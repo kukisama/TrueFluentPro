@@ -75,14 +75,6 @@ namespace TrueFluentPro.ViewModels
             _configService = configService;
             _notifyReviewLampChanged = notifyReviewLampChanged;
 
-            _batchTasks.CollectionChanged += (_, _) =>
-            {
-                ClearBatchTasksCommand.RaiseCanExecuteChanged();
-                StartBatchCommand.RaiseCanExecuteChanged();
-                OnPropertyChanged(nameof(BatchStartButtonText));
-            };
-            _batchQueueItems.CollectionChanged += (_, _) => UpdateBatchQueueStatusText();
-
             LoadBatchTasksCommand = new RelayCommand(
                 execute: _ => LoadBatchTasksFromLibrary());
 
@@ -93,6 +85,14 @@ namespace TrueFluentPro.ViewModels
             StartBatchCommand = new RelayCommand(
                 execute: _ => StartBatchProcessing(),
                 canExecute: _ => CanStartBatchProcessing());
+
+            _batchTasks.CollectionChanged += (_, _) =>
+            {
+                ClearBatchTasksCommand.RaiseCanExecuteChanged();
+                StartBatchCommand.RaiseCanExecuteChanged();
+                OnPropertyChanged(nameof(BatchStartButtonText));
+            };
+            _batchQueueItems.CollectionChanged += (_, _) => UpdateBatchQueueStatusText();
 
             StopBatchCommand = new RelayCommand(
                 execute: _ => StopBatchProcessing(),

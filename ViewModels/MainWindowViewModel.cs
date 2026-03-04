@@ -80,8 +80,8 @@ namespace TrueFluentPro.ViewModels
                 _config,
                 () =>
                 {
-                    ((RelayCommand)StartTranslationCommand).RaiseCanExecuteChanged();
-                    ((RelayCommand)ToggleTranslationCommand).RaiseCanExecuteChanged();
+                    (StartTranslationCommand as RelayCommand)?.RaiseCanExecuteChanged();
+                    (ToggleTranslationCommand as RelayCommand)?.RaiseCanExecuteChanged();
                 },
                 cfg => _translationService?.UpdateConfigAsync(cfg),
                 (eventName, message, isSuccess) => AppLogService.Instance.LogAudit(eventName, message, isSuccess),
@@ -105,8 +105,8 @@ namespace TrueFluentPro.ViewModels
                     Playback.LoadAudioForPlayback(audioFile);
                     BatchProcessing?.OnAudioFileSelected(audioFile);
                 },
-                () => Playback.SuppressSubtitleSeek,
-                cue => Playback.SeekToTime(cue.Start));
+                () => Playback?.SuppressSubtitleSeek ?? false,
+                cue => { if (cue != null) Playback?.SeekToTime(cue.Start); });
 
             BatchProcessing = new BatchProcessingViewModel(
                 () => _config,

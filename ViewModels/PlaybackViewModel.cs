@@ -88,8 +88,23 @@ namespace TrueFluentPro.ViewModels
             );
         }
 
-        public void LoadAudioForPlayback(MediaFileItem? audioFile)
+        private bool _isLoadingAudio;
+        private System.Threading.CancellationTokenSource? _loadAudioCts;
+
+        public bool IsLoadingAudio
         {
+            get => _isLoadingAudio;
+            private set => SetProperty(ref _isLoadingAudio, value);
+        }
+
+        public async void LoadAudioForPlayback(MediaFileItem? audioFile)
+        {
+            // 取消上一次尚未完成的加载
+            _loadAudioCts?.Cancel();
+            _loadAudioCts?.Dispose();
+            _loadAudioCts = new System.Threading.CancellationTokenSource();
+            var token = _loadAudioCts.Token;
+
             StopPlaybackInternal();
 
             _playbackDuration = TimeSpan.Zero;
@@ -108,9 +123,22 @@ namespace TrueFluentPro.ViewModels
                 return;
             }
 
+            IsLoadingAudio = true;
+            _statusSetter("正在加载音频...");
+
             try
             {
-                _playbackReader = new AudioFileReader(audioFile.FullPath);
+                // 在后台线程构造 AudioFileReader，避免大文件扫描帧索引阻塞 UI
+                var reader = await System.Threading.Tasks.Task.Run(
+                    () => new AudioFileReader(audioFile.FullPath), token);
+
+                if (token.IsCancellationRequested)
+                {
+                    reader.Dispose();
+                    return;
+                }
+
+                _playbackReader = reader;
                 _playbackOutput = new WaveOutEvent();
                 _playbackOutput.Init(_playbackReader);
                 _playbackOutput.PlaybackStopped += OnPlaybackStopped;
@@ -119,11 +147,20 @@ namespace TrueFluentPro.ViewModels
                 PlaybackProgress = 0;
                 UpdatePlaybackState(true, false);
                 _playbackTimer.Start();
+                _statusSetter("");
+            }
+            catch (System.Threading.Tasks.TaskCanceledException)
+            {
+                // 加载被取消（用户切换到其他文件），忽略
             }
             catch (Exception ex)
             {
                 UpdatePlaybackState(false, false);
                 _statusSetter($"加载音频失败: {ex.Message}");
+            }
+            finally
+            {
+                IsLoadingAudio = false;
             }
         }
 
@@ -316,6 +353,9 @@ namespace TrueFluentPro.ViewModels
 
         public void Dispose()
         {
+            _loadAudioCts?.Cancel();
+            _loadAudioCts?.Dispose();
+            _loadAudioCts = null;
             StopPlaybackInternal();
         }
     }
