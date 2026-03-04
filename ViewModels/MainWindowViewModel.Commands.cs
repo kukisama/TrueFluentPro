@@ -7,7 +7,6 @@ namespace TrueFluentPro.ViewModels
         public PlaybackViewModel Playback { get; }
         public AiInsightViewModel AiInsight { get; }
         public ICommand ToggleTranslationCommand { get; }
-        public ICommand RefreshAudioDevicesCommand { get; }
         public ICommand RefreshAudioLibraryCommand { get; }
         public ICommand StartTranslationCommand { get; }
         public ICommand StopTranslationCommand { get; }

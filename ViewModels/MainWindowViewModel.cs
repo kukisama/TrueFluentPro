@@ -15,7 +15,6 @@ using System.Text.RegularExpressions;
 using System.ComponentModel;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Media;
-using TrueFluentPro.Services.Audio;
 using System.IO;
 using System.Diagnostics;
 using System.Net.Http;
@@ -55,17 +54,7 @@ namespace TrueFluentPro.ViewModels
         // Proxy for ReviewBatch.cs which still references IsAiConfigured directly
         private bool IsAiConfigured => _config.AiConfig?.IsValid == true;
 
-        private int _audioSourceModeIndex;
-        private readonly ObservableCollection<AudioDeviceInfo> _audioDevices;
-        private AudioDeviceInfo? _selectedAudioDevice;
-        private bool _isAudioDeviceSelectionEnabled;
-        private bool _isAudioDeviceRefreshEnabled;
-        private readonly ObservableCollection<AudioDeviceInfo> _outputDevices;
-        private AudioDeviceInfo? _selectedOutputDevice;
-        private bool _isOutputDeviceSelectionEnabled;
-        private bool _suppressDeviceSelectionPersistence;
-        private double _audioLevel;
-        private readonly ObservableCollection<double> _audioLevelHistory;
+        public AudioDevicesViewModel AudioDevices { get; }
 
         private readonly ObservableCollection<MediaFileItem> _audioFiles;
         private readonly ObservableCollection<MediaFileItem> _subtitleFiles;
@@ -129,9 +118,6 @@ namespace TrueFluentPro.ViewModels
             AppLogService.Initialize(() => _config.BatchLogLevel);
             _history = new ObservableCollection<TranslationItem>();
             _subscriptionNames = new ObservableCollection<string>();
-            _audioDevices = new ObservableCollection<AudioDeviceInfo>();
-            _outputDevices = new ObservableCollection<AudioDeviceInfo>();
-            _audioLevelHistory = new ObservableCollection<double>(Enumerable.Repeat(0d, 24));
             _audioFiles = new ObservableCollection<MediaFileItem>();
             _subtitleFiles = new ObservableCollection<MediaFileItem>();
             _subtitleCues = new ObservableCollection<SubtitleCue>();
@@ -158,6 +144,16 @@ namespace TrueFluentPro.ViewModels
                 () => _subtitleCues,
                 cue => SelectedSubtitleCue = cue,
                 () => _selectedSubtitleCue);
+
+            AudioDevices = new AudioDevicesViewModel(
+                () => _config,
+                msg => StatusMessage = msg,
+                () => IsTranslating,
+                cfg => _translationService?.UpdateConfigAsync(cfg),
+                () => _translationService?.TryApplyLiveAudioRoutingFromCurrentConfig() ?? false,
+                reason => QueueConfigSave(reason),
+                (eventName, message) => AppendBatchDebugLog(eventName, message),
+                () => _mainWindow);
 
             _subscriptionLampTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(500), DispatcherPriority.Background, (_, _) =>
             {
@@ -189,7 +185,7 @@ namespace TrueFluentPro.ViewModels
                 async () => await Dispatcher.UIThread.InvokeAsync(() => TriggerSubscriptionValidation()));
             RegisterPostShowInitializationAction(
                 "AudioDevicesRefresh",
-                async () => await Dispatcher.UIThread.InvokeAsync(() => RefreshAudioDevices(persistSelection: false)));
+                async () => await Dispatcher.UIThread.InvokeAsync(() => AudioDevices.RefreshAudioDevices(persistSelection: false)));
             RegisterPostShowInitializationAction(
                 "AudioLibraryRefresh",
                 async () => await Dispatcher.UIThread.InvokeAsync(() => RefreshAudioLibrary()));
@@ -251,11 +247,6 @@ namespace TrueFluentPro.ViewModels
             
             ToggleEditorTypeCommand = new RelayCommand(
                 execute: _ => ToggleEditorType(),
-                canExecute: _ => true
-            );
-
-            RefreshAudioDevicesCommand = new RelayCommand(
-                execute: _ => RefreshAudioDevices(persistSelection: true),
                 canExecute: _ => true
             );
 

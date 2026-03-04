@@ -119,7 +119,7 @@
                         IsVisible="{Binding IsLiveMode}">
                     <Grid>
                         <Border Height="1" Background="#FFE2E8F0" VerticalAlignment="Center"/>
-                        <ItemsControl ItemsSource="{Binding AudioLevelHistory}" VerticalAlignment="Bottom" Margin="4,3">
+                        <ItemsControl ItemsSource="{Binding AudioDevices.AudioLevelHistory}" VerticalAlignment="Bottom" Margin="4,3">
                             <ItemsControl.ItemsPanel>
                                 <ItemsPanelTemplate>
                                     <StackPanel Orientation="Horizontal" Spacing="1"/>
@@ -169,21 +169,21 @@
 
                     <TextBlock Grid.Column="3" Text="麦克风:" VerticalAlignment="Center" Margin="10,0,5,0"/>
                     <ComboBox Grid.Column="4" Name="InputDeviceComboBox" Width="220"
-                      ItemsSource="{Binding AudioDevices}"
-                      SelectedItem="{Binding SelectedAudioDevice, Mode=TwoWay}"
-                      IsEnabled="{Binding IsInputDeviceUiEnabled}"
+                      ItemsSource="{Binding AudioDevices.AudioDevicesList}"
+                      SelectedItem="{Binding AudioDevices.SelectedAudioDevice, Mode=TwoWay}"
+                      IsEnabled="{Binding AudioDevices.IsInputDeviceUiEnabled}"
                         ToolTip.Tip="选择麦克风设备（选“无”表示不采集麦克风）"/>
 
                     <TextBlock Grid.Column="5" Text="系统回环:" VerticalAlignment="Center" Margin="10,0,5,0"/>
                     <ComboBox Grid.Column="6" Name="OutputDeviceComboBox" Width="220"
-                      ItemsSource="{Binding OutputDevices}"
-                      SelectedItem="{Binding SelectedOutputDevice, Mode=TwoWay}"
-                      IsEnabled="{Binding IsOutputDeviceUiEnabled}"
+                      ItemsSource="{Binding AudioDevices.OutputDevicesList}"
+                      SelectedItem="{Binding AudioDevices.SelectedOutputDevice, Mode=TwoWay}"
+                      IsEnabled="{Binding AudioDevices.IsOutputDeviceUiEnabled}"
                         ToolTip.Tip="选择系统回环设备（选“无”表示不采集系统回环）"/>
 
                     <Button Grid.Column="7" Content="刷新" Width="60" Margin="10,0,0,0"
-                    Command="{Binding RefreshAudioDevicesCommand}"
-                    IsEnabled="{Binding IsAudioDeviceRefreshEnabled}"
+                    Command="{Binding AudioDevices.RefreshAudioDevicesCommand}"
+                    IsEnabled="{Binding AudioDevices.IsAudioDeviceRefreshEnabled}"
                     ToolTip.Tip="刷新音频设备列表"/>
 
             <StackPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="12" Orientation="Horizontal"
@@ -192,10 +192,10 @@
                     <TextBlock Text="录制来源:" VerticalAlignment="Center"/>
                     <ToggleButton Content="仅环回"
                                   Classes="audio-pill"
-                                  IsChecked="{Binding IsRecordingLoopbackOnly, Mode=TwoWay}"/>
+                                  IsChecked="{Binding AudioDevices.IsRecordingLoopbackOnly, Mode=TwoWay}"/>
                     <ToggleButton Content="环回+麦克风"
                                   Classes="audio-pill"
-                                  IsChecked="{Binding IsRecordingLoopbackMix, Mode=TwoWay}"/>
+                                  IsChecked="{Binding AudioDevices.IsRecordingLoopbackMix, Mode=TwoWay}"/>
                 </StackPanel>
 
                 <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"

@@ -247,8 +247,7 @@ namespace TrueFluentPro.ViewModels
 
                     _activeSubscriptionIndex = _config.ActiveSubscriptionIndex;
 
-                    _audioSourceModeIndex = AudioSourceModeToIndex(_config.AudioSourceMode);
-                    NormalizeRecognitionToggles();
+                    AudioDevices.UpdateConfig();
 
                     OnPropertyChanged(nameof(Config));
                     OnPropertyChanged(nameof(SubscriptionNames));
@@ -257,21 +256,6 @@ namespace TrueFluentPro.ViewModels
                     OnPropertyChanged(nameof(SourceLanguageIndex));
                     OnPropertyChanged(nameof(TargetLanguageIndex));
                     OnPropertyChanged(nameof(ActiveSubscriptionStatus));
-                    OnPropertyChanged(nameof(AudioSourceModeIndex));
-                    OnPropertyChanged(nameof(AudioDevices));
-                    OnPropertyChanged(nameof(SelectedAudioDevice));
-                    OnPropertyChanged(nameof(IsAudioSourceSelectionEnabled));
-                    OnPropertyChanged(nameof(IsAudioDeviceSelectionEnabled));
-                    OnPropertyChanged(nameof(IsAudioDeviceRefreshEnabled));
-                    OnPropertyChanged(nameof(OutputDevices));
-                    OnPropertyChanged(nameof(SelectedOutputDevice));
-                    OnPropertyChanged(nameof(IsOutputDeviceSelectionEnabled));
-                    OnPropertyChanged(nameof(IsRecordingLoopbackOnly));
-                    OnPropertyChanged(nameof(IsRecordingLoopbackMix));
-                    OnPropertyChanged(nameof(IsInputRecognitionEnabled));
-                    OnPropertyChanged(nameof(IsOutputRecognitionEnabled));
-                    OnPropertyChanged(nameof(IsInputDeviceUiEnabled));
-                    OnPropertyChanged(nameof(IsOutputDeviceUiEnabled));
 
                     ForceUpdateComboBoxSelection();
 
@@ -400,27 +384,10 @@ namespace TrueFluentPro.ViewModels
 
             _activeSubscriptionIndex = _config.ActiveSubscriptionIndex;
 
-            _audioSourceModeIndex = AudioSourceModeToIndex(_config.AudioSourceMode);
-            NormalizeRecognitionToggles();
-            RefreshAudioDevices(persistSelection: false);
+            AudioDevices.UpdateConfig();
 
             OnPropertyChanged(nameof(SubscriptionNames));
             OnPropertyChanged(nameof(ActiveSubscriptionStatus));
-            OnPropertyChanged(nameof(AudioSourceModeIndex));
-            OnPropertyChanged(nameof(AudioDevices));
-            OnPropertyChanged(nameof(SelectedAudioDevice));
-            OnPropertyChanged(nameof(IsAudioSourceSelectionEnabled));
-            OnPropertyChanged(nameof(IsAudioDeviceSelectionEnabled));
-            OnPropertyChanged(nameof(IsAudioDeviceRefreshEnabled));
-            OnPropertyChanged(nameof(OutputDevices));
-            OnPropertyChanged(nameof(SelectedOutputDevice));
-            OnPropertyChanged(nameof(IsOutputDeviceSelectionEnabled));
-            OnPropertyChanged(nameof(IsRecordingLoopbackOnly));
-            OnPropertyChanged(nameof(IsRecordingLoopbackMix));
-            OnPropertyChanged(nameof(IsInputRecognitionEnabled));
-            OnPropertyChanged(nameof(IsOutputRecognitionEnabled));
-            OnPropertyChanged(nameof(IsInputDeviceUiEnabled));
-            OnPropertyChanged(nameof(IsOutputDeviceUiEnabled));
             NormalizeSpeechSubtitleOption();
             OnPropertyChanged(nameof(IsSpeechSubtitleOptionEnabled));
             OnPropertyChanged(nameof(UseSpeechSubtitleForReview));

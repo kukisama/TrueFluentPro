@@ -156,18 +156,17 @@ namespace TrueFluentPro.ViewModels
                 OnPropertyChanged(nameof(TranslationToggleButtonText));
                 OnPropertyChanged(nameof(TranslationToggleButtonBackground));
                 OnPropertyChanged(nameof(TranslationToggleButtonForeground));
-                OnPropertyChanged(nameof(IsAudioSourceSelectionEnabled));
+                AudioDevices.NotifyTranslatingChanged();
 
                 if (value)
                 {
                     // 翻译进行中允许实时切换输入/输出设备，仅禁用刷新
-                    IsAudioDeviceRefreshEnabled = false;
-                    OnPropertyChanged(nameof(IsInputDeviceUiEnabled));
-                    OnPropertyChanged(nameof(IsOutputDeviceUiEnabled));
+                    AudioDevices.IsAudioDeviceRefreshEnabled = false;
+                    AudioDevices.NotifyTranslatingChanged();
                 }
                 else
                 {
-                    RefreshAudioDevices(persistSelection: false);
+                    AudioDevices.RefreshAudioDevices(persistSelection: false);
                 }
 
                 ((RelayCommand)StartTranslationCommand).RaiseCanExecuteChanged();
@@ -293,8 +292,8 @@ namespace TrueFluentPro.ViewModels
             IsConfigurationEnabled = true;
             StatusMessage = "已停止";
             AudioDiagnosticStatus = "诊断: 已停止";
-            AudioLevel = 0;
-            ResetAudioLevelHistory();
+            AudioDevices.SetAudioLevel(0);
+            AudioDevices.ResetAudioLevelHistory();
 
             if (_floatingSubtitleManager?.IsWindowOpen == true)
             {
@@ -624,6 +623,14 @@ namespace TrueFluentPro.ViewModels
             Dispatcher.UIThread.Post(() =>
             {
                 AudioDiagnosticStatus = message;
+            });
+        }
+
+        private void OnAudioLevelUpdated(object? sender, double level)
+        {
+            Dispatcher.UIThread.Post(() =>
+            {
+                AudioDevices.SetAudioLevel(level);
             });
         }
 
