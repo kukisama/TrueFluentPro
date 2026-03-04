@@ -50,7 +50,7 @@ public partial class MainWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
-        MediaStudioViewPage.Cleanup();
+        MediaStudioViewPage?.Cleanup();
         _viewModel?.Dispose();
         base.OnClosed(e);
     }
