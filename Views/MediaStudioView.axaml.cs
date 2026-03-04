@@ -1245,7 +1245,11 @@ namespace TrueFluentPro.Views
             }
 
             var previewWindow = new ImagePreviewWindow(imagePaths, index);
-            previewWindow.Show(TopLevel.GetTopLevel(this) as Window);
+            var parentWindow = TopLevel.GetTopLevel(this) as Window;
+            if (parentWindow != null)
+                previewWindow.Show(parentWindow);
+            else
+                previewWindow.Show();
         }
 
         private static bool IsImageFile(string? filePath)
