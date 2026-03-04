@@ -1,5 +1,6 @@
 using Avalonia.Threading;
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Text;
@@ -12,6 +13,10 @@ public static class CrashLogger
 {
     private static int _initialized;
     private static string? _logDir;
+    private static readonly object _diagnosticsLock = new();
+    private static Func<string>? _contextProvider;
+    private static readonly Queue<string> _breadcrumbs = new();
+    private const int MaxBreadcrumbs = 200;
 
     public static string? LogDirectory => _logDir;
 
@@ -67,6 +72,43 @@ public static class CrashLogger
         Write(source, new Exception(message), isTerminating: false);
     }
 
+    public static void SetContextProvider(Func<string>? provider)
+    {
+        lock (_diagnosticsLock)
+        {
+            _contextProvider = provider;
+        }
+    }
+
+    public static void AddBreadcrumb(string message)
+    {
+        try
+        {
+            var line = $"{DateTimeOffset.Now:HH:mm:ss.fff} {message}";
+            try
+            {
+                Trace.WriteLine($"[Breadcrumb] {line}");
+            }
+            catch
+            {
+                // ignore
+            }
+
+            lock (_diagnosticsLock)
+            {
+                _breadcrumbs.Enqueue(line);
+                while (_breadcrumbs.Count > MaxBreadcrumbs)
+                {
+                    _breadcrumbs.Dequeue();
+                }
+            }
+        }
+        catch
+        {
+            // ignore
+        }
+    }
+
     public static void HookAvaloniaUiThread()
     {
         try
@@ -105,6 +147,9 @@ public static class CrashLogger
             sb.AppendLine($"BaseDirectory: {AppContext.BaseDirectory}");
             sb.AppendLine($"OS: {Environment.OSVersion}");
             sb.AppendLine($"Framework: {System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription}");
+            AppendRuntimeDiagnostics(sb);
+            AppendContextSnapshot(sb);
+            AppendBreadcrumbs(sb);
             sb.AppendLine();
 
             if (exception != null)
@@ -157,6 +202,89 @@ public static class CrashLogger
         catch
         {
             // ignore
+        }
+    }
+
+    private static void AppendRuntimeDiagnostics(StringBuilder sb)
+    {
+        try
+        {
+            var process = Process.GetCurrentProcess();
+            ThreadPool.GetAvailableThreads(out var workerAvailable, out var ioAvailable);
+            ThreadPool.GetMaxThreads(out var workerMax, out var ioMax);
+            ThreadPool.GetMinThreads(out var workerMin, out var ioMin);
+            var gcInfo = GC.GetGCMemoryInfo();
+
+            sb.AppendLine();
+            sb.AppendLine("RuntimeDiagnostics:");
+            sb.AppendLine($"ManagedThreadId: {Environment.CurrentManagedThreadId}");
+            sb.AppendLine($"ProcessId: {Environment.ProcessId}");
+            sb.AppendLine($"Uptime: {(DateTimeOffset.Now - process.StartTime):g}");
+            sb.AppendLine($"WorkingSetMB: {process.WorkingSet64 / 1024d / 1024d:F1}");
+            sb.AppendLine($"PrivateMemoryMB: {process.PrivateMemorySize64 / 1024d / 1024d:F1}");
+            sb.AppendLine($"Threads: {process.Threads.Count}");
+            sb.AppendLine($"Handles: {process.HandleCount}");
+            sb.AppendLine($"GC.TotalMemoryMB: {GC.GetTotalMemory(false) / 1024d / 1024d:F1}");
+            sb.AppendLine($"GC.HeapSizeMB: {gcInfo.HeapSizeBytes / 1024d / 1024d:F1}");
+            sb.AppendLine($"GC.FragmentedMB: {gcInfo.FragmentedBytes / 1024d / 1024d:F1}");
+            sb.AppendLine($"GC.MemoryLoadBytes: {gcInfo.MemoryLoadBytes}");
+            sb.AppendLine($"ThreadPool.Worker: available={workerAvailable}, min={workerMin}, max={workerMax}");
+            sb.AppendLine($"ThreadPool.IO: available={ioAvailable}, min={ioMin}, max={ioMax}");
+        }
+        catch (Exception ex)
+        {
+            sb.AppendLine($"RuntimeDiagnosticsError: {ex.Message}");
+        }
+    }
+
+    private static void AppendContextSnapshot(StringBuilder sb)
+    {
+        Func<string>? provider;
+        lock (_diagnosticsLock)
+        {
+            provider = _contextProvider;
+        }
+
+        if (provider == null)
+        {
+            return;
+        }
+
+        try
+        {
+            var snapshot = provider();
+            if (!string.IsNullOrWhiteSpace(snapshot))
+            {
+                sb.AppendLine();
+                sb.AppendLine("AppContextSnapshot:");
+                sb.AppendLine(snapshot.TrimEnd());
+            }
+        }
+        catch (Exception ex)
+        {
+            sb.AppendLine();
+            sb.AppendLine($"AppContextSnapshotError: {ex.Message}");
+        }
+    }
+
+    private static void AppendBreadcrumbs(StringBuilder sb)
+    {
+        string[] lines;
+        lock (_diagnosticsLock)
+        {
+            if (_breadcrumbs.Count == 0)
+            {
+                return;
+            }
+
+            lines = _breadcrumbs.ToArray();
+        }
+
+        sb.AppendLine();
+        sb.AppendLine("Breadcrumbs:");
+        foreach (var line in lines)
+        {
+            sb.AppendLine(line);
         }
     }
 

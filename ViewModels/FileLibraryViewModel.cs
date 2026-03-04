@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.IO;
 using System.Linq;
 using TrueFluentPro.Helpers;
@@ -15,12 +16,13 @@ namespace TrueFluentPro.ViewModels
 
         private readonly ObservableCollection<MediaFileItem> _audioFiles = new();
         private readonly ObservableCollection<MediaFileItem> _subtitleFiles = new();
-        private readonly ObservableCollection<SubtitleCue> _subtitleCues = new();
+        private ObservableCollection<SubtitleCue> _subtitleCues = new();
 
         private MediaFileItem? _selectedAudioFile;
         private MediaFileItem? _selectedSubtitleFile;
         private SubtitleCue? _selectedSubtitleCue;
         private double _subtitleListHeight;
+        private bool _isLoadingSubtitleCues;
 
         private readonly Func<AzureSpeechConfig> _configProvider;
         private readonly Action<string> _statusSetter;
@@ -53,7 +55,7 @@ namespace TrueFluentPro.ViewModels
             _suppressSubtitleSeekProvider = suppressSubtitleSeekProvider;
             _onSubtitleCueSelected = onSubtitleCueSelected;
 
-            _subtitleCues.CollectionChanged += (_, _) => UpdateSubtitleListHeight();
+            _subtitleCues.CollectionChanged += OnSubtitleCuesCollectionChanged;
 
             RefreshAudioLibraryCommand = new RelayCommand(
                 execute: _ => RefreshAudioLibrary(),
@@ -62,7 +64,21 @@ namespace TrueFluentPro.ViewModels
 
         public ObservableCollection<MediaFileItem> AudioFiles => _audioFiles;
         public ObservableCollection<MediaFileItem> SubtitleFiles => _subtitleFiles;
-        public ObservableCollection<SubtitleCue> SubtitleCues => _subtitleCues;
+        public ObservableCollection<SubtitleCue> SubtitleCues
+        {
+            get => _subtitleCues;
+            private set
+            {
+                if (ReferenceEquals(_subtitleCues, value))
+                {
+                    return;
+                }
+
+                _subtitleCues.CollectionChanged -= OnSubtitleCuesCollectionChanged;
+                SetProperty(ref _subtitleCues, value);
+                _subtitleCues.CollectionChanged += OnSubtitleCuesCollectionChanged;
+            }
+        }
 
         public MediaFileItem? SelectedAudioFile
         {
@@ -74,8 +90,8 @@ namespace TrueFluentPro.ViewModels
                     return;
                 }
 
-                LoadSubtitleFilesForAudio(value);
                 _onAudioFileSelected(value);
+                LoadSubtitleFilesForAudio(value);
             }
         }
 
@@ -108,6 +124,11 @@ namespace TrueFluentPro.ViewModels
                     return;
                 }
 
+                if (_isLoadingSubtitleCues)
+                {
+                    return;
+                }
+
                 if (value != null)
                 {
                     _onSubtitleCueSelected(value);
@@ -115,6 +136,8 @@ namespace TrueFluentPro.ViewModels
             }
         }
 
+        // SubtitleListHeight 保留用于未来可能的外部消费场景，但不再绑定到 XAML 高度约束
+        // 字幕列表现在通过 Grid * 行自然填充可用空间
         public double SubtitleListHeight
         {
             get => _subtitleListHeight;
@@ -127,7 +150,7 @@ namespace TrueFluentPro.ViewModels
         {
             _audioFiles.Clear();
             _subtitleFiles.Clear();
-            _subtitleCues.Clear();
+            SubtitleCues = new ObservableCollection<SubtitleCue>();
 
             var sessionsPath = PathManager.Instance.SessionsPath;
             if (!Directory.Exists(sessionsPath))
@@ -159,7 +182,7 @@ namespace TrueFluentPro.ViewModels
         public void LoadSubtitleFilesForAudio(MediaFileItem? audioFile)
         {
             _subtitleFiles.Clear();
-            _subtitleCues.Clear();
+            // 不在此处清空 SubtitleCues——SelectedSubtitleFile = null 会触发 LoadSubtitleCues 自动处理
             SelectedSubtitleFile = null;
 
             if (audioFile == null || string.IsNullOrWhiteSpace(audioFile.FullPath))
@@ -221,31 +244,70 @@ namespace TrueFluentPro.ViewModels
 
         private void LoadSubtitleCues(MediaFileItem? subtitleFile)
         {
-            _subtitleCues.Clear();
-            SelectedSubtitleCue = null;
-
-            if (subtitleFile == null || string.IsNullOrWhiteSpace(subtitleFile.FullPath))
+            CrashLogger.AddBreadcrumb($"LoadSubtitleCues start: subtitle={DescribeMediaFile(subtitleFile)}");
+            _isLoadingSubtitleCues = true;
+            var loadedCueCount = 0;
+            try
             {
-                return;
+                SelectedSubtitleCue = null;
+
+                if (subtitleFile == null || string.IsNullOrWhiteSpace(subtitleFile.FullPath)
+                    || !File.Exists(subtitleFile.FullPath))
+                {
+                    // 仅在需要清空时替换集合
+                    if (_subtitleCues.Count > 0)
+                    {
+                        SubtitleCues = new ObservableCollection<SubtitleCue>();
+                    }
+                }
+                else
+                {
+                    var extension = Path.GetExtension(subtitleFile.FullPath).ToLowerInvariant();
+                    List<SubtitleCue> cues;
+                    if (extension == ".srt")
+                    {
+                        cues = ParseSubtitleFile(subtitleFile.FullPath, expectsHeader: false);
+                    }
+                    else if (extension == ".vtt")
+                    {
+                        cues = ParseSubtitleFile(subtitleFile.FullPath, expectsHeader: true);
+                    }
+                    else
+                    {
+                        cues = new List<SubtitleCue>();
+                    }
+
+                    loadedCueCount = cues.Count;
+
+                    // 一次性替换整个集合，避免逐条 Add 触发 N 次 CollectionChanged/UI 重绘
+                    // 不先清空再加载——直接用有数据的集合替换，减少多余的布局重算
+                    SubtitleCues = new ObservableCollection<SubtitleCue>(cues);
+
+                    if (cues.Count > 0)
+                    {
+                        // 加载阶段自动选中第一条字幕。
+                        // 当前处于 _isLoadingSubtitleCues=true，SelectedSubtitleCue setter 不会触发 seek 副作用。
+                        SelectedSubtitleCue = cues[0];
+                    }
+                }
+            }
+            finally
+            {
+                _isLoadingSubtitleCues = false;
             }
 
-            if (!File.Exists(subtitleFile.FullPath))
-            {
-                return;
-            }
-
-            var extension = Path.GetExtension(subtitleFile.FullPath).ToLowerInvariant();
-            if (extension == ".srt")
-            {
-                ParseSrt(subtitleFile.FullPath);
-            }
-            else if (extension == ".vtt")
-            {
-                ParseVtt(subtitleFile.FullPath);
-            }
-
-            UpdateSubtitleListHeight();
+            CrashLogger.AddBreadcrumb($"LoadSubtitleCues done: cues={loadedCueCount}, subtitle={DescribeMediaFile(subtitleFile)}");
             SubtitleCuesLoaded?.Invoke();
+        }
+
+        private static string DescribeMediaFile(MediaFileItem? item)
+        {
+            if (item == null)
+            {
+                return "(null)";
+            }
+
+            return $"name='{item.Name}', path='{item.FullPath}'";
         }
 
         // ── Static path helpers (public, used by batch) ──
@@ -288,20 +350,15 @@ namespace TrueFluentPro.ViewModels
 
         // ── Parsing ──
 
-        private void ParseSrt(string path)
+        private static List<SubtitleCue> ParseSubtitleFile(string path, bool expectsHeader)
         {
             var lines = File.ReadAllLines(path);
-            ParseSubtitleLines(lines, expectsHeader: false);
+            return ParseSubtitleLines(lines, expectsHeader);
         }
 
-        private void ParseVtt(string path)
+        private static List<SubtitleCue> ParseSubtitleLines(string[] lines, bool expectsHeader)
         {
-            var lines = File.ReadAllLines(path);
-            ParseSubtitleLines(lines, expectsHeader: true);
-        }
-
-        private void ParseSubtitleLines(string[] lines, bool expectsHeader)
-        {
+            var cues = new List<SubtitleCue>();
             var index = 0;
             if (expectsHeader && index < lines.Length && lines[index].StartsWith("WEBVTT", StringComparison.OrdinalIgnoreCase))
             {
@@ -344,7 +401,7 @@ namespace TrueFluentPro.ViewModels
                 var text = string.Join(" ", textLines).Trim();
                 if (!string.IsNullOrWhiteSpace(text))
                 {
-                    _subtitleCues.Add(new SubtitleCue
+                    cues.Add(new SubtitleCue
                     {
                         Start = start,
                         End = end,
@@ -353,6 +410,11 @@ namespace TrueFluentPro.ViewModels
                 }
             }
 
+            return cues;
+        }
+
+        private void OnSubtitleCuesCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+        {
             UpdateSubtitleListHeight();
         }
 

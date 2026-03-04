@@ -16,7 +16,7 @@ namespace TrueFluentPro.ViewModels
         private readonly Func<SubtitleCue?> _subtitleCueGetter;
 
         private WaveOutEvent? _playbackOutput;
-        private AudioFileReader? _playbackReader;
+        private WaveStream? _playbackReader;
         private readonly DispatcherTimer _playbackTimer;
         private TimeSpan _playbackPosition = TimeSpan.Zero;
         private TimeSpan _playbackDuration = TimeSpan.Zero;
@@ -88,23 +88,8 @@ namespace TrueFluentPro.ViewModels
             );
         }
 
-        private bool _isLoadingAudio;
-        private System.Threading.CancellationTokenSource? _loadAudioCts;
-
-        public bool IsLoadingAudio
+        public void LoadAudioForPlayback(MediaFileItem? audioFile)
         {
-            get => _isLoadingAudio;
-            private set => SetProperty(ref _isLoadingAudio, value);
-        }
-
-        public async void LoadAudioForPlayback(MediaFileItem? audioFile)
-        {
-            // 取消上一次尚未完成的加载
-            _loadAudioCts?.Cancel();
-            _loadAudioCts?.Dispose();
-            _loadAudioCts = new System.Threading.CancellationTokenSource();
-            var token = _loadAudioCts.Token;
-
             StopPlaybackInternal();
 
             _playbackDuration = TimeSpan.Zero;
@@ -123,22 +108,13 @@ namespace TrueFluentPro.ViewModels
                 return;
             }
 
-            IsLoadingAudio = true;
-            _statusSetter("正在加载音频...");
-
             try
             {
-                // 在后台线程构造 AudioFileReader，避免大文件扫描帧索引阻塞 UI
-                var reader = await System.Threading.Tasks.Task.Run(
-                    () => new AudioFileReader(audioFile.FullPath), token);
-
-                if (token.IsCancellationRequested)
-                {
-                    reader.Dispose();
-                    return;
-                }
-
-                _playbackReader = reader;
+                // 使用 MediaFoundationReader 代替 AudioFileReader
+                // AudioFileReader 内部使用 Mp3FileReader，会在构造时扫描整个文件建帧索引，
+                // 对大文件（100MB+）耗时数秒甚至导致 UI 无响应。
+                // MediaFoundationReader 基于 Windows Media Foundation，瞬时打开，原生支持 seek。
+                _playbackReader = new MediaFoundationReader(audioFile.FullPath);
                 _playbackOutput = new WaveOutEvent();
                 _playbackOutput.Init(_playbackReader);
                 _playbackOutput.PlaybackStopped += OnPlaybackStopped;
@@ -146,21 +122,13 @@ namespace TrueFluentPro.ViewModels
                 _playbackPosition = TimeSpan.Zero;
                 PlaybackProgress = 0;
                 UpdatePlaybackState(true, false);
-                _playbackTimer.Start();
-                _statusSetter("");
-            }
-            catch (System.Threading.Tasks.TaskCanceledException)
-            {
-                // 加载被取消（用户切换到其他文件），忽略
+                // 仅在真正播放时才启动定时器，避免空转刷新触发布局压力
+                _playbackTimer.Stop();
             }
             catch (Exception ex)
             {
                 UpdatePlaybackState(false, false);
                 _statusSetter($"加载音频失败: {ex.Message}");
-            }
-            finally
-            {
-                IsLoadingAudio = false;
             }
         }
 
@@ -172,6 +140,7 @@ namespace TrueFluentPro.ViewModels
             }
 
             _playbackOutput.Play();
+            _playbackTimer.Start();
             UpdatePlaybackState(true, true);
         }
 
@@ -183,6 +152,7 @@ namespace TrueFluentPro.ViewModels
             }
 
             _playbackOutput.Pause();
+            _playbackTimer.Stop();
             UpdatePlaybackState(true, false);
         }
 
@@ -194,12 +164,14 @@ namespace TrueFluentPro.ViewModels
             }
 
             _playbackOutput.Stop();
+            _playbackTimer.Stop();
             SeekToTime(TimeSpan.Zero);
             UpdatePlaybackState(true, false);
         }
 
         private void OnPlaybackStopped(object? sender, StoppedEventArgs e)
         {
+            _playbackTimer.Stop();
             UpdatePlaybackProgressFromReader();
             UpdatePlaybackState(_playbackReader != null, false);
         }
@@ -246,14 +218,35 @@ namespace TrueFluentPro.ViewModels
             }
 
             _suppressSeek = true;
-            _playbackPosition = _playbackReader.CurrentTime;
-            _playbackDuration = _playbackReader.TotalTime;
-            _playbackProgress = _playbackDuration > TimeSpan.Zero
-                ? _playbackPosition.TotalMilliseconds / _playbackDuration.TotalMilliseconds
+            var newPosition = _playbackReader.CurrentTime;
+            var newDuration = _playbackReader.TotalTime;
+            var newProgress = newDuration > TimeSpan.Zero
+                ? newPosition.TotalMilliseconds / newDuration.TotalMilliseconds
                 : 0;
-            OnPropertyChanged(nameof(PlaybackProgress));
-            OnPropertyChanged(nameof(PlaybackTimeText));
-            UpdateCurrentSubtitleCue(_playbackPosition);
+
+            var positionChanged = (newPosition - _playbackPosition).Duration() > TimeSpan.FromMilliseconds(50);
+            var durationChanged = (newDuration - _playbackDuration).Duration() > TimeSpan.FromMilliseconds(50);
+            var progressChanged = Math.Abs(newProgress - _playbackProgress) > 0.0005d;
+
+            _playbackPosition = newPosition;
+            _playbackDuration = newDuration;
+
+            if (progressChanged)
+            {
+                _playbackProgress = newProgress;
+                OnPropertyChanged(nameof(PlaybackProgress));
+            }
+
+            if (positionChanged || durationChanged)
+            {
+                OnPropertyChanged(nameof(PlaybackTimeText));
+            }
+
+            if (positionChanged)
+            {
+                UpdateCurrentSubtitleCue(_playbackPosition);
+            }
+
             _suppressSeek = false;
         }
 
@@ -353,9 +346,6 @@ namespace TrueFluentPro.ViewModels
 
         public void Dispose()
         {
-            _loadAudioCts?.Cancel();
-            _loadAudioCts?.Dispose();
-            _loadAudioCts = null;
             StopPlaybackInternal();
         }
     }

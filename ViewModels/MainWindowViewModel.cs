@@ -62,6 +62,9 @@ namespace TrueFluentPro.ViewModels
         private int _postShowInitStarted;
         private volatile bool _isMainWindowShown;
         private volatile bool _isConfigLoaded;
+        private string? _pendingReviewAudioPath;
+        private int _pendingReviewSequence;
+        private int _lastDispatchedReviewSequence;
 
         public MainWindowViewModel(
             ConfigurationService configService,
@@ -102,8 +105,15 @@ namespace TrueFluentPro.ViewModels
                 msg => StatusMessage = msg,
                 audioFile =>
                 {
+                    CrashLogger.AddBreadcrumb($"AudioSelected: {DescribeMediaFile(audioFile)}");
                     Playback.LoadAudioForPlayback(audioFile);
-                    BatchProcessing?.OnAudioFileSelected(audioFile);
+
+                    // 顺序执行策略：先完成字幕加载，再触发复盘加载。
+                    _pendingReviewAudioPath = audioFile?.FullPath;
+                    _pendingReviewSequence++;
+                    CrashLogger.AddBreadcrumb($"BatchReviewQueuedAfterSubtitleLoad: seq={_pendingReviewSequence}, audio={DescribeMediaFile(audioFile)}");
+
+                    CrashLogger.AddBreadcrumb($"AudioSelectionHandled: subtitleCues={FileLibrary?.SubtitleCues.Count ?? -1}, subtitleFiles={FileLibrary?.SubtitleFiles.Count ?? -1}, playbackReady={Playback?.IsStopEnabled ?? false}");
                 },
                 () => Playback?.SuppressSubtitleSeek ?? false,
                 cue => { if (cue != null) Playback?.SeekToTime(cue.Start); });
@@ -117,7 +127,7 @@ namespace TrueFluentPro.ViewModels
                 configService,
                 () => ConfigVM.NotifyReviewLampChanged());
 
-            FileLibrary.SubtitleCuesLoaded += BatchProcessing.OnSubtitleCuesLoaded;
+            FileLibrary.SubtitleCuesLoaded += OnFileLibrarySubtitleCuesLoaded;
             FileLibrary.AudioLibraryRefreshed += BatchProcessing.OnAudioLibraryRefreshed;
 
             AudioDevices = new AudioDevicesViewModel(
@@ -151,6 +161,9 @@ namespace TrueFluentPro.ViewModels
             RegisterPostShowInitializationAction(
                 "AiSilentLogin",
                 async () => await AiInsight.TrySilentLoginForAiAsync());
+
+            CrashLogger.SetContextProvider(BuildCrashContextSnapshot);
+            CrashLogger.AddBreadcrumb("MainWindowViewModel initialized");
 
             _ = LoadConfigAsync();
 
@@ -293,6 +306,78 @@ namespace TrueFluentPro.ViewModels
         private void OnConfigurationUpdated(object? sender, AzureSpeechConfig updatedConfig)
         {
             ConfigVM.HandleExternalConfigUpdate(updatedConfig);
+        }
+
+        private void OnFileLibrarySubtitleCuesLoaded()
+        {
+            BatchProcessing.OnSubtitleCuesLoaded();
+
+            var sequence = _pendingReviewSequence;
+            if (sequence == _lastDispatchedReviewSequence)
+            {
+                return;
+            }
+
+            var currentAudio = FileLibrary.SelectedAudioFile;
+            var currentPath = currentAudio?.FullPath;
+            if (!string.Equals(currentPath, _pendingReviewAudioPath, StringComparison.OrdinalIgnoreCase))
+            {
+                CrashLogger.AddBreadcrumb($"BatchReviewSkippedStaleQueue: queued='{_pendingReviewAudioPath}', current='{currentPath}'");
+                return;
+            }
+
+            _lastDispatchedReviewSequence = sequence;
+            CrashLogger.AddBreadcrumb($"BatchAudioSelectionDispatchSequential: seq={sequence}, audio={DescribeMediaFile(currentAudio)}");
+            BatchProcessing.OnAudioFileSelected(currentAudio);
+            CrashLogger.AddBreadcrumb($"BatchReviewLoadScheduled: seq={sequence}, audio={DescribeMediaFile(currentAudio)}");
+        }
+
+        private string BuildCrashContextSnapshot()
+        {
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine($"StatusMessage: {_statusMessage}");
+            sb.AppendLine($"IsTranslating: {_isTranslating}");
+            sb.AppendLine($"HistoryCount: {_history.Count}");
+
+            var selectedAudio = FileLibrary?.SelectedAudioFile;
+            var selectedSubtitle = FileLibrary?.SelectedSubtitleFile;
+
+            sb.AppendLine($"AudioFilesCount: {FileLibrary?.AudioFiles.Count ?? -1}");
+            sb.AppendLine($"SubtitleFilesCount: {FileLibrary?.SubtitleFiles.Count ?? -1}");
+            sb.AppendLine($"SubtitleCuesCount: {FileLibrary?.SubtitleCues.Count ?? -1}");
+            sb.AppendLine($"SelectedAudio: {DescribeMediaFile(selectedAudio)}");
+            sb.AppendLine($"SelectedSubtitle: {DescribeMediaFile(selectedSubtitle)}");
+            sb.AppendLine($"PlaybackTime: {Playback?.PlaybackTimeText ?? "(null)"}");
+            sb.AppendLine($"PlaybackState: playEnabled={Playback?.IsPlayEnabled ?? false}, pauseEnabled={Playback?.IsPauseEnabled ?? false}, stopEnabled={Playback?.IsStopEnabled ?? false}");
+            sb.AppendLine($"BatchTasksCount: {BatchProcessing?.BatchTasks.Count ?? -1}");
+            sb.AppendLine($"BatchQueueCount: {BatchProcessing?.BatchQueueItems.Count ?? -1}");
+
+            return sb.ToString();
+        }
+
+        private static string DescribeMediaFile(MediaFileItem? item)
+        {
+            if (item == null)
+            {
+                return "(null)";
+            }
+
+            var name = item.Name ?? "(no-name)";
+            var path = item.FullPath ?? "";
+            long size = -1;
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(path) && File.Exists(path))
+                {
+                    size = new FileInfo(path).Length;
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+
+            return $"name='{name}', sizeBytes={size}, path='{path}'";
         }
     }
 }

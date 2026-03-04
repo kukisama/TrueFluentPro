@@ -21,6 +21,11 @@
             <Setter Property="Background" Value="#FFE5E7EB" />
             <Setter Property="Foreground" Value="#FF111827" />
         </Style>
+        <!-- 右键仅弹菜单：抑制音频列表项的按下闪烁视觉态 -->
+        <Style Selector="ListBox#AudioFileListBox > ListBoxItem:pressed">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+        </Style>
         <Style Selector="Slider#PlaybackSlider /template/ Thumb">
             <Setter Property="Width" Value="9" />
             <Setter Property="Height" Value="9" />
@@ -49,23 +54,36 @@
                             <Button Content="刷新" Width="50" Padding="6,2" Command="{Binding FileLibrary.RefreshAudioLibraryCommand}"
                                     HorizontalAlignment="Right" DockPanel.Dock="Right"/>
                         </DockPanel>
-                        <ListBox ItemsSource="{Binding FileLibrary.AudioFiles}" SelectedItem="{Binding FileLibrary.SelectedAudioFile}" Height="160"
-                                 PointerPressed="AudioFileList_PointerPressed">
-                            <ListBox.ItemTemplate>
-                                <DataTemplate DataType="models:MediaFileItem">
-                                    <Border Padding="2">
-                                        <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis"/>
-                                        <Border.ContextMenu>
-                                            <ContextMenu DataContext="{Binding}">
-                                                <MenuItem Header="生成字幕+复盘"
-                                                          IsEnabled="True"
-                                                          Click="AudioFileEnqueue_Click"/>
-                                            </ContextMenu>
-                                        </Border.ContextMenu>
-                                    </Border>
-                                </DataTemplate>
-                            </ListBox.ItemTemplate>
-                        </ListBox>
+                        <Grid Name="AudioFileListHost" Height="160" ClipToBounds="False">
+                            <ListBox Name="AudioFileListBox"
+                                     ItemsSource="{Binding FileLibrary.AudioFiles}" SelectedItem="{Binding FileLibrary.SelectedAudioFile}"
+                                     Focusable="False">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate DataType="models:MediaFileItem">
+                                        <Border Padding="2">
+                                            <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis"/>
+                                        </Border>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+
+                            <Border x:Name="AudioInlineMenuPanel"
+                                    IsVisible="False"
+                                    HorizontalAlignment="Left"
+                                    VerticalAlignment="Top"
+                                    ZIndex="1000"
+                                    Background="#FFFFFFFF"
+                                    BorderBrush="#FFE5E7EB"
+                                    BorderThickness="1"
+                                    CornerRadius="6"
+                                    Padding="4"
+                                    MaxWidth="180">
+                                <Button Content="生成字幕+复盘"
+                                        Padding="8,4"
+                                        HorizontalAlignment="Stretch"
+                                        Click="AudioInlineEnqueue_Click"/>
+                            </Border>
+                        </Grid>
 
                         <TextBlock Text="字幕文件" FontSize="11" Foreground="Gray"/>
                         <ListBox ItemsSource="{Binding FileLibrary.SubtitleFiles}" SelectedItem="{Binding FileLibrary.SelectedSubtitleFile}" Height="120">
@@ -165,34 +183,24 @@
                     </StackPanel>
                 </StackPanel>
                 <Grid Grid.Row="1" RowDefinitions="Auto,Auto" Margin="0,6,0,6">
-                    <Canvas Height="18" Margin="0,0,0,1" IsHitTestVisible="False"
-                            Width="{Binding ElementName=PlaybackSlider, Path=Bounds.Width}">
-                        <Border Width="96" Height="16" Background="#FFF3F4F6" BorderBrush="#FFE5E7EB"
-                                BorderThickness="1" CornerRadius="8" Padding="4,0">
-                            <Canvas.Left>
-                                <MultiBinding Converter="{StaticResource ProgressToOffset}">
-                                    <Binding Path="Playback.PlaybackProgress"/>
-                                    <Binding ElementName="PlaybackSlider" Path="Bounds.Width"/>
-                                    <Binding RelativeSource="{RelativeSource Self}" Path="Bounds.Width"/>
-                                </MultiBinding>
-                            </Canvas.Left>
-                            <TextBlock Text="{Binding Playback.PlaybackTimeText}" FontSize="10" Foreground="#FF111827"
-                                       VerticalAlignment="Center" HorizontalAlignment="Center"/>
-                        </Border>
-                    </Canvas>
+                    <TextBlock Grid.Row="0"
+                               Text="{Binding Playback.PlaybackTimeText}"
+                               FontSize="10"
+                               Foreground="#FF111827"
+                               HorizontalAlignment="Right"
+                               Margin="0,0,0,4"/>
                     <Slider Grid.Row="1" Name="PlaybackSlider" Minimum="0" Maximum="1"
                             Value="{Binding Playback.PlaybackProgress, Mode=TwoWay}"/>
                 </Grid>
                 <Border Grid.Row="2" BorderBrush="#FFE5E7EB" BorderThickness="1" CornerRadius="4">
                     <ListBox Name="SubtitleCueListBox" ItemsSource="{Binding FileLibrary.SubtitleCues}" SelectedItem="{Binding FileLibrary.SelectedSubtitleCue}" Margin="0" Padding="0"
-                             Height="{Binding FileLibrary.SubtitleListHeight}" MinHeight="0" VerticalAlignment="Top"
-                             ScrollViewer.VerticalScrollBarVisibility="Auto"
+                             Background="Transparent"
                              DoubleTapped="SubtitleCueListBox_DoubleTapped">
                         <ListBox.ItemTemplate>
                             <DataTemplate DataType="models:SubtitleCue">
                                 <StackPanel Margin="0,2">
                                     <TextBlock Text="{Binding RangeText}" FontSize="10" Foreground="Gray"/>
-                                    <TextBlock Text="{Binding Text}" TextWrapping="Wrap"/>
+                                    <TextBlock Text="{Binding Text}" TextTrimming="CharacterEllipsis"/>
                                 </StackPanel>
                             </DataTemplate>
                         </ListBox.ItemTemplate>
@@ -228,13 +236,12 @@
                         <TabControl.ContentTemplate>
                             <DataTemplate x:CompileBindings="False">
                                 <Grid>
-                                    <ScrollViewer IsVisible="{Binding !IsEmpty}">
-                                        <md:MarkdownScrollViewer Markdown="{Binding Markdown}">
-                                            <md:MarkdownScrollViewer.Engine>
-                                                <md:Markdown HyperlinkCommand="{Binding $parent[TabControl].DataContext.BatchProcessing.ReviewMarkdownLinkCommand}" />
-                                            </md:MarkdownScrollViewer.Engine>
-                                        </md:MarkdownScrollViewer>
-                                    </ScrollViewer>
+                                    <md:MarkdownScrollViewer IsVisible="{Binding !IsEmpty}"
+                                                             Markdown="{Binding Markdown}">
+                                        <md:MarkdownScrollViewer.Engine>
+                                            <md:Markdown HyperlinkCommand="{Binding $parent[TabControl].DataContext.BatchProcessing.ReviewMarkdownLinkCommand}" />
+                                        </md:MarkdownScrollViewer.Engine>
+                                    </md:MarkdownScrollViewer>
                                     <TextBlock Text="选择音频与字幕后生成内容"
                                                Foreground="Gray" FontSize="12"
                                                HorizontalAlignment="Center" VerticalAlignment="Center"

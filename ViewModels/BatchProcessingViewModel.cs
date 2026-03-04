@@ -314,7 +314,28 @@ namespace TrueFluentPro.ViewModels
         public void OnAudioFileSelected(MediaFileItem? audioFile)
         {
             CancelAllReviewSheetGeneration();
-            LoadReviewSheetForAudio(audioFile, SelectedReviewSheet);
+
+            // 顺序策略：由 MainWindow 在“字幕加载完成”后调用本方法。
+            // 本方法再以后台优先级投递复盘加载，避免与同一帧其它 UI 更新竞争。
+            if (SelectedReviewSheet != null)
+            {
+                SelectedReviewSheet.StatusMessage = "字幕已就绪，正在加载复盘...";
+                SelectedReviewSheet.IsLoading = true;
+            }
+
+            Dispatcher.UIThread.Post(() =>
+            {
+                var currentAudio = _fileLibrary.SelectedAudioFile;
+                var isStale = !string.Equals(currentAudio?.FullPath, audioFile?.FullPath, StringComparison.OrdinalIgnoreCase);
+                if (isStale)
+                {
+                    AppLogService.Instance.LogAudit("ReviewLoadSkipped", "stale audio selection", isSuccess: true);
+                    return;
+                }
+
+                LoadReviewSheetForAudio(audioFile, SelectedReviewSheet);
+            }, DispatcherPriority.Background);
+
             GenerateReviewSummaryCommand.RaiseCanExecuteChanged();
             GenerateAllReviewSheetsCommand.RaiseCanExecuteChanged();
             GenerateSpeechSubtitleCommand.RaiseCanExecuteChanged();
@@ -1350,7 +1371,8 @@ namespace TrueFluentPro.ViewModels
             var sheetPath = GetReviewSheetPath(audioFile.FullPath, sheet.FileTag);
             if (File.Exists(sheetPath))
             {
-                sheet.Markdown = TimeLinkHelper.InjectTimeLinks(File.ReadAllText(sheetPath));
+                var raw = File.ReadAllText(sheetPath);
+                sheet.Markdown = PrepareStableReviewContent(raw);
                 sheet.StatusMessage = $"已加载: {Path.GetFileName(sheetPath)}";
             }
             else
@@ -1360,6 +1382,16 @@ namespace TrueFluentPro.ViewModels
 
             GenerateReviewSummaryCommand.RaiseCanExecuteChanged();
             GenerateAllReviewSheetsCommand.RaiseCanExecuteChanged();
+        }
+
+        private static string PrepareStableReviewContent(string markdown)
+        {
+            if (string.IsNullOrWhiteSpace(markdown))
+            {
+                return markdown;
+            }
+
+            return TimeLinkHelper.InjectTimeLinks(markdown);
         }
 
         private static string GetReviewSheetPath(string audioFilePath, string fileTag)
@@ -1475,8 +1507,8 @@ namespace TrueFluentPro.ViewModels
                 return;
             }
 
-            var cues = _fileLibrary.SubtitleCues.ToList();
-            await GenerateReviewSheetAsync(sheet, audioFile, cues);
+            EnqueueReviewSheetsForAudio(audioFile, new[] { sheet });
+            StartBatchQueueRunner("复盘已加入队列");
         }
 
         private bool CanGenerateAllReviewSheets()
