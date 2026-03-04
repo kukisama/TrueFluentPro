@@ -36,6 +36,7 @@ namespace TrueFluentPro.ViewModels
         private readonly string[] _sourceLanguages = { "auto", "en", "zh-CN", "ja-JP", "ko-KR", "fr-FR", "de-DE", "es-ES" };
         private readonly string[] _targetLanguages = { "en", "zh-CN", "ja-JP", "ko-KR", "fr-FR", "de-DE", "es-ES" };
         private bool _isConfigurationEnabled = true;
+        private bool _suppressIndexPersistence;
 
         public event Action<AzureSpeechConfig>? ConfigLoaded;
         public event Action<AzureSpeechConfig>? ConfigUpdatedFromExternal;
@@ -103,6 +104,12 @@ namespace TrueFluentPro.ViewModels
             get => _activeSubscriptionIndex;
             set
             {
+                if (_suppressIndexPersistence)
+                {
+                    SetProperty(ref _activeSubscriptionIndex, value);
+                    return;
+                }
+
                 if (value >= 0 && value < _config.Subscriptions.Count)
                 {
                     if (SetProperty(ref _activeSubscriptionIndex, value))
@@ -291,22 +298,33 @@ namespace TrueFluentPro.ViewModels
         {
             _config = await _configService.LoadConfigAsync();
 
+            var savedIndex = _config.ActiveSubscriptionIndex;
+
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
-                UpdateSubscriptionNames();
-
-                if (_config.Subscriptions.Count > 0 && _config.ActiveSubscriptionIndex >= _config.Subscriptions.Count)
+                _suppressIndexPersistence = true;
+                try
                 {
-                    _config.ActiveSubscriptionIndex = _config.Subscriptions.Count - 1;
+                    UpdateSubscriptionNames();
                 }
-                else if (_config.Subscriptions.Count == 0 && _config.ActiveSubscriptionIndex != -1)
+                finally
                 {
-                    _config.ActiveSubscriptionIndex = -1;
+                    _suppressIndexPersistence = false;
                 }
 
+                if (_config.Subscriptions.Count > 0 && savedIndex >= _config.Subscriptions.Count)
+                {
+                    savedIndex = _config.Subscriptions.Count - 1;
+                }
+                else if (_config.Subscriptions.Count == 0)
+                {
+                    savedIndex = -1;
+                }
+
+                _config.ActiveSubscriptionIndex = savedIndex;
                 _sourceLanguage = _config.SourceLanguage;
                 _targetLanguage = _config.TargetLanguage;
-                _activeSubscriptionIndex = _config.ActiveSubscriptionIndex;
+                _activeSubscriptionIndex = savedIndex;
 
                 OnPropertyChanged(nameof(Config));
                 OnPropertyChanged(nameof(SubscriptionNames));
@@ -327,18 +345,29 @@ namespace TrueFluentPro.ViewModels
         {
             _config = updatedConfig;
 
-            UpdateSubscriptionNames();
+            var savedIndex = _config.ActiveSubscriptionIndex;
 
-            if (_config.Subscriptions.Count > 0 && _config.ActiveSubscriptionIndex >= _config.Subscriptions.Count)
+            _suppressIndexPersistence = true;
+            try
             {
-                _config.ActiveSubscriptionIndex = _config.Subscriptions.Count - 1;
+                UpdateSubscriptionNames();
             }
-            else if (_config.Subscriptions.Count == 0 && _config.ActiveSubscriptionIndex != -1)
+            finally
             {
-                _config.ActiveSubscriptionIndex = -1;
+                _suppressIndexPersistence = false;
             }
 
-            _activeSubscriptionIndex = _config.ActiveSubscriptionIndex;
+            if (_config.Subscriptions.Count > 0 && savedIndex >= _config.Subscriptions.Count)
+            {
+                savedIndex = _config.Subscriptions.Count - 1;
+            }
+            else if (_config.Subscriptions.Count == 0)
+            {
+                savedIndex = -1;
+            }
+
+            _config.ActiveSubscriptionIndex = savedIndex;
+            _activeSubscriptionIndex = savedIndex;
 
             OnPropertyChanged(nameof(SubscriptionNames));
             OnPropertyChanged(nameof(ActiveSubscriptionStatus));
@@ -439,14 +468,19 @@ namespace TrueFluentPro.ViewModels
 
         public void ForceUpdateComboBoxSelection()
         {
-            var mainWindow = _mainWindowProvider();
-            if (mainWindow == null) return;
-
-            var comboBox = mainWindow.FindControl<ComboBox>("SubscriptionComboBox");
-            if (comboBox != null && _activeSubscriptionIndex >= 0 && _activeSubscriptionIndex < _subscriptionNames.Count)
+            // Force binding refresh by bouncing the value through OnPropertyChanged
+            var idx = _activeSubscriptionIndex;
+            _suppressIndexPersistence = true;
+            try
             {
-                comboBox.SelectedIndex = -1;
-                comboBox.SelectedIndex = _activeSubscriptionIndex;
+                _activeSubscriptionIndex = -1;
+                OnPropertyChanged(nameof(ActiveSubscriptionIndex));
+                _activeSubscriptionIndex = idx;
+                OnPropertyChanged(nameof(ActiveSubscriptionIndex));
+            }
+            finally
+            {
+                _suppressIndexPersistence = false;
             }
         }
 

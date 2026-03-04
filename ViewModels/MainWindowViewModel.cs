@@ -267,6 +267,9 @@ namespace TrueFluentPro.ViewModels
             BatchProcessing.RebuildReviewSheets();
             AiInsight.UpdateConfig();
 
+            ((RelayCommand)StartTranslationCommand).RaiseCanExecuteChanged();
+            ((RelayCommand)ToggleTranslationCommand).RaiseCanExecuteChanged();
+
             StatusMessage = $"配置已加载，文件位置: {ConfigVM.GetConfigFilePath()}";
         }
 
@@ -280,6 +283,9 @@ namespace TrueFluentPro.ViewModels
             BatchProcessing.RefreshCommandStates();
             BatchProcessing.RebuildReviewSheets();
             AiInsight.UpdateConfig();
+
+            ((RelayCommand)StartTranslationCommand).RaiseCanExecuteChanged();
+            ((RelayCommand)ToggleTranslationCommand).RaiseCanExecuteChanged();
 
             _ = AiInsight.TrySilentLoginForAiAsync();
         }

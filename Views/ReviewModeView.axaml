@@ -157,9 +157,9 @@
                 <StackPanel Grid.Row="0" Spacing="6">
                     <TextBlock Text="音频播放" FontWeight="Bold"/>
                     <StackPanel Orientation="Horizontal" Spacing="6">
-                        <Button Content="▶" Width="34" Command="{Binding Playback.PlayAudioCommand}"
+                        <Button Content="▶" Width="40" Height="32" FontSize="16" Command="{Binding Playback.PlayAudioCommand}"
                                 IsEnabled="{Binding Playback.IsPlayEnabled}" IsVisible="{Binding Playback.IsPlayEnabled}"/>
-                        <Button Content="⏸" Width="34" Command="{Binding Playback.PauseAudioCommand}"
+                        <Button Content="⏸" Width="40" Height="32" FontSize="16" Command="{Binding Playback.PauseAudioCommand}"
                                 IsEnabled="{Binding Playback.IsPauseEnabled}" IsVisible="{Binding Playback.IsPauseEnabled}"/>
                         <TextBlock Text="{Binding Playback.PlaybackTimeText}" VerticalAlignment="Center" Foreground="Gray"/>
                     </StackPanel>

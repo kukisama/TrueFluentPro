@@ -609,42 +609,24 @@ namespace TrueFluentPro.ViewModels
 
         private void ForceUpdateDeviceComboBoxSelection()
         {
-            var mainWindow = _mainWindowProvider();
-            if (mainWindow == null)
-            {
-                return;
-            }
-
             Dispatcher.UIThread.Post(() =>
             {
                 _suppressDeviceSelectionPersistence = true;
                 try
                 {
-                    var inputCombo = mainWindow.FindControl<ComboBox>("InputDeviceComboBox");
-                    if (inputCombo != null)
-                    {
-                        if (_selectedAudioDevice != null)
-                        {
-                            inputCombo.SelectedItem = _selectedAudioDevice;
-                        }
-                        else if (_audioDevices.Count > 0)
-                        {
-                            inputCombo.SelectedItem = _audioDevices[0];
-                        }
-                    }
+                    // Force binding refresh by bouncing the values
+                    var savedInput = _selectedAudioDevice;
+                    var savedOutput = _selectedOutputDevice;
 
-                    var outputCombo = mainWindow.FindControl<ComboBox>("OutputDeviceComboBox");
-                    if (outputCombo != null)
-                    {
-                        if (_selectedOutputDevice != null)
-                        {
-                            outputCombo.SelectedItem = _selectedOutputDevice;
-                        }
-                        else if (_outputDevices.Count > 0)
-                        {
-                            outputCombo.SelectedItem = _outputDevices[0];
-                        }
-                    }
+                    _selectedAudioDevice = null;
+                    OnPropertyChanged(nameof(SelectedAudioDevice));
+                    _selectedAudioDevice = savedInput;
+                    OnPropertyChanged(nameof(SelectedAudioDevice));
+
+                    _selectedOutputDevice = null;
+                    OnPropertyChanged(nameof(SelectedOutputDevice));
+                    _selectedOutputDevice = savedOutput;
+                    OnPropertyChanged(nameof(SelectedOutputDevice));
                 }
                 finally
                 {
