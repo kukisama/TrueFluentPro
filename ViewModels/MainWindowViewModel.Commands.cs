@@ -4,6 +4,7 @@ namespace TrueFluentPro.ViewModels
 {
     public partial class MainWindowViewModel
     {
+        public AiInsightViewModel AiInsight { get; }
         public ICommand ToggleTranslationCommand { get; }
         public ICommand RefreshAudioDevicesCommand { get; }
         public ICommand RefreshAudioLibraryCommand { get; }
@@ -23,12 +24,6 @@ namespace TrueFluentPro.ViewModels
         public ICommand ShowAboutCommand { get; }
         public ICommand ShowHelpCommand { get; }
         public string AppVersion { get; }
-        public ICommand SendInsightCommand { get; }
-        public ICommand StopInsightCommand { get; }
-        public ICommand ClearInsightCommand { get; }
-        public ICommand ShowAiConfigCommand { get; }
-        public ICommand SendPresetInsightCommand { get; }
-        public ICommand ToggleAutoInsightCommand { get; }
         public ICommand GenerateReviewSummaryCommand { get; }
         public ICommand GenerateAllReviewSheetsCommand { get; }
         public ICommand ReviewMarkdownLinkCommand { get; }

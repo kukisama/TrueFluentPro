@@ -51,6 +51,11 @@ namespace TrueFluentPro.ViewModels
         private TextEditorType _editorType = TextEditorType.Advanced;
         private EditorDisplayMode _editorDisplayMode = EditorDisplayMode.Translated;
 
+        private readonly AiInsightService _aiInsightService;
+
+        // Proxy for ReviewBatch.cs which still references IsAiConfigured directly
+        private bool IsAiConfigured => _config.AiConfig?.IsValid == true;
+
         private int _audioSourceModeIndex;
         private readonly ObservableCollection<AudioDeviceInfo> _audioDevices;
         private AudioDeviceInfo? _selectedAudioDevice;
@@ -129,7 +134,8 @@ namespace TrueFluentPro.ViewModels
         {
             _configService = configService;
             _subscriptionValidator = subscriptionValidator;
-            _aiInsightService = new AiInsightService(_azureTokenProvider);
+            var azureTokenProvider = new AzureTokenProvider("ai");
+            _aiInsightService = new AiInsightService(azureTokenProvider);
             _config = new AzureSpeechConfig();
             AppLogService.Initialize(() => _config.BatchLogLevel);
             _history = new ObservableCollection<TranslationItem>();
@@ -197,9 +203,18 @@ namespace TrueFluentPro.ViewModels
             RegisterPostShowInitializationAction(
                 "AudioLibraryRefresh",
                 async () => await Dispatcher.UIThread.InvokeAsync(() => RefreshAudioLibrary()));
+
+            AiInsight = new AiInsightViewModel(
+                _aiInsightService,
+                azureTokenProvider,
+                () => _config,
+                () => _history,
+                msg => StatusMessage = msg,
+                ShowConfig);
+
             RegisterPostShowInitializationAction(
                 "AiSilentLogin",
-                async () => await TrySilentLoginForAiAsync());
+                async () => await AiInsight.TrySilentLoginForAiAsync());
 
             _ = LoadConfigAsync();
 
@@ -299,37 +314,6 @@ namespace TrueFluentPro.ViewModels
             ShowHelpCommand = new RelayCommand(
                 execute: async _ => await ShowHelp(),
                 canExecute: _ => true
-            );
-
-            SendInsightCommand = new RelayCommand(
-                execute: _ => SendInsight(InsightUserInput),
-                canExecute: _ => !IsInsightLoading && IsAiConfigured
-                                 && !string.IsNullOrWhiteSpace(InsightUserInput)
-            );
-
-            StopInsightCommand = new RelayCommand(
-                execute: _ => StopInsight(),
-                canExecute: _ => IsInsightLoading
-            );
-
-            ClearInsightCommand = new RelayCommand(
-                execute: _ => { InsightMarkdown = ""; InsightUserInput = ""; },
-                canExecute: _ => true
-            );
-
-            ShowAiConfigCommand = new RelayCommand(
-                execute: async _ => await ShowAiConfig(),
-                canExecute: _ => true
-            );
-
-            SendPresetInsightCommand = new RelayCommand(
-                execute: param => SendInsight(param?.ToString() ?? ""),
-                canExecute: _ => !IsInsightLoading && IsAiConfigured
-            );
-
-            ToggleAutoInsightCommand = new RelayCommand(
-                execute: _ => ToggleAutoInsight(),
-                canExecute: _ => IsAiConfigured
             );
 
             GenerateReviewSummaryCommand = new RelayCommand(

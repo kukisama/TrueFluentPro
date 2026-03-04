@@ -324,15 +324,15 @@
                                     <TextBlock Text="未配置 AI 服务" Foreground="Orange"
                                                VerticalAlignment="Center"
                                                FontSize="11"
-                                               IsVisible="{Binding !IsAiConfigured}"/>
+                                               IsVisible="{Binding !AiInsight.IsAiConfigured}"/>
                                     <TextBlock Text="AI 服务已就绪" Foreground="Green"
                                                VerticalAlignment="Center"
                                                FontSize="11"
-                                               IsVisible="{Binding IsAiConfigured}"/>
+                                               IsVisible="{Binding AiInsight.IsAiConfigured}"/>
                                 </StackPanel>
 
                                 <!-- 预设分析模板按钮 -->
-                                <ItemsControl Grid.Row="1" ItemsSource="{Binding InsightPresetButtons}" Margin="8,4">
+                                <ItemsControl Grid.Row="1" ItemsSource="{Binding AiInsight.InsightPresetButtons}" Margin="8,4">
                                     <ItemsControl.ItemsPanel>
                                         <ItemsPanelTemplate>
                                             <WrapPanel Orientation="Horizontal"/>
@@ -341,7 +341,7 @@
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate x:CompileBindings="False">
                                             <Button Content="{Binding Name}" Margin="0,0,6,6" Padding="8,4"
-                                                    Command="{Binding $parent[ItemsControl].DataContext.SendPresetInsightCommand}"
+                                                    Command="{Binding $parent[ItemsControl].DataContext.AiInsight.SendPresetInsightCommand}"
                                                     CommandParameter="{Binding Prompt}"/>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
@@ -349,14 +349,14 @@
 
                                 <!-- 自定义输入框 + 发送/停止 -->
                                 <Grid Grid.Row="2" ColumnDefinitions="*,Auto,Auto" Margin="8,4">
-                                    <TextBox Grid.Column="0" Text="{Binding InsightUserInput, Mode=TwoWay}"
+                                    <TextBox Grid.Column="0" Text="{Binding AiInsight.InsightUserInput, Mode=TwoWay}"
                                              Watermark="输入自定义分析问题..." Padding="6,4"
                                              AcceptsReturn="False"/>
                                     <Button Grid.Column="1" Content="发送" Margin="6,0,0,0" Padding="12,4"
-                                            Command="{Binding SendInsightCommand}"/>
+                                            Command="{Binding AiInsight.SendInsightCommand}"/>
                                     <Button Grid.Column="2" Content="停止" Margin="6,0,0,0" Padding="12,4"
-                                            Command="{Binding StopInsightCommand}"
-                                            IsVisible="{Binding IsInsightLoading}"/>
+                                            Command="{Binding AiInsight.StopInsightCommand}"
+                                            IsVisible="{Binding AiInsight.IsInsightLoading}"/>
                                 </Grid>
 
                                 <!-- 自动循环洞察 -->
@@ -367,25 +367,25 @@
                                         <TextBlock Grid.Column="0" Text="自动洞察:" FontSize="11"
                                                    VerticalAlignment="Center" Margin="0,0,8,0"/>
                                         <ComboBox Grid.Column="1" MinWidth="130"
-                                                  SelectedIndex="{Binding AutoInsightModeIndex, Mode=TwoWay}"
-                                                  IsEnabled="{Binding !IsAutoInsightEnabled}"
+                                                  SelectedIndex="{Binding AiInsight.AutoInsightModeIndex, Mode=TwoWay}"
+                                                  IsEnabled="{Binding !AiInsight.IsAutoInsightEnabled}"
                                                   VerticalAlignment="Center">
                                             <ComboBoxItem Content="定时循环"/>
                                             <ComboBoxItem Content="新数据触发"/>
                                         </ComboBox>
                                         <TextBlock Grid.Column="2" Text="间隔(秒):" FontSize="11"
                                                    VerticalAlignment="Center" Margin="10,0,4,0"/>
-                                        <TextBox Grid.Column="3" Text="{Binding AutoInsightIntervalSeconds, Mode=TwoWay}"
+                                        <TextBox Grid.Column="3" Text="{Binding AiInsight.AutoInsightIntervalSeconds, Mode=TwoWay}"
                                                  Width="120" Padding="6,4" VerticalAlignment="Center"
-                                                 IsEnabled="{Binding !IsAutoInsightEnabled}"/>
-                                        <TextBox Grid.Column="4" Text="{Binding AutoInsightPrompt, Mode=TwoWay}"
+                                                 IsEnabled="{Binding !AiInsight.IsAutoInsightEnabled}"/>
+                                        <TextBox Grid.Column="4" Text="{Binding AiInsight.AutoInsightPrompt, Mode=TwoWay}"
                                                  Watermark="自动分析使用的提示词..."
                                                  Padding="6,4" Margin="10,0,0,0" MaxWidth="260"
                                                  VerticalAlignment="Center"
-                                                 IsEnabled="{Binding !IsAutoInsightEnabled}"/>
+                                                 IsEnabled="{Binding !AiInsight.IsAutoInsightEnabled}"/>
                                         <Button Grid.Column="5"
-                                                Content="{Binding AutoInsightToggleText}"
-                                                Command="{Binding ToggleAutoInsightCommand}"
+                                                Content="{Binding AiInsight.AutoInsightToggleText}"
+                                                Command="{Binding AiInsight.ToggleAutoInsightCommand}"
                                                 Padding="10,4" Margin="6,0,0,0"
                                                 VerticalAlignment="Center"/>
                                     </Grid>
@@ -395,12 +395,12 @@
                                 <Border Grid.Row="4" Margin="8,4" BorderBrush="#FFE5E7EB"
                                         BorderThickness="1" CornerRadius="4">
                                     <Grid>
-                                        <ScrollViewer IsVisible="{Binding !IsInsightEmpty}">
-                                            <md:MarkdownScrollViewer Markdown="{Binding InsightMarkdown}"/>
+                                        <ScrollViewer IsVisible="{Binding !AiInsight.IsInsightEmpty}">
+                                            <md:MarkdownScrollViewer Markdown="{Binding AiInsight.InsightMarkdown}"/>
                                         </ScrollViewer>
                                         <!-- 加载指示器 -->
                                         <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                    IsVisible="{Binding IsInsightLoading}">
+                                                    IsVisible="{Binding AiInsight.IsInsightLoading}">
                                             <TextBlock Text="AI 正在分析..." Foreground="Gray"
                                                        FontSize="12" HorizontalAlignment="Center"/>
                                         </StackPanel>
@@ -408,7 +408,7 @@
                                         <TextBlock Text="选择预设模板或输入问题开始分析"
                                                    Foreground="Gray" FontSize="12"
                                                    HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                   IsVisible="{Binding IsInsightEmpty}"/>
+                                                   IsVisible="{Binding AiInsight.IsInsightEmpty}"/>
                                     </Grid>
                                 </Border>
 
@@ -416,7 +416,7 @@
                                 <StackPanel Grid.Row="5" Orientation="Horizontal"
                                             HorizontalAlignment="Right" Margin="8,4,8,8">
                                     <Button Content="清除结果" Padding="8,4"
-                                            Command="{Binding ClearInsightCommand}"/>
+                                            Command="{Binding AiInsight.ClearInsightCommand}"/>
                                 </StackPanel>
                             </Grid>
                         </TabItem>

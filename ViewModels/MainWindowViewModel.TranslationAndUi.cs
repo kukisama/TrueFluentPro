@@ -374,13 +374,8 @@ namespace TrueFluentPro.ViewModels
                     await _translationService.UpdateConfigAsync(_config);
                 }
 
-                OnPropertyChanged(nameof(IsAiConfigured));
-                OnPropertyChanged(nameof(InsightPresetButtons));
+                AiInsight.UpdateConfig();
                 RebuildReviewSheets();
-                ((RelayCommand)SendInsightCommand).RaiseCanExecuteChanged();
-                ((RelayCommand)SendPresetInsightCommand).RaiseCanExecuteChanged();
-                ((RelayCommand)ToggleAutoInsightCommand).RaiseCanExecuteChanged();
-                ((RelayCommand)GenerateReviewSummaryCommand).RaiseCanExecuteChanged();
                 ((RelayCommand)GenerateAllReviewSheetsCommand).RaiseCanExecuteChanged();
                 ((RelayCommand)StartBatchCommand).RaiseCanExecuteChanged();
                 ((RelayCommand)StartTranslationCommand).RaiseCanExecuteChanged();
@@ -612,7 +607,7 @@ namespace TrueFluentPro.ViewModels
 
                 ((RelayCommand)ClearHistoryCommand).RaiseCanExecuteChanged();
 
-                OnNewDataAutoInsight();
+                AiInsight.OnNewDataAutoInsight();
             });
         }
 

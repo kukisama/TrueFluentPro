@@ -278,9 +278,6 @@ namespace TrueFluentPro.ViewModels
                     ((RelayCommand)StartTranslationCommand).RaiseCanExecuteChanged();
                     ((RelayCommand)ToggleTranslationCommand).RaiseCanExecuteChanged();
 
-                    OnPropertyChanged(nameof(IsAiConfigured));
-                    OnPropertyChanged(nameof(InsightPresetButtons));
-
                     // Apply default font size from config
                     Controls.AdvancedRichTextBox.DefaultFontSizeValue = _config.DefaultFontSize;
 
@@ -290,9 +287,7 @@ namespace TrueFluentPro.ViewModels
                     OnPropertyChanged(nameof(SpeechSubtitleOptionStatusText));
                     OnPropertyChanged(nameof(BatchStartButtonText));
                     RebuildReviewSheets();
-                    ((RelayCommand)SendInsightCommand).RaiseCanExecuteChanged();
-                    ((RelayCommand)SendPresetInsightCommand).RaiseCanExecuteChanged();
-                    ((RelayCommand)ToggleAutoInsightCommand).RaiseCanExecuteChanged();
+                    AiInsight.UpdateConfig();
                     if (GenerateSpeechSubtitleCommand is RelayCommand speechCmd)
                     {
                         speechCmd.RaiseCanExecuteChanged();
@@ -426,7 +421,6 @@ namespace TrueFluentPro.ViewModels
             OnPropertyChanged(nameof(IsOutputRecognitionEnabled));
             OnPropertyChanged(nameof(IsInputDeviceUiEnabled));
             OnPropertyChanged(nameof(IsOutputDeviceUiEnabled));
-            OnPropertyChanged(nameof(IsAiConfigured));
             NormalizeSpeechSubtitleOption();
             OnPropertyChanged(nameof(IsSpeechSubtitleOptionEnabled));
             OnPropertyChanged(nameof(UseSpeechSubtitleForReview));
@@ -436,8 +430,7 @@ namespace TrueFluentPro.ViewModels
 
             ForceUpdateComboBoxSelection();
             ((RelayCommand)StartTranslationCommand).RaiseCanExecuteChanged();
-            ((RelayCommand)SendInsightCommand).RaiseCanExecuteChanged();
-            ((RelayCommand)SendPresetInsightCommand).RaiseCanExecuteChanged();
+            AiInsight.UpdateConfig();
             ((RelayCommand)GenerateReviewSummaryCommand).RaiseCanExecuteChanged();
             ((RelayCommand)GenerateAllReviewSheetsCommand).RaiseCanExecuteChanged();
             ((RelayCommand)StartBatchCommand).RaiseCanExecuteChanged();
@@ -453,7 +446,7 @@ namespace TrueFluentPro.ViewModels
             TriggerSubscriptionValidation();
 
             // AAD 模式下尝试静默登录（不弹窗）
-            _ = TrySilentLoginForAiAsync();
+            _ = AiInsight.TrySilentLoginForAiAsync();
 
             _ = Task.Run(async () =>
             {

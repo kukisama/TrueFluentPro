@@ -83,9 +83,7 @@ namespace TrueFluentPro.ViewModels
 
             _floatingSubtitleManager?.Dispose();
 
-            _insightCts?.Cancel();
-            _insightCts?.Dispose();
-            _autoInsightTimer?.Stop();
+            AiInsight?.Dispose();
         }
     }
 }
