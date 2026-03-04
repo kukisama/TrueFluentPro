@@ -24,19 +24,6 @@
     </Window.Resources>
 
     <Window.Styles>
-        <!-- 让"帮助"按钮更显眼：仅影响顶部工具栏的 HelpButton，不改全局主题 -->
-        <Style Selector="Button#HelpButton">
-            <Setter Property="Background" Value="#FF2563EB" />
-            <Setter Property="Foreground" Value="White" />
-            <Setter Property="BorderBrush" Value="#FF1E40AF" />
-            <Setter Property="BorderThickness" Value="1" />
-        </Style>
-        <Style Selector="Button#HelpButton:pointerover">
-            <Setter Property="Background" Value="#FF1D4ED8" />
-        </Style>
-        <Style Selector="Button#HelpButton:pressed">
-            <Setter Property="Background" Value="#FF1E40AF" />
-        </Style>
         <Style Selector="ToggleButton.audio-pill">
             <Setter Property="Padding" Value="10,4" />
             <Setter Property="CornerRadius" Value="999" />
@@ -102,20 +89,10 @@
                 </StackPanel>
 
                 <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="5">
-                    <Button Name="HelpButton" Content="帮助" Padding="10,5" Click="HelpButton_Click">
-                        <Button.ContextMenu>
-                            <ContextMenu>
-                                <MenuItem Header="获取Azure Speech服务" Command="{Binding OpenAzureSpeechPortalCommand}"/>
-                                <MenuItem Header="获取Microsoft Foundry服务" Command="{Binding OpenFoundryPortalCommand}"/>
-                                <MenuItem Header="项目github地址" Command="{Binding OpenProjectGitHubCommand}"/>
-                                <MenuItem Header="说明" Command="{Binding ShowHelpCommand}"/>
-                                <Separator/>
-                                <MenuItem Header="关于" Command="{Binding ShowAboutCommand}"/>
-                                <Separator/>
-                                <MenuItem Header="{Binding AppVersion}" IsEnabled="False" FontSize="11"/>
-                            </ContextMenu>
-                        </Button.ContextMenu>
-                    </Button>
+                    <Button Content="说明" Padding="10,5" Command="{Binding ShowHelpCommand}"
+                            ToolTip.Tip="查看帮助说明"/>
+                    <Button Content="关于" Padding="10,5" Command="{Binding ShowAboutCommand}"
+                            ToolTip.Tip="查看关于信息"/>
                 </StackPanel>
             </Grid>
         </Border>

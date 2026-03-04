@@ -118,7 +118,8 @@ namespace TrueFluentPro.Controls
                 Orientation = Orientation.Horizontal,
                 Background = new SolidColorBrush(Color.FromRgb(233, 236, 239)),
                 Spacing = 5,
-                Margin = new Thickness(8, 8, 8, 6)
+                Margin = new Thickness(8, 8, 8, 6),
+                MinHeight = 32
             };
 
             _toolbar.Children.Add(new TextBlock
@@ -128,8 +129,8 @@ namespace TrueFluentPro.Controls
                 Margin = new Thickness(5, 0, 2, 0)
             }); _fontSizeCombo = new ComboBox
             {
-                Width = 60,
-                Height = 25,
+                Width = 70,
+                Height = 30,
                 VerticalAlignment = VerticalAlignment.Center,
                 ItemsSource = new[] { "24", "26", "28", "30", "32", "34", "36", "38", "40", "42", "44", "46", "48", "50" },
                 SelectedItem = DefaultFontSizeValue.ToString()

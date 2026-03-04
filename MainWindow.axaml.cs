@@ -2,7 +2,6 @@ using Avalonia.Controls;
 using TrueFluentPro.Services;
 using TrueFluentPro.ViewModels;
 using System;
-using Avalonia.Interactivity;
 using FluentAvalonia.UI.Controls;
 
 namespace TrueFluentPro;
@@ -106,14 +105,4 @@ public partial class MainWindow : Window
         }
     }
 
-    private void HelpButton_Click(object? sender, RoutedEventArgs e)
-    {
-        if (sender is Button button && button.ContextMenu != null)
-        {
-            // ContextMenu is hosted in a separate popup tree and does not reliably inherit
-            // DataContext. Assign it explicitly so MenuItem Command bindings work.
-            button.ContextMenu.DataContext = DataContext;
-            button.ContextMenu.Open(button);
-        }
-    }
 }
