@@ -199,6 +199,33 @@ namespace TrueFluentPro.ViewModels
             set => SetProperty(ref _history, value);
         }
 
+        private string _selectedNavTag = "live";
+
+        public string SelectedNavTag
+        {
+            get => _selectedNavTag;
+            set
+            {
+                if (SetProperty(ref _selectedNavTag, value))
+                {
+                    // Keep legacy UiModeIndex in sync for any remaining bindings
+                    _uiModeIndex = value == "review" ? 1 : 0;
+
+                    if (value == "review" && !_isReviewModeViewCreated)
+                    {
+                        _isReviewModeViewCreated = true;
+                    }
+
+                    OnPropertyChanged(nameof(UiModeIndex));
+                    OnPropertyChanged(nameof(ReviewModeViewContent));
+                    OnPropertyChanged(nameof(IsLiveMode));
+                    OnPropertyChanged(nameof(IsReviewMode));
+                    OnPropertyChanged(nameof(IsLiveModeSelected));
+                    OnPropertyChanged(nameof(IsReviewModeSelected));
+                }
+            }
+        }
+
         public int UiModeIndex
         {
             get => _uiModeIndex;
@@ -206,6 +233,10 @@ namespace TrueFluentPro.ViewModels
             {
                 if (SetProperty(ref _uiModeIndex, value))
                 {
+                    // Sync SelectedNavTag
+                    _selectedNavTag = value == 1 ? "review" : "live";
+                    OnPropertyChanged(nameof(SelectedNavTag));
+
                     if (value == 1 && !_isReviewModeViewCreated)
                     {
                         _isReviewModeViewCreated = true;

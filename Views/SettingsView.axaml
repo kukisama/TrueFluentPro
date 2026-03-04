@@ -1,0 +1,91 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:TrueFluentPro.ViewModels"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="600"
+             x:Class="TrueFluentPro.Views.SettingsView"
+             x:DataType="vm:MainWindowViewModel"
+             x:CompileBindings="False">
+
+    <ScrollViewer>
+        <StackPanel Margin="24" Spacing="16">
+            <TextBlock Text="设置" FontSize="24" FontWeight="Bold" Margin="0,0,0,8"/>
+
+            <!-- 订阅管理 -->
+            <Border BorderBrush="#FFE5E7EB" BorderThickness="1" CornerRadius="8" Padding="16">
+                <StackPanel Spacing="10">
+                    <TextBlock Text="订阅管理" FontWeight="SemiBold" FontSize="16"/>
+                    <TextBlock Text="管理 Azure 订阅、AI 配置和应用设置" Foreground="Gray" FontSize="12"/>
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <TextBlock Text="当前订阅:" VerticalAlignment="Center"/>
+                        <ComboBox MinWidth="200"
+                                  ItemsSource="{Binding ConfigVM.SubscriptionNames}"
+                                  SelectedIndex="{Binding ConfigVM.ActiveSubscriptionIndex, Mode=TwoWay}"
+                                  IsEnabled="{Binding ConfigVM.IsConfigurationEnabled}"/>
+                        <Ellipse Width="12" Height="12" StrokeThickness="2"
+                                 VerticalAlignment="Center" Margin="4,0"
+                                 Fill="{Binding ConfigVM.SubscriptionLampFill}"
+                                 Stroke="{Binding ConfigVM.SubscriptionLampStroke}"
+                                 Opacity="{Binding ConfigVM.SubscriptionLampOpacity}"
+                                 ToolTip.Tip="{Binding ConfigVM.SubscriptionValidationStatusMessage}"/>
+                    </StackPanel>
+                    <Button Content="打开配置中心" Padding="12,6"
+                            Command="{Binding ShowConfigCommand}"
+                            IsEnabled="{Binding ConfigVM.IsConfigurationEnabled}"/>
+                </StackPanel>
+            </Border>
+
+            <!-- 音频设备 -->
+            <Border BorderBrush="#FFE5E7EB" BorderThickness="1" CornerRadius="8" Padding="16">
+                <StackPanel Spacing="10">
+                    <TextBlock Text="音频设备" FontWeight="SemiBold" FontSize="16"/>
+                    <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto" RowSpacing="8" ColumnSpacing="8">
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="麦克风:" VerticalAlignment="Center"/>
+                        <ComboBox Grid.Row="0" Grid.Column="1" MinWidth="220"
+                                  ItemsSource="{Binding AudioDevices.AudioDevicesList}"
+                                  SelectedItem="{Binding AudioDevices.SelectedAudioDevice, Mode=TwoWay}"
+                                  IsEnabled="{Binding AudioDevices.IsInputDeviceUiEnabled}"/>
+
+                        <TextBlock Grid.Row="1" Grid.Column="0" Text="系统回环:" VerticalAlignment="Center"/>
+                        <ComboBox Grid.Row="1" Grid.Column="1" MinWidth="220"
+                                  ItemsSource="{Binding AudioDevices.OutputDevicesList}"
+                                  SelectedItem="{Binding AudioDevices.SelectedOutputDevice, Mode=TwoWay}"
+                                  IsEnabled="{Binding AudioDevices.IsOutputDeviceUiEnabled}"/>
+
+                        <Button Grid.Row="0" Grid.Column="2" Content="刷新" Padding="8,4"
+                                Command="{Binding AudioDevices.RefreshAudioDevicesCommand}"
+                                IsEnabled="{Binding AudioDevices.IsAudioDeviceRefreshEnabled}"/>
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <!-- 外部链接 -->
+            <Border BorderBrush="#FFE5E7EB" BorderThickness="1" CornerRadius="8" Padding="16">
+                <StackPanel Spacing="10">
+                    <TextBlock Text="外部链接" FontWeight="SemiBold" FontSize="16"/>
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button Content="Azure Speech 服务" Padding="10,5"
+                                Command="{Binding OpenAzureSpeechPortalCommand}"/>
+                        <Button Content="Microsoft Foundry" Padding="10,5"
+                                Command="{Binding OpenFoundryPortalCommand}"/>
+                        <Button Content="项目 GitHub" Padding="10,5"
+                                Command="{Binding OpenProjectGitHubCommand}"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- 帮助与关于 -->
+            <Border BorderBrush="#FFE5E7EB" BorderThickness="1" CornerRadius="8" Padding="16">
+                <StackPanel Spacing="10">
+                    <TextBlock Text="帮助与关于" FontWeight="SemiBold" FontSize="16"/>
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button Content="说明" Padding="10,5" Command="{Binding ShowHelpCommand}"/>
+                        <Button Content="关于" Padding="10,5" Command="{Binding ShowAboutCommand}"/>
+                    </StackPanel>
+                    <TextBlock Text="{Binding AppVersion}" FontSize="11" Foreground="Gray"/>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

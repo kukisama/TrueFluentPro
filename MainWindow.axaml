@@ -5,7 +5,8 @@
         xmlns:vm="using:TrueFluentPro.ViewModels"
         xmlns:models="using:TrueFluentPro.Models"
         xmlns:controls="using:TrueFluentPro.Controls"
-        xmlns:md="clr-namespace:Markdown.Avalonia;assembly=Markdown.Avalonia"
+        xmlns:ui="using:FluentAvalonia.UI.Controls"
+        xmlns:views="using:TrueFluentPro.Views"
         mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="600"
         x:Class="TrueFluentPro.MainWindow"
         x:DataType="vm:MainWindowViewModel"
@@ -20,11 +21,10 @@
 
     <Window.Resources>
         <controls:LevelToHeightConverter x:Key="LevelToHeight" MaxHeight="16"/>
-        <controls:ProgressToOffsetConverter x:Key="ProgressToOffset" Padding="6"/>
     </Window.Resources>
 
     <Window.Styles>
-        <!-- 让“帮助”按钮更显眼：仅影响顶部工具栏的 HelpButton，不改全局主题 -->
+        <!-- 让"帮助"按钮更显眼：仅影响顶部工具栏的 HelpButton，不改全局主题 -->
         <Style Selector="Button#HelpButton">
             <Setter Property="Background" Value="#FF2563EB" />
             <Setter Property="Foreground" Value="White" />
@@ -55,604 +55,73 @@
             <Setter Property="BorderBrush" Value="#FF1D4ED8" />
             <Setter Property="Foreground" Value="White" />
         </Style>
-        <Style Selector="Slider#PlaybackSlider">
-            <Setter Property="Height" Value="12" />
-            <Setter Property="Background" Value="#FFE5E7EB" />
-            <Setter Property="Foreground" Value="#FF111827" />
-        </Style>
-        <Style Selector="Slider#PlaybackSlider /template/ Thumb">
-            <Setter Property="Width" Value="9" />
-            <Setter Property="Height" Value="9" />
-            <Setter Property="CornerRadius" Value="4.5" />
-            <Setter Property="MinWidth" Value="9" />
-            <Setter Property="MinHeight" Value="9" />
-            <Setter Property="MaxWidth" Value="9" />
-            <Setter Property="MaxHeight" Value="9" />
-            <Setter Property="Background" Value="#FF111827" />
-            <Setter Property="BorderBrush" Value="#FFE5E7EB" />
-            <Setter Property="BorderThickness" Value="1" />
-        </Style>
-        <Style Selector="Slider#PlaybackSlider /template/ Track">
-            <Setter Property="Height" Value="3" />
-        </Style>
     </Window.Styles>
 
-        <Grid RowDefinitions="Auto,Auto,*,Auto">
+    <DockPanel>
         <!-- 顶部工具栏 -->
-        <Grid Grid.Row="0" ColumnDefinitions="Auto,*" Margin="10">
-            <TextBlock Grid.Column="0" Text="译见 Pro" FontSize="18" FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,20,0"/>
-                  <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="5">
-                <Button Content="配置中心" Command="{Binding ShowConfigCommand}" Padding="10,5" 
-                        IsEnabled="{Binding ConfigVM.IsConfigurationEnabled}"/>
-            <Button Content="清空历史" Command="{Binding ClearHistoryCommand}" Padding="10,5"
-                IsVisible="{Binding IsLiveMode}"/>
-            <Button Content="查看历史记录" Command="{Binding OpenHistoryFolderCommand}" Padding="10,5" 
-                        ToolTip.Tip="打开本地历史记录文件夹，查看保存的翻译文件"/>
-            <Button Content="浮动字幕" Command="{Binding ShowFloatingSubtitlesCommand}" Padding="10,5"
-                IsVisible="{Binding IsLiveMode}"
-                    Background="{Binding FloatingSubtitleButtonBackground}"
-                    Foreground="{Binding FloatingSubtitleButtonForeground}"
-                    ToolTip.Tip="使用可拖动的透明字幕框提供服务"/>
+        <Border DockPanel.Dock="Top" Padding="10" BorderBrush="#FFE5E7EB" BorderThickness="0,0,0,1">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+                <TextBlock Grid.Column="0" Text="译见 Pro" FontSize="18" FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,20,0"/>
 
-                <Button Content="🎨 Media Studio" Command="{Binding ShowMediaStudioCommand}" Padding="10,5"
-                        ToolTip.Tip="AI 图片与视频生成工作室"/>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="5">
+                    <Button Content="清空历史" Command="{Binding ClearHistoryCommand}" Padding="10,5"
+                        IsVisible="{Binding IsLiveMode}"/>
+                    <Button Content="查看历史记录" Command="{Binding OpenHistoryFolderCommand}" Padding="10,5" 
+                            ToolTip.Tip="打开本地历史记录文件夹，查看保存的翻译文件"/>
+                    <Button Content="浮动字幕" Command="{Binding ShowFloatingSubtitlesCommand}" Padding="10,5"
+                        IsVisible="{Binding IsLiveMode}"
+                            Background="{Binding FloatingSubtitleButtonBackground}"
+                            Foreground="{Binding FloatingSubtitleButtonForeground}"
+                            ToolTip.Tip="使用可拖动的透明字幕框提供服务"/>
 
-                <Button Name="HelpButton" Content="帮助" Padding="10,5" Click="HelpButton_Click">
-                    <Button.ContextMenu>
-                        <ContextMenu>
-                            <MenuItem Header="获取Azure Speech服务" Command="{Binding OpenAzureSpeechPortalCommand}"/>
-                            <MenuItem Header="获取Microsoft Foundry服务" Command="{Binding OpenFoundryPortalCommand}"/>
-                            <MenuItem Header="项目github地址" Command="{Binding OpenProjectGitHubCommand}"/>
-                            <MenuItem Header="说明" Command="{Binding ShowHelpCommand}"/>
-                            <Separator/>
-                            <MenuItem Header="关于" Command="{Binding ShowAboutCommand}"/>
-                            <Separator/>
-                            <MenuItem Header="{Binding AppVersion}" IsEnabled="False" FontSize="11"/>
-                        </ContextMenu>
-                    </Button.ContextMenu>
-                </Button>
-
-                <Border Width="70" Height="22" Margin="20,0,0,0"
-                        Background="Transparent" BorderBrush="#FFCBD5E1" BorderThickness="1"
-                        CornerRadius="3" VerticalAlignment="Center"
-                        ToolTip.Tip="音频活动电平"
-                        IsVisible="{Binding IsLiveMode}">
-                    <Grid>
-                        <Border Height="1" Background="#FFE2E8F0" VerticalAlignment="Center"/>
-                        <ItemsControl ItemsSource="{Binding AudioDevices.AudioLevelHistory}" VerticalAlignment="Bottom" Margin="4,3">
-                            <ItemsControl.ItemsPanel>
-                                <ItemsPanelTemplate>
-                                    <StackPanel Orientation="Horizontal" Spacing="1"/>
-                                </ItemsPanelTemplate>
-                            </ItemsControl.ItemsPanel>
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Border Width="2"
-                                            Height="{Binding Converter={StaticResource LevelToHeight}}"
-                                            Background="#FF16A34A"
-                                            Opacity="0.85"
-                                            VerticalAlignment="Bottom"/>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </Grid>
-                </Border>
-
-                <StackPanel Orientation="Horizontal" Spacing="8" Margin="16,0,0,0" VerticalAlignment="Center">
-                    <TextBlock Text="模式:" VerticalAlignment="Center"/>
-                    <StackPanel Orientation="Horizontal" Spacing="10">
-                        <RadioButton Content="实时会议" GroupName="UiMode"
-                                     IsChecked="{Binding IsLiveModeSelected, Mode=TwoWay}"/>
-                        <RadioButton Content="复盘/批处理" GroupName="UiMode"
-                                     IsChecked="{Binding IsReviewModeSelected, Mode=TwoWay}"/>
-                    </StackPanel>
-                </StackPanel>
-            </StackPanel>
-        </Grid>
-          <!-- 订阅与输入选择区域 -->
-        <Grid Grid.Row="1" Margin="10,0,10,10" IsVisible="{Binding IsLiveMode}"
-            ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,*,Auto,Auto"
-            RowDefinitions="Auto,Auto" RowSpacing="6">
-            <TextBlock Grid.Column="0" Text="订阅:" VerticalAlignment="Center" Margin="0,0,5,0"/>
-            <ComboBox Grid.Column="1" Name="SubscriptionComboBox" MinWidth="150" 
-                      ItemsSource="{Binding ConfigVM.SubscriptionNames}" 
-                      SelectedIndex="{Binding ConfigVM.ActiveSubscriptionIndex, Mode=TwoWay}"
-                      IsEnabled="{Binding ConfigVM.IsConfigurationEnabled}"
-                      ToolTip.Tip="选择要使用的Azure订阅"/>
-
-            <Ellipse Grid.Column="2" Width="12" Height="12" StrokeThickness="2"
-                     VerticalAlignment="Center" Margin="8,0,12,0"
-                     Fill="{Binding ConfigVM.SubscriptionLampFill}"
-                     Stroke="{Binding ConfigVM.SubscriptionLampStroke}"
-                     Opacity="{Binding ConfigVM.SubscriptionLampOpacity}"
-                     ToolTip.Tip="{Binding ConfigVM.SubscriptionValidationStatusMessage}"/>
-
-                    <TextBlock Grid.Column="3" Text="麦克风:" VerticalAlignment="Center" Margin="10,0,5,0"/>
-                    <ComboBox Grid.Column="4" Name="InputDeviceComboBox" Width="220"
-                      ItemsSource="{Binding AudioDevices.AudioDevicesList}"
-                      SelectedItem="{Binding AudioDevices.SelectedAudioDevice, Mode=TwoWay}"
-                      IsEnabled="{Binding AudioDevices.IsInputDeviceUiEnabled}"
-                        ToolTip.Tip="选择麦克风设备（选“无”表示不采集麦克风）"/>
-
-                    <TextBlock Grid.Column="5" Text="系统回环:" VerticalAlignment="Center" Margin="10,0,5,0"/>
-                    <ComboBox Grid.Column="6" Name="OutputDeviceComboBox" Width="220"
-                      ItemsSource="{Binding AudioDevices.OutputDevicesList}"
-                      SelectedItem="{Binding AudioDevices.SelectedOutputDevice, Mode=TwoWay}"
-                      IsEnabled="{Binding AudioDevices.IsOutputDeviceUiEnabled}"
-                        ToolTip.Tip="选择系统回环设备（选“无”表示不采集系统回环）"/>
-
-                    <Button Grid.Column="7" Content="刷新" Width="60" Margin="10,0,0,0"
-                    Command="{Binding AudioDevices.RefreshAudioDevicesCommand}"
-                    IsEnabled="{Binding AudioDevices.IsAudioDeviceRefreshEnabled}"
-                    ToolTip.Tip="刷新音频设备列表"/>
-
-            <StackPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="12" Orientation="Horizontal"
-                        Spacing="12" VerticalAlignment="Center">
-                <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                    <TextBlock Text="录制来源:" VerticalAlignment="Center"/>
-                    <ToggleButton Content="仅环回"
-                                  Classes="audio-pill"
-                                  IsChecked="{Binding AudioDevices.IsRecordingLoopbackOnly, Mode=TwoWay}"/>
-                    <ToggleButton Content="环回+麦克风"
-                                  Classes="audio-pill"
-                                  IsChecked="{Binding AudioDevices.IsRecordingLoopbackMix, Mode=TwoWay}"/>
-                </StackPanel>
-
-                <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
+                    <Border Width="70" Height="22" Margin="20,0,0,0"
+                            Background="Transparent" BorderBrush="#FFCBD5E1" BorderThickness="1"
+                            CornerRadius="3" VerticalAlignment="Center"
+                            ToolTip.Tip="音频活动电平"
                             IsVisible="{Binding IsLiveMode}">
-                    <TextBlock Text="源语言:" VerticalAlignment="Center"/>
-                    <ComboBox Name="SourceLanguageComboBox" MinWidth="120"
-                          IsEnabled="{Binding ConfigVM.IsConfigurationEnabled}"
-                          SelectedIndex="{Binding ConfigVM.SourceLanguageIndex}">
-                    <ComboBoxItem Tag="auto" Content="自动识别"/>
-                      <ComboBoxItem Tag="en" Content="英语"/>
-                      <ComboBoxItem Tag="zh-CN" Content="中文"/>
-                      <ComboBoxItem Tag="ja-JP" Content="日语"/>
-                      <ComboBoxItem Tag="ko-KR" Content="韩语"/>
-                      <ComboBoxItem Tag="fr-FR" Content="法语"/>
-                      <ComboBoxItem Tag="de-DE" Content="德语"/>
-                      <ComboBoxItem Tag="es" Content="西班牙语"/>
-                    </ComboBox>
-
-                    <TextBlock Text="→" VerticalAlignment="Center" FontSize="16" FontWeight="Bold" Margin="4,0"/>
-
-                    <TextBlock Text="目标语言:" VerticalAlignment="Center"/>
-                    <ComboBox Name="TargetLanguageComboBox" MinWidth="120"
-                          IsEnabled="{Binding ConfigVM.IsConfigurationEnabled}"
-                          SelectedIndex="{Binding ConfigVM.TargetLanguageIndex}">
-                    <ComboBoxItem Tag="en" Content="英语"/>
-                    <ComboBoxItem Tag="zh-CN" Content="中文"/>
-                    <ComboBoxItem Tag="ja-JP" Content="日语"/>
-                    <ComboBoxItem Tag="ko-KR" Content="韩语"/>
-                    <ComboBoxItem Tag="fr-FR" Content="法语"/>
-                    <ComboBoxItem Tag="de-DE" Content="德语"/>
-                    <ComboBoxItem Tag="es" Content="西班牙语"/>
-                    </ComboBox>
-                </StackPanel>
-
-                <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                    <Button Content="{Binding TranslationToggleButtonText}"
-                            Command="{Binding ToggleTranslationCommand}"
-                            Background="{Binding TranslationToggleButtonBackground}"
-                            Foreground="{Binding TranslationToggleButtonForeground}"
-                            Padding="10,5"/>
-                </StackPanel>
-
-            </StackPanel>
-        </Grid>
-        <!-- 中间翻译内容区域 -->
-        <Grid Grid.Row="2" Margin="10">
-            <!-- 实时会议模式 -->
-            <Grid IsVisible="{Binding IsLiveMode}" ColumnDefinitions="*,*">
-                <!-- 左侧实时翻译区域 -->
-                <Border Grid.Column="0" BorderBrush="Gray" BorderThickness="1" Margin="0,0,5,0">
-                    <Grid RowDefinitions="Auto,*">
-                        <DockPanel Grid.Row="0" Margin="5">
-                            <TextBlock Text="实时翻译" FontWeight="Bold" DockPanel.Dock="Left"/>
-                            <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
-                                <RadioButton Content="原文" GroupName="EditorView"
-                                             IsChecked="{Binding IsOriginalView}"/>
-                                <RadioButton Content="译文" GroupName="EditorView"
-                                             IsChecked="{Binding IsTranslatedView}"/>
-                                <RadioButton Content="双语" GroupName="EditorView"
-                                             IsChecked="{Binding IsBilingualView}"/>
-                            </StackPanel>
-                        </DockPanel>
-
-                        <Grid Grid.Row="1" Margin="5">
-                            <Border BorderBrush="LightGray" BorderThickness="1" IsVisible="{Binding IsSingleView}">
-                                <controls:ConfigurableTextEditor x:Name="UnifiedEditor"
-                                                                 Text="{Binding DisplayedText, Mode=TwoWay}"
-                                                                 Placeholder="{Binding DisplayPlaceholder}"
-                                                                 EditorType="Advanced"/>
-                            </Border>
-                            <StackPanel Spacing="6" IsVisible="{Binding IsBilingualView}">
-                                <Border BorderBrush="LightGray" BorderThickness="1">
-                                    <controls:ConfigurableTextEditor Text="{Binding CurrentOriginal, Mode=TwoWay}"
-                                                                     Placeholder="原文将在这里显示..."
-                                                                     EditorType="Advanced"/>
-                                </Border>
-                                <Border BorderBrush="LightGray" BorderThickness="1">
-                                    <controls:ConfigurableTextEditor Text="{Binding CurrentTranslated, Mode=TwoWay}"
-                                                                     Placeholder="译文将在这里显示..."
-                                                                     EditorType="Advanced"/>
-                                </Border>
-                            </StackPanel>
+                        <Grid>
+                            <Border Height="1" Background="#FFE2E8F0" VerticalAlignment="Center"/>
+                            <ItemsControl ItemsSource="{Binding AudioDevices.AudioLevelHistory}" VerticalAlignment="Bottom" Margin="4,3">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <StackPanel Orientation="Horizontal" Spacing="1"/>
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Width="2"
+                                                Height="{Binding Converter={StaticResource LevelToHeight}}"
+                                                Background="#FF16A34A"
+                                                Opacity="0.85"
+                                                VerticalAlignment="Bottom"/>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
                         </Grid>
-                    </Grid>
-                </Border>
-                
-                <!-- 右侧历史/洞察区域 -->
-                <Border Grid.Column="1" BorderBrush="Gray" BorderThickness="1" Margin="5,0,0,0">
-                    <TabControl>
-                        <TabItem Header="历史记录">
-                            <Grid RowDefinitions="Auto,*">
-                                <TextBlock Grid.Row="0" Text="历史记录" FontWeight="Bold" Margin="5"/>
-                                <ListBox Grid.Row="1" ItemsSource="{Binding History}" Margin="5">
-                                    <ListBox.ItemTemplate>
-                                        <DataTemplate DataType="models:TranslationItem">
-                                            <Border Margin="0,4" BorderBrush="#FFE5E7EB" BorderThickness="1" CornerRadius="4" Padding="6">
-                                                <Expander>
-                                                    <Expander.Header>
-                                                        <StackPanel Spacing="2">
-                                                            <DockPanel>
-                                                                <TextBlock Text="{Binding Timestamp, StringFormat=\{0:HH:mm:ss\}}" FontWeight="Bold" DockPanel.Dock="Left"/>
-                                                                <TextBlock Text="{Binding TranslatedText}" Foreground="Blue"
-                                                                           TextTrimming="CharacterEllipsis" Margin="8,0,0,0"/>
-                                                            </DockPanel>
-                                                            <TextBlock Text="{Binding OriginalText}" Foreground="Gray"
-                                                                       TextTrimming="CharacterEllipsis"/>
-                                                        </StackPanel>
-                                                    </Expander.Header>
-                                                    <StackPanel Spacing="6" Margin="0,6,0,0">
-                                                        <TextBlock Text="原文" FontSize="10" Foreground="Gray"/>
-                                                        <TextBlock Text="{Binding OriginalText}" TextWrapping="Wrap"/>
-                                                        <TextBlock Text="译文" FontSize="10" Foreground="Gray"/>
-                                                        <TextBlock Text="{Binding TranslatedText}" TextWrapping="Wrap" Foreground="Blue"/>
-                                                    </StackPanel>
-                                                </Expander>
-                                            </Border>
-                                        </DataTemplate>
-                                    </ListBox.ItemTemplate>
-                                </ListBox>
-                            </Grid>
-                        </TabItem>
-                        <TabItem Header="洞察">
-                            <Grid RowDefinitions="Auto,Auto,Auto,Auto,*,Auto">
-                                <!-- AI 状态 -->
-                                <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="8,8,8,4" Spacing="10">
-                                    <TextBlock Text="未配置 AI 服务" Foreground="Orange"
-                                               VerticalAlignment="Center"
-                                               FontSize="11"
-                                               IsVisible="{Binding !AiInsight.IsAiConfigured}"/>
-                                    <TextBlock Text="AI 服务已就绪" Foreground="Green"
-                                               VerticalAlignment="Center"
-                                               FontSize="11"
-                                               IsVisible="{Binding AiInsight.IsAiConfigured}"/>
-                                </StackPanel>
+                    </Border>
+                </StackPanel>
 
-                                <!-- 预设分析模板按钮 -->
-                                <ItemsControl Grid.Row="1" ItemsSource="{Binding AiInsight.InsightPresetButtons}" Margin="8,4">
-                                    <ItemsControl.ItemsPanel>
-                                        <ItemsPanelTemplate>
-                                            <WrapPanel Orientation="Horizontal"/>
-                                        </ItemsPanelTemplate>
-                                    </ItemsControl.ItemsPanel>
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate x:CompileBindings="False">
-                                            <Button Content="{Binding Name}" Margin="0,0,6,6" Padding="8,4"
-                                                    Command="{Binding $parent[ItemsControl].DataContext.AiInsight.SendPresetInsightCommand}"
-                                                    CommandParameter="{Binding Prompt}"/>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-
-                                <!-- 自定义输入框 + 发送/停止 -->
-                                <Grid Grid.Row="2" ColumnDefinitions="*,Auto,Auto" Margin="8,4">
-                                    <TextBox Grid.Column="0" Text="{Binding AiInsight.InsightUserInput, Mode=TwoWay}"
-                                             Watermark="输入自定义分析问题..." Padding="6,4"
-                                             AcceptsReturn="False"/>
-                                    <Button Grid.Column="1" Content="发送" Margin="6,0,0,0" Padding="12,4"
-                                            Command="{Binding AiInsight.SendInsightCommand}"/>
-                                    <Button Grid.Column="2" Content="停止" Margin="6,0,0,0" Padding="12,4"
-                                            Command="{Binding AiInsight.StopInsightCommand}"
-                                            IsVisible="{Binding AiInsight.IsInsightLoading}"/>
-                                </Grid>
-
-                                <!-- 自动循环洞察 -->
-                                <Border Grid.Row="3" Margin="8,4" Padding="8,6"
-                                        Background="#FFF8FAFC" BorderBrush="#FFE2E8F0"
-                                        BorderThickness="1" CornerRadius="4">
-                                    <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto">
-                                        <TextBlock Grid.Column="0" Text="自动洞察:" FontSize="11"
-                                                   VerticalAlignment="Center" Margin="0,0,8,0"/>
-                                        <ComboBox Grid.Column="1" MinWidth="130"
-                                                  SelectedIndex="{Binding AiInsight.AutoInsightModeIndex, Mode=TwoWay}"
-                                                  IsEnabled="{Binding !AiInsight.IsAutoInsightEnabled}"
-                                                  VerticalAlignment="Center">
-                                            <ComboBoxItem Content="定时循环"/>
-                                            <ComboBoxItem Content="新数据触发"/>
-                                        </ComboBox>
-                                        <TextBlock Grid.Column="2" Text="间隔(秒):" FontSize="11"
-                                                   VerticalAlignment="Center" Margin="10,0,4,0"/>
-                                        <TextBox Grid.Column="3" Text="{Binding AiInsight.AutoInsightIntervalSeconds, Mode=TwoWay}"
-                                                 Width="120" Padding="6,4" VerticalAlignment="Center"
-                                                 IsEnabled="{Binding !AiInsight.IsAutoInsightEnabled}"/>
-                                        <TextBox Grid.Column="4" Text="{Binding AiInsight.AutoInsightPrompt, Mode=TwoWay}"
-                                                 Watermark="自动分析使用的提示词..."
-                                                 Padding="6,4" Margin="10,0,0,0" MaxWidth="260"
-                                                 VerticalAlignment="Center"
-                                                 IsEnabled="{Binding !AiInsight.IsAutoInsightEnabled}"/>
-                                        <Button Grid.Column="5"
-                                                Content="{Binding AiInsight.AutoInsightToggleText}"
-                                                Command="{Binding AiInsight.ToggleAutoInsightCommand}"
-                                                Padding="10,4" Margin="6,0,0,0"
-                                                VerticalAlignment="Center"/>
-                                    </Grid>
-                                </Border>
-
-                                <!-- Markdown 渲染结果区 -->
-                                <Border Grid.Row="4" Margin="8,4" BorderBrush="#FFE5E7EB"
-                                        BorderThickness="1" CornerRadius="4">
-                                    <Grid>
-                                        <ScrollViewer IsVisible="{Binding !AiInsight.IsInsightEmpty}">
-                                            <md:MarkdownScrollViewer Markdown="{Binding AiInsight.InsightMarkdown}"/>
-                                        </ScrollViewer>
-                                        <!-- 加载指示器 -->
-                                        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                    IsVisible="{Binding AiInsight.IsInsightLoading}">
-                                            <TextBlock Text="AI 正在分析..." Foreground="Gray"
-                                                       FontSize="12" HorizontalAlignment="Center"/>
-                                        </StackPanel>
-                                        <!-- 空状态提示 -->
-                                        <TextBlock Text="选择预设模板或输入问题开始分析"
-                                                   Foreground="Gray" FontSize="12"
-                                                   HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                   IsVisible="{Binding AiInsight.IsInsightEmpty}"/>
-                                    </Grid>
-                                </Border>
-
-                                <!-- 清除按钮 -->
-                                <StackPanel Grid.Row="5" Orientation="Horizontal"
-                                            HorizontalAlignment="Right" Margin="8,4,8,8">
-                                    <Button Content="清除结果" Padding="8,4"
-                                            Command="{Binding AiInsight.ClearInsightCommand}"/>
-                                </StackPanel>
-                            </Grid>
-                        </TabItem>
-                    </TabControl>
-                </Border>
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="5">
+                    <Button Name="HelpButton" Content="帮助" Padding="10,5" Click="HelpButton_Click">
+                        <Button.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="获取Azure Speech服务" Command="{Binding OpenAzureSpeechPortalCommand}"/>
+                                <MenuItem Header="获取Microsoft Foundry服务" Command="{Binding OpenFoundryPortalCommand}"/>
+                                <MenuItem Header="项目github地址" Command="{Binding OpenProjectGitHubCommand}"/>
+                                <MenuItem Header="说明" Command="{Binding ShowHelpCommand}"/>
+                                <Separator/>
+                                <MenuItem Header="关于" Command="{Binding ShowAboutCommand}"/>
+                                <Separator/>
+                                <MenuItem Header="{Binding AppVersion}" IsEnabled="False" FontSize="11"/>
+                            </ContextMenu>
+                        </Button.ContextMenu>
+                    </Button>
+                </StackPanel>
             </Grid>
-
-            <!-- 复盘/批处理模式（按需实例化） -->
-            <ContentControl IsVisible="{Binding IsReviewMode}" Content="{Binding ReviewModeViewContent}">
-                <ContentControl.ContentTemplate>
-                    <DataTemplate>
-                        <Grid ColumnDefinitions="280,*,6,320" ColumnSpacing="8">
-                <!-- 左侧文件与批处理 -->
-                <Border Grid.Column="0" BorderBrush="#FFE5E7EB" BorderThickness="1" CornerRadius="4" Padding="8">
-                    <TabControl>
-                        <TabItem Header="文件库">
-                            <StackPanel Spacing="10">
-                                <DockPanel>
-                                    <TextBlock Text="音频文件" FontSize="11" Foreground="Gray" DockPanel.Dock="Left"/>
-                                    <Button Content="刷新" Width="50" Padding="6,2" Command="{Binding FileLibrary.RefreshAudioLibraryCommand}"
-                                            HorizontalAlignment="Right" DockPanel.Dock="Right"/>
-                                </DockPanel>
-                                <ListBox ItemsSource="{Binding FileLibrary.AudioFiles}" SelectedItem="{Binding FileLibrary.SelectedAudioFile}" Height="160"
-                                         PointerPressed="AudioFileList_PointerPressed">
-                                    <ListBox.ItemTemplate>
-                                        <DataTemplate DataType="models:MediaFileItem">
-                                            <Border Padding="2">
-                                                <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis"/>
-                                                <Border.ContextMenu>
-                                                    <ContextMenu DataContext="{Binding}">
-                                                        <MenuItem Header="生成字幕+复盘"
-                                                                  IsEnabled="True"
-                                                                  Click="AudioFileEnqueue_Click"/>
-                                                    </ContextMenu>
-                                                </Border.ContextMenu>
-                                            </Border>
-                                        </DataTemplate>
-                                    </ListBox.ItemTemplate>
-                                </ListBox>
-
-                                <TextBlock Text="字幕文件" FontSize="11" Foreground="Gray"/>
-                                <ListBox ItemsSource="{Binding FileLibrary.SubtitleFiles}" SelectedItem="{Binding FileLibrary.SelectedSubtitleFile}" Height="120">
-                                    <ListBox.ItemTemplate>
-                                        <DataTemplate DataType="models:MediaFileItem">
-                                            <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis"/>
-                                        </DataTemplate>
-                                    </ListBox.ItemTemplate>
-                                </ListBox>
-                                <TextBlock Text="Speech 字幕将在复盘/批处理中按需自动生成" FontSize="10" Foreground="Gray"/>
-                            </StackPanel>
-                        </TabItem>
-                        <TabItem Header="批处理">
-                            <StackPanel Spacing="10">
-                                <StackPanel Orientation="Horizontal" Spacing="6">
-                                    <Button Content="从文件库载入" Padding="6,3"
-                                            Command="{Binding BatchProcessing.LoadBatchTasksCommand}"/>
-                                    <Button Content="清空" Padding="6,3"
-                                            Command="{Binding BatchProcessing.ClearBatchTasksCommand}"/>
-                                </StackPanel>
-                                <Border BorderBrush="#FFE5E7EB" BorderThickness="1" CornerRadius="4" Padding="6">
-                                    <ListBox ItemsSource="{Binding BatchProcessing.BatchTasks}" Height="220">
-                                        <ListBox.ItemTemplate>
-                                            <DataTemplate DataType="models:BatchTaskItem">
-                                                <StackPanel Spacing="2" Margin="0,2">
-                                                    <TextBlock Text="{Binding FileName}" TextTrimming="CharacterEllipsis"/>
-                                                    <StackPanel Orientation="Horizontal" Spacing="6">
-                                                        <TextBlock Text="{Binding StatusMessage}" FontSize="10" Foreground="Gray"/>
-                                                        <TextBlock Text="{Binding ReviewStatusText}" FontSize="10" Foreground="Gray"/>
-                                                        <TextBlock Text="字幕" FontSize="10" Foreground="Gray"
-                                                                   IsVisible="{Binding HasAiSubtitle}"/>
-                                                    </StackPanel>
-                                                    <ProgressBar Minimum="0" Maximum="1" Height="4"
-                                                                 Value="{Binding Progress}"/>
-                                                </StackPanel>
-                                            </DataTemplate>
-                                        </ListBox.ItemTemplate>
-                                    </ListBox>
-                                </Border>
-                                <TextBlock Text="队列池" FontSize="11" Foreground="Gray"/>
-                                <Border BorderBrush="#FFE5E7EB" BorderThickness="1" CornerRadius="4" Padding="6">
-                                    <ListBox ItemsSource="{Binding BatchProcessing.BatchQueueItems}" Height="160">
-                                        <ListBox.ItemTemplate>
-                                            <DataTemplate x:CompileBindings="False">
-                                                <Grid ColumnDefinitions="*,Auto" Margin="0,2">
-                                                    <StackPanel Spacing="2">
-                                                        <TextBlock Text="{Binding FileName}" TextTrimming="CharacterEllipsis"/>
-                                                        <StackPanel Orientation="Horizontal" Spacing="6">
-                                                            <TextBlock Text="{Binding SheetName}" FontSize="10" Foreground="Gray"/>
-                                                            <TextBlock Text="{Binding StatusMessage}" FontSize="10" Foreground="Gray"/>
-                                                        </StackPanel>
-                                                        <ProgressBar Minimum="0" Maximum="1" Height="4"
-                                                                     Value="{Binding Progress}"/>
-                                                    </StackPanel>
-                                                    <Button Grid.Column="1" Content="取消" Padding="6,2" FontSize="11"
-                                                            Command="{Binding $parent[ListBox].DataContext.BatchProcessing.CancelBatchQueueItemCommand}"
-                                                            CommandParameter="{Binding}"
-                                                            IsVisible="{Binding CanCancel}"/>
-                                                </Grid>
-                                            </DataTemplate>
-                                        </ListBox.ItemTemplate>
-                                    </ListBox>
-                                </Border>
-                                <TextBlock Text="{Binding BatchProcessing.BatchQueueStatusText}" Foreground="Gray" FontSize="10"/>
-                                <StackPanel Orientation="Horizontal" Spacing="6">
-                                    <Button Content="刷新队列" Padding="8,3"
-                                            Command="{Binding BatchProcessing.RefreshBatchQueueCommand}"
-                                            ToolTip.Tip="清理队列中已完成项"/>
-                                </StackPanel>
-                                <StackPanel Orientation="Horizontal" Spacing="6">
-                                    <TextBlock Text="并发数" VerticalAlignment="Center"/>
-                                    <TextBox Width="80" Text="{Binding BatchProcessing.BatchConcurrencyLimit, Mode=TwoWay}"/>
-                                </StackPanel>
-                                <StackPanel Orientation="Horizontal" Spacing="6">
-                                    <Button Content="{Binding BatchProcessing.BatchStartButtonText}" Padding="8,4"
-                                            Command="{Binding BatchProcessing.StartBatchCommand}"/>
-                                    <Button Content="停止" Padding="8,4"
-                                            Command="{Binding BatchProcessing.StopBatchCommand}"/>
-                                </StackPanel>
-                                <TextBlock Text="{Binding BatchProcessing.BatchStatusMessage}" Foreground="Gray" FontSize="11"/>
-                            </StackPanel>
-                        </TabItem>
-                    </TabControl>
-                </Border>
-
-                <!-- 中部播放器与字幕 -->
-                <Border Grid.Column="1" BorderBrush="#FFE5E7EB" BorderThickness="1" CornerRadius="4" Padding="8">
-                    <Grid RowDefinitions="Auto,Auto,*">
-                        <StackPanel Grid.Row="0" Spacing="6">
-                            <TextBlock Text="音频播放" FontWeight="Bold"/>
-                            <StackPanel Orientation="Horizontal" Spacing="6">
-                                <Button Content="▶" Width="34" Command="{Binding Playback.PlayAudioCommand}"
-                                        IsEnabled="{Binding Playback.IsPlayEnabled}" IsVisible="{Binding Playback.IsPlayEnabled}"/>
-                                <Button Content="⏸" Width="34" Command="{Binding Playback.PauseAudioCommand}"
-                                        IsEnabled="{Binding Playback.IsPauseEnabled}" IsVisible="{Binding Playback.IsPauseEnabled}"/>
-                                <TextBlock Text="{Binding Playback.PlaybackTimeText}" VerticalAlignment="Center" Foreground="Gray"/>
-                            </StackPanel>
-                        </StackPanel>
-                        <Grid Grid.Row="1" RowDefinitions="Auto,Auto" Margin="0,6,0,6">
-                            <Canvas Height="18" Margin="0,0,0,1" IsHitTestVisible="False"
-                                    Width="{Binding ElementName=PlaybackSlider, Path=Bounds.Width}">
-                                <Border Width="96" Height="16" Background="#FFF3F4F6" BorderBrush="#FFE5E7EB"
-                                        BorderThickness="1" CornerRadius="8" Padding="4,0">
-                                    <Canvas.Left>
-                                        <MultiBinding Converter="{StaticResource ProgressToOffset}">
-                                            <Binding Path="Playback.PlaybackProgress"/>
-                                            <Binding ElementName="PlaybackSlider" Path="Bounds.Width"/>
-                                            <Binding RelativeSource="{RelativeSource Self}" Path="Bounds.Width"/>
-                                        </MultiBinding>
-                                    </Canvas.Left>
-                                    <TextBlock Text="{Binding Playback.PlaybackTimeText}" FontSize="10" Foreground="#FF111827"
-                                               VerticalAlignment="Center" HorizontalAlignment="Center"/>
-                                </Border>
-                            </Canvas>
-                            <Slider Grid.Row="1" Name="PlaybackSlider" Minimum="0" Maximum="1"
-                                    Value="{Binding Playback.PlaybackProgress, Mode=TwoWay}"/>
-                        </Grid>
-                        <Border Grid.Row="2" BorderBrush="#FFE5E7EB" BorderThickness="1" CornerRadius="4">
-                            <ListBox Name="SubtitleCueListBox" ItemsSource="{Binding FileLibrary.SubtitleCues}" SelectedItem="{Binding FileLibrary.SelectedSubtitleCue}" Margin="0" Padding="0"
-                                     Height="{Binding FileLibrary.SubtitleListHeight}" MinHeight="0" VerticalAlignment="Top"
-                                     ScrollViewer.VerticalScrollBarVisibility="Auto"
-                                     DoubleTapped="SubtitleCueListBox_DoubleTapped">
-                                <ListBox.ItemTemplate>
-                                    <DataTemplate DataType="models:SubtitleCue">
-                                        <StackPanel Margin="0,2">
-                                            <TextBlock Text="{Binding RangeText}" FontSize="10" Foreground="Gray"/>
-                                            <TextBlock Text="{Binding Text}" TextWrapping="Wrap"/>
-                                        </StackPanel>
-                                    </DataTemplate>
-                                </ListBox.ItemTemplate>
-                            </ListBox>
-                        </Border>
-                    </Grid>
-                </Border>
-
-                <GridSplitter Grid.Column="2" Width="6" Background="#FFE5E7EB"
-                          HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
-                          ResizeDirection="Columns"/>
-
-                <!-- 右侧复盘洞察总结 -->
-                <Border Grid.Column="3" BorderBrush="#FFE5E7EB" BorderThickness="1" CornerRadius="4" Padding="8"
-                    MinWidth="240">
-                    <Grid RowDefinitions="Auto,*,Auto">
-                        <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                            <TextBlock Text="复盘洞察" FontWeight="Bold"/>
-                            <Ellipse Width="10" Height="10" StrokeThickness="2"
-                                     Fill="{Binding BatchProcessing.ReviewSummaryLampFill}"
-                                     Stroke="{Binding BatchProcessing.ReviewSummaryLampStroke}"
-                                     Opacity="{Binding ConfigVM.ReviewSummaryLampOpacity}"
-                                     VerticalAlignment="Center"/>
-                        </StackPanel>
-                        <Border Grid.Row="1" BorderBrush="#FFE5E7EB" BorderThickness="1" CornerRadius="4" Margin="0,8,0,8">
-                            <TabControl ItemsSource="{Binding BatchProcessing.ReviewSheets}"
-                                        SelectedItem="{Binding BatchProcessing.SelectedReviewSheet, Mode=TwoWay}">
-                                <TabControl.ItemTemplate>
-                                    <DataTemplate x:CompileBindings="False">
-                                        <TextBlock Text="{Binding Name}"/>
-                                    </DataTemplate>
-                                </TabControl.ItemTemplate>
-                                <TabControl.ContentTemplate>
-                                    <DataTemplate x:CompileBindings="False">
-                                        <Grid>
-                                            <ScrollViewer IsVisible="{Binding !IsEmpty}">
-                                                <md:MarkdownScrollViewer Markdown="{Binding Markdown}">
-                                                    <md:MarkdownScrollViewer.Engine>
-                                                        <md:Markdown HyperlinkCommand="{Binding $parent[TabControl].DataContext.BatchProcessing.ReviewMarkdownLinkCommand}" />
-                                                    </md:MarkdownScrollViewer.Engine>
-                                                </md:MarkdownScrollViewer>
-                                            </ScrollViewer>
-                                            <TextBlock Text="选择音频与字幕后生成内容"
-                                                       Foreground="Gray" FontSize="12"
-                                                       HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                       IsVisible="{Binding IsEmpty}"/>
-                                        </Grid>
-                                    </DataTemplate>
-                                </TabControl.ContentTemplate>
-                            </TabControl>
-                        </Border>
-                        <StackPanel Grid.Row="2" Orientation="Vertical" Spacing="6">
-                            <TextBlock Text="{Binding BatchProcessing.ReviewSummaryStatusMessage}" FontSize="11" Foreground="Gray"/>
-                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="6">
-                                <Button Content="生成内容" Padding="8,4"
-                                        Command="{Binding BatchProcessing.GenerateReviewSummaryCommand}"/>
-                                <Button Content="生成全部" Padding="8,4"
-                                    Command="{Binding BatchProcessing.GenerateAllReviewSheetsCommand}"/>
-                            </StackPanel>
-                        </StackPanel>
-                    </Grid>
-                </Border>
-                        </Grid>
-                    </DataTemplate>
-                </ContentControl.ContentTemplate>
-            </ContentControl>
-        </Grid>
+        </Border>
 
         <!-- 底部状态栏 -->
-        <Border Grid.Row="3" BorderBrush="Gray" BorderThickness="0,1,0,0" Padding="10,5">
+        <Border DockPanel.Dock="Bottom" BorderBrush="Gray" BorderThickness="0,1,0,0" Padding="10,5">
             <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
                 <TextBlock Grid.Column="0" Grid.Row="0" Text="{Binding StatusMessage}" />
                 <TextBlock Grid.Column="0" Grid.Row="1" Text="{Binding AudioDiagnosticStatus}" FontSize="10" Foreground="Gray" Margin="0,2,0,0" />
@@ -660,5 +129,40 @@
                            FontSize="10" Foreground="Gray" Margin="10,0,0,0"/>
             </Grid>
         </Border>
-    </Grid>
+
+        <!-- 主体：NavigationView -->
+        <ui:NavigationView Name="NavView"
+                           IsBackButtonVisible="False"
+                           IsPaneOpen="True"
+                           IsSettingsVisible="True"
+                           PaneDisplayMode="Left"
+                           SelectionChanged="NavView_SelectionChanged">
+
+            <ui:NavigationView.MenuItems>
+                <ui:NavigationViewItem Content="实时翻译" Tag="live">
+                    <ui:NavigationViewItem.IconSource>
+                        <ui:SymbolIconSource Symbol="Microphone"/>
+                    </ui:NavigationViewItem.IconSource>
+                </ui:NavigationViewItem>
+                <ui:NavigationViewItem Content="复盘批处理" Tag="review">
+                    <ui:NavigationViewItem.IconSource>
+                        <ui:SymbolIconSource Symbol="Library"/>
+                    </ui:NavigationViewItem.IconSource>
+                </ui:NavigationViewItem>
+                <ui:NavigationViewItem Content="Media Studio" Tag="media">
+                    <ui:NavigationViewItem.IconSource>
+                        <ui:SymbolIconSource Symbol="Image"/>
+                    </ui:NavigationViewItem.IconSource>
+                </ui:NavigationViewItem>
+            </ui:NavigationView.MenuItems>
+
+            <ui:NavigationView.Content>
+                <Panel>
+                    <views:LiveTranslationView Name="LiveView" IsVisible="True"/>
+                    <views:ReviewModeView Name="ReviewView" IsVisible="False"/>
+                    <views:SettingsView Name="SettingsViewPage" IsVisible="False"/>
+                </Panel>
+            </ui:NavigationView.Content>
+        </ui:NavigationView>
+    </DockPanel>
 </Window>
