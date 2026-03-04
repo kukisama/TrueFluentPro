@@ -32,22 +32,19 @@ public partial class MainWindow : Window
                 // ignore icon failures
             }
             
-            _viewModel = new MainWindowViewModel();
-            Console.WriteLine("MainWindowViewModel created");
-            
-            _viewModel.SetMainWindow(this);
-            Console.WriteLine("SetMainWindow called");
-            
-            DataContext = _viewModel;
-            Console.WriteLine("DataContext set");
-            
-            this.Show();
-            Console.WriteLine("Window.Show() called");
+            // ViewModel is created and assigned by App.axaml.cs via DI
+            Console.WriteLine("MainWindow constructor completed (ViewModel set by DI)");
         }        catch (Exception ex)
         {
             Console.WriteLine($"Error in MainWindow constructor: {ex.Message}");
             Console.WriteLine($"Stack trace: {ex.StackTrace}");
         }
+    }
+
+    protected override void OnDataContextChanged(EventArgs e)
+    {
+        base.OnDataContextChanged(e);
+        _viewModel = DataContext as MainWindowViewModel;
     }
 
     protected override void OnClosed(EventArgs e)
@@ -59,6 +56,7 @@ public partial class MainWindow : Window
     protected override void OnOpened(EventArgs e)
     {
         base.OnOpened(e);
+        this.Show();
         _viewModel?.NotifyMainWindowShown();
     }
 

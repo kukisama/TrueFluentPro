@@ -93,7 +93,7 @@ namespace TrueFluentPro.ViewModels
         private bool _suppressSubtitleSeek;
         private bool _isFloatingSubtitleOpen;
 
-        private readonly AzureSubscriptionValidator _subscriptionValidator = new();
+        private readonly AzureSubscriptionValidator _subscriptionValidator;
         private SubscriptionValidationState _subscriptionValidationState = SubscriptionValidationState.Unknown;
         private string _subscriptionValidationStatusMessage = "";
         private CancellationTokenSource? _subscriptionValidationCts;
@@ -123,9 +123,12 @@ namespace TrueFluentPro.ViewModels
         private volatile bool _isMainWindowShown;
         private volatile bool _isConfigLoaded;
 
-        public MainWindowViewModel()
+        public MainWindowViewModel(
+            ConfigurationService configService,
+            AzureSubscriptionValidator subscriptionValidator)
         {
-            _configService = new ConfigurationService();
+            _configService = configService;
+            _subscriptionValidator = subscriptionValidator;
             _aiInsightService = new AiInsightService(_azureTokenProvider);
             _config = new AzureSpeechConfig();
             AppLogService.Initialize(() => _config.BatchLogLevel);
