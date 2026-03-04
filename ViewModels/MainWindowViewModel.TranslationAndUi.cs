@@ -199,7 +199,10 @@ namespace TrueFluentPro.ViewModels
             set => SetProperty(ref _history, value);
         }
 
-        private string _selectedNavTag = "live";
+        public const string NavTagLive = "live";
+        public const string NavTagReview = "review";
+
+        private string _selectedNavTag = NavTagLive;
 
         public string SelectedNavTag
         {
@@ -208,10 +211,9 @@ namespace TrueFluentPro.ViewModels
             {
                 if (SetProperty(ref _selectedNavTag, value))
                 {
-                    // Keep legacy UiModeIndex in sync for any remaining bindings
-                    _uiModeIndex = value == "review" ? 1 : 0;
+                    _uiModeIndex = value == NavTagReview ? 1 : 0;
 
-                    if (value == "review" && !_isReviewModeViewCreated)
+                    if (value == NavTagReview && !_isReviewModeViewCreated)
                     {
                         _isReviewModeViewCreated = true;
                     }
@@ -233,8 +235,7 @@ namespace TrueFluentPro.ViewModels
             {
                 if (SetProperty(ref _uiModeIndex, value))
                 {
-                    // Sync SelectedNavTag
-                    _selectedNavTag = value == 1 ? "review" : "live";
+                    _selectedNavTag = value == 1 ? NavTagReview : NavTagLive;
                     OnPropertyChanged(nameof(SelectedNavTag));
 
                     if (value == 1 && !_isReviewModeViewCreated)

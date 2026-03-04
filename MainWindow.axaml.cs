@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using TrueFluentPro.Services;
 using TrueFluentPro.ViewModels;
 using System;
 using Avalonia.Interactivity;
@@ -9,6 +10,7 @@ namespace TrueFluentPro;
 public partial class MainWindow : Window
 {
     private MainWindowViewModel? _viewModel;
+    private object? _previousNavItem;
 
     public MainWindow()
     {
@@ -20,7 +22,7 @@ public partial class MainWindow : Window
 
             try
             {
-                var icon = Services.AppIconProvider.WindowIcon;
+                var icon = AppIconProvider.WindowIcon;
                 if (icon != null)
                 {
                     Icon = icon;
@@ -95,11 +97,12 @@ public partial class MainWindow : Window
         if (tag == "media" && _viewModel != null)
         {
             _viewModel.ShowMediaStudioCommand.Execute(null);
-            // Navigate back to previous view since Media Studio opens as window
-            if (NavView.MenuItems.Count > 0)
-            {
-                NavView.SelectedItem = NavView.MenuItems[0];
-            }
+            // Navigate back to the previously selected view
+            NavView.SelectedItem = _previousNavItem ?? NavView.MenuItems[0];
+        }
+        else
+        {
+            _previousNavItem = NavView.SelectedItem;
         }
     }
 
