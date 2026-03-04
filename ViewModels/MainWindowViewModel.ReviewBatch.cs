@@ -205,7 +205,7 @@ namespace TrueFluentPro.ViewModels
 
                 CancelAllReviewSheetGeneration();
                 LoadSubtitleFilesForAudio(value);
-                LoadAudioForPlayback(value);
+                Playback.LoadAudioForPlayback(value);
                 LoadReviewSheetForAudio(value, SelectedReviewSheet);
                 ((RelayCommand)GenerateReviewSummaryCommand).RaiseCanExecuteChanged();
                 ((RelayCommand)GenerateAllReviewSheetsCommand).RaiseCanExecuteChanged();
@@ -244,14 +244,14 @@ namespace TrueFluentPro.ViewModels
                     return;
                 }
 
-                if (_suppressSubtitleSeek)
+                if (Playback.SuppressSubtitleSeek)
                 {
                     return;
                 }
 
                 if (value != null)
                 {
-                    SeekToTime(value.Start);
+                    Playback.SeekToTime(value.Start);
                 }
             }
         }
@@ -2294,7 +2294,7 @@ namespace TrueFluentPro.ViewModels
 
             if (TimeLinkHelper.TryParseTimeUrl(url, out var time))
             {
-                SeekToTime(time);
+                Playback.SeekToTime(time);
             }
         }
 

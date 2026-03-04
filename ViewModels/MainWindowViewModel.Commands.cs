@@ -4,13 +4,11 @@ namespace TrueFluentPro.ViewModels
 {
     public partial class MainWindowViewModel
     {
+        public PlaybackViewModel Playback { get; }
         public AiInsightViewModel AiInsight { get; }
         public ICommand ToggleTranslationCommand { get; }
         public ICommand RefreshAudioDevicesCommand { get; }
         public ICommand RefreshAudioLibraryCommand { get; }
-        public ICommand PlayAudioCommand { get; }
-        public ICommand PauseAudioCommand { get; }
-        public ICommand StopAudioCommand { get; }
         public ICommand StartTranslationCommand { get; }
         public ICommand StopTranslationCommand { get; }
         public ICommand ClearHistoryCommand { get; }

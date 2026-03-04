@@ -1,12 +1,36 @@
 using System;
+using System.Collections.ObjectModel;
 using System.Linq;
+using System.Windows.Input;
+using Avalonia.Threading;
 using NAudio.Wave;
 using TrueFluentPro.Models;
 
 namespace TrueFluentPro.ViewModels
 {
-    public partial class MainWindowViewModel
+    public class PlaybackViewModel : ViewModelBase
     {
+        private readonly Action<string> _statusSetter;
+        private readonly Func<ObservableCollection<SubtitleCue>> _subtitleCuesProvider;
+        private readonly Action<SubtitleCue?> _subtitleCueSetter;
+        private readonly Func<SubtitleCue?> _subtitleCueGetter;
+
+        private WaveOutEvent? _playbackOutput;
+        private AudioFileReader? _playbackReader;
+        private readonly DispatcherTimer _playbackTimer;
+        private TimeSpan _playbackPosition = TimeSpan.Zero;
+        private TimeSpan _playbackDuration = TimeSpan.Zero;
+        private double _playbackProgress;
+        private bool _isPlaybackReady;
+        private bool _isPlaying;
+        private bool _suppressSeek;
+
+        public bool SuppressSubtitleSeek { get; private set; }
+
+        public ICommand PlayAudioCommand { get; }
+        public ICommand PauseAudioCommand { get; }
+        public ICommand StopAudioCommand { get; }
+
         public bool IsPlayEnabled => _isPlaybackReady && !_isPlaying;
 
         public bool IsPauseEnabled => _isPlaybackReady && _isPlaying;
@@ -32,7 +56,39 @@ namespace TrueFluentPro.ViewModels
             }
         }
 
-        private void LoadAudioForPlayback(MediaFileItem? audioFile)
+        public PlaybackViewModel(
+            Action<string> statusSetter,
+            Func<ObservableCollection<SubtitleCue>> subtitleCuesProvider,
+            Action<SubtitleCue?> subtitleCueSetter,
+            Func<SubtitleCue?> subtitleCueGetter)
+        {
+            _statusSetter = statusSetter;
+            _subtitleCuesProvider = subtitleCuesProvider;
+            _subtitleCueSetter = subtitleCueSetter;
+            _subtitleCueGetter = subtitleCueGetter;
+
+            _playbackTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(200), DispatcherPriority.Background, (_, _) =>
+            {
+                UpdatePlaybackProgressFromReader();
+            });
+
+            PlayAudioCommand = new RelayCommand(
+                execute: _ => PlayAudio(),
+                canExecute: _ => IsPlayEnabled
+            );
+
+            PauseAudioCommand = new RelayCommand(
+                execute: _ => PauseAudio(),
+                canExecute: _ => IsPauseEnabled
+            );
+
+            StopAudioCommand = new RelayCommand(
+                execute: _ => StopAudio(),
+                canExecute: _ => IsStopEnabled
+            );
+        }
+
+        public void LoadAudioForPlayback(MediaFileItem? audioFile)
         {
             StopPlaybackInternal();
 
@@ -67,7 +123,7 @@ namespace TrueFluentPro.ViewModels
             catch (Exception ex)
             {
                 UpdatePlaybackState(false, false);
-                StatusMessage = $"加载音频失败: {ex.Message}";
+                _statusSetter($"加载音频失败: {ex.Message}");
             }
         }
 
@@ -111,7 +167,7 @@ namespace TrueFluentPro.ViewModels
             UpdatePlaybackState(_playbackReader != null, false);
         }
 
-        private void SeekToTime(TimeSpan time)
+        public void SeekToTime(TimeSpan time)
         {
             if (_playbackReader == null)
             {
@@ -177,27 +233,29 @@ namespace TrueFluentPro.ViewModels
 
         private void UpdateCurrentSubtitleCue(TimeSpan position)
         {
-            if (_subtitleCues.Count == 0)
+            var subtitleCues = _subtitleCuesProvider();
+            if (subtitleCues.Count == 0)
             {
                 return;
             }
 
-            if (_selectedSubtitleCue != null
-                && position >= _selectedSubtitleCue.Start
-                && position <= _selectedSubtitleCue.End)
+            var selectedSubtitleCue = _subtitleCueGetter();
+            if (selectedSubtitleCue != null
+                && position >= selectedSubtitleCue.Start
+                && position <= selectedSubtitleCue.End)
             {
                 return;
             }
 
-            var match = _subtitleCues.FirstOrDefault(cue => position >= cue.Start && position <= cue.End);
-            if (ReferenceEquals(match, _selectedSubtitleCue))
+            var match = subtitleCues.FirstOrDefault(cue => position >= cue.Start && position <= cue.End);
+            if (ReferenceEquals(match, selectedSubtitleCue))
             {
                 return;
             }
 
-            _suppressSubtitleSeek = true;
-            SelectedSubtitleCue = match;
-            _suppressSubtitleSeek = false;
+            SuppressSubtitleSeek = true;
+            _subtitleCueSetter(match);
+            SuppressSubtitleSeek = false;
         }
 
         private void UpdatePlaybackState(bool ready, bool playing)
@@ -254,6 +312,11 @@ namespace TrueFluentPro.ViewModels
             return time.TotalHours >= 1
                 ? time.ToString(@"hh\:mm\:ss")
                 : time.ToString(@"mm\:ss");
+        }
+
+        public void Dispose()
+        {
+            StopPlaybackInternal();
         }
     }
 }

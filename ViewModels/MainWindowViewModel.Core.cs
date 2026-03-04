@@ -83,6 +83,8 @@ namespace TrueFluentPro.ViewModels
 
             _floatingSubtitleManager?.Dispose();
 
+            Playback?.Dispose();
+
             AiInsight?.Dispose();
         }
     }

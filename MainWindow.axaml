@@ -547,11 +547,11 @@
                         <StackPanel Grid.Row="0" Spacing="6">
                             <TextBlock Text="音频播放" FontWeight="Bold"/>
                             <StackPanel Orientation="Horizontal" Spacing="6">
-                                <Button Content="▶" Width="34" Command="{Binding PlayAudioCommand}"
-                                        IsEnabled="{Binding IsPlayEnabled}" IsVisible="{Binding IsPlayEnabled}"/>
-                                <Button Content="⏸" Width="34" Command="{Binding PauseAudioCommand}"
-                                        IsEnabled="{Binding IsPauseEnabled}" IsVisible="{Binding IsPauseEnabled}"/>
-                                <TextBlock Text="{Binding PlaybackTimeText}" VerticalAlignment="Center" Foreground="Gray"/>
+                                <Button Content="▶" Width="34" Command="{Binding Playback.PlayAudioCommand}"
+                                        IsEnabled="{Binding Playback.IsPlayEnabled}" IsVisible="{Binding Playback.IsPlayEnabled}"/>
+                                <Button Content="⏸" Width="34" Command="{Binding Playback.PauseAudioCommand}"
+                                        IsEnabled="{Binding Playback.IsPauseEnabled}" IsVisible="{Binding Playback.IsPauseEnabled}"/>
+                                <TextBlock Text="{Binding Playback.PlaybackTimeText}" VerticalAlignment="Center" Foreground="Gray"/>
                             </StackPanel>
                         </StackPanel>
                         <Grid Grid.Row="1" RowDefinitions="Auto,Auto" Margin="0,6,0,6">
@@ -561,17 +561,17 @@
                                         BorderThickness="1" CornerRadius="8" Padding="4,0">
                                     <Canvas.Left>
                                         <MultiBinding Converter="{StaticResource ProgressToOffset}">
-                                            <Binding Path="PlaybackProgress"/>
+                                            <Binding Path="Playback.PlaybackProgress"/>
                                             <Binding ElementName="PlaybackSlider" Path="Bounds.Width"/>
                                             <Binding RelativeSource="{RelativeSource Self}" Path="Bounds.Width"/>
                                         </MultiBinding>
                                     </Canvas.Left>
-                                    <TextBlock Text="{Binding PlaybackTimeText}" FontSize="10" Foreground="#FF111827"
+                                    <TextBlock Text="{Binding Playback.PlaybackTimeText}" FontSize="10" Foreground="#FF111827"
                                                VerticalAlignment="Center" HorizontalAlignment="Center"/>
                                 </Border>
                             </Canvas>
                             <Slider Grid.Row="1" Name="PlaybackSlider" Minimum="0" Maximum="1"
-                                    Value="{Binding PlaybackProgress, Mode=TwoWay}"/>
+                                    Value="{Binding Playback.PlaybackProgress, Mode=TwoWay}"/>
                         </Grid>
                         <Border Grid.Row="2" BorderBrush="#FFE5E7EB" BorderThickness="1" CornerRadius="4">
                             <ListBox Name="SubtitleCueListBox" ItemsSource="{Binding SubtitleCues}" SelectedItem="{Binding SelectedSubtitleCue}" Margin="0" Padding="0"

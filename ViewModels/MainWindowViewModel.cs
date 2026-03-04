@@ -20,7 +20,6 @@ using System.IO;
 using System.Diagnostics;
 using System.Net.Http;
 using System.Text.Json;
-using NAudio.Wave;
 
 namespace TrueFluentPro.ViewModels
 {
@@ -86,16 +85,6 @@ namespace TrueFluentPro.ViewModels
         private SubtitleCue? _selectedSubtitleCue;
         private double _subtitleListHeight;
 
-        private WaveOutEvent? _playbackOutput;
-        private AudioFileReader? _playbackReader;
-        private readonly DispatcherTimer _playbackTimer;
-        private TimeSpan _playbackPosition = TimeSpan.Zero;
-        private TimeSpan _playbackDuration = TimeSpan.Zero;
-        private double _playbackProgress;
-        private bool _isPlaybackReady;
-        private bool _isPlaying;
-        private bool _suppressSeek;
-        private bool _suppressSubtitleSeek;
         private bool _isFloatingSubtitleOpen;
 
         private readonly AzureSubscriptionValidator _subscriptionValidator;
@@ -164,10 +153,11 @@ namespace TrueFluentPro.ViewModels
             };
             _batchQueueItems.CollectionChanged += (_, _) => UpdateBatchQueueStatusText();
 
-            _playbackTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(200), DispatcherPriority.Background, (_, _) =>
-            {
-                UpdatePlaybackProgressFromReader();
-            });
+            Playback = new PlaybackViewModel(
+                msg => StatusMessage = msg,
+                () => _subtitleCues,
+                cue => SelectedSubtitleCue = cue,
+                () => _selectedSubtitleCue);
 
             _subscriptionLampTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(500), DispatcherPriority.Background, (_, _) =>
             {
@@ -272,21 +262,6 @@ namespace TrueFluentPro.ViewModels
             RefreshAudioLibraryCommand = new RelayCommand(
                 execute: _ => RefreshAudioLibrary(),
                 canExecute: _ => true
-            );
-
-            PlayAudioCommand = new RelayCommand(
-                execute: _ => PlayAudio(),
-                canExecute: _ => IsPlayEnabled
-            );
-
-            PauseAudioCommand = new RelayCommand(
-                execute: _ => PauseAudio(),
-                canExecute: _ => IsPauseEnabled
-            );
-
-            StopAudioCommand = new RelayCommand(
-                execute: _ => StopAudio(),
-                canExecute: _ => IsStopEnabled
             );
 
             OpenAzureSpeechPortalCommand = new RelayCommand(

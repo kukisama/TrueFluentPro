@@ -80,7 +80,7 @@ public partial class MainWindow : Window
 
         if (sender is ListBox listBox && listBox.SelectedItem is SubtitleCue cue)
         {
-            _viewModel.PlayFromSubtitleCue(cue);
+            _viewModel.Playback.PlayFromSubtitleCue(cue);
         }
     }
 
