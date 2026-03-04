@@ -1,0 +1,292 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:TrueFluentPro.ViewModels"
+             xmlns:models="using:TrueFluentPro.Models"
+             xmlns:controls="using:TrueFluentPro.Controls"
+             xmlns:md="clr-namespace:Markdown.Avalonia;assembly=Markdown.Avalonia"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="600"
+             x:Class="TrueFluentPro.Views.LiveTranslationView"
+             x:DataType="vm:MainWindowViewModel"
+             x:CompileBindings="False">
+
+    <UserControl.Resources>
+        <controls:LevelToHeightConverter x:Key="LevelToHeight" MaxHeight="16"/>
+    </UserControl.Resources>
+
+    <Grid RowDefinitions="Auto,*">
+        <!-- 订阅与输入选择区域 -->
+        <Grid Grid.Row="0" Margin="10,0,10,10"
+            ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,*,Auto,Auto"
+            RowDefinitions="Auto,Auto" RowSpacing="6">
+            <TextBlock Grid.Column="0" Text="订阅:" VerticalAlignment="Center" Margin="0,0,5,0"/>
+            <ComboBox Grid.Column="1" Name="SubscriptionComboBox" MinWidth="150" 
+                      ItemsSource="{Binding ConfigVM.SubscriptionNames}" 
+                      SelectedIndex="{Binding ConfigVM.ActiveSubscriptionIndex, Mode=TwoWay}"
+                      IsEnabled="{Binding ConfigVM.IsConfigurationEnabled}"
+                      ToolTip.Tip="选择要使用的Azure订阅"/>
+
+            <Ellipse Grid.Column="2" Width="12" Height="12" StrokeThickness="2"
+                     VerticalAlignment="Center" Margin="8,0,12,0"
+                     Fill="{Binding ConfigVM.SubscriptionLampFill}"
+                     Stroke="{Binding ConfigVM.SubscriptionLampStroke}"
+                     Opacity="{Binding ConfigVM.SubscriptionLampOpacity}"
+                     ToolTip.Tip="{Binding ConfigVM.SubscriptionValidationStatusMessage}"/>
+
+                    <TextBlock Grid.Column="3" Text="麦克风:" VerticalAlignment="Center" Margin="10,0,5,0"/>
+                    <ComboBox Grid.Column="4" Name="InputDeviceComboBox" Width="220"
+                      ItemsSource="{Binding AudioDevices.AudioDevicesList}"
+                      SelectedItem="{Binding AudioDevices.SelectedAudioDevice, Mode=TwoWay}"
+                      IsEnabled="{Binding AudioDevices.IsInputDeviceUiEnabled}"
+                        ToolTip.Tip="选择麦克风设备（选“无”表示不采集麦克风）"/>
+
+                    <TextBlock Grid.Column="5" Text="系统回环:" VerticalAlignment="Center" Margin="10,0,5,0"/>
+                    <ComboBox Grid.Column="6" Name="OutputDeviceComboBox" Width="220"
+                      ItemsSource="{Binding AudioDevices.OutputDevicesList}"
+                      SelectedItem="{Binding AudioDevices.SelectedOutputDevice, Mode=TwoWay}"
+                      IsEnabled="{Binding AudioDevices.IsOutputDeviceUiEnabled}"
+                        ToolTip.Tip="选择系统回环设备（选“无”表示不采集系统回环）"/>
+
+                    <Button Grid.Column="7" Content="刷新" Width="60" Margin="10,0,0,0"
+                    Command="{Binding AudioDevices.RefreshAudioDevicesCommand}"
+                    IsEnabled="{Binding AudioDevices.IsAudioDeviceRefreshEnabled}"
+                    ToolTip.Tip="刷新音频设备列表"/>
+
+            <StackPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="12" Orientation="Horizontal"
+                        Spacing="12" VerticalAlignment="Center">
+                <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                    <TextBlock Text="录制来源:" VerticalAlignment="Center"/>
+                    <ToggleButton Content="仅环回"
+                                  Classes="audio-pill"
+                                  IsChecked="{Binding AudioDevices.IsRecordingLoopbackOnly, Mode=TwoWay}"/>
+                    <ToggleButton Content="环回+麦克风"
+                                  Classes="audio-pill"
+                                  IsChecked="{Binding AudioDevices.IsRecordingLoopbackMix, Mode=TwoWay}"/>
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                    <TextBlock Text="源语言:" VerticalAlignment="Center"/>
+                    <ComboBox Name="SourceLanguageComboBox" MinWidth="120"
+                          IsEnabled="{Binding ConfigVM.IsConfigurationEnabled}"
+                          SelectedIndex="{Binding ConfigVM.SourceLanguageIndex}">
+                    <ComboBoxItem Tag="auto" Content="自动识别"/>
+                      <ComboBoxItem Tag="en" Content="英语"/>
+                      <ComboBoxItem Tag="zh-CN" Content="中文"/>
+                      <ComboBoxItem Tag="ja-JP" Content="日语"/>
+                      <ComboBoxItem Tag="ko-KR" Content="韩语"/>
+                      <ComboBoxItem Tag="fr-FR" Content="法语"/>
+                      <ComboBoxItem Tag="de-DE" Content="德语"/>
+                      <ComboBoxItem Tag="es" Content="西班牙语"/>
+                    </ComboBox>
+
+                    <TextBlock Text="→" VerticalAlignment="Center" FontSize="16" FontWeight="Bold" Margin="4,0"/>
+
+                    <TextBlock Text="目标语言:" VerticalAlignment="Center"/>
+                    <ComboBox Name="TargetLanguageComboBox" MinWidth="120"
+                          IsEnabled="{Binding ConfigVM.IsConfigurationEnabled}"
+                          SelectedIndex="{Binding ConfigVM.TargetLanguageIndex}">
+                    <ComboBoxItem Tag="en" Content="英语"/>
+                    <ComboBoxItem Tag="zh-CN" Content="中文"/>
+                    <ComboBoxItem Tag="ja-JP" Content="日语"/>
+                    <ComboBoxItem Tag="ko-KR" Content="韩语"/>
+                    <ComboBoxItem Tag="fr-FR" Content="法语"/>
+                    <ComboBoxItem Tag="de-DE" Content="德语"/>
+                    <ComboBoxItem Tag="es" Content="西班牙语"/>
+                    </ComboBox>
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                    <Button Content="{Binding TranslationToggleButtonText}"
+                            Command="{Binding ToggleTranslationCommand}"
+                            Background="{Binding TranslationToggleButtonBackground}"
+                            Foreground="{Binding TranslationToggleButtonForeground}"
+                            Padding="10,5"/>
+                </StackPanel>
+
+            </StackPanel>
+        </Grid>
+
+        <!-- 中间翻译内容区域 -->
+        <Grid Grid.Row="1" Margin="10" ColumnDefinitions="*,*">
+            <!-- 左侧实时翻译区域 -->
+            <Border Grid.Column="0" BorderBrush="Gray" BorderThickness="1" Margin="0,0,5,0">
+                <Grid RowDefinitions="Auto,*">
+                    <DockPanel Grid.Row="0" Margin="5">
+                        <TextBlock Text="实时翻译" FontWeight="Bold" DockPanel.Dock="Left"/>
+                        <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+                            <RadioButton Content="原文" GroupName="EditorView"
+                                         IsChecked="{Binding IsOriginalView}"/>
+                            <RadioButton Content="译文" GroupName="EditorView"
+                                         IsChecked="{Binding IsTranslatedView}"/>
+                            <RadioButton Content="双语" GroupName="EditorView"
+                                         IsChecked="{Binding IsBilingualView}"/>
+                        </StackPanel>
+                    </DockPanel>
+
+                    <Grid Grid.Row="1" Margin="5">
+                        <Border BorderBrush="LightGray" BorderThickness="1" IsVisible="{Binding IsSingleView}">
+                            <controls:ConfigurableTextEditor x:Name="UnifiedEditor"
+                                                             Text="{Binding DisplayedText, Mode=TwoWay}"
+                                                             Placeholder="{Binding DisplayPlaceholder}"
+                                                             EditorType="Advanced"/>
+                        </Border>
+                        <StackPanel Spacing="6" IsVisible="{Binding IsBilingualView}">
+                            <Border BorderBrush="LightGray" BorderThickness="1">
+                                <controls:ConfigurableTextEditor Text="{Binding CurrentOriginal, Mode=TwoWay}"
+                                                                 Placeholder="原文将在这里显示..."
+                                                                 EditorType="Advanced"/>
+                            </Border>
+                            <Border BorderBrush="LightGray" BorderThickness="1">
+                                <controls:ConfigurableTextEditor Text="{Binding CurrentTranslated, Mode=TwoWay}"
+                                                                 Placeholder="译文将在这里显示..."
+                                                                 EditorType="Advanced"/>
+                            </Border>
+                        </StackPanel>
+                    </Grid>
+                </Grid>
+            </Border>
+            
+            <!-- 右侧历史/洞察区域 -->
+            <Border Grid.Column="1" BorderBrush="Gray" BorderThickness="1" Margin="5,0,0,0">
+                <TabControl>
+                    <TabItem Header="历史记录">
+                        <Grid RowDefinitions="Auto,*">
+                            <TextBlock Grid.Row="0" Text="历史记录" FontWeight="Bold" Margin="5"/>
+                            <ListBox Grid.Row="1" ItemsSource="{Binding History}" Margin="5">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate DataType="models:TranslationItem">
+                                        <Border Margin="0,4" BorderBrush="#FFE5E7EB" BorderThickness="1" CornerRadius="4" Padding="6">
+                                            <Expander>
+                                                <Expander.Header>
+                                                    <StackPanel Spacing="2">
+                                                        <DockPanel>
+                                                            <TextBlock Text="{Binding Timestamp, StringFormat=\{0:HH:mm:ss\}}" FontWeight="Bold" DockPanel.Dock="Left"/>
+                                                            <TextBlock Text="{Binding TranslatedText}" Foreground="Blue"
+                                                                       TextTrimming="CharacterEllipsis" Margin="8,0,0,0"/>
+                                                        </DockPanel>
+                                                        <TextBlock Text="{Binding OriginalText}" Foreground="Gray"
+                                                                   TextTrimming="CharacterEllipsis"/>
+                                                    </StackPanel>
+                                                </Expander.Header>
+                                                <StackPanel Spacing="6" Margin="0,6,0,0">
+                                                    <TextBlock Text="原文" FontSize="10" Foreground="Gray"/>
+                                                    <TextBlock Text="{Binding OriginalText}" TextWrapping="Wrap"/>
+                                                    <TextBlock Text="译文" FontSize="10" Foreground="Gray"/>
+                                                    <TextBlock Text="{Binding TranslatedText}" TextWrapping="Wrap" Foreground="Blue"/>
+                                                </StackPanel>
+                                            </Expander>
+                                        </Border>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </Grid>
+                    </TabItem>
+                    <TabItem Header="洞察">
+                        <Grid RowDefinitions="Auto,Auto,Auto,Auto,*,Auto">
+                            <!-- AI 状态 -->
+                            <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="8,8,8,4" Spacing="10">
+                                <TextBlock Text="未配置 AI 服务" Foreground="Orange"
+                                           VerticalAlignment="Center"
+                                           FontSize="11"
+                                           IsVisible="{Binding !AiInsight.IsAiConfigured}"/>
+                                <TextBlock Text="AI 服务已就绪" Foreground="Green"
+                                           VerticalAlignment="Center"
+                                           FontSize="11"
+                                           IsVisible="{Binding AiInsight.IsAiConfigured}"/>
+                            </StackPanel>
+
+                            <!-- 预设分析模板按钮 -->
+                            <ItemsControl Grid.Row="1" ItemsSource="{Binding AiInsight.InsightPresetButtons}" Margin="8,4">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <WrapPanel Orientation="Horizontal"/>
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:CompileBindings="False">
+                                        <Button Content="{Binding Name}" Margin="0,0,6,6" Padding="8,4"
+                                                Command="{Binding $parent[ItemsControl].DataContext.AiInsight.SendPresetInsightCommand}"
+                                                CommandParameter="{Binding Prompt}"/>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <!-- 自定义输入框 + 发送/停止 -->
+                            <Grid Grid.Row="2" ColumnDefinitions="*,Auto,Auto" Margin="8,4">
+                                <TextBox Grid.Column="0" Text="{Binding AiInsight.InsightUserInput, Mode=TwoWay}"
+                                         Watermark="输入自定义分析问题..." Padding="6,4"
+                                         AcceptsReturn="False"/>
+                                <Button Grid.Column="1" Content="发送" Margin="6,0,0,0" Padding="12,4"
+                                        Command="{Binding AiInsight.SendInsightCommand}"/>
+                                <Button Grid.Column="2" Content="停止" Margin="6,0,0,0" Padding="12,4"
+                                        Command="{Binding AiInsight.StopInsightCommand}"
+                                        IsVisible="{Binding AiInsight.IsInsightLoading}"/>
+                            </Grid>
+
+                            <!-- 自动循环洞察 -->
+                            <Border Grid.Row="3" Margin="8,4" Padding="8,6"
+                                    Background="#FFF8FAFC" BorderBrush="#FFE2E8F0"
+                                    BorderThickness="1" CornerRadius="4">
+                                <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto">
+                                    <TextBlock Grid.Column="0" Text="自动洞察:" FontSize="11"
+                                               VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                    <ComboBox Grid.Column="1" MinWidth="130"
+                                              SelectedIndex="{Binding AiInsight.AutoInsightModeIndex, Mode=TwoWay}"
+                                              IsEnabled="{Binding !AiInsight.IsAutoInsightEnabled}"
+                                              VerticalAlignment="Center">
+                                        <ComboBoxItem Content="定时循环"/>
+                                        <ComboBoxItem Content="新数据触发"/>
+                                    </ComboBox>
+                                    <TextBlock Grid.Column="2" Text="间隔(秒):" FontSize="11"
+                                               VerticalAlignment="Center" Margin="10,0,4,0"/>
+                                    <TextBox Grid.Column="3" Text="{Binding AiInsight.AutoInsightIntervalSeconds, Mode=TwoWay}"
+                                             Width="120" Padding="6,4" VerticalAlignment="Center"
+                                             IsEnabled="{Binding !AiInsight.IsAutoInsightEnabled}"/>
+                                    <TextBox Grid.Column="4" Text="{Binding AiInsight.AutoInsightPrompt, Mode=TwoWay}"
+                                             Watermark="自动分析使用的提示词..."
+                                             Padding="6,4" Margin="10,0,0,0" MaxWidth="260"
+                                             VerticalAlignment="Center"
+                                             IsEnabled="{Binding !AiInsight.IsAutoInsightEnabled}"/>
+                                    <Button Grid.Column="5"
+                                            Content="{Binding AiInsight.AutoInsightToggleText}"
+                                            Command="{Binding AiInsight.ToggleAutoInsightCommand}"
+                                            Padding="10,4" Margin="6,0,0,0"
+                                            VerticalAlignment="Center"/>
+                                </Grid>
+                            </Border>
+
+                            <!-- Markdown 渲染结果区 -->
+                            <Border Grid.Row="4" Margin="8,4" BorderBrush="#FFE5E7EB"
+                                    BorderThickness="1" CornerRadius="4">
+                                <Grid>
+                                    <ScrollViewer IsVisible="{Binding !AiInsight.IsInsightEmpty}">
+                                        <md:MarkdownScrollViewer Markdown="{Binding AiInsight.InsightMarkdown}"/>
+                                    </ScrollViewer>
+                                    <!-- 加载指示器 -->
+                                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                IsVisible="{Binding AiInsight.IsInsightLoading}">
+                                        <TextBlock Text="AI 正在分析..." Foreground="Gray"
+                                                   FontSize="12" HorizontalAlignment="Center"/>
+                                    </StackPanel>
+                                    <!-- 空状态提示 -->
+                                    <TextBlock Text="选择预设模板或输入问题开始分析"
+                                               Foreground="Gray" FontSize="12"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                                               IsVisible="{Binding AiInsight.IsInsightEmpty}"/>
+                                </Grid>
+                            </Border>
+
+                            <!-- 清除按钮 -->
+                            <StackPanel Grid.Row="5" Orientation="Horizontal"
+                                        HorizontalAlignment="Right" Margin="8,4,8,8">
+                                <Button Content="清除结果" Padding="8,4"
+                                        Command="{Binding AiInsight.ClearInsightCommand}"/>
+                            </StackPanel>
+                        </Grid>
+                    </TabItem>
+                </TabControl>
+            </Border>
+        </Grid>
+    </Grid>
+</UserControl>

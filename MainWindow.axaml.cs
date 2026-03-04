@@ -3,15 +3,16 @@ using TrueFluentPro.Services;
 using TrueFluentPro.ViewModels;
 using System;
 using Avalonia.Interactivity;
-using TrueFluentPro.Models;
-using Avalonia.Input;
-using Avalonia.VisualTree;
+using FluentAvalonia.UI.Controls;
 
 namespace TrueFluentPro;
 
 public partial class MainWindow : Window
 {
-    private MainWindowViewModel? _viewModel;    public MainWindow()
+    private MainWindowViewModel? _viewModel;
+    private object? _previousNavItem;
+
+    public MainWindow()
     {
         Console.WriteLine("MainWindow constructor called");
         try
@@ -34,7 +35,8 @@ public partial class MainWindow : Window
             
             // ViewModel is created and assigned by App.axaml.cs via DI
             Console.WriteLine("MainWindow constructor completed (ViewModel set by DI)");
-        }        catch (Exception ex)
+        }
+        catch (Exception ex)
         {
             Console.WriteLine($"Error in MainWindow constructor: {ex.Message}");
             Console.WriteLine($"Stack trace: {ex.StackTrace}");
@@ -58,6 +60,50 @@ public partial class MainWindow : Window
         base.OnOpened(e);
         this.Show();
         _viewModel?.NotifyMainWindowShown();
+
+        // Select first navigation item on startup
+        if (NavView.MenuItems.Count > 0)
+        {
+            NavView.SelectedItem = NavView.MenuItems[0];
+        }
+    }
+
+    private void NavView_SelectionChanged(object? sender, NavigationViewSelectionChangedEventArgs e)
+    {
+        if (e.IsSettingsSelected)
+        {
+            ShowPage("settings");
+            return;
+        }
+
+        if (e.SelectedItem is NavigationViewItem navItem && navItem.Tag is string tag)
+        {
+            ShowPage(tag);
+        }
+    }
+
+    private void ShowPage(string tag)
+    {
+        LiveView.IsVisible = tag == "live";
+        ReviewView.IsVisible = tag == "review";
+        SettingsViewPage.IsVisible = tag == "settings";
+
+        if (_viewModel != null)
+        {
+            _viewModel.SelectedNavTag = tag;
+        }
+
+        // Open Media Studio in a separate window when selected
+        if (tag == "media" && _viewModel != null)
+        {
+            _viewModel.ShowMediaStudioCommand.Execute(null);
+            // Navigate back to the previously selected view
+            NavView.SelectedItem = _previousNavItem ?? NavView.MenuItems[0];
+        }
+        else
+        {
+            _previousNavItem = NavView.SelectedItem;
+        }
     }
 
     private void HelpButton_Click(object? sender, RoutedEventArgs e)
@@ -70,77 +116,4 @@ public partial class MainWindow : Window
             button.ContextMenu.Open(button);
         }
     }
-
-    private void SubtitleCueListBox_DoubleTapped(object? sender, Avalonia.Input.TappedEventArgs e)
-    {
-        if (_viewModel == null)
-        {
-            return;
-        }
-
-        if (sender is ListBox listBox && listBox.SelectedItem is SubtitleCue cue)
-        {
-            _viewModel.Playback.PlayFromSubtitleCue(cue);
-        }
-    }
-
-    private void AudioFileList_PointerPressed(object? sender, PointerPressedEventArgs e)
-    {
-        if (sender is not ListBox listBox)
-        {
-            return;
-        }
-
-        if (!e.GetCurrentPoint(listBox).Properties.IsRightButtonPressed)
-        {
-            return;
-        }
-
-        if (e.Source is not Control control)
-        {
-            _viewModel?.BatchProcessing.AuditUiEvent("AudioFileRightClick", "source-control-missing");
-            return;
-        }
-
-        var item = control.FindAncestorOfType<ListBoxItem>();
-        if (item?.DataContext is not MediaFileItem mediaItem)
-        {
-            var sourceType = control.GetType().Name;
-            _viewModel?.BatchProcessing.AuditUiEvent("AudioFileRightClick", $"no-media-item source={sourceType}");
-            return;
-        }
-
-        var before = listBox.SelectedItem is MediaFileItem beforeItem
-            ? beforeItem.FullPath
-            : "";
-
-        listBox.SelectedItem = mediaItem;
-        listBox.Focus();
-
-        var after = listBox.SelectedItem is MediaFileItem afterItem
-            ? afterItem.FullPath
-            : "";
-        _viewModel?.BatchProcessing.AuditUiEvent(
-            "AudioFileRightClick",
-            $"selected-before={before} selected-after={after} item={mediaItem.FullPath}");
-    }
-
-    private void AudioFileEnqueue_Click(object? sender, RoutedEventArgs e)
-    {
-        if (sender is not MenuItem menuItem)
-        {
-            _viewModel?.BatchProcessing.AuditUiEvent("AudioFileEnqueue", "sender-not-menuitem");
-            return;
-        }
-
-        if (menuItem.DataContext is not MediaFileItem mediaItem)
-        {
-            _viewModel?.BatchProcessing.AuditUiEvent("AudioFileEnqueue", "menuitem-datacontext-missing");
-            return;
-        }
-
-        _viewModel?.BatchProcessing.AuditUiEvent("AudioFileEnqueue", $"click item={mediaItem.FullPath}");
-        _viewModel?.BatchProcessing.EnqueueSubtitleAndReviewFromLibraryUi(mediaItem);
-    }
 }
-

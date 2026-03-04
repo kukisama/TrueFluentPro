@@ -199,6 +199,35 @@ namespace TrueFluentPro.ViewModels
             set => SetProperty(ref _history, value);
         }
 
+        public const string NavTagLive = "live";
+        public const string NavTagReview = "review";
+
+        private string _selectedNavTag = NavTagLive;
+
+        public string SelectedNavTag
+        {
+            get => _selectedNavTag;
+            set
+            {
+                if (SetProperty(ref _selectedNavTag, value))
+                {
+                    _uiModeIndex = value == NavTagReview ? 1 : 0;
+
+                    if (value == NavTagReview && !_isReviewModeViewCreated)
+                    {
+                        _isReviewModeViewCreated = true;
+                    }
+
+                    OnPropertyChanged(nameof(UiModeIndex));
+                    OnPropertyChanged(nameof(ReviewModeViewContent));
+                    OnPropertyChanged(nameof(IsLiveMode));
+                    OnPropertyChanged(nameof(IsReviewMode));
+                    OnPropertyChanged(nameof(IsLiveModeSelected));
+                    OnPropertyChanged(nameof(IsReviewModeSelected));
+                }
+            }
+        }
+
         public int UiModeIndex
         {
             get => _uiModeIndex;
@@ -206,6 +235,9 @@ namespace TrueFluentPro.ViewModels
             {
                 if (SetProperty(ref _uiModeIndex, value))
                 {
+                    _selectedNavTag = value == 1 ? NavTagReview : NavTagLive;
+                    OnPropertyChanged(nameof(SelectedNavTag));
+
                     if (value == 1 && !_isReviewModeViewCreated)
                     {
                         _isReviewModeViewCreated = true;

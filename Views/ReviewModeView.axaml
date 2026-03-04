@@ -1,0 +1,259 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:TrueFluentPro.ViewModels"
+             xmlns:models="using:TrueFluentPro.Models"
+             xmlns:controls="using:TrueFluentPro.Controls"
+             xmlns:md="clr-namespace:Markdown.Avalonia;assembly=Markdown.Avalonia"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="600"
+             x:Class="TrueFluentPro.Views.ReviewModeView"
+             x:DataType="vm:MainWindowViewModel"
+             x:CompileBindings="False">
+
+    <UserControl.Resources>
+        <controls:ProgressToOffsetConverter x:Key="ProgressToOffset" Padding="6"/>
+    </UserControl.Resources>
+
+    <UserControl.Styles>
+        <Style Selector="Slider#PlaybackSlider">
+            <Setter Property="Height" Value="12" />
+            <Setter Property="Background" Value="#FFE5E7EB" />
+            <Setter Property="Foreground" Value="#FF111827" />
+        </Style>
+        <Style Selector="Slider#PlaybackSlider /template/ Thumb">
+            <Setter Property="Width" Value="9" />
+            <Setter Property="Height" Value="9" />
+            <Setter Property="CornerRadius" Value="4.5" />
+            <Setter Property="MinWidth" Value="9" />
+            <Setter Property="MinHeight" Value="9" />
+            <Setter Property="MaxWidth" Value="9" />
+            <Setter Property="MaxHeight" Value="9" />
+            <Setter Property="Background" Value="#FF111827" />
+            <Setter Property="BorderBrush" Value="#FFE5E7EB" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+        <Style Selector="Slider#PlaybackSlider /template/ Track">
+            <Setter Property="Height" Value="3" />
+        </Style>
+    </UserControl.Styles>
+
+    <Grid ColumnDefinitions="280,*,6,320" ColumnSpacing="8" Margin="10">
+        <!-- 左侧文件与批处理 -->
+        <Border Grid.Column="0" BorderBrush="#FFE5E7EB" BorderThickness="1" CornerRadius="4" Padding="8">
+            <TabControl>
+                <TabItem Header="文件库">
+                    <StackPanel Spacing="10">
+                        <DockPanel>
+                            <TextBlock Text="音频文件" FontSize="11" Foreground="Gray" DockPanel.Dock="Left"/>
+                            <Button Content="刷新" Width="50" Padding="6,2" Command="{Binding FileLibrary.RefreshAudioLibraryCommand}"
+                                    HorizontalAlignment="Right" DockPanel.Dock="Right"/>
+                        </DockPanel>
+                        <ListBox ItemsSource="{Binding FileLibrary.AudioFiles}" SelectedItem="{Binding FileLibrary.SelectedAudioFile}" Height="160"
+                                 PointerPressed="AudioFileList_PointerPressed">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate DataType="models:MediaFileItem">
+                                    <Border Padding="2">
+                                        <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis"/>
+                                        <Border.ContextMenu>
+                                            <ContextMenu DataContext="{Binding}">
+                                                <MenuItem Header="生成字幕+复盘"
+                                                          IsEnabled="True"
+                                                          Click="AudioFileEnqueue_Click"/>
+                                            </ContextMenu>
+                                        </Border.ContextMenu>
+                                    </Border>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+
+                        <TextBlock Text="字幕文件" FontSize="11" Foreground="Gray"/>
+                        <ListBox ItemsSource="{Binding FileLibrary.SubtitleFiles}" SelectedItem="{Binding FileLibrary.SelectedSubtitleFile}" Height="120">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate DataType="models:MediaFileItem">
+                                    <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis"/>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                        <TextBlock Text="Speech 字幕将在复盘/批处理中按需自动生成" FontSize="10" Foreground="Gray"/>
+                    </StackPanel>
+                </TabItem>
+                <TabItem Header="批处理">
+                    <StackPanel Spacing="10">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <Button Content="从文件库载入" Padding="6,3"
+                                    Command="{Binding BatchProcessing.LoadBatchTasksCommand}"/>
+                            <Button Content="清空" Padding="6,3"
+                                    Command="{Binding BatchProcessing.ClearBatchTasksCommand}"/>
+                        </StackPanel>
+                        <Border BorderBrush="#FFE5E7EB" BorderThickness="1" CornerRadius="4" Padding="6">
+                            <ListBox ItemsSource="{Binding BatchProcessing.BatchTasks}" Height="220">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate DataType="models:BatchTaskItem">
+                                        <StackPanel Spacing="2" Margin="0,2">
+                                            <TextBlock Text="{Binding FileName}" TextTrimming="CharacterEllipsis"/>
+                                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                                <TextBlock Text="{Binding StatusMessage}" FontSize="10" Foreground="Gray"/>
+                                                <TextBlock Text="{Binding ReviewStatusText}" FontSize="10" Foreground="Gray"/>
+                                                <TextBlock Text="字幕" FontSize="10" Foreground="Gray"
+                                                           IsVisible="{Binding HasAiSubtitle}"/>
+                                            </StackPanel>
+                                            <ProgressBar Minimum="0" Maximum="1" Height="4"
+                                                         Value="{Binding Progress}"/>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </Border>
+                        <TextBlock Text="队列池" FontSize="11" Foreground="Gray"/>
+                        <Border BorderBrush="#FFE5E7EB" BorderThickness="1" CornerRadius="4" Padding="6">
+                            <ListBox ItemsSource="{Binding BatchProcessing.BatchQueueItems}" Height="160">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate x:CompileBindings="False">
+                                        <Grid ColumnDefinitions="*,Auto" Margin="0,2">
+                                            <StackPanel Spacing="2">
+                                                <TextBlock Text="{Binding FileName}" TextTrimming="CharacterEllipsis"/>
+                                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                                    <TextBlock Text="{Binding SheetName}" FontSize="10" Foreground="Gray"/>
+                                                    <TextBlock Text="{Binding StatusMessage}" FontSize="10" Foreground="Gray"/>
+                                                </StackPanel>
+                                                <ProgressBar Minimum="0" Maximum="1" Height="4"
+                                                             Value="{Binding Progress}"/>
+                                            </StackPanel>
+                                            <Button Grid.Column="1" Content="取消" Padding="6,2" FontSize="11"
+                                                    Command="{Binding $parent[ListBox].DataContext.BatchProcessing.CancelBatchQueueItemCommand}"
+                                                    CommandParameter="{Binding}"
+                                                    IsVisible="{Binding CanCancel}"/>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </Border>
+                        <TextBlock Text="{Binding BatchProcessing.BatchQueueStatusText}" Foreground="Gray" FontSize="10"/>
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <Button Content="刷新队列" Padding="8,3"
+                                    Command="{Binding BatchProcessing.RefreshBatchQueueCommand}"
+                                    ToolTip.Tip="清理队列中已完成项"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <TextBlock Text="并发数" VerticalAlignment="Center"/>
+                            <TextBox Width="80" Text="{Binding BatchProcessing.BatchConcurrencyLimit, Mode=TwoWay}"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <Button Content="{Binding BatchProcessing.BatchStartButtonText}" Padding="8,4"
+                                    Command="{Binding BatchProcessing.StartBatchCommand}"/>
+                            <Button Content="停止" Padding="8,4"
+                                    Command="{Binding BatchProcessing.StopBatchCommand}"/>
+                        </StackPanel>
+                        <TextBlock Text="{Binding BatchProcessing.BatchStatusMessage}" Foreground="Gray" FontSize="11"/>
+                    </StackPanel>
+                </TabItem>
+            </TabControl>
+        </Border>
+
+        <!-- 中部播放器与字幕 -->
+        <Border Grid.Column="1" BorderBrush="#FFE5E7EB" BorderThickness="1" CornerRadius="4" Padding="8">
+            <Grid RowDefinitions="Auto,Auto,*">
+                <StackPanel Grid.Row="0" Spacing="6">
+                    <TextBlock Text="音频播放" FontWeight="Bold"/>
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <Button Content="▶" Width="34" Command="{Binding Playback.PlayAudioCommand}"
+                                IsEnabled="{Binding Playback.IsPlayEnabled}" IsVisible="{Binding Playback.IsPlayEnabled}"/>
+                        <Button Content="⏸" Width="34" Command="{Binding Playback.PauseAudioCommand}"
+                                IsEnabled="{Binding Playback.IsPauseEnabled}" IsVisible="{Binding Playback.IsPauseEnabled}"/>
+                        <TextBlock Text="{Binding Playback.PlaybackTimeText}" VerticalAlignment="Center" Foreground="Gray"/>
+                    </StackPanel>
+                </StackPanel>
+                <Grid Grid.Row="1" RowDefinitions="Auto,Auto" Margin="0,6,0,6">
+                    <Canvas Height="18" Margin="0,0,0,1" IsHitTestVisible="False"
+                            Width="{Binding ElementName=PlaybackSlider, Path=Bounds.Width}">
+                        <Border Width="96" Height="16" Background="#FFF3F4F6" BorderBrush="#FFE5E7EB"
+                                BorderThickness="1" CornerRadius="8" Padding="4,0">
+                            <Canvas.Left>
+                                <MultiBinding Converter="{StaticResource ProgressToOffset}">
+                                    <Binding Path="Playback.PlaybackProgress"/>
+                                    <Binding ElementName="PlaybackSlider" Path="Bounds.Width"/>
+                                    <Binding RelativeSource="{RelativeSource Self}" Path="Bounds.Width"/>
+                                </MultiBinding>
+                            </Canvas.Left>
+                            <TextBlock Text="{Binding Playback.PlaybackTimeText}" FontSize="10" Foreground="#FF111827"
+                                       VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                        </Border>
+                    </Canvas>
+                    <Slider Grid.Row="1" Name="PlaybackSlider" Minimum="0" Maximum="1"
+                            Value="{Binding Playback.PlaybackProgress, Mode=TwoWay}"/>
+                </Grid>
+                <Border Grid.Row="2" BorderBrush="#FFE5E7EB" BorderThickness="1" CornerRadius="4">
+                    <ListBox Name="SubtitleCueListBox" ItemsSource="{Binding FileLibrary.SubtitleCues}" SelectedItem="{Binding FileLibrary.SelectedSubtitleCue}" Margin="0" Padding="0"
+                             Height="{Binding FileLibrary.SubtitleListHeight}" MinHeight="0" VerticalAlignment="Top"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto"
+                             DoubleTapped="SubtitleCueListBox_DoubleTapped">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate DataType="models:SubtitleCue">
+                                <StackPanel Margin="0,2">
+                                    <TextBlock Text="{Binding RangeText}" FontSize="10" Foreground="Gray"/>
+                                    <TextBlock Text="{Binding Text}" TextWrapping="Wrap"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </Border>
+            </Grid>
+        </Border>
+
+        <GridSplitter Grid.Column="2" Width="6" Background="#FFE5E7EB"
+                  HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                  ResizeDirection="Columns"/>
+
+        <!-- 右侧复盘洞察总结 -->
+        <Border Grid.Column="3" BorderBrush="#FFE5E7EB" BorderThickness="1" CornerRadius="4" Padding="8"
+            MinWidth="240">
+            <Grid RowDefinitions="Auto,*,Auto">
+                <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                    <TextBlock Text="复盘洞察" FontWeight="Bold"/>
+                    <Ellipse Width="10" Height="10" StrokeThickness="2"
+                             Fill="{Binding BatchProcessing.ReviewSummaryLampFill}"
+                             Stroke="{Binding BatchProcessing.ReviewSummaryLampStroke}"
+                             Opacity="{Binding ConfigVM.ReviewSummaryLampOpacity}"
+                             VerticalAlignment="Center"/>
+                </StackPanel>
+                <Border Grid.Row="1" BorderBrush="#FFE5E7EB" BorderThickness="1" CornerRadius="4" Margin="0,8,0,8">
+                    <TabControl ItemsSource="{Binding BatchProcessing.ReviewSheets}"
+                                SelectedItem="{Binding BatchProcessing.SelectedReviewSheet, Mode=TwoWay}">
+                        <TabControl.ItemTemplate>
+                            <DataTemplate x:CompileBindings="False">
+                                <TextBlock Text="{Binding Name}"/>
+                            </DataTemplate>
+                        </TabControl.ItemTemplate>
+                        <TabControl.ContentTemplate>
+                            <DataTemplate x:CompileBindings="False">
+                                <Grid>
+                                    <ScrollViewer IsVisible="{Binding !IsEmpty}">
+                                        <md:MarkdownScrollViewer Markdown="{Binding Markdown}">
+                                            <md:MarkdownScrollViewer.Engine>
+                                                <md:Markdown HyperlinkCommand="{Binding $parent[TabControl].DataContext.BatchProcessing.ReviewMarkdownLinkCommand}" />
+                                            </md:MarkdownScrollViewer.Engine>
+                                        </md:MarkdownScrollViewer>
+                                    </ScrollViewer>
+                                    <TextBlock Text="选择音频与字幕后生成内容"
+                                               Foreground="Gray" FontSize="12"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                                               IsVisible="{Binding IsEmpty}"/>
+                                </Grid>
+                            </DataTemplate>
+                        </TabControl.ContentTemplate>
+                    </TabControl>
+                </Border>
+                <StackPanel Grid.Row="2" Orientation="Vertical" Spacing="6">
+                    <TextBlock Text="{Binding BatchProcessing.ReviewSummaryStatusMessage}" FontSize="11" Foreground="Gray"/>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="6">
+                        <Button Content="生成内容" Padding="8,4"
+                                Command="{Binding BatchProcessing.GenerateReviewSummaryCommand}"/>
+                        <Button Content="生成全部" Padding="8,4"
+                            Command="{Binding BatchProcessing.GenerateAllReviewSheetsCommand}"/>
+                    </StackPanel>
+                </StackPanel>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>
