@@ -1,0 +1,506 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:controls="using:TrueFluentPro.Controls"
+        mc:Ignorable="d" d:DesignWidth="1000" d:DesignHeight="700"
+        x:Class="TrueFluentPro.Views.MediaStudioView"
+        x:CompileBindings="False">
+
+    <UserControl.Resources>
+        <controls:FilePathToBitmapConverter x:Key="FilePathToBitmapConverter"/>
+        <controls:FirstFrameBadgeVisibilityConverter x:Key="FirstFrameBadgeVisibilityConverter"/>
+    </UserControl.Resources>
+
+    <UserControl.Styles>
+        <!-- 用户消息气泡 -->
+        <Style Selector="Border.user-msg">
+            <Setter Property="Background" Value="#FFE3F2FD"/>
+            <Setter Property="CornerRadius" Value="10,10,2,10"/>
+            <Setter Property="Padding" Value="12,8"/>
+            <Setter Property="Margin" Value="120,4,8,4"/>
+            <Setter Property="HorizontalAlignment" Value="Right"/>
+        </Style>
+        <!-- AI 消息气泡 -->
+        <Style Selector="Border.ai-msg">
+            <Setter Property="Background" Value="#FFF5F5F5"/>
+            <Setter Property="CornerRadius" Value="10,10,10,2"/>
+            <Setter Property="Padding" Value="12,8"/>
+            <Setter Property="Margin" Value="8,4,120,4"/>
+            <Setter Property="HorizontalAlignment" Value="Left"/>
+        </Style>
+        <!-- 会话列表选中项 -->
+        <Style Selector="ListBoxItem:selected">
+            <Setter Property="Background" Value="#FF1976D2"/>
+            <Setter Property="Foreground" Value="White"/>
+        </Style>
+        <Style Selector="ListBoxItem:selected TextBlock">
+            <Setter Property="Foreground" Value="White"/>
+        </Style>
+        <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
+            <Setter Property="Foreground" Value="White"/>
+        </Style>
+        <!-- 参数区域标签 -->
+        <Style Selector="TextBlock.param-label">
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Foreground" Value="#FF666666"/>
+            <Setter Property="Margin" Value="0,0,4,0"/>
+        </Style>
+
+        <Style Selector="Grid.ref-anchor Button.ref-remove">
+            <Setter Property="IsVisible" Value="False"/>
+        </Style>
+        <Style Selector="Grid.ref-anchor:pointerover Button.ref-remove">
+            <Setter Property="IsVisible" Value="True"/>
+        </Style>
+        <Style Selector="Button.ref-add">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+        </Style>
+        <Style Selector="Button.ref-add:pointerover">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+        </Style>
+        <Style Selector="Button.ref-add:pressed">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+        </Style>
+    </UserControl.Styles>
+
+    <Grid RowDefinitions="Auto,*,Auto">
+        <!-- ===== 顶部工具栏 ===== -->
+        <Border Grid.Row="0" BorderBrush="#FFE0E0E0" BorderThickness="0,0,0,1" Padding="10,8">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6">
+                    <Button Content="＋ 新建会话" Command="{Binding NewSessionCommand}" Padding="10,5"/>
+                    <Button Content="删除会话" Command="{Binding DeleteSessionCommand}" Padding="10,5"/>
+                </StackPanel>
+                <TextBlock Grid.Column="1" Text="🎨 Media Studio"
+                           FontSize="15" FontWeight="SemiBold"
+                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding StatusText}" FontSize="12" Foreground="#FF888888"
+                               VerticalAlignment="Center"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- ===== 主体区域（左右分栏） ===== -->
+        <Grid Grid.Row="1" ColumnDefinitions="200,1,*">
+            <!-- 左侧会话列表 -->
+            <Border Grid.Column="0" Background="#FFFAFAFA">
+                <Grid RowDefinitions="Auto,*">
+                    <TextBlock Grid.Row="0" Text="会话列表" FontSize="13" FontWeight="SemiBold"
+                               Margin="12,10,12,6" Foreground="#FF555555"/>
+                    <ListBox Grid.Row="1"
+                             x:Name="SessionListBox"
+                             ItemsSource="{Binding Sessions}"
+                             SelectedItem="{Binding CurrentSession}"
+                             Margin="4,0" Padding="0"
+                             Background="Transparent"
+                             KeyDown="SessionListBox_KeyDown">
+                        <ListBox.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="重命名 (F2)" Click="RenameSession_Click"/>
+                                <MenuItem Header="恢复已取消的视频作业" Click="ResumeVideoTasks_Click"/>
+                                <Separator/>
+                                <MenuItem Header="删除会话" Click="DeleteSession_Click"/>
+                            </ContextMenu>
+                        </ListBox.ContextMenu>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Grid ColumnDefinitions="*,Auto" Margin="4,3" PointerPressed="SessionItem_PointerPressed">
+                                    <TextBlock Grid.Column="0" Text="{Binding SessionName}"
+                                               VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                    <Ellipse Grid.Column="1" Width="8" Height="8"
+                                             Fill="#FF4CAF50"
+                                             IsVisible="{Binding HasBadge}"
+                                             VerticalAlignment="Center" Margin="6,0,2,0"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </Grid>
+            </Border>
+
+            <!-- 分隔线 -->
+            <Border Grid.Column="1" Background="#FFE0E0E0"/>
+
+            <!-- 右侧内容区 -->
+            <Grid Grid.Column="2" RowDefinitions="*,Auto"
+                            x:Name="SessionViewsHost">
+                            <ItemsControl ItemsSource="{Binding Sessions}"
+                                          IsVisible="{Binding HasCurrentSession}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <Grid/>
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid RowDefinitions="*,Auto"
+                                              x:Name="SessionContentRoot"
+                                              IsVisible="{Binding IsActiveSession}">
+
+                <!-- 聊天消息区 -->
+                <Border Grid.Row="0" Margin="0">
+                    <Grid>
+                        <ScrollViewer x:Name="SessionScrollViewer"
+                                      VerticalScrollBarVisibility="Auto"
+                                      HorizontalScrollBarVisibility="Disabled"
+                                      Padding="8"
+                                      ScrollChanged="ChatScrollViewer_ScrollChanged"
+                                      AttachedToVisualTree="SessionScrollViewer_AttachedToVisualTree"
+                                      DetachedFromVisualTree="SessionScrollViewer_DetachedFromVisualTree">
+                            <ItemsControl ItemsSource="{Binding Messages}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <VirtualizingStackPanel/>
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Panel>
+                                            <!-- 用户消息 -->
+                                            <Border Classes="user-msg" IsVisible="{Binding IsUser}">
+                                                <Border.ContextMenu>
+                                                    <ContextMenu>
+                                                        <MenuItem Header="删除此条记录" Click="DeleteChatMessage_Click" Tag="{Binding}"/>
+                                                    </ContextMenu>
+                                                </Border.ContextMenu>
+                                                <StackPanel Spacing="4">
+                                                    <SelectableTextBlock Text="{Binding Text}"
+                                                             TextWrapping="Wrap"
+                                                             MaxWidth="500"/>
+                                                    <TextBlock Text="{Binding TimestampText}" FontSize="10"
+                                                               Foreground="#FF999999" HorizontalAlignment="Right"/>
+                                                </StackPanel>
+                                            </Border>
+
+                                            <!-- AI 消息 -->
+                                            <Border Classes="ai-msg" IsVisible="{Binding IsAssistant}">
+                                                <Border.ContextMenu>
+                                                    <ContextMenu>
+                                                        <MenuItem Header="删除此条记录" Click="DeleteChatMessage_Click" Tag="{Binding}"/>
+                                                    </ContextMenu>
+                                                </Border.ContextMenu>
+                                                <StackPanel Spacing="6">
+                                                    <SelectableTextBlock Text="{Binding Text}"
+                                                             TextWrapping="Wrap"
+                                                             MaxWidth="500"/>
+
+                                                    <ProgressBar IsIndeterminate="True" Height="4"
+                                                                 IsVisible="{Binding IsLoading}"/>
+
+                                                    <!-- 媒体文件列表 -->
+                                                    <ItemsControl ItemsSource="{Binding MediaPaths}"
+                                                                  IsVisible="{Binding HasMedia}">
+                                                        <ItemsControl.ItemsPanel>
+                                                            <ItemsPanelTemplate>
+                                                                <WrapPanel Orientation="Horizontal"/>
+                                                            </ItemsPanelTemplate>
+                                                        </ItemsControl.ItemsPanel>
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate>
+                                                                <Border Margin="2" CornerRadius="4"
+                                                                        Background="#FFEEEEEE" Padding="4"
+                                                                        Cursor="Hand"
+                                                                        PointerPressed="MediaThumbnail_PointerPressed"
+                                                                        Tag="{Binding $parent[ItemsControl].DataContext}">
+                                                                    <Grid>
+                                                                        <!-- 图片预览（点击即可大图/播放） -->
+                                                                        <Image x:Name="PreviewImage"
+                                                                               MaxWidth="200" MaxHeight="200"
+                                                                               Stretch="Uniform"
+                                                                               Source="{Binding Converter={StaticResource FilePathToBitmapConverter}}"/>
+
+                                                                        <!-- 首帧专属播放提示 -->
+                                                                        <Border HorizontalAlignment="Left"
+                                                                                VerticalAlignment="Top"
+                                                                                Margin="6"
+                                                                                CornerRadius="10"
+                                                                                Padding="10,4"
+                                                                                Background="#CC000000"
+                                                                                IsVisible="{Binding Converter={StaticResource FirstFrameBadgeVisibilityConverter}}">
+                                                                            <TextBlock Text="▶ 播放视频"
+                                                                                       FontSize="13"
+                                                                                       FontWeight="SemiBold"
+                                                                                       Foreground="White"/>
+                                                                        </Border>
+
+                                                                        <!-- 首帧中心播放图示（更大更直观） -->
+                                                                        <Border HorizontalAlignment="Center"
+                                                                                VerticalAlignment="Center"
+                                                                                Width="56"
+                                                                                Height="56"
+                                                                                CornerRadius="28"
+                                                                                Background="#B3000000"
+                                                                                BorderBrush="#E6FFFFFF"
+                                                                                BorderThickness="2"
+                                                                                IsVisible="{Binding Converter={StaticResource FirstFrameBadgeVisibilityConverter}}">
+                                                                            <TextBlock Text="▶"
+                                                                                       FontSize="28"
+                                                                                       FontWeight="Bold"
+                                                                                       Foreground="White"
+                                                                                       HorizontalAlignment="Center"
+                                                                                       VerticalAlignment="Center"
+                                                                                       Margin="2,0,0,0"/>
+                                                                        </Border>
+                                                                    </Grid>
+                                                                </Border>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+
+                                                    <TextBlock Text="{Binding TimestampText}" FontSize="10"
+                                                               Foreground="#FF999999"/>
+                                                </StackPanel>
+                                            </Border>
+                                        </Panel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+
+                                        <StackPanel HorizontalAlignment="Right"
+                                                    VerticalAlignment="Bottom"
+                                                    Margin="0,0,12,12"
+                                                    Spacing="6"
+                                                    IsHitTestVisible="True">
+                                            <Button x:Name="ScrollToTopButton"
+                                                    Content="⇧ 顶部"
+                                                    IsVisible="False"
+                                                    Padding="10,4"
+                                                    Click="ScrollToTop_Click"/>
+                                            <Button x:Name="ScrollToBottomButton"
+                                                    Content="⇩ 底部"
+                                                    IsVisible="False"
+                                                    Padding="10,4"
+                                                    Click="ScrollToBottom_Click"/>
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+
+                <!-- ===== 底部输入区 ===== -->
+                <Border Grid.Row="1" BorderBrush="#FFE0E0E0" BorderThickness="0,1,0,0" Padding="10,8">
+                    <Grid RowDefinitions="Auto,Auto,Auto">
+                        <!-- 参数行 -->
+                        <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="10" Margin="0,0,0,6">
+                            <!-- 模式切换 -->
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <RadioButton Content="🖼️ 图片"
+                                             IsChecked="{Binding IsImageMode}"
+                                             GroupName="MediaType"
+                                             Padding="6,3"/>
+                                <RadioButton Content="🎬 视频"
+                                             IsChecked="{Binding IsVideoMode}"
+                                             GroupName="MediaType"
+                                             Padding="6,3"/>
+                            </StackPanel>
+
+                            <Border Width="1" Background="#FFE0E0E0" Margin="4,0"/>
+
+                            <!-- 图片参数 -->
+                            <StackPanel Orientation="Horizontal" Spacing="6"
+                                        IsVisible="{Binding IsImageMode}">
+                                <TextBlock Classes="param-label" Text="尺寸:"/>
+                                <ComboBox ItemsSource="{Binding ImageSizeOptions}"
+                                          SelectedItem="{Binding OverrideImageSize}"
+                                          Width="120" Padding="4,2" FontSize="12"/>
+                                <TextBlock Classes="param-label" Text="质量:"/>
+                                <ComboBox ItemsSource="{Binding ImageQualityOptions}"
+                                          SelectedItem="{Binding OverrideImageQuality}"
+                                          Width="80" Padding="4,2" FontSize="12"/>
+                                <TextBlock Classes="param-label" Text="格式:"/>
+                                <ComboBox ItemsSource="{Binding ImageFormatOptions}"
+                                      SelectedItem="{Binding OverrideImageFormat}"
+                                      Width="80" Padding="4,2" FontSize="12"/>
+                                <TextBlock Classes="param-label" Text="数量:"/>
+                                <ComboBox ItemsSource="{Binding ImageCountOptions}"
+                                      SelectedItem="{Binding OverrideImageCount}"
+                                      Width="70" Padding="4,2" FontSize="12"/>
+                            </StackPanel>
+
+                            <!-- 视频参数 -->
+                            <StackPanel Orientation="Horizontal" Spacing="6"
+                                        IsVisible="{Binding IsVideoMode}">
+                                <TextBlock Classes="param-label" Text="比例:"/>
+                                <ComboBox ItemsSource="{Binding VideoAspectRatioOptions}"
+                                      SelectedItem="{Binding SelectedVideoAspectRatio}"
+                                      Width="70" Padding="4,2" FontSize="12"/>
+                                <TextBlock Classes="param-label" Text="分辨率:"/>
+                                <ComboBox ItemsSource="{Binding VideoResolutionOptions}"
+                                      SelectedItem="{Binding SelectedVideoResolution}"
+                                      Width="80" Padding="4,2" FontSize="12"/>
+                                <TextBlock Classes="param-label" Text="时长:"/>
+                                <ComboBox ItemsSource="{Binding VideoDurationOptions}"
+                                      SelectedItem="{Binding OverrideVideoSeconds}"
+                                      Width="70" Padding="4,2" FontSize="12"/>
+                                <TextBlock Classes="param-label" Text="数量:"/>
+                                <ComboBox ItemsSource="{Binding VideoCountOptions}"
+                                      SelectedItem="{Binding OverrideVideoVariants}"
+                                      Width="60" Padding="4,2" FontSize="12"/>
+                            </StackPanel>
+                        </StackPanel>
+
+                        <!-- 输入行 -->
+                        <Grid Grid.Row="1" ColumnDefinitions="*,Auto">
+                            <Grid Grid.Column="0" RowDefinitions="Auto,Auto">
+                                <Border Grid.Row="0"
+                                        BorderBrush="#FFE6E6E6"
+                                        BorderThickness="1"
+                                        CornerRadius="6"
+                                        Padding="6"
+                                        Margin="0,0,0,6"
+                                        IsVisible="{Binding HasReferenceImage}">
+                                    <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                                                  VerticalScrollBarVisibility="Disabled">
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <ItemsControl ItemsSource="{Binding ReferenceImagePaths}">
+                                                <ItemsControl.ItemsPanel>
+                                                    <ItemsPanelTemplate>
+                                                        <StackPanel Orientation="Horizontal" Spacing="6"/>
+                                                    </ItemsPanelTemplate>
+                                                </ItemsControl.ItemsPanel>
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <Grid Classes="ref-anchor" Width="52" Height="52">
+                                                            <Border Background="Transparent"
+                                                                    BorderBrush="#FFCCCCCC"
+                                                                    BorderThickness="1"
+                                                                    CornerRadius="4"
+                                                                    Cursor="Hand"
+                                                                    PointerPressed="ReferenceImageThumbnail_PointerPressed"
+                                                                    ToolTip.Tip="点击裁切为当前视频目标尺寸">
+                                                                <Image Stretch="UniformToFill"
+                                                                       Source="{Binding ., Converter={StaticResource FilePathToBitmapConverter}}"/>
+                                                            </Border>
+                                                                <Button Classes="ref-remove"
+                                                                    Width="14"
+                                                                    Height="14"
+                                                                    HorizontalAlignment="Right"
+                                                                    VerticalAlignment="Top"
+                                                                    Margin="0,-5,-5,0"
+                                                                    Padding="0"
+                                                                    FontSize="9"
+                                                                    FontWeight="Bold"
+                                                                    Content="×"
+                                                                    HorizontalContentAlignment="Center"
+                                                                    VerticalContentAlignment="Center"
+                                                                    Background="#CC000000"
+                                                                    Foreground="White"
+                                                                    BorderThickness="0"
+                                                                    CornerRadius="7"
+                                                                    Command="{Binding DataContext.RemoveReferenceImageCommand, ElementName=SessionContentRoot}"
+                                                                    CommandParameter="{Binding .}"
+                                                                    ToolTip.Tip="移除此参考图"/>
+                                                        </Grid>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+
+                                            <Button Classes="ref-add"
+                                                    IsVisible="{Binding CanAddMoreReferenceImages}"
+                                                    Width="52"
+                                                    Height="52"
+                                                    Padding="0"
+                                                    FontSize="18"
+                                                    Content="＋"
+                                                    Click="AttachReferenceImage_Click"
+                                                    ToolTip.Tip="添加参考图（最多8张，支持 Ctrl+V）"/>
+
+                                            <TextBlock VerticalAlignment="Center"
+                                                       Margin="4,0,0,0"
+                                                       FontSize="11"
+                                                       Foreground="#FF666666"
+                                                       Text="{Binding ReferenceImageCount, StringFormat=参考图: {0}/8}"/>
+                                        </StackPanel>
+                                    </ScrollViewer>
+                                </Border>
+
+                                <Grid Grid.Row="1" ColumnDefinitions="Auto,*" ColumnSpacing="6">
+                                    <Button Grid.Column="0"
+                                            Classes="ref-add"
+                                            IsVisible="{Binding CanAddMoreReferenceImages}"
+                                            Width="36"
+                                            Height="38"
+                                            Padding="0"
+                                            FontSize="16"
+                                            Content="🖼"
+                                            Click="AttachReferenceImage_Click"
+                                            ToolTip.Tip="添加参考图（最多8张，支持 Ctrl+V）"/>
+
+                                    <TextBox x:Name="PromptTextBox"
+                                             Grid.Column="1"
+                                             Text="{Binding PromptText}"
+                                             Watermark="请输入提示词... (Ctrl+Enter 发送，Ctrl+V 可粘贴参考图，最多8张)"
+                                             AcceptsReturn="True"
+                                             TextWrapping="Wrap"
+                                             MaxHeight="80"
+                                             MinHeight="38"
+                                             Padding="8,6"/>
+                                </Grid>
+                            </Grid>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" Margin="8,0,0,0"
+                                        VerticalAlignment="Bottom">
+                                <Button Content="生成" Command="{Binding GenerateCommand}"
+                                        Padding="16,8" FontWeight="SemiBold"
+                                        Background="#FF1976D2" Foreground="White"/>
+                                <Button Content="取消" Command="{Binding CancelCommand}"
+                                        Padding="10,8"
+                                        IsVisible="{Binding IsGenerating}"/>
+                            </StackPanel>
+                        </Grid>
+
+                        <StackPanel Grid.Row="2" Margin="42,4,0,0" Spacing="2">
+                            <TextBlock FontSize="12"
+                                       Foreground="#FFE65100"
+                                       IsVisible="{Binding IsVideoReferenceLimitExceeded}"
+                                       Text="{Binding VideoReferenceLimitHint}"/>
+                            <TextBlock FontSize="12"
+                                       Foreground="#FFE65100"
+                                       IsVisible="{Binding IsReferenceImageSizeMismatch}"
+                                       Text="{Binding ReferenceImageValidationHint}"/>
+                            <TextBlock FontSize="12"
+                                       Foreground="#FF2E7D32"
+                                       IsVisible="{Binding IsReferenceImageSizeMatched}"
+                                       Text="{Binding ReferenceImageValidationHint}"/>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+            </Grid>
+
+            <!-- 无会话提示 -->
+            <TextBlock Grid.Column="2"
+                       Text="请新建会话开始使用 Media Studio"
+                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                       FontSize="16" Foreground="#FFAAAAAA"
+                       IsVisible="{Binding !HasCurrentSession}"/>
+        </Grid>
+
+        <!-- ===== 底部状态栏 ===== -->
+        <Border Grid.Row="2" Background="#FFF5F5F5" BorderBrush="#FFE0E0E0" BorderThickness="0,1,0,0" Padding="10,4">
+            <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Grid.Column="0" Text="{Binding StatusText}"
+                           FontSize="12" Foreground="#FF888888" VerticalAlignment="Center"/>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10">
+                    <TextBlock FontSize="12" Foreground="#FF888888" VerticalAlignment="Center">
+                        <TextBlock.Text>
+                            <MultiBinding StringFormat="活跃任务: {0}">
+                                <Binding Path="ActiveTaskCount"/>
+                            </MultiBinding>
+                        </TextBlock.Text>
+                    </TextBlock>
+                </StackPanel>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

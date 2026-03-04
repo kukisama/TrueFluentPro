@@ -137,6 +137,7 @@
                 <Panel>
                     <views:LiveTranslationView Name="LiveView" IsVisible="True"/>
                     <views:ReviewModeView Name="ReviewView" IsVisible="False"/>
+                    <views:MediaStudioView Name="MediaStudioViewPage" IsVisible="False"/>
                     <views:SettingsView Name="SettingsViewPage" IsVisible="False"/>
                 </Panel>
             </ui:NavigationView.Content>

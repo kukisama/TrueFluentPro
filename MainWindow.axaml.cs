@@ -9,7 +9,7 @@ namespace TrueFluentPro;
 public partial class MainWindow : Window
 {
     private MainWindowViewModel? _viewModel;
-    private object? _previousNavItem;
+    private bool _mediaStudioInitialized;
 
     public MainWindow()
     {
@@ -50,6 +50,7 @@ public partial class MainWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
+        MediaStudioViewPage.Cleanup();
         _viewModel?.Dispose();
         base.OnClosed(e);
     }
@@ -85,6 +86,7 @@ public partial class MainWindow : Window
     {
         LiveView.IsVisible = tag == "live";
         ReviewView.IsVisible = tag == "review";
+        MediaStudioViewPage.IsVisible = tag == "media";
         SettingsViewPage.IsVisible = tag == "settings";
 
         if (_viewModel != null)
@@ -92,16 +94,13 @@ public partial class MainWindow : Window
             _viewModel.SelectedNavTag = tag;
         }
 
-        // Open Media Studio in a separate window when selected
-        if (tag == "media" && _viewModel != null)
+        if (tag == "media" && _viewModel != null && !_mediaStudioInitialized)
         {
-            _viewModel.ShowMediaStudioCommand.Execute(null);
-            // Navigate back to the previously selected view
-            NavView.SelectedItem = _previousNavItem ?? NavView.MenuItems[0];
-        }
-        else
-        {
-            _previousNavItem = NavView.SelectedItem;
+            _mediaStudioInitialized = true;
+            var config = _viewModel.ConfigVM.Config;
+            MediaStudioViewPage.Initialize(
+                config.AiConfig ?? new TrueFluentPro.Models.AiConfig(),
+                config.MediaGenConfig);
         }
     }
 
