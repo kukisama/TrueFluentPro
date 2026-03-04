@@ -46,44 +46,17 @@ namespace TrueFluentPro.ViewModels
 
         private readonly AiInsightService _aiInsightService;
 
-        // Proxy for ReviewBatch.cs which still references IsAiConfigured directly
-        private bool IsAiConfigured => _config.AiConfig?.IsValid == true;
-
         public AudioDevicesViewModel AudioDevices { get; }
         public ConfigViewModel ConfigVM { get; }
-
-        private readonly ObservableCollection<MediaFileItem> _audioFiles;
-        private readonly ObservableCollection<MediaFileItem> _subtitleFiles;
-        private readonly ObservableCollection<SubtitleCue> _subtitleCues;
-        private readonly ObservableCollection<BatchTaskItem> _batchTasks;
-        private readonly ObservableCollection<BatchQueueItem> _batchQueueItems;
-        private int _batchConcurrencyLimit = 10;
-        private bool _isBatchRunning;
-        private CancellationTokenSource? _batchCts;
-        private string _batchStatusMessage = "";
-        private string _batchQueueStatusText = "";
-        private Task? _batchQueueRunnerTask;
-        private List<ReviewSheetPreset> _batchReviewSheetSnapshot = new();
-
-        private MediaFileItem? _selectedAudioFile;
-        private MediaFileItem? _selectedSubtitleFile;
-        private SubtitleCue? _selectedSubtitleCue;
-        private double _subtitleListHeight;
+        public FileLibraryViewModel FileLibrary { get; }
+        public BatchProcessingViewModel BatchProcessing { get; }
 
         private bool _isFloatingSubtitleOpen;
 
         private FloatingSubtitleManager? _floatingSubtitleManager;
 
-
-        private bool _isSpeechSubtitleGenerating;
-        private string _speechSubtitleStatusMessage = "";
-        private CancellationTokenSource? _speechSubtitleCts;
-
         private int _uiModeIndex;
         private bool _isReviewModeViewCreated;
-
-        private readonly ObservableCollection<ReviewSheetState> _reviewSheets = new();
-        private ReviewSheetState? _selectedReviewSheet;
 
         private readonly List<(string Name, Func<Task> Action)> _postShowInitActions = new();
         private int _postShowInitStarted;
@@ -100,26 +73,6 @@ namespace TrueFluentPro.ViewModels
             _config = new AzureSpeechConfig();
             AppLogService.Initialize(() => _config.BatchLogLevel);
             _history = new ObservableCollection<TranslationItem>();
-            _audioFiles = new ObservableCollection<MediaFileItem>();
-            _subtitleFiles = new ObservableCollection<MediaFileItem>();
-            _subtitleCues = new ObservableCollection<SubtitleCue>();
-            _batchTasks = new ObservableCollection<BatchTaskItem>();
-            _batchQueueItems = new ObservableCollection<BatchQueueItem>();
-            _batchQueueStatusText = "队列为空";
-            _subtitleCues.CollectionChanged += (_, _) => UpdateSubtitleListHeight();
-            _batchTasks.CollectionChanged += (_, _) =>
-            {
-                if (ClearBatchTasksCommand is RelayCommand cmd)
-                {
-                    cmd.RaiseCanExecuteChanged();
-                }
-                if (StartBatchCommand is RelayCommand startCmd)
-                {
-                    startCmd.RaiseCanExecuteChanged();
-                }
-                OnPropertyChanged(nameof(BatchStartButtonText));
-            };
-            _batchQueueItems.CollectionChanged += (_, _) => UpdateBatchQueueStatusText();
 
             ConfigVM = new ConfigViewModel(
                 configService,
@@ -131,8 +84,8 @@ namespace TrueFluentPro.ViewModels
                     ((RelayCommand)ToggleTranslationCommand).RaiseCanExecuteChanged();
                 },
                 cfg => _translationService?.UpdateConfigAsync(cfg),
-                (eventName, message, isSuccess) => AppendBatchDebugLog(eventName, message, isSuccess),
-                () => IsReviewSummaryLoading,
+                (eventName, message, isSuccess) => AppLogService.Instance.LogAudit(eventName, message, isSuccess),
+                () => BatchProcessing?.IsReviewSummaryLoading ?? false,
                 () => _mainWindow);
 
             ConfigVM.ConfigLoaded += OnConfigVMConfigLoaded;
@@ -140,9 +93,32 @@ namespace TrueFluentPro.ViewModels
 
             Playback = new PlaybackViewModel(
                 msg => StatusMessage = msg,
-                () => _subtitleCues,
-                cue => SelectedSubtitleCue = cue,
-                () => _selectedSubtitleCue);
+                () => FileLibrary?.SubtitleCues ?? new ObservableCollection<SubtitleCue>(),
+                cue => { if (FileLibrary != null) FileLibrary.SelectedSubtitleCue = cue; },
+                () => FileLibrary?.SelectedSubtitleCue);
+
+            FileLibrary = new FileLibraryViewModel(
+                () => _config,
+                msg => StatusMessage = msg,
+                audioFile =>
+                {
+                    Playback.LoadAudioForPlayback(audioFile);
+                    BatchProcessing?.OnAudioFileSelected(audioFile);
+                },
+                () => Playback.SuppressSubtitleSeek,
+                cue => Playback.SeekToTime(cue.Start));
+
+            BatchProcessing = new BatchProcessingViewModel(
+                () => _config,
+                msg => StatusMessage = msg,
+                _aiInsightService,
+                FileLibrary,
+                Playback,
+                configService,
+                () => ConfigVM.NotifyReviewLampChanged());
+
+            FileLibrary.SubtitleCuesLoaded += BatchProcessing.OnSubtitleCuesLoaded;
+            FileLibrary.AudioLibraryRefreshed += BatchProcessing.OnAudioLibraryRefreshed;
 
             AudioDevices = new AudioDevicesViewModel(
                 () => _config,
@@ -151,7 +127,7 @@ namespace TrueFluentPro.ViewModels
                 cfg => _translationService?.UpdateConfigAsync(cfg),
                 () => _translationService?.TryApplyLiveAudioRoutingFromCurrentConfig() ?? false,
                 reason => ConfigVM.QueueConfigSave(reason),
-                (eventName, message) => AppendBatchDebugLog(eventName, message),
+                (eventName, message) => AppLogService.Instance.LogAudit(eventName, message),
                 () => _mainWindow);
 
             RegisterPostShowInitializationAction(
@@ -162,7 +138,7 @@ namespace TrueFluentPro.ViewModels
                 async () => await Dispatcher.UIThread.InvokeAsync(() => AudioDevices.RefreshAudioDevices(persistSelection: false)));
             RegisterPostShowInitializationAction(
                 "AudioLibraryRefresh",
-                async () => await Dispatcher.UIThread.InvokeAsync(() => RefreshAudioLibrary()));
+                async () => await Dispatcher.UIThread.InvokeAsync(() => FileLibrary.RefreshAudioLibrary()));
 
             AiInsight = new AiInsightViewModel(
                 _aiInsightService,
@@ -224,11 +200,6 @@ namespace TrueFluentPro.ViewModels
                 canExecute: _ => true
             );
 
-            RefreshAudioLibraryCommand = new RelayCommand(
-                execute: _ => RefreshAudioLibrary(),
-                canExecute: _ => true
-            );
-
             OpenAzureSpeechPortalCommand = new RelayCommand(
                 execute: _ => OpenUrl("https://portal.azure.com/#view/Microsoft_Azure_ProjectOxford/CognitiveServicesHub/~/SpeechServices"),
                 canExecute: _ => true
@@ -254,68 +225,6 @@ namespace TrueFluentPro.ViewModels
             ShowHelpCommand = new RelayCommand(
                 execute: async _ => await ShowHelp(),
                 canExecute: _ => true
-            );
-
-            GenerateReviewSummaryCommand = new RelayCommand(
-                execute: _ => GenerateReviewSummary(),
-                canExecute: _ => CanGenerateReviewSummary()
-            );
-
-            GenerateAllReviewSheetsCommand = new RelayCommand(
-                execute: _ => GenerateAllReviewSheets(),
-                canExecute: _ => CanGenerateAllReviewSheets()
-            );
-
-            ReviewMarkdownLinkCommand = new RelayCommand(
-                execute: param => OnReviewMarkdownLink(param)
-            );
-
-            LoadBatchTasksCommand = new RelayCommand(
-                execute: _ => LoadBatchTasksFromLibrary()
-            );
-
-            ClearBatchTasksCommand = new RelayCommand(
-                execute: _ => ClearBatchTasks(),
-                canExecute: _ => BatchTasks.Count > 0
-            );
-
-            StartBatchCommand = new RelayCommand(
-                execute: _ => StartBatchProcessing(),
-                canExecute: _ => CanStartBatchProcessing()
-            );
-
-            StopBatchCommand = new RelayCommand(
-                execute: _ => StopBatchProcessing(),
-                canExecute: _ => IsBatchRunning
-            );
-
-            RefreshBatchQueueCommand = new RelayCommand(
-                execute: _ => RefreshBatchQueue(),
-                canExecute: _ => true
-            );
-
-            CancelBatchQueueItemCommand = new RelayCommand(
-                execute: param => CancelBatchQueueItem(param as BatchQueueItem)
-            );
-
-            EnqueueSubtitleReviewCommand = new RelayCommand(
-                execute: param => EnqueueSubtitleAndReviewFromLibrary(param as MediaFileItem),
-                canExecute: param => CanEnqueueSubtitleAndReviewFromLibrary(param as MediaFileItem)
-            );
-
-            GenerateSpeechSubtitleCommand = new RelayCommand(
-                execute: _ => GenerateSpeechSubtitle(),
-                canExecute: _ => CanGenerateSpeechSubtitle()
-            );
-
-            CancelSpeechSubtitleCommand = new RelayCommand(
-                execute: _ => CancelSpeechSubtitle(),
-                canExecute: _ => IsSpeechSubtitleGenerating
-            );
-
-            GenerateBatchSpeechSubtitleCommand = new RelayCommand(
-                execute: _ => GenerateBatchSpeechSubtitle(),
-                canExecute: _ => CanGenerateBatchSpeechSubtitle()
             );
 
             ShowMediaStudioCommand = new RelayCommand(
@@ -353,21 +262,10 @@ namespace TrueFluentPro.ViewModels
             // Apply default font size from config
             Controls.AdvancedRichTextBox.DefaultFontSizeValue = _config.DefaultFontSize;
 
-            NormalizeSpeechSubtitleOption();
-            OnPropertyChanged(nameof(IsSpeechSubtitleOptionEnabled));
-            OnPropertyChanged(nameof(UseSpeechSubtitleForReview));
-            OnPropertyChanged(nameof(SpeechSubtitleOptionStatusText));
-            OnPropertyChanged(nameof(BatchStartButtonText));
-            RebuildReviewSheets();
+            BatchProcessing.NormalizeSpeechSubtitleOption();
+            BatchProcessing.RefreshCommandStates();
+            BatchProcessing.RebuildReviewSheets();
             AiInsight.UpdateConfig();
-            if (GenerateSpeechSubtitleCommand is RelayCommand speechCmd)
-            {
-                speechCmd.RaiseCanExecuteChanged();
-            }
-            if (GenerateBatchSpeechSubtitleCommand is RelayCommand batchCmd)
-            {
-                batchCmd.RaiseCanExecuteChanged();
-            }
 
             StatusMessage = $"配置已加载，文件位置: {ConfigVM.GetConfigFilePath()}";
         }
@@ -378,24 +276,10 @@ namespace TrueFluentPro.ViewModels
 
             AudioDevices.UpdateConfig();
 
-            NormalizeSpeechSubtitleOption();
-            OnPropertyChanged(nameof(IsSpeechSubtitleOptionEnabled));
-            OnPropertyChanged(nameof(UseSpeechSubtitleForReview));
-            OnPropertyChanged(nameof(SpeechSubtitleOptionStatusText));
-            OnPropertyChanged(nameof(BatchStartButtonText));
-            RebuildReviewSheets();
+            BatchProcessing.NormalizeSpeechSubtitleOption();
+            BatchProcessing.RefreshCommandStates();
+            BatchProcessing.RebuildReviewSheets();
             AiInsight.UpdateConfig();
-            ((RelayCommand)GenerateReviewSummaryCommand).RaiseCanExecuteChanged();
-            ((RelayCommand)GenerateAllReviewSheetsCommand).RaiseCanExecuteChanged();
-            ((RelayCommand)StartBatchCommand).RaiseCanExecuteChanged();
-            if (GenerateSpeechSubtitleCommand is RelayCommand speechCmd)
-            {
-                speechCmd.RaiseCanExecuteChanged();
-            }
-            if (GenerateBatchSpeechSubtitleCommand is RelayCommand batchCmd)
-            {
-                batchCmd.RaiseCanExecuteChanged();
-            }
 
             _ = AiInsight.TrySilentLoginForAiAsync();
         }

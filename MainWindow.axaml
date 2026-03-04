@@ -436,10 +436,10 @@
                             <StackPanel Spacing="10">
                                 <DockPanel>
                                     <TextBlock Text="音频文件" FontSize="11" Foreground="Gray" DockPanel.Dock="Left"/>
-                                    <Button Content="刷新" Width="50" Padding="6,2" Command="{Binding RefreshAudioLibraryCommand}"
+                                    <Button Content="刷新" Width="50" Padding="6,2" Command="{Binding FileLibrary.RefreshAudioLibraryCommand}"
                                             HorizontalAlignment="Right" DockPanel.Dock="Right"/>
                                 </DockPanel>
-                                <ListBox ItemsSource="{Binding AudioFiles}" SelectedItem="{Binding SelectedAudioFile}" Height="160"
+                                <ListBox ItemsSource="{Binding FileLibrary.AudioFiles}" SelectedItem="{Binding FileLibrary.SelectedAudioFile}" Height="160"
                                          PointerPressed="AudioFileList_PointerPressed">
                                     <ListBox.ItemTemplate>
                                         <DataTemplate DataType="models:MediaFileItem">
@@ -458,7 +458,7 @@
                                 </ListBox>
 
                                 <TextBlock Text="字幕文件" FontSize="11" Foreground="Gray"/>
-                                <ListBox ItemsSource="{Binding SubtitleFiles}" SelectedItem="{Binding SelectedSubtitleFile}" Height="120">
+                                <ListBox ItemsSource="{Binding FileLibrary.SubtitleFiles}" SelectedItem="{Binding FileLibrary.SelectedSubtitleFile}" Height="120">
                                     <ListBox.ItemTemplate>
                                         <DataTemplate DataType="models:MediaFileItem">
                                             <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis"/>
@@ -472,12 +472,12 @@
                             <StackPanel Spacing="10">
                                 <StackPanel Orientation="Horizontal" Spacing="6">
                                     <Button Content="从文件库载入" Padding="6,3"
-                                            Command="{Binding LoadBatchTasksCommand}"/>
+                                            Command="{Binding BatchProcessing.LoadBatchTasksCommand}"/>
                                     <Button Content="清空" Padding="6,3"
-                                            Command="{Binding ClearBatchTasksCommand}"/>
+                                            Command="{Binding BatchProcessing.ClearBatchTasksCommand}"/>
                                 </StackPanel>
                                 <Border BorderBrush="#FFE5E7EB" BorderThickness="1" CornerRadius="4" Padding="6">
-                                    <ListBox ItemsSource="{Binding BatchTasks}" Height="220">
+                                    <ListBox ItemsSource="{Binding BatchProcessing.BatchTasks}" Height="220">
                                         <ListBox.ItemTemplate>
                                             <DataTemplate DataType="models:BatchTaskItem">
                                                 <StackPanel Spacing="2" Margin="0,2">
@@ -497,7 +497,7 @@
                                 </Border>
                                 <TextBlock Text="队列池" FontSize="11" Foreground="Gray"/>
                                 <Border BorderBrush="#FFE5E7EB" BorderThickness="1" CornerRadius="4" Padding="6">
-                                    <ListBox ItemsSource="{Binding BatchQueueItems}" Height="160">
+                                    <ListBox ItemsSource="{Binding BatchProcessing.BatchQueueItems}" Height="160">
                                         <ListBox.ItemTemplate>
                                             <DataTemplate x:CompileBindings="False">
                                                 <Grid ColumnDefinitions="*,Auto" Margin="0,2">
@@ -511,7 +511,7 @@
                                                                      Value="{Binding Progress}"/>
                                                     </StackPanel>
                                                     <Button Grid.Column="1" Content="取消" Padding="6,2" FontSize="11"
-                                                            Command="{Binding $parent[ListBox].DataContext.CancelBatchQueueItemCommand}"
+                                                            Command="{Binding $parent[ListBox].DataContext.BatchProcessing.CancelBatchQueueItemCommand}"
                                                             CommandParameter="{Binding}"
                                                             IsVisible="{Binding CanCancel}"/>
                                                 </Grid>
@@ -519,23 +519,23 @@
                                         </ListBox.ItemTemplate>
                                     </ListBox>
                                 </Border>
-                                <TextBlock Text="{Binding BatchQueueStatusText}" Foreground="Gray" FontSize="10"/>
+                                <TextBlock Text="{Binding BatchProcessing.BatchQueueStatusText}" Foreground="Gray" FontSize="10"/>
                                 <StackPanel Orientation="Horizontal" Spacing="6">
                                     <Button Content="刷新队列" Padding="8,3"
-                                            Command="{Binding RefreshBatchQueueCommand}"
+                                            Command="{Binding BatchProcessing.RefreshBatchQueueCommand}"
                                             ToolTip.Tip="清理队列中已完成项"/>
                                 </StackPanel>
                                 <StackPanel Orientation="Horizontal" Spacing="6">
                                     <TextBlock Text="并发数" VerticalAlignment="Center"/>
-                                    <TextBox Width="80" Text="{Binding BatchConcurrencyLimit, Mode=TwoWay}"/>
+                                    <TextBox Width="80" Text="{Binding BatchProcessing.BatchConcurrencyLimit, Mode=TwoWay}"/>
                                 </StackPanel>
                                 <StackPanel Orientation="Horizontal" Spacing="6">
-                                    <Button Content="{Binding BatchStartButtonText}" Padding="8,4"
-                                            Command="{Binding StartBatchCommand}"/>
+                                    <Button Content="{Binding BatchProcessing.BatchStartButtonText}" Padding="8,4"
+                                            Command="{Binding BatchProcessing.StartBatchCommand}"/>
                                     <Button Content="停止" Padding="8,4"
-                                            Command="{Binding StopBatchCommand}"/>
+                                            Command="{Binding BatchProcessing.StopBatchCommand}"/>
                                 </StackPanel>
-                                <TextBlock Text="{Binding BatchStatusMessage}" Foreground="Gray" FontSize="11"/>
+                                <TextBlock Text="{Binding BatchProcessing.BatchStatusMessage}" Foreground="Gray" FontSize="11"/>
                             </StackPanel>
                         </TabItem>
                     </TabControl>
@@ -574,8 +574,8 @@
                                     Value="{Binding Playback.PlaybackProgress, Mode=TwoWay}"/>
                         </Grid>
                         <Border Grid.Row="2" BorderBrush="#FFE5E7EB" BorderThickness="1" CornerRadius="4">
-                            <ListBox Name="SubtitleCueListBox" ItemsSource="{Binding SubtitleCues}" SelectedItem="{Binding SelectedSubtitleCue}" Margin="0" Padding="0"
-                                     Height="{Binding SubtitleListHeight}" MinHeight="0" VerticalAlignment="Top"
+                            <ListBox Name="SubtitleCueListBox" ItemsSource="{Binding FileLibrary.SubtitleCues}" SelectedItem="{Binding FileLibrary.SelectedSubtitleCue}" Margin="0" Padding="0"
+                                     Height="{Binding FileLibrary.SubtitleListHeight}" MinHeight="0" VerticalAlignment="Top"
                                      ScrollViewer.VerticalScrollBarVisibility="Auto"
                                      DoubleTapped="SubtitleCueListBox_DoubleTapped">
                                 <ListBox.ItemTemplate>
@@ -602,14 +602,14 @@
                         <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                             <TextBlock Text="复盘洞察" FontWeight="Bold"/>
                             <Ellipse Width="10" Height="10" StrokeThickness="2"
-                                     Fill="{Binding ReviewSummaryLampFill}"
-                                     Stroke="{Binding ReviewSummaryLampStroke}"
+                                     Fill="{Binding BatchProcessing.ReviewSummaryLampFill}"
+                                     Stroke="{Binding BatchProcessing.ReviewSummaryLampStroke}"
                                      Opacity="{Binding ConfigVM.ReviewSummaryLampOpacity}"
                                      VerticalAlignment="Center"/>
                         </StackPanel>
                         <Border Grid.Row="1" BorderBrush="#FFE5E7EB" BorderThickness="1" CornerRadius="4" Margin="0,8,0,8">
-                            <TabControl ItemsSource="{Binding ReviewSheets}"
-                                        SelectedItem="{Binding SelectedReviewSheet, Mode=TwoWay}">
+                            <TabControl ItemsSource="{Binding BatchProcessing.ReviewSheets}"
+                                        SelectedItem="{Binding BatchProcessing.SelectedReviewSheet, Mode=TwoWay}">
                                 <TabControl.ItemTemplate>
                                     <DataTemplate x:CompileBindings="False">
                                         <TextBlock Text="{Binding Name}"/>
@@ -621,7 +621,7 @@
                                             <ScrollViewer IsVisible="{Binding !IsEmpty}">
                                                 <md:MarkdownScrollViewer Markdown="{Binding Markdown}">
                                                     <md:MarkdownScrollViewer.Engine>
-                                                        <md:Markdown HyperlinkCommand="{Binding $parent[TabControl].DataContext.ReviewMarkdownLinkCommand}" />
+                                                        <md:Markdown HyperlinkCommand="{Binding $parent[TabControl].DataContext.BatchProcessing.ReviewMarkdownLinkCommand}" />
                                                     </md:MarkdownScrollViewer.Engine>
                                                 </md:MarkdownScrollViewer>
                                             </ScrollViewer>
@@ -635,12 +635,12 @@
                             </TabControl>
                         </Border>
                         <StackPanel Grid.Row="2" Orientation="Vertical" Spacing="6">
-                            <TextBlock Text="{Binding ReviewSummaryStatusMessage}" FontSize="11" Foreground="Gray"/>
+                            <TextBlock Text="{Binding BatchProcessing.ReviewSummaryStatusMessage}" FontSize="11" Foreground="Gray"/>
                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="6">
                                 <Button Content="生成内容" Padding="8,4"
-                                        Command="{Binding GenerateReviewSummaryCommand}"/>
+                                        Command="{Binding BatchProcessing.GenerateReviewSummaryCommand}"/>
                                 <Button Content="生成全部" Padding="8,4"
-                                    Command="{Binding GenerateAllReviewSheetsCommand}"/>
+                                    Command="{Binding BatchProcessing.GenerateAllReviewSheetsCommand}"/>
                             </StackPanel>
                         </StackPanel>
                     </Grid>

@@ -4,6 +4,7 @@ using System;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using TrueFluentPro.Services;
 
 namespace TrueFluentPro.ViewModels
 {
@@ -66,7 +67,7 @@ namespace TrueFluentPro.ViewModels
             }
             catch (Exception ex)
             {
-                AppendBatchDebugLog("PostShowInitFailed", $"action='{actionName}' error='{ex.Message}'", isSuccess: false);
+                AppLogService.Instance.LogAudit("PostShowInitFailed", $"action='{actionName}' error='{ex.Message}'", isSuccess: false);
             }
         }
 

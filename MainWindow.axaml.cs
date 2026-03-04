@@ -98,7 +98,7 @@ public partial class MainWindow : Window
 
         if (e.Source is not Control control)
         {
-            _viewModel?.AuditUiEvent("AudioFileRightClick", "source-control-missing");
+            _viewModel?.BatchProcessing.AuditUiEvent("AudioFileRightClick", "source-control-missing");
             return;
         }
 
@@ -106,7 +106,7 @@ public partial class MainWindow : Window
         if (item?.DataContext is not MediaFileItem mediaItem)
         {
             var sourceType = control.GetType().Name;
-            _viewModel?.AuditUiEvent("AudioFileRightClick", $"no-media-item source={sourceType}");
+            _viewModel?.BatchProcessing.AuditUiEvent("AudioFileRightClick", $"no-media-item source={sourceType}");
             return;
         }
 
@@ -120,7 +120,7 @@ public partial class MainWindow : Window
         var after = listBox.SelectedItem is MediaFileItem afterItem
             ? afterItem.FullPath
             : "";
-        _viewModel?.AuditUiEvent(
+        _viewModel?.BatchProcessing.AuditUiEvent(
             "AudioFileRightClick",
             $"selected-before={before} selected-after={after} item={mediaItem.FullPath}");
     }
@@ -129,18 +129,18 @@ public partial class MainWindow : Window
     {
         if (sender is not MenuItem menuItem)
         {
-            _viewModel?.AuditUiEvent("AudioFileEnqueue", "sender-not-menuitem");
+            _viewModel?.BatchProcessing.AuditUiEvent("AudioFileEnqueue", "sender-not-menuitem");
             return;
         }
 
         if (menuItem.DataContext is not MediaFileItem mediaItem)
         {
-            _viewModel?.AuditUiEvent("AudioFileEnqueue", "menuitem-datacontext-missing");
+            _viewModel?.BatchProcessing.AuditUiEvent("AudioFileEnqueue", "menuitem-datacontext-missing");
             return;
         }
 
-        _viewModel?.AuditUiEvent("AudioFileEnqueue", $"click item={mediaItem.FullPath}");
-        _viewModel?.EnqueueSubtitleAndReviewFromLibraryUi(mediaItem);
+        _viewModel?.BatchProcessing.AuditUiEvent("AudioFileEnqueue", $"click item={mediaItem.FullPath}");
+        _viewModel?.BatchProcessing.EnqueueSubtitleAndReviewFromLibraryUi(mediaItem);
     }
 }
 

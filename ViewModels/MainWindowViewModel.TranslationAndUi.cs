@@ -375,9 +375,8 @@ namespace TrueFluentPro.ViewModels
                 }
 
                 AiInsight.UpdateConfig();
-                RebuildReviewSheets();
-                ((RelayCommand)GenerateAllReviewSheetsCommand).RaiseCanExecuteChanged();
-                ((RelayCommand)StartBatchCommand).RaiseCanExecuteChanged();
+                BatchProcessing.RebuildReviewSheets();
+                BatchProcessing.RefreshCommandStates();
                 ((RelayCommand)StartTranslationCommand).RaiseCanExecuteChanged();
             }
         }
@@ -643,7 +642,7 @@ namespace TrueFluentPro.ViewModels
                     ? "录制流"
                     : "音频流";
 
-            AppendBatchDebugLog(eventName, message);
+            AppLogService.Instance.LogAudit(eventName, message);
         }
     }
 }
