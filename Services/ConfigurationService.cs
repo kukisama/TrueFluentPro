@@ -81,6 +81,7 @@ namespace TrueFluentPro.Services
             var endpoints = new List<AiEndpoint>();
 
             // --- 迁移 AiConfig（文字对话终结点）---
+            // 旧字段：ApiEndpoint, ApiKey, ModelName, SummaryModelName, QuickModelName 等
             var ai = config.AiConfig;
             if (ai != null && !string.IsNullOrWhiteSpace(ai.ApiEndpoint))
             {
@@ -134,8 +135,9 @@ namespace TrueFluentPro.Services
             }
 
             // --- 迁移 MediaGenConfig（图片终结点）---
+            // 旧字段：ImageApiEndpoint, ImageApiKey, ImageProviderType, VideoApiEndpoint 等
             var media = config.MediaGenConfig;
-            if (!string.IsNullOrWhiteSpace(media.ImageApiEndpoint))
+            if (media != null && !string.IsNullOrWhiteSpace(media.ImageApiEndpoint))
             {
                 // 检查是否与已有终结点 URL 相同，可合并
                 var existing = endpoints.FirstOrDefault(e =>
@@ -187,59 +189,62 @@ namespace TrueFluentPro.Services
             }
 
             // --- 迁移 MediaGenConfig（视频终结点）---
-            var videoUrl = media.VideoUseImageEndpoint ? media.ImageApiEndpoint : media.VideoApiEndpoint;
-            if (!string.IsNullOrWhiteSpace(videoUrl))
+            if (media != null)
             {
-                var existing = endpoints.FirstOrDefault(e =>
-                    string.Equals(e.BaseUrl, videoUrl, StringComparison.OrdinalIgnoreCase));
-
-                if (existing != null)
+                var videoUrl = media.VideoUseImageEndpoint ? media.ImageApiEndpoint : media.VideoApiEndpoint;
+                if (!string.IsNullOrWhiteSpace(videoUrl))
                 {
-                    if (!string.IsNullOrWhiteSpace(media.VideoModel) &&
-                        !existing.Models.Any(m => m.ModelId == media.VideoModel))
+                    var existing = endpoints.FirstOrDefault(e =>
+                        string.Equals(e.BaseUrl, videoUrl, StringComparison.OrdinalIgnoreCase));
+
+                    if (existing != null)
                     {
-                        existing.Models.Add(new AiModelEntry
+                        if (!string.IsNullOrWhiteSpace(media.VideoModel) &&
+                            !existing.Models.Any(m => m.ModelId == media.VideoModel))
                         {
-                            ModelId = media.VideoModel,
-                            DisplayName = media.VideoModel,
-                            Capabilities = ModelCapability.Video
-                        });
+                            existing.Models.Add(new AiModelEntry
+                            {
+                                ModelId = media.VideoModel,
+                                DisplayName = media.VideoModel,
+                                Capabilities = ModelCapability.Video
+                            });
+                        }
+                        media.VideoModelRef = new ModelReference { EndpointId = existing.Id, ModelId = media.VideoModel };
                     }
-                    media.VideoModelRef = new ModelReference { EndpointId = existing.Id, ModelId = media.VideoModel };
-                }
-                else
-                {
-                    var videoKey = media.VideoUseImageEndpoint ? media.ImageApiKey : media.VideoApiKey;
-                    var videoProvider = media.VideoUseImageEndpoint ? media.ImageProviderType : media.VideoProviderType;
-                    var videoAuth = media.VideoUseImageEndpoint ? media.ImageAzureAuthMode : media.VideoAzureAuthMode;
-                    var videoTenant = media.VideoUseImageEndpoint ? media.ImageAzureTenantId : media.VideoAzureTenantId;
-                    var videoClient = media.VideoUseImageEndpoint ? media.ImageAzureClientId : media.VideoAzureClientId;
-
-                    var ep = new AiEndpoint
+                    else
                     {
-                        Id = Guid.NewGuid().ToString(),
-                        Name = "默认视频",
-                        IsEnabled = true,
-                        ProviderType = videoProvider,
-                        BaseUrl = videoUrl,
-                        ApiKey = videoKey,
-                        AuthMode = videoAuth,
-                        AzureTenantId = videoTenant,
-                        AzureClientId = videoClient,
-                    };
+                        var videoKey = media.VideoUseImageEndpoint ? media.ImageApiKey : media.VideoApiKey;
+                        var videoProvider = media.VideoUseImageEndpoint ? media.ImageProviderType : media.VideoProviderType;
+                        var videoAuth = media.VideoUseImageEndpoint ? media.ImageAzureAuthMode : media.VideoAzureAuthMode;
+                        var videoTenant = media.VideoUseImageEndpoint ? media.ImageAzureTenantId : media.VideoAzureTenantId;
+                        var videoClient = media.VideoUseImageEndpoint ? media.ImageAzureClientId : media.VideoAzureClientId;
 
-                    if (!string.IsNullOrWhiteSpace(media.VideoModel))
-                    {
-                        ep.Models.Add(new AiModelEntry
+                        var ep = new AiEndpoint
                         {
-                            ModelId = media.VideoModel,
-                            DisplayName = media.VideoModel,
-                            Capabilities = ModelCapability.Video
-                        });
-                    }
+                            Id = Guid.NewGuid().ToString(),
+                            Name = "默认视频",
+                            IsEnabled = true,
+                            ProviderType = videoProvider,
+                            BaseUrl = videoUrl,
+                            ApiKey = videoKey,
+                            AuthMode = videoAuth,
+                            AzureTenantId = videoTenant,
+                            AzureClientId = videoClient,
+                        };
 
-                    endpoints.Add(ep);
-                    media.VideoModelRef = new ModelReference { EndpointId = ep.Id, ModelId = media.VideoModel };
+                        if (!string.IsNullOrWhiteSpace(media.VideoModel))
+                        {
+                            ep.Models.Add(new AiModelEntry
+                            {
+                                ModelId = media.VideoModel,
+                                DisplayName = media.VideoModel,
+                                Capabilities = ModelCapability.Video
+                            });
+                        }
+
+                        endpoints.Add(ep);
+                        media.VideoModelRef = new ModelReference { EndpointId = ep.Id, ModelId = media.VideoModel };
+                    }
                 }
             }
 

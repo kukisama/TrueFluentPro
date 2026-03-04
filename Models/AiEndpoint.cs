@@ -15,7 +15,7 @@ namespace TrueFluentPro.Models
     /// <summary>一个 AI 终结点（Provider 实例）</summary>
     public class AiEndpoint
     {
-        public string Id { get; set; } = Guid.NewGuid().ToString();
+        public string Id { get; set; } = "";
         public string Name { get; set; } = "";
         public bool IsEnabled { get; set; } = true;
 

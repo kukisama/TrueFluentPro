@@ -35,8 +35,12 @@ public partial class SettingsView : UserControl
         if (_suppressScrollSync) return;
         if (e.AddedItems.Count == 0) return;
 
-        var item = e.AddedItems[0] as ListBoxItem;
-        var tag = item?.Tag as string;
+        string? tag = null;
+        if (e.AddedItems[0] is ListBoxItem lbi)
+            tag = lbi.Tag as string;
+        else if (e.AddedItems[0] is { } item && NavListBox.ContainerFromItem(item) is ListBoxItem container)
+            tag = container.Tag as string;
+
         if (string.IsNullOrEmpty(tag)) return;
 
         var target = _sectionBorders?.FirstOrDefault(b => b.Name == tag);
@@ -48,9 +52,9 @@ public partial class SettingsView : UserControl
     {
         if (_sectionBorders == null || _sectionBorders.Length == 0) return;
 
-        // 找到当前可见区域中最靠上的分区
+        // 找到当前可见区域中最靠上的、且未完全滚出视口的分区
         Border? topVisible = null;
-        double bestY = double.MaxValue;
+        double bestY = double.NegativeInfinity;
 
         foreach (var section in _sectionBorders)
         {
@@ -58,12 +62,27 @@ public partial class SettingsView : UserControl
             if (transform == null) continue;
 
             var pos = transform.Value.Transform(new Point(0, 0));
-            // 选择 Y 坐标最接近顶部（但尚在可见区域内或刚过顶部）的分区
-            if (pos.Y <= 40 && pos.Y > bestY) continue;
-            if (pos.Y <= 40 || (topVisible == null && pos.Y < bestY))
+            // 选择 Y <= 40（已滚过或刚到顶部）中 Y 值最大（最接近可视顶部）的分区
+            if (pos.Y <= 40 && pos.Y > bestY)
             {
                 topVisible = section;
                 bestY = pos.Y;
+            }
+        }
+
+        // 若没有分区在顶部以上，选第一个可见分区
+        if (topVisible == null)
+        {
+            foreach (var section in _sectionBorders)
+            {
+                var transform = section.TransformToVisual(SettingsScroller);
+                if (transform == null) continue;
+                var pos = transform.Value.Transform(new Point(0, 0));
+                if (pos.Y >= 0)
+                {
+                    topVisible = section;
+                    break;
+                }
             }
         }
 
