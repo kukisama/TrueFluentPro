@@ -183,10 +183,6 @@ namespace TrueFluentPro.ViewModels
             }
         }
 
-        public double ReviewSummaryLampOpacity => IsReviewSummaryLoading
-            ? (_reviewLampBlinkOn ? 1.0 : 0.35)
-            : 1.0;
-
         public double SubtitleListHeight
         {
             get => _subtitleListHeight;
@@ -282,7 +278,7 @@ namespace TrueFluentPro.ViewModels
                 OnPropertyChanged(nameof(IsReviewSummaryEmpty));
                 OnPropertyChanged(nameof(ReviewSummaryLampFill));
                 OnPropertyChanged(nameof(ReviewSummaryLampStroke));
-                OnPropertyChanged(nameof(ReviewSummaryLampOpacity));
+                ConfigVM.NotifyReviewLampChanged();
 
                 if (_selectedReviewSheet != null)
                 {
@@ -1398,7 +1394,7 @@ namespace TrueFluentPro.ViewModels
             OnPropertyChanged(nameof(IsReviewSummaryEmpty));
             OnPropertyChanged(nameof(ReviewSummaryLampFill));
             OnPropertyChanged(nameof(ReviewSummaryLampStroke));
-            OnPropertyChanged(nameof(ReviewSummaryLampOpacity));
+            ConfigVM.NotifyReviewLampChanged();
             if (GenerateReviewSummaryCommand is RelayCommand genCmd)
             {
                 genCmd.RaiseCanExecuteChanged();

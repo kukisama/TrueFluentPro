@@ -7,11 +7,85 @@ using Avalonia.Controls;
 using Avalonia.Media;
 using Avalonia.Threading;
 using TrueFluentPro.Models;
+using TrueFluentPro.Services;
 
 namespace TrueFluentPro.ViewModels
 {
-    public partial class MainWindowViewModel
+    public class ConfigViewModel : ViewModelBase
     {
+        private readonly ConfigurationService _configService;
+        private readonly AzureSubscriptionValidator _subscriptionValidator;
+        private readonly Action _translationCommandsRefresh;
+        private readonly Action<AzureSpeechConfig>? _translationServiceUpdater;
+        private readonly Action<string, string, bool> _logger;
+        private readonly Func<bool> _isReviewSummaryLoadingProvider;
+        private readonly Func<Window?> _mainWindowProvider;
+
+        private AzureSpeechConfig _config;
+        private ObservableCollection<string> _subscriptionNames;
+        private int _activeSubscriptionIndex;
+        private SubscriptionValidationState _subscriptionValidationState = SubscriptionValidationState.Unknown;
+        private string _subscriptionValidationStatusMessage = "";
+        private CancellationTokenSource? _subscriptionValidationCts;
+        private int _subscriptionValidationVersion;
+        private bool _subscriptionLampBlinkOn = true;
+        private readonly DispatcherTimer _subscriptionLampTimer;
+        private bool _reviewLampBlinkOn = true;
+        private string _sourceLanguage = "auto";
+        private string _targetLanguage = "zh-CN";
+        private readonly string[] _sourceLanguages = { "auto", "en", "zh-CN", "ja-JP", "ko-KR", "fr-FR", "de-DE", "es-ES" };
+        private readonly string[] _targetLanguages = { "en", "zh-CN", "ja-JP", "ko-KR", "fr-FR", "de-DE", "es-ES" };
+        private bool _isConfigurationEnabled = true;
+
+        public event Action<AzureSpeechConfig>? ConfigLoaded;
+        public event Action<AzureSpeechConfig>? ConfigUpdatedFromExternal;
+
+        public ConfigViewModel(
+            ConfigurationService configService,
+            AzureSubscriptionValidator subscriptionValidator,
+            AzureSpeechConfig initialConfig,
+            Action translationCommandsRefresh,
+            Action<AzureSpeechConfig>? translationServiceUpdater,
+            Action<string, string, bool> logger,
+            Func<bool> isReviewSummaryLoadingProvider,
+            Func<Window?> mainWindowProvider)
+        {
+            _configService = configService;
+            _subscriptionValidator = subscriptionValidator;
+            _config = initialConfig;
+            _translationCommandsRefresh = translationCommandsRefresh;
+            _translationServiceUpdater = translationServiceUpdater;
+            _logger = logger;
+            _isReviewSummaryLoadingProvider = isReviewSummaryLoadingProvider;
+            _mainWindowProvider = mainWindowProvider;
+            _subscriptionNames = new ObservableCollection<string>();
+
+            _subscriptionLampTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(500), DispatcherPriority.Background, (_, _) =>
+            {
+                if (_subscriptionValidationState == SubscriptionValidationState.Validating)
+                {
+                    _subscriptionLampBlinkOn = !_subscriptionLampBlinkOn;
+                    OnPropertyChanged(nameof(SubscriptionLampOpacity));
+                }
+                if (_isReviewSummaryLoadingProvider())
+                {
+                    _reviewLampBlinkOn = !_reviewLampBlinkOn;
+                    OnPropertyChanged(nameof(ReviewSummaryLampOpacity));
+                }
+                else if (ReviewSummaryLampOpacity != 1)
+                {
+                    _reviewLampBlinkOn = true;
+                    OnPropertyChanged(nameof(ReviewSummaryLampOpacity));
+                }
+                else if (SubscriptionLampOpacity != 1)
+                {
+                    _subscriptionLampBlinkOn = true;
+                    OnPropertyChanged(nameof(SubscriptionLampOpacity));
+                }
+            });
+            _subscriptionLampTimer.Start();
+        }
+
         public AzureSpeechConfig Config
         {
             get => _config;
@@ -35,16 +109,9 @@ namespace TrueFluentPro.ViewModels
                     {
                         _config.ActiveSubscriptionIndex = value;
                         OnPropertyChanged(nameof(ActiveSubscriptionStatus));
-                        ((RelayCommand)StartTranslationCommand).RaiseCanExecuteChanged();
-                        ((RelayCommand)ToggleTranslationCommand).RaiseCanExecuteChanged();
-
-                        if (_translationService != null)
-                        {
-                            _ = _translationService.UpdateConfigAsync(_config);
-                        }
-
+                        _translationCommandsRefresh();
+                        _translationServiceUpdater?.Invoke(_config);
                         TriggerSubscriptionValidation();
-
                         _ = Task.Run(async () => await _configService.SaveConfigAsync(_config));
                     }
                 }
@@ -54,7 +121,7 @@ namespace TrueFluentPro.ViewModels
                     {
                         _config.ActiveSubscriptionIndex = value;
                         OnPropertyChanged(nameof(ActiveSubscriptionStatus));
-                        ((RelayCommand)StartTranslationCommand).RaiseCanExecuteChanged();
+                        _translationCommandsRefresh();
                         TriggerSubscriptionValidation();
                         _ = Task.Run(async () => await _configService.SaveConfigAsync(_config));
                     }
@@ -131,14 +198,8 @@ namespace TrueFluentPro.ViewModels
                 {
                     _config.SourceLanguage = value;
                     OnPropertyChanged(nameof(SourceLanguageIndex));
-                    ((RelayCommand)StartTranslationCommand).RaiseCanExecuteChanged();
-                    ((RelayCommand)ToggleTranslationCommand).RaiseCanExecuteChanged();
-
-                    if (_translationService != null)
-                    {
-                        _ = _translationService.UpdateConfigAsync(_config);
-                    }
-
+                    _translationCommandsRefresh();
+                    _translationServiceUpdater?.Invoke(_config);
                     _ = Task.Run(async () => await _configService.SaveConfigAsync(_config));
                 }
             }
@@ -153,14 +214,8 @@ namespace TrueFluentPro.ViewModels
                 {
                     _config.TargetLanguage = value;
                     OnPropertyChanged(nameof(TargetLanguageIndex));
-                    ((RelayCommand)StartTranslationCommand).RaiseCanExecuteChanged();
-                    ((RelayCommand)ToggleTranslationCommand).RaiseCanExecuteChanged();
-
-                    if (_translationService != null)
-                    {
-                        _ = _translationService.UpdateConfigAsync(_config);
-                    }
-
+                    _translationCommandsRefresh();
+                    _translationServiceUpdater?.Invoke(_config);
                     _ = Task.Run(async () => await _configService.SaveConfigAsync(_config));
                 }
             }
@@ -223,92 +278,90 @@ namespace TrueFluentPro.ViewModels
             }
         }
 
-        private async Task LoadConfigAsync()
+        public double ReviewSummaryLampOpacity => _isReviewSummaryLoadingProvider()
+            ? (_reviewLampBlinkOn ? 1.0 : 0.35)
+            : 1.0;
+
+        public void NotifyReviewLampChanged()
         {
-            try
-            {
-                _config = await _configService.LoadConfigAsync();
-
-                await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
-                {
-                    UpdateSubscriptionNames();
-
-                    if (_config.Subscriptions.Count > 0 && _config.ActiveSubscriptionIndex >= _config.Subscriptions.Count)
-                    {
-                        _config.ActiveSubscriptionIndex = _config.Subscriptions.Count - 1;
-                    }
-                    else if (_config.Subscriptions.Count == 0 && _config.ActiveSubscriptionIndex != -1)
-                    {
-                        _config.ActiveSubscriptionIndex = -1;
-                    }
-
-                    _sourceLanguage = _config.SourceLanguage;
-                    _targetLanguage = _config.TargetLanguage;
-
-                    _activeSubscriptionIndex = _config.ActiveSubscriptionIndex;
-
-                    AudioDevices.UpdateConfig();
-
-                    OnPropertyChanged(nameof(Config));
-                    OnPropertyChanged(nameof(SubscriptionNames));
-                    OnPropertyChanged(nameof(SourceLanguage));
-                    OnPropertyChanged(nameof(TargetLanguage));
-                    OnPropertyChanged(nameof(SourceLanguageIndex));
-                    OnPropertyChanged(nameof(TargetLanguageIndex));
-                    OnPropertyChanged(nameof(ActiveSubscriptionStatus));
-
-                    ForceUpdateComboBoxSelection();
-
-                    ((RelayCommand)StartTranslationCommand).RaiseCanExecuteChanged();
-                    ((RelayCommand)ToggleTranslationCommand).RaiseCanExecuteChanged();
-
-                    // Apply default font size from config
-                    Controls.AdvancedRichTextBox.DefaultFontSizeValue = _config.DefaultFontSize;
-
-                    NormalizeSpeechSubtitleOption();
-                    OnPropertyChanged(nameof(IsSpeechSubtitleOptionEnabled));
-                    OnPropertyChanged(nameof(UseSpeechSubtitleForReview));
-                    OnPropertyChanged(nameof(SpeechSubtitleOptionStatusText));
-                    OnPropertyChanged(nameof(BatchStartButtonText));
-                    RebuildReviewSheets();
-                    AiInsight.UpdateConfig();
-                    if (GenerateSpeechSubtitleCommand is RelayCommand speechCmd)
-                    {
-                        speechCmd.RaiseCanExecuteChanged();
-                    }
-                    if (GenerateBatchSpeechSubtitleCommand is RelayCommand batchCmd)
-                    {
-                        batchCmd.RaiseCanExecuteChanged();
-                    }
-
-                    StatusMessage = $"配置已加载，文件位置: {_configService.GetConfigFilePath()}";
-                });
-
-                MarkConfigLoaded();
-            }
-            catch (Exception ex)
-            {
-                await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
-                {
-                    StatusMessage = $"加载配置失败: {ex.Message}";
-                });
-
-                MarkConfigLoaded();
-            }
+            OnPropertyChanged(nameof(ReviewSummaryLampOpacity));
         }
 
-        private void UpdateSubscriptionNames()
+        public async Task LoadConfigAsync()
         {
-            _subscriptionNames.Clear();
+            _config = await _configService.LoadConfigAsync();
 
-            foreach (var subscription in _config.Subscriptions)
+            await Dispatcher.UIThread.InvokeAsync(() =>
             {
-                var displayName = $"{subscription.Name} ({subscription.ServiceRegion})";
-                _subscriptionNames.Add(displayName);
-            }
+                UpdateSubscriptionNames();
+
+                if (_config.Subscriptions.Count > 0 && _config.ActiveSubscriptionIndex >= _config.Subscriptions.Count)
+                {
+                    _config.ActiveSubscriptionIndex = _config.Subscriptions.Count - 1;
+                }
+                else if (_config.Subscriptions.Count == 0 && _config.ActiveSubscriptionIndex != -1)
+                {
+                    _config.ActiveSubscriptionIndex = -1;
+                }
+
+                _sourceLanguage = _config.SourceLanguage;
+                _targetLanguage = _config.TargetLanguage;
+                _activeSubscriptionIndex = _config.ActiveSubscriptionIndex;
+
+                OnPropertyChanged(nameof(Config));
+                OnPropertyChanged(nameof(SubscriptionNames));
+                OnPropertyChanged(nameof(SourceLanguage));
+                OnPropertyChanged(nameof(TargetLanguage));
+                OnPropertyChanged(nameof(SourceLanguageIndex));
+                OnPropertyChanged(nameof(TargetLanguageIndex));
+                OnPropertyChanged(nameof(ActiveSubscriptionStatus));
+
+                ForceUpdateComboBoxSelection();
+                _translationCommandsRefresh();
+
+                ConfigLoaded?.Invoke(_config);
+            });
         }
 
-        private void TriggerSubscriptionValidation()
+        public void HandleExternalConfigUpdate(AzureSpeechConfig updatedConfig)
+        {
+            _config = updatedConfig;
+
+            UpdateSubscriptionNames();
+
+            if (_config.Subscriptions.Count > 0 && _config.ActiveSubscriptionIndex >= _config.Subscriptions.Count)
+            {
+                _config.ActiveSubscriptionIndex = _config.Subscriptions.Count - 1;
+            }
+            else if (_config.Subscriptions.Count == 0 && _config.ActiveSubscriptionIndex != -1)
+            {
+                _config.ActiveSubscriptionIndex = -1;
+            }
+
+            _activeSubscriptionIndex = _config.ActiveSubscriptionIndex;
+
+            OnPropertyChanged(nameof(SubscriptionNames));
+            OnPropertyChanged(nameof(ActiveSubscriptionStatus));
+
+            ForceUpdateComboBoxSelection();
+            _translationCommandsRefresh();
+            TriggerSubscriptionValidation();
+
+            ConfigUpdatedFromExternal?.Invoke(_config);
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await _configService.SaveConfigAsync(_config);
+                }
+                catch
+                {
+                }
+            });
+        }
+
+        public void TriggerSubscriptionValidation()
         {
             var subscription = _config.GetActiveSubscription();
             if (subscription == null || !subscription.IsValid())
@@ -349,7 +402,18 @@ namespace TrueFluentPro.ViewModels
             });
         }
 
-        private void QueueConfigSave(string reason)
+        public void UpdateSubscriptionNames()
+        {
+            _subscriptionNames.Clear();
+
+            foreach (var subscription in _config.Subscriptions)
+            {
+                var displayName = $"{subscription.Name} ({subscription.ServiceRegion})";
+                _subscriptionNames.Add(displayName);
+            }
+        }
+
+        public void QueueConfigSave(string reason)
         {
             var configPath = _configService.GetConfigFilePath();
             _ = Task.Run(async () =>
@@ -357,87 +421,35 @@ namespace TrueFluentPro.ViewModels
                 try
                 {
                     await _configService.SaveConfigAsync(_config).ConfigureAwait(false);
-                    AppendBatchDebugLog("ConfigSaved", $"reason='{reason}' path='{configPath}'");
+                    _logger("ConfigSaved", $"reason='{reason}' path='{configPath}'", true);
                 }
                 catch (Exception ex)
                 {
-                    AppendBatchDebugLog("ConfigSaveFailed",
-                        $"reason='{reason}' path='{configPath}' error='{ex.Message}'", isSuccess: false);
+                    _logger("ConfigSaveFailed",
+                        $"reason='{reason}' path='{configPath}' error='{ex.Message}'", false);
                 }
             });
         }
 
-        private void OnConfigurationUpdated(object? sender, AzureSpeechConfig updatedConfig)
+        public void SetConfig(AzureSpeechConfig config)
         {
-            _config = updatedConfig;
-
-            UpdateSubscriptionNames();
-
-            if (_config.Subscriptions.Count > 0 && _config.ActiveSubscriptionIndex >= _config.Subscriptions.Count)
-            {
-                _config.ActiveSubscriptionIndex = _config.Subscriptions.Count - 1;
-            }
-            else if (_config.Subscriptions.Count == 0 && _config.ActiveSubscriptionIndex != -1)
-            {
-                _config.ActiveSubscriptionIndex = -1;
-            }
-
-            _activeSubscriptionIndex = _config.ActiveSubscriptionIndex;
-
-            AudioDevices.UpdateConfig();
-
-            OnPropertyChanged(nameof(SubscriptionNames));
-            OnPropertyChanged(nameof(ActiveSubscriptionStatus));
-            NormalizeSpeechSubtitleOption();
-            OnPropertyChanged(nameof(IsSpeechSubtitleOptionEnabled));
-            OnPropertyChanged(nameof(UseSpeechSubtitleForReview));
-            OnPropertyChanged(nameof(SpeechSubtitleOptionStatusText));
-            OnPropertyChanged(nameof(BatchStartButtonText));
-            RebuildReviewSheets();
-
-            ForceUpdateComboBoxSelection();
-            ((RelayCommand)StartTranslationCommand).RaiseCanExecuteChanged();
-            AiInsight.UpdateConfig();
-            ((RelayCommand)GenerateReviewSummaryCommand).RaiseCanExecuteChanged();
-            ((RelayCommand)GenerateAllReviewSheetsCommand).RaiseCanExecuteChanged();
-            ((RelayCommand)StartBatchCommand).RaiseCanExecuteChanged();
-            if (GenerateSpeechSubtitleCommand is RelayCommand speechCmd)
-            {
-                speechCmd.RaiseCanExecuteChanged();
-            }
-            if (GenerateBatchSpeechSubtitleCommand is RelayCommand batchCmd)
-            {
-                batchCmd.RaiseCanExecuteChanged();
-            }
-
-            TriggerSubscriptionValidation();
-
-            // AAD 模式下尝试静默登录（不弹窗）
-            _ = AiInsight.TrySilentLoginForAiAsync();
-
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    await _configService.SaveConfigAsync(_config);
-                }
-                catch
-                {
-
-                }
-            });
+            _config = config;
+            OnPropertyChanged(nameof(Config));
         }
 
         public void ForceUpdateComboBoxSelection()
         {
-            if (_mainWindow == null) return;
+            var mainWindow = _mainWindowProvider();
+            if (mainWindow == null) return;
 
-            var comboBox = _mainWindow.FindControl<ComboBox>("SubscriptionComboBox");
+            var comboBox = mainWindow.FindControl<ComboBox>("SubscriptionComboBox");
             if (comboBox != null && _activeSubscriptionIndex >= 0 && _activeSubscriptionIndex < _subscriptionNames.Count)
             {
                 comboBox.SelectedIndex = -1;
                 comboBox.SelectedIndex = _activeSubscriptionIndex;
             }
         }
+
+        public string GetConfigFilePath() => _configService.GetConfigFilePath();
     }
 }

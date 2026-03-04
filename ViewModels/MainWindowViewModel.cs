@@ -41,11 +41,6 @@ namespace TrueFluentPro.ViewModels
         private SpeechTranslationService? _translationService;
         private Window? _mainWindow;
         private ConfigurationService _configService;
-        private ObservableCollection<string> _subscriptionNames;
-        private int _activeSubscriptionIndex;
-        private string _sourceLanguage = "auto";
-        private string _targetLanguage = "zh-CN";
-        private bool _isConfigurationEnabled = true;
         private TextEditorType _editorType = TextEditorType.Advanced;
         private EditorDisplayMode _editorDisplayMode = EditorDisplayMode.Translated;
 
@@ -55,6 +50,7 @@ namespace TrueFluentPro.ViewModels
         private bool IsAiConfigured => _config.AiConfig?.IsValid == true;
 
         public AudioDevicesViewModel AudioDevices { get; }
+        public ConfigViewModel ConfigVM { get; }
 
         private readonly ObservableCollection<MediaFileItem> _audioFiles;
         private readonly ObservableCollection<MediaFileItem> _subtitleFiles;
@@ -76,15 +72,6 @@ namespace TrueFluentPro.ViewModels
 
         private bool _isFloatingSubtitleOpen;
 
-        private readonly AzureSubscriptionValidator _subscriptionValidator;
-        private SubscriptionValidationState _subscriptionValidationState = SubscriptionValidationState.Unknown;
-        private string _subscriptionValidationStatusMessage = "";
-        private CancellationTokenSource? _subscriptionValidationCts;
-        private int _subscriptionValidationVersion;
-        private bool _subscriptionLampBlinkOn = true;
-        private readonly DispatcherTimer _subscriptionLampTimer;
-        private bool _reviewLampBlinkOn = true;
-
         private FloatingSubtitleManager? _floatingSubtitleManager;
 
 
@@ -98,9 +85,6 @@ namespace TrueFluentPro.ViewModels
         private readonly ObservableCollection<ReviewSheetState> _reviewSheets = new();
         private ReviewSheetState? _selectedReviewSheet;
 
-        private readonly string[] _sourceLanguages = { "auto", "en", "zh-CN", "ja-JP", "ko-KR", "fr-FR", "de-DE", "es-ES" };
-        private readonly string[] _targetLanguages = { "en", "zh-CN", "ja-JP", "ko-KR", "fr-FR", "de-DE", "es-ES" };
-
         private readonly List<(string Name, Func<Task> Action)> _postShowInitActions = new();
         private int _postShowInitStarted;
         private volatile bool _isMainWindowShown;
@@ -111,13 +95,11 @@ namespace TrueFluentPro.ViewModels
             AzureSubscriptionValidator subscriptionValidator)
         {
             _configService = configService;
-            _subscriptionValidator = subscriptionValidator;
             var azureTokenProvider = new AzureTokenProvider("ai");
             _aiInsightService = new AiInsightService(azureTokenProvider);
             _config = new AzureSpeechConfig();
             AppLogService.Initialize(() => _config.BatchLogLevel);
             _history = new ObservableCollection<TranslationItem>();
-            _subscriptionNames = new ObservableCollection<string>();
             _audioFiles = new ObservableCollection<MediaFileItem>();
             _subtitleFiles = new ObservableCollection<MediaFileItem>();
             _subtitleCues = new ObservableCollection<SubtitleCue>();
@@ -139,6 +121,23 @@ namespace TrueFluentPro.ViewModels
             };
             _batchQueueItems.CollectionChanged += (_, _) => UpdateBatchQueueStatusText();
 
+            ConfigVM = new ConfigViewModel(
+                configService,
+                subscriptionValidator,
+                _config,
+                () =>
+                {
+                    ((RelayCommand)StartTranslationCommand).RaiseCanExecuteChanged();
+                    ((RelayCommand)ToggleTranslationCommand).RaiseCanExecuteChanged();
+                },
+                cfg => _translationService?.UpdateConfigAsync(cfg),
+                (eventName, message, isSuccess) => AppendBatchDebugLog(eventName, message, isSuccess),
+                () => IsReviewSummaryLoading,
+                () => _mainWindow);
+
+            ConfigVM.ConfigLoaded += OnConfigVMConfigLoaded;
+            ConfigVM.ConfigUpdatedFromExternal += OnConfigVMConfigUpdatedFromExternal;
+
             Playback = new PlaybackViewModel(
                 msg => StatusMessage = msg,
                 () => _subtitleCues,
@@ -151,38 +150,13 @@ namespace TrueFluentPro.ViewModels
                 () => IsTranslating,
                 cfg => _translationService?.UpdateConfigAsync(cfg),
                 () => _translationService?.TryApplyLiveAudioRoutingFromCurrentConfig() ?? false,
-                reason => QueueConfigSave(reason),
+                reason => ConfigVM.QueueConfigSave(reason),
                 (eventName, message) => AppendBatchDebugLog(eventName, message),
                 () => _mainWindow);
 
-            _subscriptionLampTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(500), DispatcherPriority.Background, (_, _) =>
-            {
-                if (_subscriptionValidationState == SubscriptionValidationState.Validating)
-                {
-                    _subscriptionLampBlinkOn = !_subscriptionLampBlinkOn;
-                    OnPropertyChanged(nameof(SubscriptionLampOpacity));
-                }
-                if (IsReviewSummaryLoading)
-                {
-                    _reviewLampBlinkOn = !_reviewLampBlinkOn;
-                    OnPropertyChanged(nameof(ReviewSummaryLampOpacity));
-                }
-                else if (ReviewSummaryLampOpacity != 1)
-                {
-                    _reviewLampBlinkOn = true;
-                    OnPropertyChanged(nameof(ReviewSummaryLampOpacity));
-                }
-                else if (SubscriptionLampOpacity != 1)
-                {
-                    _subscriptionLampBlinkOn = true;
-                    OnPropertyChanged(nameof(SubscriptionLampOpacity));
-                }
-            });
-            _subscriptionLampTimer.Start();
-
             RegisterPostShowInitializationAction(
                 "SubscriptionValidation",
-                async () => await Dispatcher.UIThread.InvokeAsync(() => TriggerSubscriptionValidation()));
+                async () => await Dispatcher.UIThread.InvokeAsync(() => ConfigVM.TriggerSubscriptionValidation()));
             RegisterPostShowInitializationAction(
                 "AudioDevicesRefresh",
                 async () => await Dispatcher.UIThread.InvokeAsync(() => AudioDevices.RefreshAudioDevices(persistSelection: false)));
@@ -348,6 +322,87 @@ namespace TrueFluentPro.ViewModels
                 execute: _ => ShowMediaStudio(),
                 canExecute: _ => true
             );
+        }
+
+        private async Task LoadConfigAsync()
+        {
+            try
+            {
+                await ConfigVM.LoadConfigAsync();
+                _config = ConfigVM.Config;
+
+                MarkConfigLoaded();
+            }
+            catch (Exception ex)
+            {
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    StatusMessage = $"加载配置失败: {ex.Message}";
+                });
+
+                MarkConfigLoaded();
+            }
+        }
+
+        private void OnConfigVMConfigLoaded(AzureSpeechConfig config)
+        {
+            _config = config;
+
+            AudioDevices.UpdateConfig();
+
+            // Apply default font size from config
+            Controls.AdvancedRichTextBox.DefaultFontSizeValue = _config.DefaultFontSize;
+
+            NormalizeSpeechSubtitleOption();
+            OnPropertyChanged(nameof(IsSpeechSubtitleOptionEnabled));
+            OnPropertyChanged(nameof(UseSpeechSubtitleForReview));
+            OnPropertyChanged(nameof(SpeechSubtitleOptionStatusText));
+            OnPropertyChanged(nameof(BatchStartButtonText));
+            RebuildReviewSheets();
+            AiInsight.UpdateConfig();
+            if (GenerateSpeechSubtitleCommand is RelayCommand speechCmd)
+            {
+                speechCmd.RaiseCanExecuteChanged();
+            }
+            if (GenerateBatchSpeechSubtitleCommand is RelayCommand batchCmd)
+            {
+                batchCmd.RaiseCanExecuteChanged();
+            }
+
+            StatusMessage = $"配置已加载，文件位置: {ConfigVM.GetConfigFilePath()}";
+        }
+
+        private void OnConfigVMConfigUpdatedFromExternal(AzureSpeechConfig config)
+        {
+            _config = config;
+
+            AudioDevices.UpdateConfig();
+
+            NormalizeSpeechSubtitleOption();
+            OnPropertyChanged(nameof(IsSpeechSubtitleOptionEnabled));
+            OnPropertyChanged(nameof(UseSpeechSubtitleForReview));
+            OnPropertyChanged(nameof(SpeechSubtitleOptionStatusText));
+            OnPropertyChanged(nameof(BatchStartButtonText));
+            RebuildReviewSheets();
+            AiInsight.UpdateConfig();
+            ((RelayCommand)GenerateReviewSummaryCommand).RaiseCanExecuteChanged();
+            ((RelayCommand)GenerateAllReviewSheetsCommand).RaiseCanExecuteChanged();
+            ((RelayCommand)StartBatchCommand).RaiseCanExecuteChanged();
+            if (GenerateSpeechSubtitleCommand is RelayCommand speechCmd)
+            {
+                speechCmd.RaiseCanExecuteChanged();
+            }
+            if (GenerateBatchSpeechSubtitleCommand is RelayCommand batchCmd)
+            {
+                batchCmd.RaiseCanExecuteChanged();
+            }
+
+            _ = AiInsight.TrySilentLoginForAiAsync();
+        }
+
+        private void OnConfigurationUpdated(object? sender, AzureSpeechConfig updatedConfig)
+        {
+            ConfigVM.HandleExternalConfigUpdate(updatedConfig);
         }
     }
 }

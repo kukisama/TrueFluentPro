@@ -83,7 +83,7 @@
             <TextBlock Grid.Column="0" Text="译见 Pro" FontSize="18" FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,20,0"/>
                   <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="5">
                 <Button Content="配置中心" Command="{Binding ShowConfigCommand}" Padding="10,5" 
-                        IsEnabled="{Binding IsConfigurationEnabled}"/>
+                        IsEnabled="{Binding ConfigVM.IsConfigurationEnabled}"/>
             <Button Content="清空历史" Command="{Binding ClearHistoryCommand}" Padding="10,5"
                 IsVisible="{Binding IsLiveMode}"/>
             <Button Content="查看历史记录" Command="{Binding OpenHistoryFolderCommand}" Padding="10,5" 
@@ -155,17 +155,17 @@
             RowDefinitions="Auto,Auto" RowSpacing="6">
             <TextBlock Grid.Column="0" Text="订阅:" VerticalAlignment="Center" Margin="0,0,5,0"/>
             <ComboBox Grid.Column="1" Name="SubscriptionComboBox" MinWidth="150" 
-                      ItemsSource="{Binding SubscriptionNames}" 
-                      SelectedIndex="{Binding ActiveSubscriptionIndex, Mode=TwoWay}"
-                      IsEnabled="{Binding IsConfigurationEnabled}"
+                      ItemsSource="{Binding ConfigVM.SubscriptionNames}" 
+                      SelectedIndex="{Binding ConfigVM.ActiveSubscriptionIndex, Mode=TwoWay}"
+                      IsEnabled="{Binding ConfigVM.IsConfigurationEnabled}"
                       ToolTip.Tip="选择要使用的Azure订阅"/>
 
             <Ellipse Grid.Column="2" Width="12" Height="12" StrokeThickness="2"
                      VerticalAlignment="Center" Margin="8,0,12,0"
-                     Fill="{Binding SubscriptionLampFill}"
-                     Stroke="{Binding SubscriptionLampStroke}"
-                     Opacity="{Binding SubscriptionLampOpacity}"
-                     ToolTip.Tip="{Binding SubscriptionValidationStatusMessage}"/>
+                     Fill="{Binding ConfigVM.SubscriptionLampFill}"
+                     Stroke="{Binding ConfigVM.SubscriptionLampStroke}"
+                     Opacity="{Binding ConfigVM.SubscriptionLampOpacity}"
+                     ToolTip.Tip="{Binding ConfigVM.SubscriptionValidationStatusMessage}"/>
 
                     <TextBlock Grid.Column="3" Text="麦克风:" VerticalAlignment="Center" Margin="10,0,5,0"/>
                     <ComboBox Grid.Column="4" Name="InputDeviceComboBox" Width="220"
@@ -202,8 +202,8 @@
                             IsVisible="{Binding IsLiveMode}">
                     <TextBlock Text="源语言:" VerticalAlignment="Center"/>
                     <ComboBox Name="SourceLanguageComboBox" MinWidth="120"
-                          IsEnabled="{Binding IsConfigurationEnabled}"
-                          SelectedIndex="{Binding SourceLanguageIndex}">
+                          IsEnabled="{Binding ConfigVM.IsConfigurationEnabled}"
+                          SelectedIndex="{Binding ConfigVM.SourceLanguageIndex}">
                     <ComboBoxItem Tag="auto" Content="自动识别"/>
                       <ComboBoxItem Tag="en" Content="英语"/>
                       <ComboBoxItem Tag="zh-CN" Content="中文"/>
@@ -218,8 +218,8 @@
 
                     <TextBlock Text="目标语言:" VerticalAlignment="Center"/>
                     <ComboBox Name="TargetLanguageComboBox" MinWidth="120"
-                          IsEnabled="{Binding IsConfigurationEnabled}"
-                          SelectedIndex="{Binding TargetLanguageIndex}">
+                          IsEnabled="{Binding ConfigVM.IsConfigurationEnabled}"
+                          SelectedIndex="{Binding ConfigVM.TargetLanguageIndex}">
                     <ComboBoxItem Tag="en" Content="英语"/>
                     <ComboBoxItem Tag="zh-CN" Content="中文"/>
                     <ComboBoxItem Tag="ja-JP" Content="日语"/>
@@ -604,7 +604,7 @@
                             <Ellipse Width="10" Height="10" StrokeThickness="2"
                                      Fill="{Binding ReviewSummaryLampFill}"
                                      Stroke="{Binding ReviewSummaryLampStroke}"
-                                     Opacity="{Binding ReviewSummaryLampOpacity}"
+                                     Opacity="{Binding ConfigVM.ReviewSummaryLampOpacity}"
                                      VerticalAlignment="Center"/>
                         </StackPanel>
                         <Border Grid.Row="1" BorderBrush="#FFE5E7EB" BorderThickness="1" CornerRadius="4" Margin="0,8,0,8">
@@ -656,7 +656,7 @@
             <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
                 <TextBlock Grid.Column="0" Grid.Row="0" Text="{Binding StatusMessage}" />
                 <TextBlock Grid.Column="0" Grid.Row="1" Text="{Binding AudioDiagnosticStatus}" FontSize="10" Foreground="Gray" Margin="0,2,0,0" />
-                <TextBlock Grid.Column="1" Text="{Binding SubscriptionValidationStatusMessage}" 
+                <TextBlock Grid.Column="1" Text="{Binding ConfigVM.SubscriptionValidationStatusMessage}" 
                            FontSize="10" Foreground="Gray" Margin="10,0,0,0"/>
             </Grid>
         </Border>

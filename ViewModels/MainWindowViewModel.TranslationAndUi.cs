@@ -273,7 +273,7 @@ namespace TrueFluentPro.ViewModels
 
             await _translationService.StartTranslationAsync();
             IsTranslating = true;
-            IsConfigurationEnabled = false;
+            ConfigVM.IsConfigurationEnabled = false;
             StatusMessage = "正在翻译...";
 
             ((RelayCommand)StartTranslationCommand).RaiseCanExecuteChanged();
@@ -289,7 +289,7 @@ namespace TrueFluentPro.ViewModels
             }
 
             IsTranslating = false;
-            IsConfigurationEnabled = true;
+            ConfigVM.IsConfigurationEnabled = true;
             StatusMessage = "已停止";
             AudioDiagnosticStatus = "诊断: 已停止";
             AudioDevices.SetAudioLevel(0);
@@ -357,11 +357,12 @@ namespace TrueFluentPro.ViewModels
             if (result)
             {
                 _config = configView.Config;
+                ConfigVM.SetConfig(_config);
 
                 try
                 {
                     await _configService.SaveConfigAsync(_config);
-                    StatusMessage = $"配置已保存到: {_configService.GetConfigFilePath()}";
+                    StatusMessage = $"配置已保存到: {ConfigVM.GetConfigFilePath()}";
                 }
                 catch (Exception ex)
                 {
