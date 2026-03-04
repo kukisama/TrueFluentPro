@@ -3,89 +3,223 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="using:TrueFluentPro.ViewModels"
-             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="600"
+             mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="700"
              x:Class="TrueFluentPro.Views.SettingsView"
              x:DataType="vm:MainWindowViewModel"
              x:CompileBindings="False">
 
-    <ScrollViewer>
-        <StackPanel Margin="24" Spacing="16">
-            <TextBlock Text="设置" FontSize="24" FontWeight="Bold" Margin="0,0,0,8"/>
+    <Grid ColumnDefinitions="180,*">
+        <!-- 左侧锚点导航 -->
+        <Border Grid.Column="0" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                BorderThickness="0,0,1,0" Padding="0,12,0,0">
+            <ListBox Name="NavListBox" SelectionMode="Single"
+                     SelectionChanged="OnNavSectionChanged"
+                     Background="Transparent" Margin="4,0">
+                <ListBoxItem Tag="Section_Subscription" Content="订阅管理"/>
+                <ListBoxItem Tag="Section_Audio" Content="音频设备"/>
+                <ListBoxItem Tag="Section_Storage" Content="录音与存储"/>
+                <ListBoxItem Tag="Section_Endpoints" Content="AI 终结点"/>
+                <ListBoxItem Tag="Section_Recognition" Content="语音识别"/>
+                <ListBoxItem Tag="Section_Text" Content="字幕与文本"/>
+                <ListBoxItem Tag="Section_Insight" Content="AI 洞察"/>
+                <ListBoxItem Tag="Section_Review" Content="复盘预设"/>
+                <ListBoxItem Tag="Section_ImageGen" Content="图片生成"/>
+                <ListBoxItem Tag="Section_VideoGen" Content="视频生成"/>
+                <ListBoxItem Tag="Section_Links" Content="外部链接"/>
+                <ListBoxItem Tag="Section_About" Content="帮助与关于"/>
+            </ListBox>
+        </Border>
 
-            <!-- 订阅管理 -->
-            <Border BorderBrush="#FFE5E7EB" BorderThickness="1" CornerRadius="8" Padding="16">
-                <StackPanel Spacing="10">
-                    <TextBlock Text="订阅管理" FontWeight="SemiBold" FontSize="16"/>
-                    <TextBlock Text="管理 Azure 订阅、AI 配置和应用设置" Foreground="Gray" FontSize="12"/>
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                        <TextBlock Text="当前订阅:" VerticalAlignment="Center"/>
-                        <ComboBox MinWidth="200"
-                                  ItemsSource="{Binding ConfigVM.SubscriptionNames}"
-                                  SelectedIndex="{Binding ConfigVM.ActiveSubscriptionIndex, Mode=TwoWay}"
-                                  IsEnabled="{Binding ConfigVM.IsConfigurationEnabled}"/>
-                        <Ellipse Width="12" Height="12" StrokeThickness="2"
-                                 VerticalAlignment="Center" Margin="4,0"
-                                 Fill="{Binding ConfigVM.SubscriptionLampFill}"
-                                 Stroke="{Binding ConfigVM.SubscriptionLampStroke}"
-                                 Opacity="{Binding ConfigVM.SubscriptionLampOpacity}"
-                                 ToolTip.Tip="{Binding ConfigVM.SubscriptionValidationStatusMessage}"/>
+        <!-- 右侧瀑布流内容 -->
+        <ScrollViewer Grid.Column="1" Name="SettingsScroller"
+                      ScrollChanged="OnSettingsScrollChanged"
+                      HorizontalScrollBarVisibility="Disabled">
+            <StackPanel Name="SectionsPanel" Spacing="16" Margin="24,12,24,24">
+
+                <!-- ═══ 1. 订阅管理 ═══ -->
+                <Border Name="Section_Subscription"
+                        BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1" CornerRadius="8" Padding="20" Margin="0,0,0,0">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="订阅管理" Theme="{StaticResource SubtitleTextBlockStyle}"/>
+                        <Separator/>
+                        <TextBlock Text="管理 Azure 语音服务订阅" Foreground="Gray" FontSize="12"/>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBlock Text="当前订阅:" VerticalAlignment="Center"/>
+                            <ComboBox MinWidth="200"
+                                      ItemsSource="{Binding ConfigVM.SubscriptionNames}"
+                                      SelectedIndex="{Binding ConfigVM.ActiveSubscriptionIndex, Mode=TwoWay}"
+                                      IsEnabled="{Binding ConfigVM.IsConfigurationEnabled}"/>
+                            <Ellipse Width="12" Height="12" StrokeThickness="2"
+                                     VerticalAlignment="Center" Margin="4,0"
+                                     Fill="{Binding ConfigVM.SubscriptionLampFill}"
+                                     Stroke="{Binding ConfigVM.SubscriptionLampStroke}"
+                                     Opacity="{Binding ConfigVM.SubscriptionLampOpacity}"
+                                     ToolTip.Tip="{Binding ConfigVM.SubscriptionValidationStatusMessage}"/>
+                        </StackPanel>
+                        <Button Content="打开配置中心（订阅 CRUD）" Padding="12,6"
+                                Command="{Binding ShowConfigCommand}"
+                                IsEnabled="{Binding ConfigVM.IsConfigurationEnabled}"/>
                     </StackPanel>
-                    <Button Content="打开配置中心" Padding="12,6"
-                            Command="{Binding ShowConfigCommand}"
-                            IsEnabled="{Binding ConfigVM.IsConfigurationEnabled}"/>
-                </StackPanel>
-            </Border>
+                </Border>
 
-            <!-- 音频设备 -->
-            <Border BorderBrush="#FFE5E7EB" BorderThickness="1" CornerRadius="8" Padding="16">
-                <StackPanel Spacing="10">
-                    <TextBlock Text="音频设备" FontWeight="SemiBold" FontSize="16"/>
-                    <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto" RowSpacing="8" ColumnSpacing="8">
-                        <TextBlock Grid.Row="0" Grid.Column="0" Text="麦克风:" VerticalAlignment="Center"/>
-                        <ComboBox Grid.Row="0" Grid.Column="1" MinWidth="220"
-                                  ItemsSource="{Binding AudioDevices.AudioDevicesList}"
-                                  SelectedItem="{Binding AudioDevices.SelectedAudioDevice, Mode=TwoWay}"
-                                  IsEnabled="{Binding AudioDevices.IsInputDeviceUiEnabled}"/>
+                <!-- ═══ 2. 音频设备 ═══ -->
+                <Border Name="Section_Audio"
+                        BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1" CornerRadius="8" Padding="20">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="音频设备" Theme="{StaticResource SubtitleTextBlockStyle}"/>
+                        <Separator/>
+                        <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto" RowSpacing="8" ColumnSpacing="8">
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="麦克风:" VerticalAlignment="Center"/>
+                            <ComboBox Grid.Row="0" Grid.Column="1" MinWidth="220"
+                                      ItemsSource="{Binding AudioDevices.AudioDevicesList}"
+                                      SelectedItem="{Binding AudioDevices.SelectedAudioDevice, Mode=TwoWay}"
+                                      IsEnabled="{Binding AudioDevices.IsInputDeviceUiEnabled}"/>
 
-                        <TextBlock Grid.Row="1" Grid.Column="0" Text="系统回环:" VerticalAlignment="Center"/>
-                        <ComboBox Grid.Row="1" Grid.Column="1" MinWidth="220"
-                                  ItemsSource="{Binding AudioDevices.OutputDevicesList}"
-                                  SelectedItem="{Binding AudioDevices.SelectedOutputDevice, Mode=TwoWay}"
-                                  IsEnabled="{Binding AudioDevices.IsOutputDeviceUiEnabled}"/>
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="系统回环:" VerticalAlignment="Center"/>
+                            <ComboBox Grid.Row="1" Grid.Column="1" MinWidth="220"
+                                      ItemsSource="{Binding AudioDevices.OutputDevicesList}"
+                                      SelectedItem="{Binding AudioDevices.SelectedOutputDevice, Mode=TwoWay}"
+                                      IsEnabled="{Binding AudioDevices.IsOutputDeviceUiEnabled}"/>
 
-                        <Button Grid.Row="0" Grid.Column="2" Content="刷新" Padding="8,4"
-                                Command="{Binding AudioDevices.RefreshAudioDevicesCommand}"
-                                IsEnabled="{Binding AudioDevices.IsAudioDeviceRefreshEnabled}"/>
-                    </Grid>
-                </StackPanel>
-            </Border>
-
-            <!-- 外部链接 -->
-            <Border BorderBrush="#FFE5E7EB" BorderThickness="1" CornerRadius="8" Padding="16">
-                <StackPanel Spacing="10">
-                    <TextBlock Text="外部链接" FontWeight="SemiBold" FontSize="16"/>
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                        <Button Content="Azure Speech 服务" Padding="10,5"
-                                Command="{Binding OpenAzureSpeechPortalCommand}"/>
-                        <Button Content="Microsoft Foundry" Padding="10,5"
-                                Command="{Binding OpenFoundryPortalCommand}"/>
-                        <Button Content="项目 GitHub" Padding="10,5"
-                                Command="{Binding OpenProjectGitHubCommand}"/>
+                            <Button Grid.Row="0" Grid.Column="2" Content="刷新" Padding="8,4"
+                                    Command="{Binding AudioDevices.RefreshAudioDevicesCommand}"
+                                    IsEnabled="{Binding AudioDevices.IsAudioDeviceRefreshEnabled}"/>
+                        </Grid>
                     </StackPanel>
-                </StackPanel>
-            </Border>
+                </Border>
 
-            <!-- 帮助与关于 -->
-            <Border BorderBrush="#FFE5E7EB" BorderThickness="1" CornerRadius="8" Padding="16">
-                <StackPanel Spacing="10">
-                    <TextBlock Text="帮助与关于" FontWeight="SemiBold" FontSize="16"/>
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                        <Button Content="说明" Padding="10,5" Command="{Binding ShowHelpCommand}"/>
-                        <Button Content="关于" Padding="10,5" Command="{Binding ShowAboutCommand}"/>
+                <!-- ═══ 3. 录音与存储 ═══ -->
+                <Border Name="Section_Storage"
+                        BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1" CornerRadius="8" Padding="20">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="录音与存储" Theme="{StaticResource SubtitleTextBlockStyle}"/>
+                        <Separator/>
+                        <TextBlock Text="录音设置、会话目录、批量转写和字幕切分配置" Foreground="Gray" FontSize="12"/>
+                        <TextBlock Text="（配置内容将在后续迁移中完善）" Foreground="Gray" FontSize="11" FontStyle="Italic"/>
                     </StackPanel>
-                    <TextBlock Text="{Binding AppVersion}" FontSize="11" Foreground="Gray"/>
-                </StackPanel>
-            </Border>
-        </StackPanel>
-    </ScrollViewer>
+                </Border>
+
+                <!-- ═══ 4. AI 终结点管理 ═══ -->
+                <Border Name="Section_Endpoints"
+                        BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1" CornerRadius="8" Padding="20">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="AI 终结点管理" Theme="{StaticResource SubtitleTextBlockStyle}"/>
+                        <Separator/>
+                        <TextBlock Text="统一管理 AI 服务终结点与模型注册，支持文字/图片/视频能力标记" Foreground="Gray" FontSize="12"/>
+                        <TextBlock Text="（终结点注册表 UI 将在后续迁移中完善）" Foreground="Gray" FontSize="11" FontStyle="Italic"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- ═══ 5. 语音识别 ═══ -->
+                <Border Name="Section_Recognition"
+                        BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1" CornerRadius="8" Padding="20">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="语音识别" Theme="{StaticResource SubtitleTextBlockStyle}"/>
+                        <Separator/>
+                        <TextBlock Text="语言、置信度、超时与增益参数" Foreground="Gray" FontSize="12"/>
+                        <TextBlock Text="（配置内容将在后续迁移中完善）" Foreground="Gray" FontSize="11" FontStyle="Italic"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- ═══ 6. 字幕与文本 ═══ -->
+                <Border Name="Section_Text"
+                        BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1" CornerRadius="8" Padding="20">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="字幕与文本" Theme="{StaticResource SubtitleTextBlockStyle}"/>
+                        <Separator/>
+                        <TextBlock Text="字幕输出格式与实时翻译字号设置" Foreground="Gray" FontSize="12"/>
+                        <TextBlock Text="（配置内容将在后续迁移中完善）" Foreground="Gray" FontSize="11" FontStyle="Italic"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- ═══ 7. AI 洞察 ═══ -->
+                <Border Name="Section_Insight"
+                        BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1" CornerRadius="8" Padding="20">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="AI 洞察" Theme="{StaticResource SubtitleTextBlockStyle}"/>
+                        <Separator/>
+                        <TextBlock Text="洞察模型选择与预设按钮管理" Foreground="Gray" FontSize="12"/>
+                        <TextBlock Text="（模型选择下拉将引用终结点中标记 [文字] 能力的模型）" Foreground="Gray" FontSize="11" FontStyle="Italic"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- ═══ 8. 复盘预设 ═══ -->
+                <Border Name="Section_Review"
+                        BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1" CornerRadius="8" Padding="20">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="复盘预设" Theme="{StaticResource SubtitleTextBlockStyle}"/>
+                        <Separator/>
+                        <TextBlock Text="复盘 Sheet 预设与模型选择" Foreground="Gray" FontSize="12"/>
+                        <TextBlock Text="（模型选择下拉将引用终结点中标记 [文字] 能力的模型）" Foreground="Gray" FontSize="11" FontStyle="Italic"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- ═══ 9. 图片生成 ═══ -->
+                <Border Name="Section_ImageGen"
+                        BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1" CornerRadius="8" Padding="20">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="图片生成" Theme="{StaticResource SubtitleTextBlockStyle}"/>
+                        <Separator/>
+                        <TextBlock Text="图片模型选择与默认参数" Foreground="Gray" FontSize="12"/>
+                        <TextBlock Text="（模型选择下拉将引用终结点中标记 [图片] 能力的模型）" Foreground="Gray" FontSize="11" FontStyle="Italic"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- ═══ 10. 视频生成 ═══ -->
+                <Border Name="Section_VideoGen"
+                        BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1" CornerRadius="8" Padding="20">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="视频生成" Theme="{StaticResource SubtitleTextBlockStyle}"/>
+                        <Separator/>
+                        <TextBlock Text="视频模型选择与默认参数" Foreground="Gray" FontSize="12"/>
+                        <TextBlock Text="（模型选择下拉将引用终结点中标记 [视频] 能力的模型）" Foreground="Gray" FontSize="11" FontStyle="Italic"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- ═══ 11. 外部链接 ═══ -->
+                <Border Name="Section_Links"
+                        BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1" CornerRadius="8" Padding="20">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="外部链接" Theme="{StaticResource SubtitleTextBlockStyle}"/>
+                        <Separator/>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button Content="Azure Speech 服务" Padding="10,5"
+                                    Command="{Binding OpenAzureSpeechPortalCommand}"/>
+                            <Button Content="Microsoft Foundry" Padding="10,5"
+                                    Command="{Binding OpenFoundryPortalCommand}"/>
+                            <Button Content="项目 GitHub" Padding="10,5"
+                                    Command="{Binding OpenProjectGitHubCommand}"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- ═══ 12. 帮助与关于 ═══ -->
+                <Border Name="Section_About"
+                        BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1" CornerRadius="8" Padding="20">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="帮助与关于" Theme="{StaticResource SubtitleTextBlockStyle}"/>
+                        <Separator/>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button Content="说明" Padding="10,5" Command="{Binding ShowHelpCommand}"/>
+                            <Button Content="关于" Padding="10,5" Command="{Binding ShowAboutCommand}"/>
+                        </StackPanel>
+                        <TextBlock Text="{Binding AppVersion}" FontSize="11" Foreground="Gray"/>
+                    </StackPanel>
+                </Border>
+
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
 </UserControl>

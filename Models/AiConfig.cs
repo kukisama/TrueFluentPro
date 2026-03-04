@@ -57,6 +57,12 @@ namespace TrueFluentPro.Models
 
         public string ReviewUserContentTemplate { get; set; } = "以下是会议字幕内容:\n\n{subtitle}\n\n---\n\n{prompt}";
 
+        // --- 终结点模型引用（3.4 新增，与旧字段并存以便迁移） ---
+        public ModelReference? InsightModelRef { get; set; }
+        public ModelReference? SummaryModelRef { get; set; }
+        public ModelReference? QuickModelRef { get; set; }
+        public ModelReference? ReviewModelRef { get; set; }
+
         public bool AutoInsightBufferOutput { get; set; } = true;
 
         public List<InsightPresetButton> PresetButtons { get; set; } = new()
