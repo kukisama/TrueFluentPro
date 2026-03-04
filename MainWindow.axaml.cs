@@ -32,22 +32,19 @@ public partial class MainWindow : Window
                 // ignore icon failures
             }
             
-            _viewModel = new MainWindowViewModel();
-            Console.WriteLine("MainWindowViewModel created");
-            
-            _viewModel.SetMainWindow(this);
-            Console.WriteLine("SetMainWindow called");
-            
-            DataContext = _viewModel;
-            Console.WriteLine("DataContext set");
-            
-            this.Show();
-            Console.WriteLine("Window.Show() called");
+            // ViewModel is created and assigned by App.axaml.cs via DI
+            Console.WriteLine("MainWindow constructor completed (ViewModel set by DI)");
         }        catch (Exception ex)
         {
             Console.WriteLine($"Error in MainWindow constructor: {ex.Message}");
             Console.WriteLine($"Stack trace: {ex.StackTrace}");
         }
+    }
+
+    protected override void OnDataContextChanged(EventArgs e)
+    {
+        base.OnDataContextChanged(e);
+        _viewModel = DataContext as MainWindowViewModel;
     }
 
     protected override void OnClosed(EventArgs e)
@@ -59,6 +56,7 @@ public partial class MainWindow : Window
     protected override void OnOpened(EventArgs e)
     {
         base.OnOpened(e);
+        this.Show();
         _viewModel?.NotifyMainWindowShown();
     }
 
@@ -82,7 +80,7 @@ public partial class MainWindow : Window
 
         if (sender is ListBox listBox && listBox.SelectedItem is SubtitleCue cue)
         {
-            _viewModel.PlayFromSubtitleCue(cue);
+            _viewModel.Playback.PlayFromSubtitleCue(cue);
         }
     }
 
@@ -100,7 +98,7 @@ public partial class MainWindow : Window
 
         if (e.Source is not Control control)
         {
-            _viewModel?.AuditUiEvent("AudioFileRightClick", "source-control-missing");
+            _viewModel?.BatchProcessing.AuditUiEvent("AudioFileRightClick", "source-control-missing");
             return;
         }
 
@@ -108,7 +106,7 @@ public partial class MainWindow : Window
         if (item?.DataContext is not MediaFileItem mediaItem)
         {
             var sourceType = control.GetType().Name;
-            _viewModel?.AuditUiEvent("AudioFileRightClick", $"no-media-item source={sourceType}");
+            _viewModel?.BatchProcessing.AuditUiEvent("AudioFileRightClick", $"no-media-item source={sourceType}");
             return;
         }
 
@@ -122,7 +120,7 @@ public partial class MainWindow : Window
         var after = listBox.SelectedItem is MediaFileItem afterItem
             ? afterItem.FullPath
             : "";
-        _viewModel?.AuditUiEvent(
+        _viewModel?.BatchProcessing.AuditUiEvent(
             "AudioFileRightClick",
             $"selected-before={before} selected-after={after} item={mediaItem.FullPath}");
     }
@@ -131,18 +129,18 @@ public partial class MainWindow : Window
     {
         if (sender is not MenuItem menuItem)
         {
-            _viewModel?.AuditUiEvent("AudioFileEnqueue", "sender-not-menuitem");
+            _viewModel?.BatchProcessing.AuditUiEvent("AudioFileEnqueue", "sender-not-menuitem");
             return;
         }
 
         if (menuItem.DataContext is not MediaFileItem mediaItem)
         {
-            _viewModel?.AuditUiEvent("AudioFileEnqueue", "menuitem-datacontext-missing");
+            _viewModel?.BatchProcessing.AuditUiEvent("AudioFileEnqueue", "menuitem-datacontext-missing");
             return;
         }
 
-        _viewModel?.AuditUiEvent("AudioFileEnqueue", $"click item={mediaItem.FullPath}");
-        _viewModel?.EnqueueSubtitleAndReviewFromLibraryUi(mediaItem);
+        _viewModel?.BatchProcessing.AuditUiEvent("AudioFileEnqueue", $"click item={mediaItem.FullPath}");
+        _viewModel?.BatchProcessing.EnqueueSubtitleAndReviewFromLibraryUi(mediaItem);
     }
 }
 

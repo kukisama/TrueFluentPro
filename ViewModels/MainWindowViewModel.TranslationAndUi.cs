@@ -156,18 +156,17 @@ namespace TrueFluentPro.ViewModels
                 OnPropertyChanged(nameof(TranslationToggleButtonText));
                 OnPropertyChanged(nameof(TranslationToggleButtonBackground));
                 OnPropertyChanged(nameof(TranslationToggleButtonForeground));
-                OnPropertyChanged(nameof(IsAudioSourceSelectionEnabled));
+                AudioDevices.NotifyTranslatingChanged();
 
                 if (value)
                 {
                     // 翻译进行中允许实时切换输入/输出设备，仅禁用刷新
-                    IsAudioDeviceRefreshEnabled = false;
-                    OnPropertyChanged(nameof(IsInputDeviceUiEnabled));
-                    OnPropertyChanged(nameof(IsOutputDeviceUiEnabled));
+                    AudioDevices.IsAudioDeviceRefreshEnabled = false;
+                    AudioDevices.NotifyTranslatingChanged();
                 }
                 else
                 {
-                    RefreshAudioDevices(persistSelection: false);
+                    AudioDevices.RefreshAudioDevices(persistSelection: false);
                 }
 
                 ((RelayCommand)StartTranslationCommand).RaiseCanExecuteChanged();
@@ -274,7 +273,7 @@ namespace TrueFluentPro.ViewModels
 
             await _translationService.StartTranslationAsync();
             IsTranslating = true;
-            IsConfigurationEnabled = false;
+            ConfigVM.IsConfigurationEnabled = false;
             StatusMessage = "正在翻译...";
 
             ((RelayCommand)StartTranslationCommand).RaiseCanExecuteChanged();
@@ -290,11 +289,11 @@ namespace TrueFluentPro.ViewModels
             }
 
             IsTranslating = false;
-            IsConfigurationEnabled = true;
+            ConfigVM.IsConfigurationEnabled = true;
             StatusMessage = "已停止";
             AudioDiagnosticStatus = "诊断: 已停止";
-            AudioLevel = 0;
-            ResetAudioLevelHistory();
+            AudioDevices.SetAudioLevel(0);
+            AudioDevices.ResetAudioLevelHistory();
 
             if (_floatingSubtitleManager?.IsWindowOpen == true)
             {
@@ -358,11 +357,12 @@ namespace TrueFluentPro.ViewModels
             if (result)
             {
                 _config = configView.Config;
+                ConfigVM.SetConfig(_config);
 
                 try
                 {
                     await _configService.SaveConfigAsync(_config);
-                    StatusMessage = $"配置已保存到: {_configService.GetConfigFilePath()}";
+                    StatusMessage = $"配置已保存到: {ConfigVM.GetConfigFilePath()}";
                 }
                 catch (Exception ex)
                 {
@@ -374,15 +374,9 @@ namespace TrueFluentPro.ViewModels
                     await _translationService.UpdateConfigAsync(_config);
                 }
 
-                OnPropertyChanged(nameof(IsAiConfigured));
-                OnPropertyChanged(nameof(InsightPresetButtons));
-                RebuildReviewSheets();
-                ((RelayCommand)SendInsightCommand).RaiseCanExecuteChanged();
-                ((RelayCommand)SendPresetInsightCommand).RaiseCanExecuteChanged();
-                ((RelayCommand)ToggleAutoInsightCommand).RaiseCanExecuteChanged();
-                ((RelayCommand)GenerateReviewSummaryCommand).RaiseCanExecuteChanged();
-                ((RelayCommand)GenerateAllReviewSheetsCommand).RaiseCanExecuteChanged();
-                ((RelayCommand)StartBatchCommand).RaiseCanExecuteChanged();
+                AiInsight.UpdateConfig();
+                BatchProcessing.RebuildReviewSheets();
+                BatchProcessing.RefreshCommandStates();
                 ((RelayCommand)StartTranslationCommand).RaiseCanExecuteChanged();
             }
         }
@@ -612,7 +606,7 @@ namespace TrueFluentPro.ViewModels
 
                 ((RelayCommand)ClearHistoryCommand).RaiseCanExecuteChanged();
 
-                OnNewDataAutoInsight();
+                AiInsight.OnNewDataAutoInsight();
             });
         }
 
@@ -632,6 +626,14 @@ namespace TrueFluentPro.ViewModels
             });
         }
 
+        private void OnAudioLevelUpdated(object? sender, double level)
+        {
+            Dispatcher.UIThread.Post(() =>
+            {
+                AudioDevices.SetAudioLevel(level);
+            });
+        }
+
         private void AppendAudioStreamAuditLog(string message)
         {
             var eventName = message.StartsWith("[翻译流]", StringComparison.Ordinal)
@@ -640,7 +642,7 @@ namespace TrueFluentPro.ViewModels
                     ? "录制流"
                     : "音频流";
 
-            AppendBatchDebugLog(eventName, message);
+            AppLogService.Instance.LogAudit(eventName, message);
         }
     }
 }

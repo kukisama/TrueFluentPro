@@ -2,10 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Media;
@@ -17,18 +15,127 @@ using TrueFluentPro.Services;
 
 namespace TrueFluentPro.ViewModels
 {
-    public partial class MainWindowViewModel
+    public class BatchProcessingViewModel : ViewModelBase
     {
-        private const double SubtitleCueRowHeight = 56;
+        private readonly ObservableCollection<BatchTaskItem> _batchTasks = new();
+        private readonly ObservableCollection<BatchQueueItem> _batchQueueItems = new();
+        private int _batchConcurrencyLimit = 10;
+        private bool _isBatchRunning;
+        private CancellationTokenSource? _batchCts;
+        private string _batchStatusMessage = "";
+        private string _batchQueueStatusText = "队列为空";
+        private Task? _batchQueueRunnerTask;
+        private List<ReviewSheetPreset> _batchReviewSheetSnapshot = new();
 
-        public ObservableCollection<MediaFileItem> AudioFiles => _audioFiles;
+        private bool _isSpeechSubtitleGenerating;
+        private string _speechSubtitleStatusMessage = "";
+        private CancellationTokenSource? _speechSubtitleCts;
 
-        public ObservableCollection<MediaFileItem> SubtitleFiles => _subtitleFiles;
+        private readonly ObservableCollection<ReviewSheetState> _reviewSheets = new();
+        private ReviewSheetState? _selectedReviewSheet;
 
-        public ObservableCollection<SubtitleCue> SubtitleCues => _subtitleCues;
+        private readonly Func<AzureSpeechConfig> _configProvider;
+        private readonly Action<string> _statusSetter;
+        private readonly AiInsightService _aiInsightService;
+        private readonly FileLibraryViewModel _fileLibrary;
+        private readonly PlaybackViewModel _playback;
+        private readonly ConfigurationService _configService;
+        private readonly Action _notifyReviewLampChanged;
+
+        public RelayCommand LoadBatchTasksCommand { get; }
+        public RelayCommand ClearBatchTasksCommand { get; }
+        public RelayCommand StartBatchCommand { get; }
+        public RelayCommand StopBatchCommand { get; }
+        public RelayCommand RefreshBatchQueueCommand { get; }
+        public RelayCommand CancelBatchQueueItemCommand { get; }
+        public RelayCommand GenerateReviewSummaryCommand { get; }
+        public RelayCommand GenerateAllReviewSheetsCommand { get; }
+        public RelayCommand ReviewMarkdownLinkCommand { get; }
+        public RelayCommand EnqueueSubtitleReviewCommand { get; }
+        public RelayCommand GenerateSpeechSubtitleCommand { get; }
+        public RelayCommand CancelSpeechSubtitleCommand { get; }
+        public RelayCommand GenerateBatchSpeechSubtitleCommand { get; }
+
+        private bool IsAiConfigured => _configProvider().AiConfig?.IsValid == true;
+
+        public BatchProcessingViewModel(
+            Func<AzureSpeechConfig> configProvider,
+            Action<string> statusSetter,
+            AiInsightService aiInsightService,
+            FileLibraryViewModel fileLibrary,
+            PlaybackViewModel playback,
+            ConfigurationService configService,
+            Action notifyReviewLampChanged)
+        {
+            _configProvider = configProvider;
+            _statusSetter = statusSetter;
+            _aiInsightService = aiInsightService;
+            _fileLibrary = fileLibrary;
+            _playback = playback;
+            _configService = configService;
+            _notifyReviewLampChanged = notifyReviewLampChanged;
+
+            _batchTasks.CollectionChanged += (_, _) =>
+            {
+                ClearBatchTasksCommand.RaiseCanExecuteChanged();
+                StartBatchCommand.RaiseCanExecuteChanged();
+                OnPropertyChanged(nameof(BatchStartButtonText));
+            };
+            _batchQueueItems.CollectionChanged += (_, _) => UpdateBatchQueueStatusText();
+
+            LoadBatchTasksCommand = new RelayCommand(
+                execute: _ => LoadBatchTasksFromLibrary());
+
+            ClearBatchTasksCommand = new RelayCommand(
+                execute: _ => ClearBatchTasks(),
+                canExecute: _ => BatchTasks.Count > 0);
+
+            StartBatchCommand = new RelayCommand(
+                execute: _ => StartBatchProcessing(),
+                canExecute: _ => CanStartBatchProcessing());
+
+            StopBatchCommand = new RelayCommand(
+                execute: _ => StopBatchProcessing(),
+                canExecute: _ => IsBatchRunning);
+
+            RefreshBatchQueueCommand = new RelayCommand(
+                execute: _ => RefreshBatchQueue(),
+                canExecute: _ => true);
+
+            CancelBatchQueueItemCommand = new RelayCommand(
+                execute: param => CancelBatchQueueItem(param as BatchQueueItem));
+
+            GenerateReviewSummaryCommand = new RelayCommand(
+                execute: _ => GenerateReviewSummary(),
+                canExecute: _ => CanGenerateReviewSummary());
+
+            GenerateAllReviewSheetsCommand = new RelayCommand(
+                execute: _ => GenerateAllReviewSheets(),
+                canExecute: _ => CanGenerateAllReviewSheets());
+
+            ReviewMarkdownLinkCommand = new RelayCommand(
+                execute: param => OnReviewMarkdownLink(param));
+
+            EnqueueSubtitleReviewCommand = new RelayCommand(
+                execute: param => EnqueueSubtitleAndReviewFromLibrary(param as MediaFileItem),
+                canExecute: param => CanEnqueueSubtitleAndReviewFromLibrary(param as MediaFileItem));
+
+            GenerateSpeechSubtitleCommand = new RelayCommand(
+                execute: _ => GenerateSpeechSubtitle(),
+                canExecute: _ => CanGenerateSpeechSubtitle());
+
+            CancelSpeechSubtitleCommand = new RelayCommand(
+                execute: _ => CancelSpeechSubtitle(),
+                canExecute: _ => IsSpeechSubtitleGenerating);
+
+            GenerateBatchSpeechSubtitleCommand = new RelayCommand(
+                execute: _ => GenerateBatchSpeechSubtitle(),
+                canExecute: _ => CanGenerateBatchSpeechSubtitle());
+        }
+
+        // ── Properties ──
 
         public ObservableCollection<BatchTaskItem> BatchTasks => _batchTasks;
-
         public ObservableCollection<BatchQueueItem> BatchQueueItems => _batchQueueItems;
 
         public int BatchConcurrencyLimit
@@ -44,15 +151,8 @@ namespace TrueFluentPro.ViewModels
             {
                 if (SetProperty(ref _isBatchRunning, value))
                 {
-                    if (StartBatchCommand is RelayCommand startCmd)
-                    {
-                        startCmd.RaiseCanExecuteChanged();
-                    }
-
-                    if (StopBatchCommand is RelayCommand stopCmd)
-                    {
-                        stopCmd.RaiseCanExecuteChanged();
-                    }
+                    StartBatchCommand.RaiseCanExecuteChanged();
+                    StopBatchCommand.RaiseCanExecuteChanged();
                 }
             }
         }
@@ -76,26 +176,11 @@ namespace TrueFluentPro.ViewModels
             {
                 if (SetProperty(ref _isSpeechSubtitleGenerating, value))
                 {
-                    if (GenerateSpeechSubtitleCommand is RelayCommand cmd)
-                    {
-                        cmd.RaiseCanExecuteChanged();
-                    }
-                    if (GenerateBatchSpeechSubtitleCommand is RelayCommand batchCmd)
-                    {
-                        batchCmd.RaiseCanExecuteChanged();
-                    }
-                    if (CancelSpeechSubtitleCommand is RelayCommand cancelCmd)
-                    {
-                        cancelCmd.RaiseCanExecuteChanged();
-                    }
-                    if (GenerateReviewSummaryCommand is RelayCommand genCmd)
-                    {
-                        genCmd.RaiseCanExecuteChanged();
-                    }
-                    if (GenerateAllReviewSheetsCommand is RelayCommand allCmd)
-                    {
-                        allCmd.RaiseCanExecuteChanged();
-                    }
+                    GenerateSpeechSubtitleCommand.RaiseCanExecuteChanged();
+                    GenerateBatchSpeechSubtitleCommand.RaiseCanExecuteChanged();
+                    CancelSpeechSubtitleCommand.RaiseCanExecuteChanged();
+                    GenerateReviewSummaryCommand.RaiseCanExecuteChanged();
+                    GenerateAllReviewSheetsCommand.RaiseCanExecuteChanged();
                 }
             }
         }
@@ -106,39 +191,38 @@ namespace TrueFluentPro.ViewModels
             private set => SetProperty(ref _speechSubtitleStatusMessage, value);
         }
 
-        public bool IsSpeechSubtitleOptionEnabled => _config.BatchStorageIsValid
-            && !string.IsNullOrWhiteSpace(_config.BatchStorageConnectionString);
+        public bool IsSpeechSubtitleOptionEnabled
+        {
+            get
+            {
+                var config = _configProvider();
+                return config.BatchStorageIsValid
+                    && !string.IsNullOrWhiteSpace(config.BatchStorageConnectionString);
+            }
+        }
 
         public bool UseSpeechSubtitleForReview
         {
-            get => _config.UseSpeechSubtitleForReview;
+            get => _configProvider().UseSpeechSubtitleForReview;
             set
             {
-                if (_config.UseSpeechSubtitleForReview == value)
+                var config = _configProvider();
+                if (config.UseSpeechSubtitleForReview == value)
                 {
                     return;
                 }
 
-                _config.UseSpeechSubtitleForReview = value;
+                config.UseSpeechSubtitleForReview = value;
                 OnPropertyChanged(nameof(UseSpeechSubtitleForReview));
                 OnPropertyChanged(nameof(BatchStartButtonText));
-                if (GenerateReviewSummaryCommand is RelayCommand genCmd)
-                {
-                    genCmd.RaiseCanExecuteChanged();
-                }
-                if (GenerateAllReviewSheetsCommand is RelayCommand allCmd)
-                {
-                    allCmd.RaiseCanExecuteChanged();
-                }
-                if (StartBatchCommand is RelayCommand startCmd)
-                {
-                    startCmd.RaiseCanExecuteChanged();
-                }
+                GenerateReviewSummaryCommand.RaiseCanExecuteChanged();
+                GenerateAllReviewSheetsCommand.RaiseCanExecuteChanged();
+                StartBatchCommand.RaiseCanExecuteChanged();
                 _ = Task.Run(async () =>
                 {
                     try
                     {
-                        await _configService.SaveConfigAsync(_config);
+                        await _configService.SaveConfigAsync(config);
                     }
                     catch
                     {
@@ -183,79 +267,6 @@ namespace TrueFluentPro.ViewModels
             }
         }
 
-        public double ReviewSummaryLampOpacity => IsReviewSummaryLoading
-            ? (_reviewLampBlinkOn ? 1.0 : 0.35)
-            : 1.0;
-
-        public double SubtitleListHeight
-        {
-            get => _subtitleListHeight;
-            private set => SetProperty(ref _subtitleListHeight, value);
-        }
-
-        public MediaFileItem? SelectedAudioFile
-        {
-            get => _selectedAudioFile;
-            set
-            {
-                if (!SetProperty(ref _selectedAudioFile, value))
-                {
-                    return;
-                }
-
-                CancelAllReviewSheetGeneration();
-                LoadSubtitleFilesForAudio(value);
-                LoadAudioForPlayback(value);
-                LoadReviewSheetForAudio(value, SelectedReviewSheet);
-                ((RelayCommand)GenerateReviewSummaryCommand).RaiseCanExecuteChanged();
-                ((RelayCommand)GenerateAllReviewSheetsCommand).RaiseCanExecuteChanged();
-                if (GenerateSpeechSubtitleCommand is RelayCommand speechCmd)
-                {
-                    speechCmd.RaiseCanExecuteChanged();
-                }
-                if (GenerateBatchSpeechSubtitleCommand is RelayCommand batchCmd)
-                {
-                    batchCmd.RaiseCanExecuteChanged();
-                }
-            }
-        }
-
-        public MediaFileItem? SelectedSubtitleFile
-        {
-            get => _selectedSubtitleFile;
-            set
-            {
-                if (!SetProperty(ref _selectedSubtitleFile, value))
-                {
-                    return;
-                }
-
-                LoadSubtitleCues(value);
-            }
-        }
-
-        public SubtitleCue? SelectedSubtitleCue
-        {
-            get => _selectedSubtitleCue;
-            set
-            {
-                if (!SetProperty(ref _selectedSubtitleCue, value))
-                {
-                    return;
-                }
-
-                if (_suppressSubtitleSeek)
-                {
-                    return;
-                }
-
-                if (value != null)
-                {
-                    SeekToTime(value.Start);
-                }
-            }
-        }
-
         public ObservableCollection<ReviewSheetState> ReviewSheets => _reviewSheets;
 
         public ReviewSheetState? SelectedReviewSheet
@@ -282,71 +293,170 @@ namespace TrueFluentPro.ViewModels
                 OnPropertyChanged(nameof(IsReviewSummaryEmpty));
                 OnPropertyChanged(nameof(ReviewSummaryLampFill));
                 OnPropertyChanged(nameof(ReviewSummaryLampStroke));
-                OnPropertyChanged(nameof(ReviewSummaryLampOpacity));
+                _notifyReviewLampChanged();
 
                 if (_selectedReviewSheet != null)
                 {
                     _selectedReviewSheet.PropertyChanged += OnSelectedReviewSheetPropertyChanged;
                 }
 
-                LoadReviewSheetForAudio(SelectedAudioFile, _selectedReviewSheet);
+                LoadReviewSheetForAudio(_fileLibrary.SelectedAudioFile, _selectedReviewSheet);
             }
         }
 
         public string ReviewSummaryMarkdown => SelectedReviewSheet?.Markdown ?? "";
-
         public string ReviewSummaryStatusMessage => SelectedReviewSheet?.StatusMessage ?? "";
-
         public bool IsReviewSummaryLoading => SelectedReviewSheet?.IsLoading ?? false;
-
         public bool IsReviewSummaryEmpty => string.IsNullOrWhiteSpace(ReviewSummaryMarkdown) && !IsReviewSummaryLoading;
 
-        private void RefreshAudioLibrary()
+        // ── Called by MainWindowViewModel when audio selection changes ──
+
+        public void OnAudioFileSelected(MediaFileItem? audioFile)
         {
-            _audioFiles.Clear();
-            _subtitleFiles.Clear();
-            _subtitleCues.Clear();
+            CancelAllReviewSheetGeneration();
+            LoadReviewSheetForAudio(audioFile, SelectedReviewSheet);
+            GenerateReviewSummaryCommand.RaiseCanExecuteChanged();
+            GenerateAllReviewSheetsCommand.RaiseCanExecuteChanged();
+            GenerateSpeechSubtitleCommand.RaiseCanExecuteChanged();
+            GenerateBatchSpeechSubtitleCommand.RaiseCanExecuteChanged();
+        }
+
+        /// <summary>Called when subtitle cues finish loading to refresh command states.</summary>
+        public void OnSubtitleCuesLoaded()
+        {
+            GenerateReviewSummaryCommand.RaiseCanExecuteChanged();
+            GenerateAllReviewSheetsCommand.RaiseCanExecuteChanged();
+        }
+
+        // ── Called when config changes ──
+
+        public void RebuildReviewSheets()
+        {
+            var config = _configProvider();
+            var currentTag = SelectedReviewSheet?.FileTag;
+            _reviewSheets.Clear();
+
+            var presets = config.AiConfig?.ReviewSheets;
+            if (presets == null || presets.Count == 0)
+            {
+                presets = new AiConfig().ReviewSheets;
+            }
+
+            foreach (var preset in presets)
+            {
+                _reviewSheets.Add(ReviewSheetState.FromPreset(preset));
+            }
+
+            SelectedReviewSheet = _reviewSheets.FirstOrDefault(s => s.FileTag == currentTag)
+                                   ?? _reviewSheets.FirstOrDefault();
+        }
+
+        public void NormalizeSpeechSubtitleOption()
+        {
+            var config = _configProvider();
+            if (!IsSpeechSubtitleOptionEnabled && config.UseSpeechSubtitleForReview)
+            {
+                config.UseSpeechSubtitleForReview = false;
+            }
+        }
+
+        public void RefreshCommandStates()
+        {
+            OnPropertyChanged(nameof(IsSpeechSubtitleOptionEnabled));
+            OnPropertyChanged(nameof(UseSpeechSubtitleForReview));
+            OnPropertyChanged(nameof(SpeechSubtitleOptionStatusText));
+            OnPropertyChanged(nameof(BatchStartButtonText));
+            GenerateSpeechSubtitleCommand.RaiseCanExecuteChanged();
+            GenerateBatchSpeechSubtitleCommand.RaiseCanExecuteChanged();
+            GenerateReviewSummaryCommand.RaiseCanExecuteChanged();
+            GenerateAllReviewSheetsCommand.RaiseCanExecuteChanged();
+            StartBatchCommand.RaiseCanExecuteChanged();
+        }
+
+        // ── Called from MainWindow.axaml.cs ──
+
+        public void EnqueueSubtitleAndReviewFromLibraryUi(MediaFileItem? audioFile)
+        {
+            EnqueueSubtitleAndReviewFromLibrary(audioFile);
+        }
+
+        public void AuditUiEvent(string eventName, string message, bool isSuccess = true)
+            => AppLogService.Instance.LogAudit(eventName, message, isSuccess);
+
+        // ── RefreshAudioLibrary supplement: clear review sheets ──
+
+        public void OnAudioLibraryRefreshed()
+        {
             foreach (var sheet in _reviewSheets)
             {
                 sheet.Markdown = "";
                 sheet.StatusMessage = "";
             }
+        }
 
-            var sessionsPath = PathManager.Instance.SessionsPath;
-            if (!Directory.Exists(sessionsPath))
+        // ── Private helpers ──
+
+        private bool ShouldGenerateSpeechSubtitleForReview
+        {
+            get
             {
-                return;
-            }
-
-            var files = Directory.GetFiles(sessionsPath, "*.mp3")
-                .Concat(Directory.GetFiles(sessionsPath, "*.wav"))
-                .OrderByDescending(path => File.GetLastWriteTimeUtc(path));
-
-            foreach (var file in files)
-            {
-                _audioFiles.Add(new MediaFileItem
-                {
-                    Name = Path.GetFileName(file),
-                    FullPath = file
-                });
-            }
-
-            if (_selectedAudioFile != null && !_audioFiles.Any(item => item.FullPath == _selectedAudioFile.FullPath))
-            {
-                SelectedAudioFile = null;
+                var config = _configProvider();
+                return IsSpeechSubtitleOptionEnabled && config.UseSpeechSubtitleForReview;
             }
         }
 
+        private bool ShouldWriteBatchLogSuccess => AppLogService.Instance.ShouldLogSuccess;
+        private bool ShouldWriteBatchLogFailure => AppLogService.Instance.ShouldLogFailure;
+        private void EnsureBatchLogFile() => AppLogService.Instance.EnsureBatchFile();
+
+        private void AppendBatchLog(string eventName, string fileName, string status, string message)
+            => AppLogService.Instance.LogBatch(eventName, fileName, status, message);
+
+        private void AppendBatchDebugLog(string eventName, string message, bool isSuccess = true)
+            => AppLogService.Instance.LogAudit(eventName, message, isSuccess);
+
+        private static string FormatBatchExceptionForLog(Exception ex)
+            => AppLogService.FormatException(ex);
+
+        private void OnSelectedReviewSheetPropertyChanged(object? sender, PropertyChangedEventArgs e)
+        {
+            OnPropertyChanged(nameof(ReviewSummaryMarkdown));
+            OnPropertyChanged(nameof(ReviewSummaryStatusMessage));
+            OnPropertyChanged(nameof(IsReviewSummaryLoading));
+            OnPropertyChanged(nameof(IsReviewSummaryEmpty));
+            OnPropertyChanged(nameof(ReviewSummaryLampFill));
+            OnPropertyChanged(nameof(ReviewSummaryLampStroke));
+            _notifyReviewLampChanged();
+            GenerateReviewSummaryCommand.RaiseCanExecuteChanged();
+            GenerateAllReviewSheetsCommand.RaiseCanExecuteChanged();
+        }
+
+        private void UpdateBatchQueueStatusText()
+        {
+            var total = _batchQueueItems.Count;
+            var completed = _batchQueueItems.Count(item => item.Status == BatchTaskStatus.Completed);
+            var running = _batchQueueItems.Count(item => item.Status == BatchTaskStatus.Running);
+            var failed = _batchQueueItems.Count(item => item.Status == BatchTaskStatus.Failed);
+            var pending = Math.Max(total - completed - running - failed, 0);
+
+            BatchQueueStatusText = total == 0
+                ? "队列为空"
+                : $"队列 {completed}/{total} 完成，运行 {running}，等待 {pending}，失败 {failed}";
+        }
+
+        // ── Batch task loading ──
+
         private void LoadBatchTasksFromLibrary()
         {
-            if (_audioFiles.Count == 0)
+            if (_fileLibrary.AudioFiles.Count == 0)
             {
-                RefreshAudioLibrary();
+                _fileLibrary.RefreshAudioLibrary();
+                OnAudioLibraryRefreshed();
             }
 
             var batchSheets = GetBatchReviewSheets();
             _batchTasks.Clear();
-            foreach (var audio in _audioFiles)
+            foreach (var audio in _fileLibrary.AudioFiles)
             {
                 var totalSheets = batchSheets.Count;
                 var completedSheets = 0;
@@ -359,14 +469,14 @@ namespace TrueFluentPro.ViewModels
                 }
                 var hasAiSummary = totalSheets > 0 && completedSheets >= totalSheets;
                 var requireSpeech = ShouldGenerateSpeechSubtitleForReview;
-                var hasSpeechSubtitle = HasSpeechSubtitle(audio.FullPath);
+                var hasSpeechSubtitle = FileLibraryViewModel.HasSpeechSubtitle(audio.FullPath);
                 var subtitlePath = requireSpeech
-                    ? (hasSpeechSubtitle ? GetSpeechSubtitlePath(audio.FullPath) : "")
-                    : GetPreferredSubtitlePath(audio.FullPath);
+                    ? (hasSpeechSubtitle ? FileLibraryViewModel.GetSpeechSubtitlePath(audio.FullPath) : "")
+                    : FileLibraryViewModel.GetPreferredSubtitlePath(audio.FullPath);
                 var hasSubtitle = requireSpeech
                     ? hasSpeechSubtitle
                     : !string.IsNullOrWhiteSpace(subtitlePath);
-                var hasAiSubtitle = HasAiSubtitle(audio.FullPath);
+                var hasAiSubtitle = FileLibraryViewModel.HasAiSubtitle(audio.FullPath);
                 var pendingSheets = Math.Max(totalSheets - completedSheets, 0);
                 var statusMessage = hasSubtitle
                     ? "待处理"
@@ -396,208 +506,26 @@ namespace TrueFluentPro.ViewModels
                 });
             }
 
-            StatusMessage = _batchTasks.Count == 0
+            _statusSetter(_batchTasks.Count == 0
                 ? "未找到可批处理的音频文件"
-                : $"已载入 {_batchTasks.Count} 条批处理任务";
+                : $"已载入 {_batchTasks.Count} 条批处理任务");
             BatchStatusMessage = "";
         }
 
         private List<ReviewSheetPreset> GetBatchReviewSheets()
         {
-            var sheets = _config.AiConfig?.ReviewSheets
+            var config = _configProvider();
+            var sheets = config.AiConfig?.ReviewSheets
                 ?.Where(s => s.IncludeInBatch)
                 .ToList();
 
             return sheets ?? new List<ReviewSheetPreset>();
         }
 
-        private void UpdateBatchQueueStatusText()
-        {
-            var total = _batchQueueItems.Count;
-            var completed = _batchQueueItems.Count(item => item.Status == BatchTaskStatus.Completed);
-            var running = _batchQueueItems.Count(item => item.Status == BatchTaskStatus.Running);
-            var failed = _batchQueueItems.Count(item => item.Status == BatchTaskStatus.Failed);
-            var pending = Math.Max(total - completed - running - failed, 0);
-
-            BatchQueueStatusText = total == 0
-                ? "队列为空"
-                : $"队列 {completed}/{total} 完成，运行 {running}，等待 {pending}，失败 {failed}";
-        }
-
-        private void NormalizeSpeechSubtitleOption()
-        {
-            if (!IsSpeechSubtitleOptionEnabled && _config.UseSpeechSubtitleForReview)
-            {
-                _config.UseSpeechSubtitleForReview = false;
-            }
-        }
-
-        private bool ShouldGenerateSpeechSubtitleForReview => IsSpeechSubtitleOptionEnabled
-            && _config.UseSpeechSubtitleForReview;
-
-        private bool CanGenerateSpeechSubtitleFromStorage()
-        {
-            if (!IsSpeechSubtitleOptionEnabled)
-            {
-                return false;
-            }
-
-            var subscription = _config.GetActiveSubscription();
-            return subscription?.IsValid() == true && !string.IsNullOrWhiteSpace(_config.SourceLanguage);
-        }
-
-        private void EnqueueReviewSheetsForAudio(MediaFileItem audioFile, IEnumerable<ReviewSheetState> sheets)
-        {
-            var requireSpeech = ShouldGenerateSpeechSubtitleForReview;
-            var subtitlePath = requireSpeech
-                ? GetSpeechSubtitlePath(audioFile.FullPath)
-                : GetPreferredSubtitlePath(audioFile.FullPath);
-            var hasSubtitle = requireSpeech
-                ? File.Exists(subtitlePath)
-                : !string.IsNullOrWhiteSpace(subtitlePath) && File.Exists(subtitlePath);
-            if (!hasSubtitle)
-            {
-                foreach (var sheet in sheets)
-                {
-                    sheet.StatusMessage = requireSpeech ? "缺少 speech 字幕" : "缺少字幕";
-                }
-                return;
-            }
-
-            foreach (var sheet in sheets)
-            {
-                var sheetPath = GetReviewSheetPath(audioFile.FullPath, sheet.FileTag);
-                if (File.Exists(sheetPath))
-                {
-                    continue;
-                }
-
-                var existsInQueue = _batchQueueItems.Any(item =>
-                    string.Equals(item.FullPath, audioFile.FullPath, StringComparison.OrdinalIgnoreCase)
-                    && string.Equals(item.SheetTag, sheet.FileTag, StringComparison.OrdinalIgnoreCase)
-                    && item.Status is BatchTaskStatus.Pending or BatchTaskStatus.Running);
-
-                if (existsInQueue)
-                {
-                    continue;
-                }
-
-                _batchQueueItems.Add(new BatchQueueItem
-                {
-                    FileName = audioFile.Name,
-                    FullPath = audioFile.FullPath,
-                    SheetName = sheet.Name,
-                    SheetTag = sheet.FileTag,
-                    Prompt = sheet.Prompt,
-                    QueueType = BatchQueueItemType.ReviewSheet,
-                    Status = BatchTaskStatus.Pending,
-                    Progress = 0,
-                    StatusMessage = "待处理"
-                });
-
-                sheet.StatusMessage = "已加入队列";
-            }
-
-            UpdateBatchQueueStatusText();
-        }
-
-        private void StartBatchQueueRunner(string statusMessage)
-        {
-            if (_batchQueueRunnerTask != null && !_batchQueueRunnerTask.IsCompleted)
-            {
-                return;
-            }
-
-            if (_batchQueueItems.Count == 0)
-            {
-                return;
-            }
-
-            _batchCts?.Cancel();
-            _batchCts = new CancellationTokenSource();
-            var token = _batchCts.Token;
-
-            IsBatchRunning = true;
-            BatchStatusMessage = statusMessage;
-
-            _batchQueueRunnerTask = Task.Run(async () =>
-            {
-                var running = new List<Task>();
-                var cueCache = new Dictionary<string, List<SubtitleCue>>();
-                var cueLock = new object();
-
-                try
-                {
-                    while (!token.IsCancellationRequested)
-                    {
-                        running.RemoveAll(t => t.IsCompleted);
-
-                        while (running.Count < BatchConcurrencyLimit)
-                        {
-                            var next = await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
-                            {
-                                var item = _batchQueueItems.FirstOrDefault(i => i.Status == BatchTaskStatus.Pending);
-                                if (item != null)
-                                {
-                                    item.Status = BatchTaskStatus.Running;
-                                    item.StatusMessage = "调度中";
-                                }
-                                return item;
-                            });
-
-                            if (next == null)
-                            {
-                                break;
-                            }
-
-                            var parent = await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
-                                BatchTasks.FirstOrDefault(x => x.FullPath == next.FullPath));
-
-                            running.Add(Task.Run(() =>
-                                ProcessBatchQueueItem(next, parent, token, cueCache, cueLock), token));
-                        }
-
-                        if (running.Count == 0)
-                        {
-                            break;
-                        }
-
-                        // 关键修复：运行中可能会有新任务入队（例如右键连续加入队列）。
-                        // 旧逻辑只等待“已有运行任务完成”才进入下一轮，导致新入队任务长时间停留在待处理。
-                        // 新逻辑：任务完成或短周期唤醒（300ms）任一发生即继续下一轮，及时按并发上限补位。
-                        var finishedOrWake = await Task.WhenAny(
-                            Task.WhenAny(running),
-                            Task.Delay(TimeSpan.FromMilliseconds(300), token));
-
-                        if (finishedOrWake != null && finishedOrWake.Status == TaskStatus.RanToCompletion)
-                        {
-                            running.RemoveAll(t => t.IsCompleted);
-                        }
-                    }
-                }
-                catch (OperationCanceledException)
-                {
-                    // ignore cancellation
-                }
-
-                Avalonia.Threading.Dispatcher.UIThread.Post(() =>
-                {
-                    IsBatchRunning = false;
-                    BatchStatusMessage = token.IsCancellationRequested
-                        ? "批处理已停止"
-                        : "批处理完成";
-                    if (!token.IsCancellationRequested && ShouldWriteBatchLogSuccess)
-                    {
-                        AppendBatchLog("BatchComplete", "-", "Success", "批处理完成");
-                    }
-                });
-            }, token);
-        }
-
         private void ClearBatchTasks()
         {
             _batchTasks.Clear();
-            StatusMessage = "批处理任务已清空";
+            _statusSetter("批处理任务已清空");
             BatchStatusMessage = "";
         }
 
@@ -617,7 +545,7 @@ namespace TrueFluentPro.ViewModels
                 return false;
             }
 
-            var needsSpeech = enableSpeech && BatchTasks.Any(task => !HasSpeechSubtitle(task.FullPath));
+            var needsSpeech = enableSpeech && BatchTasks.Any(task => !FileLibraryViewModel.HasSpeechSubtitle(task.FullPath));
             if (needsSpeech && !CanGenerateSpeechSubtitleFromStorage())
             {
                 return false;
@@ -625,29 +553,6 @@ namespace TrueFluentPro.ViewModels
 
             return true;
         }
-
-        private bool ShouldWriteBatchLogSuccess => AppLogService.Instance.ShouldLogSuccess;
-
-        private bool ShouldWriteBatchLogFailure => AppLogService.Instance.ShouldLogFailure;
-
-        private void EnsureBatchLogFile() => AppLogService.Instance.EnsureBatchFile();
-
-        private void AppendBatchLog(string eventName, string fileName, string status, string message)
-            => AppLogService.Instance.LogBatch(eventName, fileName, status, message);
-
-        private void AppendBatchDebugLog(string eventName, string message, bool isSuccess = true)
-            => AppLogService.Instance.LogAudit(eventName, message, isSuccess);
-
-        public void AuditUiEvent(string eventName, string message, bool isSuccess = true)
-            => AppLogService.Instance.LogAudit(eventName, message, isSuccess);
-
-        public void EnqueueSubtitleAndReviewFromLibraryUi(MediaFileItem? audioFile)
-        {
-            EnqueueSubtitleAndReviewFromLibrary(audioFile);
-        }
-
-        private static string FormatBatchExceptionForLog(Exception ex)
-            => AppLogService.FormatException(ex);
 
         private string GetBatchStartButtonText()
         {
@@ -673,6 +578,20 @@ namespace TrueFluentPro.ViewModels
             return "开始处理";
         }
 
+        private bool CanGenerateSpeechSubtitleFromStorage()
+        {
+            if (!IsSpeechSubtitleOptionEnabled)
+            {
+                return false;
+            }
+
+            var config = _configProvider();
+            var subscription = config.GetActiveSubscription();
+            return subscription?.IsValid() == true && !string.IsNullOrWhiteSpace(config.SourceLanguage);
+        }
+
+        // ── Batch processing ──
+
         private void StartBatchProcessing()
         {
             if (BatchTasks.Count == 0)
@@ -681,6 +600,7 @@ namespace TrueFluentPro.ViewModels
                 return;
             }
 
+            var config = _configProvider();
             var batchSheets = GetBatchReviewSheets();
             var enableReview = IsAiConfigured && batchSheets.Count > 0;
             var enableSpeech = ShouldGenerateSpeechSubtitleForReview;
@@ -691,7 +611,7 @@ namespace TrueFluentPro.ViewModels
                 return;
             }
 
-            var needsSpeech = enableSpeech && BatchTasks.Any(task => !HasSpeechSubtitle(task.FullPath));
+            var needsSpeech = enableSpeech && BatchTasks.Any(task => !FileLibraryViewModel.HasSpeechSubtitle(task.FullPath));
             if (needsSpeech && !CanGenerateSpeechSubtitleFromStorage())
             {
                 BatchStatusMessage = "speech 字幕需要有效的存储账号与语音订阅";
@@ -713,7 +633,7 @@ namespace TrueFluentPro.ViewModels
             foreach (var batchItem in BatchTasks)
             {
                 PrepareAndEnqueueSingleItem(batchItem, batchSheets, enableSpeech, enableReview,
-                    _config.BatchForceRegeneration);
+                    config.BatchForceRegeneration);
             }
 
             if (_batchQueueItems.Count == 0)
@@ -728,6 +648,78 @@ namespace TrueFluentPro.ViewModels
             }
 
             StartBatchQueueRunner("批处理已开始");
+        }
+
+        private void StopBatchProcessing()
+        {
+            _batchCts?.Cancel();
+            foreach (var item in _batchQueueItems)
+            {
+                item.Cts?.Cancel();
+            }
+            BatchStatusMessage = "正在停止批处理...";
+            if (ShouldWriteBatchLogFailure)
+            {
+                AppendBatchLog("BatchStop", "-", "Failed", "批处理停止");
+            }
+        }
+
+        private void RefreshBatchQueue()
+        {
+            var completedItems = _batchQueueItems
+                .Where(item => item.Status == BatchTaskStatus.Completed)
+                .ToList();
+
+            if (completedItems.Count == 0)
+            {
+                BatchStatusMessage = "队列中暂无可清理的已完成项";
+                return;
+            }
+
+            foreach (var item in completedItems)
+            {
+                _batchQueueItems.Remove(item);
+            }
+
+            UpdateBatchQueueStatusText();
+            BatchStatusMessage = $"已清理 {completedItems.Count} 条已完成队列项";
+        }
+
+        private void CancelBatchQueueItem(BatchQueueItem? item)
+        {
+            if (item == null)
+            {
+                return;
+            }
+
+            item.Cts?.Cancel();
+            UpdateQueueItem(item, BatchTaskStatus.Failed, item.Progress, "已取消");
+            if (ShouldWriteBatchLogFailure)
+            {
+                var eventName = item.QueueType == BatchQueueItemType.SpeechSubtitle
+                    ? "SpeechCanceled"
+                    : "ReviewCanceled";
+                AppendBatchLog(eventName, item.FileName, "Failed", "已取消");
+            }
+
+            var parent = BatchTasks.FirstOrDefault(x => x.FullPath == item.FullPath);
+            if (parent != null)
+            {
+                if (item.QueueType == BatchQueueItemType.SpeechSubtitle)
+                {
+                    parent.ReviewStatusText = "复盘:字幕取消";
+                    UpdateBatchItem(parent, BatchTaskStatus.Failed, 0, "字幕已取消");
+                }
+                else
+                {
+                    UpdateBatchReviewProgress(parent, BatchTaskStatus.Failed);
+                }
+            }
+
+            Dispatcher.UIThread.Post(() =>
+            {
+                _batchQueueItems.Remove(item);
+            });
         }
 
         private void EnqueueSpeechSubtitleForBatch(BatchTaskItem batchItem)
@@ -806,12 +798,6 @@ namespace TrueFluentPro.ViewModels
             return added;
         }
 
-        /// <summary>
-        /// 单个 BatchTaskItem 的决策与入队逻辑（共享核心）。
-        /// 批处理按钮和右键菜单共同调用此方法。
-        /// </summary>
-        /// <param name="forceRegeneration">true: 强制重新生成字幕和复盘（忽略已有文件）</param>
-        /// <returns>添加到队列的项数</returns>
         private int PrepareAndEnqueueSingleItem(
             BatchTaskItem batchItem,
             List<ReviewSheetPreset> reviewSheets,
@@ -819,10 +805,9 @@ namespace TrueFluentPro.ViewModels
             bool enableReview,
             bool forceRegeneration)
         {
-            var speechExists = HasSpeechSubtitle(batchItem.FullPath);
-            batchItem.HasAiSubtitle = enableSpeech ? speechExists : HasAiSubtitle(batchItem.FullPath);
+            var speechExists = FileLibraryViewModel.HasSpeechSubtitle(batchItem.FullPath);
+            batchItem.HasAiSubtitle = enableSpeech ? speechExists : FileLibraryViewModel.HasAiSubtitle(batchItem.FullPath);
 
-            // ── 需要生成 speech 字幕 ──
             if (enableSpeech && (forceRegeneration || !speechExists))
             {
                 batchItem.HasAiSubtitle = false;
@@ -838,7 +823,6 @@ namespace TrueFluentPro.ViewModels
                 return 1;
             }
 
-            // ── 字幕已有 / 未启用，且无需复盘 ──
             if (!enableReview)
             {
                 batchItem.ReviewTotal = 0;
@@ -846,7 +830,7 @@ namespace TrueFluentPro.ViewModels
                 batchItem.ReviewFailed = 0;
                 batchItem.ReviewPending = 0;
                 batchItem.ReviewStatusText = "复盘:未启用";
-                batchItem.HasAiSubtitle = speechExists || HasAiSubtitle(batchItem.FullPath);
+                batchItem.HasAiSubtitle = speechExists || FileLibraryViewModel.HasAiSubtitle(batchItem.FullPath);
                 UpdateBatchItem(batchItem, BatchTaskStatus.Completed, 1, "字幕已存在");
                 if (ShouldWriteBatchLogSuccess)
                 {
@@ -855,10 +839,9 @@ namespace TrueFluentPro.ViewModels
                 return 0;
             }
 
-            // ── 未启用 speech，检查是否有字幕可供复盘 ──
             if (!enableSpeech)
             {
-                var subtitlePath = GetPreferredSubtitlePath(batchItem.FullPath);
+                var subtitlePath = FileLibraryViewModel.GetPreferredSubtitlePath(batchItem.FullPath);
                 if (string.IsNullOrWhiteSpace(subtitlePath) || !File.Exists(subtitlePath))
                 {
                     batchItem.ReviewTotal = reviewSheets.Count;
@@ -875,7 +858,6 @@ namespace TrueFluentPro.ViewModels
                 }
             }
 
-            // ── 入队复盘项 ──
             var completed = forceRegeneration ? 0 : reviewSheets.Count(s =>
                 File.Exists(GetReviewSheetPath(batchItem.FullPath, s.FileTag)));
             var pending = Math.Max(reviewSheets.Count - completed, 0);
@@ -907,39 +889,93 @@ namespace TrueFluentPro.ViewModels
             return added;
         }
 
-        private void StopBatchProcessing()
+        private void StartBatchQueueRunner(string statusMessage)
         {
-            _batchCts?.Cancel();
-            foreach (var item in _batchQueueItems)
+            if (_batchQueueRunnerTask != null && !_batchQueueRunnerTask.IsCompleted)
             {
-                item.Cts?.Cancel();
-            }
-            BatchStatusMessage = "正在停止批处理...";
-            if (ShouldWriteBatchLogFailure)
-            {
-                AppendBatchLog("BatchStop", "-", "Failed", "批处理停止");
-            }
-        }
-
-        private void RefreshBatchQueue()
-        {
-            var completedItems = _batchQueueItems
-                .Where(item => item.Status == BatchTaskStatus.Completed)
-                .ToList();
-
-            if (completedItems.Count == 0)
-            {
-                BatchStatusMessage = "队列中暂无可清理的已完成项";
                 return;
             }
 
-            foreach (var item in completedItems)
+            if (_batchQueueItems.Count == 0)
             {
-                _batchQueueItems.Remove(item);
+                return;
             }
 
-            UpdateBatchQueueStatusText();
-            BatchStatusMessage = $"已清理 {completedItems.Count} 条已完成队列项";
+            _batchCts?.Cancel();
+            _batchCts = new CancellationTokenSource();
+            var token = _batchCts.Token;
+
+            IsBatchRunning = true;
+            BatchStatusMessage = statusMessage;
+
+            _batchQueueRunnerTask = Task.Run(async () =>
+            {
+                var running = new List<Task>();
+                var cueCache = new Dictionary<string, List<SubtitleCue>>();
+                var cueLock = new object();
+
+                try
+                {
+                    while (!token.IsCancellationRequested)
+                    {
+                        running.RemoveAll(t => t.IsCompleted);
+
+                        while (running.Count < BatchConcurrencyLimit)
+                        {
+                            var next = await Dispatcher.UIThread.InvokeAsync(() =>
+                            {
+                                var item = _batchQueueItems.FirstOrDefault(i => i.Status == BatchTaskStatus.Pending);
+                                if (item != null)
+                                {
+                                    item.Status = BatchTaskStatus.Running;
+                                    item.StatusMessage = "调度中";
+                                }
+                                return item;
+                            });
+
+                            if (next == null)
+                            {
+                                break;
+                            }
+
+                            var parent = await Dispatcher.UIThread.InvokeAsync(() =>
+                                BatchTasks.FirstOrDefault(x => x.FullPath == next.FullPath));
+
+                            running.Add(Task.Run(() =>
+                                ProcessBatchQueueItem(next, parent, token, cueCache, cueLock), token));
+                        }
+
+                        if (running.Count == 0)
+                        {
+                            break;
+                        }
+
+                        var finishedOrWake = await Task.WhenAny(
+                            Task.WhenAny(running),
+                            Task.Delay(TimeSpan.FromMilliseconds(300), token));
+
+                        if (finishedOrWake != null && finishedOrWake.Status == TaskStatus.RanToCompletion)
+                        {
+                            running.RemoveAll(t => t.IsCompleted);
+                        }
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                }
+
+                Dispatcher.UIThread.Post(() =>
+                {
+                    IsBatchRunning = false;
+                    BatchStatusMessage = token.IsCancellationRequested
+                        ? "批处理已停止"
+                        : "批处理完成";
+                    if (!token.IsCancellationRequested && ShouldWriteBatchLogSuccess)
+                    {
+                        AppendBatchLog("BatchComplete", "-", "Success", "批处理完成");
+                    }
+                });
+            }, token);
         }
 
         private async Task ProcessBatchQueueItem(
@@ -992,7 +1028,8 @@ namespace TrueFluentPro.ViewModels
                 return;
             }
 
-            var systemPrompt = _config.AiConfig?.ReviewSystemPrompt;
+            var config = _configProvider();
+            var systemPrompt = config.AiConfig?.ReviewSystemPrompt;
             if (string.IsNullOrWhiteSpace(systemPrompt))
             {
                 systemPrompt = new AiConfig().ReviewSystemPrompt;
@@ -1000,7 +1037,7 @@ namespace TrueFluentPro.ViewModels
             var prompt = string.IsNullOrWhiteSpace(queueItem.Prompt)
                 ? "请生成复盘总结。"
                 : queueItem.Prompt.Trim();
-            var userTemplate = _config.AiConfig?.ReviewUserContentTemplate;
+            var userTemplate = config.AiConfig?.ReviewUserContentTemplate;
             if (string.IsNullOrWhiteSpace(userTemplate))
             {
                 userTemplate = new AiConfig().ReviewUserContentTemplate;
@@ -1014,7 +1051,7 @@ namespace TrueFluentPro.ViewModels
                 var sb = new System.Text.StringBuilder();
                 AiRequestOutcome? outcome = null;
                 await _aiInsightService.StreamChatAsync(
-                    _config.AiConfig!,
+                    config.AiConfig!,
                     systemPrompt,
                     userPrompt,
                     chunk =>
@@ -1023,7 +1060,7 @@ namespace TrueFluentPro.ViewModels
                     },
                     localToken,
                     AiChatProfile.Summary,
-                    enableReasoning: _config.AiConfig!.SummaryEnableReasoning,
+                    enableReasoning: config.AiConfig!.SummaryEnableReasoning,
                     onOutcome: o => outcome = o);
 
                 var markdown = TimeLinkHelper.InjectTimeLinks(sb.ToString());
@@ -1038,7 +1075,7 @@ namespace TrueFluentPro.ViewModels
                 {
                     note = "完成(思考)";
                 }
-                else if (_config.AiConfig!.SummaryEnableReasoning)
+                else if (config.AiConfig!.SummaryEnableReasoning)
                 {
                     note = "完成(非思考)";
                 }
@@ -1154,7 +1191,7 @@ namespace TrueFluentPro.ViewModels
                     }
                 }
 
-                var added = await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                var added = await Dispatcher.UIThread.InvokeAsync(() =>
                     parentItem == null
                         ? 0
                         : EnqueueReviewQueueItemsForAudioInternal(
@@ -1213,8 +1250,8 @@ namespace TrueFluentPro.ViewModels
             }
 
             var subtitlePath = ShouldGenerateSpeechSubtitleForReview
-                ? GetSpeechSubtitlePath(audioPath)
-                : GetPreferredSubtitlePath(audioPath);
+                ? FileLibraryViewModel.GetSpeechSubtitlePath(audioPath)
+                : FileLibraryViewModel.GetPreferredSubtitlePath(audioPath);
             if (string.IsNullOrWhiteSpace(subtitlePath) || !File.Exists(subtitlePath))
             {
                 return new List<SubtitleCue>();
@@ -1231,7 +1268,7 @@ namespace TrueFluentPro.ViewModels
 
         private void UpdateBatchReviewProgress(BatchTaskItem item, BatchTaskStatus sheetStatus)
         {
-            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            Dispatcher.UIThread.Post(() =>
             {
                 if (sheetStatus == BatchTaskStatus.Completed)
                 {
@@ -1270,7 +1307,7 @@ namespace TrueFluentPro.ViewModels
 
         private void UpdateQueueItem(BatchQueueItem item, BatchTaskStatus status, double progress, string message)
         {
-            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            Dispatcher.UIThread.Post(() =>
             {
                 if (!_batchQueueItems.Contains(item))
                 {
@@ -1284,46 +1321,9 @@ namespace TrueFluentPro.ViewModels
             });
         }
 
-        private void CancelBatchQueueItem(BatchQueueItem? item)
+        private static void UpdateBatchItem(BatchTaskItem item, BatchTaskStatus status, double progress, string message)
         {
-            if (item == null)
-            {
-                return;
-            }
-
-            item.Cts?.Cancel();
-            UpdateQueueItem(item, BatchTaskStatus.Failed, item.Progress, "已取消");
-            if (ShouldWriteBatchLogFailure)
-            {
-                var eventName = item.QueueType == BatchQueueItemType.SpeechSubtitle
-                    ? "SpeechCanceled"
-                    : "ReviewCanceled";
-                AppendBatchLog(eventName, item.FileName, "Failed", "已取消");
-            }
-
-            var parent = BatchTasks.FirstOrDefault(x => x.FullPath == item.FullPath);
-            if (parent != null)
-            {
-                if (item.QueueType == BatchQueueItemType.SpeechSubtitle)
-                {
-                    parent.ReviewStatusText = "复盘:字幕取消";
-                    UpdateBatchItem(parent, BatchTaskStatus.Failed, 0, "字幕已取消");
-                }
-                else
-                {
-                    UpdateBatchReviewProgress(parent, BatchTaskStatus.Failed);
-                }
-            }
-
-            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
-            {
-                _batchQueueItems.Remove(item);
-            });
-        }
-
-        private void UpdateBatchItem(BatchTaskItem item, BatchTaskStatus status, double progress, string message)
-        {
-            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            Dispatcher.UIThread.Post(() =>
             {
                 item.Status = status;
                 item.Progress = progress;
@@ -1331,172 +1331,7 @@ namespace TrueFluentPro.ViewModels
             });
         }
 
-        private static string? GetPreferredSubtitlePath(string audioFilePath)
-        {
-            var directory = Path.GetDirectoryName(audioFilePath) ?? PathManager.Instance.SessionsPath;
-            var baseName = Path.GetFileNameWithoutExtension(audioFilePath);
-
-            var candidates = new[]
-            {
-                Path.Combine(directory, baseName + ".speech.vtt"),
-                Path.Combine(directory, baseName + ".ai.srt"),
-                Path.Combine(directory, baseName + ".ai.vtt"),
-                Path.Combine(directory, baseName + ".srt"),
-                Path.Combine(directory, baseName + ".vtt")
-            };
-
-            return candidates.FirstOrDefault(File.Exists);
-        }
-
-        private static bool HasAiSubtitle(string audioFilePath)
-        {
-            var directory = Path.GetDirectoryName(audioFilePath) ?? PathManager.Instance.SessionsPath;
-            var baseName = Path.GetFileNameWithoutExtension(audioFilePath);
-            var speechVtt = Path.Combine(directory, baseName + ".speech.vtt");
-            var aiSrt = Path.Combine(directory, baseName + ".ai.srt");
-            var aiVtt = Path.Combine(directory, baseName + ".ai.vtt");
-            return File.Exists(speechVtt) || File.Exists(aiSrt) || File.Exists(aiVtt);
-        }
-
-        private static bool HasSpeechSubtitle(string audioFilePath)
-        {
-            var speechPath = GetSpeechSubtitlePath(audioFilePath);
-            return File.Exists(speechPath);
-        }
-
-        private void RebuildReviewSheets()
-        {
-            var currentTag = SelectedReviewSheet?.FileTag;
-            _reviewSheets.Clear();
-
-            var presets = _config.AiConfig?.ReviewSheets;
-            if (presets == null || presets.Count == 0)
-            {
-                presets = new AiConfig().ReviewSheets;
-            }
-
-            foreach (var preset in presets)
-            {
-                _reviewSheets.Add(ReviewSheetState.FromPreset(preset));
-            }
-
-            SelectedReviewSheet = _reviewSheets.FirstOrDefault(s => s.FileTag == currentTag)
-                                   ?? _reviewSheets.FirstOrDefault();
-        }
-
-        private ReviewSheetState? GetPrimaryReviewSheet()
-        {
-            return _reviewSheets.FirstOrDefault(s => string.Equals(s.FileTag, "summary", StringComparison.OrdinalIgnoreCase))
-                   ?? _reviewSheets.FirstOrDefault();
-        }
-
-        private void OnSelectedReviewSheetPropertyChanged(object? sender, PropertyChangedEventArgs e)
-        {
-            OnPropertyChanged(nameof(ReviewSummaryMarkdown));
-            OnPropertyChanged(nameof(ReviewSummaryStatusMessage));
-            OnPropertyChanged(nameof(IsReviewSummaryLoading));
-            OnPropertyChanged(nameof(IsReviewSummaryEmpty));
-            OnPropertyChanged(nameof(ReviewSummaryLampFill));
-            OnPropertyChanged(nameof(ReviewSummaryLampStroke));
-            OnPropertyChanged(nameof(ReviewSummaryLampOpacity));
-            if (GenerateReviewSummaryCommand is RelayCommand genCmd)
-            {
-                genCmd.RaiseCanExecuteChanged();
-            }
-            if (GenerateAllReviewSheetsCommand is RelayCommand allCmd)
-            {
-                allCmd.RaiseCanExecuteChanged();
-            }
-        }
-
-        private void LoadSubtitleFilesForAudio(MediaFileItem? audioFile)
-        {
-            _subtitleFiles.Clear();
-            _subtitleCues.Clear();
-            SelectedSubtitleFile = null;
-
-            if (audioFile == null || string.IsNullOrWhiteSpace(audioFile.FullPath))
-            {
-                return;
-            }
-
-            var directory = Path.GetDirectoryName(audioFile.FullPath) ?? PathManager.Instance.SessionsPath;
-            var baseName = Path.GetFileNameWithoutExtension(audioFile.FullPath);
-            var candidateBases = new[] { baseName };
-
-            foreach (var candidate in candidateBases)
-            {
-                var speechVtt = Path.Combine(directory, candidate + ".speech.vtt");
-                if (File.Exists(speechVtt))
-                {
-                    _subtitleFiles.Add(new MediaFileItem
-                    {
-                        Name = Path.GetFileName(speechVtt),
-                        FullPath = speechVtt
-                    });
-                }
-
-                var srtPath = Path.Combine(directory, candidate + ".srt");
-                if (File.Exists(srtPath))
-                {
-                    _subtitleFiles.Add(new MediaFileItem
-                    {
-                        Name = Path.GetFileName(srtPath),
-                        FullPath = srtPath
-                    });
-                }
-
-                var vttPath = Path.Combine(directory, candidate + ".vtt");
-                if (File.Exists(vttPath))
-                {
-                    _subtitleFiles.Add(new MediaFileItem
-                    {
-                        Name = Path.GetFileName(vttPath),
-                        FullPath = vttPath
-                    });
-                }
-            }
-
-            if (_subtitleFiles.Count > 0)
-            {
-                var speechPath = GetSpeechSubtitlePath(audioFile.FullPath);
-                var speechFile = _subtitleFiles.FirstOrDefault(item =>
-                    string.Equals(item.FullPath, speechPath, StringComparison.OrdinalIgnoreCase));
-                SelectedSubtitleFile = ShouldGenerateSpeechSubtitleForReview && speechFile != null
-                    ? speechFile
-                    : _subtitleFiles[0];
-            }
-        }
-
-        private void LoadSubtitleCues(MediaFileItem? subtitleFile)
-        {
-            _subtitleCues.Clear();
-            SelectedSubtitleCue = null;
-
-            if (subtitleFile == null || string.IsNullOrWhiteSpace(subtitleFile.FullPath))
-            {
-                return;
-            }
-
-            if (!File.Exists(subtitleFile.FullPath))
-            {
-                return;
-            }
-
-            var extension = Path.GetExtension(subtitleFile.FullPath).ToLowerInvariant();
-            if (extension == ".srt")
-            {
-                ParseSrt(subtitleFile.FullPath);
-            }
-            else if (extension == ".vtt")
-            {
-                ParseVtt(subtitleFile.FullPath);
-            }
-
-            UpdateSubtitleListHeight();
-            ((RelayCommand)GenerateReviewSummaryCommand).RaiseCanExecuteChanged();
-            ((RelayCommand)GenerateAllReviewSheetsCommand).RaiseCanExecuteChanged();
-        }
+        // ── Review sheet loading / generation ──
 
         private void LoadReviewSheetForAudio(MediaFileItem? audioFile, ReviewSheetState? sheet)
         {
@@ -1523,8 +1358,8 @@ namespace TrueFluentPro.ViewModels
                 sheet.StatusMessage = "未找到复盘内容，可生成。";
             }
 
-            ((RelayCommand)GenerateReviewSummaryCommand).RaiseCanExecuteChanged();
-            ((RelayCommand)GenerateAllReviewSheetsCommand).RaiseCanExecuteChanged();
+            GenerateReviewSummaryCommand.RaiseCanExecuteChanged();
+            GenerateAllReviewSheetsCommand.RaiseCanExecuteChanged();
         }
 
         private static string GetReviewSheetPath(string audioFilePath, string fileTag)
@@ -1545,16 +1380,72 @@ namespace TrueFluentPro.ViewModels
             }
         }
 
+        private void EnqueueReviewSheetsForAudio(MediaFileItem audioFile, IEnumerable<ReviewSheetState> sheets)
+        {
+            var requireSpeech = ShouldGenerateSpeechSubtitleForReview;
+            var subtitlePath = requireSpeech
+                ? FileLibraryViewModel.GetSpeechSubtitlePath(audioFile.FullPath)
+                : FileLibraryViewModel.GetPreferredSubtitlePath(audioFile.FullPath);
+            var hasSubtitle = requireSpeech
+                ? File.Exists(subtitlePath)
+                : !string.IsNullOrWhiteSpace(subtitlePath) && File.Exists(subtitlePath);
+            if (!hasSubtitle)
+            {
+                foreach (var sheet in sheets)
+                {
+                    sheet.StatusMessage = requireSpeech ? "缺少 speech 字幕" : "缺少字幕";
+                }
+                return;
+            }
+
+            foreach (var sheet in sheets)
+            {
+                var sheetPath = GetReviewSheetPath(audioFile.FullPath, sheet.FileTag);
+                if (File.Exists(sheetPath))
+                {
+                    continue;
+                }
+
+                var existsInQueue = _batchQueueItems.Any(item =>
+                    string.Equals(item.FullPath, audioFile.FullPath, StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(item.SheetTag, sheet.FileTag, StringComparison.OrdinalIgnoreCase)
+                    && item.Status is BatchTaskStatus.Pending or BatchTaskStatus.Running);
+
+                if (existsInQueue)
+                {
+                    continue;
+                }
+
+                _batchQueueItems.Add(new BatchQueueItem
+                {
+                    FileName = audioFile.Name,
+                    FullPath = audioFile.FullPath,
+                    SheetName = sheet.Name,
+                    SheetTag = sheet.FileTag,
+                    Prompt = sheet.Prompt,
+                    QueueType = BatchQueueItemType.ReviewSheet,
+                    Status = BatchTaskStatus.Pending,
+                    Progress = 0,
+                    StatusMessage = "待处理"
+                });
+
+                sheet.StatusMessage = "已加入队列";
+            }
+
+            UpdateBatchQueueStatusText();
+        }
+
         private bool CanGenerateReviewSummary()
         {
-            var hasCues = SubtitleCues.Count > 0;
+            var hasCues = _fileLibrary.SubtitleCues.Count > 0;
+            var selectedAudio = _fileLibrary.SelectedAudioFile;
             var allowSpeechGeneration = ShouldGenerateSpeechSubtitleForReview
-                && SelectedAudioFile != null
+                && selectedAudio != null
                 && !IsSpeechSubtitleGenerating
-                && (HasSpeechSubtitle(SelectedAudioFile.FullPath) || CanGenerateSpeechSubtitleFromStorage());
+                && (FileLibraryViewModel.HasSpeechSubtitle(selectedAudio.FullPath) || CanGenerateSpeechSubtitleFromStorage());
 
             return IsAiConfigured
-                   && SelectedAudioFile != null
+                   && selectedAudio != null
                    && SelectedReviewSheet != null
                    && (hasCues || allowSpeechGeneration)
                    && !IsReviewSummaryLoading;
@@ -1564,18 +1455,18 @@ namespace TrueFluentPro.ViewModels
         {
             if (SelectedReviewSheet == null)
             {
-                SelectedReviewSheet?.StatusMessage = "未选择复盘模板";
                 return;
             }
 
-            if (SelectedAudioFile == null)
+            var selectedAudio = _fileLibrary.SelectedAudioFile;
+            if (selectedAudio == null)
             {
                 SelectedReviewSheet.StatusMessage = "未选择音频文件";
                 return;
             }
 
             var sheet = SelectedReviewSheet;
-            var audioFile = SelectedAudioFile;
+            var audioFile = selectedAudio;
             if (!await EnsureSpeechSubtitleForReviewAsync(audioFile))
             {
                 sheet.StatusMessage = string.IsNullOrWhiteSpace(SpeechSubtitleStatusMessage)
@@ -1584,23 +1475,48 @@ namespace TrueFluentPro.ViewModels
                 return;
             }
 
-            var cues = SubtitleCues.ToList();
+            var cues = _fileLibrary.SubtitleCues.ToList();
             await GenerateReviewSheetAsync(sheet, audioFile, cues);
         }
 
         private bool CanGenerateAllReviewSheets()
         {
-            var hasCues = SubtitleCues.Count > 0;
+            var hasCues = _fileLibrary.SubtitleCues.Count > 0;
+            var selectedAudio = _fileLibrary.SelectedAudioFile;
             var allowSpeechGeneration = ShouldGenerateSpeechSubtitleForReview
-                && SelectedAudioFile != null
+                && selectedAudio != null
                 && !IsSpeechSubtitleGenerating
-                && (HasSpeechSubtitle(SelectedAudioFile.FullPath) || CanGenerateSpeechSubtitleFromStorage());
+                && (FileLibraryViewModel.HasSpeechSubtitle(selectedAudio.FullPath) || CanGenerateSpeechSubtitleFromStorage());
 
             return IsAiConfigured
-                   && SelectedAudioFile != null
+                   && selectedAudio != null
                    && (hasCues || allowSpeechGeneration)
                    && _reviewSheets.Count > 0
                    && _reviewSheets.Any(sheet => !sheet.IsLoading);
+        }
+
+        private async void GenerateAllReviewSheets()
+        {
+            var selectedAudio = _fileLibrary.SelectedAudioFile;
+            if (selectedAudio == null)
+            {
+                SelectedReviewSheet?.StatusMessage = "未选择音频文件";
+                return;
+            }
+
+            if (!await EnsureSpeechSubtitleForReviewAsync(selectedAudio))
+            {
+                if (SelectedReviewSheet != null)
+                {
+                    SelectedReviewSheet.StatusMessage = string.IsNullOrWhiteSpace(SpeechSubtitleStatusMessage)
+                        ? "speech 字幕未就绪，无法生成复盘"
+                        : SpeechSubtitleStatusMessage;
+                }
+                return;
+            }
+
+            EnqueueReviewSheetsForAudio(selectedAudio, _reviewSheets);
+            StartBatchQueueRunner("复盘已加入队列");
         }
 
         private async Task<bool> EnsureSpeechSubtitleForReviewAsync(MediaFileItem audioFile)
@@ -1610,15 +1526,15 @@ namespace TrueFluentPro.ViewModels
                 return true;
             }
 
-            var speechPath = GetSpeechSubtitlePath(audioFile.FullPath);
+            var speechPath = FileLibraryViewModel.GetSpeechSubtitlePath(audioFile.FullPath);
             if (File.Exists(speechPath))
             {
-                LoadSubtitleFilesForAudio(audioFile);
-                var speechFile = _subtitleFiles.FirstOrDefault(item =>
+                _fileLibrary.LoadSubtitleFilesForAudio(audioFile);
+                var speechFile = _fileLibrary.SubtitleFiles.FirstOrDefault(item =>
                     string.Equals(item.FullPath, speechPath, StringComparison.OrdinalIgnoreCase));
                 if (speechFile != null)
                 {
-                    SelectedSubtitleFile = speechFile;
+                    _fileLibrary.SelectedSubtitleFile = speechFile;
                 }
                 return true;
             }
@@ -1649,12 +1565,12 @@ namespace TrueFluentPro.ViewModels
                 }
 
                 SpeechSubtitleStatusMessage = $"speech 字幕已生成: {Path.GetFileName(speechPath)}";
-                LoadSubtitleFilesForAudio(audioFile);
-                var speechFile = _subtitleFiles.FirstOrDefault(item =>
+                _fileLibrary.LoadSubtitleFilesForAudio(audioFile);
+                var speechFile = _fileLibrary.SubtitleFiles.FirstOrDefault(item =>
                     string.Equals(item.FullPath, speechPath, StringComparison.OrdinalIgnoreCase));
                 if (speechFile != null)
                 {
-                    SelectedSubtitleFile = speechFile;
+                    _fileLibrary.SelectedSubtitleFile = speechFile;
                 }
 
                 return true;
@@ -1677,465 +1593,10 @@ namespace TrueFluentPro.ViewModels
             }
         }
 
-        private async void GenerateAllReviewSheets()
-        {
-            if (SelectedAudioFile == null)
-            {
-                SelectedReviewSheet?.StatusMessage = "未选择音频文件";
-                return;
-            }
-
-            if (!await EnsureSpeechSubtitleForReviewAsync(SelectedAudioFile))
-            {
-                if (SelectedReviewSheet != null)
-                {
-                    SelectedReviewSheet.StatusMessage = string.IsNullOrWhiteSpace(SpeechSubtitleStatusMessage)
-                        ? "speech 字幕未就绪，无法生成复盘"
-                        : SpeechSubtitleStatusMessage;
-                }
-                return;
-            }
-
-            EnqueueReviewSheetsForAudio(SelectedAudioFile, _reviewSheets);
-            StartBatchQueueRunner("复盘已加入队列");
-        }
-
-        private bool CanEnqueueSubtitleAndReviewFromLibrary(MediaFileItem? audioFile)
-        {
-            var target = audioFile ?? SelectedAudioFile;
-            var canExecute = target != null && !string.IsNullOrWhiteSpace(target.FullPath);
-            {
-                var reason = canExecute
-                    ? "ok"
-                    : (target == null ? "target-null" : "fullpath-empty");
-                var selectedPath = SelectedAudioFile?.FullPath ?? "";
-                var paramPath = audioFile?.FullPath ?? "";
-                AppendBatchDebugLog(
-                    "EnqueueSubtitleReview.CanExecute",
-                    $"result={canExecute} reason={reason} selected={selectedPath} param={paramPath}");
-            }
-
-            return canExecute;
-        }
-
-        private void EnqueueSubtitleAndReviewFromLibrary(MediaFileItem? audioFile)
-        {
-            var target = audioFile ?? SelectedAudioFile;
-            if (target == null || string.IsNullOrWhiteSpace(target.FullPath))
-            {
-                BatchStatusMessage = "未选择音频文件";
-                return;
-            }
-
-            if (!File.Exists(target.FullPath))
-            {
-                BatchStatusMessage = "音频文件不存在";
-                return;
-            }
-
-            var batchSheets = GetBatchReviewSheets();
-            var enableReview = IsAiConfigured && batchSheets.Count > 0;
-            var enableSpeech = ShouldGenerateSpeechSubtitleForReview;
-
-            if (!enableReview && !enableSpeech)
-            {
-                BatchStatusMessage = "未启用 speech 字幕或复盘生成";
-                return;
-            }
-
-            if (enableSpeech && !CanGenerateSpeechSubtitleFromStorage())
-            {
-                BatchStatusMessage = "speech 字幕需要有效的存储账号与语音订阅";
-                return;
-            }
-
-            if (!enableSpeech)
-            {
-                var subtitlePath = GetPreferredSubtitlePath(target.FullPath);
-                var hasSubtitle = !string.IsNullOrWhiteSpace(subtitlePath) && File.Exists(subtitlePath);
-                if (!hasSubtitle)
-                {
-                    BatchStatusMessage = "缺少字幕";
-                    return;
-                }
-            }
-
-            var batchItem = _batchTasks.FirstOrDefault(item =>
-                string.Equals(item.FullPath, target.FullPath, StringComparison.OrdinalIgnoreCase));
-            if (batchItem == null)
-            {
-                batchItem = new BatchTaskItem
-                {
-                    FileName = target.Name,
-                    FullPath = target.FullPath,
-                    Status = BatchTaskStatus.Pending,
-                    Progress = 0
-                };
-                _batchTasks.Add(batchItem);
-            }
-
-            var reviewSheets = _batchReviewSheetSnapshot.Count > 0
-                ? _batchReviewSheetSnapshot
-                : batchSheets.ToList();
-            if (_batchReviewSheetSnapshot.Count == 0 && reviewSheets.Count > 0)
-            {
-                _batchReviewSheetSnapshot = reviewSheets.ToList();
-            }
-
-            EnsureBatchLogFile();
-
-            PrepareAndEnqueueSingleItem(batchItem, reviewSheets, enableSpeech, enableReview,
-                _config.ContextMenuForceRegeneration);
-
-            if (ShouldWriteBatchLogSuccess)
-            {
-                AppendBatchLog("QueueStart", batchItem.FileName, "Success", "右键队列启动");
-            }
-
-            UpdateBatchQueueStatusText();
-            StartBatchQueueRunner("已加入队列");
-        }
-
-        private bool CanGenerateSpeechSubtitle()
-        {
-            if (IsSpeechSubtitleGenerating)
-            {
-                return false;
-            }
-
-            if (SelectedAudioFile == null || string.IsNullOrWhiteSpace(SelectedAudioFile.FullPath))
-            {
-                return false;
-            }
-
-            if (!File.Exists(SelectedAudioFile.FullPath))
-            {
-                return false;
-            }
-
-            var subscription = _config.GetActiveSubscription();
-            return subscription?.IsValid() == true && !string.IsNullOrWhiteSpace(_config.SourceLanguage);
-        }
-
-        private async void GenerateSpeechSubtitle()
-        {
-            if (!CanGenerateSpeechSubtitle())
-            {
-                SpeechSubtitleStatusMessage = "订阅或音频不可用";
-                return;
-            }
-
-            var audioFile = SelectedAudioFile;
-            if (audioFile == null)
-            {
-                return;
-            }
-
-            _speechSubtitleCts?.Cancel();
-            _speechSubtitleCts = new CancellationTokenSource();
-            var token = _speechSubtitleCts.Token;
-
-            IsSpeechSubtitleGenerating = true;
-            SpeechSubtitleStatusMessage = "正在转写...";
-
-            try
-            {
-                var cues = await TranscribeSpeechToCuesAsync(audioFile.FullPath, token);
-                if (cues.Count == 0)
-                {
-                    SpeechSubtitleStatusMessage = "未识别到有效文本";
-                    return;
-                }
-
-                var outputPath = GetSpeechSubtitlePath(audioFile.FullPath);
-                BlobStorageService.WriteVttFile(outputPath, cues);
-
-                SpeechSubtitleStatusMessage = $"speech 字幕已生成: {Path.GetFileName(outputPath)}";
-                LoadSubtitleFilesForAudio(audioFile);
-            }
-            catch (OperationCanceledException)
-            {
-                SpeechSubtitleStatusMessage = "转写已取消";
-            }
-            catch (Exception ex)
-            {
-                SpeechSubtitleStatusMessage = $"转写失败: {ex.Message}";
-            }
-            finally
-            {
-                IsSpeechSubtitleGenerating = false;
-                _speechSubtitleCts?.Dispose();
-                _speechSubtitleCts = null;
-            }
-        }
-
-        private bool CanGenerateBatchSpeechSubtitle()
-        {
-            if (IsSpeechSubtitleGenerating)
-            {
-                return false;
-            }
-
-            if (SelectedAudioFile == null || string.IsNullOrWhiteSpace(SelectedAudioFile.FullPath))
-            {
-                return false;
-            }
-
-            if (!File.Exists(SelectedAudioFile.FullPath))
-            {
-                return false;
-            }
-
-            if (!IsSpeechSubtitleOptionEnabled)
-            {
-                return false;
-            }
-
-            return CanGenerateSpeechSubtitleFromStorage();
-        }
-
-        private async void GenerateBatchSpeechSubtitle()
-        {
-            if (!CanGenerateBatchSpeechSubtitle())
-            {
-                SpeechSubtitleStatusMessage = "请先验证存储账号与语音订阅";
-                return;
-            }
-
-            var audioFile = SelectedAudioFile;
-            if (audioFile == null)
-            {
-                return;
-            }
-
-            _speechSubtitleCts?.Cancel();
-            _speechSubtitleCts = new CancellationTokenSource();
-            var token = _speechSubtitleCts.Token;
-
-            IsSpeechSubtitleGenerating = true;
-            try
-            {
-                var success = await GenerateBatchSpeechSubtitleForFileAsync(
-                    audioFile.FullPath,
-                    token,
-                    status => SpeechSubtitleStatusMessage = status);
-
-                if (!success)
-                {
-                    SpeechSubtitleStatusMessage = "未识别到有效文本";
-                    return;
-                }
-
-                var outputPath = GetSpeechSubtitlePath(audioFile.FullPath);
-                SpeechSubtitleStatusMessage = $"speech 字幕已生成: {Path.GetFileName(outputPath)}";
-                LoadSubtitleFilesForAudio(audioFile);
-            }
-            catch (OperationCanceledException)
-            {
-                SpeechSubtitleStatusMessage = "批量转写已取消";
-            }
-            catch (Exception ex)
-            {
-                SpeechSubtitleStatusMessage = $"批量转写失败: {ex.Message}";
-            }
-            finally
-            {
-                IsSpeechSubtitleGenerating = false;
-                _speechSubtitleCts?.Dispose();
-                _speechSubtitleCts = null;
-            }
-        }
-
-        private async Task<bool> GenerateBatchSpeechSubtitleForFileAsync(
-            string audioPath,
-            CancellationToken token,
-            Action<string>? onStatus)
-        {
-            if (string.IsNullOrWhiteSpace(audioPath))
-            {
-                return false;
-            }
-
-            if (!File.Exists(audioPath))
-            {
-                throw new FileNotFoundException("未找到音频文件", audioPath);
-            }
-
-            var subscription = _config.GetActiveSubscription();
-            if (subscription == null || !subscription.IsValid())
-            {
-                throw new InvalidOperationException("语音订阅未配置");
-            }
-
-            if (!IsSpeechSubtitleOptionEnabled)
-            {
-                throw new InvalidOperationException("存储账号未验证");
-            }
-
-            var uploadPath = audioPath;
-            string? tempUploadPath = null;
-            var converted = false;
-
-            try
-            {
-                uploadPath = AudioFormatConverter.PrepareBatchUploadAudioPath(
-                    audioPath,
-                    onStatus,
-                    token,
-                    out tempUploadPath,
-                    out converted);
-
-                var audioFileName = Path.GetFileName(audioPath);
-                if (converted)
-                {
-                    if (ShouldWriteBatchLogSuccess)
-                    {
-                        AppendBatchLog("AudioConvert", audioFileName, "Success",
-                            $"pcm16k16bitmono temp={Path.GetFileName(uploadPath)}");
-                    }
-                }
-                else
-                {
-                    if (ShouldWriteBatchLogSuccess)
-                    {
-                        AppendBatchLog("AudioReuse", audioFileName, "Success",
-                            $"pcm16k16bitmono file={Path.GetFileName(uploadPath)}");
-                    }
-                }
-
-                onStatus?.Invoke("批量转写：上传音频...");
-
-                var (audioContainer, outputContainer) = await BlobStorageService.GetBatchContainersAsync(
-                    _config.BatchStorageConnectionString,
-                    _config.BatchAudioContainerName,
-                    _config.BatchResultContainerName,
-                    token);
-
-                BlobClient uploadedBlob;
-                try
-                {
-                    uploadedBlob = await BlobStorageService.UploadAudioToBlobAsync(
-                        uploadPath,
-                        audioContainer,
-                        token);
-
-                    if (ShouldWriteBatchLogSuccess)
-                    {
-                        var blobProps = await uploadedBlob.GetPropertiesAsync(cancellationToken: token);
-                        var eTag = blobProps.Value.ETag.ToString();
-                        var requestId = blobProps.GetRawResponse().Headers.TryGetValue("x-ms-request-id", out var rid)
-                            ? rid
-                            : "";
-                        AppendBatchLog("BlobUpload", audioFileName, "Success",
-                            $"container={audioContainer.Name} blob={uploadedBlob.Name} etag={eTag} requestId={requestId}");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    if (ShouldWriteBatchLogFailure)
-                    {
-                        AppendBatchLog("BlobUpload", audioFileName, "Failed",
-                            $"container={audioContainer.Name} file={Path.GetFileName(uploadPath)} error={ex.Message}");
-                    }
-                    throw;
-                }
-
-                if (!string.IsNullOrWhiteSpace(tempUploadPath))
-                {
-                    try
-                    {
-                        File.Delete(tempUploadPath);
-                    }
-                    catch
-                    {
-                        // ignore temp cleanup failures
-                    }
-                    tempUploadPath = null;
-                }
-
-                var contentUrl = BlobStorageService.CreateBlobReadSasUri(uploadedBlob, TimeSpan.FromHours(24));
-
-                onStatus?.Invoke("批量转写：提交任务...");
-
-                var splitOptions = GetBatchSubtitleSplitOptions();
-                Action<string, string>? batchLog = ShouldWriteBatchLogSuccess
-                    ? (evt, msg) => AppendBatchLog(evt, audioFileName, "Success", msg)
-                    : null;
-                var (cues, transcriptionJson) = await SpeechBatchApiClient.BatchTranscribeSpeechToCuesAsync(
-                    contentUrl,
-                    _config.SourceLanguage,
-                    subscription,
-                    token,
-                    status => onStatus?.Invoke(status),
-                    splitOptions,
-                    batchLog);
-
-                if (ShouldWriteBatchLogSuccess)
-                {
-                    AppendBatchLog("TranscribeResult", audioFileName, "Success", $"cues={cues.Count}");
-                }
-
-                if (cues.Count == 0)
-                {
-                    return false;
-                }
-
-                var outputPath = GetSpeechSubtitlePath(audioPath);
-                BlobStorageService.WriteVttFile(outputPath, cues);
-
-                var baseName = Path.GetFileNameWithoutExtension(audioPath);
-                await BlobStorageService.UploadTextToBlobAsync(outputContainer, baseName + ".speech.vtt", File.ReadAllText(outputPath), "text/vtt", token);
-                await BlobStorageService.UploadTextToBlobAsync(outputContainer, baseName + ".speech.json", transcriptionJson, "application/json", token);
-
-                return true;
-            }
-            finally
-            {
-                if (!string.IsNullOrWhiteSpace(tempUploadPath))
-                {
-                    try
-                    {
-                        File.Delete(tempUploadPath);
-                    }
-                    catch
-                    {
-                        // ignore temp cleanup failures
-                    }
-                }
-            }
-        }
-
-        private BatchSubtitleSplitOptions GetBatchSubtitleSplitOptions()
-        {
-            return new BatchSubtitleSplitOptions
-            {
-                EnableSentenceSplit = _config.EnableBatchSubtitleSentenceSplit,
-                SplitOnComma = _config.BatchSubtitleSplitOnComma,
-                MaxChars = Math.Clamp(_config.BatchSubtitleMaxChars, 6, 80),
-                MaxDurationSeconds = Math.Clamp(_config.BatchSubtitleMaxDurationSeconds, 1, 15),
-                PauseSplitMs = Math.Clamp(_config.BatchSubtitlePauseSplitMs, 100, 2000)
-            };
-        }
-
-        private void CancelSpeechSubtitle()
-        {
-            _speechSubtitleCts?.Cancel();
-        }
-
-        private static string GetSpeechSubtitlePath(string audioFilePath)
-            => RealtimeSpeechTranscriber.GetSpeechSubtitlePath(audioFilePath);
-
-        private Task<List<SubtitleCue>> TranscribeSpeechToCuesAsync(string audioPath, CancellationToken token)
-        {
-            var subscription = _config.GetActiveSubscription()
-                ?? throw new InvalidOperationException("语音订阅未配置");
-            return RealtimeSpeechTranscriber.TranscribeSpeechToCuesAsync(
-                audioPath, subscription, _config.SourceLanguage, token);
-        }
-
         private async Task GenerateReviewSheetAsync(ReviewSheetState sheet, MediaFileItem audioFile, List<SubtitleCue> cues)
         {
-            var aiConfig = _config.AiConfig;
+            var config = _configProvider();
+            var aiConfig = config.AiConfig;
             if (aiConfig == null || !aiConfig.IsValid)
             {
                 sheet.StatusMessage = "AI 配置无效，请先配置 AI 服务";
@@ -2162,10 +1623,7 @@ namespace TrueFluentPro.ViewModels
             sheet.IsLoading = true;
             sheet.Markdown = "";
             sheet.StatusMessage = "正在生成复盘内容...";
-            if (GenerateAllReviewSheetsCommand is RelayCommand allStartCmd)
-            {
-                allStartCmd.RaiseCanExecuteChanged();
-            }
+            GenerateAllReviewSheetsCommand.RaiseCanExecuteChanged();
 
             var systemPrompt = aiConfig.ReviewSystemPrompt;
             if (string.IsNullOrWhiteSpace(systemPrompt))
@@ -2200,7 +1658,7 @@ namespace TrueFluentPro.ViewModels
                             return;
                         }
 
-                        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                        Dispatcher.UIThread.Post(() =>
                         {
                             sb.Append(chunk);
                             sheet.Markdown = TimeLinkHelper.InjectTimeLinks(sb.ToString());
@@ -2256,22 +1714,21 @@ namespace TrueFluentPro.ViewModels
                     sheet.Cts = null;
                 }
 
-                if (GenerateAllReviewSheetsCommand is RelayCommand allCmd)
-                {
-                    allCmd.RaiseCanExecuteChanged();
-                }
+                GenerateAllReviewSheetsCommand.RaiseCanExecuteChanged();
             }
         }
 
-        private string FormatSubtitleForSummary()
+        private void OnReviewMarkdownLink(object? param)
         {
-            var sb = new System.Text.StringBuilder();
-            foreach (var cue in SubtitleCues)
+            if (param is not string url || string.IsNullOrWhiteSpace(url))
             {
-                var time = cue.Start.ToString(@"hh\:mm\:ss");
-                sb.AppendLine($"[{time}] {cue.Text}");
+                return;
             }
-            return sb.ToString();
+
+            if (TimeLinkHelper.TryParseTimeUrl(url, out var time))
+            {
+                _playback.SeekToTime(time);
+            }
         }
 
         private static string FormatSubtitleForSummary(List<SubtitleCue> cues)
@@ -2285,91 +1742,443 @@ namespace TrueFluentPro.ViewModels
             return sb.ToString();
         }
 
-        private void OnReviewMarkdownLink(object? param)
+        // ── Enqueue from context menu ──
+
+        private bool CanEnqueueSubtitleAndReviewFromLibrary(MediaFileItem? audioFile)
         {
-            if (param is not string url || string.IsNullOrWhiteSpace(url))
+            var target = audioFile ?? _fileLibrary.SelectedAudioFile;
+            var canExecute = target != null && !string.IsNullOrWhiteSpace(target.FullPath);
+            {
+                var reason = canExecute
+                    ? "ok"
+                    : (target == null ? "target-null" : "fullpath-empty");
+                var selectedPath = _fileLibrary.SelectedAudioFile?.FullPath ?? "";
+                var paramPath = audioFile?.FullPath ?? "";
+                AppendBatchDebugLog(
+                    "EnqueueSubtitleReview.CanExecute",
+                    $"result={canExecute} reason={reason} selected={selectedPath} param={paramPath}");
+            }
+
+            return canExecute;
+        }
+
+        private void EnqueueSubtitleAndReviewFromLibrary(MediaFileItem? audioFile)
+        {
+            var target = audioFile ?? _fileLibrary.SelectedAudioFile;
+            if (target == null || string.IsNullOrWhiteSpace(target.FullPath))
+            {
+                BatchStatusMessage = "未选择音频文件";
+                return;
+            }
+
+            if (!File.Exists(target.FullPath))
+            {
+                BatchStatusMessage = "音频文件不存在";
+                return;
+            }
+
+            var config = _configProvider();
+            var batchSheets = GetBatchReviewSheets();
+            var enableReview = IsAiConfigured && batchSheets.Count > 0;
+            var enableSpeech = ShouldGenerateSpeechSubtitleForReview;
+
+            if (!enableReview && !enableSpeech)
+            {
+                BatchStatusMessage = "未启用 speech 字幕或复盘生成";
+                return;
+            }
+
+            if (enableSpeech && !CanGenerateSpeechSubtitleFromStorage())
+            {
+                BatchStatusMessage = "speech 字幕需要有效的存储账号与语音订阅";
+                return;
+            }
+
+            if (!enableSpeech)
+            {
+                var subtitlePath = FileLibraryViewModel.GetPreferredSubtitlePath(target.FullPath);
+                var hasSubtitle = !string.IsNullOrWhiteSpace(subtitlePath) && File.Exists(subtitlePath);
+                if (!hasSubtitle)
+                {
+                    BatchStatusMessage = "缺少字幕";
+                    return;
+                }
+            }
+
+            var batchItem = _batchTasks.FirstOrDefault(item =>
+                string.Equals(item.FullPath, target.FullPath, StringComparison.OrdinalIgnoreCase));
+            if (batchItem == null)
+            {
+                batchItem = new BatchTaskItem
+                {
+                    FileName = target.Name,
+                    FullPath = target.FullPath,
+                    Status = BatchTaskStatus.Pending,
+                    Progress = 0
+                };
+                _batchTasks.Add(batchItem);
+            }
+
+            var reviewSheets = _batchReviewSheetSnapshot.Count > 0
+                ? _batchReviewSheetSnapshot
+                : batchSheets.ToList();
+            if (_batchReviewSheetSnapshot.Count == 0 && reviewSheets.Count > 0)
+            {
+                _batchReviewSheetSnapshot = reviewSheets.ToList();
+            }
+
+            EnsureBatchLogFile();
+
+            PrepareAndEnqueueSingleItem(batchItem, reviewSheets, enableSpeech, enableReview,
+                config.ContextMenuForceRegeneration);
+
+            if (ShouldWriteBatchLogSuccess)
+            {
+                AppendBatchLog("QueueStart", batchItem.FileName, "Success", "右键队列启动");
+            }
+
+            UpdateBatchQueueStatusText();
+            StartBatchQueueRunner("已加入队列");
+        }
+
+        // ── Speech subtitle generation ──
+
+        private bool CanGenerateSpeechSubtitle()
+        {
+            if (IsSpeechSubtitleGenerating)
+            {
+                return false;
+            }
+
+            var selectedAudio = _fileLibrary.SelectedAudioFile;
+            if (selectedAudio == null || string.IsNullOrWhiteSpace(selectedAudio.FullPath))
+            {
+                return false;
+            }
+
+            if (!File.Exists(selectedAudio.FullPath))
+            {
+                return false;
+            }
+
+            var config = _configProvider();
+            var subscription = config.GetActiveSubscription();
+            return subscription?.IsValid() == true && !string.IsNullOrWhiteSpace(config.SourceLanguage);
+        }
+
+        private async void GenerateSpeechSubtitle()
+        {
+            if (!CanGenerateSpeechSubtitle())
+            {
+                SpeechSubtitleStatusMessage = "订阅或音频不可用";
+                return;
+            }
+
+            var audioFile = _fileLibrary.SelectedAudioFile;
+            if (audioFile == null)
             {
                 return;
             }
 
-            if (TimeLinkHelper.TryParseTimeUrl(url, out var time))
+            _speechSubtitleCts?.Cancel();
+            _speechSubtitleCts = new CancellationTokenSource();
+            var token = _speechSubtitleCts.Token;
+
+            IsSpeechSubtitleGenerating = true;
+            SpeechSubtitleStatusMessage = "正在转写...";
+
+            try
             {
-                SeekToTime(time);
-            }
-        }
-
-        private void ParseSrt(string path)
-        {
-            var lines = File.ReadAllLines(path);
-            ParseSubtitleLines(lines, expectsHeader: false);
-        }
-
-        private void ParseVtt(string path)
-        {
-            var lines = File.ReadAllLines(path);
-            ParseSubtitleLines(lines, expectsHeader: true);
-        }
-
-        private void ParseSubtitleLines(string[] lines, bool expectsHeader)
-        {
-            var index = 0;
-            if (expectsHeader && index < lines.Length && lines[index].StartsWith("WEBVTT", StringComparison.OrdinalIgnoreCase))
-            {
-                index++;
-            }
-
-            while (index < lines.Length)
-            {
-                var line = lines[index].Trim();
-                if (string.IsNullOrWhiteSpace(line))
+                var cues = await TranscribeSpeechToCuesAsync(audioFile.FullPath, token);
+                if (cues.Count == 0)
                 {
-                    index++;
-                    continue;
+                    SpeechSubtitleStatusMessage = "未识别到有效文本";
+                    return;
                 }
 
-                if (int.TryParse(line, out _))
+                var outputPath = FileLibraryViewModel.GetSpeechSubtitlePath(audioFile.FullPath);
+                BlobStorageService.WriteVttFile(outputPath, cues);
+
+                SpeechSubtitleStatusMessage = $"speech 字幕已生成: {Path.GetFileName(outputPath)}";
+                _fileLibrary.LoadSubtitleFilesForAudio(audioFile);
+            }
+            catch (OperationCanceledException)
+            {
+                SpeechSubtitleStatusMessage = "转写已取消";
+            }
+            catch (Exception ex)
+            {
+                SpeechSubtitleStatusMessage = $"转写失败: {ex.Message}";
+            }
+            finally
+            {
+                IsSpeechSubtitleGenerating = false;
+                _speechSubtitleCts?.Dispose();
+                _speechSubtitleCts = null;
+            }
+        }
+
+        private bool CanGenerateBatchSpeechSubtitle()
+        {
+            if (IsSpeechSubtitleGenerating)
+            {
+                return false;
+            }
+
+            var selectedAudio = _fileLibrary.SelectedAudioFile;
+            if (selectedAudio == null || string.IsNullOrWhiteSpace(selectedAudio.FullPath))
+            {
+                return false;
+            }
+
+            if (!File.Exists(selectedAudio.FullPath))
+            {
+                return false;
+            }
+
+            if (!IsSpeechSubtitleOptionEnabled)
+            {
+                return false;
+            }
+
+            return CanGenerateSpeechSubtitleFromStorage();
+        }
+
+        private async void GenerateBatchSpeechSubtitle()
+        {
+            if (!CanGenerateBatchSpeechSubtitle())
+            {
+                SpeechSubtitleStatusMessage = "请先验证存储账号与语音订阅";
+                return;
+            }
+
+            var audioFile = _fileLibrary.SelectedAudioFile;
+            if (audioFile == null)
+            {
+                return;
+            }
+
+            _speechSubtitleCts?.Cancel();
+            _speechSubtitleCts = new CancellationTokenSource();
+            var token = _speechSubtitleCts.Token;
+
+            IsSpeechSubtitleGenerating = true;
+            try
+            {
+                var success = await GenerateBatchSpeechSubtitleForFileAsync(
+                    audioFile.FullPath,
+                    token,
+                    status => SpeechSubtitleStatusMessage = status);
+
+                if (!success)
                 {
-                    index++;
-                    if (index >= lines.Length)
+                    SpeechSubtitleStatusMessage = "未识别到有效文本";
+                    return;
+                }
+
+                var outputPath = FileLibraryViewModel.GetSpeechSubtitlePath(audioFile.FullPath);
+                SpeechSubtitleStatusMessage = $"speech 字幕已生成: {Path.GetFileName(outputPath)}";
+                _fileLibrary.LoadSubtitleFilesForAudio(audioFile);
+            }
+            catch (OperationCanceledException)
+            {
+                SpeechSubtitleStatusMessage = "批量转写已取消";
+            }
+            catch (Exception ex)
+            {
+                SpeechSubtitleStatusMessage = $"批量转写失败: {ex.Message}";
+            }
+            finally
+            {
+                IsSpeechSubtitleGenerating = false;
+                _speechSubtitleCts?.Dispose();
+                _speechSubtitleCts = null;
+            }
+        }
+
+        private void CancelSpeechSubtitle()
+        {
+            _speechSubtitleCts?.Cancel();
+        }
+
+        private Task<List<SubtitleCue>> TranscribeSpeechToCuesAsync(string audioPath, CancellationToken token)
+        {
+            var config = _configProvider();
+            var subscription = config.GetActiveSubscription()
+                ?? throw new InvalidOperationException("语音订阅未配置");
+            return RealtimeSpeechTranscriber.TranscribeSpeechToCuesAsync(
+                audioPath, subscription, config.SourceLanguage, token);
+        }
+
+        private async Task<bool> GenerateBatchSpeechSubtitleForFileAsync(
+            string audioPath,
+            CancellationToken token,
+            Action<string>? onStatus)
+        {
+            if (string.IsNullOrWhiteSpace(audioPath))
+            {
+                return false;
+            }
+
+            if (!File.Exists(audioPath))
+            {
+                throw new FileNotFoundException("未找到音频文件", audioPath);
+            }
+
+            var config = _configProvider();
+            var subscription = config.GetActiveSubscription();
+            if (subscription == null || !subscription.IsValid())
+            {
+                throw new InvalidOperationException("语音订阅未配置");
+            }
+
+            if (!IsSpeechSubtitleOptionEnabled)
+            {
+                throw new InvalidOperationException("存储账号未验证");
+            }
+
+            var uploadPath = audioPath;
+            string? tempUploadPath = null;
+            var converted = false;
+
+            try
+            {
+                uploadPath = AudioFormatConverter.PrepareBatchUploadAudioPath(
+                    audioPath,
+                    onStatus,
+                    token,
+                    out tempUploadPath,
+                    out converted);
+
+                var audioFileName = Path.GetFileName(audioPath);
+                if (converted)
+                {
+                    if (ShouldWriteBatchLogSuccess)
                     {
-                        break;
+                        AppendBatchLog("AudioConvert", audioFileName, "Success",
+                            $"pcm16k16bitmono temp={Path.GetFileName(uploadPath)}");
                     }
-                    line = lines[index].Trim();
                 }
-
-                if (!SubtitleFileParser.TryParseTimeRange(line, out var start, out var end))
+                else
                 {
-                    index++;
-                    continue;
-                }
-
-                index++;
-                var textLines = new List<string>();
-                while (index < lines.Length && !string.IsNullOrWhiteSpace(lines[index]))
-                {
-                    textLines.Add(lines[index].Trim());
-                    index++;
-                }
-
-                var text = string.Join(" ", textLines).Trim();
-                if (!string.IsNullOrWhiteSpace(text))
-                {
-                    _subtitleCues.Add(new SubtitleCue
+                    if (ShouldWriteBatchLogSuccess)
                     {
-                        Start = start,
-                        End = end,
-                        Text = text
-                    });
+                        AppendBatchLog("AudioReuse", audioFileName, "Success",
+                            $"pcm16k16bitmono file={Path.GetFileName(uploadPath)}");
+                    }
+                }
+
+                onStatus?.Invoke("批量转写：上传音频...");
+
+                var (audioContainer, outputContainer) = await BlobStorageService.GetBatchContainersAsync(
+                    config.BatchStorageConnectionString,
+                    config.BatchAudioContainerName,
+                    config.BatchResultContainerName,
+                    token);
+
+                BlobClient uploadedBlob;
+                try
+                {
+                    uploadedBlob = await BlobStorageService.UploadAudioToBlobAsync(
+                        uploadPath,
+                        audioContainer,
+                        token);
+
+                    if (ShouldWriteBatchLogSuccess)
+                    {
+                        var blobProps = await uploadedBlob.GetPropertiesAsync(cancellationToken: token);
+                        var eTag = blobProps.Value.ETag.ToString();
+                        var requestId = blobProps.GetRawResponse().Headers.TryGetValue("x-ms-request-id", out var rid)
+                            ? rid
+                            : "";
+                        AppendBatchLog("BlobUpload", audioFileName, "Success",
+                            $"container={audioContainer.Name} blob={uploadedBlob.Name} etag={eTag} requestId={requestId}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    if (ShouldWriteBatchLogFailure)
+                    {
+                        AppendBatchLog("BlobUpload", audioFileName, "Failed",
+                            $"container={audioContainer.Name} file={Path.GetFileName(uploadPath)} error={ex.Message}");
+                    }
+                    throw;
+                }
+
+                if (!string.IsNullOrWhiteSpace(tempUploadPath))
+                {
+                    try
+                    {
+                        File.Delete(tempUploadPath);
+                    }
+                    catch
+                    {
+                    }
+                    tempUploadPath = null;
+                }
+
+                var contentUrl = BlobStorageService.CreateBlobReadSasUri(uploadedBlob, TimeSpan.FromHours(24));
+
+                onStatus?.Invoke("批量转写：提交任务...");
+
+                var splitOptions = GetBatchSubtitleSplitOptions();
+                Action<string, string>? batchLog = ShouldWriteBatchLogSuccess
+                    ? (evt, msg) => AppendBatchLog(evt, audioFileName, "Success", msg)
+                    : null;
+                var (cues, transcriptionJson) = await SpeechBatchApiClient.BatchTranscribeSpeechToCuesAsync(
+                    contentUrl,
+                    config.SourceLanguage,
+                    subscription,
+                    token,
+                    status => onStatus?.Invoke(status),
+                    splitOptions,
+                    batchLog);
+
+                if (ShouldWriteBatchLogSuccess)
+                {
+                    AppendBatchLog("TranscribeResult", audioFileName, "Success", $"cues={cues.Count}");
+                }
+
+                if (cues.Count == 0)
+                {
+                    return false;
+                }
+
+                var outputPath = FileLibraryViewModel.GetSpeechSubtitlePath(audioPath);
+                BlobStorageService.WriteVttFile(outputPath, cues);
+
+                var baseName = Path.GetFileNameWithoutExtension(audioPath);
+                await BlobStorageService.UploadTextToBlobAsync(outputContainer, baseName + ".speech.vtt", File.ReadAllText(outputPath), "text/vtt", token);
+                await BlobStorageService.UploadTextToBlobAsync(outputContainer, baseName + ".speech.json", transcriptionJson, "application/json", token);
+
+                return true;
+            }
+            finally
+            {
+                if (!string.IsNullOrWhiteSpace(tempUploadPath))
+                {
+                    try
+                    {
+                        File.Delete(tempUploadPath);
+                    }
+                    catch
+                    {
+                    }
                 }
             }
-
-            UpdateSubtitleListHeight();
         }
 
-        private void UpdateSubtitleListHeight()
+        private BatchSubtitleSplitOptions GetBatchSubtitleSplitOptions()
         {
-            var visible = Math.Min(_subtitleCues.Count, 6);
-            SubtitleListHeight = visible * SubtitleCueRowHeight;
+            var config = _configProvider();
+            return new BatchSubtitleSplitOptions
+            {
+                EnableSentenceSplit = config.EnableBatchSubtitleSentenceSplit,
+                SplitOnComma = config.BatchSubtitleSplitOnComma,
+                MaxChars = Math.Clamp(config.BatchSubtitleMaxChars, 6, 80),
+                MaxDurationSeconds = Math.Clamp(config.BatchSubtitleMaxDurationSeconds, 1, 15),
+                PauseSplitMs = Math.Clamp(config.BatchSubtitlePauseSplitMs, 100, 2000)
+            };
         }
     }
 }

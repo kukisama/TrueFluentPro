@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Linq;
 using System.Net.Http;
 using System.Threading;
@@ -11,10 +12,15 @@ using TrueFluentPro.Services;
 
 namespace TrueFluentPro.ViewModels
 {
-    public partial class MainWindowViewModel
+    public class AiInsightViewModel : ViewModelBase
     {
-        private readonly AzureTokenProvider _azureTokenProvider = new("ai");
+        private readonly AzureTokenProvider _azureTokenProvider;
         private readonly AiInsightService _aiInsightService;
+        private readonly Func<AzureSpeechConfig> _configProvider;
+        private readonly Func<ObservableCollection<TranslationItem>> _historyProvider;
+        private readonly Action<string> _statusSetter;
+        private readonly Func<Task> _showConfigAction;
+
         private string _insightMarkdown = "";
         private string _insightUserInput = "";
         private bool _isInsightLoading;
@@ -27,25 +33,59 @@ namespace TrueFluentPro.ViewModels
         private DispatcherTimer? _autoInsightTimer;
         private int _lastAutoInsightHistoryCount;
 
-        private async Task TrySilentLoginForAiAsync()
+        public AiInsightViewModel(
+            AiInsightService aiInsightService,
+            AzureTokenProvider azureTokenProvider,
+            Func<AzureSpeechConfig> configProvider,
+            Func<ObservableCollection<TranslationItem>> historyProvider,
+            Action<string> statusSetter,
+            Func<Task> showConfigAction)
         {
-            try
-            {
-                var ai = _config.AiConfig;
-                if (ai == null)
-                    return;
-                if (ai.ProviderType != AiProviderType.AzureOpenAi)
-                    return;
-                if (ai.AzureAuthMode != AzureAuthMode.AAD)
-                    return;
+            _aiInsightService = aiInsightService;
+            _azureTokenProvider = azureTokenProvider;
+            _configProvider = configProvider;
+            _historyProvider = historyProvider;
+            _statusSetter = statusSetter;
+            _showConfigAction = showConfigAction;
 
-                await _azureTokenProvider.TrySilentLoginAsync(ai.AzureTenantId, ai.AzureClientId);
-            }
-            catch
-            {
-                // 静默失败不影响功能，后续用户可手动登录
-            }
+            SendInsightCommand = new RelayCommand(
+                execute: _ => SendInsight(InsightUserInput),
+                canExecute: _ => !IsInsightLoading && IsAiConfigured
+                                 && !string.IsNullOrWhiteSpace(InsightUserInput)
+            );
+
+            StopInsightCommand = new RelayCommand(
+                execute: _ => StopInsight(),
+                canExecute: _ => IsInsightLoading
+            );
+
+            ClearInsightCommand = new RelayCommand(
+                execute: _ => { InsightMarkdown = ""; InsightUserInput = ""; },
+                canExecute: _ => true
+            );
+
+            ShowAiConfigCommand = new RelayCommand(
+                execute: async _ => await ShowAiConfig(),
+                canExecute: _ => true
+            );
+
+            SendPresetInsightCommand = new RelayCommand(
+                execute: param => SendInsight(param?.ToString() ?? ""),
+                canExecute: _ => !IsInsightLoading && IsAiConfigured
+            );
+
+            ToggleAutoInsightCommand = new RelayCommand(
+                execute: _ => ToggleAutoInsight(),
+                canExecute: _ => IsAiConfigured
+            );
         }
+
+        public ICommand SendInsightCommand { get; }
+        public ICommand StopInsightCommand { get; }
+        public ICommand ClearInsightCommand { get; }
+        public ICommand ShowAiConfigCommand { get; }
+        public ICommand SendPresetInsightCommand { get; }
+        public ICommand ToggleAutoInsightCommand { get; }
 
         public string InsightMarkdown
         {
@@ -86,10 +126,10 @@ namespace TrueFluentPro.ViewModels
             }
         }
 
-        public bool IsAiConfigured => _config.AiConfig?.IsValid == true;
+        public bool IsAiConfigured => _configProvider().AiConfig?.IsValid == true;
 
         public List<InsightPresetButton> InsightPresetButtons =>
-            _config.AiConfig?.PresetButtons ?? new List<InsightPresetButton>();
+            _configProvider().AiConfig?.PresetButtons ?? new List<InsightPresetButton>();
 
         public bool IsInsightEmpty => string.IsNullOrEmpty(InsightMarkdown) && !IsInsightLoading;
 
@@ -126,9 +166,62 @@ namespace TrueFluentPro.ViewModels
             set => SetProperty(ref _autoInsightPrompt, value);
         }
 
+        public async Task TrySilentLoginForAiAsync()
+        {
+            try
+            {
+                var ai = _configProvider().AiConfig;
+                if (ai == null)
+                    return;
+                if (ai.ProviderType != AiProviderType.AzureOpenAi)
+                    return;
+                if (ai.AzureAuthMode != AzureAuthMode.AAD)
+                    return;
+
+                await _azureTokenProvider.TrySilentLoginAsync(ai.AzureTenantId, ai.AzureClientId);
+            }
+            catch
+            {
+                // 静默失败不影响功能，后续用户可手动登录
+            }
+        }
+
+        public void UpdateConfig()
+        {
+            OnPropertyChanged(nameof(IsAiConfigured));
+            OnPropertyChanged(nameof(InsightPresetButtons));
+            ((RelayCommand)SendInsightCommand).RaiseCanExecuteChanged();
+            ((RelayCommand)SendPresetInsightCommand).RaiseCanExecuteChanged();
+            ((RelayCommand)ToggleAutoInsightCommand).RaiseCanExecuteChanged();
+        }
+
+        public void OnNewDataAutoInsight()
+        {
+            if (!IsAutoInsightEnabled || AutoInsightModeIndex != 1)
+            {
+                return;
+            }
+
+            if (IsInsightLoading)
+            {
+                return;
+            }
+
+            var history = _historyProvider();
+            if (history.Count <= _lastAutoInsightHistoryCount)
+            {
+                return;
+            }
+
+            _lastAutoInsightHistoryCount = history.Count;
+            var bufferOutput = _configProvider().AiConfig?.AutoInsightBufferOutput == true;
+            SendInsight(AutoInsightPrompt, bufferOutput);
+        }
+
         private async void SendInsight(string userQuestion, bool bufferOutput = false)
         {
-            if (_config.AiConfig == null || !_config.AiConfig.IsValid)
+            var config = _configProvider();
+            if (config.AiConfig == null || !config.AiConfig.IsValid)
             {
                 return;
             }
@@ -143,13 +236,13 @@ namespace TrueFluentPro.ViewModels
                 InsightMarkdown = "";
             }
 
-            var systemPrompt = _config.AiConfig.InsightSystemPrompt;
+            var systemPrompt = config.AiConfig.InsightSystemPrompt;
             if (string.IsNullOrWhiteSpace(systemPrompt))
             {
                 systemPrompt = new AiConfig().InsightSystemPrompt;
             }
             var historyText = FormatHistoryForAi();
-            var userTemplate = _config.AiConfig.InsightUserContentTemplate;
+            var userTemplate = config.AiConfig.InsightUserContentTemplate;
             if (string.IsNullOrWhiteSpace(userTemplate))
             {
                 userTemplate = new AiConfig().InsightUserContentTemplate;
@@ -162,7 +255,7 @@ namespace TrueFluentPro.ViewModels
             try
             {
                 await _aiInsightService.StreamChatAsync(
-                    _config.AiConfig,
+                    config.AiConfig,
                     systemPrompt,
                     fullUserContent,
                     chunk =>
@@ -228,13 +321,14 @@ namespace TrueFluentPro.ViewModels
 
         private string FormatHistoryForAi()
         {
-            if (History.Count == 0)
+            var history = _historyProvider();
+            if (history.Count == 0)
             {
                 return "(暂无翻译记录)";
             }
 
             var sb = new System.Text.StringBuilder();
-            var ordered = History.Reverse().ToList();
+            var ordered = history.Reverse().ToList();
             foreach (var item in ordered)
             {
                 sb.AppendLine($"[{item.Timestamp:HH:mm:ss}]");
@@ -247,7 +341,7 @@ namespace TrueFluentPro.ViewModels
 
         private async Task ShowAiConfig()
         {
-            await ShowConfig();
+            await _showConfigAction();
         }
 
         private void ToggleAutoInsight()
@@ -263,8 +357,9 @@ namespace TrueFluentPro.ViewModels
                 return;
             }
 
+            var history = _historyProvider();
             IsAutoInsightEnabled = true;
-            _lastAutoInsightHistoryCount = History.Count;
+            _lastAutoInsightHistoryCount = history.Count;
 
             if (AutoInsightModeIndex == 0)
             {
@@ -273,11 +368,11 @@ namespace TrueFluentPro.ViewModels
                     DispatcherPriority.Background,
                     (_, _) => AutoInsightTick());
                 _autoInsightTimer.Start();
-                StatusMessage = $"自动洞察已启动，每 {AutoInsightIntervalSeconds} 秒分析一次";
+                _statusSetter($"自动洞察已启动，每 {AutoInsightIntervalSeconds} 秒分析一次");
             }
             else
             {
-                StatusMessage = "自动洞察已启动，每收到新翻译数据时自动分析";
+                _statusSetter("自动洞察已启动，每收到新翻译数据时自动分析");
             }
         }
 
@@ -286,7 +381,7 @@ namespace TrueFluentPro.ViewModels
             IsAutoInsightEnabled = false;
             _autoInsightTimer?.Stop();
             _autoInsightTimer = null;
-            StatusMessage = "自动洞察已停止";
+            _statusSetter("自动洞察已停止");
         }
 
         private void AutoInsightTick()
@@ -296,35 +391,21 @@ namespace TrueFluentPro.ViewModels
                 return;
             }
 
-            if (History.Count == 0)
+            var history = _historyProvider();
+            if (history.Count == 0)
             {
                 return;
             }
 
-            var bufferOutput = _config.AiConfig?.AutoInsightBufferOutput == true;
+            var bufferOutput = _configProvider().AiConfig?.AutoInsightBufferOutput == true;
             SendInsight(AutoInsightPrompt, bufferOutput);
         }
 
-        private void OnNewDataAutoInsight()
+        public void Dispose()
         {
-            if (!IsAutoInsightEnabled || AutoInsightModeIndex != 1)
-            {
-                return;
-            }
-
-            if (IsInsightLoading)
-            {
-                return;
-            }
-
-            if (History.Count <= _lastAutoInsightHistoryCount)
-            {
-                return;
-            }
-
-            _lastAutoInsightHistoryCount = History.Count;
-            var bufferOutput = _config.AiConfig?.AutoInsightBufferOutput == true;
-            SendInsight(AutoInsightPrompt, bufferOutput);
+            _insightCts?.Cancel();
+            _insightCts?.Dispose();
+            _autoInsightTimer?.Stop();
         }
     }
 }
