@@ -13,6 +13,11 @@ on:
     tags:
       - 'v*'
       - '[0-9]*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '要发布的 tag（如 1.8.1）'
+        required: true
 
 permissions:
   contents: write
@@ -26,6 +31,8 @@ jobs:
         rid: [win-x64, win-arm64]
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -46,10 +53,13 @@ jobs:
             -c Release `
             -r ${{ matrix.rid }} `
             --self-contained false `
-            /p:PublishSingleFile=true `
             -o artifacts/updater-${{ matrix.rid }}
           Copy-Item "artifacts/updater-${{ matrix.rid }}/Updater.exe" `
             "artifacts/publish/TrueFluentPro-${{ matrix.rid }}-fdd/Updater.exe"
+          Copy-Item "artifacts/updater-${{ matrix.rid }}/Updater.dll" `
+            "artifacts/publish/TrueFluentPro-${{ matrix.rid }}-fdd/Updater.dll"
+          Copy-Item "artifacts/updater-${{ matrix.rid }}/Updater.runtimeconfig.json" `
+            "artifacts/publish/TrueFluentPro-${{ matrix.rid }}-fdd/Updater.runtimeconfig.json"
 
       - name: Create zip
         run: |
@@ -70,6 +80,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ inputs.tag || github.ref }}
           sparse-checkout: |
             Assets/RELEASE_NOTES.md
             RELEASE_NOTES.md
@@ -96,6 +107,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
           body_path: ${{ steps.resolve_notes.outputs.path }}
           generate_release_notes: true
           append_body: true
