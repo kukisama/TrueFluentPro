@@ -1,7 +1,9 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Input;
@@ -12,10 +14,6 @@ using TrueFluentPro.Services;
 
 namespace TrueFluentPro.ViewModels
 {
-    /// <summary>
-    /// 设置页 ViewModel —— 管理配置中心的全部编辑逻辑。
-    /// 替代原 ConfigCenterView.axaml.cs 的 1300+ 行事件驱动代码。
-    /// </summary>
     public class SettingsViewModel : ViewModelBase
     {
         private readonly ConfigurationService _configService;
@@ -23,17 +21,14 @@ namespace TrueFluentPro.ViewModels
 
         private AzureSpeechConfig _config = new();
 
-        // ─── 自动保存防抖 ───
         private Timer? _debounceTimer;
         private bool _isDirty;
         private string _autoSaveStatus = "";
         private const int DebounceMs = 500;
 
-        // ─── 终结点管理 ───
         private ObservableCollection<AiEndpoint> _endpoints = new();
         private AiEndpoint? _selectedEndpoint;
 
-        // ─── 订阅管理 ───
         private ObservableCollection<AzureSubscription> _subscriptions = new();
         private AzureSubscription? _selectedSubscription;
         private string _subscriptionEditorName = "";
@@ -44,7 +39,6 @@ namespace TrueFluentPro.ViewModels
         private string _testAllResult = "";
         private bool _showTestAllResult;
 
-        // ─── 录音与存储 ───
         private bool _enableRecording = true;
         private int _recordingMp3BitrateKbps = 256;
         private string _sessionDirectory = "";
@@ -61,7 +55,6 @@ namespace TrueFluentPro.ViewModels
         private int _batchPauseSplitMs = 500;
         private bool _useSpeechSubtitleForReview;
 
-        // ─── 语音识别 ───
         private bool _filterModalParticles = true;
         private int _maxHistoryItems = 15;
         private int _realtimeMaxLength = 150;
@@ -76,12 +69,10 @@ namespace TrueFluentPro.ViewModels
         private int _autoGainPresetIndex;
         private bool _showReconnectMarker = true;
 
-        // ─── 字幕与文本 ───
         private bool _exportSrt;
         private bool _exportVtt;
         private int _defaultFontSize = 38;
 
-        // ─── AI 洞察 ───
         private string _insightSystemPrompt = "";
         private string _reviewSystemPrompt = "";
         private string _insightUserContentTemplate = "";
@@ -90,10 +81,8 @@ namespace TrueFluentPro.ViewModels
         private bool _summaryEnableReasoning;
         private ObservableCollection<InsightPresetButton> _presetButtons = new();
 
-        // ─── 复盘 ───
         private ObservableCollection<ReviewSheetPreset> _reviewSheets = new();
 
-        // ─── AI 基础配置（旧字段，迁移兼容） ───
         private int _aiProviderTypeIndex;
         private string _aiApiEndpoint = "";
         private string _aiApiKey = "";
@@ -106,7 +95,6 @@ namespace TrueFluentPro.ViewModels
         private string _aiAzureTenantId = "";
         private string _aiAzureClientId = "";
 
-        // ─── 模型引用 ───
         private ModelOption? _selectedInsightModel;
         private ModelOption? _selectedSummaryModel;
         private ModelOption? _selectedQuickModel;
@@ -114,25 +102,15 @@ namespace TrueFluentPro.ViewModels
         private ModelOption? _selectedImageModel;
         private ModelOption? _selectedVideoModel;
 
-        // ─── Media Studio 默认参数 ───
-        private string _imageSize = "1024x1024";
-        private string _imageQuality = "medium";
-        private string _imageFormat = "png";
-        private int _imageCount = 1;
-
         private int _videoApiModeIndex;
-        private string _videoAspectRatio = "16:9";
-        private string _videoResolution = "720p";
         private int _videoWidth = 1280;
         private int _videoHeight = 720;
-        private int _videoSeconds = 5;
-        private int _videoVariants = 1;
         private int _videoPollIntervalMs = 3000;
+        private bool _suppressDirty;
 
         private int _maxLoadedSessionsInMemory = 8;
         private string _mediaOutputDirectory = "";
 
-        /// <summary>配置被完整更新后触发（供外部系统同步）</summary>
         public event Action<AzureSpeechConfig>? ConfigSaved;
 
         public SettingsViewModel(
@@ -154,11 +132,6 @@ namespace TrueFluentPro.ViewModels
             ValidateBatchStorageCommand = new RelayCommand(async _ => await ValidateBatchStorageAsync());
         }
 
-        // ═══════════════════════════════════════════════════
-        //  初始化
-        // ═══════════════════════════════════════════════════
-
-        /// <summary>用已加载的配置初始化 ViewModel（由 MainWindowViewModel 调用）</summary>
         public void Initialize(AzureSpeechConfig config)
         {
             _config = config;
@@ -167,18 +140,15 @@ namespace TrueFluentPro.ViewModels
 
         private void LoadFromConfig()
         {
-            // 订阅
             _subscriptions = new ObservableCollection<AzureSubscription>(_config.Subscriptions);
             OnPropertyChanged(nameof(Subscriptions));
             ((RelayCommand)TestAllSubscriptionsCommand).RaiseCanExecuteChanged();
 
-            // 终结点
             _endpoints = new ObservableCollection<AiEndpoint>(_config.Endpoints);
             OnPropertyChanged(nameof(Endpoints));
             if (_endpoints.Count > 0)
                 SelectedEndpoint = _endpoints[0];
 
-            // 录音与存储
             EnableRecording = _config.EnableRecording;
             RecordingMp3BitrateKbps = _config.RecordingMp3BitrateKbps;
             SessionDirectory = _config.SessionDirectory;
@@ -200,7 +170,6 @@ namespace TrueFluentPro.ViewModels
             BatchPauseSplitMs = _config.BatchSubtitlePauseSplitMs;
             UseSpeechSubtitleForReview = _config.UseSpeechSubtitleForReview;
 
-            // 语音识别
             FilterModalParticles = _config.FilterModalParticles;
             MaxHistoryItems = _config.MaxHistoryItems;
             RealtimeMaxLength = _config.RealtimeMaxLength;
@@ -215,12 +184,10 @@ namespace TrueFluentPro.ViewModels
             AutoGainPresetIndex = _config.AutoGainEnabled ? (int)_config.AutoGainPreset : 0;
             ShowReconnectMarker = _config.ShowReconnectMarkerInSubtitle;
 
-            // 字幕与文本
             ExportSrt = _config.ExportSrtSubtitles;
             ExportVtt = _config.ExportVttSubtitles;
             DefaultFontSize = _config.DefaultFontSize;
 
-            // AI 基础配置
             var ai = _config.AiConfig ?? new AiConfig();
             AiProviderTypeIndex = ai.ProviderType == AiProviderType.AzureOpenAi ? 1 : 0;
             AiApiEndpoint = ai.ApiEndpoint;
@@ -242,7 +209,6 @@ namespace TrueFluentPro.ViewModels
             _presetButtons = new ObservableCollection<InsightPresetButton>(ai.PresetButtons);
             OnPropertyChanged(nameof(PresetButtons));
 
-            // 如果复盘模版为空（可能因保存时丢失），恢复默认模版
             var reviewSource = ai.ReviewSheets.Count > 0 ? ai.ReviewSheets : new AiConfig().ReviewSheets;
             _reviewSheets = new ObservableCollection<ReviewSheetPreset>(
                 reviewSource.Select(s => new ReviewSheetPreset
@@ -254,7 +220,6 @@ namespace TrueFluentPro.ViewModels
                 }));
             OnPropertyChanged(nameof(ReviewSheets));
 
-            // 模型引用
             RefreshModelOptions();
             SelectModelOption(ai.InsightModelRef, TextModels, v => _selectedInsightModel = v, nameof(SelectedInsightModel));
             SelectModelOption(ai.SummaryModelRef, TextModels, v => _selectedSummaryModel = v, nameof(SelectedSummaryModel));
@@ -263,16 +228,17 @@ namespace TrueFluentPro.ViewModels
             SelectModelOption(_config.MediaGenConfig.ImageModelRef, ImageModels, v => _selectedImageModel = v, nameof(SelectedImageModel));
             SelectModelOption(_config.MediaGenConfig.VideoModelRef, VideoModels, v => _selectedVideoModel = v, nameof(SelectedVideoModel));
 
-            // Media Studio 默认参数
-            var media = _config.MediaGenConfig ?? new MediaGenConfig();
-            ImageSize = string.IsNullOrWhiteSpace(media.ImageSize) ? "1024x1024" : media.ImageSize;
-            ImageQuality = string.IsNullOrWhiteSpace(media.ImageQuality) ? "medium" : media.ImageQuality;
-            ImageFormat = string.IsNullOrWhiteSpace(media.ImageFormat) ? "png" : media.ImageFormat;
-            ImageCount = media.ImageCount <= 0 ? 1 : media.ImageCount;
+            _config.MediaGenConfig ??= new MediaGenConfig();
+            var media = _config.MediaGenConfig;
+
+            if (string.IsNullOrWhiteSpace(media.ImageSize)) media.ImageSize = "1024x1024";
+            if (string.IsNullOrWhiteSpace(media.ImageQuality)) media.ImageQuality = "medium";
+            if (string.IsNullOrWhiteSpace(media.ImageFormat)) media.ImageFormat = "png";
+            if (media.ImageCount <= 0) media.ImageCount = 1;
 
             VideoApiModeIndex = media.VideoApiMode == VideoApiMode.Videos ? 1 : 0;
-            VideoSeconds = media.VideoSeconds <= 0 ? 5 : media.VideoSeconds;
-            VideoVariants = media.VideoVariants <= 0 ? 1 : media.VideoVariants;
+            if (media.VideoSeconds <= 0) media.VideoSeconds = 5;
+            if (media.VideoVariants <= 0) media.VideoVariants = 1;
             VideoPollIntervalMs = media.VideoPollIntervalMs <= 0 ? 3000 : media.VideoPollIntervalMs;
 
             RefreshVideoCapabilityOptions();
@@ -281,18 +247,20 @@ namespace TrueFluentPro.ViewModels
             MaxLoadedSessionsInMemory = media.MaxLoadedSessionsInMemory <= 0 ? 8 : media.MaxLoadedSessionsInMemory;
             MediaOutputDirectory = media.OutputDirectory ?? "";
 
+            media.PropertyChanged += OnMediaGenConfigPropertyChanged;
+
             _ = RefreshAiAuthStatusAsync();
         }
 
-        // ═══════════════════════════════════════════════════
-        //  属性 — 终结点管理
-        // ═══════════════════════════════════════════════════
-
-        public ObservableCollection<AiEndpoint> Endpoints
+        private void OnMediaGenConfigPropertyChanged(object? sender, PropertyChangedEventArgs e)
         {
-            get => _endpoints;
-            set => SetProperty(ref _endpoints, value);
+            OnPropertyChanged(e.PropertyName);
+            if (e.PropertyName is nameof(MediaGenConfig.VideoAspectRatio) or nameof(MediaGenConfig.VideoResolution))
+                SyncVideoDimensionsFromSelection();
+            if (!_suppressDirty) MarkDirty();
         }
+
+        public ObservableCollection<AiEndpoint> Endpoints { get => _endpoints; set => SetProperty(ref _endpoints, value); }
 
         public AiEndpoint? SelectedEndpoint
         {
@@ -309,11 +277,9 @@ namespace TrueFluentPro.ViewModels
             }
         }
 
-        /// <summary>返回当前选中终结点的模型列表快照，确保 UI 刷新</summary>
         public List<AiModelEntry>? SelectedEndpointModels =>
             SelectedEndpoint?.Models?.ToList();
 
-        /// <summary>选中终结点的认证模式索引 (0=ApiKey, 1=AAD)</summary>
         public int SelectedEndpointAuthMode
         {
             get => SelectedEndpoint?.AuthMode == AzureAuthMode.AAD ? 1 : 0;
@@ -330,243 +296,59 @@ namespace TrueFluentPro.ViewModels
 
         public bool IsSelectedEndpointAad => SelectedEndpointAuthMode == 1;
 
-        // ─── 模型筛选 ───
-
         private List<ModelOption> _textModels = new();
         private List<ModelOption> _imageModels = new();
         private List<ModelOption> _videoModels = new();
 
-        public List<ModelOption> TextModels
-        {
-            get => _textModels;
-            private set => SetProperty(ref _textModels, value);
-        }
+        public List<ModelOption> TextModels { get => _textModels; private set => SetProperty(ref _textModels, value); }
+        public List<ModelOption> ImageModels { get => _imageModels; private set => SetProperty(ref _imageModels, value); }
+        public List<ModelOption> VideoModels { get => _videoModels; private set => SetProperty(ref _videoModels, value); }
+        public ModelOption? SelectedInsightModel { get => _selectedInsightModel;
+            set => Set(ref _selectedInsightModel, value, then: () => _ = RefreshAiAuthStatusAsync()); }
 
-        public List<ModelOption> ImageModels
-        {
-            get => _imageModels;
-            private set => SetProperty(ref _imageModels, value);
-        }
+        public ModelOption? SelectedSummaryModel { get => _selectedSummaryModel;
+            set => Set(ref _selectedSummaryModel, value, then: () => _ = RefreshAiAuthStatusAsync()); }
 
-        public List<ModelOption> VideoModels
-        {
-            get => _videoModels;
-            private set => SetProperty(ref _videoModels, value);
-        }
+        public ModelOption? SelectedQuickModel { get => _selectedQuickModel;
+            set => Set(ref _selectedQuickModel, value, then: () => _ = RefreshAiAuthStatusAsync()); }
 
-        public ModelOption? SelectedInsightModel
-        {
-            get => _selectedInsightModel;
-            set
-            {
-                if (SetProperty(ref _selectedInsightModel, value))
-                {
-                    MarkDirty();
-                    _ = RefreshAiAuthStatusAsync();
-                }
-            }
-        }
+        public ModelOption? SelectedReviewModel { get => _selectedReviewModel; set => Set(ref _selectedReviewModel, value); }
+        public ModelOption? SelectedImageModel { get => _selectedImageModel; set => Set(ref _selectedImageModel, value); }
+        public ModelOption? SelectedVideoModel { get => _selectedVideoModel;
+            set => Set(ref _selectedVideoModel, value, then: RefreshVideoCapabilityOptions); }
 
-        public ModelOption? SelectedSummaryModel
-        {
-            get => _selectedSummaryModel;
-            set
-            {
-                if (SetProperty(ref _selectedSummaryModel, value))
-                {
-                    MarkDirty();
-                    _ = RefreshAiAuthStatusAsync();
-                }
-            }
-        }
-
-        public ModelOption? SelectedQuickModel
-        {
-            get => _selectedQuickModel;
-            set
-            {
-                if (SetProperty(ref _selectedQuickModel, value))
-                {
-                    MarkDirty();
-                    _ = RefreshAiAuthStatusAsync();
-                }
-            }
-        }
-
-        public ModelOption? SelectedReviewModel
-        {
-            get => _selectedReviewModel;
-            set { if (SetProperty(ref _selectedReviewModel, value)) MarkDirty(); }
-        }
-
-        public ModelOption? SelectedImageModel
-        {
-            get => _selectedImageModel;
-            set { if (SetProperty(ref _selectedImageModel, value)) MarkDirty(); }
-        }
-
-        public ModelOption? SelectedVideoModel
-        {
-            get => _selectedVideoModel;
-            set
-            {
-                if (SetProperty(ref _selectedVideoModel, value))
-                {
-                    RefreshVideoCapabilityOptions();
-                    MarkDirty();
-                }
-            }
-        }
-
-        public List<string> ImageSizeOptions { get; } = new()
-        {
-            "1024x1024", "1024x1536", "1536x1024"
-        };
-
-        public List<string> ImageQualityOptions { get; } = new()
-        {
-            "low", "medium", "high"
-        };
-
-        public List<string> ImageFormatOptions { get; } = new()
-        {
-            "png", "jpeg"
-        };
-
-        public List<int> ImageCountOptions { get; } = new() { 1, 2, 3, 4, 5 };
+        public List<string> ImageSizeOptions { get; } = ["1024x1024", "1024x1536", "1536x1024"];
+        public List<string> ImageQualityOptions { get; } = ["low", "medium", "high"];
+        public List<string> ImageFormatOptions { get; } = ["png", "jpeg"];
+        public List<int> ImageCountOptions { get; } = [1, 2, 3, 4, 5];
         private List<string> _videoAspectRatioOptions = new() { "16:9", "9:16" };
         private List<string> _videoResolutionOptions = new() { "720p" };
         private List<int> _videoSecondsOptions = new() { 4, 8, 12 };
         private List<int> _videoVariantsOptions = new() { 1 };
 
-        public List<string> VideoAspectRatioOptions
-        {
-            get => _videoAspectRatioOptions;
-            private set => SetProperty(ref _videoAspectRatioOptions, value);
-        }
+        public List<string> VideoAspectRatioOptions { get => _videoAspectRatioOptions; private set => SetProperty(ref _videoAspectRatioOptions, value); }
+        public List<string> VideoResolutionOptions { get => _videoResolutionOptions; private set => SetProperty(ref _videoResolutionOptions, value); }
+        public List<int> VideoSecondsOptions { get => _videoSecondsOptions; private set => SetProperty(ref _videoSecondsOptions, value); }
+        public List<int> VideoVariantsOptions { get => _videoVariantsOptions; private set => SetProperty(ref _videoVariantsOptions, value); }
 
-        public List<string> VideoResolutionOptions
-        {
-            get => _videoResolutionOptions;
-            private set => SetProperty(ref _videoResolutionOptions, value);
-        }
+        public string VideoAspectRatio { get => _config.MediaGenConfig.VideoAspectRatio;
+            set => _config.MediaGenConfig.VideoAspectRatio = value; }
+        public string VideoResolution { get => _config.MediaGenConfig.VideoResolution;
+            set => _config.MediaGenConfig.VideoResolution = value; }
+        public string ImageSize { get => _config.MediaGenConfig.ImageSize; set => _config.MediaGenConfig.ImageSize = value; }
+        public string ImageQuality { get => _config.MediaGenConfig.ImageQuality; set => _config.MediaGenConfig.ImageQuality = value; }
+        public string ImageFormat { get => _config.MediaGenConfig.ImageFormat; set => _config.MediaGenConfig.ImageFormat = value; }
+        public int ImageCount { get => _config.MediaGenConfig.ImageCount; set => _config.MediaGenConfig.ImageCount = value; }
+        public int VideoApiModeIndex { get => _videoApiModeIndex;
+            set => Set(ref _videoApiModeIndex, value, then: RefreshVideoCapabilityOptions); }
 
-        public List<int> VideoSecondsOptions
-        {
-            get => _videoSecondsOptions;
-            private set => SetProperty(ref _videoSecondsOptions, value);
-        }
-
-        public List<int> VideoVariantsOptions
-        {
-            get => _videoVariantsOptions;
-            private set => SetProperty(ref _videoVariantsOptions, value);
-        }
-
-        public string VideoAspectRatio
-        {
-            get => _videoAspectRatio;
-            set
-            {
-                if (SetProperty(ref _videoAspectRatio, value))
-                {
-                    SyncVideoDimensionsFromSelection();
-                    MarkDirty();
-                }
-            }
-        }
-
-        public string VideoResolution
-        {
-            get => _videoResolution;
-            set
-            {
-                if (SetProperty(ref _videoResolution, value))
-                {
-                    SyncVideoDimensionsFromSelection();
-                    MarkDirty();
-                }
-            }
-        }
-
-        public string ImageSize
-        {
-            get => _imageSize;
-            set { if (SetProperty(ref _imageSize, value)) MarkDirty(); }
-        }
-
-        public string ImageQuality
-        {
-            get => _imageQuality;
-            set { if (SetProperty(ref _imageQuality, value)) MarkDirty(); }
-        }
-
-        public string ImageFormat
-        {
-            get => _imageFormat;
-            set { if (SetProperty(ref _imageFormat, value)) MarkDirty(); }
-        }
-
-        public int ImageCount
-        {
-            get => _imageCount;
-            set { if (SetProperty(ref _imageCount, value)) MarkDirty(); }
-        }
-
-        public int VideoApiModeIndex
-        {
-            get => _videoApiModeIndex;
-            set
-            {
-                if (SetProperty(ref _videoApiModeIndex, value))
-                {
-                    RefreshVideoCapabilityOptions();
-                    MarkDirty();
-                }
-            }
-        }
-
-        public int VideoWidth
-        {
-            get => _videoWidth;
-            private set => SetProperty(ref _videoWidth, value);
-        }
-
-        public int VideoHeight
-        {
-            get => _videoHeight;
-            private set => SetProperty(ref _videoHeight, value);
-        }
-
-        public int VideoSeconds
-        {
-            get => _videoSeconds;
-            set { if (SetProperty(ref _videoSeconds, value)) MarkDirty(); }
-        }
-
-        public int VideoVariants
-        {
-            get => _videoVariants;
-            set { if (SetProperty(ref _videoVariants, value)) MarkDirty(); }
-        }
-
-        public int VideoPollIntervalMs
-        {
-            get => _videoPollIntervalMs;
-            set { if (SetProperty(ref _videoPollIntervalMs, value)) MarkDirty(); }
-        }
-
-        public int MaxLoadedSessionsInMemory
-        {
-            get => _maxLoadedSessionsInMemory;
-            set { if (SetProperty(ref _maxLoadedSessionsInMemory, value)) MarkDirty(); }
-        }
-
-        public string MediaOutputDirectory
-        {
-            get => _mediaOutputDirectory;
-            set { if (SetProperty(ref _mediaOutputDirectory, value)) MarkDirty(); }
-        }
+        public int VideoWidth { get => _videoWidth; private set => SetProperty(ref _videoWidth, value); }
+        public int VideoHeight { get => _videoHeight; private set => SetProperty(ref _videoHeight, value); }
+        public int VideoSeconds { get => _config.MediaGenConfig.VideoSeconds; set => _config.MediaGenConfig.VideoSeconds = value; }
+        public int VideoVariants { get => _config.MediaGenConfig.VideoVariants; set => _config.MediaGenConfig.VideoVariants = value; }
+        public int VideoPollIntervalMs { get => _videoPollIntervalMs; set => Set(ref _videoPollIntervalMs, value); }
+        public int MaxLoadedSessionsInMemory { get => _maxLoadedSessionsInMemory; set => Set(ref _maxLoadedSessionsInMemory, value); }
+        public string MediaOutputDirectory { get => _mediaOutputDirectory; set => Set(ref _mediaOutputDirectory, value); }
 
         private void RefreshVideoCapabilityOptions()
         {
@@ -625,15 +407,7 @@ namespace TrueFluentPro.ViewModels
             SyncVideoDimensionsFromSelection();
         }
 
-        // ═══════════════════════════════════════════════════
-        //  属性 — 订阅管理
-        // ═══════════════════════════════════════════════════
-
-        public ObservableCollection<AzureSubscription> Subscriptions
-        {
-            get => _subscriptions;
-            set => SetProperty(ref _subscriptions, value);
-        }
+        public ObservableCollection<AzureSubscription> Subscriptions { get => _subscriptions; set => SetProperty(ref _subscriptions, value); }
 
         public AzureSubscription? SelectedSubscription
         {
@@ -649,401 +423,82 @@ namespace TrueFluentPro.ViewModels
             }
         }
 
-        public string SubscriptionEditorName
-        {
-            get => _subscriptionEditorName;
-            set => SetProperty(ref _subscriptionEditorName, value);
-        }
+        public string SubscriptionEditorName { get => _subscriptionEditorName; set => SetProperty(ref _subscriptionEditorName, value); }
+        public string SubscriptionEditorKey { get => _subscriptionEditorKey; set => SetProperty(ref _subscriptionEditorKey, value); }
+        public string SubscriptionEditorEndpoint { get => _subscriptionEditorEndpoint;
+            set => Set(ref _subscriptionEditorEndpoint, value, dirty: false, then: UpdateEndpointRegionHint); }
 
-        public string SubscriptionEditorKey
-        {
-            get => _subscriptionEditorKey;
-            set => SetProperty(ref _subscriptionEditorKey, value);
-        }
-
-        public string SubscriptionEditorEndpoint
-        {
-            get => _subscriptionEditorEndpoint;
-            set
-            {
-                if (SetProperty(ref _subscriptionEditorEndpoint, value))
-                    UpdateEndpointRegionHint();
-            }
-        }
-
-        public string SubscriptionEditorRegionHint
-        {
-            get => _subscriptionEditorRegionHint;
-            set => SetProperty(ref _subscriptionEditorRegionHint, value);
-        }
-
-        public string SubscriptionMessage
-        {
-            get => _subscriptionMessage;
-            set => SetProperty(ref _subscriptionMessage, value);
-        }
-
-        public string TestAllResult
-        {
-            get => _testAllResult;
-            set => SetProperty(ref _testAllResult, value);
-        }
-
-        public bool ShowTestAllResult
-        {
-            get => _showTestAllResult;
-            set => SetProperty(ref _showTestAllResult, value);
-        }
-
-        // ═══════════════════════════════════════════════════
-        //  属性 — 录音与存储
-        // ═══════════════════════════════════════════════════
-
-        public bool EnableRecording
-        {
-            get => _enableRecording;
-            set { if (SetProperty(ref _enableRecording, value)) MarkDirty(); }
-        }
-
-        public int RecordingMp3BitrateKbps
-        {
-            get => _recordingMp3BitrateKbps;
-            set { if (SetProperty(ref _recordingMp3BitrateKbps, value)) MarkDirty(); }
-        }
-
-        public string SessionDirectory
-        {
-            get => _sessionDirectory;
-            set { if (SetProperty(ref _sessionDirectory, value)) MarkDirty(); }
-        }
-
-        public string BatchStorageConnectionString
-        {
-            get => _batchStorageConnectionString;
-            set => SetProperty(ref _batchStorageConnectionString, value);
-        }
-
-        public string BatchStorageStatus
-        {
-            get => _batchStorageStatus;
-            set => SetProperty(ref _batchStorageStatus, value);
-        }
-
-        public bool BatchStorageIsValid
-        {
-            get => _batchStorageIsValid;
-            set => SetProperty(ref _batchStorageIsValid, value);
-        }
-
-        public int BatchLogLevelIndex
-        {
-            get => _batchLogLevelIndex;
-            set { if (SetProperty(ref _batchLogLevelIndex, value)) MarkDirty(); }
-        }
-
-        public bool BatchForceRegeneration
-        {
-            get => _batchForceRegeneration;
-            set { if (SetProperty(ref _batchForceRegeneration, value)) MarkDirty(); }
-        }
-
-        public bool ContextMenuForceRegeneration
-        {
-            get => _contextMenuForceRegeneration;
-            set { if (SetProperty(ref _contextMenuForceRegeneration, value)) MarkDirty(); }
-        }
-
-        public bool EnableBatchSentenceSplit
-        {
-            get => _enableBatchSentenceSplit;
-            set { if (SetProperty(ref _enableBatchSentenceSplit, value)) MarkDirty(); }
-        }
-
-        public bool BatchSplitOnComma
-        {
-            get => _batchSplitOnComma;
-            set { if (SetProperty(ref _batchSplitOnComma, value)) MarkDirty(); }
-        }
-
-        public int BatchMaxChars
-        {
-            get => _batchMaxChars;
-            set { if (SetProperty(ref _batchMaxChars, value)) MarkDirty(); }
-        }
-
-        public double BatchMaxDuration
-        {
-            get => _batchMaxDuration;
-            set { if (SetProperty(ref _batchMaxDuration, value)) MarkDirty(); }
-        }
-
-        public int BatchPauseSplitMs
-        {
-            get => _batchPauseSplitMs;
-            set { if (SetProperty(ref _batchPauseSplitMs, value)) MarkDirty(); }
-        }
-
-        public bool UseSpeechSubtitleForReview
-        {
-            get => _useSpeechSubtitleForReview;
-            set { if (SetProperty(ref _useSpeechSubtitleForReview, value)) MarkDirty(); }
-        }
-
-        // ═══════════════════════════════════════════════════
-        //  属性 — 语音识别
-        // ═══════════════════════════════════════════════════
-
-        public bool FilterModalParticles
-        {
-            get => _filterModalParticles;
-            set { if (SetProperty(ref _filterModalParticles, value)) MarkDirty(); }
-        }
-
-        public int MaxHistoryItems
-        {
-            get => _maxHistoryItems;
-            set { if (SetProperty(ref _maxHistoryItems, value)) MarkDirty(); }
-        }
-
-        public int RealtimeMaxLength
-        {
-            get => _realtimeMaxLength;
-            set { if (SetProperty(ref _realtimeMaxLength, value)) MarkDirty(); }
-        }
-
-        public int ChunkDurationMs
-        {
-            get => _chunkDurationMs;
-            set { if (SetProperty(ref _chunkDurationMs, value)) MarkDirty(); }
-        }
-
-        public bool EnableAutoTimeout
-        {
-            get => _enableAutoTimeout;
-            set { if (SetProperty(ref _enableAutoTimeout, value)) MarkDirty(); }
-        }
-
-        public int InitialSilenceTimeoutSeconds
-        {
-            get => _initialSilenceTimeoutSeconds;
-            set { if (SetProperty(ref _initialSilenceTimeoutSeconds, value)) MarkDirty(); }
-        }
-
-        public int EndSilenceTimeoutSeconds
-        {
-            get => _endSilenceTimeoutSeconds;
-            set { if (SetProperty(ref _endSilenceTimeoutSeconds, value)) MarkDirty(); }
-        }
-
-        public bool EnableNoResponseRestart
-        {
-            get => _enableNoResponseRestart;
-            set { if (SetProperty(ref _enableNoResponseRestart, value)) MarkDirty(); }
-        }
-
-        public int NoResponseRestartSeconds
-        {
-            get => _noResponseRestartSeconds;
-            set { if (SetProperty(ref _noResponseRestartSeconds, value)) MarkDirty(); }
-        }
-
-        public int AudioActivityThreshold
-        {
-            get => _audioActivityThreshold;
-            set { if (SetProperty(ref _audioActivityThreshold, value)) MarkDirty(); }
-        }
-
-        public double AudioLevelGain
-        {
-            get => _audioLevelGain;
-            set { if (SetProperty(ref _audioLevelGain, value)) MarkDirty(); }
-        }
-
-        public int AutoGainPresetIndex
-        {
-            get => _autoGainPresetIndex;
-            set { if (SetProperty(ref _autoGainPresetIndex, value)) MarkDirty(); }
-        }
-
-        public bool ShowReconnectMarker
-        {
-            get => _showReconnectMarker;
-            set { if (SetProperty(ref _showReconnectMarker, value)) MarkDirty(); }
-        }
-
-        // ═══════════════════════════════════════════════════
-        //  属性 — 字幕与文本
-        // ═══════════════════════════════════════════════════
-
-        public bool ExportSrt
-        {
-            get => _exportSrt;
-            set { if (SetProperty(ref _exportSrt, value)) MarkDirty(); }
-        }
-
-        public bool ExportVtt
-        {
-            get => _exportVtt;
-            set { if (SetProperty(ref _exportVtt, value)) MarkDirty(); }
-        }
-
-        public int DefaultFontSize
-        {
-            get => _defaultFontSize;
-            set { if (SetProperty(ref _defaultFontSize, value)) MarkDirty(); }
-        }
-
-        // ═══════════════════════════════════════════════════
-        //  属性 — AI 基础配置
-        // ═══════════════════════════════════════════════════
-
-        public int AiProviderTypeIndex
-        {
-            get => _aiProviderTypeIndex;
-            set
-            {
-                if (SetProperty(ref _aiProviderTypeIndex, value))
-                {
-                    OnPropertyChanged(nameof(IsAzureProvider));
-                    OnPropertyChanged(nameof(IsOpenAiProvider));
-                    MarkDirty();
-                }
-            }
-        }
+        public string SubscriptionEditorRegionHint { get => _subscriptionEditorRegionHint; set => SetProperty(ref _subscriptionEditorRegionHint, value); }
+        public string SubscriptionMessage { get => _subscriptionMessage; set => SetProperty(ref _subscriptionMessage, value); }
+        public string TestAllResult { get => _testAllResult; set => SetProperty(ref _testAllResult, value); }
+        public bool ShowTestAllResult { get => _showTestAllResult; set => SetProperty(ref _showTestAllResult, value); }
+        public bool EnableRecording { get => _enableRecording; set => Set(ref _enableRecording, value); }
+        public int RecordingMp3BitrateKbps { get => _recordingMp3BitrateKbps; set => Set(ref _recordingMp3BitrateKbps, value); }
+        public string SessionDirectory { get => _sessionDirectory; set => Set(ref _sessionDirectory, value); }
+        public string BatchStorageConnectionString { get => _batchStorageConnectionString; set => SetProperty(ref _batchStorageConnectionString, value); }
+        public string BatchStorageStatus { get => _batchStorageStatus; set => SetProperty(ref _batchStorageStatus, value); }
+        public bool BatchStorageIsValid { get => _batchStorageIsValid; set => SetProperty(ref _batchStorageIsValid, value); }
+        public int BatchLogLevelIndex { get => _batchLogLevelIndex; set => Set(ref _batchLogLevelIndex, value); }
+        public bool BatchForceRegeneration { get => _batchForceRegeneration; set => Set(ref _batchForceRegeneration, value); }
+        public bool ContextMenuForceRegeneration { get => _contextMenuForceRegeneration; set => Set(ref _contextMenuForceRegeneration, value); }
+        public bool EnableBatchSentenceSplit { get => _enableBatchSentenceSplit; set => Set(ref _enableBatchSentenceSplit, value); }
+        public bool BatchSplitOnComma { get => _batchSplitOnComma; set => Set(ref _batchSplitOnComma, value); }
+        public int BatchMaxChars { get => _batchMaxChars; set => Set(ref _batchMaxChars, value); }
+        public double BatchMaxDuration { get => _batchMaxDuration; set => Set(ref _batchMaxDuration, value); }
+        public int BatchPauseSplitMs { get => _batchPauseSplitMs; set => Set(ref _batchPauseSplitMs, value); }
+        public bool UseSpeechSubtitleForReview { get => _useSpeechSubtitleForReview; set => Set(ref _useSpeechSubtitleForReview, value); }
+        public bool FilterModalParticles { get => _filterModalParticles; set => Set(ref _filterModalParticles, value); }
+        public int MaxHistoryItems { get => _maxHistoryItems; set => Set(ref _maxHistoryItems, value); }
+        public int RealtimeMaxLength { get => _realtimeMaxLength; set => Set(ref _realtimeMaxLength, value); }
+        public int ChunkDurationMs { get => _chunkDurationMs; set => Set(ref _chunkDurationMs, value); }
+        public bool EnableAutoTimeout { get => _enableAutoTimeout; set => Set(ref _enableAutoTimeout, value); }
+        public int InitialSilenceTimeoutSeconds { get => _initialSilenceTimeoutSeconds; set => Set(ref _initialSilenceTimeoutSeconds, value); }
+        public int EndSilenceTimeoutSeconds { get => _endSilenceTimeoutSeconds; set => Set(ref _endSilenceTimeoutSeconds, value); }
+        public bool EnableNoResponseRestart { get => _enableNoResponseRestart; set => Set(ref _enableNoResponseRestart, value); }
+        public int NoResponseRestartSeconds { get => _noResponseRestartSeconds; set => Set(ref _noResponseRestartSeconds, value); }
+        public int AudioActivityThreshold { get => _audioActivityThreshold; set => Set(ref _audioActivityThreshold, value); }
+        public double AudioLevelGain { get => _audioLevelGain; set => Set(ref _audioLevelGain, value); }
+        public int AutoGainPresetIndex { get => _autoGainPresetIndex; set => Set(ref _autoGainPresetIndex, value); }
+        public bool ShowReconnectMarker { get => _showReconnectMarker; set => Set(ref _showReconnectMarker, value); }
+        public bool ExportSrt { get => _exportSrt; set => Set(ref _exportSrt, value); }
+        public bool ExportVtt { get => _exportVtt; set => Set(ref _exportVtt, value); }
+        public int DefaultFontSize { get => _defaultFontSize; set => Set(ref _defaultFontSize, value); }
+        public int AiProviderTypeIndex { get => _aiProviderTypeIndex;
+            set => Set(ref _aiProviderTypeIndex, value, then: () => {
+                OnPropertyChanged(nameof(IsAzureProvider));
+                OnPropertyChanged(nameof(IsOpenAiProvider));
+            }); }
 
         public bool IsAzureProvider => AiProviderTypeIndex == 1;
         public bool IsOpenAiProvider => AiProviderTypeIndex == 0;
 
-        public string AiApiEndpoint
-        {
-            get => _aiApiEndpoint;
-            set { if (SetProperty(ref _aiApiEndpoint, value)) MarkDirty(); }
-        }
-
-        public string AiApiKey
-        {
-            get => _aiApiKey;
-            set { if (SetProperty(ref _aiApiKey, value)) MarkDirty(); }
-        }
-
-        public string QuickModelName
-        {
-            get => _quickModelName;
-            set { if (SetProperty(ref _quickModelName, value)) MarkDirty(); }
-        }
-
-        public string SummaryModelName
-        {
-            get => _summaryModelName;
-            set { if (SetProperty(ref _summaryModelName, value)) MarkDirty(); }
-        }
-
-        public string QuickDeploymentName
-        {
-            get => _quickDeploymentName;
-            set { if (SetProperty(ref _quickDeploymentName, value)) MarkDirty(); }
-        }
-
-        public string SummaryDeploymentName
-        {
-            get => _summaryDeploymentName;
-            set { if (SetProperty(ref _summaryDeploymentName, value)) MarkDirty(); }
-        }
-
-        public string AiApiVersion
-        {
-            get => _aiApiVersion;
-            set { if (SetProperty(ref _aiApiVersion, value)) MarkDirty(); }
-        }
-
-        public int AiAzureAuthModeIndex
-        {
-            get => _aiAzureAuthModeIndex;
-            set
-            {
-                if (SetProperty(ref _aiAzureAuthModeIndex, value))
-                {
-                    OnPropertyChanged(nameof(IsAadAuth));
-                    OnPropertyChanged(nameof(ShowApiKeyField));
-                    MarkDirty();
-                }
-            }
-        }
+        public string AiApiEndpoint { get => _aiApiEndpoint; set => Set(ref _aiApiEndpoint, value); }
+        public string AiApiKey { get => _aiApiKey; set => Set(ref _aiApiKey, value); }
+        public string QuickModelName { get => _quickModelName; set => Set(ref _quickModelName, value); }
+        public string SummaryModelName { get => _summaryModelName; set => Set(ref _summaryModelName, value); }
+        public string QuickDeploymentName { get => _quickDeploymentName; set => Set(ref _quickDeploymentName, value); }
+        public string SummaryDeploymentName { get => _summaryDeploymentName; set => Set(ref _summaryDeploymentName, value); }
+        public string AiApiVersion { get => _aiApiVersion; set => Set(ref _aiApiVersion, value); }
+        public int AiAzureAuthModeIndex { get => _aiAzureAuthModeIndex;
+            set => Set(ref _aiAzureAuthModeIndex, value, then: () => {
+                OnPropertyChanged(nameof(IsAadAuth));
+                OnPropertyChanged(nameof(ShowApiKeyField));
+            }); }
 
         public bool IsAadAuth => AiAzureAuthModeIndex == 1;
         public bool ShowApiKeyField => !IsAzureProvider || !IsAadAuth;
 
-        public string AiAzureTenantId
-        {
-            get => _aiAzureTenantId;
-            set { if (SetProperty(ref _aiAzureTenantId, value)) MarkDirty(); }
-        }
-
-        public string AiAzureClientId
-        {
-            get => _aiAzureClientId;
-            set { if (SetProperty(ref _aiAzureClientId, value)) MarkDirty(); }
-        }
-
-        public bool SummaryEnableReasoning
-        {
-            get => _summaryEnableReasoning;
-            set { if (SetProperty(ref _summaryEnableReasoning, value)) MarkDirty(); }
-        }
-
-        public string InsightSystemPrompt
-        {
-            get => _insightSystemPrompt;
-            set { if (SetProperty(ref _insightSystemPrompt, value)) MarkDirty(); }
-        }
-
-        public string ReviewSystemPrompt
-        {
-            get => _reviewSystemPrompt;
-            set { if (SetProperty(ref _reviewSystemPrompt, value)) MarkDirty(); }
-        }
-
-        public string InsightUserContentTemplate
-        {
-            get => _insightUserContentTemplate;
-            set { if (SetProperty(ref _insightUserContentTemplate, value)) MarkDirty(); }
-        }
-
-        public string ReviewUserContentTemplate
-        {
-            get => _reviewUserContentTemplate;
-            set { if (SetProperty(ref _reviewUserContentTemplate, value)) MarkDirty(); }
-        }
-
-        public bool AutoInsightBufferOutput
-        {
-            get => _autoInsightBufferOutput;
-            set { if (SetProperty(ref _autoInsightBufferOutput, value)) MarkDirty(); }
-        }
-
-        public ObservableCollection<InsightPresetButton> PresetButtons
-        {
-            get => _presetButtons;
-            set => SetProperty(ref _presetButtons, value);
-        }
-
-        public ObservableCollection<ReviewSheetPreset> ReviewSheets
-        {
-            get => _reviewSheets;
-            set => SetProperty(ref _reviewSheets, value);
-        }
-
-        // ─── 自动保存状态 ───
-
-        public string AutoSaveStatus
-        {
-            get => _autoSaveStatus;
-            set => SetProperty(ref _autoSaveStatus, value);
-        }
-
-        // ═══════════════════════════════════════════════════
-        //  Commands
-        // ═══════════════════════════════════════════════════
+        public string AiAzureTenantId { get => _aiAzureTenantId; set => Set(ref _aiAzureTenantId, value); }
+        public string AiAzureClientId { get => _aiAzureClientId; set => Set(ref _aiAzureClientId, value); }
+        public bool SummaryEnableReasoning { get => _summaryEnableReasoning; set => Set(ref _summaryEnableReasoning, value); }
+        public string InsightSystemPrompt { get => _insightSystemPrompt; set => Set(ref _insightSystemPrompt, value); }
+        public string ReviewSystemPrompt { get => _reviewSystemPrompt; set => Set(ref _reviewSystemPrompt, value); }
+        public string InsightUserContentTemplate { get => _insightUserContentTemplate; set => Set(ref _insightUserContentTemplate, value); }
+        public string ReviewUserContentTemplate { get => _reviewUserContentTemplate; set => Set(ref _reviewUserContentTemplate, value); }
+        public bool AutoInsightBufferOutput { get => _autoInsightBufferOutput; set => Set(ref _autoInsightBufferOutput, value); }
+        public ObservableCollection<InsightPresetButton> PresetButtons { get => _presetButtons; set => SetProperty(ref _presetButtons, value); }
+        public ObservableCollection<ReviewSheetPreset> ReviewSheets { get => _reviewSheets; set => SetProperty(ref _reviewSheets, value); }
+        public string AutoSaveStatus { get => _autoSaveStatus; set => SetProperty(ref _autoSaveStatus, value); }
 
         public ICommand AddEndpointCommand { get; }
         public ICommand RemoveEndpointCommand { get; }
@@ -1054,10 +509,6 @@ namespace TrueFluentPro.ViewModels
         public ICommand TestSubscriptionCommand { get; }
         public ICommand TestAllSubscriptionsCommand { get; }
         public ICommand ValidateBatchStorageCommand { get; }
-
-        // ═══════════════════════════════════════════════════
-        //  终结点 CRUD
-        // ═══════════════════════════════════════════════════
 
         private void AddEndpoint()
         {
@@ -1111,7 +562,6 @@ namespace TrueFluentPro.ViewModels
             MarkDirty();
         }
 
-        /// <summary>模型内联编辑后通知同步保存</summary>
         public void NotifyModelChanged()
         {
             SyncEndpointsToConfig();
@@ -1119,7 +569,6 @@ namespace TrueFluentPro.ViewModels
             MarkDirty();
         }
 
-        /// <summary>终结点字段（名称/URL/密钥/启用状态等）更新后，立即刷新列表与模型选项。</summary>
         public void NotifyEndpointChanged()
         {
             if (SelectedEndpoint == null)
@@ -1135,14 +584,12 @@ namespace TrueFluentPro.ViewModels
             _ = RefreshAiAuthStatusAsync();
         }
 
-        /// <summary>洞察预设按钮编辑后通知保存。</summary>
         public void NotifyPresetButtonsChanged()
         {
             OnPropertyChanged(nameof(PresetButtons));
             MarkDirty();
         }
 
-        /// <summary>复盘模板编辑后通知保存。</summary>
         public void NotifyReviewSheetsChanged()
         {
             OnPropertyChanged(nameof(ReviewSheets));
@@ -1153,10 +600,6 @@ namespace TrueFluentPro.ViewModels
         {
             _config.Endpoints = Endpoints.ToList();
         }
-
-        // ═══════════════════════════════════════════════════
-        //  模型筛选
-        // ═══════════════════════════════════════════════════
 
         private void RefreshModelOptions()
         {
@@ -1171,12 +614,12 @@ namespace TrueFluentPro.ViewModels
             ImageModels = BuildModelOptions(ModelCapability.Image);
             VideoModels = BuildModelOptions(ModelCapability.Video);
 
-            RebindSelectedModelOption(insightRef, TextModels, v => _selectedInsightModel = v, nameof(SelectedInsightModel));
-            RebindSelectedModelOption(summaryRef, TextModels, v => _selectedSummaryModel = v, nameof(SelectedSummaryModel));
-            RebindSelectedModelOption(quickRef, TextModels, v => _selectedQuickModel = v, nameof(SelectedQuickModel));
-            RebindSelectedModelOption(reviewRef, TextModels, v => _selectedReviewModel = v, nameof(SelectedReviewModel));
-            RebindSelectedModelOption(imageRef, ImageModels, v => _selectedImageModel = v, nameof(SelectedImageModel));
-            RebindSelectedModelOption(videoRef, VideoModels, v => _selectedVideoModel = v, nameof(SelectedVideoModel));
+            SelectModelOption(insightRef, TextModels, v => _selectedInsightModel = v, nameof(SelectedInsightModel));
+            SelectModelOption(summaryRef, TextModels, v => _selectedSummaryModel = v, nameof(SelectedSummaryModel));
+            SelectModelOption(quickRef, TextModels, v => _selectedQuickModel = v, nameof(SelectedQuickModel));
+            SelectModelOption(reviewRef, TextModels, v => _selectedReviewModel = v, nameof(SelectedReviewModel));
+            SelectModelOption(imageRef, ImageModels, v => _selectedImageModel = v, nameof(SelectedImageModel));
+            SelectModelOption(videoRef, VideoModels, v => _selectedVideoModel = v, nameof(SelectedVideoModel));
         }
 
         private List<ModelOption> BuildModelOptions(ModelCapability required)
@@ -1197,45 +640,13 @@ namespace TrueFluentPro.ViewModels
                 .ToList();
         }
 
-        private void RebindSelectedModelOption(
-            ModelReference? reference,
-            List<ModelOption> options,
-            Action<ModelOption?> setter,
-            string propertyName)
-        {
-            if (reference == null)
-            {
-                setter(null);
-                OnPropertyChanged(propertyName);
-                return;
-            }
-
-            var match = options.FirstOrDefault(o =>
-                o.Reference.EndpointId == reference.EndpointId &&
-                o.Reference.ModelId == reference.ModelId);
-
-            setter(match);
-            OnPropertyChanged(propertyName);
-        }
-
         private void SelectModelOption(ModelReference? reference, List<ModelOption> options, Action<ModelOption?> setter, string propertyName)
         {
-            if (reference == null)
-            {
-                setter(null);
-                OnPropertyChanged(propertyName);
-                return;
-            }
-            var match = options.FirstOrDefault(o =>
-                o.Reference.EndpointId == reference.EndpointId &&
-                o.Reference.ModelId == reference.ModelId);
+            var match = reference == null ? null
+                : options.FirstOrDefault(o => o.Reference.EndpointId == reference.EndpointId && o.Reference.ModelId == reference.ModelId);
             setter(match);
             OnPropertyChanged(propertyName);
         }
-
-        // ═══════════════════════════════════════════════════
-        //  订阅 CRUD
-        // ═══════════════════════════════════════════════════
 
         private void LoadSubscriptionToEditor(AzureSubscription sub)
         {
@@ -1341,7 +752,6 @@ namespace TrueFluentPro.ViewModels
             SelectedSubscription.ServiceRegion = region;
             SelectedSubscription.Endpoint = endpoint;
 
-            // Refresh display
             var idx = Subscriptions.IndexOf(SelectedSubscription);
             if (idx >= 0)
             {
@@ -1450,10 +860,6 @@ namespace TrueFluentPro.ViewModels
             _config.Subscriptions = Subscriptions.ToList();
         }
 
-        // ═══════════════════════════════════════════════════
-        //  存储验证
-        // ═══════════════════════════════════════════════════
-
         private async Task ValidateBatchStorageAsync()
         {
             var cs = BatchStorageConnectionString?.Trim() ?? "";
@@ -1490,31 +896,13 @@ namespace TrueFluentPro.ViewModels
             }
         }
 
-        // ═══════════════════════════════════════════════════
-        //  AI 测试连接
-        // ═══════════════════════════════════════════════════
-
         private string _aiTestStatus = "";
         private string _aiTestReasoning = "";
         private string _aiAuthStatus = "认证状态：未检测";
 
-        public string AiTestStatus
-        {
-            get => _aiTestStatus;
-            set => SetProperty(ref _aiTestStatus, value);
-        }
-
-        public string AiTestReasoning
-        {
-            get => _aiTestReasoning;
-            set => SetProperty(ref _aiTestReasoning, value);
-        }
-
-        public string AiAuthStatus
-        {
-            get => _aiAuthStatus;
-            set => SetProperty(ref _aiAuthStatus, value);
-        }
+        public string AiTestStatus { get => _aiTestStatus; set => SetProperty(ref _aiTestStatus, value); }
+        public string AiTestReasoning { get => _aiTestReasoning; set => SetProperty(ref _aiTestReasoning, value); }
+        public string AiAuthStatus { get => _aiAuthStatus; set => SetProperty(ref _aiAuthStatus, value); }
 
         private async Task TestAiConnection()
         {
@@ -1706,14 +1094,18 @@ namespace TrueFluentPro.ViewModels
             }
         }
 
-        // ═══════════════════════════════════════════════════
-        //  自动保存 (debounce)
-        // ═══════════════════════════════════════════════════
+        private bool Set<T>(ref T field, T value, bool dirty = true, Action? then = null,
+            [CallerMemberName] string? name = null)
+        {
+            if (!SetProperty(ref field, value, name)) return false;
+            then?.Invoke();
+            if (dirty) MarkDirty();
+            return true;
+        }
 
         private void MarkDirty()
         {
             _isDirty = true;
-            // Reset debounce timer instead of creating new instance each time
             if (_debounceTimer == null)
             {
                 _debounceTimer = new Timer(_ =>
@@ -1745,10 +1137,21 @@ namespace TrueFluentPro.ViewModels
             }
         }
 
-        /// <summary>将 ViewModel 中所有属性写回 AzureSpeechConfig</summary>
         private void ApplyToConfig()
         {
-            // 录音与存储
+            _suppressDirty = true;
+            try
+            {
+                ApplyToConfigCore();
+            }
+            finally
+            {
+                _suppressDirty = false;
+            }
+        }
+
+        private void ApplyToConfigCore()
+        {
             _config.EnableRecording = EnableRecording;
             _config.RecordingMp3BitrateKbps = RecordingMp3BitrateKbps;
             var defaultDir = PathManager.Instance.DefaultSessionsPath;
@@ -1775,7 +1178,6 @@ namespace TrueFluentPro.ViewModels
             _config.BatchSubtitlePauseSplitMs = BatchPauseSplitMs;
             _config.UseSpeechSubtitleForReview = UseSpeechSubtitleForReview;
 
-            // 语音识别
             _config.FilterModalParticles = FilterModalParticles;
             _config.MaxHistoryItems = MaxHistoryItems;
             _config.RealtimeMaxLength = RealtimeMaxLength;
@@ -1792,13 +1194,11 @@ namespace TrueFluentPro.ViewModels
             _config.AutoGainPreset = (AutoGainPreset)presetIndex;
             _config.ShowReconnectMarkerInSubtitle = ShowReconnectMarker;
 
-            // 字幕与文本
             _config.ExportSrtSubtitles = ExportSrt;
             _config.ExportVttSubtitles = ExportVtt;
             _config.DefaultFontSize = DefaultFontSize;
             Controls.AdvancedRichTextBox.DefaultFontSizeValue = DefaultFontSize;
 
-            // AI 基础配置
             var ai = _config.AiConfig ?? new AiConfig();
             ai.ProviderType = AiProviderTypeIndex == 1 ? AiProviderType.AzureOpenAi : AiProviderType.OpenAiCompatible;
             ai.ApiEndpoint = AiApiEndpoint?.Trim() ?? "";
@@ -1829,7 +1229,6 @@ namespace TrueFluentPro.ViewModels
                     IncludeInBatch = s.IncludeInBatch
                 }).ToList();
 
-            // 模型引用
             ai.InsightModelRef = SelectedInsightModel?.Reference;
             ai.SummaryModelRef = SelectedSummaryModel?.Reference;
             ai.QuickModelRef = SelectedQuickModel?.Reference;
@@ -1839,30 +1238,27 @@ namespace TrueFluentPro.ViewModels
             _config.MediaGenConfig.ImageModelRef = SelectedImageModel?.Reference;
             _config.MediaGenConfig.VideoModelRef = SelectedVideoModel?.Reference;
 
-            // Media Studio 默认参数
             var media = _config.MediaGenConfig;
-            media.ImageSize = string.IsNullOrWhiteSpace(ImageSize) ? "1024x1024" : ImageSize.Trim();
-            media.ImageQuality = string.IsNullOrWhiteSpace(ImageQuality) ? "medium" : ImageQuality.Trim();
-            media.ImageFormat = string.IsNullOrWhiteSpace(ImageFormat) ? "png" : ImageFormat.Trim();
-            media.ImageCount = Math.Clamp(ImageCount, 1, 10);
+            if (string.IsNullOrWhiteSpace(media.ImageSize)) media.ImageSize = "1024x1024";
+            if (string.IsNullOrWhiteSpace(media.ImageQuality)) media.ImageQuality = "medium";
+            if (string.IsNullOrWhiteSpace(media.ImageFormat)) media.ImageFormat = "png";
+            media.ImageCount = Math.Clamp(media.ImageCount, 1, 10);
 
             media.VideoApiMode = VideoApiModeIndex == 1 ? VideoApiMode.Videos : VideoApiMode.SoraJobs;
             media.VideoWidth = Math.Max(64, VideoWidth);
             media.VideoHeight = Math.Max(64, VideoHeight);
-            media.VideoSeconds = Math.Clamp(VideoSeconds, 1, 120);
-            media.VideoVariants = Math.Clamp(VideoVariants, 1, 4);
+            media.VideoSeconds = Math.Clamp(media.VideoSeconds, 1, 120);
+            media.VideoVariants = Math.Clamp(media.VideoVariants, 1, 4);
             media.VideoPollIntervalMs = Math.Clamp(VideoPollIntervalMs, 500, 60000);
 
             media.MaxLoadedSessionsInMemory = Math.Clamp(MaxLoadedSessionsInMemory, 1, 64);
             media.OutputDirectory = MediaOutputDirectory?.Trim() ?? "";
 
-            // 与旧字段并存，保证 Media Studio 仍能读取到模型名称
             if (SelectedImageModel?.Reference != null)
                 media.ImageModel = SelectedImageModel.Reference.ModelId;
             if (SelectedVideoModel?.Reference != null)
                 media.VideoModel = SelectedVideoModel.Reference.ModelId;
 
-            // 终结点
             SyncEndpointsToConfig();
         }
     }

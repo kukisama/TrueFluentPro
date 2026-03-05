@@ -72,6 +72,7 @@ public static class CrashLogger
         Write(source, new Exception(message), isTerminating: false);
     }
 
+    [Conditional("DEBUG")]
     public static void SetContextProvider(Func<string>? provider)
     {
         lock (_diagnosticsLock)
@@ -80,6 +81,7 @@ public static class CrashLogger
         }
     }
 
+    [Conditional("DEBUG")]
     public static void AddBreadcrumb(string message)
     {
         try

@@ -203,75 +203,7 @@ namespace TrueFluentPro.ViewModels
             set { if (value) SelectedType = MediaGenType.Video; }
         }
 
-        // 图片参数覆盖
-        private string? _overrideImageSize;
-        public string? OverrideImageSize
-        {
-            get => _overrideImageSize;
-            set => SetProperty(ref _overrideImageSize, value);
-        }
-
-        private string? _overrideImageQuality;
-        public string? OverrideImageQuality
-        {
-            get => _overrideImageQuality;
-            set => SetProperty(ref _overrideImageQuality, value);
-        }
-
-        private string? _overrideImageFormat;
-        public string? OverrideImageFormat
-        {
-            get => _overrideImageFormat;
-            set => SetProperty(ref _overrideImageFormat, value);
-        }
-
-        private int? _overrideImageCount;
-        public int? OverrideImageCount
-        {
-            get => _overrideImageCount;
-            set => SetProperty(ref _overrideImageCount, value);
-        }
-
-        // 视频参数覆盖
-        private string _selectedVideoAspectRatio = "16:9";
-        public string SelectedVideoAspectRatio
-        {
-            get => _selectedVideoAspectRatio;
-            set
-            {
-                if (SetProperty(ref _selectedVideoAspectRatio, value))
-                {
-                    ReevaluateReferenceImageValidation();
-                }
-            }
-        }
-
-        private string _selectedVideoResolution = "480p";
-        public string SelectedVideoResolution
-        {
-            get => _selectedVideoResolution;
-            set
-            {
-                if (SetProperty(ref _selectedVideoResolution, value))
-                {
-                    ReevaluateReferenceImageValidation();
-                }
-            }
-        }
-
-        private int? _overrideVideoSeconds;
-        public int? OverrideVideoSeconds
-        {
-            get => _overrideVideoSeconds;
-            set => SetProperty(ref _overrideVideoSeconds, value);
-        }
-
-        private int? _overrideVideoVariants;
-        public int? OverrideVideoVariants
-        {
-            get => _overrideVideoVariants;
-            set => SetProperty(ref _overrideVideoVariants, value);
-        }
+        public MediaGenConfig GenConfig => _genConfig;
 
         // --- 状态指示 ---
         private string _statusText = "就绪";
@@ -383,17 +315,14 @@ namespace TrueFluentPro.ViewModels
                 p => RemoveReferenceImage(p as string),
                 _ => HasReferenceImage);
 
-            OverrideImageSize = "1024x1024";
-            OverrideImageQuality = "medium";
-            OverrideImageFormat = "png";
-            OverrideImageCount = 1;
-
             // 根据当前 API 模式初始化视频参数选项
             RefreshVideoParameterOptions();
 
-            // 设置视频参数默认值
-            OverrideVideoSeconds = VideoDurationOptions[0];
-            OverrideVideoVariants = VideoCountOptions[0];
+            _genConfig.PropertyChanged += (_, e) =>
+            {
+                if (e.PropertyName is nameof(MediaGenConfig.VideoAspectRatio) or nameof(MediaGenConfig.VideoResolution))
+                    ReevaluateReferenceImageValidation();
+            };
 
             RunningTasks.CollectionChanged += (_, _) =>
             {
@@ -472,14 +401,14 @@ namespace TrueFluentPro.ViewModels
             OnPropertyChanged(nameof(VideoCountOptions));
 
             // 确保当前选中值在新选项中有效
-            if (!VideoAspectRatioOptions.Contains(SelectedVideoAspectRatio))
-                SelectedVideoAspectRatio = VideoAspectRatioOptions[0];
-            if (!VideoResolutionOptions.Contains(SelectedVideoResolution))
-                SelectedVideoResolution = VideoResolutionOptions[0];
-            if (OverrideVideoSeconds.HasValue && !VideoDurationOptions.Contains(OverrideVideoSeconds.Value))
-                OverrideVideoSeconds = VideoDurationOptions[0];
-            if (OverrideVideoVariants.HasValue && !VideoCountOptions.Contains(OverrideVideoVariants.Value))
-                OverrideVideoVariants = VideoCountOptions[0];
+            if (!VideoAspectRatioOptions.Contains(_genConfig.VideoAspectRatio))
+                _genConfig.VideoAspectRatio = VideoAspectRatioOptions[0];
+            if (!VideoResolutionOptions.Contains(_genConfig.VideoResolution))
+                _genConfig.VideoResolution = VideoResolutionOptions[0];
+            if (!VideoDurationOptions.Contains(_genConfig.VideoSeconds))
+                _genConfig.VideoSeconds = VideoDurationOptions[0];
+            if (!VideoCountOptions.Contains(_genConfig.VideoVariants))
+                _genConfig.VideoVariants = VideoCountOptions[0];
 
             ReevaluateReferenceImageValidation();
         }
@@ -550,10 +479,10 @@ namespace TrueFluentPro.ViewModels
             var effectiveConfig = new MediaGenConfig
             {
                 ImageModel = _genConfig.ImageModel,
-                ImageSize = OverrideImageSize ?? _genConfig.ImageSize,
-                ImageQuality = OverrideImageQuality ?? _genConfig.ImageQuality,
-                ImageFormat = OverrideImageFormat ?? _genConfig.ImageFormat,
-                ImageCount = OverrideImageCount ?? _genConfig.ImageCount
+                ImageSize = _genConfig.ImageSize,
+                ImageQuality = _genConfig.ImageQuality,
+                ImageFormat = _genConfig.ImageFormat,
+                ImageCount = _genConfig.ImageCount
             };
 
             var imageConfig = BuildImageAiConfig();
@@ -724,8 +653,8 @@ namespace TrueFluentPro.ViewModels
                 VideoApiMode = _genConfig.VideoApiMode,
                 VideoWidth = videoWidth,
                 VideoHeight = videoHeight,
-                VideoSeconds = OverrideVideoSeconds ?? _genConfig.VideoSeconds,
-                VideoVariants = OverrideVideoVariants ?? _genConfig.VideoVariants,
+                VideoSeconds = _genConfig.VideoSeconds,
+                VideoVariants = _genConfig.VideoVariants,
                 VideoPollIntervalMs = _genConfig.VideoPollIntervalMs
             };
 
@@ -1262,8 +1191,8 @@ namespace TrueFluentPro.ViewModels
             return VideoCapabilityResolver.TryResolveSize(
                 _genConfig.VideoApiMode,
                 _genConfig.VideoModel,
-                SelectedVideoAspectRatio,
-                SelectedVideoResolution,
+                _genConfig.VideoAspectRatio,
+                _genConfig.VideoResolution,
                 out width,
                 out height);
         }
