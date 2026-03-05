@@ -23,118 +23,39 @@
         <controls:LevelToHeightConverter x:Key="LevelToHeight" MaxHeight="16"/>
     </Window.Resources>
 
-    <Window.Styles>
-        <Style Selector="ToggleButton.audio-pill">
-            <Setter Property="Padding" Value="10,4" />
-            <Setter Property="CornerRadius" Value="999" />
-            <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="BorderBrush" Value="#FFCBD5E1" />
-            <Setter Property="Background" Value="#FFF8FAFC" />
-            <Setter Property="Foreground" Value="#FF111827" />
-            <Setter Property="FontSize" Value="12" />
-            <Setter Property="MinWidth" Value="72" />
-        </Style>
-        <Style Selector="ToggleButton.audio-pill:pointerover">
-            <Setter Property="Background" Value="#FFF1F5F9" />
-        </Style>
-        <Style Selector="ToggleButton.audio-pill:checked">
-            <Setter Property="Background" Value="#FF2563EB" />
-            <Setter Property="BorderBrush" Value="#FF1D4ED8" />
-            <Setter Property="Foreground" Value="White" />
-        </Style>
-    </Window.Styles>
+    <!-- 主体：NavigationView 直接占满窗口 -->
+    <ui:NavigationView Name="NavView"
+                       IsBackButtonVisible="False"
+                       IsPaneOpen="True"
+                       IsSettingsVisible="True"
+                       PaneDisplayMode="Left"
+                       SelectionChanged="NavView_SelectionChanged">
 
-    <DockPanel>
-        <!-- 顶部工具栏 -->
-        <Border DockPanel.Dock="Top" Padding="10" BorderBrush="#FFE5E7EB" BorderThickness="0,0,0,1">
-            <Grid ColumnDefinitions="Auto,*">
-                <TextBlock Grid.Column="0" Text="译见 Pro" FontSize="18" FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,20,0"/>
+        <ui:NavigationView.MenuItems>
+            <ui:NavigationViewItem Content="实时翻译" Tag="live">
+                <ui:NavigationViewItem.IconSource>
+                    <ui:SymbolIconSource Symbol="Microphone"/>
+                </ui:NavigationViewItem.IconSource>
+            </ui:NavigationViewItem>
+            <ui:NavigationViewItem Content="复盘批处理" Tag="review">
+                <ui:NavigationViewItem.IconSource>
+                    <ui:SymbolIconSource Symbol="Library"/>
+                </ui:NavigationViewItem.IconSource>
+            </ui:NavigationViewItem>
+            <ui:NavigationViewItem Content="Media Studio" Tag="media">
+                <ui:NavigationViewItem.IconSource>
+                    <ui:SymbolIconSource Symbol="Image"/>
+                </ui:NavigationViewItem.IconSource>
+            </ui:NavigationViewItem>
+        </ui:NavigationView.MenuItems>
 
-                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="5">
-                    <Button Content="清空历史" Command="{Binding ClearHistoryCommand}" Padding="10,5"
-                        IsVisible="{Binding IsLiveMode}"/>
-                    <Button Content="查看历史记录" Command="{Binding OpenHistoryFolderCommand}" Padding="10,5" 
-                            ToolTip.Tip="打开本地历史记录文件夹，查看保存的翻译文件"/>
-                    <Button Content="浮动字幕" Command="{Binding ShowFloatingSubtitlesCommand}" Padding="10,5"
-                        IsVisible="{Binding IsLiveMode}"
-                            Background="{Binding FloatingSubtitleButtonBackground}"
-                            Foreground="{Binding FloatingSubtitleButtonForeground}"
-                            ToolTip.Tip="使用可拖动的透明字幕框提供服务"/>
-
-                    <Border Width="70" Height="22" Margin="20,0,0,0"
-                            Background="Transparent" BorderBrush="#FFCBD5E1" BorderThickness="1"
-                            CornerRadius="3" VerticalAlignment="Center"
-                            ToolTip.Tip="音频活动电平"
-                            IsVisible="{Binding IsLiveMode}">
-                        <Grid>
-                            <Border Height="1" Background="#FFE2E8F0" VerticalAlignment="Center"/>
-                            <ItemsControl ItemsSource="{Binding AudioDevices.AudioLevelHistory}" VerticalAlignment="Bottom" Margin="4,3">
-                                <ItemsControl.ItemsPanel>
-                                    <ItemsPanelTemplate>
-                                        <StackPanel Orientation="Horizontal" Spacing="1"/>
-                                    </ItemsPanelTemplate>
-                                </ItemsControl.ItemsPanel>
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <Border Width="2"
-                                                Height="{Binding Converter={StaticResource LevelToHeight}}"
-                                                Background="#FF16A34A"
-                                                Opacity="0.85"
-                                                VerticalAlignment="Bottom"/>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                        </Grid>
-                    </Border>
-                </StackPanel>
-
-            </Grid>
-        </Border>
-
-        <!-- 底部状态栏 -->
-        <Border DockPanel.Dock="Bottom" BorderBrush="Gray" BorderThickness="0,1,0,0" Padding="10,5">
-            <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
-                <TextBlock Grid.Column="0" Grid.Row="0" Text="{Binding StatusMessage}" />
-                <TextBlock Grid.Column="0" Grid.Row="1" Text="{Binding AudioDiagnosticStatus}" FontSize="10" Foreground="Gray" Margin="0,2,0,0" />
-                <TextBlock Grid.Column="1" Text="{Binding ConfigVM.SubscriptionValidationStatusMessage}" 
-                           FontSize="10" Foreground="Gray" Margin="10,0,0,0"/>
-            </Grid>
-        </Border>
-
-        <!-- 主体：NavigationView -->
-        <ui:NavigationView Name="NavView"
-                           IsBackButtonVisible="False"
-                           IsPaneOpen="True"
-                           IsSettingsVisible="True"
-                           PaneDisplayMode="Left"
-                           SelectionChanged="NavView_SelectionChanged">
-
-            <ui:NavigationView.MenuItems>
-                <ui:NavigationViewItem Content="实时翻译" Tag="live">
-                    <ui:NavigationViewItem.IconSource>
-                        <ui:SymbolIconSource Symbol="Microphone"/>
-                    </ui:NavigationViewItem.IconSource>
-                </ui:NavigationViewItem>
-                <ui:NavigationViewItem Content="复盘批处理" Tag="review">
-                    <ui:NavigationViewItem.IconSource>
-                        <ui:SymbolIconSource Symbol="Library"/>
-                    </ui:NavigationViewItem.IconSource>
-                </ui:NavigationViewItem>
-                <ui:NavigationViewItem Content="Media Studio" Tag="media">
-                    <ui:NavigationViewItem.IconSource>
-                        <ui:SymbolIconSource Symbol="Image"/>
-                    </ui:NavigationViewItem.IconSource>
-                </ui:NavigationViewItem>
-            </ui:NavigationView.MenuItems>
-
-            <ui:NavigationView.Content>
-                <Panel>
-                    <views:LiveTranslationView Name="LiveView" IsVisible="True"/>
-                    <views:ReviewModeView Name="ReviewView" IsVisible="False"/>
-                    <views:MediaStudioView Name="MediaStudioViewPage" IsVisible="False"/>
-                    <views:SettingsView Name="SettingsViewPage" IsVisible="False"/>
-                </Panel>
-            </ui:NavigationView.Content>
-        </ui:NavigationView>
-    </DockPanel>
+        <ui:NavigationView.Content>
+            <Panel>
+                <views:LiveTranslationView Name="LiveView" IsVisible="True"/>
+                <views:ReviewModeView Name="ReviewView" IsVisible="False"/>
+                <views:MediaStudioView Name="MediaStudioViewPage" IsVisible="False"/>
+                <views:SettingsView Name="SettingsViewPage" IsVisible="False"/>
+            </Panel>
+        </ui:NavigationView.Content>
+    </ui:NavigationView>
 </Window>

@@ -54,6 +54,8 @@ namespace TrueFluentPro.ViewModels
         private bool _isFloatingSubtitleOpen;
 
         private FloatingSubtitleManager? _floatingSubtitleManager;
+        private FloatingInsightManager? _floatingInsightManager;
+        private bool _isFloatingInsightOpen;
 
         private int _uiModeIndex;
         private bool _isReviewModeViewCreated;
@@ -207,6 +209,11 @@ namespace TrueFluentPro.ViewModels
                 canExecute: _ => true
             );              ShowFloatingSubtitlesCommand = new RelayCommand(
                 execute: _ => ShowFloatingSubtitles(),
+                canExecute: _ => true
+            );
+
+            ShowFloatingInsightCommand = new RelayCommand(
+                execute: _ => ShowFloatingInsight(),
                 canExecute: _ => true
             );
             

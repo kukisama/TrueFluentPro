@@ -51,7 +51,7 @@ public partial class MainWindow : Window
             _viewModel.NavigateToSettings = () =>
             {
                 NavView.SelectedItem = NavView.SettingsItem;
-                ShowPage("settings");
+                ShowPage(MainWindowViewModel.NavTagSettings);
             };
         }
     }
@@ -80,7 +80,7 @@ public partial class MainWindow : Window
     {
         if (e.IsSettingsSelected)
         {
-            ShowPage("settings");
+            ShowPage(MainWindowViewModel.NavTagSettings);
             return;
         }
 
@@ -92,17 +92,17 @@ public partial class MainWindow : Window
 
     private void ShowPage(string tag)
     {
-        LiveView.IsVisible = tag == "live";
-        ReviewView.IsVisible = tag == "review";
-        MediaStudioViewPage.IsVisible = tag == "media";
-        SettingsViewPage.IsVisible = tag == "settings";
+        LiveView.IsVisible = tag == MainWindowViewModel.NavTagLive;
+        ReviewView.IsVisible = tag == MainWindowViewModel.NavTagReview;
+        MediaStudioViewPage.IsVisible = tag == MainWindowViewModel.NavTagMedia;
+        SettingsViewPage.IsVisible = tag == MainWindowViewModel.NavTagSettings;
 
         if (_viewModel != null)
         {
             _viewModel.SelectedNavTag = tag;
         }
 
-        if (tag == "media" && _viewModel != null && !_mediaStudioInitialized)
+        if (tag == MainWindowViewModel.NavTagMedia && _viewModel != null && !_mediaStudioInitialized)
         {
             _mediaStudioInitialized = true;
             var config = _viewModel.ConfigVM.Config;

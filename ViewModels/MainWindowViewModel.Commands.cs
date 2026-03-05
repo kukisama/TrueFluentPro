@@ -13,6 +13,7 @@ namespace TrueFluentPro.ViewModels
         public ICommand ShowConfigCommand { get; }
         public ICommand OpenHistoryFolderCommand { get; }
         public ICommand ShowFloatingSubtitlesCommand { get; }
+        public ICommand ShowFloatingInsightCommand { get; }
         public ICommand ToggleEditorTypeCommand { get; }
         public ICommand OpenAzureSpeechPortalCommand { get; }
         public ICommand OpenFoundryPortalCommand { get; }

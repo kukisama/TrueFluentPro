@@ -15,7 +15,28 @@
         <controls:LevelToHeightConverter x:Key="LevelToHeight" MaxHeight="16"/>
     </UserControl.Resources>
 
-    <Grid RowDefinitions="Auto,*">
+    <UserControl.Styles>
+        <Style Selector="ToggleButton.audio-pill">
+            <Setter Property="Padding" Value="10,4" />
+            <Setter Property="CornerRadius" Value="999" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="BorderBrush" Value="#FFCBD5E1" />
+            <Setter Property="Background" Value="#FFF8FAFC" />
+            <Setter Property="Foreground" Value="#FF111827" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="MinWidth" Value="72" />
+        </Style>
+        <Style Selector="ToggleButton.audio-pill:pointerover">
+            <Setter Property="Background" Value="#FFF1F5F9" />
+        </Style>
+        <Style Selector="ToggleButton.audio-pill:checked">
+            <Setter Property="Background" Value="#FF2563EB" />
+            <Setter Property="BorderBrush" Value="#FF1D4ED8" />
+            <Setter Property="Foreground" Value="White" />
+        </Style>
+    </UserControl.Styles>
+
+    <Grid RowDefinitions="Auto,*,Auto">
         <!-- 订阅与输入选择区域 -->
         <Grid Grid.Row="0" Margin="10,0,10,10"
             ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,*,Auto,Auto"
@@ -108,10 +129,10 @@
         </Grid>
 
         <!-- 中间翻译内容区域 -->
-        <Grid Grid.Row="1" Margin="10" ColumnDefinitions="*,*">
+        <Grid Grid.Row="1" Margin="10,0,10,0" ColumnDefinitions="*,*">
             <!-- 左侧实时翻译区域 -->
             <Border Grid.Column="0" BorderBrush="Gray" BorderThickness="1" Margin="0,0,5,0">
-                <Grid RowDefinitions="Auto,*">
+                <Grid RowDefinitions="Auto,*,Auto">
                     <DockPanel Grid.Row="0" Margin="5">
                         <TextBlock Text="实时翻译" FontWeight="Bold" DockPanel.Dock="Left"/>
                         <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
@@ -151,7 +172,7 @@
             <Border Grid.Column="1" BorderBrush="Gray" BorderThickness="1" Margin="5,0,0,0">
                 <TabControl>
                     <TabItem Header="历史记录">
-                        <Grid RowDefinitions="Auto,*">
+                        <Grid RowDefinitions="Auto,*,Auto">
                             <TextBlock Grid.Row="0" Text="历史记录" FontWeight="Bold" Margin="5"/>
                             <ListBox Grid.Row="1" ItemsSource="{Binding History}" Margin="5">
                                 <ListBox.ItemTemplate>
@@ -288,5 +309,63 @@
                 </TabControl>
             </Border>
         </Grid>
+    
+        <!-- 底部操作栏 -->
+        <Border Grid.Row="2" BorderBrush="#FFE5E7EB" BorderThickness="0,1,0,0" Padding="10,5" Margin="0,4,0,0">
+            <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,*,Auto">
+                <!-- 清空历史 -->
+                <Button Grid.Column="0" Content="清空历史" Command="{Binding ClearHistoryCommand}" 
+                        Padding="10,5" Margin="0,0,6,0"/>
+                <!-- 查看历史记录 -->
+                <Button Grid.Column="1" Content="查看历史记录" Command="{Binding OpenHistoryFolderCommand}" 
+                        Padding="10,5" Margin="0,0,6,0"
+                        ToolTip.Tip="打开本地历史记录文件夹，查看保存的翻译文件"/>
+                <!-- 浮动字幕 -->
+                <Button Grid.Column="2" Content="浮动字幕" Command="{Binding ShowFloatingSubtitlesCommand}" 
+                        Padding="10,5" Margin="0,0,6,0"
+                        Background="{Binding FloatingSubtitleButtonBackground}"
+                        Foreground="{Binding FloatingSubtitleButtonForeground}"
+                        ToolTip.Tip="使用可拖动的透明字幕框提供服务"/>
+                <!-- 浮动洞察 -->
+                <Button Grid.Column="3" Content="🧠 浮动洞察" Command="{Binding ShowFloatingInsightCommand}" 
+                        Padding="10,5" Margin="0,0,6,0"
+                        Background="{Binding FloatingInsightButtonBackground}"
+                        Foreground="{Binding FloatingInsightButtonForeground}"
+                        ToolTip.Tip="弹出浮动洞察窗口，实时同步 AI 洞察结果"/>
+                <!-- 音频活动电平 -->
+                <Border Grid.Column="4" Width="70" Height="22"
+                        Background="Transparent" BorderBrush="#FFCBD5E1" BorderThickness="1"
+                        CornerRadius="3" VerticalAlignment="Center"
+                        ToolTip.Tip="音频活动电平">
+                    <Grid>
+                        <Border Height="1" Background="#FFE2E8F0" VerticalAlignment="Center"/>
+                        <ItemsControl ItemsSource="{Binding AudioDevices.AudioLevelHistory}" VerticalAlignment="Bottom" Margin="4,3">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal" Spacing="1"/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Width="2"
+                                            Height="{Binding Converter={StaticResource LevelToHeight}}"
+                                            Background="#FF16A34A"
+                                            Opacity="0.85"
+                                            VerticalAlignment="Bottom"/>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </Grid>
+                </Border>
+                <!-- 状态信息（右侧） -->
+                <StackPanel Grid.Column="6" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding StatusMessage}" FontSize="11" Foreground="Gray"
+                               VerticalAlignment="Center" MaxWidth="400" TextTrimming="CharacterEllipsis"/>
+                    <TextBlock Text="{Binding ConfigVM.SubscriptionValidationStatusMessage}" 
+                               FontSize="10" Foreground="Gray" VerticalAlignment="Center"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
     </Grid>
 </UserControl>
