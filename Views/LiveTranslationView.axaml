@@ -20,113 +20,118 @@
             <Setter Property="Padding" Value="10,4" />
             <Setter Property="CornerRadius" Value="999" />
             <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="BorderBrush" Value="#FFCBD5E1" />
-            <Setter Property="Background" Value="#FFF8FAFC" />
-            <Setter Property="Foreground" Value="#FF111827" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}" />
+            <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
             <Setter Property="FontSize" Value="12" />
             <Setter Property="MinWidth" Value="72" />
         </Style>
         <Style Selector="ToggleButton.audio-pill:pointerover">
-            <Setter Property="Background" Value="#FFF1F5F9" />
+            <Setter Property="Background" Value="{DynamicResource SurfaceHoverBrush}" />
         </Style>
         <Style Selector="ToggleButton.audio-pill:checked">
-            <Setter Property="Background" Value="#FF2563EB" />
-            <Setter Property="BorderBrush" Value="#FF1D4ED8" />
+            <Setter Property="Background" Value="{DynamicResource PrimaryBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource PrimaryDarkBrush}" />
             <Setter Property="Foreground" Value="White" />
         </Style>
     </UserControl.Styles>
 
     <Grid RowDefinitions="Auto,*,Auto">
-        <!-- 订阅与输入选择区域 -->
-        <Grid Grid.Row="0" Margin="10,0,10,10"
-            ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,*,Auto,Auto"
-            RowDefinitions="Auto,Auto" RowSpacing="6">
-            <TextBlock Grid.Column="0" Text="订阅:" VerticalAlignment="Center" Margin="0,0,5,0"/>
-            <ComboBox Grid.Column="1" Name="SubscriptionComboBox" MinWidth="150" 
+        <!-- 订阅与输入选择区域（紧凑工具栏） -->
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8" Margin="10,4,10,8"
+                    VerticalAlignment="Center">
+            <!-- 订阅选择 -->
+            <TextBlock Text="订阅:" VerticalAlignment="Center"/>
+            <ComboBox Name="SubscriptionComboBox" MinWidth="150" 
                       ItemsSource="{Binding ConfigVM.SubscriptionNames}" 
                       SelectedIndex="{Binding ConfigVM.ActiveSubscriptionIndex, Mode=TwoWay}"
                       IsEnabled="{Binding ConfigVM.IsConfigurationEnabled}"
                       ToolTip.Tip="选择要使用的Azure订阅"/>
-
-            <Ellipse Grid.Column="2" Width="12" Height="12" StrokeThickness="2"
-                     VerticalAlignment="Center" Margin="8,0,12,0"
+            <Ellipse Width="12" Height="12" StrokeThickness="2"
+                     VerticalAlignment="Center"
                      Fill="{Binding ConfigVM.SubscriptionLampFill}"
                      Stroke="{Binding ConfigVM.SubscriptionLampStroke}"
                      Opacity="{Binding ConfigVM.SubscriptionLampOpacity}"
                      ToolTip.Tip="{Binding ConfigVM.SubscriptionValidationStatusMessage}"/>
 
-                    <TextBlock Grid.Column="3" Text="麦克风:" VerticalAlignment="Center" Margin="10,0,5,0"/>
-                    <ComboBox Grid.Column="4" Name="InputDeviceComboBox" Width="220"
-                      ItemsSource="{Binding AudioDevices.AudioDevicesList}"
-                      SelectedItem="{Binding AudioDevices.SelectedAudioDevice, Mode=TwoWay}"
-                      IsEnabled="{Binding AudioDevices.IsInputDeviceUiEnabled}"
-                        ToolTip.Tip="选择麦克风设备（选“无”表示不采集麦克风）"/>
+            <!-- 语言对 -->
+            <TextBlock Text="源语言:" VerticalAlignment="Center" Margin="8,0,0,0"/>
+            <ComboBox Name="SourceLanguageComboBox" MinWidth="100"
+                      IsEnabled="{Binding ConfigVM.IsConfigurationEnabled}"
+                      SelectedIndex="{Binding ConfigVM.SourceLanguageIndex}">
+                <ComboBoxItem Tag="auto" Content="自动识别"/>
+                <ComboBoxItem Tag="en" Content="英语"/>
+                <ComboBoxItem Tag="zh-CN" Content="中文"/>
+                <ComboBoxItem Tag="ja-JP" Content="日语"/>
+                <ComboBoxItem Tag="ko-KR" Content="韩语"/>
+                <ComboBoxItem Tag="fr-FR" Content="法语"/>
+                <ComboBoxItem Tag="de-DE" Content="德语"/>
+                <ComboBoxItem Tag="es" Content="西班牙语"/>
+            </ComboBox>
+            <TextBlock Text="→" VerticalAlignment="Center" FontSize="16" FontWeight="Bold"/>
+            <ComboBox Name="TargetLanguageComboBox" MinWidth="100"
+                      IsEnabled="{Binding ConfigVM.IsConfigurationEnabled}"
+                      SelectedIndex="{Binding ConfigVM.TargetLanguageIndex}">
+                <ComboBoxItem Tag="en" Content="英语"/>
+                <ComboBoxItem Tag="zh-CN" Content="中文"/>
+                <ComboBoxItem Tag="ja-JP" Content="日语"/>
+                <ComboBoxItem Tag="ko-KR" Content="韩语"/>
+                <ComboBoxItem Tag="fr-FR" Content="法语"/>
+                <ComboBoxItem Tag="de-DE" Content="德语"/>
+                <ComboBoxItem Tag="es" Content="西班牙语"/>
+            </ComboBox>
 
-                    <TextBlock Grid.Column="5" Text="系统回环:" VerticalAlignment="Center" Margin="10,0,5,0"/>
-                    <ComboBox Grid.Column="6" Name="OutputDeviceComboBox" Width="220"
-                      ItemsSource="{Binding AudioDevices.OutputDevicesList}"
-                      SelectedItem="{Binding AudioDevices.SelectedOutputDevice, Mode=TwoWay}"
-                      IsEnabled="{Binding AudioDevices.IsOutputDeviceUiEnabled}"
-                        ToolTip.Tip="选择系统回环设备（选“无”表示不采集系统回环）"/>
+            <!-- 开始/停止翻译 -->
+            <Button Content="{Binding TranslationToggleButtonText}"
+                    Command="{Binding ToggleTranslationCommand}"
+                    Background="{Binding TranslationToggleButtonBackground}"
+                    Foreground="{Binding TranslationToggleButtonForeground}"
+                    Padding="10,5" Margin="8,0,0,0"/>
 
-                    <Button Grid.Column="7" Content="刷新" Width="60" Margin="10,0,0,0"
-                    Command="{Binding AudioDevices.RefreshAudioDevicesCommand}"
-                    IsEnabled="{Binding AudioDevices.IsAudioDeviceRefreshEnabled}"
-                    ToolTip.Tip="刷新音频设备列表"/>
-
-            <StackPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="12" Orientation="Horizontal"
-                        Spacing="12" VerticalAlignment="Center">
-                <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                    <TextBlock Text="录制来源:" VerticalAlignment="Center"/>
-                    <ToggleButton Content="仅环回"
-                                  Classes="audio-pill"
-                                  IsChecked="{Binding AudioDevices.IsRecordingLoopbackOnly, Mode=TwoWay}"/>
-                    <ToggleButton Content="环回+麦克风"
-                                  Classes="audio-pill"
-                                  IsChecked="{Binding AudioDevices.IsRecordingLoopbackMix, Mode=TwoWay}"/>
-                </StackPanel>
-
-                <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                    <TextBlock Text="源语言:" VerticalAlignment="Center"/>
-                    <ComboBox Name="SourceLanguageComboBox" MinWidth="120"
-                          IsEnabled="{Binding ConfigVM.IsConfigurationEnabled}"
-                          SelectedIndex="{Binding ConfigVM.SourceLanguageIndex}">
-                    <ComboBoxItem Tag="auto" Content="自动识别"/>
-                      <ComboBoxItem Tag="en" Content="英语"/>
-                      <ComboBoxItem Tag="zh-CN" Content="中文"/>
-                      <ComboBoxItem Tag="ja-JP" Content="日语"/>
-                      <ComboBoxItem Tag="ko-KR" Content="韩语"/>
-                      <ComboBoxItem Tag="fr-FR" Content="法语"/>
-                      <ComboBoxItem Tag="de-DE" Content="德语"/>
-                      <ComboBoxItem Tag="es" Content="西班牙语"/>
-                    </ComboBox>
-
-                    <TextBlock Text="→" VerticalAlignment="Center" FontSize="16" FontWeight="Bold" Margin="4,0"/>
-
-                    <TextBlock Text="目标语言:" VerticalAlignment="Center"/>
-                    <ComboBox Name="TargetLanguageComboBox" MinWidth="120"
-                          IsEnabled="{Binding ConfigVM.IsConfigurationEnabled}"
-                          SelectedIndex="{Binding ConfigVM.TargetLanguageIndex}">
-                    <ComboBoxItem Tag="en" Content="英语"/>
-                    <ComboBoxItem Tag="zh-CN" Content="中文"/>
-                    <ComboBoxItem Tag="ja-JP" Content="日语"/>
-                    <ComboBoxItem Tag="ko-KR" Content="韩语"/>
-                    <ComboBoxItem Tag="fr-FR" Content="法语"/>
-                    <ComboBoxItem Tag="de-DE" Content="德语"/>
-                    <ComboBoxItem Tag="es" Content="西班牙语"/>
-                    </ComboBox>
-                </StackPanel>
-
-                <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                    <Button Content="{Binding TranslationToggleButtonText}"
-                            Command="{Binding ToggleTranslationCommand}"
-                            Background="{Binding TranslationToggleButtonBackground}"
-                            Foreground="{Binding TranslationToggleButtonForeground}"
-                            Padding="10,5"/>
-                </StackPanel>
-
-            </StackPanel>
-        </Grid>
+            <!-- 音频设备 Flyout -->
+            <Button Content="🎧 音频设备" Padding="8,5"
+                    ToolTip.Tip="配置麦克风、系统回环和录制来源">
+                <Button.Flyout>
+                    <Flyout Placement="BottomEdgeAlignedLeft">
+                        <StackPanel Spacing="10" Width="360">
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="麦克风" FontWeight="SemiBold" FontSize="12"/>
+                                <ComboBox Name="InputDeviceComboBox"
+                                          ItemsSource="{Binding AudioDevices.AudioDevicesList}"
+                                          SelectedItem="{Binding AudioDevices.SelectedAudioDevice, Mode=TwoWay}"
+                                          IsEnabled="{Binding AudioDevices.IsInputDeviceUiEnabled}"
+                                          HorizontalAlignment="Stretch"
+                                          ToolTip.Tip="选择麦克风设备（选'无'表示不采集麦克风）"/>
+                            </StackPanel>
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="系统回环" FontWeight="SemiBold" FontSize="12"/>
+                                <ComboBox Name="OutputDeviceComboBox"
+                                          ItemsSource="{Binding AudioDevices.OutputDevicesList}"
+                                          SelectedItem="{Binding AudioDevices.SelectedOutputDevice, Mode=TwoWay}"
+                                          IsEnabled="{Binding AudioDevices.IsOutputDeviceUiEnabled}"
+                                          HorizontalAlignment="Stretch"
+                                          ToolTip.Tip="选择系统回环设备（选'无'表示不采集系统回环）"/>
+                            </StackPanel>
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="录制来源" FontWeight="SemiBold" FontSize="12"/>
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <ToggleButton Content="仅环回"
+                                                  Classes="audio-pill"
+                                                  IsChecked="{Binding AudioDevices.IsRecordingLoopbackOnly, Mode=TwoWay}"/>
+                                    <ToggleButton Content="环回+麦克风"
+                                                  Classes="audio-pill"
+                                                  IsChecked="{Binding AudioDevices.IsRecordingLoopbackMix, Mode=TwoWay}"/>
+                                </StackPanel>
+                            </StackPanel>
+                            <Button Content="刷新设备" HorizontalAlignment="Stretch"
+                                    Command="{Binding AudioDevices.RefreshAudioDevicesCommand}"
+                                    IsEnabled="{Binding AudioDevices.IsAudioDeviceRefreshEnabled}"
+                                    ToolTip.Tip="刷新音频设备列表"/>
+                        </StackPanel>
+                    </Flyout>
+                </Button.Flyout>
+            </Button>
+        </StackPanel>
 
         <!-- 中间翻译内容区域 -->
         <Grid Grid.Row="1" Margin="10,0,10,0" ColumnDefinitions="*,*">
@@ -177,7 +182,7 @@
                             <ListBox Grid.Row="1" ItemsSource="{Binding History}" Margin="5">
                                 <ListBox.ItemTemplate>
                                     <DataTemplate DataType="models:TranslationItem">
-                                        <Border Margin="0,4" BorderBrush="#FFE5E7EB" BorderThickness="1" CornerRadius="4" Padding="6">
+                                        <Border Margin="0,4" BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="1" CornerRadius="4" Padding="6">
                                             <Expander>
                                                 <Expander.Header>
                                                     <StackPanel Spacing="2">
@@ -247,7 +252,7 @@
 
                             <!-- 自动循环洞察 -->
                             <Border Grid.Row="3" Margin="8,4" Padding="8,6"
-                                    Background="#FFF8FAFC" BorderBrush="#FFE2E8F0"
+                                    Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource DividerBrush}"
                                     BorderThickness="1" CornerRadius="4">
                                 <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto">
                                     <TextBlock Grid.Column="0" Text="自动洞察:" FontSize="11"
@@ -278,7 +283,7 @@
                             </Border>
 
                             <!-- Markdown 渲染结果区 -->
-                            <Border Grid.Row="4" Margin="8,4" BorderBrush="#FFE5E7EB"
+                            <Border Grid.Row="4" Margin="8,4" BorderBrush="{DynamicResource BorderSubtleBrush}"
                                     BorderThickness="1" CornerRadius="4">
                                 <Grid>
                                     <ScrollViewer IsVisible="{Binding !AiInsight.IsInsightEmpty}">
@@ -311,7 +316,7 @@
         </Grid>
     
         <!-- 底部操作栏 -->
-        <Border Grid.Row="2" BorderBrush="#FFE5E7EB" BorderThickness="0,1,0,0" Padding="10,5" Margin="0,4,0,0">
+        <Border Grid.Row="2" BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="0,1,0,0" Padding="10,5" Margin="0,4,0,0">
             <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,*,Auto">
                 <!-- 清空历史 -->
                 <Button Grid.Column="0" Content="清空历史" Command="{Binding ClearHistoryCommand}" 
@@ -334,11 +339,11 @@
                         ToolTip.Tip="弹出浮动洞察窗口，实时同步 AI 洞察结果"/>
                 <!-- 音频活动电平 -->
                 <Border Grid.Column="4" Width="70" Height="22"
-                        Background="Transparent" BorderBrush="#FFCBD5E1" BorderThickness="1"
+                        Background="Transparent" BorderBrush="{DynamicResource BorderStrongBrush}" BorderThickness="1"
                         CornerRadius="3" VerticalAlignment="Center"
                         ToolTip.Tip="音频活动电平">
                     <Grid>
-                        <Border Height="1" Background="#FFE2E8F0" VerticalAlignment="Center"/>
+                        <Border Height="1" Background="{DynamicResource DividerBrush}" VerticalAlignment="Center"/>
                         <ItemsControl ItemsSource="{Binding AudioDevices.AudioLevelHistory}" VerticalAlignment="Bottom" Margin="4,3">
                             <ItemsControl.ItemsPanel>
                                 <ItemsPanelTemplate>
@@ -349,7 +354,7 @@
                                 <DataTemplate>
                                     <Border Width="2"
                                             Height="{Binding Converter={StaticResource LevelToHeight}}"
-                                            Background="#FF16A34A"
+                                            Background="{DynamicResource SuccessBrush}"
                                             Opacity="0.85"
                                             VerticalAlignment="Bottom"/>
                                 </DataTemplate>

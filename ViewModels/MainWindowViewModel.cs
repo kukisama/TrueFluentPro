@@ -34,6 +34,9 @@ namespace TrueFluentPro.ViewModels
         private bool _isTranslating = false;
         private string _statusMessage = "就绪";
         private string _audioDiagnosticStatus = "诊断: 未启动";
+        private string _infoBarMessage = "";
+        private bool _isInfoBarOpen = false;
+        private int _infoBarSeverity = 0; // 0=Informational, 1=Success, 2=Warning, 3=Error
         private string _currentOriginal = "";
         private string _currentTranslated = "";
         private ObservableCollection<TranslationItem> _history;

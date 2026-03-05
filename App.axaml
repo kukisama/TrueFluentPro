@@ -4,17 +4,105 @@
              xmlns:sty="using:FluentAvalonia.Styling"
              x:Class="TrueFluentPro.App"
              RequestedThemeVariant="Default">
-             <!-- "Default" ThemeVariant follows system theme variant. "Dark" or "Light" are other available options. -->    <Application.Styles>
+             <!-- "Default" ThemeVariant follows system theme variant. "Dark" or "Light" are other available options. -->
+
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.ThemeDictionaries>
+                <!-- ===== Light 主题 ===== -->
+                <ResourceDictionary x:Key="Light">
+                    <!-- 表面/背景 -->
+                    <SolidColorBrush x:Key="SurfaceBrush" Color="#FFF8FAFC"/>
+                    <SolidColorBrush x:Key="SurfaceAltBrush" Color="#FFF5F5F5"/>
+                    <SolidColorBrush x:Key="SurfaceHoverBrush" Color="#FFF1F5F9"/>
+                    <SolidColorBrush x:Key="UserMessageBrush" Color="#FFE3F2FD"/>
+                    <SolidColorBrush x:Key="AiMessageBrush" Color="#FFF5F5F5"/>
+                    <SolidColorBrush x:Key="MediaItemBrush" Color="#FFEEEEEE"/>
+                    <SolidColorBrush x:Key="SidebarBrush" Color="#FFFAFAFA"/>
+
+                    <!-- 边框/分隔线 -->
+                    <SolidColorBrush x:Key="BorderSubtleBrush" Color="#FFE5E7EB"/>
+                    <SolidColorBrush x:Key="BorderMediumBrush" Color="#FFE0E0E0"/>
+                    <SolidColorBrush x:Key="BorderStrongBrush" Color="#FFCBD5E1"/>
+                    <SolidColorBrush x:Key="DividerBrush" Color="#FFE2E8F0"/>
+                    <SolidColorBrush x:Key="InputBorderBrush" Color="#FFE6E6E6"/>
+                    <SolidColorBrush x:Key="ThumbnailBorderBrush" Color="#FFCCCCCC"/>
+
+                    <!-- 主色/强调色 -->
+                    <SolidColorBrush x:Key="PrimaryBrush" Color="#FF2563EB"/>
+                    <SolidColorBrush x:Key="PrimaryDarkBrush" Color="#FF1D4ED8"/>
+                    <SolidColorBrush x:Key="AccentBlueBrush" Color="#FF1976D2"/>
+
+                    <!-- 文字 -->
+                    <SolidColorBrush x:Key="TextPrimaryBrush" Color="#FF111827"/>
+                    <SolidColorBrush x:Key="TextMutedBrush" Color="#FF666666"/>
+                    <SolidColorBrush x:Key="TextSubtleBrush" Color="#FF888888"/>
+                    <SolidColorBrush x:Key="TextPlaceholderBrush" Color="#FFAAAAAA"/>
+                    <SolidColorBrush x:Key="TimestampBrush" Color="#FF999999"/>
+                    <SolidColorBrush x:Key="TextDarkBrush" Color="#FF555555"/>
+
+                    <!-- 状态色 -->
+                    <SolidColorBrush x:Key="SuccessBrush" Color="#FF16A34A"/>
+                    <SolidColorBrush x:Key="IndicatorGreenBrush" Color="#FF4CAF50"/>
+                    <SolidColorBrush x:Key="WarningBrush" Color="#FFE65100"/>
+                    <SolidColorBrush x:Key="SuccessTextBrush" Color="#FF2E7D32"/>
+                    <SolidColorBrush x:Key="ErrorBrush" Color="#FFB00020"/>
+                </ResourceDictionary>
+
+                <!-- ===== Dark 主题 ===== -->
+                <ResourceDictionary x:Key="Dark">
+                    <!-- 表面/背景 -->
+                    <SolidColorBrush x:Key="SurfaceBrush" Color="#FF1E1E1E"/>
+                    <SolidColorBrush x:Key="SurfaceAltBrush" Color="#FF2D2D2D"/>
+                    <SolidColorBrush x:Key="SurfaceHoverBrush" Color="#FF333333"/>
+                    <SolidColorBrush x:Key="UserMessageBrush" Color="#FF1E3A5F"/>
+                    <SolidColorBrush x:Key="AiMessageBrush" Color="#FF2D2D2D"/>
+                    <SolidColorBrush x:Key="MediaItemBrush" Color="#FF363636"/>
+                    <SolidColorBrush x:Key="SidebarBrush" Color="#FF252525"/>
+
+                    <!-- 边框/分隔线 -->
+                    <SolidColorBrush x:Key="BorderSubtleBrush" Color="#FF3E3E3E"/>
+                    <SolidColorBrush x:Key="BorderMediumBrush" Color="#FF4A4A4A"/>
+                    <SolidColorBrush x:Key="BorderStrongBrush" Color="#FF555555"/>
+                    <SolidColorBrush x:Key="DividerBrush" Color="#FF404040"/>
+                    <SolidColorBrush x:Key="InputBorderBrush" Color="#FF454545"/>
+                    <SolidColorBrush x:Key="ThumbnailBorderBrush" Color="#FF555555"/>
+
+                    <!-- 主色/强调色 -->
+                    <SolidColorBrush x:Key="PrimaryBrush" Color="#FF60A5FA"/>
+                    <SolidColorBrush x:Key="PrimaryDarkBrush" Color="#FF3B82F6"/>
+                    <SolidColorBrush x:Key="AccentBlueBrush" Color="#FF42A5F5"/>
+
+                    <!-- 文字 -->
+                    <SolidColorBrush x:Key="TextPrimaryBrush" Color="#FFE5E7EB"/>
+                    <SolidColorBrush x:Key="TextMutedBrush" Color="#FF9CA3AF"/>
+                    <SolidColorBrush x:Key="TextSubtleBrush" Color="#FF8B8B8B"/>
+                    <SolidColorBrush x:Key="TextPlaceholderBrush" Color="#FF666666"/>
+                    <SolidColorBrush x:Key="TimestampBrush" Color="#FF777777"/>
+                    <SolidColorBrush x:Key="TextDarkBrush" Color="#FFB0B0B0"/>
+
+                    <!-- 状态色 -->
+                    <SolidColorBrush x:Key="SuccessBrush" Color="#FF22C55E"/>
+                    <SolidColorBrush x:Key="IndicatorGreenBrush" Color="#FF66BB6A"/>
+                    <SolidColorBrush x:Key="WarningBrush" Color="#FFFFAB40"/>
+                    <SolidColorBrush x:Key="SuccessTextBrush" Color="#FF4CAF50"/>
+                    <SolidColorBrush x:Key="ErrorBrush" Color="#FFEF5350"/>
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+        </ResourceDictionary>
+    </Application.Resources>
+
+    <Application.Styles>
         <sty:FluentAvaloniaTheme />
         <StyleInclude Source="avares://AvaloniaEdit/Themes/Fluent/AvaloniaEdit.xaml" />
 
         <!-- 全局文本选中样式：蓝底白字（类似 CMD 终端） -->
         <Style Selector="TextBox">
-            <Setter Property="SelectionBrush" Value="#FF1976D2"/>
+            <Setter Property="SelectionBrush" Value="{DynamicResource AccentBlueBrush}"/>
             <Setter Property="SelectionForegroundBrush" Value="White"/>
         </Style>
         <Style Selector="SelectableTextBlock">
-            <Setter Property="SelectionBrush" Value="#FF1976D2"/>
+            <Setter Property="SelectionBrush" Value="{DynamicResource AccentBlueBrush}"/>
             <Setter Property="SelectionForegroundBrush" Value="White"/>
         </Style>
     </Application.Styles>
