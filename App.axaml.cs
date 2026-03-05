@@ -24,11 +24,12 @@ public partial class App : Application
 
         var services = new ServiceCollection();
 
-        // --- 基础服务（Phase 1 只注册这些） ---
+        // --- 基础服务 ---
         services.AddSingleton<ConfigurationService>();
         services.AddSingleton<AzureSubscriptionValidator>();
 
         // --- ViewModel ---
+        services.AddSingleton<SettingsViewModel>();
         services.AddSingleton<MainWindowViewModel>();
 
         Services = services.BuildServiceProvider();

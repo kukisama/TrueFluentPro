@@ -3,12 +3,14 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="using:TrueFluentPro.ViewModels"
+             xmlns:models="using:TrueFluentPro.Models"
+             xmlns:controls="clr-namespace:TrueFluentPro.Controls"
              mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="700"
              x:Class="TrueFluentPro.Views.SettingsView"
              x:DataType="vm:MainWindowViewModel"
              x:CompileBindings="False">
 
-    <Grid ColumnDefinitions="180,*">
+    <Grid ColumnDefinitions="180,*" RowDefinitions="*,Auto">
         <!-- 左侧锚点导航 -->
         <Border Grid.Column="0" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
                 BorderThickness="0,0,1,0" Padding="0,12,0,0">
@@ -44,6 +46,8 @@
                         <TextBlock Text="订阅管理" Theme="{StaticResource SubtitleTextBlockStyle}"/>
                         <Separator/>
                         <TextBlock Text="管理 Azure 语音服务订阅" Foreground="Gray" FontSize="12"/>
+
+                        <!-- 当前订阅选择 (仍绑定 ConfigVM) -->
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <TextBlock Text="当前订阅:" VerticalAlignment="Center"/>
                             <ComboBox MinWidth="200"
@@ -57,9 +61,70 @@
                                      Opacity="{Binding ConfigVM.SubscriptionLampOpacity}"
                                      ToolTip.Tip="{Binding ConfigVM.SubscriptionValidationStatusMessage}"/>
                         </StackPanel>
-                        <Button Content="打开配置中心（订阅 CRUD）" Padding="12,6"
-                                Command="{Binding ShowConfigCommand}"
-                                IsEnabled="{Binding ConfigVM.IsConfigurationEnabled}"/>
+
+                        <!-- 订阅 CRUD -->
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                            <Border Grid.Column="0" BorderBrush="Gray" BorderThickness="1" Margin="0,0,10,0">
+                                <Grid RowDefinitions="Auto,*">
+                                    <TextBlock Grid.Row="0" Text="订阅列表" FontWeight="Bold" Margin="10,10,10,5"/>
+                                    <ListBox Grid.Row="1" Name="SubscriptionListBox" Margin="10"
+                                             MinHeight="120"
+                                             ItemsSource="{Binding Settings.Subscriptions}"
+                                             SelectedItem="{Binding Settings.SelectedSubscription, Mode=TwoWay}"
+                                             SelectionMode="Single">
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate DataType="models:AzureSubscription">
+                                                <StackPanel Orientation="Vertical" Margin="5">
+                                                    <TextBlock Text="{Binding Name}" FontWeight="Bold"/>
+                                                    <TextBlock Text="{Binding ServiceRegion}" FontSize="12" Foreground="Gray"/>
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+                                </Grid>
+                            </Border>
+
+                            <StackPanel Grid.Column="1" Spacing="10" MinWidth="320">
+                                <TextBlock Text="订阅配置" FontWeight="Bold"/>
+                                <StackPanel Spacing="5">
+                                    <TextBlock Text="订阅名称"/>
+                                    <TextBox Text="{Binding Settings.SubscriptionEditorName, Mode=TwoWay}"
+                                             Watermark="例如：生产环境、测试环境"/>
+                                </StackPanel>
+                                <StackPanel Spacing="5">
+                                    <TextBlock Text="订阅密钥"/>
+                                    <TextBox Text="{Binding Settings.SubscriptionEditorKey, Mode=TwoWay}"
+                                             Watermark="输入 Azure 语音服务订阅密钥"
+                                             MaxWidth="280" Width="280"
+                                             PasswordChar="*"
+                                             RevealPassword="{Binding IsChecked, ElementName=SubShowPwdCheckBox}"/>
+                                    <CheckBox Name="SubShowPwdCheckBox" Content="显示密钥" FontSize="10" Margin="0,2,0,0"/>
+                                </StackPanel>
+                                <StackPanel Spacing="5">
+                                    <TextBlock Text="终结点"/>
+                                    <TextBox Text="{Binding Settings.SubscriptionEditorEndpoint, Mode=TwoWay}"
+                                             Watermark="例如: https://southeastasia.api.cognitive.microsoft.com/"
+                                             MaxWidth="400" Width="400"/>
+                                    <TextBlock FontSize="10" Foreground="Gray"
+                                               Text="国际版: https://{区域}.api.cognitive.microsoft.com/&#x0a;中国版: https://{区域}.api.cognitive.azure.cn/"
+                                               TextWrapping="Wrap"/>
+                                    <TextBlock Text="{Binding Settings.SubscriptionEditorRegionHint}"
+                                               FontSize="10" Foreground="DarkGreen" TextWrapping="Wrap"/>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Spacing="5" Margin="0,10,0,0">
+                                    <Button Content="添加" Width="60" Command="{Binding Settings.AddSubscriptionCommand}"/>
+                                    <Button Content="更新" Width="60" Command="{Binding Settings.UpdateSubscriptionCommand}"/>
+                                    <Button Content="删除" Width="60" Command="{Binding Settings.DeleteSubscriptionCommand}"/>
+                                    <Button Content="测试" Width="60" Command="{Binding Settings.TestSubscriptionCommand}"/>
+                                </StackPanel>
+                                <TextBlock Text="{Binding Settings.SubscriptionMessage}" FontSize="11" Foreground="Gray" TextWrapping="Wrap"/>
+
+                                <Separator Margin="0,8,0,4"/>
+                                <Button Content="全部测试速度" Padding="12,6" Command="{Binding Settings.TestAllSubscriptionsCommand}"/>
+                                <TextBlock Text="{Binding Settings.TestAllResult}" FontSize="11" Foreground="Gray"
+                                           TextWrapping="Wrap" IsVisible="{Binding Settings.ShowTestAllResult}"/>
+                            </StackPanel>
+                        </Grid>
                     </StackPanel>
                 </Border>
 
@@ -97,8 +162,83 @@
                     <StackPanel Spacing="12">
                         <TextBlock Text="录音与存储" Theme="{StaticResource SubtitleTextBlockStyle}"/>
                         <Separator/>
-                        <TextBlock Text="录音设置、会话目录、批量转写和字幕切分配置" Foreground="Gray" FontSize="12"/>
-                        <TextBlock Text="（配置内容将在后续迁移中完善）" Foreground="Gray" FontSize="11" FontStyle="Italic"/>
+
+                        <TextBlock Text="录音设置" FontWeight="Bold"/>
+                        <CheckBox Content="边翻译边录音（直接输出 MP3）"
+                                  IsChecked="{Binding Settings.EnableRecording, Mode=TwoWay}"/>
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <TextBlock Text="MP3 码率 (kbps)" VerticalAlignment="Center"/>
+                            <NumericUpDown Value="{Binding Settings.RecordingMp3BitrateKbps, Mode=TwoWay}"
+                                           Minimum="32" Maximum="320" Width="120" FormatString="F0"
+                                           IsEnabled="{Binding Settings.EnableRecording}"/>
+                        </StackPanel>
+
+                        <Separator Margin="0,8,0,8"/>
+                        <TextBlock Text="会话目录" FontWeight="Bold"/>
+                        <StackPanel Spacing="5">
+                            <TextBlock Text="会话记录保存目录"/>
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBox Grid.Column="0" MaxWidth="280"
+                                         Text="{Binding Settings.SessionDirectory, Mode=TwoWay}"
+                                         Watermark="留空使用默认目录"/>
+                                <Button Grid.Column="1" Content="..." Margin="5,0,0,0" Width="30"
+                                        Click="BrowseSessionDirectory_Click"/>
+                            </Grid>
+                        </StackPanel>
+
+                        <Separator Margin="0,8,0,8"/>
+                        <TextBlock Text="批量转写" FontWeight="Bold"/>
+                        <StackPanel Spacing="5">
+                            <TextBlock Text="存储账号连接字符串"/>
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                                <TextBox Grid.Column="0"
+                                         Text="{Binding Settings.BatchStorageConnectionString, Mode=TwoWay}"
+                                         Watermark="DefaultEndpointsProtocol=https;AccountName=...;AccountKey=..."/>
+                                <Button Grid.Column="1" Content="验证" Width="60"
+                                        Command="{Binding Settings.ValidateBatchStorageCommand}"/>
+                            </Grid>
+                            <TextBlock Text="{Binding Settings.BatchStorageStatus}" FontSize="10" Foreground="Gray" TextWrapping="Wrap"/>
+                        </StackPanel>
+
+                        <StackPanel Spacing="5">
+                            <TextBlock Text="诊断日志"/>
+                            <ComboBox MinWidth="220"
+                                      SelectedIndex="{Binding Settings.BatchLogLevelIndex, Mode=TwoWay}">
+                                <ComboBoxItem Content="关闭"/>
+                                <ComboBoxItem Content="仅失败"/>
+                                <ComboBoxItem Content="成功 + 失败"/>
+                            </ComboBox>
+                        </StackPanel>
+
+                        <StackPanel Spacing="5">
+                            <TextBlock Text="强制重新生成"/>
+                            <CheckBox Content="批量处理：强制重新生成字幕和复盘"
+                                      IsChecked="{Binding Settings.BatchForceRegeneration, Mode=TwoWay}"/>
+                            <CheckBox Content="右键处理：强制重新生成字幕和复盘"
+                                      IsChecked="{Binding Settings.ContextMenuForceRegeneration, Mode=TwoWay}"/>
+                        </StackPanel>
+
+                        <Separator Margin="0,8,0,8"/>
+                        <TextBlock Text="批量字幕切分" FontWeight="Bold"/>
+                        <CheckBox Content="启用按句子切分"
+                                  IsChecked="{Binding Settings.EnableBatchSentenceSplit, Mode=TwoWay}"/>
+                        <CheckBox Content="逗号也作为断句"
+                                  IsChecked="{Binding Settings.BatchSplitOnComma, Mode=TwoWay}"/>
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <TextBlock Text="每句最大字数" VerticalAlignment="Center"/>
+                            <NumericUpDown Value="{Binding Settings.BatchMaxChars, Mode=TwoWay}"
+                                           Minimum="6" Maximum="80" Width="120" FormatString="F0"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <TextBlock Text="每句最长时长(秒)" VerticalAlignment="Center"/>
+                            <NumericUpDown Value="{Binding Settings.BatchMaxDuration, Mode=TwoWay}"
+                                           Minimum="1" Maximum="15" Width="120" FormatString="F1"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <TextBlock Text="停顿断句阈值(ms)" VerticalAlignment="Center"/>
+                            <NumericUpDown Value="{Binding Settings.BatchPauseSplitMs, Mode=TwoWay}"
+                                           Minimum="100" Maximum="2000" Width="120" FormatString="F0"/>
+                        </StackPanel>
                     </StackPanel>
                 </Border>
 
@@ -109,8 +249,82 @@
                     <StackPanel Spacing="12">
                         <TextBlock Text="AI 终结点管理" Theme="{StaticResource SubtitleTextBlockStyle}"/>
                         <Separator/>
-                        <TextBlock Text="统一管理 AI 服务终结点与模型注册，支持文字/图片/视频能力标记" Foreground="Gray" FontSize="12"/>
-                        <TextBlock Text="（终结点注册表 UI 将在后续迁移中完善）" Foreground="Gray" FontSize="11" FontStyle="Italic"/>
+                        <TextBlock Text="统一管理 AI 服务终结点与模型注册" Foreground="Gray" FontSize="12"/>
+
+                        <Grid ColumnDefinitions="200,*" ColumnSpacing="12" MinHeight="200">
+                            <!-- 终结点列表 -->
+                            <Border Grid.Column="0" BorderBrush="Gray" BorderThickness="1" CornerRadius="4">
+                                <Grid RowDefinitions="*,Auto">
+                                    <ListBox Grid.Row="0"
+                                             ItemsSource="{Binding Settings.Endpoints}"
+                                             SelectedItem="{Binding Settings.SelectedEndpoint, Mode=TwoWay}"
+                                             SelectionMode="Single">
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate DataType="models:AiEndpoint">
+                                                <StackPanel Orientation="Horizontal" Spacing="6" Margin="4">
+                                                    <TextBlock Text="{Binding Name}" FontWeight="Bold"/>
+                                                    <TextBlock Text="{Binding IsEnabled, StringFormat='[{0}]'}"
+                                                               FontSize="10" Foreground="Gray" VerticalAlignment="Center"/>
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+                                    <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="4" Margin="4">
+                                        <Button Content="+ 添加" Padding="8,4" FontSize="11"
+                                                Command="{Binding Settings.AddEndpointCommand}"/>
+                                        <Button Content="删除" Padding="8,4" FontSize="11"
+                                                Command="{Binding Settings.RemoveEndpointCommand}"/>
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+
+                            <!-- 终结点详情 -->
+                            <StackPanel Grid.Column="1" Spacing="8"
+                                        IsVisible="{Binding Settings.SelectedEndpoint, Converter={x:Static ObjectConverters.IsNotNull}}">
+                                <StackPanel Spacing="5">
+                                    <TextBlock Text="终结点名称"/>
+                                    <TextBox Text="{Binding Settings.SelectedEndpoint.Name, Mode=TwoWay}"
+                                             Watermark="例如: t99e"/>
+                                </StackPanel>
+                                <StackPanel Spacing="5">
+                                    <TextBlock Text="API 地址"/>
+                                    <TextBox Text="{Binding Settings.SelectedEndpoint.BaseUrl, Mode=TwoWay}"
+                                             Watermark="例如: https://api.openai.com"/>
+                                </StackPanel>
+                                <StackPanel Spacing="5">
+                                    <TextBlock Text="API 密钥"/>
+                                    <TextBox Text="{Binding Settings.SelectedEndpoint.ApiKey, Mode=TwoWay}"
+                                             Watermark="sk-..." PasswordChar="*"
+                                             RevealPassword="{Binding IsChecked, ElementName=EpShowKeyCheckBox}"/>
+                                    <CheckBox Name="EpShowKeyCheckBox" Content="显示密钥" FontSize="10"/>
+                                </StackPanel>
+                                <CheckBox Content="启用此终结点"
+                                          IsChecked="{Binding Settings.SelectedEndpoint.IsEnabled, Mode=TwoWay}"/>
+
+                                <Separator Margin="0,6,0,6"/>
+                                <TextBlock Text="模型列表" FontWeight="Bold"/>
+                                <ItemsControl ItemsSource="{Binding Settings.SelectedEndpointModels}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="models:AiModelEntry">
+                                            <Border BorderBrush="Gray" BorderThickness="1" CornerRadius="4"
+                                                    Padding="8,4" Margin="0,2">
+                                                <Grid ColumnDefinitions="*,Auto">
+                                                    <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8">
+                                                        <TextBlock Text="{Binding ModelId}" FontWeight="SemiBold"/>
+                                                        <TextBlock Text="{Binding Capabilities}" FontSize="10"
+                                                                   Foreground="Gray" VerticalAlignment="Center"/>
+                                                    </StackPanel>
+                                                    <Button Grid.Column="1" Content="✕" Padding="4,2" FontSize="10"
+                                                            Click="RemoveModel_Click" Tag="{Binding}"/>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <Button Content="+ 添加模型" Padding="8,4" FontSize="11"
+                                        Click="AddModel_Click"/>
+                            </StackPanel>
+                        </Grid>
                     </StackPanel>
                 </Border>
 
@@ -121,8 +335,78 @@
                     <StackPanel Spacing="12">
                         <TextBlock Text="语音识别" Theme="{StaticResource SubtitleTextBlockStyle}"/>
                         <Separator/>
-                        <TextBlock Text="语言、置信度、超时与增益参数" Foreground="Gray" FontSize="12"/>
-                        <TextBlock Text="（配置内容将在后续迁移中完善）" Foreground="Gray" FontSize="11" FontStyle="Italic"/>
+
+                        <TextBlock Text="识别策略" FontWeight="Bold"/>
+                        <CheckBox Content="过滤语气助词"
+                                  IsChecked="{Binding Settings.FilterModalParticles, Mode=TwoWay}"/>
+                        <StackPanel Spacing="5">
+                            <TextBlock Text="最大历史记录数量"/>
+                            <NumericUpDown Value="{Binding Settings.MaxHistoryItems, Mode=TwoWay}"
+                                           Minimum="5" Maximum="100" Width="120" FormatString="F0"/>
+                        </StackPanel>
+                        <StackPanel Spacing="5">
+                            <TextBlock Text="实时字幕最大长度"/>
+                            <NumericUpDown Value="{Binding Settings.RealtimeMaxLength, Mode=TwoWay}"
+                                           Minimum="50" Maximum="500" Width="120" FormatString="F0"/>
+                        </StackPanel>
+                        <StackPanel Spacing="5">
+                            <TextBlock Text="Chunk 时长 (ms)"/>
+                            <NumericUpDown Value="{Binding Settings.ChunkDurationMs, Mode=TwoWay}"
+                                           Minimum="20" Maximum="2000" Width="120" FormatString="F0"/>
+                            <TextBlock FontSize="10" Foreground="Gray" Text="默认 200ms；可改为 500ms（延迟更高）"/>
+                        </StackPanel>
+
+                        <Separator Margin="0,8,0,8"/>
+                        <TextBlock Text="静音超时" FontWeight="Bold"/>
+                        <CheckBox Content="启用静音超时"
+                                  IsChecked="{Binding Settings.EnableAutoTimeout, Mode=TwoWay}"/>
+                        <StackPanel Spacing="5">
+                            <TextBlock Text="初始静音超时 (秒)"/>
+                            <NumericUpDown Value="{Binding Settings.InitialSilenceTimeoutSeconds, Mode=TwoWay}"
+                                           Minimum="1" Maximum="300" Width="120" FormatString="F0"
+                                           IsEnabled="{Binding Settings.EnableAutoTimeout}"/>
+                        </StackPanel>
+                        <StackPanel Spacing="5">
+                            <TextBlock Text="断句静音超时 (秒)"/>
+                            <NumericUpDown Value="{Binding Settings.EndSilenceTimeoutSeconds, Mode=TwoWay}"
+                                           Minimum="1" Maximum="30" Width="120" FormatString="F0"
+                                           IsEnabled="{Binding Settings.EnableAutoTimeout}"/>
+                        </StackPanel>
+
+                        <Separator Margin="0,8,0,8"/>
+                        <TextBlock Text="无回显重连" FontWeight="Bold"/>
+                        <CheckBox Content="有音频输入但无回显时自动重连"
+                                  IsChecked="{Binding Settings.EnableNoResponseRestart, Mode=TwoWay}"/>
+                        <StackPanel Spacing="5">
+                            <TextBlock Text="无回显阈值 (秒)"/>
+                            <NumericUpDown Value="{Binding Settings.NoResponseRestartSeconds, Mode=TwoWay}"
+                                           Minimum="1" Maximum="30" Width="120" FormatString="F0"
+                                           IsEnabled="{Binding Settings.EnableNoResponseRestart}"/>
+                        </StackPanel>
+                        <StackPanel Spacing="5">
+                            <TextBlock Text="音频活动阈值"/>
+                            <NumericUpDown Value="{Binding Settings.AudioActivityThreshold, Mode=TwoWay}"
+                                           Minimum="50" Maximum="8000" Width="120" FormatString="F0"
+                                           IsEnabled="{Binding Settings.EnableNoResponseRestart}"/>
+                        </StackPanel>
+                        <StackPanel Spacing="5">
+                            <TextBlock Text="电平显示放大倍数"/>
+                            <NumericUpDown Value="{Binding Settings.AudioLevelGain, Mode=TwoWay}"
+                                           Minimum="0.5" Maximum="10" Width="120" FormatString="F1"/>
+                        </StackPanel>
+                        <StackPanel Spacing="5">
+                            <TextBlock Text="自动增益预设"/>
+                            <ComboBox MinWidth="140"
+                                      SelectedIndex="{Binding Settings.AutoGainPresetIndex, Mode=TwoWay}">
+                                <ComboBoxItem Content="关闭"/>
+                                <ComboBoxItem Content="低"/>
+                                <ComboBoxItem Content="中"/>
+                                <ComboBoxItem Content="高"/>
+                            </ComboBox>
+                        </StackPanel>
+                        <CheckBox Content="在字幕中显示 *触发重连* 提示"
+                                  IsChecked="{Binding Settings.ShowReconnectMarker, Mode=TwoWay}"
+                                  IsEnabled="{Binding Settings.EnableNoResponseRestart}"/>
                     </StackPanel>
                 </Border>
 
@@ -133,8 +417,34 @@
                     <StackPanel Spacing="12">
                         <TextBlock Text="字幕与文本" Theme="{StaticResource SubtitleTextBlockStyle}"/>
                         <Separator/>
-                        <TextBlock Text="字幕输出格式与实时翻译字号设置" Foreground="Gray" FontSize="12"/>
-                        <TextBlock Text="（配置内容将在后续迁移中完善）" Foreground="Gray" FontSize="11" FontStyle="Italic"/>
+
+                        <TextBlock Text="字幕输出" FontWeight="Bold"/>
+                        <CheckBox Content="生成 SRT 字幕" IsChecked="{Binding Settings.ExportSrt, Mode=TwoWay}"/>
+                        <CheckBox Content="生成 VTT 字幕" IsChecked="{Binding Settings.ExportVtt, Mode=TwoWay}"/>
+                        <TextBlock FontSize="10" Foreground="Gray" Text="字幕与录音同目录保存，可同时勾选"/>
+
+                        <Separator Margin="0,8,0,8"/>
+                        <TextBlock Text="实时翻译字号" FontWeight="Bold"/>
+                        <StackPanel Spacing="5">
+                            <TextBlock Text="默认字号"/>
+                            <ComboBox Name="DefaultFontSizeComboBox" MinWidth="100"
+                                      SelectionChanged="FontSizeComboBox_SelectionChanged">
+                                <ComboBoxItem Tag="24" Content="24"/>
+                                <ComboBoxItem Tag="26" Content="26"/>
+                                <ComboBoxItem Tag="28" Content="28"/>
+                                <ComboBoxItem Tag="30" Content="30"/>
+                                <ComboBoxItem Tag="32" Content="32"/>
+                                <ComboBoxItem Tag="34" Content="34"/>
+                                <ComboBoxItem Tag="36" Content="36"/>
+                                <ComboBoxItem Tag="38" Content="38"/>
+                                <ComboBoxItem Tag="40" Content="40"/>
+                                <ComboBoxItem Tag="42" Content="42"/>
+                                <ComboBoxItem Tag="44" Content="44"/>
+                                <ComboBoxItem Tag="46" Content="46"/>
+                                <ComboBoxItem Tag="48" Content="48"/>
+                                <ComboBoxItem Tag="50" Content="50"/>
+                            </ComboBox>
+                        </StackPanel>
                     </StackPanel>
                 </Border>
 
@@ -145,8 +455,128 @@
                     <StackPanel Spacing="12">
                         <TextBlock Text="AI 洞察" Theme="{StaticResource SubtitleTextBlockStyle}"/>
                         <Separator/>
-                        <TextBlock Text="洞察模型选择与预设按钮管理" Foreground="Gray" FontSize="12"/>
-                        <TextBlock Text="（模型选择下拉将引用终结点中标记 [文字] 能力的模型）" Foreground="Gray" FontSize="11" FontStyle="Italic"/>
+
+                        <!-- AI 基础配置 (从 Tab 3 迁入) -->
+                        <TextBlock Text="AI 服务配置" FontWeight="Bold"/>
+                        <StackPanel Spacing="5">
+                            <TextBlock Text="服务类型"/>
+                            <ComboBox MinWidth="280"
+                                      SelectedIndex="{Binding Settings.AiProviderTypeIndex, Mode=TwoWay}">
+                                <ComboBoxItem Content="OpenAI 兼容 (OpenAI / DeepSeek / Ollama 等)"/>
+                                <ComboBoxItem Content="Azure OpenAI"/>
+                            </ComboBox>
+                        </StackPanel>
+                        <StackPanel Spacing="5">
+                            <TextBlock Text="API 端点"/>
+                            <TextBox Text="{Binding Settings.AiApiEndpoint, Mode=TwoWay}"
+                                     Watermark="例如: https://api.openai.com"/>
+                            <TextBlock FontSize="10" Foreground="Gray" Text="无需包含 /v1/chat/completions 路径"/>
+                        </StackPanel>
+                        <StackPanel Spacing="5" IsVisible="{Binding Settings.ShowApiKeyField}">
+                            <TextBlock Text="API 密钥"/>
+                            <TextBox Text="{Binding Settings.AiApiKey, Mode=TwoWay}"
+                                     Watermark="sk-..." PasswordChar="*"
+                                     RevealPassword="{Binding IsChecked, ElementName=AiShowKeyCheckBox}"/>
+                            <CheckBox Name="AiShowKeyCheckBox" Content="显示密钥" FontSize="10"/>
+                        </StackPanel>
+
+                        <!-- OpenAI 兼容模型名 -->
+                        <StackPanel Spacing="8" IsVisible="{Binding Settings.IsOpenAiProvider}">
+                            <TextBlock Text="模型名称 (OpenAI 兼容)"/>
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="快速应答模型 (默认)" FontSize="11" Foreground="Gray"/>
+                                <TextBox Text="{Binding Settings.QuickModelName, Mode=TwoWay}"
+                                         Watermark="例如: gpt-5.2-chat"/>
+                            </StackPanel>
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="总结模型" FontSize="11" Foreground="Gray"/>
+                                <TextBox Text="{Binding Settings.SummaryModelName, Mode=TwoWay}"
+                                         Watermark="例如: gpt-5.2"/>
+                            </StackPanel>
+                        </StackPanel>
+
+                        <!-- Azure 部署名 -->
+                        <StackPanel Spacing="10" IsVisible="{Binding Settings.IsAzureProvider}">
+                            <StackPanel Spacing="5">
+                                <TextBlock Text="快速应答部署名称"/>
+                                <TextBox Text="{Binding Settings.QuickDeploymentName, Mode=TwoWay}"/>
+                            </StackPanel>
+                            <StackPanel Spacing="5">
+                                <TextBlock Text="总结部署名称"/>
+                                <TextBox Text="{Binding Settings.SummaryDeploymentName, Mode=TwoWay}"/>
+                            </StackPanel>
+                            <StackPanel Spacing="5">
+                                <TextBlock Text="API 版本"/>
+                                <TextBox Text="{Binding Settings.AiApiVersion, Mode=TwoWay}"
+                                         Watermark="例如: 2024-02-01"/>
+                            </StackPanel>
+                            <TextBlock Text="Azure OpenAI 认证方式" FontWeight="SemiBold"/>
+                            <ComboBox MinWidth="200"
+                                      SelectedIndex="{Binding Settings.AiAzureAuthModeIndex, Mode=TwoWay}">
+                                <ComboBoxItem Content="API Key (默认)"/>
+                                <ComboBoxItem Content="Microsoft Entra ID (AAD)"/>
+                            </ComboBox>
+                            <StackPanel Spacing="5" IsVisible="{Binding Settings.IsAadAuth}">
+                                <TextBlock Text="Tenant ID"/>
+                                <TextBox Text="{Binding Settings.AiAzureTenantId, Mode=TwoWay}"/>
+                                <TextBlock Text="Client ID"/>
+                                <TextBox Text="{Binding Settings.AiAzureClientId, Mode=TwoWay}"/>
+                            </StackPanel>
+                        </StackPanel>
+
+                        <CheckBox Content="总结模型开启思考" FontSize="11"
+                                  IsChecked="{Binding Settings.SummaryEnableReasoning, Mode=TwoWay}"/>
+
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button Content="测试连接" Width="100"
+                                    Command="{Binding Settings.TestEndpointCommand}"/>
+                            <TextBlock Text="{Binding Settings.AiTestStatus}" FontSize="11" Foreground="Gray" TextWrapping="Wrap"/>
+                        </StackPanel>
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="思考内容(测试)" FontSize="11" Foreground="Gray"/>
+                            <TextBox Text="{Binding Settings.AiTestReasoning}" AcceptsReturn="True"
+                                     Height="80" TextWrapping="Wrap" IsReadOnly="True"/>
+                        </StackPanel>
+
+                        <Separator Margin="0,8,0,8"/>
+
+                        <!-- 模型选择 (终结点引用) -->
+                        <TextBlock Text="洞察模型选择（终结点引用）" FontWeight="Bold"/>
+                        <TextBlock Text="选择具有 [文字] 能力的终结点模型" FontSize="11" Foreground="Gray"/>
+                        <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="6" ColumnSpacing="8">
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="洞察模型:" VerticalAlignment="Center"/>
+                            <ComboBox Grid.Row="0" Grid.Column="1" MinWidth="250"
+                                      ItemsSource="{Binding Settings.TextModels}"
+                                      SelectedItem="{Binding Settings.SelectedInsightModel, Mode=TwoWay}"/>
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="快问模型:" VerticalAlignment="Center"/>
+                            <ComboBox Grid.Row="1" Grid.Column="1" MinWidth="250"
+                                      ItemsSource="{Binding Settings.TextModels}"
+                                      SelectedItem="{Binding Settings.SelectedQuickModel, Mode=TwoWay}"/>
+                            <TextBlock Grid.Row="2" Grid.Column="0" Text="总结模型:" VerticalAlignment="Center"/>
+                            <ComboBox Grid.Row="2" Grid.Column="1" MinWidth="250"
+                                      ItemsSource="{Binding Settings.TextModels}"
+                                      SelectedItem="{Binding Settings.SelectedSummaryModel, Mode=TwoWay}"/>
+                        </Grid>
+
+                        <Separator Margin="0,8,0,8"/>
+
+                        <TextBlock Text="系统提示词" FontWeight="SemiBold"/>
+                        <CheckBox Content="自动洞察一次性刷新（缓冲输出）" FontSize="11"
+                                  IsChecked="{Binding Settings.AutoInsightBufferOutput, Mode=TwoWay}"/>
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="洞察系统提示词" FontSize="11" Foreground="Gray"/>
+                            <TextBox Text="{Binding Settings.InsightSystemPrompt, Mode=TwoWay}"
+                                     AcceptsReturn="True" Height="100" TextWrapping="Wrap"/>
+                        </StackPanel>
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="洞察用户内容模板" FontSize="11" Foreground="Gray"/>
+                            <TextBox Text="{Binding Settings.InsightUserContentTemplate, Mode=TwoWay}"
+                                     AcceptsReturn="True" Height="100" TextWrapping="Wrap"/>
+                            <TextBlock FontSize="10" Foreground="Gray" Text="占位符：{history} 翻译历史、{question} 用户问题"/>
+                        </StackPanel>
+
+                        <Separator Margin="0,8,0,8"/>
+                        <controls:PresetButtonsEditor Name="PresetButtonsEditorControl"/>
                     </StackPanel>
                 </Border>
 
@@ -157,8 +587,34 @@
                     <StackPanel Spacing="12">
                         <TextBlock Text="复盘预设" Theme="{StaticResource SubtitleTextBlockStyle}"/>
                         <Separator/>
-                        <TextBlock Text="复盘 Sheet 预设与模型选择" Foreground="Gray" FontSize="12"/>
-                        <TextBlock Text="（模型选择下拉将引用终结点中标记 [文字] 能力的模型）" Foreground="Gray" FontSize="11" FontStyle="Italic"/>
+
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="复盘模型:" VerticalAlignment="Center"/>
+                            <ComboBox MinWidth="250"
+                                      ItemsSource="{Binding Settings.TextModels}"
+                                      SelectedItem="{Binding Settings.SelectedReviewModel, Mode=TwoWay}"/>
+                        </StackPanel>
+
+                        <CheckBox Content="根据音频生成 speech 字幕（更准确，区分讲话人）"
+                                  IsChecked="{Binding Settings.UseSpeechSubtitleForReview, Mode=TwoWay}"
+                                  IsEnabled="{Binding Settings.BatchStorageIsValid}"/>
+                        <TextBlock FontSize="10" Foreground="Gray"
+                                   Text="需先在「录音与存储」中验证批量转写的存储账号"/>
+
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="复盘系统提示词" FontSize="11" Foreground="Gray"/>
+                            <TextBox Text="{Binding Settings.ReviewSystemPrompt, Mode=TwoWay}"
+                                     AcceptsReturn="True" Height="100" TextWrapping="Wrap"/>
+                        </StackPanel>
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="复盘用户内容模板" FontSize="11" Foreground="Gray"/>
+                            <TextBox Text="{Binding Settings.ReviewUserContentTemplate, Mode=TwoWay}"
+                                     AcceptsReturn="True" Height="100" TextWrapping="Wrap"/>
+                            <TextBlock FontSize="10" Foreground="Gray" Text="占位符：{subtitle} 字幕内容、{prompt} 复盘提示词"/>
+                        </StackPanel>
+
+                        <Separator Margin="0,8,0,8"/>
+                        <controls:ReviewSheetsEditor Name="ReviewSheetsEditorControl"/>
                     </StackPanel>
                 </Border>
 
@@ -169,8 +625,16 @@
                     <StackPanel Spacing="12">
                         <TextBlock Text="图片生成" Theme="{StaticResource SubtitleTextBlockStyle}"/>
                         <Separator/>
-                        <TextBlock Text="图片模型选择与默认参数" Foreground="Gray" FontSize="12"/>
-                        <TextBlock Text="（模型选择下拉将引用终结点中标记 [图片] 能力的模型）" Foreground="Gray" FontSize="11" FontStyle="Italic"/>
+
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="图片模型:" VerticalAlignment="Center"/>
+                            <ComboBox MinWidth="250"
+                                      ItemsSource="{Binding Settings.ImageModels}"
+                                      SelectedItem="{Binding Settings.SelectedImageModel, Mode=TwoWay}"/>
+                            <TextBlock FontSize="10" Foreground="Gray" Text="仅显示具有 [图片] 能力的终结点模型"/>
+                        </StackPanel>
+
+                        <TextBlock Text="图片生成参数在 Media Studio 内配置" FontSize="11" Foreground="Gray" FontStyle="Italic"/>
                     </StackPanel>
                 </Border>
 
@@ -181,8 +645,16 @@
                     <StackPanel Spacing="12">
                         <TextBlock Text="视频生成" Theme="{StaticResource SubtitleTextBlockStyle}"/>
                         <Separator/>
-                        <TextBlock Text="视频模型选择与默认参数" Foreground="Gray" FontSize="12"/>
-                        <TextBlock Text="（模型选择下拉将引用终结点中标记 [视频] 能力的模型）" Foreground="Gray" FontSize="11" FontStyle="Italic"/>
+
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="视频模型:" VerticalAlignment="Center"/>
+                            <ComboBox MinWidth="250"
+                                      ItemsSource="{Binding Settings.VideoModels}"
+                                      SelectedItem="{Binding Settings.SelectedVideoModel, Mode=TwoWay}"/>
+                            <TextBlock FontSize="10" Foreground="Gray" Text="仅显示具有 [视频] 能力的终结点模型"/>
+                        </StackPanel>
+
+                        <TextBlock Text="视频生成参数在 Media Studio 内配置" FontSize="11" Foreground="Gray" FontStyle="Italic"/>
                     </StackPanel>
                 </Border>
 
@@ -221,5 +693,12 @@
 
             </StackPanel>
         </ScrollViewer>
+
+        <!-- 状态栏 -->
+        <Border Grid.Row="1" Grid.ColumnSpan="2"
+                BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                BorderThickness="0,1,0,0" Padding="12,6">
+            <TextBlock Text="{Binding Settings.AutoSaveStatus}" FontSize="11" Foreground="Gray"/>
+        </Border>
     </Grid>
 </UserControl>

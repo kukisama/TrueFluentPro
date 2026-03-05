@@ -46,6 +46,14 @@ public partial class MainWindow : Window
     {
         base.OnDataContextChanged(e);
         _viewModel = DataContext as MainWindowViewModel;
+        if (_viewModel != null)
+        {
+            _viewModel.NavigateToSettings = () =>
+            {
+                NavView.SelectedItem = NavView.SettingsItem;
+                ShowPage("settings");
+            };
+        }
     }
 
     protected override void OnClosed(EventArgs e)
