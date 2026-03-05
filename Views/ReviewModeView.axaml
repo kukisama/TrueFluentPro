@@ -54,36 +54,18 @@
                             <Button Content="刷新" Width="50" Padding="6,2" Command="{Binding FileLibrary.RefreshAudioLibraryCommand}"
                                     HorizontalAlignment="Right" DockPanel.Dock="Right"/>
                         </DockPanel>
-                        <Grid Name="AudioFileListHost" Height="160" ClipToBounds="False">
-                            <ListBox Name="AudioFileListBox"
-                                     ItemsSource="{Binding FileLibrary.AudioFiles}" SelectedItem="{Binding FileLibrary.SelectedAudioFile}"
-                                     Focusable="False">
-                                <ListBox.ItemTemplate>
-                                    <DataTemplate DataType="models:MediaFileItem">
-                                        <Border Padding="2">
-                                            <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis"/>
-                                        </Border>
-                                    </DataTemplate>
-                                </ListBox.ItemTemplate>
-                            </ListBox>
-
-                            <Border x:Name="AudioInlineMenuPanel"
-                                    IsVisible="False"
-                                    HorizontalAlignment="Left"
-                                    VerticalAlignment="Top"
-                                    ZIndex="1000"
-                                    Background="#FFFFFFFF"
-                                    BorderBrush="#FFE5E7EB"
-                                    BorderThickness="1"
-                                    CornerRadius="6"
-                                    Padding="4"
-                                    MaxWidth="180">
-                                <Button Content="生成字幕+复盘"
-                                        Padding="8,4"
-                                        HorizontalAlignment="Stretch"
-                                        Click="AudioInlineEnqueue_Click"/>
-                            </Border>
-                        </Grid>
+                        <ListBox Name="AudioFileListBox" Height="160"
+                                 ItemsSource="{Binding FileLibrary.AudioFiles}" SelectedItem="{Binding FileLibrary.SelectedAudioFile}"
+                                 Focusable="False"
+                                 PointerReleased="AudioFileListBox_PointerReleased">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate DataType="models:MediaFileItem">
+                                    <Border Padding="2">
+                                        <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis"/>
+                                    </Border>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
 
                         <TextBlock Text="字幕文件" FontSize="11" Foreground="Gray"/>
                         <ListBox ItemsSource="{Binding FileLibrary.SubtitleFiles}" SelectedItem="{Binding FileLibrary.SelectedSubtitleFile}" Height="120">
@@ -195,7 +177,8 @@
                 <Border Grid.Row="2" BorderBrush="#FFE5E7EB" BorderThickness="1" CornerRadius="4">
                     <ListBox Name="SubtitleCueListBox" ItemsSource="{Binding FileLibrary.SubtitleCues}" SelectedItem="{Binding FileLibrary.SelectedSubtitleCue}" Margin="0" Padding="0"
                              Background="Transparent"
-                             DoubleTapped="SubtitleCueListBox_DoubleTapped">
+                             DoubleTapped="SubtitleCueListBox_DoubleTapped"
+                             PointerReleased="SubtitleCueListBox_PointerReleased">
                         <ListBox.ItemTemplate>
                             <DataTemplate DataType="models:SubtitleCue">
                                 <StackPanel Margin="0,2">

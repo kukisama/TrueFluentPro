@@ -31,7 +31,7 @@ tools: [read, search, edit, web]
 | MediaStudioView | AI 图片/视频生成工作室 |
 | LiveTranslationView | 实时语音翻译 |
 | ReviewModeView | 翻译审校模式 |
-| ConfigView / AiConfigView | 配置详情 |
+| TenantSelectionView | AAD 租户选择弹窗 |
 | AboutView / HelpView | 关于/帮助 |
 | FloatingSubtitleWindow | 悬浮字幕窗口 |
 | ImagePreviewWindow | 图片预览弹窗 |

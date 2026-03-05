@@ -1,11 +1,8 @@
-using System;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
-using Avalonia.Media;
 using Avalonia.VisualTree;
-using TrueFluentPro.Controls;
 using TrueFluentPro.Models;
 using TrueFluentPro.Services;
 using TrueFluentPro.ViewModels;
@@ -16,104 +13,32 @@ public partial class ReviewModeView : UserControl
 {
     private MainWindowViewModel? ViewModel => DataContext as MainWindowViewModel;
     private ListBox? _audioFileListBox;
-    private Border? _audioInlineMenuPanel;
-    private InlineListContextMenuController<MediaFileItem>? _audioInlineMenuController;
-    private bool _audioPointerHooked;
-    private bool _audioSelectionHooked;
-    private bool _globalInputHooked;
 
     public ReviewModeView()
     {
         InitializeComponent();
         AttachedToVisualTree += (_, _) =>
         {
-            EnsureAudioInlineMenuAttached();
+            _audioFileListBox ??= this.FindControl<ListBox>("AudioFileListBox");
         };
     }
 
-    private void EnsureAudioInlineMenuAttached()
+    // ===== 音频文件列表右键 MenuFlyout =====
+
+    private void AudioFileListBox_PointerReleased(object? sender, PointerReleasedEventArgs e)
     {
-        _audioFileListBox ??= this.FindControl<ListBox>("AudioFileListBox");
-        _audioInlineMenuPanel ??= this.FindControl<Border>("AudioInlineMenuPanel");
+        if (e.InitialPressMouseButton != MouseButton.Right) return;
+        if (sender is not ListBox listBox) return;
 
-        if (_audioInlineMenuController == null && _audioFileListBox != null && _audioInlineMenuPanel != null)
+        // 命中测试：选中右键点击的项
+        var hitItem = ResolveHitItem<MediaFileItem>(e.Source);
+        if (hitItem != null && !ReferenceEquals(listBox.SelectedItem, hitItem))
         {
-            _audioInlineMenuController = new InlineListContextMenuController<MediaFileItem>(
-                _audioFileListBox,
-                _audioInlineMenuPanel,
-                () => _audioFileListBox.SelectedItem as MediaFileItem,
-                InlineContextSelectionMode.SelectHitItemThenOpen);
-
-            _audioInlineMenuController.MenuShown += (item, shownAt) =>
-            {
-                ViewModel?.BatchProcessing.AuditUiEvent(
-                    "AudioFileInlineMenu",
-                    $"show target={DescribeAudioItem(item)} pos=({shownAt.X:F1},{shownAt.Y:F1}) list-bounds={_audioFileListBox.Bounds}");
-                ViewModel?.BatchProcessing.AuditUiEvent(
-                    "AudioFileRightClick",
-                    $"open-by=inline-panel selected={DescribeAudioItem(item)}");
-                CrashLogger.AddBreadcrumb($"AudioFileInlineMenu shown: {item.FullPath}");
-            };
-
-            _audioInlineMenuController.MenuHidden += reason =>
-            {
-                ViewModel?.BatchProcessing.AuditUiEvent("AudioFileInlineMenu", $"hide reason={reason}");
-            };
+            listBox.SelectedItem = hitItem;
         }
 
-        if (_audioFileListBox != null)
-        {
-            if (!_audioPointerHooked)
-            {
-                _audioFileListBox.AddHandler(InputElement.PointerPressedEvent, AudioFileList_PointerPressed, RoutingStrategies.Tunnel);
-                _audioFileListBox.AddHandler(InputElement.PointerReleasedEvent, AudioFileList_PointerReleased, RoutingStrategies.Tunnel);
-                _audioPointerHooked = true;
-            }
-
-            if (!_audioSelectionHooked)
-            {
-                _audioFileListBox.SelectionChanged += AudioFileList_SelectionChanged;
-                _audioSelectionHooked = true;
-            }
-        }
-
-        if (!_globalInputHooked)
-        {
-            AddHandler(InputElement.PointerPressedEvent, AnyInput_PointerPressed, RoutingStrategies.Tunnel);
-            AddHandler(InputElement.KeyDownEvent, AnyInput_KeyDown, RoutingStrategies.Tunnel);
-            _globalInputHooked = true;
-        }
-    }
-
-    private void SubtitleCueListBox_DoubleTapped(object? sender, TappedEventArgs e)
-    {
-        if (ViewModel == null)
-        {
-            return;
-        }
-
-        if (sender is ListBox listBox && listBox.SelectedItem is SubtitleCue cue)
-        {
-            ViewModel.Playback.PlayFromSubtitleCue(cue);
-        }
-    }
-
-    private void AudioFileList_PointerPressed(object? sender, PointerPressedEventArgs e)
-    {
-        if (sender is not ListBox listBox || _audioInlineMenuController == null)
-        {
-            return;
-        }
-
-        var wasRight = e.GetCurrentPoint(listBox).Properties.IsRightButtonPressed;
-        _audioInlineMenuController.HandleListPointerPressed(e);
-
-        if (!wasRight)
-        {
-            return;
-        }
-
-        if (listBox.SelectedItem is not MediaFileItem selectedItem)
+        var selectedItem = listBox.SelectedItem as MediaFileItem;
+        if (selectedItem == null)
         {
             ViewModel?.BatchProcessing.AuditUiEvent("AudioFileRightClick", "skip-no-selected-item", isSuccess: false);
             return;
@@ -121,58 +46,85 @@ public partial class ReviewModeView : UserControl
 
         ViewModel?.BatchProcessing.AuditUiEvent(
             "AudioFileRightClick",
-            $"pointer-pressed selected={DescribeAudioItem(selectedItem)} pos={DescribePoint(e.GetPosition(listBox))} pending=true");
+            $"selected={DescribeAudioItem(selectedItem)} pos={DescribePoint(e.GetPosition(listBox))}");
+        CrashLogger.AddBreadcrumb($"AudioFileRightClick: {selectedItem.FullPath}");
+
+        var flyout = new MenuFlyout();
+
+        var enqueueItem = new MenuItem { Header = "生成字幕+复盘" };
+        enqueueItem.Click += (_, _) =>
+        {
+            ViewModel?.BatchProcessing.AuditUiEvent("AudioFileEnqueue", $"flyout-click item={selectedItem.FullPath}");
+            ViewModel?.BatchProcessing.EnqueueSubtitleAndReviewFromLibraryUi(selectedItem);
+        };
+        flyout.Items.Add(enqueueItem);
+
+        flyout.ShowAt(listBox, true);
+        e.Handled = true;
     }
 
-    private void AudioFileList_PointerReleased(object? sender, PointerReleasedEventArgs e)
+    // ===== 字幕列表右键 MenuFlyout =====
+
+    private void SubtitleCueListBox_PointerReleased(object? sender, PointerReleasedEventArgs e)
     {
-        if (sender is not ListBox listBox || _audioInlineMenuController == null)
+        if (e.InitialPressMouseButton != MouseButton.Right) return;
+        if (sender is not ListBox listBox) return;
+
+        // 命中测试：选中右键点击的项
+        var hitItem = ResolveHitItem<SubtitleCue>(e.Source);
+        if (hitItem != null && !ReferenceEquals(listBox.SelectedItem, hitItem))
         {
-            return;
+            listBox.SelectedItem = hitItem;
         }
 
-        var opened = _audioInlineMenuController.HandleListPointerReleased(e, out var openedItem);
-        if (e.InitialPressMouseButton == MouseButton.Right && !opened)
+        var selectedCue = listBox.SelectedItem as SubtitleCue;
+        if (selectedCue == null) return;
+
+        CrashLogger.AddBreadcrumb($"SubtitleCueRightClick: {selectedCue.RangeText}");
+
+        var flyout = new MenuFlyout();
+
+        var playItem = new MenuItem { Header = "跳转并播放" };
+        playItem.Click += (_, _) =>
         {
-            ViewModel?.BatchProcessing.AuditUiEvent("AudioFileRightClick", "release-skip-no-selected-item", isSuccess: false);
-            return;
-        }
+            ViewModel?.Playback.PlayFromSubtitleCue(selectedCue);
+        };
+        flyout.Items.Add(playItem);
 
-        if (opened && openedItem != null)
+        var copyItem = new MenuItem { Header = "复制字幕文本" };
+        copyItem.Click += (_, _) =>
         {
-            ViewModel?.BatchProcessing.AuditUiEvent(
-                "AudioFileRightClick",
-                $"pointer-released selected={DescribeAudioItem(openedItem)} pos={DescribePoint(e.GetPosition(listBox))} opened=true");
-        }
+            var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+            clipboard?.SetTextAsync(selectedCue.Text ?? "");
+        };
+        flyout.Items.Add(copyItem);
+
+        flyout.ShowAt(listBox, true);
+        e.Handled = true;
     }
 
-    private void AudioFileList_SelectionChanged(object? sender, SelectionChangedEventArgs e)
-    {
-        _audioInlineMenuController?.HandleSelectionChanged();
-    }
+    // ===== 字幕双击跳转（保留原有功能） =====
 
-    private void AudioInlineEnqueue_Click(object? sender, RoutedEventArgs e)
+    private void SubtitleCueListBox_DoubleTapped(object? sender, TappedEventArgs e)
     {
-        if (_audioInlineMenuController == null || !_audioInlineMenuController.TryGetCurrentItem(out var currentItem) || currentItem == null)
+        if (ViewModel == null) return;
+        if (sender is ListBox listBox && listBox.SelectedItem is SubtitleCue cue)
         {
-            ViewModel?.BatchProcessing.AuditUiEvent("AudioFileEnqueue", "inline-menu-item-missing");
-            _audioInlineMenuController?.HideMenu("inline-item-missing");
-            return;
+            ViewModel.Playback.PlayFromSubtitleCue(cue);
         }
-
-        ViewModel?.BatchProcessing.AuditUiEvent("AudioFileEnqueue", $"inline-click item={currentItem.FullPath}");
-        ViewModel?.BatchProcessing.EnqueueSubtitleAndReviewFromLibraryUi(currentItem);
-        _audioInlineMenuController.HideMenu("inline-menu-click");
     }
 
-    private void AnyInput_PointerPressed(object? sender, PointerPressedEventArgs e)
-    {
-        _audioInlineMenuController?.HandleAnyPointerPressed(e);
-    }
+    // ===== 辅助方法 =====
 
-    private void AnyInput_KeyDown(object? sender, KeyEventArgs e)
+    private static T? ResolveHitItem<T>(object? source) where T : class
     {
-        _audioInlineMenuController?.HandleAnyKeyDown(e);
+        if (source is T item) return item;
+        if (source is Control control)
+        {
+            var container = control.FindAncestorOfType<ListBoxItem>();
+            return container?.DataContext as T;
+        }
+        return null;
     }
 
     private static string DescribeAudioItem(MediaFileItem? item)

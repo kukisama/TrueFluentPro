@@ -103,14 +103,6 @@
                              Margin="4,0" Padding="0"
                              Background="Transparent"
                              KeyDown="SessionListBox_KeyDown">
-                        <ListBox.ContextMenu>
-                            <ContextMenu>
-                                <MenuItem Header="重命名 (F2)" Click="RenameSession_Click"/>
-                                <MenuItem Header="恢复已取消的视频作业" Click="ResumeVideoTasks_Click"/>
-                                <Separator/>
-                                <MenuItem Header="删除会话" Click="DeleteSession_Click"/>
-                            </ContextMenu>
-                        </ListBox.ContextMenu>
                         <ListBox.ItemTemplate>
                             <DataTemplate>
                                 <Grid ColumnDefinitions="*,Auto" Margin="4,3" PointerPressed="SessionItem_PointerPressed">
@@ -166,32 +158,26 @@
                                     <DataTemplate>
                                         <Panel>
                                             <!-- 用户消息 -->
-                                            <Border Classes="user-msg" IsVisible="{Binding IsUser}">
-                                                <Border.ContextMenu>
-                                                    <ContextMenu>
-                                                        <MenuItem Header="删除此条记录" Click="DeleteChatMessage_Click" Tag="{Binding}"/>
-                                                    </ContextMenu>
-                                                </Border.ContextMenu>
+                                            <Border Classes="user-msg" IsVisible="{Binding IsUser}"
+                                                    PointerReleased="ChatMessageBorder_PointerReleased">
                                                 <StackPanel Spacing="4">
                                                     <SelectableTextBlock Text="{Binding Text}"
                                                              TextWrapping="Wrap"
-                                                             MaxWidth="500"/>
+                                                             MaxWidth="500"
+                                                             ContextFlyout="{x:Null}"/>
                                                     <TextBlock Text="{Binding TimestampText}" FontSize="10"
                                                                Foreground="#FF999999" HorizontalAlignment="Right"/>
                                                 </StackPanel>
                                             </Border>
 
                                             <!-- AI 消息 -->
-                                            <Border Classes="ai-msg" IsVisible="{Binding IsAssistant}">
-                                                <Border.ContextMenu>
-                                                    <ContextMenu>
-                                                        <MenuItem Header="删除此条记录" Click="DeleteChatMessage_Click" Tag="{Binding}"/>
-                                                    </ContextMenu>
-                                                </Border.ContextMenu>
+                                            <Border Classes="ai-msg" IsVisible="{Binding IsAssistant}"
+                                                    PointerReleased="ChatMessageBorder_PointerReleased">
                                                 <StackPanel Spacing="6">
                                                     <SelectableTextBlock Text="{Binding Text}"
                                                              TextWrapping="Wrap"
-                                                             MaxWidth="500"/>
+                                                             MaxWidth="500"
+                                                             ContextFlyout="{x:Null}"/>
 
                                                     <ProgressBar IsIndeterminate="True" Height="4"
                                                                  IsVisible="{Binding IsLoading}"/>

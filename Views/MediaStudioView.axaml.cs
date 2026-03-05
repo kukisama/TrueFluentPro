@@ -46,6 +46,7 @@ namespace TrueFluentPro.Views
         private const int ForceBottomRetryDelayMs = 90;
         private const int ForceBottomRetryCount = 60;
 
+        private string? _capturedSelection;
         private bool _initialized;
 
         public MediaStudioView()
@@ -78,6 +79,18 @@ namespace TrueFluentPro.Views
             this.AddHandler(
                 InputElement.KeyDownEvent,
                 PromptTextBox_KeyDown,
+                Avalonia.Interactivity.RoutingStrategies.Tunnel);
+
+            // 用 MenuFlyout 替代原生 ContextMenu（ContextMenu 在 NavigationView 内 Popup 不渲染）
+            _sessionListBox!.AddHandler(
+                InputElement.PointerReleasedEvent,
+                SessionListBox_PointerReleased,
+                Avalonia.Interactivity.RoutingStrategies.Tunnel);
+
+            // 隧道阶段捕获选中文本，防止右键点击后 SelectableTextBlock 清除选区
+            this.AddHandler(
+                InputElement.PointerPressedEvent,
+                CaptureSelectionBeforeRightClick,
                 Avalonia.Interactivity.RoutingStrategies.Tunnel);
         }
 
@@ -1352,6 +1365,100 @@ namespace TrueFluentPro.Views
                 });
             }
             catch { }
+        }
+
+        // ===== MenuFlyout 右键菜单（替代原生 ContextMenu，解决 NavigationView 内 Popup 不渲染问题）=====
+
+        private void SessionListBox_PointerReleased(object? sender, PointerReleasedEventArgs e)
+        {
+            if (e.InitialPressMouseButton != MouseButton.Right) return;
+            if (_viewModel?.CurrentSession == null) return;
+
+            var flyout = new MenuFlyout();
+
+            var renameItem = new MenuItem { Header = "重命名 (F2)" };
+            renameItem.Click += RenameSession_Click;
+            flyout.Items.Add(renameItem);
+
+            var resumeItem = new MenuItem { Header = "恢复已取消的视频作业" };
+            resumeItem.Click += ResumeVideoTasks_Click;
+            flyout.Items.Add(resumeItem);
+
+            flyout.Items.Add(new Separator());
+
+            var deleteItem = new MenuItem { Header = "删除会话" };
+            deleteItem.Click += DeleteSession_Click;
+            flyout.Items.Add(deleteItem);
+
+            flyout.ShowAt(_sessionListBox!, true);
+            e.Handled = true;
+        }
+
+        private void CaptureSelectionBeforeRightClick(object? sender, PointerPressedEventArgs e)
+        {
+            if (!e.GetCurrentPoint(this).Properties.IsRightButtonPressed) return;
+            _capturedSelection = null;
+
+            // 从命中点向上查找 SelectableTextBlock，在它处理 PointerPressed 之前保存选区
+            var hit = this.InputHitTest(e.GetPosition(this)) as Visual;
+            for (var v = hit; v != null; v = v.GetVisualParent() as Visual)
+            {
+                if (v is SelectableTextBlock stb)
+                {
+                    _capturedSelection = stb.SelectedText;
+                    return;
+                }
+            }
+        }
+
+        private void ChatMessageBorder_PointerReleased(object? sender, PointerReleasedEventArgs e)
+        {
+            if (e.InitialPressMouseButton != MouseButton.Right) return;
+            if (sender is not Border border) return;
+            if (border.DataContext is not ChatMessageViewModel msg) return;
+            if (_viewModel?.CurrentSession == null) return;
+
+            // 查找 Border 内的 SelectableTextBlock
+            var stb = border.GetVisualDescendants()
+                .OfType<SelectableTextBlock>()
+                .FirstOrDefault();
+
+            // 使用隧道阶段捕获的选区（右键点击后 SelectableTextBlock 会清除选区）
+            var captured = _capturedSelection;
+            _capturedSelection = null;
+
+            var flyout = new MenuFlyout();
+
+            // 复制 — 有选中文本时复制选中，否则复制全文
+            var copyItem = new MenuItem { Header = "复制" };
+            copyItem.Click += async (_, _) =>
+            {
+                var text = !string.IsNullOrEmpty(captured) ? captured : msg.Text;
+                if (!string.IsNullOrEmpty(text))
+                    await TopLevel.GetTopLevel(this)!.Clipboard!.SetTextAsync(text);
+            };
+            flyout.Items.Add(copyItem);
+
+            // 全选
+            if (stb != null)
+            {
+                var selectAllItem = new MenuItem { Header = "全选" };
+                selectAllItem.Click += (_, _) =>
+                {
+                    stb.SelectionStart = 0;
+                    stb.SelectionEnd = stb.Text?.Length ?? 0;
+                };
+                flyout.Items.Add(selectAllItem);
+            }
+
+            flyout.Items.Add(new Separator());
+
+            var deleteItem = new MenuItem { Header = "删除此条记录", Tag = msg };
+            deleteItem.Click += DeleteChatMessage_Click;
+            flyout.Items.Add(deleteItem);
+
+            flyout.ShowAt(border, true);
+            e.Handled = true;
         }
     }
 }
