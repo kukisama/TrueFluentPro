@@ -1508,3 +1508,27 @@ public class FloatingInsightManager
 | 3.6 | **键盘导航与无障碍** | 各 View | 为核心控件添加 `AutomationProperties.Name`、`KeyboardNavigation.TabIndex`、高对比度适配 |
 | 3.7 | **批量处理拖放** | `ReviewModeView.axaml(.cs)` | 文件拖放区 + DragDrop 事件处理 |
 | 3.8 | **微交互动效** | `App.axaml` | 按钮悬停发光、按压缩放、列表项入场动画 |
+
+---
+
+## 实施记录
+
+### 第一阶段完成记录（2026-03-05）
+
+**完成状态**: ✅ 全部完成
+
+| # | 任务 | 状态 | 说明 |
+|---|------|------|------|
+| 1.1 | **消除双层顶栏** | ✅ | 移除 `MainWindow.axaml` 中自定义 Border 工具栏（含标题、按钮、音频电平），NavigationView 直接占满窗口。将清空历史、查看历史记录、浮动字幕、音频电平指示器移入 `LiveTranslationView` 底部操作栏 |
+| 1.2 | **导航 Tag 常量化** | ✅ | 在 `MainWindowViewModel.TranslationAndUi.cs` 中新增 `NavTagMedia = "media"` 和 `NavTagSettings = "settings"` 常量；`MainWindow.axaml.cs` 中 `ShowPage()`、`NavView_SelectionChanged()`、`NavigateToSettings` 回调全部使用常量引用 |
+| 1.3 | **新建 FloatingInsightWindow** | ✅ | 新增 `Views/FloatingInsightWindow.axaml(.cs)`，无边框、Topmost、可拖拽、可缩放；标题栏含字体调节（A-/A+）、背景切换（🎨）、关闭（✕）按钮；内容区为 `MarkdownScrollViewer` |
+| 1.4 | **新建 FloatingInsightViewModel** | ✅ | 新增 `ViewModels/FloatingInsightViewModel.cs`，通过 `PropertyChanged` 监听 `AiInsightViewModel.InsightMarkdown` 实时同步；支持 `FontSize`（12–36px）、`BackgroundMode`（亮/暗/透明三档切换） |
+| 1.5 | **新建 FloatingInsightManager** | ✅ | 新增 `Services/FloatingInsightManager.cs`，参照 FloatingSubtitleManager 模式实现 `ToggleWindow()`/`OpenWindow()`/`CloseWindow()`/`WindowStateChanged` 事件 |
+| 1.6 | **集成到 LiveTranslationView** | ✅ | `LiveTranslationView.axaml` 底部新增操作栏，包含：清空历史、查看历史记录、浮动字幕、🧠 浮动洞察（Toggle 状态跟随 WindowStateChanged）、音频电平指示器；右侧显示状态信息和订阅验证状态 |
+| 1.7 | **底部状态栏瘦身** | ✅ | 移除 `MainWindow.axaml` 全局底部状态栏（StatusMessage、AudioDiagnosticStatus、SubscriptionValidationStatusMessage），这些信息已移入 `LiveTranslationView` 底部操作栏 |
+
+**验收标准达成情况**：
+- ✅ MainWindow 无自定义顶部 Border，NavigationView 直接占满窗口
+- ✅ 浮动洞察窗口可弹出/关闭/拖拽/缩放/字体调节/背景切换
+- ✅ 洞察数据从主窗口实时同步到浮动窗口（通过 PropertyChanged 监听，无重复 AI 请求）
+- ✅ `dotnet build` 通过（0 Warning, 0 Error）

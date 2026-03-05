@@ -7,6 +7,9 @@ namespace TrueFluentPro.ViewModels
 {
     public class FloatingInsightViewModel : INotifyPropertyChanged
     {
+        private const double MinFontSize = 12;
+        private const double MaxFontSize = 36;
+
         private string _insightMarkdown = "";
         private int _backgroundMode = 1; // default: semi-transparent dark
         private double _fontSize = 14;
@@ -54,7 +57,7 @@ namespace TrueFluentPro.ViewModels
             get => _fontSize;
             set
             {
-                var clamped = Math.Clamp(value, 12, 36);
+                var clamped = Math.Clamp(value, MinFontSize, MaxFontSize);
                 if (Math.Abs(_fontSize - clamped) > 0.01)
                 {
                     _fontSize = clamped;
@@ -98,12 +101,12 @@ namespace TrueFluentPro.ViewModels
 
         public void IncreaseFontSize()
         {
-            FontSize = Math.Min(_fontSize + 2, 36);
+            FontSize = Math.Min(_fontSize + 2, MaxFontSize);
         }
 
         public void DecreaseFontSize()
         {
-            FontSize = Math.Max(_fontSize - 2, 12);
+            FontSize = Math.Max(_fontSize - 2, MinFontSize);
         }
 
         private void OnAiInsightPropertyChanged(object? sender, PropertyChangedEventArgs e)

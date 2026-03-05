@@ -65,11 +65,9 @@
             </Border>
 
             <!-- Content: Markdown viewer -->
-            <ScrollViewer Grid.Row="1" Margin="8,0,8,8"
-                HorizontalScrollBarVisibility="Disabled"
-                VerticalScrollBarVisibility="Auto">
+            <Border Grid.Row="1" Margin="8,0,8,8">
                 <md:MarkdownScrollViewer Markdown="{Binding InsightMarkdown}"/>
-            </ScrollViewer>
+            </Border>
         </Grid>
     </Border>
 </Window>
