@@ -1,0 +1,75 @@
+<Window xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="using:TrueFluentPro.ViewModels"
+    xmlns:md="clr-namespace:Markdown.Avalonia;assembly=Markdown.Avalonia"
+    x:Class="TrueFluentPro.Views.FloatingInsightWindow"
+    x:DataType="vm:FloatingInsightViewModel" Title="Floating Insight"
+    Width="520"
+    Height="400"
+    MinWidth="320"
+    MinHeight="200"
+    SystemDecorations="None"
+    WindowStartupLocation="Manual"
+    Topmost="True"
+    CanResize="True"
+    Background="Transparent"
+    ExtendClientAreaToDecorationsHint="True"
+    ExtendClientAreaChromeHints="NoChrome"
+    ExtendClientAreaTitleBarHeightHint="-1">
+
+    <Window.Styles>
+        <Style Selector="Window">
+            <Setter Property="BorderThickness" Value="0" />
+        </Style>
+    </Window.Styles>
+
+    <Border Name="MainBorder"
+        Background="{Binding BackgroundBrush}"
+        CornerRadius="8"
+        BorderThickness="2"
+        BorderBrush="#40FFFFFF"
+        Margin="5">
+
+        <Grid RowDefinitions="Auto,*">
+            <!-- Title bar: draggable -->
+            <Border Grid.Row="0"
+                Background="Transparent"
+                Cursor="Hand"
+                PointerPressed="OnTitleBarPointerPressed"
+                Padding="10,6">
+                <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto">
+                    <!-- Brain icon -->
+                    <TextBlock Grid.Column="0" Text="🧠" FontSize="16"
+                        VerticalAlignment="Center" Margin="0,0,8,0"/>
+                    <TextBlock Grid.Column="1" Text="浮动洞察"
+                        FontSize="13" FontWeight="SemiBold"
+                        Foreground="{Binding TextBrush}"
+                        VerticalAlignment="Center"/>
+                    <!-- Font decrease -->
+                    <Button Grid.Column="2" Content="A-" Padding="6,2" Margin="4,0"
+                        FontSize="11" Click="OnDecreaseFontSize"
+                        ToolTip.Tip="缩小字体"/>
+                    <!-- Font increase -->
+                    <Button Grid.Column="3" Content="A+" Padding="6,2" Margin="0,0,4,0"
+                        FontSize="11" Click="OnIncreaseFontSize"
+                        ToolTip.Tip="放大字体"/>
+                    <!-- Background toggle -->
+                    <Button Grid.Column="4" Content="🎨" Padding="6,2" Margin="0,0,4,0"
+                        FontSize="11" Click="OnToggleBackground"
+                        ToolTip.Tip="切换背景模式"/>
+                    <!-- Close -->
+                    <Button Grid.Column="5" Content="✕" Padding="6,2"
+                        FontSize="11" Click="OnCloseClick"
+                        ToolTip.Tip="关闭"/>
+                </Grid>
+            </Border>
+
+            <!-- Content: Markdown viewer -->
+            <Border Grid.Row="1" Margin="8,0,8,8"
+                    Background="{Binding BackgroundBrush}">
+                <md:MarkdownScrollViewer Name="InsightMarkdownViewer"
+                                         Markdown="{Binding InsightMarkdown}"/>
+            </Border>
+        </Grid>
+    </Border>
+</Window>

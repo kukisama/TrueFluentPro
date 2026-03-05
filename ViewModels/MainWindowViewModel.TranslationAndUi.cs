@@ -143,6 +143,29 @@ namespace TrueFluentPro.ViewModels
             ? Brushes.White
             : new SolidColorBrush(Color.Parse("#FF111827"));
 
+        public bool IsFloatingInsightOpen
+        {
+            get => _isFloatingInsightOpen;
+            private set
+            {
+                if (!SetProperty(ref _isFloatingInsightOpen, value))
+                {
+                    return;
+                }
+
+                OnPropertyChanged(nameof(FloatingInsightButtonBackground));
+                OnPropertyChanged(nameof(FloatingInsightButtonForeground));
+            }
+        }
+
+        public object? FloatingInsightButtonBackground => IsFloatingInsightOpen
+            ? new SolidColorBrush(Color.Parse("#FF8B5CF6"))
+            : new SolidColorBrush(Color.Parse("#FFE5E7EB"));
+
+        public object? FloatingInsightButtonForeground => IsFloatingInsightOpen
+            ? Brushes.White
+            : new SolidColorBrush(Color.Parse("#FF111827"));
+
         public bool IsTranslating
         {
             get => _isTranslating;
@@ -201,6 +224,8 @@ namespace TrueFluentPro.ViewModels
 
         public const string NavTagLive = "live";
         public const string NavTagReview = "review";
+        public const string NavTagMedia = "media";
+        public const string NavTagSettings = "settings";
 
         private string _selectedNavTag = NavTagLive;
 
@@ -542,6 +567,29 @@ namespace TrueFluentPro.ViewModels
             catch (Exception ex)
             {
                 StatusMessage = $"浮动字幕窗口操作失败: {ex.Message}";
+            }
+        }
+
+        private void ShowFloatingInsight()
+        {
+            try
+            {
+                if (_floatingInsightManager == null)
+                {
+                    _floatingInsightManager = new FloatingInsightManager(AiInsight);
+                    _floatingInsightManager.WindowStateChanged += (_, isOpen) => IsFloatingInsightOpen = isOpen;
+                }
+
+                _floatingInsightManager.ToggleWindow();
+                IsFloatingInsightOpen = _floatingInsightManager.IsWindowOpen;
+
+                StatusMessage = _floatingInsightManager.IsWindowOpen
+                    ? "浮动洞察窗口已打开"
+                    : "浮动洞察窗口已关闭";
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"浮动洞察窗口操作失败: {ex.Message}";
             }
         }
 
