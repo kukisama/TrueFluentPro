@@ -65,8 +65,10 @@
             </Border>
 
             <!-- Content: Markdown viewer -->
-            <Border Grid.Row="1" Margin="8,0,8,8">
-                <md:MarkdownScrollViewer Markdown="{Binding InsightMarkdown}"/>
+            <Border Grid.Row="1" Margin="8,0,8,8"
+                    Background="{Binding BackgroundBrush}">
+                <md:MarkdownScrollViewer Name="InsightMarkdownViewer"
+                                         Markdown="{Binding InsightMarkdown}"/>
             </Border>
         </Grid>
     </Border>

@@ -1,6 +1,8 @@
 using System;
+using System.ComponentModel;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using TrueFluentPro.ViewModels;
@@ -18,6 +20,39 @@ namespace TrueFluentPro.Views
         public FloatingInsightWindow(FloatingInsightViewModel viewModel) : this()
         {
             DataContext = viewModel;
+        }
+
+        protected override void OnDataContextChanged(EventArgs e)
+        {
+            base.OnDataContextChanged(e);
+            if (DataContext is FloatingInsightViewModel vm)
+            {
+                vm.PropertyChanged += OnViewModelPropertyChanged;
+                ApplyMarkdownStyle(vm);
+            }
+        }
+
+        private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+        {
+            if (sender is not FloatingInsightViewModel vm) return;
+
+            if (e.PropertyName is nameof(FloatingInsightViewModel.FontSize)
+                              or nameof(FloatingInsightViewModel.TextBrush)
+                              or nameof(FloatingInsightViewModel.BackgroundMode))
+            {
+                ApplyMarkdownStyle(vm);
+            }
+        }
+
+        private void ApplyMarkdownStyle(FloatingInsightViewModel vm)
+        {
+            var viewer = InsightMarkdownViewer;
+            if (viewer == null) return;
+
+            // MarkdownScrollViewer doesn't expose FontSize/Foreground directly,
+            // but Avalonia's inherited styled properties propagate to child TextBlocks.
+            viewer.SetValue(TemplatedControl.FontSizeProperty, vm.FontSize);
+            viewer.SetValue(TemplatedControl.ForegroundProperty, vm.TextBrush);
         }
 
         private void SetInitialPosition()
@@ -75,12 +110,13 @@ namespace TrueFluentPro.Views
 
         protected override void OnClosed(EventArgs e)
         {
-            base.OnClosed(e);
-
             if (DataContext is FloatingInsightViewModel viewModel)
             {
+                viewModel.PropertyChanged -= OnViewModelPropertyChanged;
                 viewModel.OnWindowClosed();
             }
+
+            base.OnClosed(e);
         }
     }
 }
