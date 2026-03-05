@@ -56,8 +56,6 @@ jobs:
             -o artifacts/updater-${{ matrix.rid }}
           Copy-Item "artifacts/updater-${{ matrix.rid }}/Updater.exe" `
             "artifacts/publish/TrueFluentPro-${{ matrix.rid }}-fdd/Updater.exe"
-          Copy-Item "artifacts/updater-${{ matrix.rid }}/Updater.runtimeconfig.json" `
-            "artifacts/publish/TrueFluentPro-${{ matrix.rid }}-fdd/Updater.runtimeconfig.json"
 
       - name: Create zip
         run: |
