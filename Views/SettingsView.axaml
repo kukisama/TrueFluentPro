@@ -291,30 +291,79 @@
                                     <TextBox Text="{Binding Settings.SelectedEndpoint.BaseUrl, Mode=TwoWay}"
                                              Watermark="例如: https://api.openai.com"/>
                                 </StackPanel>
+
+                                <!-- 认证方式 -->
                                 <StackPanel Spacing="5">
+                                    <TextBlock Text="认证方式"/>
+                                    <ComboBox MinWidth="200"
+                                              SelectedIndex="{Binding Settings.SelectedEndpointAuthMode, Mode=TwoWay}">
+                                        <ComboBoxItem Content="API Key (默认)"/>
+                                        <ComboBoxItem Content="Microsoft Entra ID (AAD)"/>
+                                    </ComboBox>
+                                </StackPanel>
+                                <StackPanel Spacing="5" IsVisible="{Binding !Settings.IsSelectedEndpointAad}">
                                     <TextBlock Text="API 密钥"/>
                                     <TextBox Text="{Binding Settings.SelectedEndpoint.ApiKey, Mode=TwoWay}"
                                              Watermark="sk-..." PasswordChar="*"
                                              RevealPassword="{Binding IsChecked, ElementName=EpShowKeyCheckBox}"/>
                                     <CheckBox Name="EpShowKeyCheckBox" Content="显示密钥" FontSize="10"/>
                                 </StackPanel>
+                                <StackPanel Spacing="5" IsVisible="{Binding Settings.IsSelectedEndpointAad}">
+                                    <TextBlock Text="Tenant ID"/>
+                                    <TextBox Text="{Binding Settings.SelectedEndpoint.AzureTenantId, Mode=TwoWay}"
+                                             Watermark="Azure AD Tenant ID"/>
+                                    <TextBlock Text="Client ID"/>
+                                    <TextBox Text="{Binding Settings.SelectedEndpoint.AzureClientId, Mode=TwoWay}"
+                                             Watermark="Azure AD Client ID"/>
+                                </StackPanel>
+
                                 <CheckBox Content="启用此终结点"
                                           IsChecked="{Binding Settings.SelectedEndpoint.IsEnabled, Mode=TwoWay}"/>
 
                                 <Separator Margin="0,6,0,6"/>
                                 <TextBlock Text="模型列表" FontWeight="Bold"/>
+                                <TextBlock Text="点击模型字段可直接编辑" FontSize="10" Foreground="Gray"/>
                                 <ItemsControl ItemsSource="{Binding Settings.SelectedEndpointModels}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate DataType="models:AiModelEntry">
                                             <Border BorderBrush="Gray" BorderThickness="1" CornerRadius="4"
-                                                    Padding="8,4" Margin="0,2">
-                                                <Grid ColumnDefinitions="*,Auto">
-                                                    <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8">
-                                                        <TextBlock Text="{Binding ModelId}" FontWeight="SemiBold"/>
-                                                        <TextBlock Text="{Binding Capabilities}" FontSize="10"
-                                                                   Foreground="Gray" VerticalAlignment="Center"/>
+                                                    Padding="8,6" Margin="0,2">
+                                                <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto" RowSpacing="4">
+                                                    <StackPanel Grid.Row="0" Grid.Column="0" Spacing="4">
+                                                        <Grid ColumnDefinitions="80,*" ColumnSpacing="6">
+                                                            <TextBlock Grid.Column="0" Text="模型 ID:" FontSize="11" VerticalAlignment="Center"/>
+                                                            <TextBox Grid.Column="1" Text="{Binding ModelId, Mode=TwoWay}"
+                                                                     Watermark="模型 ID" FontSize="11" Padding="4,2"
+                                                                     LostFocus="ModelField_LostFocus"/>
+                                                        </Grid>
+                                                        <Grid ColumnDefinitions="80,*" ColumnSpacing="6">
+                                                            <TextBlock Grid.Column="0" Text="显示名:" FontSize="11" VerticalAlignment="Center"/>
+                                                            <TextBox Grid.Column="1" Text="{Binding DisplayName, Mode=TwoWay}"
+                                                                     Watermark="显示名称 (可选)" FontSize="11" Padding="4,2"
+                                                                     LostFocus="ModelField_LostFocus"/>
+                                                        </Grid>
+                                                        <Grid ColumnDefinitions="80,*" ColumnSpacing="6">
+                                                            <TextBlock Grid.Column="0" Text="部署名:" FontSize="11" VerticalAlignment="Center"/>
+                                                            <TextBox Grid.Column="1" Text="{Binding DeploymentName, Mode=TwoWay}"
+                                                                     Watermark="Azure 部署名 (可选)" FontSize="11" Padding="4,2"
+                                                                     LostFocus="ModelField_LostFocus"/>
+                                                        </Grid>
+                                                        <Grid ColumnDefinitions="80,*" ColumnSpacing="6">
+                                                            <TextBlock Grid.Column="0" Text="能力:" FontSize="11" VerticalAlignment="Center"/>
+                                                            <ComboBox Grid.Column="1" MinWidth="120" FontSize="11" Padding="4,2"
+                                                                      Tag="{Binding}"
+                                                                      Loaded="ModelCapabilityCombo_Loaded"
+                                                                      SelectionChanged="ModelCapability_SelectionChanged">
+                                                                <ComboBox.Items>
+                                                                    <ComboBoxItem Content="文字" Tag="Text"/>
+                                                                    <ComboBoxItem Content="图片" Tag="Image"/>
+                                                                    <ComboBoxItem Content="视频" Tag="Video"/>
+                                                                </ComboBox.Items>
+                                                            </ComboBox>
+                                                        </Grid>
                                                     </StackPanel>
-                                                    <Button Grid.Column="1" Content="✕" Padding="4,2" FontSize="10"
+                                                    <Button Grid.Row="0" Grid.Column="1" Content="✕" Padding="4,2" FontSize="10"
+                                                            VerticalAlignment="Top"
                                                             Click="RemoveModel_Click" Tag="{Binding}"/>
                                                 </Grid>
                                             </Border>
