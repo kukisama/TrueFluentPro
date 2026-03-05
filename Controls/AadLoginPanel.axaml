@@ -2,11 +2,11 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="TrueFluentPro.Controls.AadLoginPanel">
     <StackPanel Spacing="8">
-        <StackPanel Spacing="5">
+        <StackPanel Spacing="5" x:Name="TenantIdPanel">
             <TextBlock Text="Tenant ID (可选)"/>
             <TextBox x:Name="TenantIdTextBox" Watermark="Azure AD 租户 ID"/>
         </StackPanel>
-        <StackPanel Spacing="5">
+        <StackPanel Spacing="5" x:Name="ClientIdPanel">
             <TextBlock Text="Client ID (可选)"/>
             <TextBox x:Name="ClientIdTextBox" Watermark="应用注册 Client ID"/>
         </StackPanel>

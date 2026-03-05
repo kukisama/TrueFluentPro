@@ -2,8 +2,10 @@ using System;
 using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using Avalonia.VisualTree;
 using TrueFluentPro.Models;
 using TrueFluentPro.ViewModels;
 
@@ -41,6 +43,27 @@ public partial class SettingsView : UserControl
 
             // 初始化字号下拉
             SelectFontSizeComboBox(vm.Settings.DefaultFontSize);
+
+            // 监听终结点选择变化，同步 AadLoginPanel
+            vm.Settings.PropertyChanged += (_, e) =>
+            {
+                if (e.PropertyName == nameof(SettingsViewModel.SelectedEndpoint))
+                    SyncAadLoginPanel(vm.Settings);
+            };
+            SyncAadLoginPanel(vm.Settings);
+
+            // AAD 登录完成后同步 TenantId 回终结点模型
+            EndpointAadLoginPanel.LoginCompleted += () =>
+            {
+                var ep = vm.Settings.SelectedEndpoint;
+                if (ep == null) return;
+                var newTenant = EndpointAadLoginPanel.TenantId;
+                if (!string.IsNullOrWhiteSpace(newTenant) && newTenant != ep.AzureTenantId)
+                {
+                    ep.AzureTenantId = newTenant;
+                    vm.Settings.NotifyModelChanged(); // trigger save
+                }
+            };
         }
     }
 
@@ -229,5 +252,72 @@ public partial class SettingsView : UserControl
         };
         if (DataContext is MainWindowViewModel vm)
             vm.Settings.NotifyModelChanged();
+    }
+
+    // ═══ AAD 登录面板同步 ═══
+
+    /// <summary>同步 AadLoginPanel 的 TenantId/ClientId/ProfileKey 到当前选中终结点</summary>
+    private void SyncAadLoginPanel(SettingsViewModel settings)
+    {
+        var ep = settings.SelectedEndpoint;
+        if (ep == null) return;
+
+        EndpointAadLoginPanel.ProfileKey = $"endpoint_{ep.Id}";
+        EndpointAadLoginPanel.TenantId = ep.AzureTenantId;
+        EndpointAadLoginPanel.ClientId = ep.AzureClientId;
+    }
+
+    // ═══ 模型手风琴（同一时间仅展开一个） ═══
+
+    /// <summary>当前展开的模型详情面板（null 表示全部折叠）</summary>
+    private StackPanel? _expandedModelPanel;
+
+    /// <summary>点击模型条目头部：展开/折叠（手风琴行为）</summary>
+    private void ModelHeader_PointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (sender is not Border header) return;
+
+        // 从 header 的父 StackPanel 中找到 ModelDetailPanel
+        var parent = header.Parent as StackPanel;
+        var detailPanel = parent?.Children.OfType<StackPanel>()
+            .FirstOrDefault(p => p.Name == "ModelDetailPanel");
+
+        if (detailPanel == null) return;
+
+        if (detailPanel.IsVisible)
+        {
+            // 收缩当前展开的
+            detailPanel.IsVisible = false;
+            UpdateExpandIcon(header, false);
+            _expandedModelPanel = null;
+        }
+        else
+        {
+            // 收缩之前展开的
+            if (_expandedModelPanel != null && _expandedModelPanel != detailPanel)
+            {
+                _expandedModelPanel.IsVisible = false;
+                // 更新之前展开条目的图标
+                var prevHeader = (_expandedModelPanel.Parent as Visual)?.GetVisualChildren()
+                    .OfType<Border>().FirstOrDefault(b => b.Cursor != null);
+                if (prevHeader != null)
+                    UpdateExpandIcon(prevHeader, false);
+            }
+
+            // 展开当前
+            detailPanel.IsVisible = true;
+            UpdateExpandIcon(header, true);
+            _expandedModelPanel = detailPanel;
+        }
+    }
+
+    /// <summary>更新展开/收缩箭头图标</summary>
+    private static void UpdateExpandIcon(Border header, bool expanded)
+    {
+        var icon = header.GetVisualDescendants()
+            .OfType<TextBlock>()
+            .FirstOrDefault(t => t.Name == "ModelExpandIcon");
+        if (icon != null)
+            icon.Text = expanded ? "▼" : "▶";
     }
 }
