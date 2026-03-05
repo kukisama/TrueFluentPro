@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.Json.Serialization;
 using TrueFluentPro.Services;
 
@@ -177,10 +178,34 @@ namespace TrueFluentPro.Models
 
         public MediaGenConfig MediaGenConfig { get; set; } = new();
 
+        /// <summary>统一 AI 终结点注册表</summary>
+        public List<AiEndpoint> Endpoints { get; set; } = new();
+
         [JsonIgnore]
         public string SessionDirectory => string.IsNullOrWhiteSpace(SessionDirectoryOverride)
             ? PathManager.Instance.SessionsPath
             : SessionDirectoryOverride;
+
+        /// <summary>从所有启用的终结点中，按能力筛选可用模型</summary>
+        public IEnumerable<(AiEndpoint Endpoint, AiModelEntry Model)>
+            GetAvailableModels(ModelCapability required)
+        {
+            return Endpoints
+                .Where(ep => ep.IsEnabled)
+                .SelectMany(ep => ep.Models
+                    .Where(m => m.Capabilities.HasFlag(required))
+                    .Select(m => (ep, m)));
+        }
+
+        /// <summary>解析 ModelReference 为可用的终结点+模型</summary>
+        public (AiEndpoint? Endpoint, AiModelEntry? Model)
+            ResolveModel(ModelReference? reference)
+        {
+            if (reference == null) return (null, null);
+            var ep = Endpoints.FirstOrDefault(e => e.Id == reference.EndpointId);
+            var model = ep?.Models.FirstOrDefault(m => m.ModelId == reference.ModelId);
+            return (ep, model);
+        }
 
         public AzureSpeechConfig()
         {

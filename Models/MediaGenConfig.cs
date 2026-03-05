@@ -22,6 +22,10 @@ namespace TrueFluentPro.Models
         public string VideoAzureTenantId { get; set; } = "";
         public string VideoAzureClientId { get; set; } = "";
 
+        // --- 终结点模型引用（3.4 新增，与旧字段并存以便迁移） ---
+        public ModelReference? ImageModelRef { get; set; }
+        public ModelReference? VideoModelRef { get; set; }
+
         // --- 图片默认参数 ---
         public string ImageModel { get; set; } = "gpt-image-1";
         public string ImageSize { get; set; } = "1024x1024";
