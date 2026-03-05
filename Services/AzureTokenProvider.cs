@@ -216,16 +216,20 @@ namespace TrueFluentPro.Services
             string? tenantId,
             string? clientId,
             Action<string>? onDeviceCode = null,
-            CancellationToken ct = default)
+            CancellationToken ct = default,
+            bool forceInteractive = false)
         {
-            try
+            if (!forceInteractive)
             {
-                if (await TrySilentLoginAsync(tenantId, clientId, ct))
-                    return true;
-            }
-            catch
-            {
-                // 静默失败不阻断
+                try
+                {
+                    if (await TrySilentLoginAsync(tenantId, clientId, ct))
+                        return true;
+                }
+                catch
+                {
+                    // 静默失败不阻断
+                }
             }
 
             // 交互式优先：更符合“少登录 + 易切换账号”的体验
@@ -271,9 +275,11 @@ namespace TrueFluentPro.Services
 
                 var credential = new DeviceCodeCredential(options);
 
-                // 尝试静默获取
+                // 尝试静默获取，限时 5 秒防止设备代码流挂起
+                using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                cts.CancelAfter(TimeSpan.FromSeconds(5));
                 _cachedToken = await credential.GetTokenAsync(
-                    new TokenRequestContext(new[] { _scope }), ct);
+                    new TokenRequestContext(new[] { _scope }), cts.Token);
 
                 _credential = credential;
                 Username = record.Username;

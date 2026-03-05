@@ -128,7 +128,17 @@ namespace TrueFluentPro.Controls
                     if (tenants.Count == 1)
                     {
                         TenantIdTextBox.Text = tenants[0].TenantId;
-                        SetStatus($"✓ 已登录: {provider.Username ?? "已认证"}（租户: {tenants[0].TenantId}）", "#22863a");
+                        SetStatus($"正在切换到租户: {tenants[0].TenantId}…", "#6a737d");
+                        var switched = await provider.LoginAutoAsync(tenants[0].TenantId, clientId, onDeviceCode);
+                        if (switched)
+                        {
+                            SetStatus($"✓ 已登录: {provider.Username ?? "已认证"}（租户: {tenants[0].TenantId}）", "#22863a");
+                            DeviceCodePanel.IsVisible = false;
+                        }
+                        else
+                        {
+                            SetStatus("✗ 切换租户失败（请检查权限/管理员同意/条件访问策略）", "#cb2431");
+                        }
                     }
                     else if (tenants.Count > 1)
                     {
@@ -141,7 +151,7 @@ namespace TrueFluentPro.Controls
                         {
                             TenantIdTextBox.Text = picked.TenantId;
                             SetStatus($"正在切换到租户: {picked.DisplayName ?? picked.TenantId}…", "#6a737d");
-                            var switched = await provider.LoginAutoAsync(picked.TenantId, clientId, onDeviceCode);
+                            var switched = await provider.LoginAutoAsync(picked.TenantId, clientId, onDeviceCode, forceInteractive: true);
                             if (switched)
                             {
                                 SetStatus($"✓ 已登录: {provider.Username ?? "已认证"}（租户: {picked.TenantId}）", "#22863a");

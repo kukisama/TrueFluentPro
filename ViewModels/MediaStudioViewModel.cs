@@ -21,10 +21,11 @@ namespace TrueFluentPro.ViewModels
     {
         private readonly AiConfig _aiConfig;
         private readonly MediaGenConfig _genConfig;
+        private readonly List<AiEndpoint> _endpoints;
         private readonly AiImageGenService _imageService = new();
         private readonly AiVideoGenService _videoService = new();
-        private readonly AzureTokenProvider _imageTokenProvider = new("media-image");
-        private readonly AzureTokenProvider _videoTokenProvider = new("media-video");
+        private AzureTokenProvider _imageTokenProvider = new("media-image");
+        private AzureTokenProvider _videoTokenProvider = new("media-video");
         private readonly string _studioDirectory;
         private readonly string _indexFilePath;
         private MediaStudioIndex _sessionIndex = new();
@@ -113,10 +114,11 @@ namespace TrueFluentPro.ViewModels
         public ICommand DeleteSessionCommand { get; }
         public ICommand RenameSessionCommand { get; }
 
-        public MediaStudioViewModel(AiConfig aiConfig, MediaGenConfig genConfig)
+        public MediaStudioViewModel(AiConfig aiConfig, MediaGenConfig genConfig, List<AiEndpoint> endpoints)
         {
             _aiConfig = aiConfig;
             _genConfig = genConfig;
+            _endpoints = endpoints;
 
             _imageService.SetTokenProvider(_imageTokenProvider);
             _videoService.SetTokenProvider(_videoTokenProvider);
@@ -166,22 +168,35 @@ namespace TrueFluentPro.ViewModels
 
         private async Task TrySilentLoginForMediaAsync()
         {
-            if (_genConfig.ImageProviderType == AiProviderType.AzureOpenAi
-                && _genConfig.ImageAzureAuthMode == AzureAuthMode.AAD)
+            // 图片：优先从新终结点系统读取 AAD 配置，回退到旧 genConfig 字段
+            var imageEp = ResolveEndpoint(_genConfig.ImageModelRef);
+            var imageAuthMode = imageEp?.AuthMode ?? _genConfig.ImageAzureAuthMode;
+            if (imageAuthMode == AzureAuthMode.AAD)
             {
-                await _imageTokenProvider.TrySilentLoginAsync(
-                    _genConfig.ImageAzureTenantId,
-                    _genConfig.ImageAzureClientId);
+                // 使用与终结点管理页登录按钮相同的 profileKey，共享同一份 token 缓存
+                var profileKey = imageEp != null ? GetEndpointProfileKey(imageEp) : "media-image";
+                _imageTokenProvider = new AzureTokenProvider(profileKey);
+                _imageService.SetTokenProvider(_imageTokenProvider);
+                var tenantId = imageEp?.AzureTenantId ?? _genConfig.ImageAzureTenantId;
+                var clientId = imageEp?.AzureClientId ?? _genConfig.ImageAzureClientId;
+                await _imageTokenProvider.TrySilentLoginAsync(tenantId, clientId);
             }
 
-            if (_genConfig.VideoProviderType == AiProviderType.AzureOpenAi
-                && _genConfig.VideoAzureAuthMode == AzureAuthMode.AAD)
+            // 视频：同理
+            var videoEp = ResolveEndpoint(_genConfig.VideoModelRef);
+            var videoAuthMode = videoEp?.AuthMode ?? _genConfig.VideoAzureAuthMode;
+            if (videoAuthMode == AzureAuthMode.AAD)
             {
-                await _videoTokenProvider.TrySilentLoginAsync(
-                    _genConfig.VideoAzureTenantId,
-                    _genConfig.VideoAzureClientId);
+                var profileKey = videoEp != null ? GetEndpointProfileKey(videoEp) : "media-video";
+                _videoTokenProvider = new AzureTokenProvider(profileKey);
+                _videoService.SetTokenProvider(_videoTokenProvider);
+                var tenantId = videoEp?.AzureTenantId ?? _genConfig.VideoAzureTenantId;
+                var clientId = videoEp?.AzureClientId ?? _genConfig.VideoAzureClientId;
+                await _videoTokenProvider.TrySilentLoginAsync(tenantId, clientId);
             }
         }
+
+        private static string GetEndpointProfileKey(AiEndpoint endpoint) => $"endpoint_{endpoint.Id}";
 
         public void CreateNewSession()
         {
@@ -192,7 +207,7 @@ namespace TrueFluentPro.ViewModels
 
             var session = new MediaSessionViewModel(
                 sessionId, defaultName,
-                sessionDir, _aiConfig, _genConfig,
+                sessionDir, _aiConfig, _genConfig, _endpoints,
                 _imageService, _videoService,
                 OnSessionTaskCountChanged,
                 s => SaveSessionMeta(s));
@@ -490,6 +505,7 @@ namespace TrueFluentPro.ViewModels
                         dir,
                         _aiConfig,
                         _genConfig,
+                        _endpoints,
                         _imageService,
                         _videoService,
                         OnSessionTaskCountChanged,
@@ -817,6 +833,12 @@ namespace TrueFluentPro.ViewModels
         {
             SaveAllSessions();
             CancelAll();
+        }
+
+        private AiEndpoint? ResolveEndpoint(ModelReference? reference)
+        {
+            if (reference == null || _endpoints == null) return null;
+            return _endpoints.FirstOrDefault(e => e.Id == reference.EndpointId && e.IsEnabled);
         }
 
         private static string ConvertPathForSave(string? path, string sessionDirectory)

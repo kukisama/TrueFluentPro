@@ -25,6 +25,13 @@ namespace TrueFluentPro.Services
         }
 
         /// <summary>
+        /// 判断是否为 Azure OpenAI 终结点（ProviderType == AzureOpenAi 或 AuthMode == AAD 均视为 Azure）。
+        /// AAD 认证必然是 Azure 终结点，即使 ProviderType 未显式设置为 AzureOpenAi，URL 也应走 /openai/v1/... 路径。
+        /// </summary>
+        protected static bool IsAzureEndpoint(AiConfig config)
+            => config.IsAzureEndpoint;
+
+        /// <summary>
         /// 构建 API 基础 URL（去掉末尾的 /v1 等）
         /// </summary>
         protected static string BuildBaseUrl(AiConfig config)
@@ -40,10 +47,14 @@ namespace TrueFluentPro.Services
         /// </summary>
         protected async Task SetAuthHeadersAsync(HttpRequestMessage request, AiConfig config, CancellationToken ct = default)
         {
-            if (config.ProviderType == AiProviderType.AzureOpenAi)
+            if (IsAzureEndpoint(config))
             {
-                if (config.AzureAuthMode == AzureAuthMode.AAD && TokenProvider?.IsLoggedIn == true)
+                if (config.AzureAuthMode == AzureAuthMode.AAD)
                 {
+                    if (TokenProvider?.IsLoggedIn != true)
+                        throw new InvalidOperationException(
+                            "Azure AAD 认证未登录。请先在设置中完成 AAD 登录，或切换为 API Key 认证模式。");
+
                     var token = await TokenProvider.GetTokenAsync(ct);
                     request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
                 }
@@ -64,8 +75,9 @@ namespace TrueFluentPro.Services
         /// </summary>
         protected static void SetAuthHeaders(HttpRequestMessage request, AiConfig config)
         {
-            if (config.ProviderType == AiProviderType.AzureOpenAi)
+            if (IsAzureEndpoint(config))
             {
+                // 同步版本不支持 AAD，始终用 api-key
                 request.Headers.Add("api-key", config.ApiKey);
             }
             else
@@ -82,7 +94,7 @@ namespace TrueFluentPro.Services
         {
             var baseUrl = config.ApiEndpoint.TrimEnd('/');
 
-            if (config.ProviderType == AiProviderType.AzureOpenAi)
+            if (IsAzureEndpoint(config))
             {
                 // 旧方式（传统 Azure 部署路径）：
                 // return $"{baseUrl}/openai/deployments/{config.DeploymentName}/images/generations?api-version={config.ApiVersion}";
@@ -105,7 +117,7 @@ namespace TrueFluentPro.Services
         {
             var baseUrl = config.ApiEndpoint.TrimEnd('/');
 
-            if (config.ProviderType == AiProviderType.AzureOpenAi)
+            if (IsAzureEndpoint(config))
             {
                 // 旧方式（传统 Azure 部署路径，/images/edits 返回 404）：
                 // return $"{baseUrl}/openai/deployments/{config.DeploymentName}/images/edits?api-version={config.ApiVersion}";
@@ -140,7 +152,7 @@ namespace TrueFluentPro.Services
         {
             var baseUrl = config.ApiEndpoint.TrimEnd('/');
 
-            if (config.ProviderType == AiProviderType.AzureOpenAi)
+            if (IsAzureEndpoint(config))
             {
                 if (apiMode == VideoApiMode.Videos)
                 {
@@ -171,7 +183,7 @@ namespace TrueFluentPro.Services
         {
             var baseUrl = config.ApiEndpoint.TrimEnd('/');
 
-            if (config.ProviderType == AiProviderType.AzureOpenAi)
+            if (IsAzureEndpoint(config))
             {
                 if (apiMode == VideoApiMode.Videos)
                 {
@@ -201,7 +213,7 @@ namespace TrueFluentPro.Services
         {
             var baseUrl = config.ApiEndpoint.TrimEnd('/');
 
-            if (config.ProviderType == AiProviderType.AzureOpenAi)
+            if (IsAzureEndpoint(config))
             {
                 if (apiMode == VideoApiMode.Videos)
                 {
@@ -225,7 +237,7 @@ namespace TrueFluentPro.Services
         {
             var baseUrl = config.ApiEndpoint.TrimEnd('/');
 
-            if (config.ProviderType == AiProviderType.AzureOpenAi)
+            if (IsAzureEndpoint(config))
             {
                 if (apiMode == VideoApiMode.Videos)
                 {
@@ -250,7 +262,7 @@ namespace TrueFluentPro.Services
         {
             var baseUrl = config.ApiEndpoint.TrimEnd('/');
 
-            if (config.ProviderType == AiProviderType.AzureOpenAi)
+            if (IsAzureEndpoint(config))
             {
                 // 官方示例：/openai/v1/video/generations/{generationId}/content/video?api-version=preview
                 return $"{baseUrl}/openai/v1/video/generations/{generationId}/content/video?api-version=preview";
@@ -271,7 +283,7 @@ namespace TrueFluentPro.Services
         {
             var baseUrl = config.ApiEndpoint.TrimEnd('/');
 
-            if (config.ProviderType == AiProviderType.AzureOpenAi)
+            if (IsAzureEndpoint(config))
             {
                 return $"{baseUrl}/openai/v1/video/generations/{generationId}/content?api-version=preview";
             }

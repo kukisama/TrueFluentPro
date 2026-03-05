@@ -1065,8 +1065,7 @@ namespace TrueFluentPro.ViewModels
             }
 
             AzureTokenProvider? tokenProvider = null;
-            if (runtimeConfig.ProviderType == AiProviderType.AzureOpenAi
-                && runtimeConfig.AzureAuthMode == AzureAuthMode.AAD)
+            if (runtimeConfig.AzureAuthMode == AzureAuthMode.AAD)
             {
                 tokenProvider = endpoint != null
                     ? new AzureTokenProvider(GetEndpointProfileKey(endpoint))
@@ -1660,8 +1659,7 @@ namespace TrueFluentPro.ViewModels
             }
 
             AzureTokenProvider? tokenProvider = null;
-            if (aiConfig.ProviderType == AiProviderType.AzureOpenAi
-                && aiConfig.AzureAuthMode == AzureAuthMode.AAD)
+            if (aiConfig.AzureAuthMode == AzureAuthMode.AAD)
             {
                 tokenProvider = endpoint != null
                     ? new AzureTokenProvider(GetEndpointProfileKey(endpoint))
@@ -1856,7 +1854,7 @@ namespace TrueFluentPro.ViewModels
                         ReviewSheets = ai.ReviewSheets
                     };
 
-                    if (endpoint.ProviderType == AiProviderType.AzureOpenAi)
+                    if (endpoint.IsAzureEndpoint)
                     {
                         var deployment = string.IsNullOrWhiteSpace(model.DeploymentName)
                             ? model.ModelId
@@ -2287,17 +2285,48 @@ namespace TrueFluentPro.ViewModels
                 onStatus?.Invoke("批量转写：提交任务...");
 
                 var splitOptions = GetBatchSubtitleSplitOptions();
+                var normalizedLocale = RealtimeSpeechTranscriber.GetTranscriptionSourceLanguage(config.SourceLanguage);
                 Action<string, string>? batchLog = ShouldWriteBatchLogSuccess
                     ? (evt, msg) => AppendBatchLog(evt, audioFileName, "Success", msg)
                     : null;
-                var (cues, transcriptionJson) = await SpeechBatchApiClient.BatchTranscribeSpeechToCuesAsync(
-                    contentUrl,
-                    config.SourceLanguage,
-                    subscription,
-                    token,
-                    status => onStatus?.Invoke(status),
-                    splitOptions,
-                    batchLog);
+                List<SubtitleCue> cues;
+                string transcriptionJson;
+
+                try
+                {
+                    (cues, transcriptionJson) = await SpeechBatchApiClient.BatchTranscribeSpeechToCuesAsync(
+                        contentUrl,
+                        normalizedLocale,
+                        subscription,
+                        token,
+                        status => onStatus?.Invoke(status),
+                        splitOptions,
+                        batchLog);
+                }
+                catch (Exception ex) when (IsOfflineTranscriptionLocaleUnsupported(ex))
+                {
+                    const string fallbackLocale = "zh-CN";
+                    if (string.Equals(normalizedLocale, fallbackLocale, StringComparison.OrdinalIgnoreCase))
+                    {
+                        throw;
+                    }
+
+                    onStatus?.Invoke($"批量转写不支持语言 {normalizedLocale}，改用批量兜底 locale={fallbackLocale} 重试...");
+                    if (ShouldWriteBatchLogFailure)
+                    {
+                        AppendBatchLog("TranscribeBatchFallback", audioFileName, "Failed",
+                            $"mode=batch-retry locale={normalizedLocale} fallback={fallbackLocale} detail={ex.Message}");
+                    }
+
+                    (cues, transcriptionJson) = await SpeechBatchApiClient.BatchTranscribeSpeechToCuesAsync(
+                        contentUrl,
+                        fallbackLocale,
+                        subscription,
+                        token,
+                        status => onStatus?.Invoke(status),
+                        splitOptions,
+                        batchLog);
+                }
 
                 if (ShouldWriteBatchLogSuccess)
                 {
@@ -2344,6 +2373,14 @@ namespace TrueFluentPro.ViewModels
                 MaxDurationSeconds = Math.Clamp(config.BatchSubtitleMaxDurationSeconds, 1, 15),
                 PauseSplitMs = Math.Clamp(config.BatchSubtitlePauseSplitMs, 100, 2000)
             };
+        }
+
+        private static bool IsOfflineTranscriptionLocaleUnsupported(Exception ex)
+        {
+            var message = ex.Message ?? string.Empty;
+            return message.Contains("does not support offline transcription", StringComparison.OrdinalIgnoreCase)
+                   || message.Contains("offline transcription", StringComparison.OrdinalIgnoreCase)
+                   || message.Contains("不支持离线转写", StringComparison.OrdinalIgnoreCase);
         }
     }
 }

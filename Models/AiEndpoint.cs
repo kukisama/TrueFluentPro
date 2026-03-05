@@ -30,6 +30,12 @@ namespace TrueFluentPro.Models
         public string AzureTenantId { get; set; } = "";
         public string AzureClientId { get; set; } = "";
 
+        /// <summary>
+        /// 是否为 Azure OpenAI 终结点（ProviderType 或 AAD 认证均视为 Azure）。
+        /// </summary>
+        public bool IsAzureEndpoint => ProviderType == AiProviderType.AzureOpenAi
+                                       || AuthMode == AzureAuthMode.AAD;
+
         // --- 模型列表 ---
         public List<AiModelEntry> Models { get; set; } = new();
     }

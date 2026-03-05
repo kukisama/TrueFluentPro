@@ -113,7 +113,7 @@ namespace TrueFluentPro.Services
                 Encoding.UTF8,
                 "application/json");
 
-            if (config.ProviderType == AiProviderType.AzureOpenAi)
+            if (config.IsAzureEndpoint)
             {
                 if (config.AzureAuthMode == AzureAuthMode.AAD && _tokenProvider?.IsLoggedIn == true)
                 {
@@ -236,7 +236,7 @@ namespace TrueFluentPro.Services
         {
             var baseUrl = config.ApiEndpoint.TrimEnd('/');
 
-            if (config.ProviderType == AiProviderType.AzureOpenAi)
+            if (config.IsAzureEndpoint)
             {
                 var deploymentName = config.GetDeploymentName(profile);
                 return $"{baseUrl}/openai/deployments/{deploymentName}/chat/completions?api-version={config.ApiVersion}";
@@ -256,7 +256,7 @@ namespace TrueFluentPro.Services
                 new { role = "user", content = userContent }
             };
 
-            if (config.ProviderType == AiProviderType.AzureOpenAi)
+            if (config.IsAzureEndpoint)
             {
                 return new { messages, stream = true };
             }

@@ -47,6 +47,13 @@ namespace TrueFluentPro.Models
         public string AzureTenantId { get; set; } = "";
         public string AzureClientId { get; set; } = "";
 
+        /// <summary>
+        /// 是否为 Azure OpenAI 终结点（ProviderType 或 AAD 认证均视为 Azure，微软已统一 URL 格式）。
+        /// </summary>
+        [JsonIgnore]
+        public bool IsAzureEndpoint => ProviderType == AiProviderType.AzureOpenAi
+                                       || AzureAuthMode == AzureAuthMode.AAD;
+
         public bool SummaryEnableReasoning { get; set; } = false;
 
         public string InsightSystemPrompt { get; set; } = "你是一个专业的会议/翻译分析助手。用户会提供实时翻译的历史记录，请根据用户的问题对内容进行分析。请用 Markdown 格式输出分析结果。";
@@ -105,13 +112,13 @@ namespace TrueFluentPro.Models
         [JsonIgnore]
         public bool IsValid => !string.IsNullOrWhiteSpace(ApiEndpoint)
                             && (AzureAuthMode == AzureAuthMode.AAD || !string.IsNullOrWhiteSpace(ApiKey))
-                            && (ProviderType == AiProviderType.OpenAiCompatible
-                                ? !string.IsNullOrWhiteSpace(ModelName)
-                                    || !string.IsNullOrWhiteSpace(SummaryModelName)
-                                    || !string.IsNullOrWhiteSpace(QuickModelName)
-                                : !string.IsNullOrWhiteSpace(DeploymentName)
+                            && (IsAzureEndpoint
+                                ? !string.IsNullOrWhiteSpace(DeploymentName)
                                     || !string.IsNullOrWhiteSpace(SummaryDeploymentName)
-                                    || !string.IsNullOrWhiteSpace(QuickDeploymentName));
+                                    || !string.IsNullOrWhiteSpace(QuickDeploymentName)
+                                : !string.IsNullOrWhiteSpace(ModelName)
+                                    || !string.IsNullOrWhiteSpace(SummaryModelName)
+                                    || !string.IsNullOrWhiteSpace(QuickModelName));
 
         public string GetModelName(AiChatProfile profile)
         {

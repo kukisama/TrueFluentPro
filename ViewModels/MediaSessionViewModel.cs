@@ -20,6 +20,7 @@ namespace TrueFluentPro.ViewModels
     {
         private readonly AiConfig _aiConfig;
         private readonly MediaGenConfig _genConfig;
+        private readonly List<AiEndpoint> _endpoints;
         private readonly AiImageGenService _imageService;
         private readonly AiVideoGenService _videoService;
         private readonly Action _onTaskCountChanged;
@@ -346,6 +347,7 @@ namespace TrueFluentPro.ViewModels
             string sessionDirectory,
             AiConfig aiConfig,
             MediaGenConfig genConfig,
+            List<AiEndpoint> endpoints,
             AiImageGenService imageService,
             AiVideoGenService videoService,
             Action onTaskCountChanged,
@@ -356,6 +358,7 @@ namespace TrueFluentPro.ViewModels
             SessionDirectory = sessionDirectory;
             _aiConfig = aiConfig;
             _genConfig = genConfig;
+            _endpoints = endpoints;
             _imageService = imageService;
             _videoService = videoService;
             _onTaskCountChanged = onTaskCountChanged;
@@ -1560,8 +1563,25 @@ namespace TrueFluentPro.ViewModels
 
         private AiConfig BuildImageAiConfig()
         {
-            var useFallback = string.IsNullOrWhiteSpace(_genConfig.ImageApiEndpoint);
+            var ep = ResolveEndpoint(_genConfig.ImageModelRef);
+            if (ep != null)
+            {
+                return new AiConfig
+                {
+                    ProviderType = ep.ProviderType,
+                    ApiEndpoint = ep.BaseUrl?.Trim() ?? "",
+                    ApiKey = ep.ApiKey?.Trim() ?? "",
+                    DeploymentName = _genConfig.ImageModel,
+                    ModelName = _genConfig.ImageModel,
+                    ApiVersion = string.IsNullOrWhiteSpace(ep.ApiVersion) ? "2024-02-01" : ep.ApiVersion.Trim(),
+                    AzureAuthMode = ep.AuthMode,
+                    AzureTenantId = ep.AzureTenantId ?? "",
+                    AzureClientId = ep.AzureClientId ?? ""
+                };
+            }
 
+            // 旧配置回退
+            var useFallback = string.IsNullOrWhiteSpace(_genConfig.ImageApiEndpoint);
             return new AiConfig
             {
                 ProviderType = useFallback ? _aiConfig.ProviderType : _genConfig.ImageProviderType,
@@ -1580,9 +1600,27 @@ namespace TrueFluentPro.ViewModels
 
         private AiConfig BuildVideoAiConfig()
         {
-            var useFallback = string.IsNullOrWhiteSpace(_genConfig.VideoApiEndpoint);
+            var ep = ResolveEndpoint(_genConfig.VideoModelRef);
+            if (ep != null)
+            {
+                var config = new AiConfig
+                {
+                    ProviderType = ep.ProviderType,
+                    ApiEndpoint = ep.BaseUrl?.Trim() ?? "",
+                    ApiKey = ep.ApiKey?.Trim() ?? "",
+                    ApiVersion = string.IsNullOrWhiteSpace(ep.ApiVersion) ? "2024-02-01" : ep.ApiVersion.Trim(),
+                    AzureAuthMode = ep.AuthMode,
+                    AzureTenantId = ep.AzureTenantId ?? "",
+                    AzureClientId = ep.AzureClientId ?? "",
+                    DeploymentName = _genConfig.VideoModel,
+                    ModelName = _genConfig.VideoModel
+                };
+                return config;
+            }
 
-            var config = new AiConfig
+            // 旧配置回退
+            var useFallback = string.IsNullOrWhiteSpace(_genConfig.VideoApiEndpoint);
+            var fallback = new AiConfig
             {
                 ProviderType = useFallback ? _aiConfig.ProviderType : _genConfig.VideoProviderType,
                 ApiEndpoint = useFallback ? _aiConfig.ApiEndpoint : _genConfig.VideoApiEndpoint,
@@ -1594,10 +1632,15 @@ namespace TrueFluentPro.ViewModels
                 AzureTenantId = useFallback ? _aiConfig.AzureTenantId : _genConfig.VideoAzureTenantId,
                 AzureClientId = useFallback ? _aiConfig.AzureClientId : _genConfig.VideoAzureClientId
             };
+            fallback.DeploymentName = _genConfig.VideoModel;
+            fallback.ModelName = _genConfig.VideoModel;
+            return fallback;
+        }
 
-            config.DeploymentName = _genConfig.VideoModel;
-            config.ModelName = _genConfig.VideoModel;
-            return config;
+        private AiEndpoint? ResolveEndpoint(ModelReference? reference)
+        {
+            if (reference == null || _endpoints == null) return null;
+            return _endpoints.FirstOrDefault(e => e.Id == reference.EndpointId && e.IsEnabled);
         }
 
     }

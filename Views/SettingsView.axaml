@@ -708,10 +708,10 @@
 
                         <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="6" ColumnSpacing="8">
                             <TextBlock Grid.Row="0" Grid.Column="0" Text="API 模式:" VerticalAlignment="Center"/>
-                            <ComboBox Grid.Row="0" Grid.Column="1" MinWidth="220"
+                                <ComboBox Grid.Row="0" Grid.Column="1" MinWidth="220"
                                       SelectedIndex="{Binding Settings.VideoApiModeIndex, Mode=TwoWay}">
-                                <ComboBoxItem Content="Sora Jobs (/openai/v1/video/generations/jobs)"/>
-                                <ComboBoxItem Content="Videos (/openai/v1/videos)"/>
+                                  <ComboBoxItem Content="sora1 (/openai/v1/video/generations/jobs)"/>
+                                  <ComboBoxItem Content="sora2 (/openai/v1/videos)"/>
                             </ComboBox>
 
                             <TextBlock Grid.Row="1" Grid.Column="0" Text="比例:" VerticalAlignment="Center"/>

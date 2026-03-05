@@ -236,8 +236,7 @@ namespace TrueFluentPro.ViewModels
             }
 
             AzureTokenProvider? tokenProvider = null;
-            if (runtimeConfig.ProviderType == AiProviderType.AzureOpenAi
-                && runtimeConfig.AzureAuthMode == AzureAuthMode.AAD)
+            if (runtimeConfig.AzureAuthMode == AzureAuthMode.AAD)
             {
                 tokenProvider = endpoint != null
                     ? new AzureTokenProvider(GetEndpointProfileKey(endpoint))
@@ -384,7 +383,7 @@ namespace TrueFluentPro.ViewModels
                         ReviewSheets = ai.ReviewSheets
                     };
 
-                    if (endpoint.ProviderType == AiProviderType.AzureOpenAi)
+                    if (endpoint.IsAzureEndpoint)
                     {
                         var deployment = string.IsNullOrWhiteSpace(model.DeploymentName)
                             ? model.ModelId

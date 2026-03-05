@@ -54,12 +54,12 @@ namespace TrueFluentPro.Views
             InitializeComponent();
         }
 
-        public void Initialize(AiConfig aiConfig, MediaGenConfig genConfig)
+        public void Initialize(AiConfig aiConfig, MediaGenConfig genConfig, List<AiEndpoint> endpoints)
         {
             if (_initialized) return;
             _initialized = true;
 
-            _viewModel = new MediaStudioViewModel(aiConfig, genConfig);
+            _viewModel = new MediaStudioViewModel(aiConfig, genConfig, endpoints);
             DataContext = _viewModel;
 
             _sessionListBox = this.FindControl<ListBox>("SessionListBox");

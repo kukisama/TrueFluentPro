@@ -1011,7 +1011,7 @@ namespace TrueFluentPro.ViewModels
                 SummaryEnableReasoning = SummaryEnableReasoning
             };
 
-            if (endpoint.ProviderType == AiProviderType.AzureOpenAi && endpoint.AuthMode == AzureAuthMode.AAD)
+            if (endpoint.AuthMode == AzureAuthMode.AAD)
             {
                 tokenProvider = new AzureTokenProvider(GetEndpointProfileKey(endpoint));
                 var silentLoggedIn = await tokenProvider.TrySilentLoginAsync(
@@ -1027,7 +1027,7 @@ namespace TrueFluentPro.ViewModels
                 var username = string.IsNullOrWhiteSpace(tokenProvider.Username) ? "已认证" : tokenProvider.Username;
                 AiAuthStatus = $"认证状态：AAD 已登录（{username}）";
             }
-            else if (endpoint.ProviderType == AiProviderType.AzureOpenAi)
+            else if (endpoint.IsAzureEndpoint)
             {
                 AiAuthStatus = string.IsNullOrWhiteSpace(endpoint.ApiKey)
                     ? "认证状态：API Key 未配置"
@@ -1040,7 +1040,7 @@ namespace TrueFluentPro.ViewModels
                     : "认证状态：OpenAI 兼容 API Key 已配置";
             }
 
-            if (endpoint.ProviderType == AiProviderType.AzureOpenAi)
+            if (endpoint.IsAzureEndpoint)
             {
                 var deployment = string.IsNullOrWhiteSpace(model.DeploymentName)
                     ? model.ModelId
@@ -1241,9 +1241,6 @@ namespace TrueFluentPro.ViewModels
             ai.ReviewModelRef = SelectedReviewModel?.Reference;
             _config.AiConfig = ai;
 
-            _config.MediaGenConfig.ImageModelRef = SelectedImageModel?.Reference;
-            _config.MediaGenConfig.VideoModelRef = SelectedVideoModel?.Reference;
-
             var media = _config.MediaGenConfig;
             media.ImageSize = string.IsNullOrWhiteSpace(_imageSize) ? "1024x1024" : _imageSize;
             media.ImageQuality = string.IsNullOrWhiteSpace(_imageQuality) ? "medium" : _imageQuality;
@@ -1263,9 +1260,35 @@ namespace TrueFluentPro.ViewModels
             media.OutputDirectory = MediaOutputDirectory?.Trim() ?? "";
 
             if (SelectedImageModel?.Reference != null)
+            {
                 media.ImageModel = SelectedImageModel.Reference.ModelId;
+                media.ImageModelRef = SelectedImageModel.Reference;
+                var (imgEp, imgModel) = _config.ResolveModel(SelectedImageModel.Reference);
+                if (imgEp != null)
+                {
+                    media.ImageProviderType = imgEp.ProviderType;
+                    media.ImageApiEndpoint = imgEp.BaseUrl?.Trim() ?? "";
+                    media.ImageApiKey = imgEp.ApiKey?.Trim() ?? "";
+                    media.ImageAzureAuthMode = imgEp.AuthMode;
+                    media.ImageAzureTenantId = imgEp.AzureTenantId ?? "";
+                    media.ImageAzureClientId = imgEp.AzureClientId ?? "";
+                }
+            }
             if (SelectedVideoModel?.Reference != null)
+            {
                 media.VideoModel = SelectedVideoModel.Reference.ModelId;
+                media.VideoModelRef = SelectedVideoModel.Reference;
+                var (vidEp, vidModel) = _config.ResolveModel(SelectedVideoModel.Reference);
+                if (vidEp != null)
+                {
+                    media.VideoProviderType = vidEp.ProviderType;
+                    media.VideoApiEndpoint = vidEp.BaseUrl?.Trim() ?? "";
+                    media.VideoApiKey = vidEp.ApiKey?.Trim() ?? "";
+                    media.VideoAzureAuthMode = vidEp.AuthMode;
+                    media.VideoAzureTenantId = vidEp.AzureTenantId ?? "";
+                    media.VideoAzureClientId = vidEp.AzureClientId ?? "";
+                }
+            }
 
             SyncEndpointsToConfig();
         }

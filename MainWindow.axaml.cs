@@ -186,7 +186,8 @@ public partial class MainWindow : Window
             var config = _viewModel.ConfigVM.Config;
             MediaStudioViewPage.Initialize(
                 config.AiConfig ?? new TrueFluentPro.Models.AiConfig(),
-                config.MediaGenConfig);
+                config.MediaGenConfig,
+                config.Endpoints);
         }
     }
 

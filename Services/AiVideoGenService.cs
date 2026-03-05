@@ -45,10 +45,10 @@ namespace TrueFluentPro.Services
             var primaryAltUrl = BuildVideoDownloadUrlAlt(config, videoId, apiMode);
 
             // Azure /openai/v1/videos 示例可能不接受 api-version=preview（返回 404），对这种情况准备无参数回退。
-            var primaryUrlNoApiVersion = (config.ProviderType == AiProviderType.AzureOpenAi && apiMode == VideoApiMode.Videos)
+            var primaryUrlNoApiVersion = (IsAzureEndpoint(config) && apiMode == VideoApiMode.Videos)
                 ? RemovePreviewApiVersion(primaryUrl)
                 : null;
-            var primaryAltUrlNoApiVersion = (config.ProviderType == AiProviderType.AzureOpenAi && apiMode == VideoApiMode.Videos)
+            var primaryAltUrlNoApiVersion = (IsAzureEndpoint(config) && apiMode == VideoApiMode.Videos)
                 ? RemovePreviewApiVersion(primaryAltUrl)
                 : null;
 
@@ -61,7 +61,7 @@ namespace TrueFluentPro.Services
             }
 
             // 组装候选 URL 列表，顺序与 DownloadVideoAsync 中一致
-            if (config.ProviderType == AiProviderType.AzureOpenAi && apiMode == VideoApiMode.SoraJobs)
+            if (IsAzureEndpoint(config) && apiMode == VideoApiMode.SoraJobs)
             {
                 // generationId 下载优先
                 AddUrl(fallbackUrl);
@@ -153,7 +153,7 @@ namespace TrueFluentPro.Services
             AiConfig config, string videoId, CancellationToken ct, VideoApiMode apiMode)
         {
             var url = BuildVideoPollUrl(config, videoId, apiMode);
-            var altUrl = (config.ProviderType == AiProviderType.AzureOpenAi && apiMode == VideoApiMode.Videos)
+            var altUrl = (IsAzureEndpoint(config) && apiMode == VideoApiMode.Videos)
                 ? RemovePreviewApiVersion(url)
                 : null;
 
@@ -316,7 +316,7 @@ namespace TrueFluentPro.Services
             CancellationToken ct)
         {
             var url = BuildVideoCreateUrl(config, VideoApiMode.Videos);
-            var altUrl = (config.ProviderType == AiProviderType.AzureOpenAi)
+            var altUrl = (IsAzureEndpoint(config))
                 ? RemovePreviewApiVersion(url)
                 : null;
 
@@ -426,12 +426,12 @@ namespace TrueFluentPro.Services
             CancellationToken ct)
         {
             var url = BuildVideoCreateUrl(config, genConfig.VideoApiMode);
-            var altUrl = (config.ProviderType == AiProviderType.AzureOpenAi && genConfig.VideoApiMode == VideoApiMode.Videos)
+            var altUrl = (IsAzureEndpoint(config) && genConfig.VideoApiMode == VideoApiMode.Videos)
                 ? RemovePreviewApiVersion(url)
                 : null;
 
             Dictionary<string, object> bodyObj;
-            if (config.ProviderType == AiProviderType.AzureOpenAi)
+            if (IsAzureEndpoint(config))
             {
                 if (genConfig.VideoApiMode == VideoApiMode.Videos)
                 {
@@ -554,16 +554,16 @@ namespace TrueFluentPro.Services
             var primaryAltUrl = BuildVideoDownloadUrlAlt(config, videoId, apiMode);
 
             // Azure /openai/v1/videos 示例可能不接受 api-version=preview（返回 404），对这种情况准备无参数回退。
-            var primaryUrlNoApiVersion = (config.ProviderType == AiProviderType.AzureOpenAi && apiMode == VideoApiMode.Videos)
+            var primaryUrlNoApiVersion = (IsAzureEndpoint(config) && apiMode == VideoApiMode.Videos)
                 ? RemovePreviewApiVersion(primaryUrl)
                 : null;
-            var primaryAltUrlNoApiVersion = (config.ProviderType == AiProviderType.AzureOpenAi && apiMode == VideoApiMode.Videos)
+            var primaryAltUrlNoApiVersion = (IsAzureEndpoint(config) && apiMode == VideoApiMode.Videos)
                 ? RemovePreviewApiVersion(primaryAltUrl)
                 : null;
 
             // 如果未提供 generationId，先尝试从轮询响应解析出来。
             // 备注：即使 status 不是终态，部分后端也可能已经返回 generations[].id。
-            if (config.ProviderType == AiProviderType.AzureOpenAi
+            if (IsAzureEndpoint(config)
                 && apiMode == VideoApiMode.SoraJobs
                 && string.IsNullOrWhiteSpace(resolvedGenId))
             {
@@ -634,7 +634,7 @@ namespace TrueFluentPro.Services
                     urlsToTry.Add(u);
             }
 
-            if (config.ProviderType == AiProviderType.AzureOpenAi && apiMode == VideoApiMode.SoraJobs)
+            if (IsAzureEndpoint(config) && apiMode == VideoApiMode.SoraJobs)
             {
                 // generationId 下载优先
                 AddUrl(fallbackUrl);
