@@ -5,7 +5,6 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
-using Avalonia.VisualTree;
 using TrueFluentPro.Models;
 using TrueFluentPro.ViewModels;
 
@@ -271,6 +270,8 @@ public partial class SettingsView : UserControl
 
     /// <summary>当前展开的模型详情面板（null 表示全部折叠）</summary>
     private StackPanel? _expandedModelPanel;
+    /// <summary>当前展开模型的头部 Border（用于更新图标）</summary>
+    private Border? _expandedModelHeader;
 
     /// <summary>点击模型条目头部：展开/折叠（手风琴行为）</summary>
     private void ModelHeader_PointerPressed(object? sender, PointerPressedEventArgs e)
@@ -288,8 +289,9 @@ public partial class SettingsView : UserControl
         {
             // 收缩当前展开的
             detailPanel.IsVisible = false;
-            UpdateExpandIcon(header, false);
+            SetExpandIcon(header, false);
             _expandedModelPanel = null;
+            _expandedModelHeader = null;
         }
         else
         {
@@ -297,27 +299,27 @@ public partial class SettingsView : UserControl
             if (_expandedModelPanel != null && _expandedModelPanel != detailPanel)
             {
                 _expandedModelPanel.IsVisible = false;
-                // 更新之前展开条目的图标
-                var prevHeader = (_expandedModelPanel.Parent as Visual)?.GetVisualChildren()
-                    .OfType<Border>().FirstOrDefault(b => b.Cursor != null);
-                if (prevHeader != null)
-                    UpdateExpandIcon(prevHeader, false);
+                if (_expandedModelHeader != null)
+                    SetExpandIcon(_expandedModelHeader, false);
             }
 
             // 展开当前
             detailPanel.IsVisible = true;
-            UpdateExpandIcon(header, true);
+            SetExpandIcon(header, true);
             _expandedModelPanel = detailPanel;
+            _expandedModelHeader = header;
         }
     }
 
-    /// <summary>更新展开/收缩箭头图标</summary>
-    private static void UpdateExpandIcon(Border header, bool expanded)
+    /// <summary>更新展开/收缩箭头图标（直接从 header Grid 子元素中查找）</summary>
+    private static void SetExpandIcon(Border header, bool expanded)
     {
-        var icon = header.GetVisualDescendants()
-            .OfType<TextBlock>()
-            .FirstOrDefault(t => t.Name == "ModelExpandIcon");
-        if (icon != null)
-            icon.Text = expanded ? "▼" : "▶";
+        if (header.Child is Grid grid)
+        {
+            var icon = grid.Children.OfType<TextBlock>()
+                .FirstOrDefault(t => t.Name == "ModelExpandIcon");
+            if (icon != null)
+                icon.Text = expanded ? "▼" : "▶";
+        }
     }
 }

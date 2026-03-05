@@ -162,6 +162,8 @@ namespace TrueFluentPro.Controls
                         SetStatus($"✓ 已登录: {provider.Username ?? "已认证"}（未能获取租户列表，可手动填写租户 ID）", "#22863a");
                     }
                 }
+
+                LoginCompleted?.Invoke();
             }
             catch (Exception ex)
             {
@@ -170,7 +172,6 @@ namespace TrueFluentPro.Controls
             finally
             {
                 LoginButton.IsEnabled = true;
-                LoginCompleted?.Invoke();
             }
         }
 
