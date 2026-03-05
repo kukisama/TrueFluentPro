@@ -16,10 +16,20 @@ namespace TrueFluentPro.Controls
         public static readonly StyledProperty<string> ProfileKeyProperty =
             AvaloniaProperty.Register<AadLoginPanel, string>(nameof(ProfileKey), "ai");
 
+        public static readonly StyledProperty<bool> HideTenantClientFieldsProperty =
+            AvaloniaProperty.Register<AadLoginPanel, bool>(nameof(HideTenantClientFields), false);
+
         public string ProfileKey
         {
             get => GetValue(ProfileKeyProperty);
             set => SetValue(ProfileKeyProperty, value);
+        }
+
+        /// <summary>为 true 时隐藏面板内置的 Tenant/Client ID 字段（由外部控件提供）</summary>
+        public bool HideTenantClientFields
+        {
+            get => GetValue(HideTenantClientFieldsProperty);
+            set => SetValue(HideTenantClientFieldsProperty, value);
         }
 
         public string? TenantId
@@ -34,6 +44,9 @@ namespace TrueFluentPro.Controls
             set => ClientIdTextBox.Text = value;
         }
 
+        /// <summary>登录完成后触发（可能更新了 TenantId）</summary>
+        public event Action? LoginCompleted;
+
         private string? _lastDeviceCodeUrl;
 
         public AadLoginPanel()
@@ -43,6 +56,17 @@ namespace TrueFluentPro.Controls
             LogoutButton.Click += LogoutButton_Click;
             CopyCodeButton.Click += CopyCodeButton_Click;
             OpenLinkButton.Click += OpenLinkButton_Click;
+        }
+
+        protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+        {
+            base.OnPropertyChanged(change);
+            if (change.Property == HideTenantClientFieldsProperty)
+            {
+                var hide = (bool)(change.NewValue ?? false);
+                TenantIdPanel.IsVisible = !hide;
+                ClientIdPanel.IsVisible = !hide;
+            }
         }
 
         public void SetStatus(string text, string colorHex)
@@ -138,6 +162,8 @@ namespace TrueFluentPro.Controls
                         SetStatus($"✓ 已登录: {provider.Username ?? "已认证"}（未能获取租户列表，可手动填写租户 ID）", "#22863a");
                     }
                 }
+
+                LoginCompleted?.Invoke();
             }
             catch (Exception ex)
             {

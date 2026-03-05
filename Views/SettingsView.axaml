@@ -315,6 +315,9 @@
                                     <TextBlock Text="Client ID"/>
                                     <TextBox Text="{Binding Settings.SelectedEndpoint.AzureClientId, Mode=TwoWay}"
                                              Watermark="Azure AD Client ID"/>
+                                    <controls:AadLoginPanel x:Name="EndpointAadLoginPanel"
+                                                              Margin="0,4,0,0"
+                                                              HideTenantClientFields="True"/>
                                 </StackPanel>
 
                                 <CheckBox Content="启用此终结点"
@@ -322,14 +325,38 @@
 
                                 <Separator Margin="0,6,0,6"/>
                                 <TextBlock Text="模型列表" FontWeight="Bold"/>
-                                <TextBlock Text="点击模型字段可直接编辑" FontSize="10" Foreground="Gray"/>
+                                <TextBlock Text="点击模型条目展开编辑，同一时间仅展开一个" FontSize="10" Foreground="Gray"/>
                                 <ItemsControl ItemsSource="{Binding Settings.SelectedEndpointModels}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate DataType="models:AiModelEntry">
                                             <Border BorderBrush="Gray" BorderThickness="1" CornerRadius="4"
-                                                    Padding="8,6" Margin="0,2">
-                                                <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto" RowSpacing="4">
-                                                    <StackPanel Grid.Row="0" Grid.Column="0" Spacing="4">
+                                                    Margin="0,2" Tag="{Binding}">
+                                                <StackPanel>
+                                                    <!-- 折叠头部：点击展开/收缩 -->
+                                                    <Border Padding="8,6" Cursor="Hand"
+                                                            PointerPressed="ModelHeader_PointerPressed"
+                                                            Tag="{Binding}"
+                                                            Background="Transparent">
+                                                        <Grid ColumnDefinitions="Auto,*,Auto">
+                                                            <TextBlock Grid.Column="0" Text="▶" FontSize="10"
+                                                                       VerticalAlignment="Center" Margin="0,0,6,0"
+                                                                       Name="ModelExpandIcon"/>
+                                                            <TextBlock Grid.Column="1" FontSize="11" VerticalAlignment="Center">
+                                                                <TextBlock.Text>
+                                                                    <MultiBinding StringFormat="{}{0} {1}">
+                                                                        <Binding Path="ModelId"/>
+                                                                        <Binding Path="DisplayName" FallbackValue=""/>
+                                                                    </MultiBinding>
+                                                                </TextBlock.Text>
+                                                            </TextBlock>
+                                                            <Button Grid.Column="2" Content="✕" Padding="4,2" FontSize="10"
+                                                                    VerticalAlignment="Center"
+                                                                    Click="RemoveModel_Click" Tag="{Binding}"/>
+                                                        </Grid>
+                                                    </Border>
+                                                    <!-- 展开内容：默认隐藏 -->
+                                                    <StackPanel Name="ModelDetailPanel" IsVisible="False"
+                                                                Spacing="4" Margin="8,0,8,6">
                                                         <Grid ColumnDefinitions="80,*" ColumnSpacing="6">
                                                             <TextBlock Grid.Column="0" Text="模型 ID:" FontSize="11" VerticalAlignment="Center"/>
                                                             <TextBox Grid.Column="1" Text="{Binding ModelId, Mode=TwoWay}"
@@ -362,10 +389,7 @@
                                                             </ComboBox>
                                                         </Grid>
                                                     </StackPanel>
-                                                    <Button Grid.Row="0" Grid.Column="1" Content="✕" Padding="4,2" FontSize="10"
-                                                            VerticalAlignment="Top"
-                                                            Click="RemoveModel_Click" Tag="{Binding}"/>
-                                                </Grid>
+                                                </StackPanel>
                                             </Border>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
@@ -558,18 +582,6 @@
                                 <TextBlock Text="API 版本"/>
                                 <TextBox Text="{Binding Settings.AiApiVersion, Mode=TwoWay}"
                                          Watermark="例如: 2024-02-01"/>
-                            </StackPanel>
-                            <TextBlock Text="Azure OpenAI 认证方式" FontWeight="SemiBold"/>
-                            <ComboBox MinWidth="200"
-                                      SelectedIndex="{Binding Settings.AiAzureAuthModeIndex, Mode=TwoWay}">
-                                <ComboBoxItem Content="API Key (默认)"/>
-                                <ComboBoxItem Content="Microsoft Entra ID (AAD)"/>
-                            </ComboBox>
-                            <StackPanel Spacing="5" IsVisible="{Binding Settings.IsAadAuth}">
-                                <TextBlock Text="Tenant ID"/>
-                                <TextBox Text="{Binding Settings.AiAzureTenantId, Mode=TwoWay}"/>
-                                <TextBlock Text="Client ID"/>
-                                <TextBox Text="{Binding Settings.AiAzureClientId, Mode=TwoWay}"/>
                             </StackPanel>
                         </StackPanel>
 
