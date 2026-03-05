@@ -109,23 +109,6 @@ namespace TrueFluentPro.ViewModels
             FontSize = Math.Max(_fontSize - 2, MinFontSize);
         }
 
-        /// <summary>
-        /// 通过 AI 洞察 ViewModel 的数据通路写入测试 Markdown，触发正常的渲染流程。
-        /// </summary>
-        public void GenerateTestContent()
-        {
-            _aiInsight.InsightMarkdown = "# 字体测试\n\n" +
-                "## 二级标题示例\n\n" +
-                "正常文字，**粗体文字**，*斜体文字*，`行内代码`\n\n" +
-                "- 列表项一：中文排版测试\n" +
-                "- 列表项二：English mixed\n" +
-                "- 列表项三：数字 1234567890\n\n" +
-                "> 引用块：这是一段引用文字，用于测试不同样式下的显示效果。\n\n" +
-                "1. 有序列表第一项\n" +
-                "2. 有序列表第二项\n\n" +
-                "当前字号：" + FontSize + "px";
-        }
-
         private void OnAiInsightPropertyChanged(object? sender, PropertyChangedEventArgs e)
         {
             if (e.PropertyName == nameof(AiInsightViewModel.InsightMarkdown))

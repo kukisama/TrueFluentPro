@@ -140,14 +140,6 @@ namespace TrueFluentPro.Views
             }
         }
 
-        private void OnTestMarkdown(object? sender, RoutedEventArgs e)
-        {
-            if (DataContext is FloatingInsightViewModel vm)
-            {
-                vm.GenerateTestContent();
-            }
-        }
-
         private void OnCloseClick(object? sender, RoutedEventArgs e)
         {
             Close();

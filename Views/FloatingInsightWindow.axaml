@@ -37,7 +37,7 @@
                 Cursor="Hand"
                 PointerPressed="OnTitleBarPointerPressed"
                 Padding="10,6">
-                <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto,Auto">
+                <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto">
                     <!-- Brain icon -->
                     <TextBlock Grid.Column="0" Text="🧠" FontSize="16"
                         VerticalAlignment="Center" Margin="0,0,8,0"/>
@@ -53,16 +53,12 @@
                     <Button Grid.Column="3" Content="A+" Padding="6,2" Margin="0,0,4,0"
                         FontSize="11" Click="OnIncreaseFontSize"
                         ToolTip.Tip="放大字体"/>
-                    <!-- Test markdown -->
-                    <Button Grid.Column="4" Content="📋" Padding="6,2" Margin="0,0,4,0"
-                        FontSize="11" Click="OnTestMarkdown"
-                        ToolTip.Tip="生成测试Markdown（评估字体效果）"/>
                     <!-- Background toggle -->
-                    <Button Grid.Column="5" Content="🎨" Padding="6,2" Margin="0,0,4,0"
+                    <Button Grid.Column="4" Content="🎨" Padding="6,2" Margin="0,0,4,0"
                         FontSize="11" Click="OnToggleBackground"
                         ToolTip.Tip="切换背景模式（或右键点击窗口）"/>
                     <!-- Close -->
-                    <Button Grid.Column="6" Content="✕" Padding="6,2"
+                    <Button Grid.Column="5" Content="✕" Padding="6,2"
                         FontSize="11" Click="OnCloseClick"
                         ToolTip.Tip="关闭"/>
                 </Grid>
