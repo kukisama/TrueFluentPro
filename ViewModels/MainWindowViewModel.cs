@@ -309,11 +309,6 @@ namespace TrueFluentPro.ViewModels
             _ = AiInsight.TrySilentLoginForAiAsync();
         }
 
-        private void OnConfigurationUpdated(object? sender, AzureSpeechConfig updatedConfig)
-        {
-            ConfigVM.HandleExternalConfigUpdate(updatedConfig);
-        }
-
         private void OnSettingsConfigSaved(AzureSpeechConfig config)
         {
             _config = config;
