@@ -138,7 +138,7 @@ public partial class MainWindow : Window
         }
         else
         {
-            // index 3 → Settings
+            // Out-of-bounds index (e.g. Ctrl+4) navigates to Settings
             NavView.SelectedItem = NavView.SettingsItem;
             ShowPage(MainWindowViewModel.NavTagSettings);
         }
@@ -161,47 +161,71 @@ public partial class MainWindow : Window
     // 3.2 页面切换过渡动画：使用 CrossFade 实现淡入淡出
     private async void ShowPage(string tag)
     {
-        var newVisible = tag switch
+        try
         {
-            MainWindowViewModel.NavTagLive => (Control)LiveView,
-            MainWindowViewModel.NavTagReview => (Control)ReviewView,
-            MainWindowViewModel.NavTagMedia => (Control)MediaStudioViewPage,
-            MainWindowViewModel.NavTagSettings => (Control)SettingsViewPage,
-            _ => (Control)LiveView
-        };
-
-        var pages = new Control[] { LiveView, ReviewView, MediaStudioViewPage, SettingsViewPage };
-
-        // 交叉淡入淡出动画
-        foreach (var page in pages)
-        {
-            if (page == newVisible)
+            var newVisible = tag switch
             {
-                page.Opacity = 0;
-                page.IsVisible = true;
+                MainWindowViewModel.NavTagLive => (Control)LiveView,
+                MainWindowViewModel.NavTagReview => (Control)ReviewView,
+                MainWindowViewModel.NavTagMedia => (Control)MediaStudioViewPage,
+                MainWindowViewModel.NavTagSettings => (Control)SettingsViewPage,
+                _ => (Control)LiveView
+            };
+
+            var pages = new Control[] { LiveView, ReviewView, MediaStudioViewPage, SettingsViewPage };
+
+            // 找到当前可见页（作为 CrossFade 的 from 参数）
+            Control? currentVisible = null;
+            foreach (var page in pages)
+            {
+                if (page.IsVisible && page != newVisible)
+                {
+                    currentVisible = page;
+                    break;
+                }
             }
-            else
+
+            // 交叉淡入淡出动画
+            foreach (var page in pages)
             {
-                page.IsVisible = false;
+                if (page == newVisible)
+                {
+                    page.Opacity = 0;
+                    page.IsVisible = true;
+                }
+                else if (page != currentVisible)
+                {
+                    page.IsVisible = false;
+                }
+            }
+
+            // 使用 CrossFade 过渡效果
+            var crossFade = new CrossFade(TimeSpan.FromMilliseconds(200));
+            await crossFade.Start(currentVisible, newVisible, default);
+
+            // 确保旧页面隐藏
+            if (currentVisible != null)
+            {
+                currentVisible.IsVisible = false;
+            }
+
+            if (_viewModel != null)
+            {
+                _viewModel.SelectedNavTag = tag;
+            }
+
+            if (tag == MainWindowViewModel.NavTagMedia && _viewModel != null && !_mediaStudioInitialized)
+            {
+                _mediaStudioInitialized = true;
+                var config = _viewModel.ConfigVM.Config;
+                MediaStudioViewPage.Initialize(
+                    config.AiConfig ?? new TrueFluentPro.Models.AiConfig(),
+                    config.MediaGenConfig);
             }
         }
-
-        // 使用 CrossFade 过渡效果
-        var crossFade = new CrossFade(TimeSpan.FromMilliseconds(200));
-        await crossFade.Start(null, newVisible, default);
-
-        if (_viewModel != null)
+        catch (Exception ex)
         {
-            _viewModel.SelectedNavTag = tag;
-        }
-
-        if (tag == MainWindowViewModel.NavTagMedia && _viewModel != null && !_mediaStudioInitialized)
-        {
-            _mediaStudioInitialized = true;
-            var config = _viewModel.ConfigVM.Config;
-            MediaStudioViewPage.Initialize(
-                config.AiConfig ?? new TrueFluentPro.Models.AiConfig(),
-                config.MediaGenConfig);
+            Console.WriteLine($"ShowPage transition error: {ex.Message}");
         }
     }
 

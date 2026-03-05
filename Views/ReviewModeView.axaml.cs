@@ -116,10 +116,12 @@ public partial class ReviewModeView : UserControl
                 {
                     Directory.CreateDirectory(sessionsDir);
                     var destPath = Path.Combine(sessionsDir, Path.GetFileName(filePath));
-                    if (!File.Exists(destPath))
-                    {
-                        File.Copy(filePath, destPath);
-                    }
+                    // overwrite: false — 不覆盖已有同名文件
+                    File.Copy(filePath, destPath, overwrite: false);
+                }
+                catch (IOException)
+                {
+                    // 目标文件已存在，跳过
                 }
                 catch (Exception ex)
                 {
