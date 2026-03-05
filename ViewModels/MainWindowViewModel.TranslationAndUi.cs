@@ -241,13 +241,12 @@ namespace TrueFluentPro.ViewModels
 
             InfoBarMessage = message;
 
-            // 根据消息内容推断严重级别
-            var lower = message;
-            if (lower.Contains("失败") || lower.Contains("错误") || lower.Contains("异常"))
+            // 根据消息内容推断严重级别（中文关键词匹配）
+            if (message.Contains("失败") || message.Contains("错误") || message.Contains("异常"))
                 InfoBarSeverity = 3; // Error
-            else if (lower.Contains("警告") || lower.Contains("注意"))
+            else if (message.Contains("警告") || message.Contains("注意"))
                 InfoBarSeverity = 2; // Warning
-            else if (lower.Contains("成功") || lower.Contains("已完成") || lower.Contains("已加载") || lower.Contains("已打开") || lower.Contains("已切换") || lower.Contains("已停止"))
+            else if (message.Contains("成功") || message.Contains("已完成") || message.Contains("已加载") || message.Contains("已打开") || message.Contains("已切换") || message.Contains("已停止"))
                 InfoBarSeverity = 1; // Success
             else
                 InfoBarSeverity = 0; // Informational
