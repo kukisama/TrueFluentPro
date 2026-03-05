@@ -222,8 +222,11 @@ namespace TrueFluentPro.ViewModels
             AutoInsightBufferOutput = ai.AutoInsightBufferOutput;
             _presetButtons = new ObservableCollection<InsightPresetButton>(ai.PresetButtons);
             OnPropertyChanged(nameof(PresetButtons));
+
+            // 如果复盘模版为空（可能因保存时丢失），恢复默认模版
+            var reviewSource = ai.ReviewSheets.Count > 0 ? ai.ReviewSheets : new AiConfig().ReviewSheets;
             _reviewSheets = new ObservableCollection<ReviewSheetPreset>(
-                ai.ReviewSheets.Select(s => new ReviewSheetPreset
+                reviewSource.Select(s => new ReviewSheetPreset
                 {
                     Name = s.Name,
                     FileTag = s.FileTag,
@@ -261,11 +264,32 @@ namespace TrueFluentPro.ViewModels
                 {
                     ((RelayCommand)RemoveEndpointCommand).RaiseCanExecuteChanged();
                     OnPropertyChanged(nameof(SelectedEndpointModels));
+                    OnPropertyChanged(nameof(SelectedEndpointAuthMode));
+                    OnPropertyChanged(nameof(IsSelectedEndpointAad));
                 }
             }
         }
 
-        public IEnumerable<AiModelEntry>? SelectedEndpointModels => SelectedEndpoint?.Models;
+        /// <summary>返回当前选中终结点的模型列表快照，确保 UI 刷新</summary>
+        public List<AiModelEntry>? SelectedEndpointModels =>
+            SelectedEndpoint?.Models?.ToList();
+
+        /// <summary>选中终结点的认证模式索引 (0=ApiKey, 1=AAD)</summary>
+        public int SelectedEndpointAuthMode
+        {
+            get => SelectedEndpoint?.AuthMode == AzureAuthMode.AAD ? 1 : 0;
+            set
+            {
+                if (SelectedEndpoint == null) return;
+                SelectedEndpoint.AuthMode = value == 1 ? AzureAuthMode.AAD : AzureAuthMode.ApiKey;
+                OnPropertyChanged(nameof(SelectedEndpointAuthMode));
+                OnPropertyChanged(nameof(IsSelectedEndpointAad));
+                SyncEndpointsToConfig();
+                MarkDirty();
+            }
+        }
+
+        public bool IsSelectedEndpointAad => SelectedEndpointAuthMode == 1;
 
         // ─── 模型筛选 ───
 
@@ -812,6 +836,14 @@ namespace TrueFluentPro.ViewModels
             MarkDirty();
         }
 
+        /// <summary>模型内联编辑后通知同步保存</summary>
+        public void NotifyModelChanged()
+        {
+            SyncEndpointsToConfig();
+            RefreshModelOptions();
+            MarkDirty();
+        }
+
         private void SyncEndpointsToConfig()
         {
             _config.Endpoints = Endpoints.ToList();
@@ -848,11 +880,18 @@ namespace TrueFluentPro.ViewModels
 
         private void SelectModelOption(ModelReference? reference, List<ModelOption> options, Action<ModelOption?> setter, string propertyName)
         {
-            if (reference == null) { setter(null); OnPropertyChanged(propertyName); return; }
+            if (reference == null)
+            {
+                // 自动选择列表中第一个可用模型
+                setter(options.Count > 0 ? options[0] : null);
+                OnPropertyChanged(propertyName);
+                return;
+            }
             var match = options.FirstOrDefault(o =>
                 o.Reference.EndpointId == reference.EndpointId &&
                 o.Reference.ModelId == reference.ModelId);
-            setter(match);
+            // 如果引用未匹配到，回退到第一个可用模型
+            setter(match ?? (options.Count > 0 ? options[0] : null));
             OnPropertyChanged(propertyName);
         }
 

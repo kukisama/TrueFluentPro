@@ -59,7 +59,18 @@ public partial class SettingsView : UserControl
         if (string.IsNullOrEmpty(tag)) return;
 
         var target = _sectionBorders?.FirstOrDefault(b => b.Name == tag);
-        target?.BringIntoView();
+        if (target == null) return;
+
+        // 直接计算目标在 ScrollViewer 内容中的偏移量并滚动，避免 BringIntoView 在元素已可见时不滚动
+        var transform = target.TransformToVisual(SettingsScroller);
+        if (transform != null)
+        {
+            var pos = transform.Value.Transform(new Point(0, 0));
+            var newOffset = SettingsScroller.Offset.Y + pos.Y;
+            _suppressScrollSync = true;
+            SettingsScroller.Offset = new Avalonia.Vector(SettingsScroller.Offset.X, Math.Max(0, newOffset));
+            _suppressScrollSync = false;
+        }
     }
 
     /// <summary>右侧滚动 → 更新左侧导航高亮</summary>
@@ -181,5 +192,29 @@ public partial class SettingsView : UserControl
         {
             vm.Settings.RemoveModelFromSelectedEndpoint(model);
         }
+    }
+
+    /// <summary>模型字段编辑完成后同步保存</summary>
+    private void ModelField_LostFocus(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is MainWindowViewModel vm)
+            vm.Settings.NotifyModelChanged();
+    }
+
+    /// <summary>模型能力下拉框选中变化后同步到模型</summary>
+    private void ModelCapability_SelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (sender is not ComboBox combo) return;
+        if (combo.Tag is not AiModelEntry model) return;
+        if (combo.SelectedItem is not ComboBoxItem selected) return;
+        var tag = selected.Tag?.ToString();
+        model.Capabilities = tag switch
+        {
+            "Image" => ModelCapability.Image,
+            "Video" => ModelCapability.Video,
+            _ => ModelCapability.Text,
+        };
+        if (DataContext is MainWindowViewModel vm)
+            vm.Settings.NotifyModelChanged();
     }
 }
