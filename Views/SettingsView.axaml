@@ -352,6 +352,7 @@
                                                             <TextBlock Grid.Column="0" Text="能力:" FontSize="11" VerticalAlignment="Center"/>
                                                             <ComboBox Grid.Column="1" MinWidth="120" FontSize="11" Padding="4,2"
                                                                       Tag="{Binding}"
+                                                                      Loaded="ModelCapabilityCombo_Loaded"
                                                                       SelectionChanged="ModelCapability_SelectionChanged">
                                                                 <ComboBox.Items>
                                                                     <ComboBoxItem Content="文字" Tag="Text"/>

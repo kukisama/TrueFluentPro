@@ -201,6 +201,19 @@ public partial class SettingsView : UserControl
             vm.Settings.NotifyModelChanged();
     }
 
+    /// <summary>能力 ComboBox 加载时根据模型当前能力设置初始选中项</summary>
+    private void ModelCapabilityCombo_Loaded(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not ComboBox combo) return;
+        if (combo.Tag is not AiModelEntry model) return;
+        combo.SelectedIndex = model.Capabilities switch
+        {
+            ModelCapability.Image => 1,
+            ModelCapability.Video => 2,
+            _ => 0,
+        };
+    }
+
     /// <summary>模型能力下拉框选中变化后同步到模型</summary>
     private void ModelCapability_SelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
