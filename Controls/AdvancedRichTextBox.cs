@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Styling;
 using System.ComponentModel;
 using AvaloniaEdit;
 using AvaloniaEdit.Document;
@@ -49,7 +50,6 @@ namespace TrueFluentPro.Controls
 
             _textEditor = new TextEditor
             {
-                Background = new SolidColorBrush(Color.FromRgb(255, 255, 255)),
                 FontFamily = new FontFamily("Consolas, 'Courier New', monospace"),
                 FontSize = DefaultFontSizeValue,
                 ShowLineNumbers = false,
@@ -72,6 +72,27 @@ namespace TrueFluentPro.Controls
 
             dockPanel.Children.Add(_textEditor);
             Content = dockPanel;
+
+            // 初始应用主题色，并监听主题切换
+            ApplyThemeColors();
+            ActualThemeVariantChanged += (_, _) => ApplyThemeColors();
+        }
+
+        private void ApplyThemeColors()
+        {
+            var isDark = ActualThemeVariant == ThemeVariant.Dark;
+            if (isDark)
+            {
+                _textEditor.Background = new SolidColorBrush(Color.FromRgb(30, 30, 30));
+                _textEditor.Foreground = new SolidColorBrush(Color.FromRgb(229, 231, 235));
+                _toolbar.Background = new SolidColorBrush(Color.FromRgb(45, 45, 45));
+            }
+            else
+            {
+                _textEditor.Background = new SolidColorBrush(Color.FromRgb(255, 255, 255));
+                _textEditor.Foreground = new SolidColorBrush(Color.FromRgb(17, 24, 39));
+                _toolbar.Background = new SolidColorBrush(Color.FromRgb(233, 236, 239));
+            }
         }
         private void OnTextChanged(object? sender, EventArgs e)
         {
@@ -116,7 +137,6 @@ namespace TrueFluentPro.Controls
             _toolbar = new StackPanel
             {
                 Orientation = Orientation.Horizontal,
-                Background = new SolidColorBrush(Color.FromRgb(233, 236, 239)),
                 Spacing = 5,
                 Margin = new Thickness(8, 8, 8, 6),
                 MinHeight = 32

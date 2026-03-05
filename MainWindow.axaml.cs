@@ -1,5 +1,4 @@
 using Avalonia;
-using Avalonia.Animation;
 using Avalonia.Controls;
 using Avalonia.Input;
 using TrueFluentPro.Services;
@@ -158,74 +157,36 @@ public partial class MainWindow : Window
         }
     }
 
-    // 3.2 页面切换过渡动画：使用 CrossFade 实现淡入淡出
-    private async void ShowPage(string tag)
+    private void ShowPage(string tag)
     {
-        try
+        var newVisible = tag switch
         {
-            var newVisible = tag switch
-            {
-                MainWindowViewModel.NavTagLive => (Control)LiveView,
-                MainWindowViewModel.NavTagReview => (Control)ReviewView,
-                MainWindowViewModel.NavTagMedia => (Control)MediaStudioViewPage,
-                MainWindowViewModel.NavTagSettings => (Control)SettingsViewPage,
-                _ => (Control)LiveView
-            };
+            MainWindowViewModel.NavTagLive => (Control)LiveView,
+            MainWindowViewModel.NavTagReview => (Control)ReviewView,
+            MainWindowViewModel.NavTagMedia => (Control)MediaStudioViewPage,
+            MainWindowViewModel.NavTagSettings => (Control)SettingsViewPage,
+            _ => (Control)LiveView
+        };
 
-            var pages = new Control[] { LiveView, ReviewView, MediaStudioViewPage, SettingsViewPage };
+        var pages = new Control[] { LiveView, ReviewView, MediaStudioViewPage, SettingsViewPage };
 
-            // 找到当前可见页（作为 CrossFade 的 from 参数）
-            Control? currentVisible = null;
-            foreach (var page in pages)
-            {
-                if (page.IsVisible && page != newVisible)
-                {
-                    currentVisible = page;
-                    break;
-                }
-            }
-
-            // 交叉淡入淡出动画
-            foreach (var page in pages)
-            {
-                if (page == newVisible)
-                {
-                    page.Opacity = 0;
-                    page.IsVisible = true;
-                }
-                else if (page != currentVisible)
-                {
-                    page.IsVisible = false;
-                }
-            }
-
-            // 使用 CrossFade 过渡效果
-            var crossFade = new CrossFade(TimeSpan.FromMilliseconds(200));
-            await crossFade.Start(currentVisible, newVisible, default);
-
-            // 确保旧页面隐藏
-            if (currentVisible != null)
-            {
-                currentVisible.IsVisible = false;
-            }
-
-            if (_viewModel != null)
-            {
-                _viewModel.SelectedNavTag = tag;
-            }
-
-            if (tag == MainWindowViewModel.NavTagMedia && _viewModel != null && !_mediaStudioInitialized)
-            {
-                _mediaStudioInitialized = true;
-                var config = _viewModel.ConfigVM.Config;
-                MediaStudioViewPage.Initialize(
-                    config.AiConfig ?? new TrueFluentPro.Models.AiConfig(),
-                    config.MediaGenConfig);
-            }
+        foreach (var page in pages)
+        {
+            page.IsVisible = page == newVisible;
         }
-        catch (Exception ex)
+
+        if (_viewModel != null)
         {
-            Console.WriteLine($"ShowPage transition error: {ex.Message}");
+            _viewModel.SelectedNavTag = tag;
+        }
+
+        if (tag == MainWindowViewModel.NavTagMedia && _viewModel != null && !_mediaStudioInitialized)
+        {
+            _mediaStudioInitialized = true;
+            var config = _viewModel.ConfigVM.Config;
+            MediaStudioViewPage.Initialize(
+                config.AiConfig ?? new TrueFluentPro.Models.AiConfig(),
+                config.MediaGenConfig);
         }
     }
 

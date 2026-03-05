@@ -176,6 +176,8 @@ namespace TrueFluentPro.Models
 
         public AiConfig? AiConfig { get; set; }
 
+        public bool IsAutoUpdateEnabled { get; set; } = true;
+
         public MediaGenConfig MediaGenConfig { get; set; } = new();
 
         /// <summary>统一 AI 终结点注册表</summary>

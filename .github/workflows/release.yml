@@ -40,6 +40,17 @@ jobs:
             --self-contained false `
             -o artifacts/publish/TrueFluentPro-${{ matrix.rid }}-fdd
 
+      - name: Publish Updater (${{ matrix.rid }})
+        run: |
+          dotnet publish tools/Updater/Updater.csproj `
+            -c Release `
+            -r ${{ matrix.rid }} `
+            --self-contained false `
+            /p:PublishSingleFile=true `
+            -o artifacts/updater-${{ matrix.rid }}
+          Copy-Item "artifacts/updater-${{ matrix.rid }}/Updater.exe" `
+            "artifacts/publish/TrueFluentPro-${{ matrix.rid }}-fdd/Updater.exe"
+
       - name: Create zip
         run: |
           Compress-Archive `

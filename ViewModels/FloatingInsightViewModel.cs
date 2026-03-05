@@ -11,7 +11,7 @@ namespace TrueFluentPro.ViewModels
         private const double MaxFontSize = 36;
 
         private string _insightMarkdown = "";
-        private int _backgroundMode = 1; // default: semi-transparent dark
+        private int _backgroundMode = 0; // default: transparent (matches subtitle)
         private double _fontSize = 14;
         private readonly AiInsightViewModel _aiInsight;
 
@@ -72,10 +72,10 @@ namespace TrueFluentPro.ViewModels
             {
                 return _backgroundMode switch
                 {
-                    0 => new SolidColorBrush(Color.FromArgb(230, 255, 255, 255)),
-                    1 => new SolidColorBrush(Color.FromArgb(230, 30, 30, 30)),
-                    2 => new SolidColorBrush(Colors.Transparent),
-                    _ => new SolidColorBrush(Color.FromArgb(230, 30, 30, 30))
+                    0 => new SolidColorBrush(Colors.Transparent),
+                    1 => new SolidColorBrush(Color.FromArgb(230, 0, 0, 0)),
+                    2 => new SolidColorBrush(Color.FromArgb(230, 255, 255, 255)),
+                    _ => new SolidColorBrush(Colors.Transparent)
                 };
             }
         }
@@ -86,10 +86,10 @@ namespace TrueFluentPro.ViewModels
             {
                 return _backgroundMode switch
                 {
-                    0 => new SolidColorBrush(Colors.Black),
-                    1 => new SolidColorBrush(Colors.White),
-                    2 => new SolidColorBrush(Color.FromRgb(30, 30, 30)),
-                    _ => new SolidColorBrush(Colors.White)
+                    0 => new SolidColorBrush(Color.FromRgb(255, 20, 147)), // 透明→粉色
+                    1 => new SolidColorBrush(Colors.White),                // 黑底→白字
+                    2 => new SolidColorBrush(Colors.Black),                // 白底→黑字
+                    _ => new SolidColorBrush(Color.FromRgb(255, 20, 147))
                 };
             }
         }
@@ -107,6 +107,23 @@ namespace TrueFluentPro.ViewModels
         public void DecreaseFontSize()
         {
             FontSize = Math.Max(_fontSize - 2, MinFontSize);
+        }
+
+        /// <summary>
+        /// 通过 AI 洞察 ViewModel 的数据通路写入测试 Markdown，触发正常的渲染流程。
+        /// </summary>
+        public void GenerateTestContent()
+        {
+            _aiInsight.InsightMarkdown = "# 字体测试\n\n" +
+                "## 二级标题示例\n\n" +
+                "正常文字，**粗体文字**，*斜体文字*，`行内代码`\n\n" +
+                "- 列表项一：中文排版测试\n" +
+                "- 列表项二：English mixed\n" +
+                "- 列表项三：数字 1234567890\n\n" +
+                "> 引用块：这是一段引用文字，用于测试不同样式下的显示效果。\n\n" +
+                "1. 有序列表第一项\n" +
+                "2. 有序列表第二项\n\n" +
+                "当前字号：" + FontSize + "px";
         }
 
         private void OnAiInsightPropertyChanged(object? sender, PropertyChangedEventArgs e)

@@ -56,20 +56,21 @@
         </ui:NavigationView.MenuItems>
 
         <ui:NavigationView.Content>
-            <Grid RowDefinitions="*,Auto">
-                <Panel Grid.Row="0">
-                    <views:LiveTranslationView Name="LiveView" IsVisible="True"/>
-                    <views:ReviewModeView Name="ReviewView" IsVisible="False"/>
-                    <views:MediaStudioView Name="MediaStudioViewPage" IsVisible="False"/>
-                    <views:SettingsView Name="SettingsViewPage" IsVisible="False"/>
-                </Panel>
-                <!-- InfoBar 通知（替代纯文字 StatusMessage） -->
-                <ui:InfoBar Grid.Row="1"
-                            IsOpen="{Binding IsInfoBarOpen, Mode=TwoWay}"
+            <Panel>
+                <views:LiveTranslationView Name="LiveView" IsVisible="True"/>
+                <views:ReviewModeView Name="ReviewView" IsVisible="False"/>
+                <views:MediaStudioView Name="MediaStudioViewPage" IsVisible="False"/>
+                <views:SettingsView Name="SettingsViewPage" IsVisible="False"/>
+                <!-- InfoBar 覆盖在右下角，不占布局空间 -->
+                <ui:InfoBar IsOpen="{Binding IsInfoBarOpen, Mode=TwoWay}"
                             Message="{Binding InfoBarMessage}"
                             Severity="{Binding InfoBarSeverity}"
-                            IsClosable="True"/>
-            </Grid>
+                            IsClosable="True"
+                            HorizontalAlignment="Right"
+                            VerticalAlignment="Bottom"
+                            MaxWidth="500"
+                            Margin="0,0,8,8"/>
+            </Panel>
         </ui:NavigationView.Content>
     </ui:NavigationView>
 </Window>

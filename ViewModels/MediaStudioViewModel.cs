@@ -60,6 +60,7 @@ namespace TrueFluentPro.ViewModels
 
                     if (value != null)
                     {
+                        value.ActivateOnFirstSelection();
                         var switchSw = Stopwatch.StartNew();
                         var wasLoaded = value.IsContentLoaded;
                         EnsureSessionLoaded(value);

@@ -53,6 +53,18 @@
             <Setter Property="BorderBrush" Value="{DynamicResource PrimaryDarkBrush}" />
             <Setter Property="Foreground" Value="White" />
         </Style>
+        <!-- 可展开提示词输入框：默认单行紧凑，聚焦后展开多行 -->
+        <Style Selector="TextBox.expandable-prompt">
+            <Setter Property="MinHeight" Value="28"/>
+            <Setter Property="MaxHeight" Value="28"/>
+            <Setter Property="AcceptsReturn" Value="False"/>
+            <Setter Property="TextWrapping" Value="NoWrap"/>
+        </Style>
+        <Style Selector="TextBox.expandable-prompt:focus">
+            <Setter Property="MaxHeight" Value="100"/>
+            <Setter Property="AcceptsReturn" Value="True"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+        </Style>
     </UserControl.Styles>
 
     <Grid RowDefinitions="Auto,*,Auto">
@@ -183,7 +195,7 @@
         <!-- 中间翻译内容区域 -->
         <Grid Grid.Row="1" Margin="10,0,10,0" ColumnDefinitions="*,*">
             <!-- 左侧实时翻译区域 -->
-            <Border Grid.Column="0" BorderBrush="Gray" BorderThickness="1" Margin="0,0,5,0">
+            <Border Grid.Column="0" BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="1" Margin="0,0,5,0">
                 <Grid RowDefinitions="Auto,*,Auto">
                     <DockPanel Grid.Row="0" Margin="5">
                         <TextBlock Text="实时翻译" FontWeight="Bold" DockPanel.Dock="Left"/>
@@ -201,30 +213,30 @@
                     </DockPanel>
 
                     <Grid Grid.Row="1" Margin="5">
-                        <Border BorderBrush="LightGray" BorderThickness="1" IsVisible="{Binding IsSingleView}">
+                        <Border BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="1" IsVisible="{Binding IsSingleView}">
                             <controls:ConfigurableTextEditor x:Name="UnifiedEditor"
                                                              Text="{Binding DisplayedText, Mode=TwoWay}"
                                                              Placeholder="{Binding DisplayPlaceholder}"
                                                              EditorType="Advanced"/>
                         </Border>
-                        <StackPanel Spacing="6" IsVisible="{Binding IsBilingualView}">
-                            <Border BorderBrush="LightGray" BorderThickness="1">
+                        <Grid RowDefinitions="*,6,*" IsVisible="{Binding IsBilingualView}">
+                            <Border Grid.Row="0" BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="1">
                                 <controls:ConfigurableTextEditor Text="{Binding CurrentOriginal, Mode=TwoWay}"
                                                                  Placeholder="原文将在这里显示..."
                                                                  EditorType="Advanced"/>
                             </Border>
-                            <Border BorderBrush="LightGray" BorderThickness="1">
+                            <Border Grid.Row="2" BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="1">
                                 <controls:ConfigurableTextEditor Text="{Binding CurrentTranslated, Mode=TwoWay}"
                                                                  Placeholder="译文将在这里显示..."
                                                                  EditorType="Advanced"/>
                             </Border>
-                        </StackPanel>
+                        </Grid>
                     </Grid>
                 </Grid>
             </Border>
             
             <!-- 右侧历史/洞察区域 -->
-            <Border Grid.Column="1" BorderBrush="Gray" BorderThickness="1" Margin="5,0,0,0">
+            <Border Grid.Column="1" BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="1" Margin="5,0,0,0">
                 <TabControl>
                     <TabItem Header="历史记录">
                         <Grid RowDefinitions="Auto,*,Auto">
@@ -238,7 +250,7 @@
                                                     <StackPanel Spacing="2">
                                                         <DockPanel>
                                                             <TextBlock Text="{Binding Timestamp, StringFormat=\{0:HH:mm:ss\}}" FontWeight="Bold" DockPanel.Dock="Left"/>
-                                                            <TextBlock Text="{Binding TranslatedText}" Foreground="Blue"
+                                                            <TextBlock Text="{Binding TranslatedText}" Foreground="{DynamicResource PrimaryBrush}"
                                                                        TextTrimming="CharacterEllipsis" Margin="8,0,0,0"/>
                                                         </DockPanel>
                                                         <TextBlock Text="{Binding OriginalText}" Foreground="Gray"
@@ -249,7 +261,7 @@
                                                     <TextBlock Text="原文" FontSize="10" Foreground="Gray"/>
                                                     <TextBlock Text="{Binding OriginalText}" TextWrapping="Wrap"/>
                                                     <TextBlock Text="译文" FontSize="10" Foreground="Gray"/>
-                                                    <TextBlock Text="{Binding TranslatedText}" TextWrapping="Wrap" Foreground="Blue"/>
+                                                    <TextBlock Text="{Binding TranslatedText}" TextWrapping="Wrap" Foreground="{DynamicResource PrimaryBrush}"/>
                                                 </StackPanel>
                                             </Expander>
                                         </Border>
@@ -304,31 +316,36 @@
                             <Border Grid.Row="3" Margin="8,4" Padding="8,6"
                                     Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource DividerBrush}"
                                     BorderThickness="1" CornerRadius="4">
-                                <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto">
-                                    <TextBlock Grid.Column="0" Text="自动洞察:" FontSize="11"
-                                               VerticalAlignment="Center" Margin="0,0,8,0"/>
-                                    <ComboBox Grid.Column="1" MinWidth="130"
-                                              SelectedIndex="{Binding AiInsight.AutoInsightModeIndex, Mode=TwoWay}"
-                                              IsEnabled="{Binding !AiInsight.IsAutoInsightEnabled}"
-                                              VerticalAlignment="Center">
-                                        <ComboBoxItem Content="定时循环"/>
-                                        <ComboBoxItem Content="新数据触发"/>
-                                    </ComboBox>
-                                    <TextBlock Grid.Column="2" Text="间隔(秒):" FontSize="11"
-                                               VerticalAlignment="Center" Margin="10,0,4,0"/>
-                                    <TextBox Grid.Column="3" Text="{Binding AiInsight.AutoInsightIntervalSeconds, Mode=TwoWay}"
-                                             Width="120" Padding="6,4" VerticalAlignment="Center"
+                                <Grid RowDefinitions="Auto,Auto">
+                                    <!-- 控制行：自动洞察模式、间隔、启停 -->
+                                    <WrapPanel Grid.Row="0" Orientation="Horizontal">
+                                        <StackPanel Orientation="Horizontal" Spacing="4" Margin="0,0,10,4">
+                                            <TextBlock Text="自动洞察:" FontSize="11" VerticalAlignment="Center"/>
+                                            <ComboBox MinWidth="100"
+                                                      SelectedIndex="{Binding AiInsight.AutoInsightModeIndex, Mode=TwoWay}"
+                                                      IsEnabled="{Binding !AiInsight.IsAutoInsightEnabled}"
+                                                      VerticalAlignment="Center">
+                                                <ComboBoxItem Content="定时循环"/>
+                                                <ComboBoxItem Content="新数据触发"/>
+                                            </ComboBox>
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal" Spacing="4" Margin="0,0,10,4">
+                                            <TextBlock Text="间隔(秒):" FontSize="11" VerticalAlignment="Center"/>
+                                            <TextBox Text="{Binding AiInsight.AutoInsightIntervalSeconds, Mode=TwoWay}"
+                                                     Width="60" Padding="6,4" VerticalAlignment="Center"
+                                                     IsEnabled="{Binding !AiInsight.IsAutoInsightEnabled}"/>
+                                        </StackPanel>
+                                        <Button Content="{Binding AiInsight.AutoInsightToggleText}"
+                                                Command="{Binding AiInsight.ToggleAutoInsightCommand}"
+                                                Padding="10,4" Margin="0,0,0,4"
+                                                VerticalAlignment="Center"/>
+                                    </WrapPanel>
+                                    <!-- 提示词输入：聚焦展开多行，失焦收回单行 -->
+                                    <TextBox Grid.Row="1" Classes="expandable-prompt"
+                                             Text="{Binding AiInsight.AutoInsightPrompt, Mode=TwoWay}"
+                                             Watermark="自动分析使用的提示词（点击展开编辑）..."
+                                             Padding="6,4" Margin="0,2,0,0"
                                              IsEnabled="{Binding !AiInsight.IsAutoInsightEnabled}"/>
-                                    <TextBox Grid.Column="4" Text="{Binding AiInsight.AutoInsightPrompt, Mode=TwoWay}"
-                                             Watermark="自动分析使用的提示词..."
-                                             Padding="6,4" Margin="10,0,0,0" MaxWidth="260"
-                                             VerticalAlignment="Center"
-                                             IsEnabled="{Binding !AiInsight.IsAutoInsightEnabled}"/>
-                                    <Button Grid.Column="5"
-                                            Content="{Binding AiInsight.AutoInsightToggleText}"
-                                            Command="{Binding AiInsight.ToggleAutoInsightCommand}"
-                                            Padding="10,4" Margin="6,0,0,0"
-                                            VerticalAlignment="Center"/>
                                 </Grid>
                             </Border>
 

@@ -28,6 +28,18 @@ namespace TrueFluentPro.ViewModels
         private readonly SemaphoreSlim _videoFrameBackfillLock = new(1, 1);
         private const int MaxReferenceImageCount = 8;
 
+        // ── 会话级参数（仅内存，不回写配置文件）──
+        private string _imageSize = "1024x1024";
+        private string _imageQuality = "medium";
+        private string _imageFormat = "png";
+        private int _imageCount = 1;
+        private string _videoAspectRatio = "16:9";
+        private string _videoResolution = "720p";
+        private int _videoSeconds = 5;
+        private int _videoVariants = 1;
+        private bool _imageParamsActivated;
+        private bool _videoParamsActivated;
+
         public string SessionId { get; }
 
         private string _sessionName;
@@ -179,6 +191,9 @@ namespace TrueFluentPro.ViewModels
             {
                 if (SetProperty(ref _selectedType, value))
                 {
+                    if (value == MediaGenType.Video && !_videoParamsActivated)
+                        ActivateVideoParams();
+
                     OnPropertyChanged(nameof(IsImageMode));
                     OnPropertyChanged(nameof(IsVideoMode));
                     OnPropertyChanged(nameof(IsVideoReferenceLimitExceeded));
@@ -204,6 +219,56 @@ namespace TrueFluentPro.ViewModels
         }
 
         public MediaGenConfig GenConfig => _genConfig;
+
+        // ── 会话级生成参数（供 AXAML ComboBox 直接绑定）──
+        public string ImageSize
+        {
+            get => _imageSize;
+            set => SetProperty(ref _imageSize, value);
+        }
+        public string ImageQuality
+        {
+            get => _imageQuality;
+            set => SetProperty(ref _imageQuality, value);
+        }
+        public string ImageFormat
+        {
+            get => _imageFormat;
+            set => SetProperty(ref _imageFormat, value);
+        }
+        public int ImageCount
+        {
+            get => _imageCount;
+            set => SetProperty(ref _imageCount, value);
+        }
+        public string VideoAspectRatio
+        {
+            get => _videoAspectRatio;
+            set
+            {
+                if (SetProperty(ref _videoAspectRatio, value))
+                    ReevaluateReferenceImageValidation();
+            }
+        }
+        public string VideoResolution
+        {
+            get => _videoResolution;
+            set
+            {
+                if (SetProperty(ref _videoResolution, value))
+                    ReevaluateReferenceImageValidation();
+            }
+        }
+        public int VideoSeconds
+        {
+            get => _videoSeconds;
+            set => SetProperty(ref _videoSeconds, value);
+        }
+        public int VideoVariants
+        {
+            get => _videoVariants;
+            set => SetProperty(ref _videoVariants, value);
+        }
 
         // --- 状态指示 ---
         private string _statusText = "就绪";
@@ -296,6 +361,9 @@ namespace TrueFluentPro.ViewModels
             _onTaskCountChanged = onTaskCountChanged;
             _onRequestSave = onRequestSave;
 
+            // 会话参数延迟注入：在会话首次被选中 / 首次切到视频模式时，
+            // 从全局 genConfig 快照最新值，避免使用创建时的过期配置。
+
             GenerateCommand = new RelayCommand(
                 _ => Generate(),
                 _ => CanGenerateNow());
@@ -317,12 +385,6 @@ namespace TrueFluentPro.ViewModels
 
             // 根据当前 API 模式初始化视频参数选项
             RefreshVideoParameterOptions();
-
-            _genConfig.PropertyChanged += (_, e) =>
-            {
-                if (e.PropertyName is nameof(MediaGenConfig.VideoAspectRatio) or nameof(MediaGenConfig.VideoResolution))
-                    ReevaluateReferenceImageValidation();
-            };
 
             RunningTasks.CollectionChanged += (_, _) =>
             {
@@ -382,6 +444,38 @@ namespace TrueFluentPro.ViewModels
         }
 
         /// <summary>
+        /// 首次切换到视频模式时，从全局配置重新快照视频参数。
+        /// 这样在 Settings 中修改的视频参数能在首次切换时生效。
+        /// </summary>
+        /// <summary>
+        /// 会话首次被选中时调用，从全局配置注入图片参数。
+        /// </summary>
+        public void ActivateOnFirstSelection()
+        {
+            if (!_imageParamsActivated)
+                ActivateImageParams();
+        }
+
+        private void ActivateImageParams()
+        {
+            _imageParamsActivated = true;
+            ImageSize = string.IsNullOrWhiteSpace(_genConfig.ImageSize) ? "1024x1024" : _genConfig.ImageSize;
+            ImageQuality = string.IsNullOrWhiteSpace(_genConfig.ImageQuality) ? "medium" : _genConfig.ImageQuality;
+            ImageFormat = string.IsNullOrWhiteSpace(_genConfig.ImageFormat) ? "png" : _genConfig.ImageFormat;
+            ImageCount = _genConfig.ImageCount > 0 ? _genConfig.ImageCount : 1;
+        }
+
+        private void ActivateVideoParams()
+        {
+            _videoParamsActivated = true;
+            VideoAspectRatio = _genConfig.VideoAspectRatio ?? "16:9";
+            VideoResolution = _genConfig.VideoResolution ?? "720p";
+            VideoSeconds = _genConfig.VideoSeconds > 0 ? _genConfig.VideoSeconds : 5;
+            VideoVariants = _genConfig.VideoVariants > 0 ? _genConfig.VideoVariants : 1;
+            RefreshVideoParameterOptions();
+        }
+
+        /// <summary>
         /// 根据当前 VideoApiMode（sora / sora-2）刷新视频参数选项。
         /// sora: 全参数（1:1/16:9/9:16，480p/720p/1080p，5/10/15/20秒，1/2数量）
         /// sora-2: 仅 16:9/9:16，720p，4/8/12秒，无数量选择
@@ -401,14 +495,14 @@ namespace TrueFluentPro.ViewModels
             OnPropertyChanged(nameof(VideoCountOptions));
 
             // 确保当前选中值在新选项中有效
-            if (!VideoAspectRatioOptions.Contains(_genConfig.VideoAspectRatio))
-                _genConfig.VideoAspectRatio = VideoAspectRatioOptions[0];
-            if (!VideoResolutionOptions.Contains(_genConfig.VideoResolution))
-                _genConfig.VideoResolution = VideoResolutionOptions[0];
-            if (!VideoDurationOptions.Contains(_genConfig.VideoSeconds))
-                _genConfig.VideoSeconds = VideoDurationOptions[0];
-            if (!VideoCountOptions.Contains(_genConfig.VideoVariants))
-                _genConfig.VideoVariants = VideoCountOptions[0];
+            if (!VideoAspectRatioOptions.Contains(VideoAspectRatio))
+                VideoAspectRatio = VideoAspectRatioOptions[0];
+            if (!VideoResolutionOptions.Contains(VideoResolution))
+                VideoResolution = VideoResolutionOptions[0];
+            if (!VideoDurationOptions.Contains(VideoSeconds))
+                VideoSeconds = VideoDurationOptions[0];
+            if (!VideoCountOptions.Contains(VideoVariants))
+                VideoVariants = VideoCountOptions[0];
 
             ReevaluateReferenceImageValidation();
         }
@@ -479,10 +573,10 @@ namespace TrueFluentPro.ViewModels
             var effectiveConfig = new MediaGenConfig
             {
                 ImageModel = _genConfig.ImageModel,
-                ImageSize = _genConfig.ImageSize,
-                ImageQuality = _genConfig.ImageQuality,
-                ImageFormat = _genConfig.ImageFormat,
-                ImageCount = _genConfig.ImageCount
+                ImageSize = ImageSize,
+                ImageQuality = ImageQuality,
+                ImageFormat = ImageFormat,
+                ImageCount = ImageCount
             };
 
             var imageConfig = BuildImageAiConfig();
@@ -653,8 +747,8 @@ namespace TrueFluentPro.ViewModels
                 VideoApiMode = _genConfig.VideoApiMode,
                 VideoWidth = videoWidth,
                 VideoHeight = videoHeight,
-                VideoSeconds = _genConfig.VideoSeconds,
-                VideoVariants = _genConfig.VideoVariants,
+                VideoSeconds = VideoSeconds,
+                VideoVariants = VideoVariants,
                 VideoPollIntervalMs = _genConfig.VideoPollIntervalMs
             };
 
@@ -1191,8 +1285,8 @@ namespace TrueFluentPro.ViewModels
             return VideoCapabilityResolver.TryResolveSize(
                 _genConfig.VideoApiMode,
                 _genConfig.VideoModel,
-                _genConfig.VideoAspectRatio,
-                _genConfig.VideoResolution,
+                VideoAspectRatio,
+                VideoResolution,
                 out width,
                 out height);
         }

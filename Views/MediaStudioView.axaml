@@ -295,19 +295,19 @@
                                         IsVisible="{Binding IsImageMode}">
                                 <TextBlock Classes="param-label" Text="尺寸:"/>
                                 <ComboBox ItemsSource="{Binding ImageSizeOptions}"
-                                          SelectedItem="{Binding GenConfig.ImageSize}"
+                                          SelectedItem="{Binding ImageSize}"
                                           Width="120" Padding="4,2" FontSize="12"/>
                                 <TextBlock Classes="param-label" Text="质量:"/>
                                 <ComboBox ItemsSource="{Binding ImageQualityOptions}"
-                                          SelectedItem="{Binding GenConfig.ImageQuality}"
+                                          SelectedItem="{Binding ImageQuality}"
                                           Width="80" Padding="4,2" FontSize="12"/>
                                 <TextBlock Classes="param-label" Text="格式:"/>
                                 <ComboBox ItemsSource="{Binding ImageFormatOptions}"
-                                      SelectedItem="{Binding GenConfig.ImageFormat}"
+                                      SelectedItem="{Binding ImageFormat}"
                                       Width="80" Padding="4,2" FontSize="12"/>
                                 <TextBlock Classes="param-label" Text="数量:"/>
                                 <ComboBox ItemsSource="{Binding ImageCountOptions}"
-                                      SelectedItem="{Binding GenConfig.ImageCount}"
+                                      SelectedItem="{Binding ImageCount}"
                                       Width="70" Padding="4,2" FontSize="12"/>
                             </StackPanel>
 
@@ -316,19 +316,19 @@
                                         IsVisible="{Binding IsVideoMode}">
                                 <TextBlock Classes="param-label" Text="比例:"/>
                                 <ComboBox ItemsSource="{Binding VideoAspectRatioOptions}"
-                                      SelectedItem="{Binding GenConfig.VideoAspectRatio}"
+                                      SelectedItem="{Binding VideoAspectRatio}"
                                       Width="70" Padding="4,2" FontSize="12"/>
                                 <TextBlock Classes="param-label" Text="分辨率:"/>
                                 <ComboBox ItemsSource="{Binding VideoResolutionOptions}"
-                                      SelectedItem="{Binding GenConfig.VideoResolution}"
+                                      SelectedItem="{Binding VideoResolution}"
                                       Width="80" Padding="4,2" FontSize="12"/>
                                 <TextBlock Classes="param-label" Text="时长:"/>
                                 <ComboBox ItemsSource="{Binding VideoDurationOptions}"
-                                      SelectedItem="{Binding GenConfig.VideoSeconds}"
+                                      SelectedItem="{Binding VideoSeconds}"
                                       Width="70" Padding="4,2" FontSize="12"/>
                                 <TextBlock Classes="param-label" Text="数量:"/>
                                 <ComboBox ItemsSource="{Binding VideoCountOptions}"
-                                      SelectedItem="{Binding GenConfig.VideoVariants}"
+                                      SelectedItem="{Binding VideoVariants}"
                                       Width="60" Padding="4,2" FontSize="12"/>
                             </StackPanel>
                         </StackPanel>

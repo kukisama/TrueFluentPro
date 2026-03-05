@@ -72,6 +72,7 @@ namespace TrueFluentPro.ViewModels
         private bool _exportSrt;
         private bool _exportVtt;
         private int _defaultFontSize = 38;
+        private bool _isAutoUpdateEnabled = true;
 
         private string _insightSystemPrompt = "";
         private string _reviewSystemPrompt = "";
@@ -106,7 +107,16 @@ namespace TrueFluentPro.ViewModels
         private int _videoWidth = 1280;
         private int _videoHeight = 720;
         private int _videoPollIntervalMs = 3000;
-        private bool _suppressDirty;
+
+        // 图片/视频参数本地字段（不再代理 MediaGenConfig，ApplyToConfigCore 时写入）
+        private string _imageSize = "1024x1024";
+        private string _imageQuality = "medium";
+        private string _imageFormat = "png";
+        private int _imageCount = 1;
+        private string _videoAspectRatio = "16:9";
+        private string _videoResolution = "720p";
+        private int _videoSeconds = 5;
+        private int _videoVariants = 1;
 
         private int _maxLoadedSessionsInMemory = 8;
         private string _mediaOutputDirectory = "";
@@ -187,6 +197,7 @@ namespace TrueFluentPro.ViewModels
             ExportSrt = _config.ExportSrtSubtitles;
             ExportVtt = _config.ExportVttSubtitles;
             DefaultFontSize = _config.DefaultFontSize;
+            IsAutoUpdateEnabled = _config.IsAutoUpdateEnabled;
 
             var ai = _config.AiConfig ?? new AiConfig();
             AiProviderTypeIndex = ai.ProviderType == AiProviderType.AzureOpenAi ? 1 : 0;
@@ -231,14 +242,16 @@ namespace TrueFluentPro.ViewModels
             _config.MediaGenConfig ??= new MediaGenConfig();
             var media = _config.MediaGenConfig;
 
-            if (string.IsNullOrWhiteSpace(media.ImageSize)) media.ImageSize = "1024x1024";
-            if (string.IsNullOrWhiteSpace(media.ImageQuality)) media.ImageQuality = "medium";
-            if (string.IsNullOrWhiteSpace(media.ImageFormat)) media.ImageFormat = "png";
-            if (media.ImageCount <= 0) media.ImageCount = 1;
+            _imageSize = string.IsNullOrWhiteSpace(media.ImageSize) ? "1024x1024" : media.ImageSize;
+            _imageQuality = string.IsNullOrWhiteSpace(media.ImageQuality) ? "medium" : media.ImageQuality;
+            _imageFormat = string.IsNullOrWhiteSpace(media.ImageFormat) ? "png" : media.ImageFormat;
+            _imageCount = media.ImageCount <= 0 ? 1 : media.ImageCount;
+            _videoAspectRatio = string.IsNullOrWhiteSpace(media.VideoAspectRatio) ? "16:9" : media.VideoAspectRatio;
+            _videoResolution = string.IsNullOrWhiteSpace(media.VideoResolution) ? "720p" : media.VideoResolution;
+            _videoSeconds = media.VideoSeconds <= 0 ? 5 : media.VideoSeconds;
+            _videoVariants = media.VideoVariants <= 0 ? 1 : media.VideoVariants;
 
             VideoApiModeIndex = media.VideoApiMode == VideoApiMode.Videos ? 1 : 0;
-            if (media.VideoSeconds <= 0) media.VideoSeconds = 5;
-            if (media.VideoVariants <= 0) media.VideoVariants = 1;
             VideoPollIntervalMs = media.VideoPollIntervalMs <= 0 ? 3000 : media.VideoPollIntervalMs;
 
             RefreshVideoCapabilityOptions();
@@ -247,17 +260,16 @@ namespace TrueFluentPro.ViewModels
             MaxLoadedSessionsInMemory = media.MaxLoadedSessionsInMemory <= 0 ? 8 : media.MaxLoadedSessionsInMemory;
             MediaOutputDirectory = media.OutputDirectory ?? "";
 
-            media.PropertyChanged += OnMediaGenConfigPropertyChanged;
+            OnPropertyChanged(nameof(ImageSize));
+            OnPropertyChanged(nameof(ImageQuality));
+            OnPropertyChanged(nameof(ImageFormat));
+            OnPropertyChanged(nameof(ImageCount));
+            OnPropertyChanged(nameof(VideoAspectRatio));
+            OnPropertyChanged(nameof(VideoResolution));
+            OnPropertyChanged(nameof(VideoSeconds));
+            OnPropertyChanged(nameof(VideoVariants));
 
             _ = RefreshAiAuthStatusAsync();
-        }
-
-        private void OnMediaGenConfigPropertyChanged(object? sender, PropertyChangedEventArgs e)
-        {
-            OnPropertyChanged(e.PropertyName);
-            if (e.PropertyName is nameof(MediaGenConfig.VideoAspectRatio) or nameof(MediaGenConfig.VideoResolution))
-                SyncVideoDimensionsFromSelection();
-            if (!_suppressDirty) MarkDirty();
         }
 
         public ObservableCollection<AiEndpoint> Endpoints { get => _endpoints; set => SetProperty(ref _endpoints, value); }
@@ -331,21 +343,21 @@ namespace TrueFluentPro.ViewModels
         public List<int> VideoSecondsOptions { get => _videoSecondsOptions; private set => SetProperty(ref _videoSecondsOptions, value); }
         public List<int> VideoVariantsOptions { get => _videoVariantsOptions; private set => SetProperty(ref _videoVariantsOptions, value); }
 
-        public string VideoAspectRatio { get => _config.MediaGenConfig.VideoAspectRatio;
-            set => _config.MediaGenConfig.VideoAspectRatio = value; }
-        public string VideoResolution { get => _config.MediaGenConfig.VideoResolution;
-            set => _config.MediaGenConfig.VideoResolution = value; }
-        public string ImageSize { get => _config.MediaGenConfig.ImageSize; set => _config.MediaGenConfig.ImageSize = value; }
-        public string ImageQuality { get => _config.MediaGenConfig.ImageQuality; set => _config.MediaGenConfig.ImageQuality = value; }
-        public string ImageFormat { get => _config.MediaGenConfig.ImageFormat; set => _config.MediaGenConfig.ImageFormat = value; }
-        public int ImageCount { get => _config.MediaGenConfig.ImageCount; set => _config.MediaGenConfig.ImageCount = value; }
+        public string ImageSize { get => _imageSize; set => Set(ref _imageSize, value); }
+        public string ImageQuality { get => _imageQuality; set => Set(ref _imageQuality, value); }
+        public string ImageFormat { get => _imageFormat; set => Set(ref _imageFormat, value); }
+        public int ImageCount { get => _imageCount; set => Set(ref _imageCount, value); }
+        public string VideoAspectRatio { get => _videoAspectRatio;
+            set => Set(ref _videoAspectRatio, value, then: SyncVideoDimensionsFromSelection); }
+        public string VideoResolution { get => _videoResolution;
+            set => Set(ref _videoResolution, value, then: SyncVideoDimensionsFromSelection); }
         public int VideoApiModeIndex { get => _videoApiModeIndex;
             set => Set(ref _videoApiModeIndex, value, then: RefreshVideoCapabilityOptions); }
 
         public int VideoWidth { get => _videoWidth; private set => SetProperty(ref _videoWidth, value); }
         public int VideoHeight { get => _videoHeight; private set => SetProperty(ref _videoHeight, value); }
-        public int VideoSeconds { get => _config.MediaGenConfig.VideoSeconds; set => _config.MediaGenConfig.VideoSeconds = value; }
-        public int VideoVariants { get => _config.MediaGenConfig.VideoVariants; set => _config.MediaGenConfig.VideoVariants = value; }
+        public int VideoSeconds { get => _videoSeconds; set => Set(ref _videoSeconds, value); }
+        public int VideoVariants { get => _videoVariants; set => Set(ref _videoVariants, value); }
         public int VideoPollIntervalMs { get => _videoPollIntervalMs; set => Set(ref _videoPollIntervalMs, value); }
         public int MaxLoadedSessionsInMemory { get => _maxLoadedSessionsInMemory; set => Set(ref _maxLoadedSessionsInMemory, value); }
         public string MediaOutputDirectory { get => _mediaOutputDirectory; set => Set(ref _mediaOutputDirectory, value); }
@@ -448,6 +460,7 @@ namespace TrueFluentPro.ViewModels
         public int BatchPauseSplitMs { get => _batchPauseSplitMs; set => Set(ref _batchPauseSplitMs, value); }
         public bool UseSpeechSubtitleForReview { get => _useSpeechSubtitleForReview; set => Set(ref _useSpeechSubtitleForReview, value); }
         public bool FilterModalParticles { get => _filterModalParticles; set => Set(ref _filterModalParticles, value); }
+        public bool IsAutoUpdateEnabled { get => _isAutoUpdateEnabled; set => Set(ref _isAutoUpdateEnabled, value); }
         public int MaxHistoryItems { get => _maxHistoryItems; set => Set(ref _maxHistoryItems, value); }
         public int RealtimeMaxLength { get => _realtimeMaxLength; set => Set(ref _realtimeMaxLength, value); }
         public int ChunkDurationMs { get => _chunkDurationMs; set => Set(ref _chunkDurationMs, value); }
@@ -1139,15 +1152,7 @@ namespace TrueFluentPro.ViewModels
 
         private void ApplyToConfig()
         {
-            _suppressDirty = true;
-            try
-            {
-                ApplyToConfigCore();
-            }
-            finally
-            {
-                _suppressDirty = false;
-            }
+            ApplyToConfigCore();
         }
 
         private void ApplyToConfigCore()
@@ -1197,6 +1202,7 @@ namespace TrueFluentPro.ViewModels
             _config.ExportSrtSubtitles = ExportSrt;
             _config.ExportVttSubtitles = ExportVtt;
             _config.DefaultFontSize = DefaultFontSize;
+            _config.IsAutoUpdateEnabled = IsAutoUpdateEnabled;
             Controls.AdvancedRichTextBox.DefaultFontSizeValue = DefaultFontSize;
 
             var ai = _config.AiConfig ?? new AiConfig();
@@ -1239,16 +1245,18 @@ namespace TrueFluentPro.ViewModels
             _config.MediaGenConfig.VideoModelRef = SelectedVideoModel?.Reference;
 
             var media = _config.MediaGenConfig;
-            if (string.IsNullOrWhiteSpace(media.ImageSize)) media.ImageSize = "1024x1024";
-            if (string.IsNullOrWhiteSpace(media.ImageQuality)) media.ImageQuality = "medium";
-            if (string.IsNullOrWhiteSpace(media.ImageFormat)) media.ImageFormat = "png";
-            media.ImageCount = Math.Clamp(media.ImageCount, 1, 10);
+            media.ImageSize = string.IsNullOrWhiteSpace(_imageSize) ? "1024x1024" : _imageSize;
+            media.ImageQuality = string.IsNullOrWhiteSpace(_imageQuality) ? "medium" : _imageQuality;
+            media.ImageFormat = string.IsNullOrWhiteSpace(_imageFormat) ? "png" : _imageFormat;
+            media.ImageCount = Math.Clamp(_imageCount, 1, 10);
 
             media.VideoApiMode = VideoApiModeIndex == 1 ? VideoApiMode.Videos : VideoApiMode.SoraJobs;
+            media.VideoAspectRatio = _videoAspectRatio ?? "16:9";
+            media.VideoResolution = _videoResolution ?? "720p";
             media.VideoWidth = Math.Max(64, VideoWidth);
             media.VideoHeight = Math.Max(64, VideoHeight);
-            media.VideoSeconds = Math.Clamp(media.VideoSeconds, 1, 120);
-            media.VideoVariants = Math.Clamp(media.VideoVariants, 1, 4);
+            media.VideoSeconds = Math.Clamp(_videoSeconds, 1, 120);
+            media.VideoVariants = Math.Clamp(_videoVariants, 1, 4);
             media.VideoPollIntervalMs = Math.Clamp(VideoPollIntervalMs, 500, 60000);
 
             media.MaxLoadedSessionsInMemory = Math.Clamp(MaxLoadedSessionsInMemory, 1, 64);

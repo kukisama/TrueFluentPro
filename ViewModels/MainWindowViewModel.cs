@@ -47,6 +47,7 @@ namespace TrueFluentPro.ViewModels
         private EditorDisplayMode _editorDisplayMode = EditorDisplayMode.Translated;
 
         private readonly AiInsightService _aiInsightService;
+        private readonly UpdateService _updateService = new();
 
         public AudioDevicesViewModel AudioDevices { get; }
         public ConfigViewModel ConfigVM { get; }
@@ -68,6 +69,11 @@ namespace TrueFluentPro.ViewModels
         private volatile bool _isMainWindowShown;
         private volatile bool _isConfigLoaded;
         private string? _pendingReviewAudioPath;
+
+        private bool _isUpdateAvailable;
+        private string _updateVersionText = "";
+        private bool _isDownloading;
+        private double _downloadProgress;
         private int _pendingReviewSequence;
         private int _lastDispatchedReviewSequence;
 
@@ -230,6 +236,21 @@ namespace TrueFluentPro.ViewModels
                 canExecute: _ => true
             );
 
+            Open21vAzureSpeechPortalCommand = new RelayCommand(
+                execute: _ => OpenUrl("https://portal.azure.cn/#create/Microsoft.CognitiveServicesSpeechServices"),
+                canExecute: _ => true
+            );
+
+            OpenStoragePortalCommand = new RelayCommand(
+                execute: _ => OpenUrl("https://portal.azure.com/#create/Microsoft.StorageAccount"),
+                canExecute: _ => true
+            );
+
+            Open21vStoragePortalCommand = new RelayCommand(
+                execute: _ => OpenUrl("https://portal.azure.cn/#create/Microsoft.StorageAccount"),
+                canExecute: _ => true
+            );
+
             OpenFoundryPortalCommand = new RelayCommand(
                 execute: _ => OpenUrl("https://ai.azure.com"),
                 canExecute: _ => true
@@ -256,6 +277,24 @@ namespace TrueFluentPro.ViewModels
                 execute: _ => ShowMediaStudio(),
                 canExecute: _ => true
             );
+
+            CheckForUpdateCommand = new RelayCommand(
+                execute: async _ => await CheckForUpdateAsync(silent: false),
+                canExecute: _ => !_isDownloading
+            );
+
+            DownloadAndApplyUpdateCommand = new RelayCommand(
+                execute: async _ => await DownloadAndApplyUpdateAsync(),
+                canExecute: _ => _isUpdateAvailable && !_isDownloading
+            );
+
+            RegisterPostShowInitializationAction(
+                "UpdateCheck",
+                async () =>
+                {
+                    await Task.Delay(3000);
+                    await CheckForUpdateAsync(silent: true);
+                });
         }
 
         private async Task LoadConfigAsync()
