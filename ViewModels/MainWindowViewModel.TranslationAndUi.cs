@@ -373,45 +373,15 @@ namespace TrueFluentPro.ViewModels
             ((RelayCommand)ClearHistoryCommand).RaiseCanExecuteChanged();
         }
 
-        private async Task ShowConfig()
+        /// <summary>导航到设置页（取代原来的模态弹窗）</summary>
+        private Task ShowConfig()
         {
-            if (_mainWindow == null)
-                return;
-
-            var configView = new ConfigCenterView(_config);
-
-            configView.ConfigurationUpdated += OnConfigurationUpdated;
-
-            var result = await configView.ShowDialog<bool>(_mainWindow);
-
-            configView.ConfigurationUpdated -= OnConfigurationUpdated;
-
-            if (result)
-            {
-                _config = configView.Config;
-                ConfigVM.SetConfig(_config);
-
-                try
-                {
-                    await _configService.SaveConfigAsync(_config);
-                    StatusMessage = $"配置已保存到: {ConfigVM.GetConfigFilePath()}";
-                }
-                catch (Exception ex)
-                {
-                    StatusMessage = $"保存配置失败: {ex.Message}";
-                }
-
-                if (_translationService != null)
-                {
-                    await _translationService.UpdateConfigAsync(_config);
-                }
-
-                AiInsight.UpdateConfig();
-                BatchProcessing.RebuildReviewSheets();
-                BatchProcessing.RefreshCommandStates();
-                ((RelayCommand)StartTranslationCommand).RaiseCanExecuteChanged();
-            }
+            NavigateToSettings?.Invoke();
+            return Task.CompletedTask;
         }
+
+        /// <summary>由 MainWindow 注册的导航回调，切换到 Settings 页</summary>
+        public Action? NavigateToSettings { get; set; }
 
         private void OpenHistoryFolder()
         {

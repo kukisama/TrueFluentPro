@@ -3,7 +3,6 @@ using System.Collections.ObjectModel;
 using System.Windows.Input;
 using TrueFluentPro.Models;
 using TrueFluentPro.Services;
-using TrueFluentPro.Views;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
@@ -50,6 +49,7 @@ namespace TrueFluentPro.ViewModels
         public ConfigViewModel ConfigVM { get; }
         public FileLibraryViewModel FileLibrary { get; }
         public BatchProcessingViewModel BatchProcessing { get; }
+        public SettingsViewModel Settings { get; }
 
         private bool _isFloatingSubtitleOpen;
 
@@ -68,9 +68,11 @@ namespace TrueFluentPro.ViewModels
 
         public MainWindowViewModel(
             ConfigurationService configService,
-            AzureSubscriptionValidator subscriptionValidator)
+            AzureSubscriptionValidator subscriptionValidator,
+            SettingsViewModel settingsViewModel)
         {
             _configService = configService;
+            Settings = settingsViewModel;
             var azureTokenProvider = new AzureTokenProvider("ai");
             _aiInsightService = new AiInsightService(azureTokenProvider);
             _config = new AzureSpeechConfig();
@@ -270,6 +272,10 @@ namespace TrueFluentPro.ViewModels
         {
             _config = config;
 
+            // 初始化 SettingsViewModel
+            Settings.Initialize(config);
+            Settings.ConfigSaved += OnSettingsConfigSaved;
+
             AudioDevices.UpdateConfig();
 
             // Apply default font size from config
@@ -306,6 +312,21 @@ namespace TrueFluentPro.ViewModels
         private void OnConfigurationUpdated(object? sender, AzureSpeechConfig updatedConfig)
         {
             ConfigVM.HandleExternalConfigUpdate(updatedConfig);
+        }
+
+        private void OnSettingsConfigSaved(AzureSpeechConfig config)
+        {
+            _config = config;
+            ConfigVM.SetConfig(config);
+
+            AudioDevices.UpdateConfig();
+            BatchProcessing.NormalizeSpeechSubtitleOption();
+            BatchProcessing.RefreshCommandStates();
+            BatchProcessing.RebuildReviewSheets();
+            AiInsight.UpdateConfig();
+
+            ((RelayCommand)StartTranslationCommand).RaiseCanExecuteChanged();
+            ((RelayCommand)ToggleTranslationCommand).RaiseCanExecuteChanged();
         }
 
         private void OnFileLibrarySubtitleCuesLoaded()

@@ -1,6 +1,11 @@
+using System;
 using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Interactivity;
+using Avalonia.Platform.Storage;
+using TrueFluentPro.Models;
+using TrueFluentPro.ViewModels;
 
 namespace TrueFluentPro.Views;
 
@@ -14,7 +19,7 @@ public partial class SettingsView : UserControl
         InitializeComponent();
     }
 
-    protected override void OnLoaded(Avalonia.Interactivity.RoutedEventArgs e)
+    protected override void OnLoaded(RoutedEventArgs e)
     {
         base.OnLoaded(e);
 
@@ -27,6 +32,16 @@ public partial class SettingsView : UserControl
         // 默认选中第一项
         if (NavListBox.SelectedIndex < 0 && NavListBox.ItemCount > 0)
             NavListBox.SelectedIndex = 0;
+
+        // 绑定 Preset/Review 编辑器到 SettingsVM
+        if (DataContext is MainWindowViewModel vm)
+        {
+            PresetButtonsEditorControl.Items = vm.Settings.PresetButtons;
+            ReviewSheetsEditorControl.Items = vm.Settings.ReviewSheets;
+
+            // 初始化字号下拉
+            SelectFontSizeComboBox(vm.Settings.DefaultFontSize);
+        }
     }
 
     /// <summary>点击左侧导航 → 滚动到对应分区</summary>
@@ -52,7 +67,6 @@ public partial class SettingsView : UserControl
     {
         if (_sectionBorders == null || _sectionBorders.Length == 0) return;
 
-        // 找到当前可见区域中最靠上的、且未完全滚出视口的分区
         Border? topVisible = null;
         double bestY = double.NegativeInfinity;
 
@@ -62,7 +76,6 @@ public partial class SettingsView : UserControl
             if (transform == null) continue;
 
             var pos = transform.Value.Transform(new Point(0, 0));
-            // 选择 Y <= 40（已滚过或刚到顶部）中 Y 值最大（最接近可视顶部）的分区
             if (pos.Y <= 40 && pos.Y > bestY)
             {
                 topVisible = section;
@@ -70,7 +83,6 @@ public partial class SettingsView : UserControl
             }
         }
 
-        // 若没有分区在顶部以上，选第一个可见分区
         if (topVisible == null)
         {
             foreach (var section in _sectionBorders)
@@ -88,7 +100,6 @@ public partial class SettingsView : UserControl
 
         if (topVisible == null) return;
 
-        // 在 NavListBox 中找到匹配 Tag 的项
         var targetIndex = -1;
         for (int i = 0; i < NavListBox.ItemCount; i++)
         {
@@ -104,6 +115,69 @@ public partial class SettingsView : UserControl
             _suppressScrollSync = true;
             NavListBox.SelectedIndex = targetIndex;
             _suppressScrollSync = false;
+        }
+    }
+
+    // ═══ 事件处理 ═══
+
+    private async void BrowseSessionDirectory_Click(object? sender, RoutedEventArgs e)
+    {
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel == null) return;
+
+        var folders = await topLevel.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+        {
+            Title = "选择会话目录",
+            AllowMultiple = false
+        });
+
+        var folder = folders.FirstOrDefault();
+        if (folder == null) return;
+        var path = folder.TryGetLocalPath();
+        if (!string.IsNullOrWhiteSpace(path) && DataContext is MainWindowViewModel vm)
+        {
+            vm.Settings.SessionDirectory = path;
+        }
+    }
+
+    private void FontSizeComboBox_SelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (DefaultFontSizeComboBox.SelectedItem is ComboBoxItem item &&
+            int.TryParse(item.Tag?.ToString(), out var size) &&
+            DataContext is MainWindowViewModel vm)
+        {
+            vm.Settings.DefaultFontSize = size;
+        }
+    }
+
+    private void SelectFontSizeComboBox(int fontSize)
+    {
+        for (var i = 0; i < DefaultFontSizeComboBox.Items.Count; i++)
+        {
+            if (DefaultFontSizeComboBox.Items[i] is ComboBoxItem item &&
+                item.Tag?.ToString() == fontSize.ToString())
+            {
+                DefaultFontSizeComboBox.SelectedIndex = i;
+                return;
+            }
+        }
+        DefaultFontSizeComboBox.SelectedIndex = 7; // 38
+    }
+
+    private void AddModel_Click(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel vm) return;
+        // 添加一个默认模型
+        vm.Settings.AddModelToSelectedEndpoint(
+            "new-model", "", "", "", ModelCapability.Text);
+    }
+
+    private void RemoveModel_Click(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Button btn && btn.Tag is AiModelEntry model &&
+            DataContext is MainWindowViewModel vm)
+        {
+            vm.Settings.RemoveModelFromSelectedEndpoint(model);
         }
     }
 }
