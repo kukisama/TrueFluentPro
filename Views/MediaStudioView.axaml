@@ -15,7 +15,7 @@
     <UserControl.Styles>
         <!-- 用户消息气泡 -->
         <Style Selector="Border.user-msg">
-            <Setter Property="Background" Value="#FFE3F2FD"/>
+            <Setter Property="Background" Value="{DynamicResource UserMessageBrush}"/>
             <Setter Property="CornerRadius" Value="10,10,2,10"/>
             <Setter Property="Padding" Value="12,8"/>
             <Setter Property="Margin" Value="120,4,8,4"/>
@@ -23,7 +23,7 @@
         </Style>
         <!-- AI 消息气泡 -->
         <Style Selector="Border.ai-msg">
-            <Setter Property="Background" Value="#FFF5F5F5"/>
+            <Setter Property="Background" Value="{DynamicResource AiMessageBrush}"/>
             <Setter Property="CornerRadius" Value="10,10,10,2"/>
             <Setter Property="Padding" Value="12,8"/>
             <Setter Property="Margin" Value="8,4,120,4"/>
@@ -31,7 +31,7 @@
         </Style>
         <!-- 会话列表选中项 -->
         <Style Selector="ListBoxItem:selected">
-            <Setter Property="Background" Value="#FF1976D2"/>
+            <Setter Property="Background" Value="{DynamicResource AccentBlueBrush}"/>
             <Setter Property="Foreground" Value="White"/>
         </Style>
         <Style Selector="ListBoxItem:selected TextBlock">
@@ -44,7 +44,7 @@
         <Style Selector="TextBlock.param-label">
             <Setter Property="VerticalAlignment" Value="Center"/>
             <Setter Property="FontSize" Value="12"/>
-            <Setter Property="Foreground" Value="#FF666666"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
             <Setter Property="Margin" Value="0,0,4,0"/>
         </Style>
 
@@ -73,7 +73,7 @@
 
     <Grid RowDefinitions="Auto,*,Auto">
         <!-- ===== 顶部工具栏 ===== -->
-        <Border Grid.Row="0" BorderBrush="#FFE0E0E0" BorderThickness="0,0,0,1" Padding="10,8">
+        <Border Grid.Row="0" BorderBrush="{DynamicResource BorderMediumBrush}" BorderThickness="0,0,0,1" Padding="10,8">
             <Grid ColumnDefinitions="Auto,*,Auto">
                 <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6">
                     <Button Content="＋ 新建会话" Command="{Binding NewSessionCommand}" Padding="10,5"/>
@@ -83,7 +83,7 @@
                            FontSize="15" FontWeight="SemiBold"
                            HorizontalAlignment="Center" VerticalAlignment="Center"/>
                 <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                    <TextBlock Text="{Binding StatusText}" FontSize="12" Foreground="#FF888888"
+                    <TextBlock Text="{Binding StatusText}" FontSize="12" Foreground="{DynamicResource TextSubtleBrush}"
                                VerticalAlignment="Center"/>
                 </StackPanel>
             </Grid>
@@ -92,10 +92,10 @@
         <!-- ===== 主体区域（左右分栏） ===== -->
         <Grid Grid.Row="1" ColumnDefinitions="200,1,*">
             <!-- 左侧会话列表 -->
-            <Border Grid.Column="0" Background="#FFFAFAFA">
+            <Border Grid.Column="0" Background="{DynamicResource SidebarBrush}">
                 <Grid RowDefinitions="Auto,*">
                     <TextBlock Grid.Row="0" Text="会话列表" FontSize="13" FontWeight="SemiBold"
-                               Margin="12,10,12,6" Foreground="#FF555555"/>
+                               Margin="12,10,12,6" Foreground="{DynamicResource TextDarkBrush}"/>
                     <ListBox Grid.Row="1"
                              x:Name="SessionListBox"
                              ItemsSource="{Binding Sessions}"
@@ -109,7 +109,7 @@
                                     <TextBlock Grid.Column="0" Text="{Binding SessionName}"
                                                VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
                                     <Ellipse Grid.Column="1" Width="8" Height="8"
-                                             Fill="#FF4CAF50"
+                                             Fill="{DynamicResource IndicatorGreenBrush}"
                                              IsVisible="{Binding HasBadge}"
                                              VerticalAlignment="Center" Margin="6,0,2,0"/>
                                 </Grid>
@@ -120,7 +120,7 @@
             </Border>
 
             <!-- 分隔线 -->
-            <Border Grid.Column="1" Background="#FFE0E0E0"/>
+            <Border Grid.Column="1" Background="{DynamicResource BorderMediumBrush}"/>
 
             <!-- 右侧内容区 -->
             <Grid Grid.Column="2" RowDefinitions="*,Auto"
@@ -166,7 +166,7 @@
                                                              MaxWidth="500"
                                                              ContextFlyout="{x:Null}"/>
                                                     <TextBlock Text="{Binding TimestampText}" FontSize="10"
-                                                               Foreground="#FF999999" HorizontalAlignment="Right"/>
+                                                               Foreground="{DynamicResource TimestampBrush}" HorizontalAlignment="Right"/>
                                                 </StackPanel>
                                             </Border>
 
@@ -193,7 +193,7 @@
                                                         <ItemsControl.ItemTemplate>
                                                             <DataTemplate>
                                                                 <Border Margin="2" CornerRadius="4"
-                                                                        Background="#FFEEEEEE" Padding="4"
+                                                                        Background="{DynamicResource MediaItemBrush}" Padding="4"
                                                                         Cursor="Hand"
                                                                         PointerPressed="MediaThumbnail_PointerPressed"
                                                                         Tag="{Binding $parent[ItemsControl].DataContext}">
@@ -243,7 +243,7 @@
                                                     </ItemsControl>
 
                                                     <TextBlock Text="{Binding TimestampText}" FontSize="10"
-                                                               Foreground="#FF999999"/>
+                                                               Foreground="{DynamicResource TimestampBrush}"/>
                                                 </StackPanel>
                                             </Border>
                                         </Panel>
@@ -272,7 +272,7 @@
                                 </Border>
 
                 <!-- ===== 底部输入区 ===== -->
-                <Border Grid.Row="1" BorderBrush="#FFE0E0E0" BorderThickness="0,1,0,0" Padding="10,8">
+                <Border Grid.Row="1" BorderBrush="{DynamicResource BorderMediumBrush}" BorderThickness="0,1,0,0" Padding="10,8">
                     <Grid RowDefinitions="Auto,Auto,Auto">
                         <!-- 参数行 -->
                         <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="10" Margin="0,0,0,6">
@@ -288,7 +288,7 @@
                                              Padding="6,3"/>
                             </StackPanel>
 
-                            <Border Width="1" Background="#FFE0E0E0" Margin="4,0"/>
+                            <Border Width="1" Background="{DynamicResource BorderMediumBrush}" Margin="4,0"/>
 
                             <!-- 图片参数 -->
                             <StackPanel Orientation="Horizontal" Spacing="6"
@@ -337,7 +337,7 @@
                         <Grid Grid.Row="1" ColumnDefinitions="*,Auto">
                             <Grid Grid.Column="0" RowDefinitions="Auto,Auto">
                                 <Border Grid.Row="0"
-                                        BorderBrush="#FFE6E6E6"
+                                        BorderBrush="{DynamicResource InputBorderBrush}"
                                         BorderThickness="1"
                                         CornerRadius="6"
                                         Padding="6"
@@ -356,7 +356,7 @@
                                                     <DataTemplate>
                                                         <Grid Classes="ref-anchor" Width="52" Height="52">
                                                             <Border Background="Transparent"
-                                                                    BorderBrush="#FFCCCCCC"
+                                                                    BorderBrush="{DynamicResource ThumbnailBorderBrush}"
                                                                     BorderThickness="1"
                                                                     CornerRadius="4"
                                                                     Cursor="Hand"
@@ -402,7 +402,7 @@
                                             <TextBlock VerticalAlignment="Center"
                                                        Margin="4,0,0,0"
                                                        FontSize="11"
-                                                       Foreground="#FF666666"
+                                                       Foreground="{DynamicResource TextMutedBrush}"
                                                        Text="{Binding ReferenceImageCount, StringFormat=参考图: {0}/8}"/>
                                         </StackPanel>
                                     </ScrollViewer>
@@ -435,7 +435,7 @@
                                         VerticalAlignment="Bottom">
                                 <Button Content="生成" Command="{Binding GenerateCommand}"
                                         Padding="16,8" FontWeight="SemiBold"
-                                        Background="#FF1976D2" Foreground="White"/>
+                                        Background="{DynamicResource AccentBlueBrush}" Foreground="White"/>
                                 <Button Content="取消" Command="{Binding CancelCommand}"
                                         Padding="10,8"
                                         IsVisible="{Binding IsGenerating}"/>
@@ -444,15 +444,15 @@
 
                         <StackPanel Grid.Row="2" Margin="42,4,0,0" Spacing="2">
                             <TextBlock FontSize="12"
-                                       Foreground="#FFE65100"
+                                       Foreground="{DynamicResource WarningBrush}"
                                        IsVisible="{Binding IsVideoReferenceLimitExceeded}"
                                        Text="{Binding VideoReferenceLimitHint}"/>
                             <TextBlock FontSize="12"
-                                       Foreground="#FFE65100"
+                                       Foreground="{DynamicResource WarningBrush}"
                                        IsVisible="{Binding IsReferenceImageSizeMismatch}"
                                        Text="{Binding ReferenceImageValidationHint}"/>
                             <TextBlock FontSize="12"
-                                       Foreground="#FF2E7D32"
+                                       Foreground="{DynamicResource SuccessTextBrush}"
                                        IsVisible="{Binding IsReferenceImageSizeMatched}"
                                        Text="{Binding ReferenceImageValidationHint}"/>
                         </StackPanel>
@@ -468,17 +468,17 @@
             <TextBlock Grid.Column="2"
                        Text="请新建会话开始使用 Media Studio"
                        HorizontalAlignment="Center" VerticalAlignment="Center"
-                       FontSize="16" Foreground="#FFAAAAAA"
+                       FontSize="16" Foreground="{DynamicResource TextPlaceholderBrush}"
                        IsVisible="{Binding !HasCurrentSession}"/>
         </Grid>
 
         <!-- ===== 底部状态栏 ===== -->
-        <Border Grid.Row="2" Background="#FFF5F5F5" BorderBrush="#FFE0E0E0" BorderThickness="0,1,0,0" Padding="10,4">
+        <Border Grid.Row="2" Background="{DynamicResource SurfaceAltBrush}" BorderBrush="{DynamicResource BorderMediumBrush}" BorderThickness="0,1,0,0" Padding="10,4">
             <Grid ColumnDefinitions="*,Auto">
                 <TextBlock Grid.Column="0" Text="{Binding StatusText}"
-                           FontSize="12" Foreground="#FF888888" VerticalAlignment="Center"/>
+                           FontSize="12" Foreground="{DynamicResource TextSubtleBrush}" VerticalAlignment="Center"/>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10">
-                    <TextBlock FontSize="12" Foreground="#FF888888" VerticalAlignment="Center">
+                    <TextBlock FontSize="12" Foreground="{DynamicResource TextSubtleBrush}" VerticalAlignment="Center">
                         <TextBlock.Text>
                             <MultiBinding StringFormat="活跃任务: {0}">
                                 <Binding Path="ActiveTaskCount"/>

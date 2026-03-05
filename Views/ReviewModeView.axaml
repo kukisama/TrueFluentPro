@@ -18,8 +18,8 @@
     <UserControl.Styles>
         <Style Selector="Slider#PlaybackSlider">
             <Setter Property="Height" Value="12" />
-            <Setter Property="Background" Value="#FFE5E7EB" />
-            <Setter Property="Foreground" Value="#FF111827" />
+            <Setter Property="Background" Value="{DynamicResource BorderSubtleBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
         </Style>
         <!-- 右键仅弹菜单：抑制音频列表项的按下闪烁视觉态 -->
         <Style Selector="ListBox#AudioFileListBox > ListBoxItem:pressed">
@@ -34,8 +34,8 @@
             <Setter Property="MinHeight" Value="9" />
             <Setter Property="MaxWidth" Value="9" />
             <Setter Property="MaxHeight" Value="9" />
-            <Setter Property="Background" Value="#FF111827" />
-            <Setter Property="BorderBrush" Value="#FFE5E7EB" />
+            <Setter Property="Background" Value="{DynamicResource TextPrimaryBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderSubtleBrush}" />
             <Setter Property="BorderThickness" Value="1" />
         </Style>
         <Style Selector="Slider#PlaybackSlider /template/ Track">
@@ -43,9 +43,10 @@
         </Style>
     </UserControl.Styles>
 
-    <Grid ColumnDefinitions="280,*,6,320" ColumnSpacing="8" Margin="10">
+    <Grid ColumnDefinitions="280,Auto,*,Auto,320" Margin="10">
         <!-- 左侧文件与批处理 -->
-        <Border Grid.Column="0" BorderBrush="#FFE5E7EB" BorderThickness="1" CornerRadius="4" Padding="8">
+        <Border Grid.Column="0" BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="1" CornerRadius="4" Padding="8"
+                MinWidth="200">
             <TabControl>
                 <TabItem Header="文件库">
                     <StackPanel Spacing="10">
@@ -86,7 +87,7 @@
                             <Button Content="清空" Padding="6,3"
                                     Command="{Binding BatchProcessing.ClearBatchTasksCommand}"/>
                         </StackPanel>
-                        <Border BorderBrush="#FFE5E7EB" BorderThickness="1" CornerRadius="4" Padding="6">
+                        <Border BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="1" CornerRadius="4" Padding="6">
                             <ListBox ItemsSource="{Binding BatchProcessing.BatchTasks}" Height="220">
                                 <ListBox.ItemTemplate>
                                     <DataTemplate DataType="models:BatchTaskItem">
@@ -106,7 +107,7 @@
                             </ListBox>
                         </Border>
                         <TextBlock Text="队列池" FontSize="11" Foreground="Gray"/>
-                        <Border BorderBrush="#FFE5E7EB" BorderThickness="1" CornerRadius="4" Padding="6">
+                        <Border BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="1" CornerRadius="4" Padding="6">
                             <ListBox ItemsSource="{Binding BatchProcessing.BatchQueueItems}" Height="160">
                                 <ListBox.ItemTemplate>
                                     <DataTemplate x:CompileBindings="False">
@@ -151,8 +152,13 @@
             </TabControl>
         </Border>
 
+        <!-- 左侧 GridSplitter -->
+        <GridSplitter Grid.Column="1" Width="6" Background="{DynamicResource BorderSubtleBrush}"
+                  HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                  ResizeDirection="Columns"/>
+
         <!-- 中部播放器与字幕 -->
-        <Border Grid.Column="1" BorderBrush="#FFE5E7EB" BorderThickness="1" CornerRadius="4" Padding="8">
+        <Border Grid.Column="2" BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="1" CornerRadius="4" Padding="8">
             <Grid RowDefinitions="Auto,Auto,*">
                 <StackPanel Grid.Row="0" Spacing="6">
                     <TextBlock Text="音频播放" FontWeight="Bold"/>
@@ -168,13 +174,13 @@
                     <TextBlock Grid.Row="0"
                                Text="{Binding Playback.PlaybackTimeText}"
                                FontSize="10"
-                               Foreground="#FF111827"
+                               Foreground="{DynamicResource TextPrimaryBrush}"
                                HorizontalAlignment="Right"
                                Margin="0,0,0,4"/>
                     <Slider Grid.Row="1" Name="PlaybackSlider" Minimum="0" Maximum="1"
                             Value="{Binding Playback.PlaybackProgress, Mode=TwoWay}"/>
                 </Grid>
-                <Border Grid.Row="2" BorderBrush="#FFE5E7EB" BorderThickness="1" CornerRadius="4">
+                <Border Grid.Row="2" BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="1" CornerRadius="4">
                     <ListBox Name="SubtitleCueListBox" ItemsSource="{Binding FileLibrary.SubtitleCues}" SelectedItem="{Binding FileLibrary.SelectedSubtitleCue}" Margin="0" Padding="0"
                              Background="Transparent"
                              DoubleTapped="SubtitleCueListBox_DoubleTapped"
@@ -192,12 +198,13 @@
             </Grid>
         </Border>
 
-        <GridSplitter Grid.Column="2" Width="6" Background="#FFE5E7EB"
+        <!-- 右侧 GridSplitter -->
+        <GridSplitter Grid.Column="3" Width="6" Background="{DynamicResource BorderSubtleBrush}"
                   HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
                   ResizeDirection="Columns"/>
 
         <!-- 右侧复盘洞察总结 -->
-        <Border Grid.Column="3" BorderBrush="#FFE5E7EB" BorderThickness="1" CornerRadius="4" Padding="8"
+        <Border Grid.Column="4" BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="1" CornerRadius="4" Padding="8"
             MinWidth="240">
             <Grid RowDefinitions="Auto,*,Auto">
                 <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
@@ -208,7 +215,7 @@
                              Opacity="{Binding ConfigVM.ReviewSummaryLampOpacity}"
                              VerticalAlignment="Center"/>
                 </StackPanel>
-                <Border Grid.Row="1" BorderBrush="#FFE5E7EB" BorderThickness="1" CornerRadius="4" Margin="0,8,0,8">
+                <Border Grid.Row="1" BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="1" CornerRadius="4" Margin="0,8,0,8">
                     <TabControl ItemsSource="{Binding BatchProcessing.ReviewSheets}"
                                 SelectedItem="{Binding BatchProcessing.SelectedReviewSheet, Mode=TwoWay}">
                         <TabControl.ItemTemplate>

@@ -1532,3 +1532,23 @@ public class FloatingInsightManager
 - ✅ 浮动洞察窗口可弹出/关闭/拖拽/缩放/字体调节/背景切换
 - ✅ 洞察数据从主窗口实时同步到浮动窗口（通过 PropertyChanged 监听，无重复 AI 请求）
 - ✅ `dotnet build` 通过（0 Warning, 0 Error）
+
+### 第二阶段完成记录（2026-03-05）
+
+**完成状态**: ✅ 全部完成
+
+| # | 任务 | 状态 | 说明 |
+|---|------|------|------|
+| 2.1 | **语义化颜色资源定义** | ✅ | 在 `App.axaml` 中新增 Light/Dark 双主题 `ResourceDictionary.ThemeDictionaries`，定义 30+ 语义化画刷：`SurfaceBrush`、`SurfaceAltBrush`、`SurfaceHoverBrush`、`UserMessageBrush`、`AiMessageBrush`、`MediaItemBrush`、`SidebarBrush`（表面/背景）；`BorderSubtleBrush`、`BorderMediumBrush`、`BorderStrongBrush`、`DividerBrush`、`InputBorderBrush`、`ThumbnailBorderBrush`（边框/分隔线）；`PrimaryBrush`、`PrimaryDarkBrush`、`AccentBlueBrush`（主色/强调色）；`TextPrimaryBrush`、`TextMutedBrush`、`TextSubtleBrush`、`TextPlaceholderBrush`、`TimestampBrush`、`TextDarkBrush`（文字）；`SuccessBrush`、`IndicatorGreenBrush`、`WarningBrush`、`SuccessTextBrush`、`ErrorBrush`（状态色）。全局文本选中样式也迁移为 `{DynamicResource AccentBlueBrush}` |
+| 2.2 | **LiveTranslationView 硬编码色迁移** | ✅ | 将所有 `#FF` 硬编码颜色值（`#FFCBD5E1`、`#FFF8FAFC`、`#FF111827`、`#FFF1F5F9`、`#FF2563EB`、`#FF1D4ED8`、`#FFE5E7EB`、`#FFE2E8F0`、`#FF16A34A`）替换为 `{DynamicResource ...}` 引用。包括 `audio-pill` 样式定义、自动洞察面板、Markdown 边框、底部操作栏、音频电平指示器等所有位置 |
+| 2.3 | **MediaStudioView 硬编码色迁移** | ✅ | 将所有 `#FF` 硬编码颜色值（`#FFE3F2FD`、`#FFF5F5F5`、`#FF1976D2`、`#FF666666`、`#FF888888`、`#FFFAFAFA`、`#FF555555`、`#FF4CAF50`、`#FFE0E0E0`、`#FF999999`、`#FFEEEEEE`、`#FFE6E6E6`、`#FFCCCCCC`、`#FFE65100`、`#FF2E7D32`、`#FFAAAAAA`）替换为 `{DynamicResource ...}`。保留了视频播放叠层的半透明颜色（`#CC000000`、`#B3000000`、`#E6FFFFFF`）因其为媒体叠层特殊用途 |
+| 2.4 | **ReviewModeView 三栏弹性化** | ✅ | 将 `ColumnDefinitions="280,*,6,320"` 改为 `ColumnDefinitions="280,Auto,*,Auto,320"`，新增左侧 GridSplitter（Grid.Column="1"）和右侧 GridSplitter（Grid.Column="3"），左侧面板新增 `MinWidth="200"`，右侧面板保持 `MinWidth="240"`。用户可自由拖拽调整三栏宽度。同时将所有 `#FFE5E7EB`、`#FF111827` 替换为 `{DynamicResource ...}` |
+| 2.5 | **LiveTranslationView 控件密度优化** | ✅ | 将原 12 列 2 行 Grid（`ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,*,Auto,Auto"` + `RowDefinitions="Auto,Auto"`）改为单行 `StackPanel Orientation="Horizontal"`，核心控件（订阅、语言对、开始/停止）直接展示，音频设备设置（麦克风、系统回环、录制来源、刷新）收纳到 `Button.Flyout` 弹出面板中 |
+| 2.6 | **降低最小窗口尺寸** | ✅ | `MainWindow.axaml` 中 `MinWidth` 从 1240 降至 1000，`MinHeight` 从 600 降至 550 |
+| 2.7 | **InfoBar 通知替换底部文字状态** | ✅ | 在 `MainWindow.axaml` 的 `NavigationView.Content` 中添加 `ui:InfoBar`（Grid 底部行），绑定 `IsInfoBarOpen`、`InfoBarMessage`、`InfoBarSeverity`。在 `MainWindowViewModel` 中新增 `InfoBarMessage`、`IsInfoBarOpen`、`InfoBarSeverity` 属性和 `ShowInfoBar()` 方法。`StatusMessage` setter 自动触发 InfoBar，并根据消息内容（失败/错误→Error、警告→Warning、成功/已完成→Success、其他→Informational）自动推断 Severity 级别 |
+
+**验收标准达成情况**：
+- ✅ LiveTranslationView、MediaStudioView、ReviewModeView 中无硬编码 `#FF` 颜色值（全部通过 `{DynamicResource ...}` 引用语义化画刷）
+- ✅ ReviewModeView 三栏可由用户拖拽调整宽度（左右两个 GridSplitter）
+- ✅ 窗口可缩小到 1000×550（`MinWidth="1000" MinHeight="550"`）
+- ✅ `dotnet build` 通过（0 Warning, 0 Error）

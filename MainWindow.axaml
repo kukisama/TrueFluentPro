@@ -12,7 +12,7 @@
         x:DataType="vm:MainWindowViewModel"
         x:CompileBindings="False"
         Title="译见 Pro"
-        MinWidth="1240" MinHeight="600"
+        MinWidth="1000" MinHeight="550"
         >
 
     <Design.DataContext>
@@ -50,12 +50,20 @@
         </ui:NavigationView.MenuItems>
 
         <ui:NavigationView.Content>
-            <Panel>
-                <views:LiveTranslationView Name="LiveView" IsVisible="True"/>
-                <views:ReviewModeView Name="ReviewView" IsVisible="False"/>
-                <views:MediaStudioView Name="MediaStudioViewPage" IsVisible="False"/>
-                <views:SettingsView Name="SettingsViewPage" IsVisible="False"/>
-            </Panel>
+            <Grid RowDefinitions="*,Auto">
+                <Panel Grid.Row="0">
+                    <views:LiveTranslationView Name="LiveView" IsVisible="True"/>
+                    <views:ReviewModeView Name="ReviewView" IsVisible="False"/>
+                    <views:MediaStudioView Name="MediaStudioViewPage" IsVisible="False"/>
+                    <views:SettingsView Name="SettingsViewPage" IsVisible="False"/>
+                </Panel>
+                <!-- InfoBar 通知（替代纯文字 StatusMessage） -->
+                <ui:InfoBar Grid.Row="1"
+                            IsOpen="{Binding IsInfoBarOpen, Mode=TwoWay}"
+                            Message="{Binding InfoBarMessage}"
+                            Severity="{Binding InfoBarSeverity}"
+                            IsClosable="True"/>
+            </Grid>
         </ui:NavigationView.Content>
     </ui:NavigationView>
 </Window>

@@ -207,7 +207,51 @@ namespace TrueFluentPro.ViewModels
         public string StatusMessage
         {
             get => _statusMessage;
-            set => SetProperty(ref _statusMessage, value);
+            set
+            {
+                if (SetProperty(ref _statusMessage, value))
+                {
+                    // 同步到 InfoBar 通知
+                    ShowInfoBar(value);
+                }
+            }
+        }
+
+        public string InfoBarMessage
+        {
+            get => _infoBarMessage;
+            set => SetProperty(ref _infoBarMessage, value);
+        }
+
+        public bool IsInfoBarOpen
+        {
+            get => _isInfoBarOpen;
+            set => SetProperty(ref _isInfoBarOpen, value);
+        }
+
+        public int InfoBarSeverity
+        {
+            get => _infoBarSeverity;
+            set => SetProperty(ref _infoBarSeverity, value);
+        }
+
+        private void ShowInfoBar(string message)
+        {
+            if (string.IsNullOrWhiteSpace(message)) return;
+
+            InfoBarMessage = message;
+
+            // 根据消息内容推断严重级别（中文关键词匹配）
+            if (message.Contains("失败") || message.Contains("错误") || message.Contains("异常"))
+                InfoBarSeverity = 3; // Error
+            else if (message.Contains("警告") || message.Contains("注意"))
+                InfoBarSeverity = 2; // Warning
+            else if (message.Contains("成功") || message.Contains("已完成") || message.Contains("已加载") || message.Contains("已打开") || message.Contains("已切换") || message.Contains("已停止"))
+                InfoBarSeverity = 1; // Success
+            else
+                InfoBarSeverity = 0; // Informational
+
+            IsInfoBarOpen = true;
         }
 
         public string AudioDiagnosticStatus
