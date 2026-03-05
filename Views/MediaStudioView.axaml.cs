@@ -43,6 +43,8 @@ namespace TrueFluentPro.Views
         private const int ContentReadyRetryDelayMs = 60;
         private const int SaveSuppressAfterRestoreMs = 350;
         private const int ViewerResolveRetryCount = 30;
+        private const int ForceBottomRetryDelayMs = 90;
+        private const int ForceBottomRetryCount = 60;
 
         private bool _initialized;
 
@@ -213,18 +215,7 @@ namespace TrueFluentPro.Views
 
             if (_attachedSession != null)
             {
-                var offsetY = Math.Max(0, viewer.Offset.Y);
-                var maxY = Math.Max(0, viewer.Extent.Height - viewer.Viewport.Height);
-                var ratio = maxY > 0 ? Math.Clamp(offsetY / maxY, 0, 1) : 0;
-                _attachedSession.LastNonBottomScrollOffsetY = offsetY;
-                _attachedSession.LastScrollAnchorRatio = ratio;
-                _attachedSession.LastScrollSavedMaxY = maxY;
-
-                if (TryCaptureVisibleAnchor(_attachedSession, viewer, out var anchorIndex, out var anchorOffsetY))
-                {
-                    _attachedSession.LastScrollAnchorMessageIndex = anchorIndex;
-                    _attachedSession.LastScrollAnchorViewportOffsetY = anchorOffsetY;
-                }
+                PersistSessionScrollSnapshot(_attachedSession, viewer);
             }
 
             UpdateQuickNavButtonsVisibility();
@@ -264,6 +255,7 @@ namespace TrueFluentPro.Views
                 _isUserNearBottom = true;
                 UpdateQuickNavButtonsVisibility();
                 _suppressScrollSaveUntilUtc = DateTime.UtcNow.AddMilliseconds(SaveSuppressAfterRestoreMs);
+                EnsureBottomAfterOpen(session, generation, traceId, ForceBottomRetryCount);
                 RestoreScrollForSession(session, generation, traceId, 8, 2);
                 return;
             }
@@ -301,6 +293,59 @@ namespace TrueFluentPro.Views
             LogSwitchAudit(traceId, "Restore.Fail.ViewerTimeout",
                 $"session={DescribeSession(session)}");
             return false;
+        }
+
+        private void EnsureBottomAfterOpen(
+            MediaSessionViewModel session,
+            int generation,
+            int traceId,
+            int retries,
+            double? previousMaxY = null,
+            int stableCount = 0)
+        {
+            if (generation != _restoreGeneration || !ReferenceEquals(_attachedSession, session))
+            {
+                return;
+            }
+
+            var viewer = GetScrollViewerForSession(session) ?? _chatScrollViewer;
+            if (viewer == null)
+            {
+                if (retries <= 0)
+                {
+                    return;
+                }
+
+                _ = Task.Delay(ForceBottomRetryDelayMs).ContinueWith(_ =>
+                    EnsureBottomAfterOpen(session, generation, traceId, retries - 1, previousMaxY, stableCount));
+                return;
+            }
+
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (generation != _restoreGeneration || !ReferenceEquals(_attachedSession, session))
+                {
+                    return;
+                }
+
+                viewer.ScrollToEnd();
+                _isUserNearBottom = true;
+                UpdateQuickNavButtonsVisibility();
+
+                var maxY = Math.Max(0, viewer.Extent.Height - viewer.Viewport.Height);
+                var isStableMaxY = previousMaxY.HasValue && Math.Abs(maxY - previousMaxY.Value) < 1;
+                var nextStableCount = (isStableMaxY && IsNearBottom(viewer)) ? stableCount + 1 : 0;
+
+                if (nextStableCount >= 3 || retries <= 0)
+                {
+                    LogSwitchAudit(traceId, "Restore.Bottom.Sticky.Done",
+                        $"session={DescribeSession(session)} retriesLeft={retries} maxY={maxY:F1} stableCount={nextStableCount}");
+                    return;
+                }
+
+                _ = Task.Delay(ForceBottomRetryDelayMs).ContinueWith(_ =>
+                    EnsureBottomAfterOpen(session, generation, traceId, retries - 1, maxY, nextStableCount));
+            }, DispatcherPriority.Background);
         }
 
         private static bool HasMemoryAnchor(MediaSessionViewModel session)
@@ -481,21 +526,49 @@ namespace TrueFluentPro.Views
 
             var offsetY = Math.Max(0, viewer.Offset.Y);
             var maxY = Math.Max(0, viewer.Extent.Height - viewer.Viewport.Height);
+            var isNearBottom = IsNearBottom(viewer);
+            var keptNonBottomSnapshot = PersistSessionScrollSnapshot(_attachedSession, viewer);
             var ratio = maxY > 0 ? Math.Clamp(offsetY / maxY, 0, 1) : 0;
 
-            _attachedSession.LastNonBottomScrollOffsetY = offsetY;
-            _attachedSession.LastScrollAnchorRatio = ratio;
-            _attachedSession.LastScrollSavedMaxY = maxY;
+            LogSwitchAudit(_switchTraceSequence, isNearBottom ? "Offset.Save.Bottom" : "Offset.Save",
+                $"session={DescribeSession(_attachedSession)} offsetY={offsetY:F1} maxY={maxY:F1} ratio={ratio:F4} hasSnapshot={keptNonBottomSnapshot} storedOffset={_attachedSession.LastNonBottomScrollOffsetY?.ToString("F1") ?? "null"}");
+        }
 
-            var hasAnchor = TryCaptureVisibleAnchor(_attachedSession, viewer, out var anchorIndex, out var anchorOffsetY);
-            if (hasAnchor)
+        private bool PersistSessionScrollSnapshot(MediaSessionViewModel session, ScrollViewer viewer)
+        {
+            if (IsNearBottom(viewer))
             {
-                _attachedSession.LastScrollAnchorMessageIndex = anchorIndex;
-                _attachedSession.LastScrollAnchorViewportOffsetY = anchorOffsetY;
+                ClearSessionScrollSnapshot(session);
+                return false;
             }
 
-            LogSwitchAudit(_switchTraceSequence, IsNearBottom(viewer) ? "Offset.Save.Bottom" : "Offset.Save",
-                $"session={DescribeSession(_attachedSession)} offsetY={offsetY:F1} maxY={maxY:F1} ratio={ratio:F4} hasAnchor={hasAnchor} anchorIdx={(hasAnchor ? anchorIndex.ToString() : "null")} anchorOffY={(hasAnchor ? anchorOffsetY.ToString("F1") : "null")}");
+            var offsetY = Math.Max(0, viewer.Offset.Y);
+            var maxY = Math.Max(0, viewer.Extent.Height - viewer.Viewport.Height);
+            var ratio = maxY > 0 ? Math.Clamp(offsetY / maxY, 0, 1) : 0;
+
+            session.LastNonBottomScrollOffsetY = offsetY;
+            session.LastScrollAnchorRatio = ratio;
+            session.LastScrollSavedMaxY = maxY;
+
+            if (TryCaptureVisibleAnchor(session, viewer, out var anchorIndex, out var anchorOffsetY))
+            {
+                session.LastScrollAnchorMessageIndex = anchorIndex;
+                session.LastScrollAnchorViewportOffsetY = anchorOffsetY;
+                return true;
+            }
+
+            session.LastScrollAnchorMessageIndex = null;
+            session.LastScrollAnchorViewportOffsetY = null;
+            return true;
+        }
+
+        private static void ClearSessionScrollSnapshot(MediaSessionViewModel session)
+        {
+            session.LastNonBottomScrollOffsetY = null;
+            session.LastScrollAnchorRatio = null;
+            session.LastScrollSavedMaxY = null;
+            session.LastScrollAnchorMessageIndex = null;
+            session.LastScrollAnchorViewportOffsetY = null;
         }
 
         private static string DescribeSession(MediaSessionViewModel? session)
@@ -694,6 +767,13 @@ namespace TrueFluentPro.Views
             {
                 _chatScrollViewer = viewer;
                 UpdateQuickNavButtonsVisibility();
+
+                // 首次进入 Media Studio 时，AttachSession 可能发生在 ScrollViewer 真正挂载之前。
+                // 此处在可视树就绪后补触发一次恢复流程，确保“默认到底部/记忆位置恢复”必达。
+                var traceId = Interlocked.Increment(ref _switchTraceSequence);
+                LogSwitchAudit(traceId, "Restore.Retry.OnViewerAttached",
+                    $"session={DescribeSession(session)} generation={_restoreGeneration}");
+                RestoreScrollForSession(session, _restoreGeneration, traceId);
             }
         }
 

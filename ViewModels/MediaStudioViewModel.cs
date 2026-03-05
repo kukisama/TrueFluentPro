@@ -197,6 +197,7 @@ namespace TrueFluentPro.ViewModels
                 s => SaveSessionMeta(s));
 
             session.IsContentLoaded = true;
+            ResetSessionScrollSnapshot(session);
 
             Sessions.Add(session);
             CurrentSession = session;
@@ -494,6 +495,7 @@ namespace TrueFluentPro.ViewModels
                         s => SaveSessionMeta(s));
 
                     session.IsContentLoaded = false;
+                    ResetSessionScrollSnapshot(session);
 
                     Sessions.Add(session);
                 }
@@ -590,7 +592,6 @@ namespace TrueFluentPro.ViewModels
                         Name = string.IsNullOrWhiteSpace(sessionData.Name) ? "新会话" : sessionData.Name,
                         DirectoryName = Path.GetFileName(dir) ?? $"session_{sessionData.Id}",
                         IsDeleted = sessionData.IsDeleted,
-                        LastNonBottomScrollOffsetY = null,
                         MessageCount = sessionData.Messages?.Count ?? 0,
                         TaskCount = sessionData.Tasks?.Count ?? 0,
                         UpdatedAt = File.GetLastWriteTime(metaPath)
@@ -617,6 +618,10 @@ namespace TrueFluentPro.ViewModels
             {
                 return;
             }
+
+            // 旧版本可能在文件中出现过滚动相关字段；
+            // 即使存在，也统一忽略，首次加载一律按“无位置快照”处理（默认到底部）。
+            ResetSessionScrollSnapshot(session);
 
             var sw = Stopwatch.StartNew();
 
@@ -684,6 +689,15 @@ namespace TrueFluentPro.ViewModels
                 sw.Stop();
                 Debug.WriteLine($"加载会话 {session.SessionId}: 失败后标记为已加载，{sw.ElapsedMilliseconds}ms");
             }
+        }
+
+        private static void ResetSessionScrollSnapshot(MediaSessionViewModel session)
+        {
+            session.LastNonBottomScrollOffsetY = null;
+            session.LastScrollAnchorRatio = null;
+            session.LastScrollSavedMaxY = null;
+            session.LastScrollAnchorMessageIndex = null;
+            session.LastScrollAnchorViewportOffsetY = null;
         }
 
         private string ResolveSessionDirectory(MediaSessionIndexItem entry)
@@ -761,7 +775,6 @@ namespace TrueFluentPro.ViewModels
 
             entry.Name = session.SessionName;
             entry.IsDeleted = false;
-            entry.LastNonBottomScrollOffsetY = null;
             entry.DirectoryName = Path.GetFileName(session.SessionDirectory) ?? entry.DirectoryName;
             if (session.IsContentLoaded)
             {

@@ -23,7 +23,6 @@ namespace TrueFluentPro.Models
         public string Name { get; set; } = "新会话";
         public string DirectoryName { get; set; } = string.Empty;
         public bool IsDeleted { get; set; } = false;
-        public double? LastNonBottomScrollOffsetY { get; set; }
         public int MessageCount { get; set; }
         public int TaskCount { get; set; }
         public DateTime UpdatedAt { get; set; } = DateTime.Now;
