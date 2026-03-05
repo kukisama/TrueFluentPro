@@ -47,7 +47,7 @@
     <DockPanel>
         <!-- 顶部工具栏 -->
         <Border DockPanel.Dock="Top" Padding="10" BorderBrush="#FFE5E7EB" BorderThickness="0,0,0,1">
-            <Grid ColumnDefinitions="Auto,*,Auto">
+            <Grid ColumnDefinitions="Auto,*">
                 <TextBlock Grid.Column="0" Text="译见 Pro" FontSize="18" FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,20,0"/>
 
                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="5">
@@ -88,12 +88,6 @@
                     </Border>
                 </StackPanel>
 
-                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="5">
-                    <Button Content="说明" Padding="10,5" Command="{Binding ShowHelpCommand}"
-                            ToolTip.Tip="查看帮助说明"/>
-                    <Button Content="关于" Padding="10,5" Command="{Binding ShowAboutCommand}"
-                            ToolTip.Tip="查看关于信息"/>
-                </StackPanel>
             </Grid>
         </Border>
 

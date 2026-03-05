@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using Avalonia.Threading;
+using TrueFluentPro.Helpers;
 using TrueFluentPro.Models;
 using TrueFluentPro.Services;
 
@@ -126,7 +127,7 @@ namespace TrueFluentPro.ViewModels
             }
         }
 
-        public bool IsAiConfigured => _configProvider().AiConfig?.IsValid == true;
+        public bool IsAiConfigured => TryBuildInsightRuntimeConfig(_configProvider(), out _, out _);
 
         public List<InsightPresetButton> InsightPresetButtons =>
             _configProvider().AiConfig?.PresetButtons ?? new List<InsightPresetButton>();
@@ -170,15 +171,23 @@ namespace TrueFluentPro.ViewModels
         {
             try
             {
-                var ai = _configProvider().AiConfig;
-                if (ai == null)
-                    return;
-                if (ai.ProviderType != AiProviderType.AzureOpenAi)
-                    return;
-                if (ai.AzureAuthMode != AzureAuthMode.AAD)
+                var config = _configProvider();
+                if (!TryBuildInsightRuntimeConfig(config, out var runtimeConfig, out var endpoint))
                     return;
 
-                await _azureTokenProvider.TrySilentLoginAsync(ai.AzureTenantId, ai.AzureClientId);
+                if (runtimeConfig.ProviderType != AiProviderType.AzureOpenAi
+                    || runtimeConfig.AzureAuthMode != AzureAuthMode.AAD)
+                    return;
+
+                if (endpoint != null)
+                {
+                    var endpointProvider = new AzureTokenProvider(GetEndpointProfileKey(endpoint));
+                    await endpointProvider.TrySilentLoginAsync(runtimeConfig.AzureTenantId, runtimeConfig.AzureClientId);
+                }
+                else
+                {
+                    await _azureTokenProvider.TrySilentLoginAsync(runtimeConfig.AzureTenantId, runtimeConfig.AzureClientId);
+                }
             }
             catch
             {
@@ -221,10 +230,23 @@ namespace TrueFluentPro.ViewModels
         private async void SendInsight(string userQuestion, bool bufferOutput = false)
         {
             var config = _configProvider();
-            if (config.AiConfig == null || !config.AiConfig.IsValid)
+            if (!TryBuildInsightRuntimeConfig(config, out var runtimeConfig, out var endpoint))
             {
                 return;
             }
+
+            AzureTokenProvider? tokenProvider = null;
+            if (runtimeConfig.ProviderType == AiProviderType.AzureOpenAi
+                && runtimeConfig.AzureAuthMode == AzureAuthMode.AAD)
+            {
+                tokenProvider = endpoint != null
+                    ? new AzureTokenProvider(GetEndpointProfileKey(endpoint))
+                    : _azureTokenProvider;
+
+                await tokenProvider.TrySilentLoginAsync(runtimeConfig.AzureTenantId, runtimeConfig.AzureClientId);
+            }
+
+            var runtimeService = new AiInsightService(tokenProvider);
 
             _insightCts?.Cancel();
             _insightCts = new CancellationTokenSource();
@@ -236,13 +258,14 @@ namespace TrueFluentPro.ViewModels
                 InsightMarkdown = "";
             }
 
-            var systemPrompt = config.AiConfig.InsightSystemPrompt;
+            var aiConfig = config.AiConfig;
+            var systemPrompt = aiConfig?.InsightSystemPrompt;
             if (string.IsNullOrWhiteSpace(systemPrompt))
             {
                 systemPrompt = new AiConfig().InsightSystemPrompt;
             }
             var historyText = FormatHistoryForAi();
-            var userTemplate = config.AiConfig.InsightUserContentTemplate;
+            var userTemplate = aiConfig?.InsightUserContentTemplate;
             if (string.IsNullOrWhiteSpace(userTemplate))
             {
                 userTemplate = new AiConfig().InsightUserContentTemplate;
@@ -254,8 +277,8 @@ namespace TrueFluentPro.ViewModels
             var sb = new System.Text.StringBuilder();
             try
             {
-                await _aiInsightService.StreamChatAsync(
-                    config.AiConfig,
+                await runtimeService.StreamChatAsync(
+                    runtimeConfig,
                     systemPrompt,
                     fullUserContent,
                     chunk =>
@@ -312,6 +335,105 @@ namespace TrueFluentPro.ViewModels
             {
                 IsInsightLoading = false;
             }
+        }
+
+        private static string GetEndpointProfileKey(AiEndpoint endpoint) => $"endpoint_{endpoint.Id}";
+
+        private static ModelReference? SelectInsightReference(AiConfig ai)
+            => ai.QuickModelRef ?? ai.InsightModelRef ?? ai.SummaryModelRef ?? ai.ReviewModelRef;
+
+        private static bool TryBuildInsightRuntimeConfig(
+            AzureSpeechConfig config,
+            out AiConfig runtimeConfig,
+            out AiEndpoint? endpoint)
+        {
+            runtimeConfig = new AiConfig();
+            endpoint = null;
+
+            var ai = config.AiConfig;
+            if (ai == null)
+            {
+                return false;
+            }
+
+            var reference = SelectInsightReference(ai);
+            if (reference != null)
+            {
+                var resolved = config.ResolveModel(reference);
+                if (resolved.Endpoint != null && resolved.Model != null)
+                {
+                    endpoint = resolved.Endpoint;
+                    var model = resolved.Model;
+
+                    runtimeConfig = new AiConfig
+                    {
+                        ProviderType = endpoint.ProviderType,
+                        ApiEndpoint = endpoint.BaseUrl?.Trim() ?? "",
+                        ApiKey = endpoint.ApiKey?.Trim() ?? "",
+                        ApiVersion = string.IsNullOrWhiteSpace(endpoint.ApiVersion) ? "2024-02-01" : endpoint.ApiVersion.Trim(),
+                        AzureAuthMode = endpoint.AuthMode,
+                        AzureTenantId = endpoint.AzureTenantId ?? "",
+                        AzureClientId = endpoint.AzureClientId ?? "",
+                        SummaryEnableReasoning = ai.SummaryEnableReasoning,
+                        InsightSystemPrompt = ai.InsightSystemPrompt,
+                        ReviewSystemPrompt = ai.ReviewSystemPrompt,
+                        InsightUserContentTemplate = ai.InsightUserContentTemplate,
+                        ReviewUserContentTemplate = ai.ReviewUserContentTemplate,
+                        AutoInsightBufferOutput = ai.AutoInsightBufferOutput,
+                        PresetButtons = ai.PresetButtons,
+                        ReviewSheets = ai.ReviewSheets
+                    };
+
+                    if (endpoint.ProviderType == AiProviderType.AzureOpenAi)
+                    {
+                        var deployment = string.IsNullOrWhiteSpace(model.DeploymentName)
+                            ? model.ModelId
+                            : model.DeploymentName;
+                        runtimeConfig.QuickDeploymentName = deployment;
+                        runtimeConfig.SummaryDeploymentName = deployment;
+                    }
+                    else
+                    {
+                        runtimeConfig.QuickModelName = model.ModelId;
+                        runtimeConfig.SummaryModelName = model.ModelId;
+                    }
+
+                    ConfigViewHelper.ApplyModelDeploymentFallbacks(runtimeConfig);
+                    return runtimeConfig.IsValid;
+                }
+            }
+
+            // 兼容历史配置：当未配置新引用时继续走旧字段
+            if (ai.IsValid)
+            {
+                runtimeConfig = new AiConfig
+                {
+                    ProviderType = ai.ProviderType,
+                    ApiEndpoint = ai.ApiEndpoint,
+                    ApiKey = ai.ApiKey,
+                    ModelName = ai.ModelName,
+                    SummaryModelName = ai.SummaryModelName,
+                    QuickModelName = ai.QuickModelName,
+                    DeploymentName = ai.DeploymentName,
+                    SummaryDeploymentName = ai.SummaryDeploymentName,
+                    QuickDeploymentName = ai.QuickDeploymentName,
+                    ApiVersion = ai.ApiVersion,
+                    AzureAuthMode = ai.AzureAuthMode,
+                    AzureTenantId = ai.AzureTenantId,
+                    AzureClientId = ai.AzureClientId,
+                    SummaryEnableReasoning = ai.SummaryEnableReasoning,
+                    InsightSystemPrompt = ai.InsightSystemPrompt,
+                    ReviewSystemPrompt = ai.ReviewSystemPrompt,
+                    InsightUserContentTemplate = ai.InsightUserContentTemplate,
+                    ReviewUserContentTemplate = ai.ReviewUserContentTemplate,
+                    AutoInsightBufferOutput = ai.AutoInsightBufferOutput,
+                    PresetButtons = ai.PresetButtons,
+                    ReviewSheets = ai.ReviewSheets
+                };
+                return true;
+            }
+
+            return false;
         }
 
         private void StopInsight()

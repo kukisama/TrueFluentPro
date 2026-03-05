@@ -1557,29 +1557,20 @@ namespace TrueFluentPro.ViewModels
 
         private AiConfig BuildVideoAiConfig()
         {
-            AiConfig config;
+            var useFallback = string.IsNullOrWhiteSpace(_genConfig.VideoApiEndpoint);
 
-            if (_genConfig.VideoUseImageEndpoint)
+            var config = new AiConfig
             {
-                config = BuildImageAiConfig();
-            }
-            else
-            {
-                var useFallback = string.IsNullOrWhiteSpace(_genConfig.VideoApiEndpoint);
-
-                config = new AiConfig
-                {
-                    ProviderType = useFallback ? _aiConfig.ProviderType : _genConfig.VideoProviderType,
-                    ApiEndpoint = useFallback ? _aiConfig.ApiEndpoint : _genConfig.VideoApiEndpoint,
-                    ApiKey = useFallback ? _aiConfig.ApiKey : _genConfig.VideoApiKey,
-                    ApiVersion = string.IsNullOrWhiteSpace(_aiConfig.ApiVersion)
-                        ? "2024-02-01"
-                        : _aiConfig.ApiVersion,
-                    AzureAuthMode = useFallback ? _aiConfig.AzureAuthMode : _genConfig.VideoAzureAuthMode,
-                    AzureTenantId = useFallback ? _aiConfig.AzureTenantId : _genConfig.VideoAzureTenantId,
-                    AzureClientId = useFallback ? _aiConfig.AzureClientId : _genConfig.VideoAzureClientId
-                };
-            }
+                ProviderType = useFallback ? _aiConfig.ProviderType : _genConfig.VideoProviderType,
+                ApiEndpoint = useFallback ? _aiConfig.ApiEndpoint : _genConfig.VideoApiEndpoint,
+                ApiKey = useFallback ? _aiConfig.ApiKey : _genConfig.VideoApiKey,
+                ApiVersion = string.IsNullOrWhiteSpace(_aiConfig.ApiVersion)
+                    ? "2024-02-01"
+                    : _aiConfig.ApiVersion,
+                AzureAuthMode = useFallback ? _aiConfig.AzureAuthMode : _genConfig.VideoAzureAuthMode,
+                AzureTenantId = useFallback ? _aiConfig.AzureTenantId : _genConfig.VideoAzureTenantId,
+                AzureClientId = useFallback ? _aiConfig.AzureClientId : _genConfig.VideoAzureClientId
+            };
 
             config.DeploymentName = _genConfig.VideoModel;
             config.ModelName = _genConfig.VideoModel;

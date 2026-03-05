@@ -118,8 +118,7 @@ namespace TrueFluentPro.ViewModels
             _genConfig = genConfig;
 
             _imageService.SetTokenProvider(_imageTokenProvider);
-            // 当视频终结点与图片一致时，复用同一套 AAD 登录状态（避免“图片已登录但视频仍提示未登录”的困惑）
-            _videoService.SetTokenProvider(_genConfig.VideoUseImageEndpoint ? _imageTokenProvider : _videoTokenProvider);
+            _videoService.SetTokenProvider(_videoTokenProvider);
 
             var sessionsPath = PathManager.Instance.SessionsPath;
             _studioDirectory = Path.Combine(sessionsPath, "media-studio");
@@ -174,9 +173,7 @@ namespace TrueFluentPro.ViewModels
                     _genConfig.ImageAzureClientId);
             }
 
-            // 视频使用独立终结点时，才需要单独的登录状态
-            if (!_genConfig.VideoUseImageEndpoint
-                && _genConfig.VideoProviderType == AiProviderType.AzureOpenAi
+            if (_genConfig.VideoProviderType == AiProviderType.AzureOpenAi
                 && _genConfig.VideoAzureAuthMode == AzureAuthMode.AAD)
             {
                 await _videoTokenProvider.TrySilentLoginAsync(
@@ -647,7 +644,20 @@ namespace TrueFluentPro.ViewModels
                 {
                     foreach (var msg in sessionData.Messages)
                     {
-                        session.Messages.Add(new ChatMessageViewModel(msg));
+                        var normalizedMessage = new MediaChatMessage
+                        {
+                            Role = msg.Role,
+                            Text = msg.Text,
+                            Timestamp = msg.Timestamp,
+                            GenerateSeconds = msg.GenerateSeconds,
+                            DownloadSeconds = msg.DownloadSeconds,
+                            MediaPaths = msg.MediaPaths?
+                                .Select(p => ResolveStoredPathForLoad(p, session.SessionDirectory))
+                                .Where(p => !string.IsNullOrWhiteSpace(p))
+                                .ToList() ?? new List<string>()
+                        };
+
+                        session.Messages.Add(new ChatMessageViewModel(normalizedMessage));
                     }
                 }
 
@@ -656,6 +666,7 @@ namespace TrueFluentPro.ViewModels
                 {
                     foreach (var task in sessionData.Tasks)
                     {
+                        task.ResultFilePath = ResolveStoredPathForLoad(task.ResultFilePath, session.SessionDirectory);
                         session.TaskHistory.Add(task);
                     }
                 }
@@ -697,7 +708,10 @@ namespace TrueFluentPro.ViewModels
                         {
                             Role = m.Role,
                             Text = m.Text,
-                            MediaPaths = m.MediaPaths.ToList(),
+                            MediaPaths = m.MediaPaths
+                                .Select(p => ConvertPathForSave(p, session.SessionDirectory))
+                                .Where(p => !string.IsNullOrWhiteSpace(p))
+                                .ToList(),
                             Timestamp = m.Timestamp,
                             GenerateSeconds = m.GenerateSeconds,
                             DownloadSeconds = m.DownloadSeconds
@@ -709,7 +723,7 @@ namespace TrueFluentPro.ViewModels
                             Status = t.Status,
                             Prompt = t.Prompt,
                             Progress = t.Progress,
-                            ResultFilePath = t.ResultFilePath,
+                            ResultFilePath = ConvertPathForSave(t.ResultFilePath, session.SessionDirectory),
                             ErrorMessage = t.ErrorMessage,
                             CreatedAt = t.CreatedAt,
                             RemoteVideoId = t.RemoteVideoId,
@@ -789,6 +803,104 @@ namespace TrueFluentPro.ViewModels
         {
             SaveAllSessions();
             CancelAll();
+        }
+
+        private static string ConvertPathForSave(string? path, string sessionDirectory)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return string.Empty;
+            }
+
+            var value = path.Trim();
+            if (Uri.TryCreate(value, UriKind.Absolute, out var uri)
+                && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
+            {
+                return value;
+            }
+
+            try
+            {
+                if (!Path.IsPathRooted(value))
+                {
+                    return value.Replace('\\', '/');
+                }
+
+                var fullPath = Path.GetFullPath(value);
+                var fullSessionDirectory = Path.GetFullPath(sessionDirectory);
+                var sessionPrefix = fullSessionDirectory.EndsWith(Path.DirectorySeparatorChar)
+                    ? fullSessionDirectory
+                    : fullSessionDirectory + Path.DirectorySeparatorChar;
+
+                if (fullPath.StartsWith(sessionPrefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    var relative = Path.GetRelativePath(fullSessionDirectory, fullPath);
+                    return relative.Replace('\\', '/');
+                }
+
+                return fullPath;
+            }
+            catch
+            {
+                return value;
+            }
+        }
+
+        private static string ResolveStoredPathForLoad(string? storedPath, string sessionDirectory)
+        {
+            if (string.IsNullOrWhiteSpace(storedPath))
+            {
+                return string.Empty;
+            }
+
+            var value = storedPath.Trim();
+            if (Uri.TryCreate(value, UriKind.Absolute, out var uri)
+                && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
+            {
+                return value;
+            }
+
+            try
+            {
+                if (!Path.IsPathRooted(value))
+                {
+                    var candidate = Path.GetFullPath(Path.Combine(sessionDirectory, value.Replace('/', Path.DirectorySeparatorChar)));
+                    return candidate;
+                }
+
+                var fullPath = Path.GetFullPath(value);
+                if (File.Exists(fullPath) || Directory.Exists(fullPath))
+                {
+                    return fullPath;
+                }
+
+                var fileName = Path.GetFileName(fullPath);
+                if (string.IsNullOrWhiteSpace(fileName))
+                {
+                    return fullPath;
+                }
+
+                var fallbackCandidates = new[]
+                {
+                    Path.Combine(sessionDirectory, fileName),
+                    Path.Combine(sessionDirectory, "media", fileName),
+                    Path.Combine(sessionDirectory, "outputs", fileName)
+                };
+
+                foreach (var candidate in fallbackCandidates)
+                {
+                    if (File.Exists(candidate) || Directory.Exists(candidate))
+                    {
+                        return candidate;
+                    }
+                }
+
+                return fullPath;
+            }
+            catch
+            {
+                return value;
+            }
         }
     }
 }

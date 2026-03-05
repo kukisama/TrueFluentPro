@@ -37,8 +37,8 @@ public partial class SettingsView : UserControl
         // 绑定 Preset/Review 编辑器到 SettingsVM
         if (DataContext is MainWindowViewModel vm)
         {
-            PresetButtonsEditorControl.Items = vm.Settings.PresetButtons;
-            ReviewSheetsEditorControl.Items = vm.Settings.ReviewSheets;
+            PresetButtonsEditorControl.ItemsChanged += () => vm.Settings.NotifyPresetButtonsChanged();
+            ReviewSheetsEditorControl.ItemsChanged += () => vm.Settings.NotifyReviewSheetsChanged();
 
             // 初始化字号下拉
             SelectFontSizeComboBox(vm.Settings.DefaultFontSize);
@@ -62,6 +62,8 @@ public partial class SettingsView : UserControl
                     ep.AzureTenantId = newTenant;
                     vm.Settings.NotifyModelChanged(); // trigger save
                 }
+
+                _ = vm.Settings.RefreshAiAuthStatusAsync();
             };
         }
     }
@@ -251,6 +253,12 @@ public partial class SettingsView : UserControl
         };
         if (DataContext is MainWindowViewModel vm)
             vm.Settings.NotifyModelChanged();
+    }
+
+    private void EndpointField_LostFocus(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is MainWindowViewModel vm)
+            vm.Settings.NotifyEndpointChanged();
     }
 
     // ═══ AAD 登录面板同步 ═══

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.ObjectModel;
 using Avalonia;
 using Avalonia.Controls;
@@ -8,6 +9,8 @@ namespace TrueFluentPro.Controls
 {
     public partial class ReviewSheetsEditor : UserControl
     {
+        public event Action? ItemsChanged;
+
         public static readonly StyledProperty<ObservableCollection<ReviewSheetPreset>?> ItemsProperty =
             AvaloniaProperty.Register<ReviewSheetsEditor, ObservableCollection<ReviewSheetPreset>?>(nameof(Items));
 
@@ -40,6 +43,7 @@ namespace TrueFluentPro.Controls
                 Prompt = "",
                 IncludeInBatch = true
             });
+            ItemsChanged?.Invoke();
         }
 
         private void RemoveReviewSheet_Click(object? sender, RoutedEventArgs e)
@@ -47,7 +51,13 @@ namespace TrueFluentPro.Controls
             if (sender is Button btn && btn.Tag is ReviewSheetPreset item)
             {
                 Items?.Remove(item);
+                ItemsChanged?.Invoke();
             }
+        }
+
+        private void ReviewField_LostFocus(object? sender, RoutedEventArgs e)
+        {
+            ItemsChanged?.Invoke();
         }
     }
 }

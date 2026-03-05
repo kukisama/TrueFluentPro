@@ -56,7 +56,7 @@ namespace TrueFluentPro.ViewModels
         public RelayCommand CancelSpeechSubtitleCommand { get; }
         public RelayCommand GenerateBatchSpeechSubtitleCommand { get; }
 
-        private bool IsAiConfigured => _configProvider().AiConfig?.IsValid == true;
+        private bool IsAiConfigured => TryBuildReviewRuntimeConfig(_configProvider(), out _, out _);
 
         public BatchProcessingViewModel(
             Func<AzureSpeechConfig> configProvider,
@@ -1050,6 +1050,31 @@ namespace TrueFluentPro.ViewModels
             }
 
             var config = _configProvider();
+            if (!TryBuildReviewRuntimeConfig(config, out var runtimeConfig, out var endpoint))
+            {
+                UpdateQueueItem(queueItem, BatchTaskStatus.Failed, 0, "AI 配置无效");
+                if (ShouldWriteBatchLogFailure)
+                {
+                    AppendBatchLog("ReviewFailed", queueItem.FileName, "Failed", "AI 配置无效");
+                }
+                if (parentItem != null)
+                {
+                    UpdateBatchReviewProgress(parentItem, BatchTaskStatus.Failed);
+                }
+                return;
+            }
+
+            AzureTokenProvider? tokenProvider = null;
+            if (runtimeConfig.ProviderType == AiProviderType.AzureOpenAi
+                && runtimeConfig.AzureAuthMode == AzureAuthMode.AAD)
+            {
+                tokenProvider = endpoint != null
+                    ? new AzureTokenProvider(GetEndpointProfileKey(endpoint))
+                    : new AzureTokenProvider("ai");
+                await tokenProvider.TrySilentLoginAsync(runtimeConfig.AzureTenantId, runtimeConfig.AzureClientId);
+            }
+            var runtimeInsightService = new AiInsightService(tokenProvider);
+
             var systemPrompt = config.AiConfig?.ReviewSystemPrompt;
             if (string.IsNullOrWhiteSpace(systemPrompt))
             {
@@ -1071,8 +1096,8 @@ namespace TrueFluentPro.ViewModels
             {
                 var sb = new System.Text.StringBuilder();
                 AiRequestOutcome? outcome = null;
-                await _aiInsightService.StreamChatAsync(
-                    config.AiConfig!,
+                await runtimeInsightService.StreamChatAsync(
+                    runtimeConfig,
                     systemPrompt,
                     userPrompt,
                     chunk =>
@@ -1081,7 +1106,7 @@ namespace TrueFluentPro.ViewModels
                     },
                     localToken,
                     AiChatProfile.Summary,
-                    enableReasoning: config.AiConfig!.SummaryEnableReasoning,
+                    enableReasoning: runtimeConfig.SummaryEnableReasoning,
                     onOutcome: o => outcome = o);
 
                 var markdown = TimeLinkHelper.InjectTimeLinks(sb.ToString());
@@ -1096,7 +1121,7 @@ namespace TrueFluentPro.ViewModels
                 {
                     note = "完成(思考)";
                 }
-                else if (config.AiConfig!.SummaryEnableReasoning)
+                else if (runtimeConfig.SummaryEnableReasoning)
                 {
                     note = "完成(非思考)";
                 }
@@ -1628,12 +1653,22 @@ namespace TrueFluentPro.ViewModels
         private async Task GenerateReviewSheetAsync(ReviewSheetState sheet, MediaFileItem audioFile, List<SubtitleCue> cues)
         {
             var config = _configProvider();
-            var aiConfig = config.AiConfig;
-            if (aiConfig == null || !aiConfig.IsValid)
+            if (!TryBuildReviewRuntimeConfig(config, out var aiConfig, out var endpoint))
             {
                 sheet.StatusMessage = "AI 配置无效，请先配置 AI 服务";
                 return;
             }
+
+            AzureTokenProvider? tokenProvider = null;
+            if (aiConfig.ProviderType == AiProviderType.AzureOpenAi
+                && aiConfig.AzureAuthMode == AzureAuthMode.AAD)
+            {
+                tokenProvider = endpoint != null
+                    ? new AzureTokenProvider(GetEndpointProfileKey(endpoint))
+                    : new AzureTokenProvider("ai");
+                await tokenProvider.TrySilentLoginAsync(aiConfig.AzureTenantId, aiConfig.AzureClientId);
+            }
+            var runtimeInsightService = new AiInsightService(tokenProvider);
 
             if (audioFile == null || string.IsNullOrWhiteSpace(audioFile.FullPath))
             {
@@ -1679,7 +1714,7 @@ namespace TrueFluentPro.ViewModels
             {
                 var sb = new System.Text.StringBuilder();
                 AiRequestOutcome? outcome = null;
-                await _aiInsightService.StreamChatAsync(
+                await runtimeInsightService.StreamChatAsync(
                     aiConfig,
                     systemPrompt,
                     userPrompt,
@@ -1772,6 +1807,104 @@ namespace TrueFluentPro.ViewModels
                 sb.AppendLine($"[{time}] {cue.Text}");
             }
             return sb.ToString();
+        }
+
+        private static string GetEndpointProfileKey(AiEndpoint endpoint) => $"endpoint_{endpoint.Id}";
+
+        private static ModelReference? SelectReviewReference(AiConfig ai)
+            => ai.ReviewModelRef ?? ai.SummaryModelRef ?? ai.QuickModelRef ?? ai.InsightModelRef;
+
+        private static bool TryBuildReviewRuntimeConfig(
+            AzureSpeechConfig config,
+            out AiConfig runtimeConfig,
+            out AiEndpoint? endpoint)
+        {
+            runtimeConfig = new AiConfig();
+            endpoint = null;
+
+            var ai = config.AiConfig;
+            if (ai == null)
+            {
+                return false;
+            }
+
+            var reference = SelectReviewReference(ai);
+            if (reference != null)
+            {
+                var resolved = config.ResolveModel(reference);
+                if (resolved.Endpoint != null && resolved.Model != null)
+                {
+                    endpoint = resolved.Endpoint;
+                    var model = resolved.Model;
+
+                    runtimeConfig = new AiConfig
+                    {
+                        ProviderType = endpoint.ProviderType,
+                        ApiEndpoint = endpoint.BaseUrl?.Trim() ?? "",
+                        ApiKey = endpoint.ApiKey?.Trim() ?? "",
+                        ApiVersion = string.IsNullOrWhiteSpace(endpoint.ApiVersion) ? "2024-02-01" : endpoint.ApiVersion.Trim(),
+                        AzureAuthMode = endpoint.AuthMode,
+                        AzureTenantId = endpoint.AzureTenantId ?? "",
+                        AzureClientId = endpoint.AzureClientId ?? "",
+                        SummaryEnableReasoning = ai.SummaryEnableReasoning,
+                        InsightSystemPrompt = ai.InsightSystemPrompt,
+                        ReviewSystemPrompt = ai.ReviewSystemPrompt,
+                        InsightUserContentTemplate = ai.InsightUserContentTemplate,
+                        ReviewUserContentTemplate = ai.ReviewUserContentTemplate,
+                        AutoInsightBufferOutput = ai.AutoInsightBufferOutput,
+                        PresetButtons = ai.PresetButtons,
+                        ReviewSheets = ai.ReviewSheets
+                    };
+
+                    if (endpoint.ProviderType == AiProviderType.AzureOpenAi)
+                    {
+                        var deployment = string.IsNullOrWhiteSpace(model.DeploymentName)
+                            ? model.ModelId
+                            : model.DeploymentName;
+                        runtimeConfig.SummaryDeploymentName = deployment;
+                        runtimeConfig.QuickDeploymentName = deployment;
+                    }
+                    else
+                    {
+                        runtimeConfig.SummaryModelName = model.ModelId;
+                        runtimeConfig.QuickModelName = model.ModelId;
+                    }
+
+                    ConfigViewHelper.ApplyModelDeploymentFallbacks(runtimeConfig);
+                    return runtimeConfig.IsValid;
+                }
+            }
+
+            if (ai.IsValid)
+            {
+                runtimeConfig = new AiConfig
+                {
+                    ProviderType = ai.ProviderType,
+                    ApiEndpoint = ai.ApiEndpoint,
+                    ApiKey = ai.ApiKey,
+                    ModelName = ai.ModelName,
+                    SummaryModelName = ai.SummaryModelName,
+                    QuickModelName = ai.QuickModelName,
+                    DeploymentName = ai.DeploymentName,
+                    SummaryDeploymentName = ai.SummaryDeploymentName,
+                    QuickDeploymentName = ai.QuickDeploymentName,
+                    ApiVersion = ai.ApiVersion,
+                    AzureAuthMode = ai.AzureAuthMode,
+                    AzureTenantId = ai.AzureTenantId,
+                    AzureClientId = ai.AzureClientId,
+                    SummaryEnableReasoning = ai.SummaryEnableReasoning,
+                    InsightSystemPrompt = ai.InsightSystemPrompt,
+                    ReviewSystemPrompt = ai.ReviewSystemPrompt,
+                    InsightUserContentTemplate = ai.InsightUserContentTemplate,
+                    ReviewUserContentTemplate = ai.ReviewUserContentTemplate,
+                    AutoInsightBufferOutput = ai.AutoInsightBufferOutput,
+                    PresetButtons = ai.PresetButtons,
+                    ReviewSheets = ai.ReviewSheets
+                };
+                return true;
+            }
+
+            return false;
         }
 
         // ── Enqueue from context menu ──

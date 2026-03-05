@@ -1,3 +1,4 @@
+using System;
 using System.Collections.ObjectModel;
 using Avalonia;
 using Avalonia.Controls;
@@ -8,6 +9,8 @@ namespace TrueFluentPro.Controls
 {
     public partial class PresetButtonsEditor : UserControl
     {
+        public event Action? ItemsChanged;
+
         public static readonly StyledProperty<ObservableCollection<InsightPresetButton>?> ItemsProperty =
             AvaloniaProperty.Register<PresetButtonsEditor, ObservableCollection<InsightPresetButton>?>(nameof(Items));
 
@@ -34,6 +37,7 @@ namespace TrueFluentPro.Controls
         private void AddPresetButton_Click(object? sender, RoutedEventArgs e)
         {
             Items?.Add(new InsightPresetButton { Name = "新按钮", Prompt = "" });
+            ItemsChanged?.Invoke();
         }
 
         private void RemovePresetButton_Click(object? sender, RoutedEventArgs e)
@@ -41,7 +45,13 @@ namespace TrueFluentPro.Controls
             if (sender is Button btn && btn.Tag is InsightPresetButton item)
             {
                 Items?.Remove(item);
+                ItemsChanged?.Invoke();
             }
+        }
+
+        private void PresetField_LostFocus(object? sender, RoutedEventArgs e)
+        {
+            ItemsChanged?.Invoke();
         }
     }
 }

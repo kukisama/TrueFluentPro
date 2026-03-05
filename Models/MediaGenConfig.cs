@@ -14,7 +14,6 @@ namespace TrueFluentPro.Models
         public string ImageAzureClientId { get; set; } = "";
 
         // --- 视频终结点配置 ---
-        public bool VideoUseImageEndpoint { get; set; } = true;
         public AiProviderType VideoProviderType { get; set; } = AiProviderType.OpenAiCompatible;
         public string VideoApiEndpoint { get; set; } = "";
         public string VideoApiKey { get; set; } = "";
@@ -43,7 +42,7 @@ namespace TrueFluentPro.Models
         public int VideoHeight { get; set; } = 480;
         public int VideoSeconds { get; set; } = 5;
         public int VideoVariants { get; set; } = 1;
-        public int VideoPollIntervalMs { get; set; } = 5000;
+        public int VideoPollIntervalMs { get; set; } = 3000;
 
         // --- 性能与缓存 ---
         public int MaxLoadedSessionsInMemory { get; set; } = 8;

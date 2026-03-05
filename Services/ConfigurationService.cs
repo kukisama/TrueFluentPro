@@ -191,7 +191,9 @@ namespace TrueFluentPro.Services
             // --- 迁移 MediaGenConfig（视频终结点）---
             if (media != null)
             {
-                var videoUrl = media.VideoUseImageEndpoint ? media.ImageApiEndpoint : media.VideoApiEndpoint;
+                var useImageFallback = string.IsNullOrWhiteSpace(media.VideoApiEndpoint)
+                    && !string.IsNullOrWhiteSpace(media.ImageApiEndpoint);
+                var videoUrl = useImageFallback ? media.ImageApiEndpoint : media.VideoApiEndpoint;
                 if (!string.IsNullOrWhiteSpace(videoUrl))
                 {
                     var existing = endpoints.FirstOrDefault(e =>
@@ -213,11 +215,11 @@ namespace TrueFluentPro.Services
                     }
                     else
                     {
-                        var videoKey = media.VideoUseImageEndpoint ? media.ImageApiKey : media.VideoApiKey;
-                        var videoProvider = media.VideoUseImageEndpoint ? media.ImageProviderType : media.VideoProviderType;
-                        var videoAuth = media.VideoUseImageEndpoint ? media.ImageAzureAuthMode : media.VideoAzureAuthMode;
-                        var videoTenant = media.VideoUseImageEndpoint ? media.ImageAzureTenantId : media.VideoAzureTenantId;
-                        var videoClient = media.VideoUseImageEndpoint ? media.ImageAzureClientId : media.VideoAzureClientId;
+                        var videoKey = useImageFallback ? media.ImageApiKey : media.VideoApiKey;
+                        var videoProvider = useImageFallback ? media.ImageProviderType : media.VideoProviderType;
+                        var videoAuth = useImageFallback ? media.ImageAzureAuthMode : media.VideoAzureAuthMode;
+                        var videoTenant = useImageFallback ? media.ImageAzureTenantId : media.VideoAzureTenantId;
+                        var videoClient = useImageFallback ? media.ImageAzureClientId : media.VideoAzureClientId;
 
                         var ep = new AiEndpoint
                         {

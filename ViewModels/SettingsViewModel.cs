@@ -114,6 +114,24 @@ namespace TrueFluentPro.ViewModels
         private ModelOption? _selectedImageModel;
         private ModelOption? _selectedVideoModel;
 
+        // ─── Media Studio 默认参数 ───
+        private string _imageSize = "1024x1024";
+        private string _imageQuality = "medium";
+        private string _imageFormat = "png";
+        private int _imageCount = 1;
+
+        private int _videoApiModeIndex;
+        private string _videoAspectRatio = "16:9";
+        private string _videoResolution = "720p";
+        private int _videoWidth = 1280;
+        private int _videoHeight = 720;
+        private int _videoSeconds = 5;
+        private int _videoVariants = 1;
+        private int _videoPollIntervalMs = 3000;
+
+        private int _maxLoadedSessionsInMemory = 8;
+        private string _mediaOutputDirectory = "";
+
         /// <summary>配置被完整更新后触发（供外部系统同步）</summary>
         public event Action<AzureSpeechConfig>? ConfigSaved;
 
@@ -126,7 +144,7 @@ namespace TrueFluentPro.ViewModels
 
             AddEndpointCommand = new RelayCommand(_ => AddEndpoint());
             RemoveEndpointCommand = new RelayCommand(_ => RemoveEndpoint(), _ => SelectedEndpoint != null);
-            TestEndpointCommand = new RelayCommand(async _ => await TestAiConnection(), _ => !string.IsNullOrWhiteSpace(AiApiEndpoint));
+            TestEndpointCommand = new RelayCommand(async _ => await TestAiConnection());
 
             AddSubscriptionCommand = new RelayCommand(async _ => await AddSubscriptionAsync());
             UpdateSubscriptionCommand = new RelayCommand(async _ => await UpdateSubscriptionAsync(), _ => SelectedSubscription != null);
@@ -152,6 +170,7 @@ namespace TrueFluentPro.ViewModels
             // 订阅
             _subscriptions = new ObservableCollection<AzureSubscription>(_config.Subscriptions);
             OnPropertyChanged(nameof(Subscriptions));
+            ((RelayCommand)TestAllSubscriptionsCommand).RaiseCanExecuteChanged();
 
             // 终结点
             _endpoints = new ObservableCollection<AiEndpoint>(_config.Endpoints);
@@ -243,6 +262,26 @@ namespace TrueFluentPro.ViewModels
             SelectModelOption(ai.ReviewModelRef, TextModels, v => _selectedReviewModel = v, nameof(SelectedReviewModel));
             SelectModelOption(_config.MediaGenConfig.ImageModelRef, ImageModels, v => _selectedImageModel = v, nameof(SelectedImageModel));
             SelectModelOption(_config.MediaGenConfig.VideoModelRef, VideoModels, v => _selectedVideoModel = v, nameof(SelectedVideoModel));
+
+            // Media Studio 默认参数
+            var media = _config.MediaGenConfig ?? new MediaGenConfig();
+            ImageSize = string.IsNullOrWhiteSpace(media.ImageSize) ? "1024x1024" : media.ImageSize;
+            ImageQuality = string.IsNullOrWhiteSpace(media.ImageQuality) ? "medium" : media.ImageQuality;
+            ImageFormat = string.IsNullOrWhiteSpace(media.ImageFormat) ? "png" : media.ImageFormat;
+            ImageCount = media.ImageCount <= 0 ? 1 : media.ImageCount;
+
+            VideoApiModeIndex = media.VideoApiMode == VideoApiMode.Videos ? 1 : 0;
+            VideoSeconds = media.VideoSeconds <= 0 ? 5 : media.VideoSeconds;
+            VideoVariants = media.VideoVariants <= 0 ? 1 : media.VideoVariants;
+            VideoPollIntervalMs = media.VideoPollIntervalMs <= 0 ? 3000 : media.VideoPollIntervalMs;
+
+            RefreshVideoCapabilityOptions();
+            ApplyVideoSizeToAspectResolution(media.VideoWidth, media.VideoHeight);
+
+            MaxLoadedSessionsInMemory = media.MaxLoadedSessionsInMemory <= 0 ? 8 : media.MaxLoadedSessionsInMemory;
+            MediaOutputDirectory = media.OutputDirectory ?? "";
+
+            _ = RefreshAiAuthStatusAsync();
         }
 
         // ═══════════════════════════════════════════════════
@@ -318,19 +357,40 @@ namespace TrueFluentPro.ViewModels
         public ModelOption? SelectedInsightModel
         {
             get => _selectedInsightModel;
-            set { if (SetProperty(ref _selectedInsightModel, value)) MarkDirty(); }
+            set
+            {
+                if (SetProperty(ref _selectedInsightModel, value))
+                {
+                    MarkDirty();
+                    _ = RefreshAiAuthStatusAsync();
+                }
+            }
         }
 
         public ModelOption? SelectedSummaryModel
         {
             get => _selectedSummaryModel;
-            set { if (SetProperty(ref _selectedSummaryModel, value)) MarkDirty(); }
+            set
+            {
+                if (SetProperty(ref _selectedSummaryModel, value))
+                {
+                    MarkDirty();
+                    _ = RefreshAiAuthStatusAsync();
+                }
+            }
         }
 
         public ModelOption? SelectedQuickModel
         {
             get => _selectedQuickModel;
-            set { if (SetProperty(ref _selectedQuickModel, value)) MarkDirty(); }
+            set
+            {
+                if (SetProperty(ref _selectedQuickModel, value))
+                {
+                    MarkDirty();
+                    _ = RefreshAiAuthStatusAsync();
+                }
+            }
         }
 
         public ModelOption? SelectedReviewModel
@@ -348,7 +408,221 @@ namespace TrueFluentPro.ViewModels
         public ModelOption? SelectedVideoModel
         {
             get => _selectedVideoModel;
-            set { if (SetProperty(ref _selectedVideoModel, value)) MarkDirty(); }
+            set
+            {
+                if (SetProperty(ref _selectedVideoModel, value))
+                {
+                    RefreshVideoCapabilityOptions();
+                    MarkDirty();
+                }
+            }
+        }
+
+        public List<string> ImageSizeOptions { get; } = new()
+        {
+            "1024x1024", "1024x1536", "1536x1024"
+        };
+
+        public List<string> ImageQualityOptions { get; } = new()
+        {
+            "low", "medium", "high"
+        };
+
+        public List<string> ImageFormatOptions { get; } = new()
+        {
+            "png", "jpeg"
+        };
+
+        public List<int> ImageCountOptions { get; } = new() { 1, 2, 3, 4, 5 };
+        private List<string> _videoAspectRatioOptions = new() { "16:9", "9:16" };
+        private List<string> _videoResolutionOptions = new() { "720p" };
+        private List<int> _videoSecondsOptions = new() { 4, 8, 12 };
+        private List<int> _videoVariantsOptions = new() { 1 };
+
+        public List<string> VideoAspectRatioOptions
+        {
+            get => _videoAspectRatioOptions;
+            private set => SetProperty(ref _videoAspectRatioOptions, value);
+        }
+
+        public List<string> VideoResolutionOptions
+        {
+            get => _videoResolutionOptions;
+            private set => SetProperty(ref _videoResolutionOptions, value);
+        }
+
+        public List<int> VideoSecondsOptions
+        {
+            get => _videoSecondsOptions;
+            private set => SetProperty(ref _videoSecondsOptions, value);
+        }
+
+        public List<int> VideoVariantsOptions
+        {
+            get => _videoVariantsOptions;
+            private set => SetProperty(ref _videoVariantsOptions, value);
+        }
+
+        public string VideoAspectRatio
+        {
+            get => _videoAspectRatio;
+            set
+            {
+                if (SetProperty(ref _videoAspectRatio, value))
+                {
+                    SyncVideoDimensionsFromSelection();
+                    MarkDirty();
+                }
+            }
+        }
+
+        public string VideoResolution
+        {
+            get => _videoResolution;
+            set
+            {
+                if (SetProperty(ref _videoResolution, value))
+                {
+                    SyncVideoDimensionsFromSelection();
+                    MarkDirty();
+                }
+            }
+        }
+
+        public string ImageSize
+        {
+            get => _imageSize;
+            set { if (SetProperty(ref _imageSize, value)) MarkDirty(); }
+        }
+
+        public string ImageQuality
+        {
+            get => _imageQuality;
+            set { if (SetProperty(ref _imageQuality, value)) MarkDirty(); }
+        }
+
+        public string ImageFormat
+        {
+            get => _imageFormat;
+            set { if (SetProperty(ref _imageFormat, value)) MarkDirty(); }
+        }
+
+        public int ImageCount
+        {
+            get => _imageCount;
+            set { if (SetProperty(ref _imageCount, value)) MarkDirty(); }
+        }
+
+        public int VideoApiModeIndex
+        {
+            get => _videoApiModeIndex;
+            set
+            {
+                if (SetProperty(ref _videoApiModeIndex, value))
+                {
+                    RefreshVideoCapabilityOptions();
+                    MarkDirty();
+                }
+            }
+        }
+
+        public int VideoWidth
+        {
+            get => _videoWidth;
+            private set => SetProperty(ref _videoWidth, value);
+        }
+
+        public int VideoHeight
+        {
+            get => _videoHeight;
+            private set => SetProperty(ref _videoHeight, value);
+        }
+
+        public int VideoSeconds
+        {
+            get => _videoSeconds;
+            set { if (SetProperty(ref _videoSeconds, value)) MarkDirty(); }
+        }
+
+        public int VideoVariants
+        {
+            get => _videoVariants;
+            set { if (SetProperty(ref _videoVariants, value)) MarkDirty(); }
+        }
+
+        public int VideoPollIntervalMs
+        {
+            get => _videoPollIntervalMs;
+            set { if (SetProperty(ref _videoPollIntervalMs, value)) MarkDirty(); }
+        }
+
+        public int MaxLoadedSessionsInMemory
+        {
+            get => _maxLoadedSessionsInMemory;
+            set { if (SetProperty(ref _maxLoadedSessionsInMemory, value)) MarkDirty(); }
+        }
+
+        public string MediaOutputDirectory
+        {
+            get => _mediaOutputDirectory;
+            set { if (SetProperty(ref _mediaOutputDirectory, value)) MarkDirty(); }
+        }
+
+        private void RefreshVideoCapabilityOptions()
+        {
+            var mode = VideoApiModeIndex == 1 ? VideoApiMode.Videos : VideoApiMode.SoraJobs;
+            var modelId = SelectedVideoModel?.Reference?.ModelId ?? _config.MediaGenConfig.VideoModel;
+            var profile = VideoCapabilityResolver.ResolveProfile(mode, modelId);
+
+            VideoAspectRatioOptions = profile.AspectRatioOptions.ToList();
+            VideoResolutionOptions = profile.ResolutionOptions.ToList();
+            VideoSecondsOptions = profile.DurationOptions.ToList();
+            VideoVariantsOptions = profile.CountOptions.ToList();
+
+            if (!VideoAspectRatioOptions.Contains(VideoAspectRatio))
+                VideoAspectRatio = VideoAspectRatioOptions.FirstOrDefault() ?? "16:9";
+            if (!VideoResolutionOptions.Contains(VideoResolution))
+                VideoResolution = VideoResolutionOptions.FirstOrDefault() ?? "720p";
+            if (!VideoSecondsOptions.Contains(VideoSeconds))
+                VideoSeconds = VideoSecondsOptions.FirstOrDefault();
+            if (!VideoVariantsOptions.Contains(VideoVariants))
+                VideoVariants = VideoVariantsOptions.FirstOrDefault();
+
+            SyncVideoDimensionsFromSelection();
+        }
+
+        private void SyncVideoDimensionsFromSelection()
+        {
+            var mode = VideoApiModeIndex == 1 ? VideoApiMode.Videos : VideoApiMode.SoraJobs;
+            var modelId = SelectedVideoModel?.Reference?.ModelId ?? _config.MediaGenConfig.VideoModel;
+            if (VideoCapabilityResolver.TryResolveSize(mode, modelId, VideoAspectRatio, VideoResolution, out var w, out var h))
+            {
+                VideoWidth = w;
+                VideoHeight = h;
+            }
+        }
+
+        private void ApplyVideoSizeToAspectResolution(int width, int height)
+        {
+            var mode = VideoApiModeIndex == 1 ? VideoApiMode.Videos : VideoApiMode.SoraJobs;
+            var modelId = SelectedVideoModel?.Reference?.ModelId ?? _config.MediaGenConfig.VideoModel;
+            var profile = VideoCapabilityResolver.ResolveProfile(mode, modelId);
+
+            foreach (var aspect in profile.AspectRatioOptions)
+            {
+                foreach (var res in profile.ResolutionOptions)
+                {
+                    if (profile.TryResolveSize(aspect, res, out var w, out var h)
+                        && w == width && h == height)
+                    {
+                        VideoAspectRatio = aspect;
+                        VideoResolution = res;
+                        return;
+                    }
+                }
+            }
+
+            SyncVideoDimensionsFromSelection();
         }
 
         // ═══════════════════════════════════════════════════
@@ -796,6 +1070,7 @@ namespace TrueFluentPro.ViewModels
             Endpoints.Add(ep);
             SelectedEndpoint = ep;
             SyncEndpointsToConfig();
+            RefreshModelOptions();
             MarkDirty();
         }
 
@@ -844,6 +1119,36 @@ namespace TrueFluentPro.ViewModels
             MarkDirty();
         }
 
+        /// <summary>终结点字段（名称/URL/密钥/启用状态等）更新后，立即刷新列表与模型选项。</summary>
+        public void NotifyEndpointChanged()
+        {
+            if (SelectedEndpoint == null)
+                return;
+
+            var selectedId = SelectedEndpoint.Id;
+            Endpoints = new ObservableCollection<AiEndpoint>(Endpoints);
+            SelectedEndpoint = Endpoints.FirstOrDefault(e => e.Id == selectedId);
+
+            SyncEndpointsToConfig();
+            RefreshModelOptions();
+            MarkDirty();
+            _ = RefreshAiAuthStatusAsync();
+        }
+
+        /// <summary>洞察预设按钮编辑后通知保存。</summary>
+        public void NotifyPresetButtonsChanged()
+        {
+            OnPropertyChanged(nameof(PresetButtons));
+            MarkDirty();
+        }
+
+        /// <summary>复盘模板编辑后通知保存。</summary>
+        public void NotifyReviewSheetsChanged()
+        {
+            OnPropertyChanged(nameof(ReviewSheets));
+            MarkDirty();
+        }
+
         private void SyncEndpointsToConfig()
         {
             _config.Endpoints = Endpoints.ToList();
@@ -855,9 +1160,23 @@ namespace TrueFluentPro.ViewModels
 
         private void RefreshModelOptions()
         {
+            var insightRef = SelectedInsightModel?.Reference;
+            var summaryRef = SelectedSummaryModel?.Reference;
+            var quickRef = SelectedQuickModel?.Reference;
+            var reviewRef = SelectedReviewModel?.Reference;
+            var imageRef = SelectedImageModel?.Reference;
+            var videoRef = SelectedVideoModel?.Reference;
+
             TextModels = BuildModelOptions(ModelCapability.Text);
             ImageModels = BuildModelOptions(ModelCapability.Image);
             VideoModels = BuildModelOptions(ModelCapability.Video);
+
+            RebindSelectedModelOption(insightRef, TextModels, v => _selectedInsightModel = v, nameof(SelectedInsightModel));
+            RebindSelectedModelOption(summaryRef, TextModels, v => _selectedSummaryModel = v, nameof(SelectedSummaryModel));
+            RebindSelectedModelOption(quickRef, TextModels, v => _selectedQuickModel = v, nameof(SelectedQuickModel));
+            RebindSelectedModelOption(reviewRef, TextModels, v => _selectedReviewModel = v, nameof(SelectedReviewModel));
+            RebindSelectedModelOption(imageRef, ImageModels, v => _selectedImageModel = v, nameof(SelectedImageModel));
+            RebindSelectedModelOption(videoRef, VideoModels, v => _selectedVideoModel = v, nameof(SelectedVideoModel));
         }
 
         private List<ModelOption> BuildModelOptions(ModelCapability required)
@@ -878,20 +1197,39 @@ namespace TrueFluentPro.ViewModels
                 .ToList();
         }
 
+        private void RebindSelectedModelOption(
+            ModelReference? reference,
+            List<ModelOption> options,
+            Action<ModelOption?> setter,
+            string propertyName)
+        {
+            if (reference == null)
+            {
+                setter(null);
+                OnPropertyChanged(propertyName);
+                return;
+            }
+
+            var match = options.FirstOrDefault(o =>
+                o.Reference.EndpointId == reference.EndpointId &&
+                o.Reference.ModelId == reference.ModelId);
+
+            setter(match);
+            OnPropertyChanged(propertyName);
+        }
+
         private void SelectModelOption(ModelReference? reference, List<ModelOption> options, Action<ModelOption?> setter, string propertyName)
         {
             if (reference == null)
             {
-                // 自动选择列表中第一个可用模型
-                setter(options.Count > 0 ? options[0] : null);
+                setter(null);
                 OnPropertyChanged(propertyName);
                 return;
             }
             var match = options.FirstOrDefault(o =>
                 o.Reference.EndpointId == reference.EndpointId &&
                 o.Reference.ModelId == reference.ModelId);
-            // 如果引用未匹配到，回退到第一个可用模型
-            setter(match ?? (options.Count > 0 ? options[0] : null));
+            setter(match);
             OnPropertyChanged(propertyName);
         }
 
@@ -963,6 +1301,7 @@ namespace TrueFluentPro.ViewModels
             SelectedSubscription = newSub;
             SyncSubscriptionsToConfig();
             MarkDirty();
+            ((RelayCommand)TestAllSubscriptionsCommand).RaiseCanExecuteChanged();
             SubscriptionMessage = "✓ 订阅添加成功！";
         }
 
@@ -1026,6 +1365,7 @@ namespace TrueFluentPro.ViewModels
             SelectedSubscription = Subscriptions.FirstOrDefault();
             SyncSubscriptionsToConfig();
             MarkDirty();
+            ((RelayCommand)TestAllSubscriptionsCommand).RaiseCanExecuteChanged();
             SubscriptionMessage = "✓ 订阅删除成功！";
         }
 
@@ -1156,6 +1496,7 @@ namespace TrueFluentPro.ViewModels
 
         private string _aiTestStatus = "";
         private string _aiTestReasoning = "";
+        private string _aiAuthStatus = "认证状态：未检测";
 
         public string AiTestStatus
         {
@@ -1169,21 +1510,22 @@ namespace TrueFluentPro.ViewModels
             set => SetProperty(ref _aiTestReasoning, value);
         }
 
+        public string AiAuthStatus
+        {
+            get => _aiAuthStatus;
+            set => SetProperty(ref _aiAuthStatus, value);
+        }
+
         private async Task TestAiConnection()
         {
-            var testConfig = new AiConfig
+            var testInfo = await BuildAiTestContextAsync();
+            if (testInfo == null)
             {
-                ProviderType = AiProviderTypeIndex == 1 ? AiProviderType.AzureOpenAi : AiProviderType.OpenAiCompatible,
-                ApiEndpoint = AiApiEndpoint?.Trim() ?? "",
-                ApiKey = AiApiKey?.Trim() ?? "",
-                QuickModelName = QuickModelName?.Trim() ?? "",
-                SummaryModelName = SummaryModelName?.Trim() ?? "",
-                QuickDeploymentName = QuickDeploymentName?.Trim() ?? "",
-                SummaryDeploymentName = SummaryDeploymentName?.Trim() ?? "",
-                ApiVersion = AiApiVersion?.Trim() ?? "2024-02-01",
-                SummaryEnableReasoning = SummaryEnableReasoning
-            };
-            ConfigViewHelper.ApplyModelDeploymentFallbacks(testConfig);
+                AiTestStatus = "请先在“洞察模型选择”中选择一个可用模型";
+                return;
+            }
+
+            var (testConfig, endpoint, tokenProvider) = testInfo.Value;
 
             if (!testConfig.IsValid)
             {
@@ -1196,7 +1538,7 @@ namespace TrueFluentPro.ViewModels
 
             try
             {
-                var service = new AiInsightService();
+                var service = new AiInsightService(tokenProvider);
                 using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
                 var received = false;
                 var reasoningBuilder = new System.Text.StringBuilder();
@@ -1230,7 +1572,137 @@ namespace TrueFluentPro.ViewModels
             }
             catch (Exception ex)
             {
-                AiTestStatus = $"连接失败: {ex.Message}";
+                if (endpoint.ProviderType == AiProviderType.AzureOpenAi
+                    && endpoint.AuthMode == AzureAuthMode.AAD
+                    && ex.Message.Contains("401", StringComparison.OrdinalIgnoreCase))
+                {
+                    AiTestStatus = $"AAD 鉴权失败(401)：请确认当前账号已授予 Azure OpenAI 访问权限（如 Cognitive Services OpenAI User），并检查终结点/部署名/租户是否匹配。原始错误: {ex.Message}";
+                }
+                else
+                {
+                    AiTestStatus = $"连接失败: {ex.Message}";
+                }
+            }
+        }
+
+        private async Task<(AiConfig config, AiEndpoint endpoint, AzureTokenProvider? tokenProvider)?> BuildAiTestContextAsync()
+        {
+            var selected = SelectedSummaryModel ?? SelectedInsightModel ?? SelectedQuickModel;
+            var reference = selected?.Reference;
+            if (reference == null)
+                return null;
+
+            var (endpoint, model) = _config.ResolveModel(reference);
+            if (endpoint == null || model == null)
+                return null;
+
+            AzureTokenProvider? tokenProvider = null;
+
+            var cfg = new AiConfig
+            {
+                ProviderType = endpoint.ProviderType,
+                ApiEndpoint = endpoint.BaseUrl?.Trim() ?? "",
+                ApiKey = endpoint.ApiKey?.Trim() ?? "",
+                ApiVersion = string.IsNullOrWhiteSpace(endpoint.ApiVersion) ? "2024-02-01" : endpoint.ApiVersion.Trim(),
+                AzureAuthMode = endpoint.AuthMode,
+                AzureTenantId = endpoint.AzureTenantId ?? "",
+                AzureClientId = endpoint.AzureClientId ?? "",
+                SummaryEnableReasoning = SummaryEnableReasoning
+            };
+
+            if (endpoint.ProviderType == AiProviderType.AzureOpenAi && endpoint.AuthMode == AzureAuthMode.AAD)
+            {
+                tokenProvider = new AzureTokenProvider(GetEndpointProfileKey(endpoint));
+                var silentLoggedIn = await tokenProvider.TrySilentLoginAsync(
+                    endpoint.AzureTenantId,
+                    endpoint.AzureClientId);
+
+                if (!silentLoggedIn)
+                {
+                    AiAuthStatus = "认证状态：AAD 未登录（请先在 AI 终结点中点击“登录”）";
+                    return null;
+                }
+
+                var username = string.IsNullOrWhiteSpace(tokenProvider.Username) ? "已认证" : tokenProvider.Username;
+                AiAuthStatus = $"认证状态：AAD 已登录（{username}）";
+            }
+            else if (endpoint.ProviderType == AiProviderType.AzureOpenAi)
+            {
+                AiAuthStatus = string.IsNullOrWhiteSpace(endpoint.ApiKey)
+                    ? "认证状态：API Key 未配置"
+                    : "认证状态：API Key 已配置";
+            }
+            else
+            {
+                AiAuthStatus = string.IsNullOrWhiteSpace(endpoint.ApiKey)
+                    ? "认证状态：OpenAI 兼容 API Key 未配置"
+                    : "认证状态：OpenAI 兼容 API Key 已配置";
+            }
+
+            if (endpoint.ProviderType == AiProviderType.AzureOpenAi)
+            {
+                var deployment = string.IsNullOrWhiteSpace(model.DeploymentName)
+                    ? model.ModelId
+                    : model.DeploymentName;
+                cfg.QuickDeploymentName = deployment;
+                cfg.SummaryDeploymentName = deployment;
+            }
+            else
+            {
+                cfg.QuickModelName = model.ModelId;
+                cfg.SummaryModelName = model.ModelId;
+            }
+
+            ConfigViewHelper.ApplyModelDeploymentFallbacks(cfg);
+            return (cfg, endpoint, tokenProvider);
+        }
+
+        private static string GetEndpointProfileKey(AiEndpoint endpoint) => $"endpoint_{endpoint.Id}";
+
+        public async Task RefreshAiAuthStatusAsync()
+        {
+            try
+            {
+                var selected = SelectedSummaryModel ?? SelectedInsightModel ?? SelectedQuickModel;
+                var reference = selected?.Reference;
+                if (reference == null)
+                {
+                    AiAuthStatus = "认证状态：未选择模型";
+                    return;
+                }
+
+                var (endpoint, _) = _config.ResolveModel(reference);
+                if (endpoint == null)
+                {
+                    AiAuthStatus = "认证状态：当前模型对应终结点不存在";
+                    return;
+                }
+
+                if (endpoint.ProviderType != AiProviderType.AzureOpenAi)
+                {
+                    AiAuthStatus = string.IsNullOrWhiteSpace(endpoint.ApiKey)
+                        ? "认证状态：OpenAI 兼容 API Key 未配置"
+                        : "认证状态：OpenAI 兼容 API Key 已配置";
+                    return;
+                }
+
+                if (endpoint.AuthMode != AzureAuthMode.AAD)
+                {
+                    AiAuthStatus = string.IsNullOrWhiteSpace(endpoint.ApiKey)
+                        ? "认证状态：API Key 未配置"
+                        : "认证状态：API Key 已配置";
+                    return;
+                }
+
+                var provider = new AzureTokenProvider(GetEndpointProfileKey(endpoint));
+                var loggedIn = await provider.TrySilentLoginAsync(endpoint.AzureTenantId, endpoint.AzureClientId);
+                AiAuthStatus = loggedIn
+                    ? $"认证状态：AAD 已登录（{(string.IsNullOrWhiteSpace(provider.Username) ? "已认证" : provider.Username)}）"
+                    : "认证状态：AAD 未登录（请先在 AI 终结点中点击“登录”）";
+            }
+            catch (Exception ex)
+            {
+                AiAuthStatus = $"认证状态检测失败：{ex.Message}";
             }
         }
 
@@ -1366,6 +1838,29 @@ namespace TrueFluentPro.ViewModels
 
             _config.MediaGenConfig.ImageModelRef = SelectedImageModel?.Reference;
             _config.MediaGenConfig.VideoModelRef = SelectedVideoModel?.Reference;
+
+            // Media Studio 默认参数
+            var media = _config.MediaGenConfig;
+            media.ImageSize = string.IsNullOrWhiteSpace(ImageSize) ? "1024x1024" : ImageSize.Trim();
+            media.ImageQuality = string.IsNullOrWhiteSpace(ImageQuality) ? "medium" : ImageQuality.Trim();
+            media.ImageFormat = string.IsNullOrWhiteSpace(ImageFormat) ? "png" : ImageFormat.Trim();
+            media.ImageCount = Math.Clamp(ImageCount, 1, 10);
+
+            media.VideoApiMode = VideoApiModeIndex == 1 ? VideoApiMode.Videos : VideoApiMode.SoraJobs;
+            media.VideoWidth = Math.Max(64, VideoWidth);
+            media.VideoHeight = Math.Max(64, VideoHeight);
+            media.VideoSeconds = Math.Clamp(VideoSeconds, 1, 120);
+            media.VideoVariants = Math.Clamp(VideoVariants, 1, 4);
+            media.VideoPollIntervalMs = Math.Clamp(VideoPollIntervalMs, 500, 60000);
+
+            media.MaxLoadedSessionsInMemory = Math.Clamp(MaxLoadedSessionsInMemory, 1, 64);
+            media.OutputDirectory = MediaOutputDirectory?.Trim() ?? "";
+
+            // 与旧字段并存，保证 Media Studio 仍能读取到模型名称
+            if (SelectedImageModel?.Reference != null)
+                media.ImageModel = SelectedImageModel.Reference.ModelId;
+            if (SelectedVideoModel?.Reference != null)
+                media.VideoModel = SelectedVideoModel.Reference.ModelId;
 
             // 终结点
             SyncEndpointsToConfig();
