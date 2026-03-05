@@ -105,5 +105,52 @@
             <Setter Property="SelectionBrush" Value="{DynamicResource AccentBlueBrush}"/>
             <Setter Property="SelectionForegroundBrush" Value="White"/>
         </Style>
+
+        <!-- 3.8 微交互动效 -->
+        <!-- 按钮悬停/按压动画 -->
+        <Style Selector="Button:pointerover">
+            <Setter Property="RenderTransform">
+                <ScaleTransform ScaleX="1.02" ScaleY="1.02"/>
+            </Setter>
+            <Setter Property="Transitions">
+                <Transitions>
+                    <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.15"/>
+                </Transitions>
+            </Setter>
+        </Style>
+        <Style Selector="Button:pressed">
+            <Setter Property="RenderTransform">
+                <ScaleTransform ScaleX="0.97" ScaleY="0.97"/>
+            </Setter>
+        </Style>
+        <Style Selector="Button">
+            <Setter Property="Transitions">
+                <Transitions>
+                    <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.12"/>
+                    <DoubleTransition Property="Opacity" Duration="0:0:0.15"/>
+                </Transitions>
+            </Setter>
+        </Style>
+
+        <!-- ToggleButton 悬停/按压动画 -->
+        <Style Selector="ToggleButton">
+            <Setter Property="Transitions">
+                <Transitions>
+                    <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.12"/>
+                    <BrushTransition Property="Background" Duration="0:0:0.15"/>
+                    <BrushTransition Property="BorderBrush" Duration="0:0:0.15"/>
+                </Transitions>
+            </Setter>
+        </Style>
+
+        <!-- ListBoxItem 入场动画 -->
+        <Style Selector="ListBoxItem">
+            <Setter Property="Transitions">
+                <Transitions>
+                    <DoubleTransition Property="Opacity" Duration="0:0:0.2"/>
+                    <BrushTransition Property="Background" Duration="0:0:0.15"/>
+                </Transitions>
+            </Setter>
+        </Style>
     </Application.Styles>
 </Application>

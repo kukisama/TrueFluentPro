@@ -1,4 +1,7 @@
+using Avalonia;
+using Avalonia.Animation;
 using Avalonia.Controls;
+using Avalonia.Input;
 using TrueFluentPro.Services;
 using TrueFluentPro.ViewModels;
 using System;
@@ -76,6 +79,71 @@ public partial class MainWindow : Window
         }
     }
 
+    // 3.5 响应式侧边栏：窗口宽度 < 1200 时自动折叠 NavigationView 到 Compact 模式
+    protected override void OnSizeChanged(SizeChangedEventArgs e)
+    {
+        base.OnSizeChanged(e);
+        if (NavView != null)
+        {
+            NavView.IsPaneOpen = e.NewSize.Width >= 1200;
+        }
+    }
+
+    // 3.1 全局快捷键
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        base.OnKeyDown(e);
+
+        var ctrl = e.KeyModifiers.HasFlag(KeyModifiers.Control);
+
+        switch (e.Key)
+        {
+            case Key.F5:
+                _viewModel?.StartTranslationCommand.Execute(null);
+                e.Handled = true;
+                break;
+            case Key.F6:
+                _viewModel?.StopTranslationCommand.Execute(null);
+                e.Handled = true;
+                break;
+            case Key.D1 when ctrl:
+                SelectNavItemByIndex(0);
+                e.Handled = true;
+                break;
+            case Key.D2 when ctrl:
+                SelectNavItemByIndex(1);
+                e.Handled = true;
+                break;
+            case Key.D3 when ctrl:
+                SelectNavItemByIndex(2);
+                e.Handled = true;
+                break;
+            case Key.D4 when ctrl:
+                SelectNavItemByIndex(3);
+                e.Handled = true;
+                break;
+            case Key.OemComma when ctrl:
+                NavView.SelectedItem = NavView.SettingsItem;
+                ShowPage(MainWindowViewModel.NavTagSettings);
+                e.Handled = true;
+                break;
+        }
+    }
+
+    private void SelectNavItemByIndex(int index)
+    {
+        if (index < NavView.MenuItems.Count)
+        {
+            NavView.SelectedItem = NavView.MenuItems[index];
+        }
+        else
+        {
+            // Out-of-bounds index (e.g. Ctrl+4) navigates to Settings
+            NavView.SelectedItem = NavView.SettingsItem;
+            ShowPage(MainWindowViewModel.NavTagSettings);
+        }
+    }
+
     private void NavView_SelectionChanged(object? sender, NavigationViewSelectionChangedEventArgs e)
     {
         if (e.IsSettingsSelected)
@@ -90,25 +158,74 @@ public partial class MainWindow : Window
         }
     }
 
-    private void ShowPage(string tag)
+    // 3.2 页面切换过渡动画：使用 CrossFade 实现淡入淡出
+    private async void ShowPage(string tag)
     {
-        LiveView.IsVisible = tag == MainWindowViewModel.NavTagLive;
-        ReviewView.IsVisible = tag == MainWindowViewModel.NavTagReview;
-        MediaStudioViewPage.IsVisible = tag == MainWindowViewModel.NavTagMedia;
-        SettingsViewPage.IsVisible = tag == MainWindowViewModel.NavTagSettings;
-
-        if (_viewModel != null)
+        try
         {
-            _viewModel.SelectedNavTag = tag;
+            var newVisible = tag switch
+            {
+                MainWindowViewModel.NavTagLive => (Control)LiveView,
+                MainWindowViewModel.NavTagReview => (Control)ReviewView,
+                MainWindowViewModel.NavTagMedia => (Control)MediaStudioViewPage,
+                MainWindowViewModel.NavTagSettings => (Control)SettingsViewPage,
+                _ => (Control)LiveView
+            };
+
+            var pages = new Control[] { LiveView, ReviewView, MediaStudioViewPage, SettingsViewPage };
+
+            // 找到当前可见页（作为 CrossFade 的 from 参数）
+            Control? currentVisible = null;
+            foreach (var page in pages)
+            {
+                if (page.IsVisible && page != newVisible)
+                {
+                    currentVisible = page;
+                    break;
+                }
+            }
+
+            // 交叉淡入淡出动画
+            foreach (var page in pages)
+            {
+                if (page == newVisible)
+                {
+                    page.Opacity = 0;
+                    page.IsVisible = true;
+                }
+                else if (page != currentVisible)
+                {
+                    page.IsVisible = false;
+                }
+            }
+
+            // 使用 CrossFade 过渡效果
+            var crossFade = new CrossFade(TimeSpan.FromMilliseconds(200));
+            await crossFade.Start(currentVisible, newVisible, default);
+
+            // 确保旧页面隐藏
+            if (currentVisible != null)
+            {
+                currentVisible.IsVisible = false;
+            }
+
+            if (_viewModel != null)
+            {
+                _viewModel.SelectedNavTag = tag;
+            }
+
+            if (tag == MainWindowViewModel.NavTagMedia && _viewModel != null && !_mediaStudioInitialized)
+            {
+                _mediaStudioInitialized = true;
+                var config = _viewModel.ConfigVM.Config;
+                MediaStudioViewPage.Initialize(
+                    config.AiConfig ?? new TrueFluentPro.Models.AiConfig(),
+                    config.MediaGenConfig);
+            }
         }
-
-        if (tag == MainWindowViewModel.NavTagMedia && _viewModel != null && !_mediaStudioInitialized)
+        catch (Exception ex)
         {
-            _mediaStudioInitialized = true;
-            var config = _viewModel.ConfigVM.Config;
-            MediaStudioViewPage.Initialize(
-                config.AiConfig ?? new TrueFluentPro.Models.AiConfig(),
-                config.MediaGenConfig);
+            Console.WriteLine($"ShowPage transition error: {ex.Message}");
         }
     }
 

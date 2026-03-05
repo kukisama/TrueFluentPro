@@ -2,7 +2,13 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Media;
+using Avalonia.Platform.Storage;
 using Avalonia.VisualTree;
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using TrueFluentPro.Models;
 using TrueFluentPro.Services;
 using TrueFluentPro.ViewModels;
@@ -13,6 +19,11 @@ public partial class ReviewModeView : UserControl
 {
     private MainWindowViewModel? ViewModel => DataContext as MainWindowViewModel;
     private ListBox? _audioFileListBox;
+    private Border? _dropZone;
+
+    // 支持的音频文件扩展名
+    private static readonly HashSet<string> SupportedAudioExtensions = new(StringComparer.OrdinalIgnoreCase)
+        { ".wav", ".mp3", ".flac", ".m4a", ".ogg", ".wma", ".aac" };
 
     public ReviewModeView()
     {
@@ -20,7 +31,116 @@ public partial class ReviewModeView : UserControl
         AttachedToVisualTree += (_, _) =>
         {
             _audioFileListBox ??= this.FindControl<ListBox>("AudioFileListBox");
+            _dropZone ??= this.FindControl<Border>("DropZone");
+
+            // 3.7 注册拖放事件
+            if (_dropZone != null)
+            {
+                _dropZone.AddHandler(DragDrop.DragOverEvent, DropZone_DragOver);
+                _dropZone.AddHandler(DragDrop.DragLeaveEvent, DropZone_DragLeave);
+                _dropZone.AddHandler(DragDrop.DropEvent, DropZone_Drop);
+            }
         };
+    }
+
+    // ===== 3.7 拖放事件处理 =====
+
+    private static List<string> ExtractAudioPaths(DragEventArgs e)
+    {
+        var result = new List<string>();
+#pragma warning disable CS0618 // Data is obsolete but DataTransfer may not have GetFiles in this version
+        var files = e.Data.GetFiles();
+#pragma warning restore CS0618
+        if (files == null) return result;
+
+        foreach (var item in files)
+        {
+            if (item is IStorageFile sf)
+            {
+                var localPath = sf.Path?.LocalPath;
+                if (!string.IsNullOrEmpty(localPath))
+                {
+                    var ext = Path.GetExtension(localPath);
+                    if (SupportedAudioExtensions.Contains(ext))
+                    {
+                        result.Add(localPath);
+                    }
+                }
+            }
+        }
+        return result;
+    }
+
+    private void DropZone_DragOver(object? sender, DragEventArgs e)
+    {
+        e.DragEffects = DragDropEffects.None;
+
+#pragma warning disable CS0618
+        if (e.Data.GetFiles() != null)
+#pragma warning restore CS0618
+        {
+            var audioPaths = ExtractAudioPaths(e);
+            if (audioPaths.Count > 0)
+            {
+                e.DragEffects = DragDropEffects.Copy;
+            }
+        }
+
+        // 高亮拖放区
+        if (_dropZone != null && e.DragEffects != DragDropEffects.None)
+        {
+            _dropZone.BorderBrush = new SolidColorBrush(Color.Parse("#FF2563EB"));
+            _dropZone.Background = new SolidColorBrush(Color.Parse("#10256BEB"));
+        }
+    }
+
+    private void DropZone_DragLeave(object? sender, DragEventArgs e)
+    {
+        ResetDropZoneAppearance();
+    }
+
+    private void DropZone_Drop(object? sender, DragEventArgs e)
+    {
+        ResetDropZoneAppearance();
+
+        var audioFiles = ExtractAudioPaths(e);
+        if (audioFiles.Count > 0)
+        {
+            CrashLogger.AddBreadcrumb($"DragDrop: {audioFiles.Count} audio files dropped");
+
+            // 将拖入的文件复制到 Sessions 目录并刷新
+            var sessionsDir = PathManager.Instance.SessionsPath;
+            foreach (var filePath in audioFiles)
+            {
+                try
+                {
+                    Directory.CreateDirectory(sessionsDir);
+                    var destPath = Path.Combine(sessionsDir, Path.GetFileName(filePath));
+                    // overwrite: false — 不覆盖已有同名文件
+                    File.Copy(filePath, destPath, overwrite: false);
+                }
+                catch (IOException)
+                {
+                    // 目标文件已存在，跳过
+                }
+                catch (Exception ex)
+                {
+                    CrashLogger.AddBreadcrumb($"DragDrop copy failed: {ex.Message}");
+                }
+            }
+
+            // 刷新文件库
+            ViewModel?.FileLibrary?.RefreshAudioLibraryCommand?.Execute(null);
+        }
+    }
+
+    private void ResetDropZoneAppearance()
+    {
+        if (_dropZone != null)
+        {
+            _dropZone.ClearValue(Border.BorderBrushProperty);
+            _dropZone.ClearValue(Border.BackgroundProperty);
+        }
     }
 
     // ===== 音频文件列表右键 MenuFlyout =====

@@ -1552,3 +1552,29 @@ public class FloatingInsightManager
 - ✅ ReviewModeView 三栏可由用户拖拽调整宽度（左右两个 GridSplitter）
 - ✅ 窗口可缩小到 1000×550（`MinWidth="1000" MinHeight="550"`）
 - ✅ `dotnet build` 通过（0 Warning, 0 Error）
+
+### 第三阶段完成记录（2026-03-05）
+
+**完成状态**: ✅ 全部完成
+
+| # | 任务 | 状态 | 说明 |
+|---|------|------|------|
+| 3.1 | **全局快捷键** | ✅ | 在 `MainWindow.axaml.cs` 中重写 `OnKeyDown`：F5 开始翻译、F6 停止翻译、Ctrl+1~3 切换三个导航页面、Ctrl+4 / Ctrl+, 打开设置。`SelectNavItemByIndex()` 辅助方法处理导航项索引映射。NavigationView 菜单项添加 `ToolTip.Tip` 显示快捷键提示 |
+| 3.2 | **页面切换过渡动画** | ✅ | `ShowPage()` 改为 `async void`，使用 Avalonia `CrossFade`（200ms）实现页面淡入淡出过渡。新页面先设 Opacity=0 并 IsVisible=true，再通过 CrossFade.Start() 执行动画。旧页面直接隐藏 |
+| 3.3 | **翻译状态脉冲动画** | ✅ | 在 `LiveTranslationView.axaml` 开始/停止按钮右侧新增 `Ellipse#RecordingIndicator`（红色圆点），绑定 `IsVisible="{Binding IsTranslating}"`。通过 `Style.Animations` 定义 1.2 秒无限循环呼吸动画（Opacity 1.0→0.3→1.0） |
+| 3.4 | **SegmentedControl 显示模式** | ✅ | 将原 `RadioButton` 三选组（原文/译文/双语）替换为 `ToggleButton.segment-btn` 样式组。新增 `segment-btn` 样式：默认灰色边框+Surface背景，`:checked` 态为 Primary 蓝底白字，`:pointerover` 态为 SurfaceHover 背景，间距从 8px 缩减为 2px 实现紧凑视觉 |
+| 3.5 | **响应式侧边栏** | ✅ | 在 `MainWindow.axaml.cs` 中重写 `OnSizeChanged`，窗口宽度 ≥ 1200px 时展开 NavigationView 侧边栏（`IsPaneOpen=true`），< 1200px 时自动折叠到 Compact 模式（`IsPaneOpen=false`） |
+| 3.6 | **键盘导航与无障碍** | ✅ | 为核心控件添加 `AutomationProperties.Name`：NavigationView 菜单项（含快捷键提示）、订阅 ComboBox、源/目标语言 ComboBox、开始/停止按钮、显示模式 ToggleButton（原文/译文/双语）、底部操作栏所有按钮（清空历史、查看记录、浮动字幕、浮动洞察）、音频电平指示器、状态信息文本、ReviewModeView 播放/暂停按钮、文件库/批处理标签页、音频/字幕列表、拖放区 |
+| 3.7 | **批量处理拖放** | ✅ | 在 `ReviewModeView.axaml` 文件库顶部新增 `Border#DropZone` 拖放区（显示 "📂 拖放音频文件到此处" + 支持格式提示），设置 `DragDrop.AllowDrop="True"`。`ReviewModeView.axaml.cs` 中注册 `DragOver`/`DragLeave`/`Drop` 事件：DragOver 时验证文件扩展名（wav/mp3/flac/m4a/ogg/wma/aac）并高亮边框为蓝色，Drop 时将音频文件复制到 `PathManager.Instance.SessionsPath` 并自动刷新文件库 |
+| 3.8 | **微交互动效** | ✅ | 在 `App.axaml` 全局样式中新增：Button `:pointerover` 缩放 1.02x + `:pressed` 缩放 0.97x（`ScaleTransform` + `TransformOperationsTransition` 120-150ms）；ToggleButton `Background`/`BorderBrush` 过渡（`BrushTransition` 150ms）；ListBoxItem `Opacity`/`Background` 入场过渡（`DoubleTransition`/`BrushTransition` 150-200ms） |
+
+**验收标准达成情况**：
+- ✅ F5/F6 可开始/停止翻译，Ctrl+1~4 可切换页面，Ctrl+, 可打开设置
+- ✅ 页面切换有 200ms CrossFade 淡入淡出效果
+- ✅ 翻译进行时红色圆点呼吸闪烁指示录音状态
+- ✅ 原文/译文/双语切换采用 ToggleButton 分段控件样式
+- ✅ 窗口宽度 < 1200px 时导航栏自动折叠
+- ✅ 核心控件均有 `AutomationProperties.Name` 无障碍标注
+- ✅ ReviewModeView 文件库支持拖放音频文件导入
+- ✅ 按钮悬停/按压有微缩放动效，ToggleButton/ListBoxItem 有过渡动画
+- ✅ `dotnet build` 通过（0 Warning, 0 Error）

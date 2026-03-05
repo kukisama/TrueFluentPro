@@ -41,6 +41,10 @@
         <Style Selector="Slider#PlaybackSlider /template/ Track">
             <Setter Property="Height" Value="3" />
         </Style>
+        <!-- 3.7 拖放高亮样式 -->
+        <Style Selector="Border#DropZone">
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderMediumBrush}" />
+        </Style>
     </UserControl.Styles>
 
     <Grid ColumnDefinitions="280,Auto,*,Auto,320" Margin="10">
@@ -48,16 +52,37 @@
         <Border Grid.Column="0" BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="1" CornerRadius="4" Padding="8"
                 MinWidth="200">
             <TabControl>
-                <TabItem Header="文件库">
+                <TabItem Header="文件库" AutomationProperties.Name="文件库">
                     <StackPanel Spacing="10">
+                        <!-- 3.7 文件拖放区 -->
+                        <Border Name="DropZone"
+                                BorderBrush="{DynamicResource BorderMediumBrush}"
+                                BorderThickness="2"
+                                CornerRadius="6"
+                                Padding="12,8"
+                                Background="{DynamicResource SurfaceAltBrush}"
+                                DragDrop.AllowDrop="True"
+                                AutomationProperties.Name="拖放音频文件到此处导入">
+                            <StackPanel HorizontalAlignment="Center" Spacing="4">
+                                <TextBlock Text="📂 拖放音频文件到此处" FontSize="11"
+                                           Foreground="{DynamicResource TextMutedBrush}"
+                                           HorizontalAlignment="Center"/>
+                                <TextBlock Text="支持 WAV / MP3 / FLAC / M4A" FontSize="9"
+                                           Foreground="{DynamicResource TextPlaceholderBrush}"
+                                           HorizontalAlignment="Center"/>
+                            </StackPanel>
+                        </Border>
+
                         <DockPanel>
                             <TextBlock Text="音频文件" FontSize="11" Foreground="Gray" DockPanel.Dock="Left"/>
                             <Button Content="刷新" Width="50" Padding="6,2" Command="{Binding FileLibrary.RefreshAudioLibraryCommand}"
-                                    HorizontalAlignment="Right" DockPanel.Dock="Right"/>
+                                    HorizontalAlignment="Right" DockPanel.Dock="Right"
+                                    AutomationProperties.Name="刷新音频文件列表"/>
                         </DockPanel>
                         <ListBox Name="AudioFileListBox" Height="160"
                                  ItemsSource="{Binding FileLibrary.AudioFiles}" SelectedItem="{Binding FileLibrary.SelectedAudioFile}"
                                  Focusable="False"
+                                 AutomationProperties.Name="音频文件列表"
                                  PointerReleased="AudioFileListBox_PointerReleased">
                             <ListBox.ItemTemplate>
                                 <DataTemplate DataType="models:MediaFileItem">
@@ -69,7 +94,8 @@
                         </ListBox>
 
                         <TextBlock Text="字幕文件" FontSize="11" Foreground="Gray"/>
-                        <ListBox ItemsSource="{Binding FileLibrary.SubtitleFiles}" SelectedItem="{Binding FileLibrary.SelectedSubtitleFile}" Height="120">
+                        <ListBox ItemsSource="{Binding FileLibrary.SubtitleFiles}" SelectedItem="{Binding FileLibrary.SelectedSubtitleFile}" Height="120"
+                                 AutomationProperties.Name="字幕文件列表">
                             <ListBox.ItemTemplate>
                                 <DataTemplate DataType="models:MediaFileItem">
                                     <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis"/>
@@ -79,7 +105,7 @@
                         <TextBlock Text="Speech 字幕将在复盘/批处理中按需自动生成" FontSize="10" Foreground="Gray"/>
                     </StackPanel>
                 </TabItem>
-                <TabItem Header="批处理">
+                <TabItem Header="批处理" AutomationProperties.Name="批处理">
                     <StackPanel Spacing="10">
                         <StackPanel Orientation="Horizontal" Spacing="6">
                             <Button Content="从文件库载入" Padding="6,3"
@@ -164,9 +190,11 @@
                     <TextBlock Text="音频播放" FontWeight="Bold"/>
                     <StackPanel Orientation="Horizontal" Spacing="6">
                         <Button Content="▶" Width="40" Height="32" FontSize="16" Command="{Binding Playback.PlayAudioCommand}"
-                                IsEnabled="{Binding Playback.IsPlayEnabled}" IsVisible="{Binding Playback.IsPlayEnabled}"/>
+                                IsEnabled="{Binding Playback.IsPlayEnabled}" IsVisible="{Binding Playback.IsPlayEnabled}"
+                                AutomationProperties.Name="播放音频"/>
                         <Button Content="⏸" Width="40" Height="32" FontSize="16" Command="{Binding Playback.PauseAudioCommand}"
-                                IsEnabled="{Binding Playback.IsPauseEnabled}" IsVisible="{Binding Playback.IsPauseEnabled}"/>
+                                IsEnabled="{Binding Playback.IsPauseEnabled}" IsVisible="{Binding Playback.IsPauseEnabled}"
+                                AutomationProperties.Name="暂停音频"/>
                         <TextBlock Text="{Binding Playback.PlaybackTimeText}" VerticalAlignment="Center" Foreground="Gray"/>
                     </StackPanel>
                 </StackPanel>
