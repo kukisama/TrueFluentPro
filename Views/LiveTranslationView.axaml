@@ -34,6 +34,25 @@
             <Setter Property="BorderBrush" Value="{DynamicResource PrimaryDarkBrush}" />
             <Setter Property="Foreground" Value="White" />
         </Style>
+        <!-- 3.4 SegmentedControl 显示模式样式 -->
+        <Style Selector="ToggleButton.segment-btn">
+            <Setter Property="Padding" Value="10,3" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderSubtleBrush}" />
+            <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="MinWidth" Value="48" />
+        </Style>
+        <Style Selector="ToggleButton.segment-btn:pointerover">
+            <Setter Property="Background" Value="{DynamicResource SurfaceHoverBrush}" />
+        </Style>
+        <Style Selector="ToggleButton.segment-btn:checked">
+            <Setter Property="Background" Value="{DynamicResource PrimaryBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource PrimaryDarkBrush}" />
+            <Setter Property="Foreground" Value="White" />
+        </Style>
     </UserControl.Styles>
 
     <Grid RowDefinitions="Auto,*,Auto">
@@ -46,6 +65,7 @@
                       ItemsSource="{Binding ConfigVM.SubscriptionNames}" 
                       SelectedIndex="{Binding ConfigVM.ActiveSubscriptionIndex, Mode=TwoWay}"
                       IsEnabled="{Binding ConfigVM.IsConfigurationEnabled}"
+                      AutomationProperties.Name="Azure 订阅选择"
                       ToolTip.Tip="选择要使用的Azure订阅"/>
             <Ellipse Width="12" Height="12" StrokeThickness="2"
                      VerticalAlignment="Center"
@@ -58,6 +78,7 @@
             <TextBlock Text="源语言:" VerticalAlignment="Center" Margin="8,0,0,0"/>
             <ComboBox Name="SourceLanguageComboBox" MinWidth="100"
                       IsEnabled="{Binding ConfigVM.IsConfigurationEnabled}"
+                      AutomationProperties.Name="源语言"
                       SelectedIndex="{Binding ConfigVM.SourceLanguageIndex}">
                 <ComboBoxItem Tag="auto" Content="自动识别"/>
                 <ComboBoxItem Tag="en" Content="英语"/>
@@ -71,6 +92,7 @@
             <TextBlock Text="→" VerticalAlignment="Center" FontSize="16" FontWeight="Bold"/>
             <ComboBox Name="TargetLanguageComboBox" MinWidth="100"
                       IsEnabled="{Binding ConfigVM.IsConfigurationEnabled}"
+                      AutomationProperties.Name="目标语言"
                       SelectedIndex="{Binding ConfigVM.TargetLanguageIndex}">
                 <ComboBoxItem Tag="en" Content="英语"/>
                 <ComboBoxItem Tag="zh-CN" Content="中文"/>
@@ -86,7 +108,32 @@
                     Command="{Binding ToggleTranslationCommand}"
                     Background="{Binding TranslationToggleButtonBackground}"
                     Foreground="{Binding TranslationToggleButtonForeground}"
-                    Padding="10,5" Margin="8,0,0,0"/>
+                    Padding="10,5" Margin="8,0,0,0"
+                    AutomationProperties.Name="开始/停止翻译 (F5/F6)"
+                    ToolTip.Tip="F5 开始翻译, F6 停止翻译"/>
+
+            <!-- 3.3 翻译状态脉冲动画：录音指示器 -->
+            <Ellipse Name="RecordingIndicator" Width="10" Height="10"
+                     Fill="Red" VerticalAlignment="Center" Margin="6,0,0,0"
+                     IsVisible="{Binding IsTranslating}">
+                <Ellipse.Styles>
+                    <Style Selector="Ellipse#RecordingIndicator">
+                        <Style.Animations>
+                            <Animation Duration="0:0:1.2" IterationCount="INFINITE">
+                                <KeyFrame Cue="0%">
+                                    <Setter Property="Opacity" Value="1.0"/>
+                                </KeyFrame>
+                                <KeyFrame Cue="50%">
+                                    <Setter Property="Opacity" Value="0.3"/>
+                                </KeyFrame>
+                                <KeyFrame Cue="100%">
+                                    <Setter Property="Opacity" Value="1.0"/>
+                                </KeyFrame>
+                            </Animation>
+                        </Style.Animations>
+                    </Style>
+                </Ellipse.Styles>
+            </Ellipse>
 
             <!-- 音频设备 Flyout -->
             <Button Content="🎧 音频设备" Padding="8,5"
@@ -140,13 +187,16 @@
                 <Grid RowDefinitions="Auto,*,Auto">
                     <DockPanel Grid.Row="0" Margin="5">
                         <TextBlock Text="实时翻译" FontWeight="Bold" DockPanel.Dock="Left"/>
-                        <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
-                            <RadioButton Content="原文" GroupName="EditorView"
-                                         IsChecked="{Binding IsOriginalView}"/>
-                            <RadioButton Content="译文" GroupName="EditorView"
-                                         IsChecked="{Binding IsTranslatedView}"/>
-                            <RadioButton Content="双语" GroupName="EditorView"
-                                         IsChecked="{Binding IsBilingualView}"/>
+                        <StackPanel Orientation="Horizontal" Spacing="2" HorizontalAlignment="Right">
+                            <ToggleButton Content="原文" Classes="segment-btn"
+                                          IsChecked="{Binding IsOriginalView}"
+                                          AutomationProperties.Name="显示原文"/>
+                            <ToggleButton Content="译文" Classes="segment-btn"
+                                          IsChecked="{Binding IsTranslatedView}"
+                                          AutomationProperties.Name="显示译文"/>
+                            <ToggleButton Content="双语" Classes="segment-btn"
+                                          IsChecked="{Binding IsBilingualView}"
+                                          AutomationProperties.Name="显示双语对照"/>
                         </StackPanel>
                     </DockPanel>
 
@@ -320,27 +370,32 @@
             <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,*,Auto">
                 <!-- 清空历史 -->
                 <Button Grid.Column="0" Content="清空历史" Command="{Binding ClearHistoryCommand}" 
-                        Padding="10,5" Margin="0,0,6,0"/>
+                        Padding="10,5" Margin="0,0,6,0"
+                        AutomationProperties.Name="清空翻译历史"/>
                 <!-- 查看历史记录 -->
                 <Button Grid.Column="1" Content="查看历史记录" Command="{Binding OpenHistoryFolderCommand}" 
                         Padding="10,5" Margin="0,0,6,0"
+                        AutomationProperties.Name="打开历史记录文件夹"
                         ToolTip.Tip="打开本地历史记录文件夹，查看保存的翻译文件"/>
                 <!-- 浮动字幕 -->
                 <Button Grid.Column="2" Content="浮动字幕" Command="{Binding ShowFloatingSubtitlesCommand}" 
                         Padding="10,5" Margin="0,0,6,0"
                         Background="{Binding FloatingSubtitleButtonBackground}"
                         Foreground="{Binding FloatingSubtitleButtonForeground}"
+                        AutomationProperties.Name="切换浮动字幕窗口"
                         ToolTip.Tip="使用可拖动的透明字幕框提供服务"/>
                 <!-- 浮动洞察 -->
                 <Button Grid.Column="3" Content="🧠 浮动洞察" Command="{Binding ShowFloatingInsightCommand}" 
                         Padding="10,5" Margin="0,0,6,0"
                         Background="{Binding FloatingInsightButtonBackground}"
                         Foreground="{Binding FloatingInsightButtonForeground}"
+                        AutomationProperties.Name="切换浮动洞察窗口"
                         ToolTip.Tip="弹出浮动洞察窗口，实时同步 AI 洞察结果"/>
                 <!-- 音频活动电平 -->
                 <Border Grid.Column="4" Width="70" Height="22"
                         Background="Transparent" BorderBrush="{DynamicResource BorderStrongBrush}" BorderThickness="1"
                         CornerRadius="3" VerticalAlignment="Center"
+                        AutomationProperties.Name="音频活动电平指示器"
                         ToolTip.Tip="音频活动电平">
                     <Grid>
                         <Border Height="1" Background="{DynamicResource DividerBrush}" VerticalAlignment="Center"/>
@@ -365,9 +420,11 @@
                 <!-- 状态信息（右侧） -->
                 <StackPanel Grid.Column="6" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                     <TextBlock Text="{Binding StatusMessage}" FontSize="11" Foreground="Gray"
-                               VerticalAlignment="Center" MaxWidth="400" TextTrimming="CharacterEllipsis"/>
+                               VerticalAlignment="Center" MaxWidth="400" TextTrimming="CharacterEllipsis"
+                               AutomationProperties.Name="翻译状态信息"/>
                     <TextBlock Text="{Binding ConfigVM.SubscriptionValidationStatusMessage}" 
-                               FontSize="10" Foreground="Gray" VerticalAlignment="Center"/>
+                               FontSize="10" Foreground="Gray" VerticalAlignment="Center"
+                               AutomationProperties.Name="订阅验证状态"/>
                 </StackPanel>
             </Grid>
         </Border>
