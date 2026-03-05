@@ -161,7 +161,9 @@ public partial class SettingsView : UserControl
                 return;
             }
         }
-        DefaultFontSizeComboBox.SelectedIndex = 7; // 38
+        // Fallback: select first item if requested font size not found
+        if (DefaultFontSizeComboBox.Items.Count > 0)
+            DefaultFontSizeComboBox.SelectedIndex = 0;
     }
 
     private void AddModel_Click(object? sender, RoutedEventArgs e)

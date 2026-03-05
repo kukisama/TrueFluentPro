@@ -126,8 +126,6 @@ namespace TrueFluentPro.ViewModels
 
             AddEndpointCommand = new RelayCommand(_ => AddEndpoint());
             RemoveEndpointCommand = new RelayCommand(_ => RemoveEndpoint(), _ => SelectedEndpoint != null);
-            AddModelCommand = new RelayCommand(_ => { }, _ => SelectedEndpoint != null);
-            RemoveModelCommand = new RelayCommand(_ => { }, _ => false);
             TestEndpointCommand = new RelayCommand(async _ => await TestAiConnection(), _ => !string.IsNullOrWhiteSpace(AiApiEndpoint));
 
             AddSubscriptionCommand = new RelayCommand(async _ => await AddSubscriptionAsync());
@@ -262,7 +260,6 @@ namespace TrueFluentPro.ViewModels
                 if (SetProperty(ref _selectedEndpoint, value))
                 {
                     ((RelayCommand)RemoveEndpointCommand).RaiseCanExecuteChanged();
-                    ((RelayCommand)AddModelCommand).RaiseCanExecuteChanged();
                     OnPropertyChanged(nameof(SelectedEndpointModels));
                 }
             }
@@ -752,8 +749,6 @@ namespace TrueFluentPro.ViewModels
 
         public ICommand AddEndpointCommand { get; }
         public ICommand RemoveEndpointCommand { get; }
-        public ICommand AddModelCommand { get; }
-        public ICommand RemoveModelCommand { get; }
         public ICommand TestEndpointCommand { get; }
         public ICommand AddSubscriptionCommand { get; }
         public ICommand UpdateSubscriptionCommand { get; }
@@ -1207,11 +1202,18 @@ namespace TrueFluentPro.ViewModels
         private void MarkDirty()
         {
             _isDirty = true;
-            _debounceTimer?.Dispose();
-            _debounceTimer = new Timer(_ =>
+            // Reset debounce timer instead of creating new instance each time
+            if (_debounceTimer == null)
             {
-                Dispatcher.UIThread.Post(() => _ = FlushSaveAsync());
-            }, null, DebounceMs, Timeout.Infinite);
+                _debounceTimer = new Timer(_ =>
+                {
+                    Dispatcher.UIThread.Post(() => _ = FlushSaveAsync());
+                }, null, DebounceMs, Timeout.Infinite);
+            }
+            else
+            {
+                _debounceTimer.Change(DebounceMs, Timeout.Infinite);
+            }
         }
 
         private async Task FlushSaveAsync()
