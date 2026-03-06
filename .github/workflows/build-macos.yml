@@ -18,6 +18,9 @@ on:
       - '*.md'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build-macos:
     runs-on: macos-14    # Apple Silicon (M1) Runner
