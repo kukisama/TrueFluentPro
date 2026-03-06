@@ -2,9 +2,11 @@ using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+#if !MACOS_BUILD
 using Windows.Media.Editing;
 using Windows.Storage;
 using Windows.Storage.Streams;
+#endif
 
 namespace TrueFluentPro.Services
 {
@@ -34,6 +36,7 @@ namespace TrueFluentPro.Services
                 return result;
             }
 
+#if !MACOS_BUILD
             if (string.IsNullOrWhiteSpace(videoFilePath) || !File.Exists(videoFilePath))
             {
                 return result;
@@ -82,6 +85,10 @@ namespace TrueFluentPro.Services
             {
                 return result;
             }
+#else
+            await Task.CompletedTask;
+            return result;
+#endif
         }
 
         public static bool TryResolveVideoPathFromFirstFrame(string? imagePath, out string videoPath)
@@ -121,6 +128,7 @@ namespace TrueFluentPro.Services
                 && imagePath.EndsWith(LastFrameSuffix, StringComparison.OrdinalIgnoreCase);
         }
 
+#if !MACOS_BUILD
         private static async Task<bool> SaveThumbnailAsync(MediaComposition composition, TimeSpan position, string filePath)
         {
             IRandomAccessStream? stream = null;
@@ -154,5 +162,6 @@ namespace TrueFluentPro.Services
                 stream?.Dispose();
             }
         }
+#endif
     }
 }
