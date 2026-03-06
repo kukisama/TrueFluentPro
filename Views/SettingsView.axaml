@@ -13,21 +13,40 @@
         <!-- 左侧锚点导航 -->
         <Border Grid.Column="0" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
                 BorderThickness="0,0,1,0" Padding="0,12,0,0">
-            <ListBox Name="NavListBox" SelectionMode="Single"
-                     SelectionChanged="OnNavSectionChanged"
-                     Background="Transparent" Margin="4,0">
-                <ListBoxItem Tag="Section_Subscription" Content="Azure Speech"/>
-                <ListBoxItem Tag="Section_Endpoints" Content="AI 终结点"/>
-                <ListBoxItem Tag="Section_Audio" Content="音频设备"/>
-                <ListBoxItem Tag="Section_Storage" Content="录音与存储"/>
-                <ListBoxItem Tag="Section_Recognition" Content="语音识别"/>
-                <ListBoxItem Tag="Section_Text" Content="字幕与文本"/>
-                <ListBoxItem Tag="Section_Insight" Content="洞察"/>
-                <ListBoxItem Tag="Section_Review" Content="复盘预设"/>
-                <ListBoxItem Tag="Section_ImageGen" Content="图片生成"/>
-                <ListBoxItem Tag="Section_VideoGen" Content="视频生成"/>
-                <ListBoxItem Tag="Section_About" Content="关于"/>
-            </ListBox>
+            <Grid RowDefinitions="*,Auto">
+                <ListBox Name="NavListBox" SelectionMode="Single"
+                         SelectionChanged="OnNavSectionChanged"
+                         Background="Transparent" Margin="4,0">
+                    <ListBoxItem Tag="Section_Subscription" Content="Azure Speech"/>
+                    <ListBoxItem Tag="Section_Endpoints" Content="AI 终结点"/>
+                    <ListBoxItem Tag="Section_Storage" Content="录音与存储"/>
+                    <ListBoxItem Tag="Section_Insight" Content="洞察"/>
+                    <ListBoxItem Tag="Section_Review" Content="复盘预设"/>
+                    <ListBoxItem Tag="Section_ImageGen" Content="图片生成"/>
+                    <ListBoxItem Tag="Section_VideoGen" Content="视频生成"/>
+                    <ListBoxItem Tag="Section_Audio" Content="音频设备"/>
+                    <ListBoxItem Tag="Section_Recognition" Content="语音识别"/>
+                    <ListBoxItem Tag="Section_Text" Content="字幕与文本"/>
+                    <ListBoxItem Tag="Section_About" Content="关于"/>
+                </ListBox>
+
+                <Border Grid.Row="1"
+                        Margin="10,12,10,12"
+                        Padding="12"
+                        CornerRadius="10"
+                        BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="配置迁移" FontWeight="SemiBold"/>
+                        <TextBlock Text="导出/导入可迁移资源：Speech、存储、AI 终结点与模型选择。不会包含 AAD 登录字段和个人化细项。"
+                                   FontSize="11"
+                                   Foreground="Gray"
+                                   TextWrapping="Wrap"/>
+                        <Button Content="导出 JSON" Click="OnExportSettingsPackageClick"/>
+                        <Button Content="导入 JSON" Click="OnImportSettingsPackageClick"/>
+                    </StackPanel>
+                </Border>
+            </Grid>
         </Border>
 
         <!-- 右侧瀑布流内容 -->
@@ -35,17 +54,28 @@
                       ScrollChanged="OnSettingsScrollChanged"
                       HorizontalScrollBarVisibility="Disabled">
             <StackPanel Name="SectionsPanel" Spacing="16" Margin="24,12,24,24">
-                <settings:SubscriptionSection  Name="Section_Subscription"/>
-                <settings:EndpointsSection     Name="Section_Endpoints"/>
-                <settings:AudioSection         Name="Section_Audio"/>
-                <settings:StorageSection       Name="Section_Storage"/>
-                <settings:RecognitionSection   Name="Section_Recognition"/>
-                <settings:TextSection          Name="Section_Text"/>
-                <settings:InsightSection       Name="Section_Insight"/>
-                <settings:ReviewSection        Name="Section_Review"/>
-                <settings:ImageGenSection      Name="Section_ImageGen"/>
-                <settings:VideoGenSection      Name="Section_VideoGen"/>
-                <settings:AboutSection         Name="Section_About"/>
+                <settings:SubscriptionSection  Name="Section_Subscription"
+                                              DataContext="{Binding Settings.SubscriptionVM}"/>
+                <settings:EndpointsSection     Name="Section_Endpoints"
+                                              DataContext="{Binding Settings.EndpointsVM}"/>
+                <settings:StorageSection       Name="Section_Storage"
+                                               DataContext="{Binding Settings.StorageVM}"/>
+                <settings:InsightSection       Name="Section_Insight"
+                                              DataContext="{Binding Settings.InsightVM}"/>
+                <settings:ReviewSection        Name="Section_Review"
+                                              DataContext="{Binding Settings.ReviewVM}"/>
+                <settings:ImageGenSection      Name="Section_ImageGen"
+                                               DataContext="{Binding Settings.ImageGenVM}"/>
+                <settings:VideoGenSection      Name="Section_VideoGen"
+                                               DataContext="{Binding Settings.VideoGenVM}"/>
+                <settings:AudioSection         Name="Section_Audio"
+                                              DataContext="{Binding AudioDevices}"/>
+                <settings:RecognitionSection   Name="Section_Recognition"
+                                               DataContext="{Binding Settings.RecognitionVM}"/>
+                <settings:TextSection          Name="Section_Text"
+                                               DataContext="{Binding Settings.TextVM}"/>
+                <settings:AboutSection         Name="Section_About"
+                                              DataContext="{Binding Settings.AboutVM}"/>
             </StackPanel>
         </ScrollViewer>
 

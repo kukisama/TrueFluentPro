@@ -36,6 +36,7 @@ namespace TrueFluentPro.ViewModels
 
         private readonly Func<AzureSpeechConfig> _configProvider;
         private readonly Action<string> _statusSetter;
+        private readonly IModelRuntimeResolver _modelRuntimeResolver;
         private readonly AiInsightService _aiInsightService;
         private readonly FileLibraryViewModel _fileLibrary;
         private readonly PlaybackViewModel _playback;
@@ -56,11 +57,12 @@ namespace TrueFluentPro.ViewModels
         public RelayCommand CancelSpeechSubtitleCommand { get; }
         public RelayCommand GenerateBatchSpeechSubtitleCommand { get; }
 
-        private bool IsAiConfigured => TryBuildReviewRuntimeConfig(_configProvider(), out _, out _);
+        private bool IsAiConfigured => TryBuildReviewRuntimeConfig(_configProvider(), out _, out _, out _);
 
         public BatchProcessingViewModel(
             Func<AzureSpeechConfig> configProvider,
             Action<string> statusSetter,
+            IModelRuntimeResolver modelRuntimeResolver,
             AiInsightService aiInsightService,
             FileLibraryViewModel fileLibrary,
             PlaybackViewModel playback,
@@ -69,6 +71,7 @@ namespace TrueFluentPro.ViewModels
         {
             _configProvider = configProvider;
             _statusSetter = statusSetter;
+            _modelRuntimeResolver = modelRuntimeResolver;
             _aiInsightService = aiInsightService;
             _fileLibrary = fileLibrary;
             _playback = playback;
@@ -1050,12 +1053,13 @@ namespace TrueFluentPro.ViewModels
             }
 
             var config = _configProvider();
-            if (!TryBuildReviewRuntimeConfig(config, out var runtimeConfig, out var endpoint))
+            if (!TryBuildReviewRuntimeConfig(config, out var runtimeRequest, out var endpoint, out var errorMessage))
             {
-                UpdateQueueItem(queueItem, BatchTaskStatus.Failed, 0, "AI 配置无效");
+                var message = string.IsNullOrWhiteSpace(errorMessage) ? "AI 配置无效" : errorMessage;
+                UpdateQueueItem(queueItem, BatchTaskStatus.Failed, 0, message);
                 if (ShouldWriteBatchLogFailure)
                 {
-                    AppendBatchLog("ReviewFailed", queueItem.FileName, "Failed", "AI 配置无效");
+                    AppendBatchLog("ReviewFailed", queueItem.FileName, "Failed", message);
                 }
                 if (parentItem != null)
                 {
@@ -1065,12 +1069,12 @@ namespace TrueFluentPro.ViewModels
             }
 
             AzureTokenProvider? tokenProvider = null;
-            if (runtimeConfig.AzureAuthMode == AzureAuthMode.AAD)
+            if (runtimeRequest.AzureAuthMode == AzureAuthMode.AAD)
             {
                 tokenProvider = endpoint != null
                     ? new AzureTokenProvider(GetEndpointProfileKey(endpoint))
                     : new AzureTokenProvider("ai");
-                await tokenProvider.TrySilentLoginAsync(runtimeConfig.AzureTenantId, runtimeConfig.AzureClientId);
+                await tokenProvider.TrySilentLoginAsync(runtimeRequest.AzureTenantId, runtimeRequest.AzureClientId);
             }
             var runtimeInsightService = new AiInsightService(tokenProvider);
 
@@ -1096,7 +1100,7 @@ namespace TrueFluentPro.ViewModels
                 var sb = new System.Text.StringBuilder();
                 AiRequestOutcome? outcome = null;
                 await runtimeInsightService.StreamChatAsync(
-                    runtimeConfig,
+                    runtimeRequest,
                     systemPrompt,
                     userPrompt,
                     chunk =>
@@ -1105,7 +1109,7 @@ namespace TrueFluentPro.ViewModels
                     },
                     localToken,
                     AiChatProfile.Summary,
-                    enableReasoning: runtimeConfig.SummaryEnableReasoning,
+                    enableReasoning: runtimeRequest.SummaryEnableReasoning,
                     onOutcome: o => outcome = o);
 
                 var markdown = TimeLinkHelper.InjectTimeLinks(sb.ToString());
@@ -1120,7 +1124,7 @@ namespace TrueFluentPro.ViewModels
                 {
                     note = "完成(思考)";
                 }
-                else if (runtimeConfig.SummaryEnableReasoning)
+                else if (runtimeRequest.SummaryEnableReasoning)
                 {
                     note = "完成(非思考)";
                 }
@@ -1652,19 +1656,21 @@ namespace TrueFluentPro.ViewModels
         private async Task GenerateReviewSheetAsync(ReviewSheetState sheet, MediaFileItem audioFile, List<SubtitleCue> cues)
         {
             var config = _configProvider();
-            if (!TryBuildReviewRuntimeConfig(config, out var aiConfig, out var endpoint))
+            if (!TryBuildReviewRuntimeConfig(config, out var runtimeRequest, out var endpoint, out var errorMessage))
             {
-                sheet.StatusMessage = "AI 配置无效，请先配置 AI 服务";
+                sheet.StatusMessage = string.IsNullOrWhiteSpace(errorMessage)
+                    ? "AI 配置无效，请先配置 AI 服务"
+                    : errorMessage;
                 return;
             }
 
             AzureTokenProvider? tokenProvider = null;
-            if (aiConfig.AzureAuthMode == AzureAuthMode.AAD)
+            if (runtimeRequest.AzureAuthMode == AzureAuthMode.AAD)
             {
                 tokenProvider = endpoint != null
                     ? new AzureTokenProvider(GetEndpointProfileKey(endpoint))
                     : new AzureTokenProvider("ai");
-                await tokenProvider.TrySilentLoginAsync(aiConfig.AzureTenantId, aiConfig.AzureClientId);
+                await tokenProvider.TrySilentLoginAsync(runtimeRequest.AzureTenantId, runtimeRequest.AzureClientId);
             }
             var runtimeInsightService = new AiInsightService(tokenProvider);
 
@@ -1690,7 +1696,7 @@ namespace TrueFluentPro.ViewModels
             sheet.StatusMessage = "正在生成复盘内容...";
             GenerateAllReviewSheetsCommand.RaiseCanExecuteChanged();
 
-            var systemPrompt = aiConfig.ReviewSystemPrompt;
+            var systemPrompt = config.AiConfig?.ReviewSystemPrompt;
             if (string.IsNullOrWhiteSpace(systemPrompt))
             {
                 systemPrompt = new AiConfig().ReviewSystemPrompt;
@@ -1699,7 +1705,7 @@ namespace TrueFluentPro.ViewModels
             var prompt = string.IsNullOrWhiteSpace(sheet.Prompt)
                 ? "请生成复盘总结。"
                 : sheet.Prompt.Trim();
-            var userTemplate = aiConfig.ReviewUserContentTemplate;
+            var userTemplate = config.AiConfig?.ReviewUserContentTemplate;
             if (string.IsNullOrWhiteSpace(userTemplate))
             {
                 userTemplate = new AiConfig().ReviewUserContentTemplate;
@@ -1713,7 +1719,7 @@ namespace TrueFluentPro.ViewModels
                 var sb = new System.Text.StringBuilder();
                 AiRequestOutcome? outcome = null;
                 await runtimeInsightService.StreamChatAsync(
-                    aiConfig,
+                    runtimeRequest,
                     systemPrompt,
                     userPrompt,
                     chunk =>
@@ -1731,7 +1737,7 @@ namespace TrueFluentPro.ViewModels
                     },
                     token,
                     AiChatProfile.Summary,
-                    enableReasoning: aiConfig.SummaryEnableReasoning,
+                    enableReasoning: runtimeRequest.SummaryEnableReasoning,
                     onOutcome: o => outcome = o);
 
                 if (!ReferenceEquals(sheet.Cts, localCts))
@@ -1750,7 +1756,7 @@ namespace TrueFluentPro.ViewModels
                 {
                     reasoningNote = " (思考已启用)";
                 }
-                else if (aiConfig.SummaryEnableReasoning)
+                else if (runtimeRequest.SummaryEnableReasoning)
                 {
                     reasoningNote = " (未启用思考)";
                 }
@@ -1812,96 +1818,33 @@ namespace TrueFluentPro.ViewModels
         private static ModelReference? SelectReviewReference(AiConfig ai)
             => ai.ReviewModelRef ?? ai.SummaryModelRef ?? ai.QuickModelRef ?? ai.InsightModelRef;
 
-        private static bool TryBuildReviewRuntimeConfig(
+        private bool TryBuildReviewRuntimeConfig(
             AzureSpeechConfig config,
-            out AiConfig runtimeConfig,
-            out AiEndpoint? endpoint)
+            out AiChatRequestConfig runtimeRequest,
+            out AiEndpoint? endpoint,
+            out string errorMessage)
         {
-            runtimeConfig = new AiConfig();
+            runtimeRequest = new AiChatRequestConfig();
             endpoint = null;
+            errorMessage = "";
 
             var ai = config.AiConfig;
             if (ai == null)
             {
+                errorMessage = "AI 配置不存在，请先在设置中选择复盘模型。";
                 return false;
             }
 
             var reference = SelectReviewReference(ai);
-            if (reference != null)
+            if (_modelRuntimeResolver.TryResolve(config, reference, ModelCapability.Text, out var runtime, out var resolveError)
+                && runtime != null)
             {
-                var resolved = config.ResolveModel(reference);
-                if (resolved.Endpoint != null && resolved.Model != null)
-                {
-                    endpoint = resolved.Endpoint;
-                    var model = resolved.Model;
-
-                    runtimeConfig = new AiConfig
-                    {
-                        ProviderType = endpoint.ProviderType,
-                        ApiEndpoint = endpoint.BaseUrl?.Trim() ?? "",
-                        ApiKey = endpoint.ApiKey?.Trim() ?? "",
-                        ApiVersion = string.IsNullOrWhiteSpace(endpoint.ApiVersion) ? "2024-02-01" : endpoint.ApiVersion.Trim(),
-                        AzureAuthMode = endpoint.AuthMode,
-                        AzureTenantId = endpoint.AzureTenantId ?? "",
-                        AzureClientId = endpoint.AzureClientId ?? "",
-                        SummaryEnableReasoning = ai.SummaryEnableReasoning,
-                        InsightSystemPrompt = ai.InsightSystemPrompt,
-                        ReviewSystemPrompt = ai.ReviewSystemPrompt,
-                        InsightUserContentTemplate = ai.InsightUserContentTemplate,
-                        ReviewUserContentTemplate = ai.ReviewUserContentTemplate,
-                        AutoInsightBufferOutput = ai.AutoInsightBufferOutput,
-                        PresetButtons = ai.PresetButtons,
-                        ReviewSheets = ai.ReviewSheets
-                    };
-
-                    if (endpoint.IsAzureEndpoint)
-                    {
-                        var deployment = string.IsNullOrWhiteSpace(model.DeploymentName)
-                            ? model.ModelId
-                            : model.DeploymentName;
-                        runtimeConfig.SummaryDeploymentName = deployment;
-                        runtimeConfig.QuickDeploymentName = deployment;
-                    }
-                    else
-                    {
-                        runtimeConfig.SummaryModelName = model.ModelId;
-                        runtimeConfig.QuickModelName = model.ModelId;
-                    }
-
-                    ConfigViewHelper.ApplyModelDeploymentFallbacks(runtimeConfig);
-                    return runtimeConfig.IsValid;
-                }
-            }
-
-            if (ai.IsValid)
-            {
-                runtimeConfig = new AiConfig
-                {
-                    ProviderType = ai.ProviderType,
-                    ApiEndpoint = ai.ApiEndpoint,
-                    ApiKey = ai.ApiKey,
-                    ModelName = ai.ModelName,
-                    SummaryModelName = ai.SummaryModelName,
-                    QuickModelName = ai.QuickModelName,
-                    DeploymentName = ai.DeploymentName,
-                    SummaryDeploymentName = ai.SummaryDeploymentName,
-                    QuickDeploymentName = ai.QuickDeploymentName,
-                    ApiVersion = ai.ApiVersion,
-                    AzureAuthMode = ai.AzureAuthMode,
-                    AzureTenantId = ai.AzureTenantId,
-                    AzureClientId = ai.AzureClientId,
-                    SummaryEnableReasoning = ai.SummaryEnableReasoning,
-                    InsightSystemPrompt = ai.InsightSystemPrompt,
-                    ReviewSystemPrompt = ai.ReviewSystemPrompt,
-                    InsightUserContentTemplate = ai.InsightUserContentTemplate,
-                    ReviewUserContentTemplate = ai.ReviewUserContentTemplate,
-                    AutoInsightBufferOutput = ai.AutoInsightBufferOutput,
-                    PresetButtons = ai.PresetButtons,
-                    ReviewSheets = ai.ReviewSheets
-                };
+                endpoint = runtime.Endpoint;
+                runtimeRequest = runtime.CreateChatRequest(ai.SummaryEnableReasoning);
                 return true;
             }
 
+            errorMessage = resolveError;
             return false;
         }
 

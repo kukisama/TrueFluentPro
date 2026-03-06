@@ -76,6 +76,7 @@ namespace TrueFluentPro.ViewModels.Settings
             Config = config;
             _subscriptions = new ObservableCollection<AzureSubscription>(config.Subscriptions);
             OnPropertyChanged(nameof(Subscriptions));
+            SelectedSubscription = _subscriptions.FirstOrDefault();
             ((RelayCommand)TestAllSubscriptionsCommand).RaiseCanExecuteChanged();
         }
 

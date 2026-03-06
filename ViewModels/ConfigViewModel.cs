@@ -463,7 +463,38 @@ namespace TrueFluentPro.ViewModels
         public void SetConfig(AzureSpeechConfig config)
         {
             _config = config;
+
+            var savedIndex = _config.ActiveSubscriptionIndex;
+
+            _suppressIndexPersistence = true;
+            try
+            {
+                UpdateSubscriptionNames();
+            }
+            finally
+            {
+                _suppressIndexPersistence = false;
+            }
+
+            if (_config.Subscriptions.Count > 0 && savedIndex >= _config.Subscriptions.Count)
+            {
+                savedIndex = _config.Subscriptions.Count - 1;
+            }
+            else if (_config.Subscriptions.Count == 0)
+            {
+                savedIndex = -1;
+            }
+
+            _config.ActiveSubscriptionIndex = savedIndex;
+            _activeSubscriptionIndex = savedIndex;
+
             OnPropertyChanged(nameof(Config));
+            OnPropertyChanged(nameof(SubscriptionNames));
+            OnPropertyChanged(nameof(ActiveSubscriptionStatus));
+
+            ForceUpdateComboBoxSelection();
+            _translationCommandsRefresh();
+            TriggerSubscriptionValidation();
         }
 
         public void ForceUpdateComboBoxSelection()

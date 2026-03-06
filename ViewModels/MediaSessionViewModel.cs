@@ -21,6 +21,7 @@ namespace TrueFluentPro.ViewModels
         private readonly AiConfig _aiConfig;
         private readonly MediaGenConfig _genConfig;
         private readonly List<AiEndpoint> _endpoints;
+        private readonly IModelRuntimeResolver _modelRuntimeResolver;
         private readonly AiImageGenService _imageService;
         private readonly AiVideoGenService _videoService;
         private readonly Action _onTaskCountChanged;
@@ -348,6 +349,7 @@ namespace TrueFluentPro.ViewModels
             AiConfig aiConfig,
             MediaGenConfig genConfig,
             List<AiEndpoint> endpoints,
+            IModelRuntimeResolver modelRuntimeResolver,
             AiImageGenService imageService,
             AiVideoGenService videoService,
             Action onTaskCountChanged,
@@ -359,6 +361,7 @@ namespace TrueFluentPro.ViewModels
             _aiConfig = aiConfig;
             _genConfig = genConfig;
             _endpoints = endpoints;
+            _modelRuntimeResolver = modelRuntimeResolver;
             _imageService = imageService;
             _videoService = videoService;
             _onTaskCountChanged = onTaskCountChanged;
@@ -429,6 +432,35 @@ namespace TrueFluentPro.ViewModels
             return true;
         }
 
+        private static async System.Threading.Tasks.Task ConfigureScopedServiceAuthAsync(
+            AiMediaServiceBase service,
+            ModelRuntimeResolution runtime,
+            CancellationToken ct)
+        {
+            service.SetTokenProvider(null);
+
+            if (runtime.AzureAuthMode != AzureAuthMode.AAD)
+                return;
+
+            var provider = new AzureTokenProvider(runtime.ProfileKey);
+            await provider.TrySilentLoginAsync(runtime.AzureTenantId, runtime.AzureClientId, ct);
+            service.SetTokenProvider(provider);
+        }
+
+        private async System.Threading.Tasks.Task<AiImageGenService> CreateScopedImageServiceAsync(ModelRuntimeResolution runtime, CancellationToken ct)
+        {
+            var service = new AiImageGenService();
+            await ConfigureScopedServiceAuthAsync(service, runtime, ct);
+            return service;
+        }
+
+        private async System.Threading.Tasks.Task<AiVideoGenService> CreateScopedVideoServiceAsync(ModelRuntimeResolution runtime, CancellationToken ct)
+        {
+            var service = new AiVideoGenService();
+            await ConfigureScopedServiceAuthAsync(service, runtime, ct);
+            return service;
+        }
+
         /// <summary>
         /// 删除一条聊天记录（只删除记录，不删除磁盘上的媒体文件）。
         /// </summary>
@@ -485,7 +517,7 @@ namespace TrueFluentPro.ViewModels
         /// </summary>
         public void RefreshVideoParameterOptions()
         {
-            var profile = VideoCapabilityResolver.ResolveProfile(_genConfig.VideoApiMode, _genConfig.VideoModel);
+            var profile = VideoCapabilityResolver.ResolveProfile(_genConfig.VideoApiMode, _genConfig.VideoModelRef?.ModelId ?? string.Empty);
 
             VideoAspectRatioOptions = profile.AspectRatioOptions.ToList();
             VideoResolutionOptions = profile.ResolutionOptions.ToList();
@@ -572,17 +604,32 @@ namespace TrueFluentPro.ViewModels
                 });
             }, null, 1000, 1000);
 
+            if (!TryResolveImageRuntime(out var imageRuntime, out var imageError) || imageRuntime == null)
+            {
+                stopwatch.Stop();
+                timer.Dispose();
+                loadingMessage.IsLoading = false;
+                loadingMessage.Text = imageError;
+                task.Status = MediaGenStatus.Failed;
+                task.ErrorMessage = imageError;
+                RunningTasks.Remove(task);
+                UpdateGeneratingState();
+                StatusText = imageError;
+                _onRequestSave?.Invoke(this);
+                return;
+            }
+
             // 构建有效的配置（覆盖参数优先）
             var effectiveConfig = new MediaGenConfig
             {
-                ImageModel = _genConfig.ImageModel,
+                ImageModel = imageRuntime.ModelId,
                 ImageSize = ImageSize,
                 ImageQuality = ImageQuality,
                 ImageFormat = ImageFormat,
                 ImageCount = ImageCount
             };
 
-            var imageConfig = BuildImageAiConfig();
+            var imageConfig = imageRuntime.CreateRequestConfig();
 
             var ct = _cts.Token;
 
@@ -590,7 +637,8 @@ namespace TrueFluentPro.ViewModels
             {
                 try
                 {
-                    var result = await _imageService.GenerateAndSaveImagesAsync(
+                    var imageService = await CreateScopedImageServiceAsync(imageRuntime, ct);
+                    var result = await imageService.GenerateAndSaveImagesAsync(
                         imageConfig, prompt, effectiveConfig, SessionDirectory, ct,
                         ReferenceImagePaths.ToList(),
                         p => Dispatcher.UIThread.Post(() =>
@@ -657,16 +705,18 @@ namespace TrueFluentPro.ViewModels
                     stopwatch.Stop();
                     timer.Dispose();
                     var elapsedSec = stopwatch.Elapsed.TotalSeconds;
+                    var logPath = PathManager.Instance.GetLogFile("image_http_debug.log");
                     Dispatcher.UIThread.Post(() =>
                     {
                         task.Status = MediaGenStatus.Failed;
-                        task.ErrorMessage = ex.Message;
+                        task.ErrorMessage = $"{ex.Message}\n日志: {logPath}";
 
                         loadingMessage.IsLoading = false;
-                        loadingMessage.Text = $"❌ 图片生成失败 (耗时 {elapsedSec:F1}秒): {ex.Message}";
+                        loadingMessage.Text = $"❌ 图片生成失败 (耗时 {elapsedSec:F1}秒): {ex.Message}\n日志: {logPath}";
 
                         RunningTasks.Remove(task);
                         UpdateGeneratingState();
+                        StatusText = $"图片生成失败，请查看日志：{logPath}";
                         _onRequestSave?.Invoke(this);
                     });
                 }
@@ -744,9 +794,24 @@ namespace TrueFluentPro.ViewModels
                 return;
             }
 
+            if (!TryResolveVideoRuntime(out var videoRuntime, out var videoError) || videoRuntime == null)
+            {
+                stopwatch.Stop();
+                timer.Dispose();
+                loadingMessage.IsLoading = false;
+                loadingMessage.Text = videoError;
+                task.Status = MediaGenStatus.Failed;
+                task.ErrorMessage = videoError;
+                RunningTasks.Remove(task);
+                UpdateGeneratingState();
+                StatusText = videoError;
+                _onRequestSave?.Invoke(this);
+                return;
+            }
+
             var effectiveConfig = new MediaGenConfig
             {
-                VideoModel = _genConfig.VideoModel,
+                VideoModel = videoRuntime.ModelId,
                 VideoApiMode = _genConfig.VideoApiMode,
                 VideoWidth = videoWidth,
                 VideoHeight = videoHeight,
@@ -758,7 +823,7 @@ namespace TrueFluentPro.ViewModels
             // 记录该任务创建时的模式，方便重启/恢复时走同一路径。
             task.RemoteVideoApiMode = effectiveConfig.VideoApiMode;
 
-            var videoConfig = BuildVideoAiConfig();
+            var videoConfig = videoRuntime.CreateRequestConfig();
 
             var randomId = Guid.NewGuid().ToString("N")[..8];
             var outputPath = Path.Combine(SessionDirectory, $"vid_001_{randomId}.mp4");
@@ -769,7 +834,8 @@ namespace TrueFluentPro.ViewModels
             {
                 try
                 {
-                    var (_, generateSec, downloadSec, downloadUrl) = await _videoService.GenerateVideoAsync(
+                    var videoService = await CreateScopedVideoServiceAsync(videoRuntime, ct);
+                    var (_, generateSec, downloadSec, downloadUrl) = await videoService.GenerateVideoAsync(
                         videoConfig, prompt, effectiveConfig, outputPath, ct,
                         ReferenceImagePath,
                         p => Dispatcher.UIThread.Post(() =>
@@ -795,7 +861,7 @@ namespace TrueFluentPro.ViewModels
                             // 拿到 generationId 就可以提前构造并写入下载 URL（不等到真正下载完成）
                             if (!string.IsNullOrWhiteSpace(task.RemoteVideoId))
                             {
-                                var candidates = _videoService.BuildDownloadCandidateUrls(
+                                var candidates = videoService.BuildDownloadCandidateUrls(
                                     videoConfig,
                                     task.RemoteVideoId,
                                     genId,
@@ -875,16 +941,18 @@ namespace TrueFluentPro.ViewModels
                     stopwatch.Stop();
                     timer.Dispose();
                     var elapsedSec = stopwatch.Elapsed.TotalSeconds;
+                    var logPath = AiVideoGenService.GetVideoDebugLogPath();
                     Dispatcher.UIThread.Post(() =>
                     {
                         task.Status = MediaGenStatus.Failed;
-                        task.ErrorMessage = ex.Message;
+                        task.ErrorMessage = $"{ex.Message}\n日志: {logPath}";
 
                         loadingMessage.IsLoading = false;
-                        loadingMessage.Text = $"❌ 视频生成失败 (耗时 {elapsedSec:F1}秒): {ex.Message}";
+                        loadingMessage.Text = $"❌ 视频生成失败 (耗时 {elapsedSec:F1}秒): {ex.Message}\n日志: {logPath}";
 
                         RunningTasks.Remove(task);
                         UpdateGeneratingState();
+                        StatusText = $"视频生成失败，请查看日志：{logPath}";
                         _onRequestSave?.Invoke(this);
                     });
                 }
@@ -912,7 +980,17 @@ namespace TrueFluentPro.ViewModels
             IsGenerating = true;
             StatusText = $"恢复视频任务... (ID: {task.RemoteVideoId})";
 
-            var videoConfig = BuildVideoAiConfig();
+            if (!TryResolveVideoRuntime(out var videoRuntime, out var videoError) || videoRuntime == null)
+            {
+                task.Status = MediaGenStatus.Failed;
+                task.ErrorMessage = videoError;
+                StatusText = videoError;
+                RunningTasks.Remove(task);
+                UpdateGeneratingState();
+                return;
+            }
+
+            var videoConfig = videoRuntime.CreateRequestConfig();
             var randomId = Guid.NewGuid().ToString("N")[..8];
             var outputPath = task.ResultFilePath
                 ?? Path.Combine(SessionDirectory, $"vid_resume_{randomId}.mp4");
@@ -963,6 +1041,7 @@ namespace TrueFluentPro.ViewModels
                 double recordedGenSec = 0;
                 try
                 {
+                    var videoService = await CreateScopedVideoServiceAsync(videoRuntime, ct);
                     string? generationId = existingGenId;
                     // 用 Timer 定时刷新显示文字（生成+下载阶段都可用）
                     string currentStatus = "";
@@ -1008,7 +1087,7 @@ namespace TrueFluentPro.ViewModels
                         {
                             try
                             {
-                                var (status, progress, genId, failureReason) = await _videoService.PollStatusDetailsAsync(
+                                var (status, progress, genId, failureReason) = await videoService.PollStatusDetailsAsync(
                                     videoConfig, videoId, ct, apiMode);
                                 Dispatcher.UIThread.Post(() =>
                                 {
@@ -1026,7 +1105,7 @@ namespace TrueFluentPro.ViewModels
                                         task.RemoteGenerationId = genId;
 
                                         // 解析到 generationId 就立刻构造并写入下载 URL，便于恢复
-                                        var candidates = _videoService.BuildDownloadCandidateUrls(
+                                        var candidates = videoService.BuildDownloadCandidateUrls(
                                             videoConfig,
                                             videoId,
                                             genId,
@@ -1081,7 +1160,7 @@ namespace TrueFluentPro.ViewModels
                         });
                     }
 
-                    var dlUrl = await _videoService.DownloadVideoAsync(videoConfig, videoId, outputPath, ct,
+                    var dlUrl = await videoService.DownloadVideoAsync(videoConfig, videoId, outputPath, ct,
                         generationId, apiMode);
                     downloadSw.Stop();
 
@@ -1136,14 +1215,16 @@ namespace TrueFluentPro.ViewModels
                 }
                 catch (Exception ex)
                 {
+                    var logPath = AiVideoGenService.GetVideoDebugLogPath();
                     Dispatcher.UIThread.Post(() =>
                     {
                         task.Status = MediaGenStatus.Failed;
-                        task.ErrorMessage = ex.Message;
+                        task.ErrorMessage = $"{ex.Message}\n日志: {logPath}";
                         loadingMessage.IsLoading = false;
-                        loadingMessage.Text = $"❌ 视频恢复失败: {ex.Message}";
+                        loadingMessage.Text = $"❌ 视频恢复失败: {ex.Message}\n日志: {logPath}";
                         RunningTasks.Remove(task);
                         UpdateGeneratingState();
+                        StatusText = $"视频恢复失败，请查看日志：{logPath}";
                         _onRequestSave?.Invoke(this);
                     });
                 }
@@ -1287,7 +1368,7 @@ namespace TrueFluentPro.ViewModels
         {
             return VideoCapabilityResolver.TryResolveSize(
                 _genConfig.VideoApiMode,
-                _genConfig.VideoModel,
+                _genConfig.VideoModelRef?.ModelId ?? string.Empty,
                 VideoAspectRatio,
                 VideoResolution,
                 out width,
@@ -1561,80 +1642,14 @@ namespace TrueFluentPro.ViewModels
             }
         }
 
-        private AiConfig BuildImageAiConfig()
+        private bool TryResolveImageRuntime(out ModelRuntimeResolution? runtime, out string errorMessage)
         {
-            var ep = ResolveEndpoint(_genConfig.ImageModelRef);
-            if (ep != null)
-            {
-                return new AiConfig
-                {
-                    ProviderType = ep.ProviderType,
-                    ApiEndpoint = ep.BaseUrl?.Trim() ?? "",
-                    ApiKey = ep.ApiKey?.Trim() ?? "",
-                    DeploymentName = _genConfig.ImageModel,
-                    ModelName = _genConfig.ImageModel,
-                    ApiVersion = string.IsNullOrWhiteSpace(ep.ApiVersion) ? "2024-02-01" : ep.ApiVersion.Trim(),
-                    AzureAuthMode = ep.AuthMode,
-                    AzureTenantId = ep.AzureTenantId ?? "",
-                    AzureClientId = ep.AzureClientId ?? ""
-                };
-            }
-
-            // 旧配置回退
-            var useFallback = string.IsNullOrWhiteSpace(_genConfig.ImageApiEndpoint);
-            return new AiConfig
-            {
-                ProviderType = useFallback ? _aiConfig.ProviderType : _genConfig.ImageProviderType,
-                ApiEndpoint = useFallback ? _aiConfig.ApiEndpoint : _genConfig.ImageApiEndpoint,
-                ApiKey = useFallback ? _aiConfig.ApiKey : _genConfig.ImageApiKey,
-                DeploymentName = _genConfig.ImageModel,
-                ModelName = _genConfig.ImageModel,
-                ApiVersion = string.IsNullOrWhiteSpace(_aiConfig.ApiVersion)
-                    ? "2024-02-01"
-                    : _aiConfig.ApiVersion,
-                AzureAuthMode = useFallback ? _aiConfig.AzureAuthMode : _genConfig.ImageAzureAuthMode,
-                AzureTenantId = useFallback ? _aiConfig.AzureTenantId : _genConfig.ImageAzureTenantId,
-                AzureClientId = useFallback ? _aiConfig.AzureClientId : _genConfig.ImageAzureClientId
-            };
+            return _modelRuntimeResolver.TryResolve(BuildRuntimeConfig(), _genConfig.ImageModelRef, ModelCapability.Image, out runtime, out errorMessage);
         }
 
-        private AiConfig BuildVideoAiConfig()
+        private bool TryResolveVideoRuntime(out ModelRuntimeResolution? runtime, out string errorMessage)
         {
-            var ep = ResolveEndpoint(_genConfig.VideoModelRef);
-            if (ep != null)
-            {
-                var config = new AiConfig
-                {
-                    ProviderType = ep.ProviderType,
-                    ApiEndpoint = ep.BaseUrl?.Trim() ?? "",
-                    ApiKey = ep.ApiKey?.Trim() ?? "",
-                    ApiVersion = string.IsNullOrWhiteSpace(ep.ApiVersion) ? "2024-02-01" : ep.ApiVersion.Trim(),
-                    AzureAuthMode = ep.AuthMode,
-                    AzureTenantId = ep.AzureTenantId ?? "",
-                    AzureClientId = ep.AzureClientId ?? "",
-                    DeploymentName = _genConfig.VideoModel,
-                    ModelName = _genConfig.VideoModel
-                };
-                return config;
-            }
-
-            // 旧配置回退
-            var useFallback = string.IsNullOrWhiteSpace(_genConfig.VideoApiEndpoint);
-            var fallback = new AiConfig
-            {
-                ProviderType = useFallback ? _aiConfig.ProviderType : _genConfig.VideoProviderType,
-                ApiEndpoint = useFallback ? _aiConfig.ApiEndpoint : _genConfig.VideoApiEndpoint,
-                ApiKey = useFallback ? _aiConfig.ApiKey : _genConfig.VideoApiKey,
-                ApiVersion = string.IsNullOrWhiteSpace(_aiConfig.ApiVersion)
-                    ? "2024-02-01"
-                    : _aiConfig.ApiVersion,
-                AzureAuthMode = useFallback ? _aiConfig.AzureAuthMode : _genConfig.VideoAzureAuthMode,
-                AzureTenantId = useFallback ? _aiConfig.AzureTenantId : _genConfig.VideoAzureTenantId,
-                AzureClientId = useFallback ? _aiConfig.AzureClientId : _genConfig.VideoAzureClientId
-            };
-            fallback.DeploymentName = _genConfig.VideoModel;
-            fallback.ModelName = _genConfig.VideoModel;
-            return fallback;
+            return _modelRuntimeResolver.TryResolve(BuildRuntimeConfig(), _genConfig.VideoModelRef, ModelCapability.Video, out runtime, out errorMessage);
         }
 
         private AiEndpoint? ResolveEndpoint(ModelReference? reference)
@@ -1642,6 +1657,14 @@ namespace TrueFluentPro.ViewModels
             if (reference == null || _endpoints == null) return null;
             return _endpoints.FirstOrDefault(e => e.Id == reference.EndpointId && e.IsEnabled);
         }
+
+        private AzureSpeechConfig BuildRuntimeConfig()
+            => new()
+            {
+                AiConfig = _aiConfig,
+                MediaGenConfig = _genConfig,
+                Endpoints = _endpoints
+            };
 
     }
 

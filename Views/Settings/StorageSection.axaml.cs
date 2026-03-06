@@ -2,7 +2,7 @@ using System.Linq;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
-using TrueFluentPro.ViewModels;
+using TrueFluentPro.ViewModels.Settings;
 
 namespace TrueFluentPro.Views.Settings;
 
@@ -27,9 +27,9 @@ public partial class StorageSection : UserControl
         var folder = folders.FirstOrDefault();
         if (folder == null) return;
         var path = folder.TryGetLocalPath();
-        if (!string.IsNullOrWhiteSpace(path) && DataContext is MainWindowViewModel vm)
+        if (!string.IsNullOrWhiteSpace(path) && DataContext is StorageSectionVM vm)
         {
-            vm.Settings.SessionDirectory = path;
+            vm.SessionDirectory = path;
         }
     }
 }

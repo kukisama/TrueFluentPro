@@ -51,22 +51,7 @@ namespace TrueFluentPro.ViewModels.Settings
             media.ImageQuality = string.IsNullOrWhiteSpace(_imageQuality) ? "medium" : _imageQuality;
             media.ImageFormat = string.IsNullOrWhiteSpace(_imageFormat) ? "png" : _imageFormat;
             media.ImageCount = Math.Clamp(_imageCount, 1, 10);
-
-            if (SelectedImageModel?.Reference != null)
-            {
-                media.ImageModel = SelectedImageModel.Reference.ModelId;
-                media.ImageModelRef = SelectedImageModel.Reference;
-                var (imgEp, _) = config.ResolveModel(SelectedImageModel.Reference);
-                if (imgEp != null)
-                {
-                    media.ImageProviderType = imgEp.ProviderType;
-                    media.ImageApiEndpoint = imgEp.BaseUrl?.Trim() ?? "";
-                    media.ImageApiKey = imgEp.ApiKey?.Trim() ?? "";
-                    media.ImageAzureAuthMode = imgEp.AuthMode;
-                    media.ImageAzureTenantId = imgEp.AzureTenantId ?? "";
-                    media.ImageAzureClientId = imgEp.AzureClientId ?? "";
-                }
-            }
+            media.ImageModelRef = SelectedImageModel?.Reference;
         }
 
         public void SelectModels(ModelReference? imageModelRef, List<ModelOption> imageModels)

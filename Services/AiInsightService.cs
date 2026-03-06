@@ -11,6 +11,45 @@ using TrueFluentPro.Models;
 
 namespace TrueFluentPro.Services
 {
+    public sealed class AiChatRequestConfig
+    {
+        public AiProviderType ProviderType { get; init; } = AiProviderType.OpenAiCompatible;
+        public string ApiEndpoint { get; init; } = "";
+        public string ApiKey { get; init; } = "";
+        public string ApiVersion { get; init; } = "2024-02-01";
+        public AzureAuthMode AzureAuthMode { get; init; } = AzureAuthMode.ApiKey;
+        public string AzureTenantId { get; init; } = "";
+        public string AzureClientId { get; init; } = "";
+        public bool IsAzureEndpoint { get; init; }
+        public string ModelName { get; init; } = "";
+        public string DeploymentName { get; init; } = "";
+        public bool SummaryEnableReasoning { get; init; }
+
+        public bool IsValid => !string.IsNullOrWhiteSpace(ApiEndpoint)
+                            && (AzureAuthMode == AzureAuthMode.AAD || !string.IsNullOrWhiteSpace(ApiKey))
+                            && (IsAzureEndpoint
+                                ? !string.IsNullOrWhiteSpace(DeploymentName)
+                                : !string.IsNullOrWhiteSpace(ModelName));
+
+        public static AiChatRequestConfig FromLegacyConfig(AiConfig config, AiChatProfile profile)
+        {
+            return new AiChatRequestConfig
+            {
+                ProviderType = config.ProviderType,
+                ApiEndpoint = config.ApiEndpoint,
+                ApiKey = config.ApiKey,
+                ApiVersion = config.ApiVersion,
+                AzureAuthMode = config.AzureAuthMode,
+                AzureTenantId = config.AzureTenantId,
+                AzureClientId = config.AzureClientId,
+                IsAzureEndpoint = config.IsAzureEndpoint,
+                ModelName = config.ModelName,
+                DeploymentName = config.DeploymentName,
+                SummaryEnableReasoning = config.SummaryEnableReasoning
+            };
+        }
+    }
+
     public class AiRequestOutcome
     {
         public bool UsedReasoning { get; set; }
@@ -31,7 +70,7 @@ namespace TrueFluentPro.Services
             _tokenProvider = tokenProvider;
         }
 
-        public async Task StreamChatAsync(
+        public Task StreamChatAsync(
             AiConfig config,
             string systemPrompt,
             string userContent,
@@ -42,11 +81,34 @@ namespace TrueFluentPro.Services
             Action<AiRequestOutcome>? onOutcome = null,
             Action<string>? onReasoningChunk = null)
         {
-            using var response = await SendRequestAsync(
-                config,
+            var request = AiChatRequestConfig.FromLegacyConfig(config, profile);
+            return StreamChatAsync(
+                request,
                 systemPrompt,
                 userContent,
+                onChunk,
+                cancellationToken,
                 profile,
+                enableReasoning,
+                onOutcome,
+                onReasoningChunk);
+        }
+
+        public async Task StreamChatAsync(
+            AiChatRequestConfig request,
+            string systemPrompt,
+            string userContent,
+            Action<string> onChunk,
+            CancellationToken cancellationToken,
+            AiChatProfile profile = AiChatProfile.Quick,
+            bool enableReasoning = false,
+            Action<AiRequestOutcome>? onOutcome = null,
+            Action<string>? onReasoningChunk = null)
+        {
+            using var response = await SendRequestAsync(
+                request,
+                systemPrompt,
+                userContent,
                 enableReasoning,
                 cancellationToken);
 
@@ -55,14 +117,13 @@ namespace TrueFluentPro.Services
                 var errorText = await response.Content.ReadAsStringAsync(cancellationToken);
 
                 if (enableReasoning
-                    && config.ProviderType == AiProviderType.OpenAiCompatible
+                    && request.ProviderType == AiProviderType.OpenAiCompatible
                     && (int)response.StatusCode is >= 400 and < 500)
                 {
                     using var fallbackResponse = await SendRequestAsync(
-                        config,
+                        request,
                         systemPrompt,
                         userContent,
-                        profile,
                         enableReasoning: false,
                         cancellationToken);
 
@@ -88,8 +149,8 @@ namespace TrueFluentPro.Services
             {
                 UsedReasoning = enableReasoning
                                 && profile == AiChatProfile.Summary
-                                && config.SummaryEnableReasoning
-                                && config.ProviderType == AiProviderType.OpenAiCompatible,
+                                && request.SummaryEnableReasoning
+                                && request.ProviderType == AiProviderType.OpenAiCompatible,
                 UsedFallback = false
             });
 
@@ -97,42 +158,40 @@ namespace TrueFluentPro.Services
         }
 
         private async Task<HttpResponseMessage> SendRequestAsync(
-            AiConfig config,
+            AiChatRequestConfig request,
             string systemPrompt,
             string userContent,
-            AiChatProfile profile,
             bool enableReasoning,
             CancellationToken cancellationToken)
         {
-            var url = BuildUrl(config, profile);
-            var body = BuildRequestBody(config, systemPrompt, userContent, profile, enableReasoning);
+            var url = BuildUrl(request);
+            var body = BuildRequestBody(request, systemPrompt, userContent, enableReasoning);
 
-            using var request = new HttpRequestMessage(HttpMethod.Post, url);
-            request.Content = new StringContent(
+            using var httpRequest = new HttpRequestMessage(HttpMethod.Post, url);
+            httpRequest.Content = new StringContent(
                 JsonSerializer.Serialize(body),
                 Encoding.UTF8,
                 "application/json");
 
-            if (config.IsAzureEndpoint)
+            if (request.IsAzureEndpoint)
             {
-                if (config.AzureAuthMode == AzureAuthMode.AAD && _tokenProvider?.IsLoggedIn == true)
+                if (request.AzureAuthMode == AzureAuthMode.AAD && _tokenProvider?.IsLoggedIn == true)
                 {
                     var token = await _tokenProvider.GetTokenAsync(cancellationToken);
-                    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+                    httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
                 }
                 else
                 {
-                    request.Headers.Add("api-key", config.ApiKey);
+                    httpRequest.Headers.Add("api-key", request.ApiKey);
                 }
             }
             else
             {
-                request.Headers.Authorization =
-                    new AuthenticationHeaderValue("Bearer", config.ApiKey);
+                httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", request.ApiKey);
             }
 
             return await _httpClient.SendAsync(
-                request,
+                httpRequest,
                 HttpCompletionOption.ResponseHeadersRead,
                 cancellationToken);
         }
@@ -232,14 +291,13 @@ namespace TrueFluentPro.Services
             return false;
         }
 
-        private static string BuildUrl(AiConfig config, AiChatProfile profile)
+        private static string BuildUrl(AiChatRequestConfig request)
         {
-            var baseUrl = config.ApiEndpoint.TrimEnd('/');
+            var baseUrl = request.ApiEndpoint.TrimEnd('/');
 
-            if (config.IsAzureEndpoint)
+            if (request.IsAzureEndpoint)
             {
-                var deploymentName = config.GetDeploymentName(profile);
-                return $"{baseUrl}/openai/deployments/{deploymentName}/chat/completions?api-version={config.ApiVersion}";
+                return $"{baseUrl}/openai/deployments/{request.DeploymentName}/chat/completions?api-version={request.ApiVersion}";
             }
 
             if (baseUrl.EndsWith("/v1"))
@@ -248,7 +306,10 @@ namespace TrueFluentPro.Services
         }
 
         private static object BuildRequestBody(
-            AiConfig config, string systemPrompt, string userContent, AiChatProfile profile, bool enableReasoning)
+            AiChatRequestConfig request,
+            string systemPrompt,
+            string userContent,
+            bool enableReasoning)
         {
             var messages = new List<object>
             {
@@ -256,19 +317,19 @@ namespace TrueFluentPro.Services
                 new { role = "user", content = userContent }
             };
 
-            if (config.IsAzureEndpoint)
+            if (request.IsAzureEndpoint)
             {
                 return new { messages, stream = true };
             }
 
             var body = new Dictionary<string, object>
             {
-                ["model"] = config.GetModelName(profile),
+                ["model"] = request.ModelName,
                 ["messages"] = messages,
                 ["stream"] = true
             };
 
-            if (enableReasoning && profile == AiChatProfile.Summary && config.SummaryEnableReasoning)
+            if (enableReasoning && request.SummaryEnableReasoning)
             {
                 body["reasoning"] = new { effort = "medium" };
             }

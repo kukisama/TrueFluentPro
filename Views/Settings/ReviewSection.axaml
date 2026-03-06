@@ -1,9 +1,10 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:vm="using:TrueFluentPro.ViewModels"
+             xmlns:vm="using:TrueFluentPro.ViewModels.Settings"
              xmlns:controls="clr-namespace:TrueFluentPro.Controls"
+             xmlns:views="clr-namespace:TrueFluentPro.Views"
              x:Class="TrueFluentPro.Views.Settings.ReviewSection"
-             x:DataType="vm:MainWindowViewModel"
+             x:DataType="vm:ReviewSectionVM"
              x:CompileBindings="False">
     <Border BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
             BorderThickness="1" CornerRadius="8" Padding="20">
@@ -14,31 +15,31 @@
             <StackPanel Spacing="6">
                 <TextBlock Text="复盘模型:" VerticalAlignment="Center"/>
                 <ComboBox MinWidth="250"
-                          ItemsSource="{Binding Settings.TextModels}"
-                          SelectedItem="{Binding Settings.SelectedReviewModel, Mode=TwoWay}"/>
+                          ItemsSource="{Binding TextModels}"
+                          SelectedItem="{Binding SelectedReviewModel, Mode=TwoWay}"/>
             </StackPanel>
 
             <CheckBox Content="根据音频生成 speech 字幕（更准确，区分讲话人）"
-                      IsChecked="{Binding Settings.UseSpeechSubtitleForReview, Mode=TwoWay}"
-                      IsEnabled="{Binding Settings.BatchStorageIsValid}"/>
+                      IsChecked="{Binding $parent[views:SettingsView].DataContext.Settings.StorageVM.UseSpeechSubtitleForReview, Mode=TwoWay}"
+                      IsEnabled="{Binding $parent[views:SettingsView].DataContext.Settings.StorageVM.BatchStorageIsValid}"/>
             <TextBlock FontSize="10" Foreground="Gray"
                        Text="需先在「录音与存储」中验证批量转写的存储账号"/>
 
             <StackPanel Spacing="4">
                 <TextBlock Text="复盘系统提示词" FontSize="11" Foreground="Gray"/>
-                <TextBox Text="{Binding Settings.ReviewSystemPrompt, Mode=TwoWay}"
+                <TextBox Text="{Binding ReviewSystemPrompt, Mode=TwoWay}"
                          AcceptsReturn="True" Height="100" TextWrapping="Wrap"/>
             </StackPanel>
             <StackPanel Spacing="4">
                 <TextBlock Text="复盘用户内容模板" FontSize="11" Foreground="Gray"/>
-                <TextBox Text="{Binding Settings.ReviewUserContentTemplate, Mode=TwoWay}"
+                <TextBox Text="{Binding ReviewUserContentTemplate, Mode=TwoWay}"
                          AcceptsReturn="True" Height="100" TextWrapping="Wrap"/>
                 <TextBlock FontSize="10" Foreground="Gray" Text="占位符：{subtitle} 字幕内容、{prompt} 复盘提示词"/>
             </StackPanel>
 
             <Separator Margin="0,8,0,8"/>
             <controls:ReviewSheetsEditor Name="ReviewSheetsEditorControl"
-                                         Items="{Binding Settings.ReviewSheets}"/>
+                                         Items="{Binding ReviewSheets}"/>
         </StackPanel>
     </Border>
 </UserControl>

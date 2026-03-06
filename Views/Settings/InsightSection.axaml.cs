@@ -1,11 +1,13 @@
 using Avalonia.Controls;
 using Avalonia.Interactivity;
-using TrueFluentPro.ViewModels;
+using TrueFluentPro.ViewModels.Settings;
 
 namespace TrueFluentPro.Views.Settings;
 
 public partial class InsightSection : UserControl
 {
+    private InsightSectionVM? _boundVm;
+
     public InsightSection()
     {
         InitializeComponent();
@@ -15,9 +17,36 @@ public partial class InsightSection : UserControl
     {
         base.OnLoaded(e);
 
-        if (DataContext is MainWindowViewModel vm)
+        if (DataContext is InsightSectionVM vm)
         {
-            PresetButtonsEditorControl.ItemsChanged += () => vm.Settings.NotifyPresetButtonsChanged();
+            WireHandlers(vm);
         }
+    }
+
+    protected override void OnUnloaded(RoutedEventArgs e)
+    {
+        UnwireHandlers();
+        base.OnUnloaded(e);
+    }
+
+    private void WireHandlers(InsightSectionVM vm)
+    {
+        if (ReferenceEquals(_boundVm, vm))
+            return;
+
+        UnwireHandlers();
+        _boundVm = vm;
+        PresetButtonsEditorControl.ItemsChanged += PresetButtonsEditorControl_ItemsChanged;
+    }
+
+    private void UnwireHandlers()
+    {
+        PresetButtonsEditorControl.ItemsChanged -= PresetButtonsEditorControl_ItemsChanged;
+        _boundVm = null;
+    }
+
+    private void PresetButtonsEditorControl_ItemsChanged()
+    {
+        _boundVm?.NotifyPresetButtonsChanged();
     }
 }

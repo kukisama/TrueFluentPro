@@ -5,7 +5,7 @@ namespace TrueFluentPro.ViewModels.Settings
     public class TextSectionVM : SettingsSectionBase
     {
         private bool _exportSrt;
-        private bool _exportVtt;
+        private bool _exportVtt = true;
         private int _defaultFontSize = 38;
 
         public bool ExportSrt { get => _exportSrt; set => Set(ref _exportSrt, value); }

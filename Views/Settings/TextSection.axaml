@@ -1,8 +1,8 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:vm="using:TrueFluentPro.ViewModels"
+             xmlns:vm="using:TrueFluentPro.ViewModels.Settings"
              x:Class="TrueFluentPro.Views.Settings.TextSection"
-             x:DataType="vm:MainWindowViewModel"
+             x:DataType="vm:TextSectionVM"
              x:CompileBindings="False">
     <Border BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
             BorderThickness="1" CornerRadius="8" Padding="20">
@@ -11,8 +11,8 @@
             <Separator/>
 
             <TextBlock Text="字幕输出" FontWeight="Bold"/>
-            <CheckBox Content="生成 SRT 字幕" IsChecked="{Binding Settings.ExportSrt, Mode=TwoWay}"/>
-            <CheckBox Content="生成 VTT 字幕" IsChecked="{Binding Settings.ExportVtt, Mode=TwoWay}"/>
+            <CheckBox Content="生成 SRT 字幕" IsChecked="{Binding ExportSrt, Mode=TwoWay}"/>
+            <CheckBox Content="生成 VTT 字幕" IsChecked="{Binding ExportVtt, Mode=TwoWay}"/>
             <TextBlock FontSize="10" Foreground="Gray" Text="字幕与录音同目录保存，可同时勾选"/>
 
             <Separator Margin="0,8,0,8"/>

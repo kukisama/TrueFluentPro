@@ -27,6 +27,9 @@ public partial class App : Application
         // --- 基础服务 ---
         services.AddSingleton<ConfigurationService>();
         services.AddSingleton<AzureSubscriptionValidator>();
+        services.AddSingleton<IAiEndpointModelDiscoveryService, AiEndpointModelDiscoveryService>();
+        services.AddSingleton<ISettingsImportExportService, SettingsImportExportService>();
+        services.AddSingleton<IModelRuntimeResolver, ModelRuntimeResolver>();
 
         // --- ViewModel ---
         services.AddSingleton<SettingsViewModel>();

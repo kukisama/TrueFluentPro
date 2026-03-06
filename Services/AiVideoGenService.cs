@@ -17,6 +17,187 @@ namespace TrueFluentPro.Services
     {
         private string? _lastSuccessfulDownloadUrl;
 
+        private static string GetVideoLogPath()
+            => PathManager.Instance.GetLogFile("video_http_debug.log");
+
+        public static string GetVideoDebugLogPath()
+            => GetVideoLogPath();
+
+        private static string DescribeEndpointKind(AiConfig config)
+        {
+            if (IsAzureEndpoint(config))
+                return "AzureOpenAI";
+            if (IsApimGateway(config))
+                return "APIM";
+            return "OpenAICompatible";
+        }
+
+        private static string DescribeAuthStrategy(AiConfig config)
+        {
+            if (IsAzureEndpoint(config))
+            {
+                return config.AzureAuthMode == AzureAuthMode.AAD
+                    ? "Authorization: Bearer (Azure AAD)"
+                    : "api-key (Azure API Key)";
+            }
+
+            if (IsApimGateway(config) && config.AzureAuthMode != AzureAuthMode.AAD)
+                return "api-key (APIM subscription header configured as api-key)";
+
+            return "Authorization: Bearer (OpenAI Compatible)";
+        }
+
+        private static async Task AppendRequestPlanLogAsync(
+            string action,
+            AiConfig config,
+            string primaryUrl,
+            string? fallbackUrl,
+            VideoApiMode apiMode,
+            string? prompt,
+            MediaGenConfig? genConfig,
+            string? referenceImagePath,
+            CancellationToken ct)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine($"Action: {action}");
+            sb.AppendLine($"EndpointKind: {DescribeEndpointKind(config)}");
+            sb.AppendLine($"AuthStrategy: {DescribeAuthStrategy(config)}");
+            sb.AppendLine($"ApiEndpoint: {config.ApiEndpoint}");
+            sb.AppendLine($"PrimaryUrl: {primaryUrl}");
+            if (!string.IsNullOrWhiteSpace(fallbackUrl))
+                sb.AppendLine($"FallbackUrl: {fallbackUrl}");
+            sb.AppendLine($"ApiMode: {apiMode}");
+            sb.AppendLine($"Model: {genConfig?.VideoModel ?? config.ModelName}");
+            if (genConfig != null)
+            {
+                sb.AppendLine($"Size: {genConfig.VideoWidth}x{genConfig.VideoHeight}");
+                sb.AppendLine($"Seconds: {genConfig.VideoSeconds}");
+                sb.AppendLine($"Variants: {genConfig.VideoVariants}");
+                sb.AppendLine($"PollIntervalMs: {genConfig.VideoPollIntervalMs}");
+            }
+            if (prompt != null)
+                sb.AppendLine($"PromptLength: {prompt.Length}");
+            sb.AppendLine($"HasReferenceImage: {!string.IsNullOrWhiteSpace(referenceImagePath) && File.Exists(referenceImagePath ?? string.Empty)}");
+            if (!string.IsNullOrWhiteSpace(referenceImagePath))
+                sb.AppendLine($"ReferenceImagePath: {referenceImagePath}");
+            sb.AppendLine($"LogPath: {GetVideoLogPath()}");
+
+            await AppLogService.Instance.LogHttpDebugAsync("video", $"Plan-{action}", sb.ToString(), ct);
+        }
+
+        private static string FormatPreparedRequestHeaders(HttpRequestMessage request)
+        {
+            var sb = new StringBuilder();
+
+            foreach (var header in request.Headers)
+            {
+                sb.Append(header.Key).Append(": ");
+
+                var isSensitive = header.Key.Equals("Authorization", StringComparison.OrdinalIgnoreCase)
+                    || header.Key.Equals("api-key", StringComparison.OrdinalIgnoreCase)
+                    || header.Key.Equals("Ocp-Apim-Subscription-Key", StringComparison.OrdinalIgnoreCase);
+
+                if (isSensitive)
+                {
+                    var raw = string.Join(",", header.Value);
+                    sb.Append($"<redacted,len={raw.Length}>");
+                }
+                else
+                {
+                    sb.Append(string.Join(",", header.Value));
+                }
+
+                sb.AppendLine();
+            }
+
+            if (request.Content != null)
+            {
+                foreach (var header in request.Content.Headers)
+                {
+                    sb.Append(header.Key).Append(": ");
+                    sb.Append(string.Join(",", header.Value));
+                    sb.AppendLine();
+                }
+            }
+
+            return sb.ToString();
+        }
+
+        private static async Task AppendPreparedRequestLogAsync(
+            string action,
+            AiConfig config,
+            HttpRequestMessage request,
+            CancellationToken ct)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine($"Action: {action}");
+            sb.AppendLine($"EndpointKind: {DescribeEndpointKind(config)}");
+            sb.AppendLine($"AuthStrategy: {DescribeAuthStrategy(config)}");
+            sb.AppendLine($"ApiKeyPresent: {!string.IsNullOrWhiteSpace(config.ApiKey)}");
+            sb.AppendLine($"ApiKeyLength: {config.ApiKey?.Length ?? 0}");
+            sb.AppendLine($"Method: {request.Method}");
+            sb.AppendLine($"RequestUri: {SanitizeUrlForLog(request.RequestUri?.ToString())}");
+            sb.AppendLine("PreparedHeaders:");
+            sb.Append(FormatPreparedRequestHeaders(request));
+            sb.AppendLine($"LogPath: {GetVideoLogPath()}");
+
+            await AppLogService.Instance.LogHttpDebugAsync("video", $"Prepared-{action}", sb.ToString(), ct);
+        }
+
+        private static async Task AppendDownloadCandidatesLogAsync(
+            string videoId,
+            AiConfig config,
+            IReadOnlyList<string> candidates,
+            CancellationToken ct)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine($"Action: DownloadCandidates videoId={videoId}");
+            sb.AppendLine($"EndpointKind: {DescribeEndpointKind(config)}");
+            sb.AppendLine($"AuthStrategy: {DescribeAuthStrategy(config)}");
+            sb.AppendLine($"ApiEndpoint: {config.ApiEndpoint}");
+            sb.AppendLine("Candidates:");
+
+            for (var i = 0; i < candidates.Count; i++)
+            {
+                sb.AppendLine($"[{i + 1}] {SanitizeUrlForLog(candidates[i])}");
+            }
+
+            sb.AppendLine($"LogPath: {GetVideoLogPath()}");
+            await AppLogService.Instance.LogHttpDebugAsync("video", $"DownloadCandidates videoId={videoId}", sb.ToString(), ct);
+        }
+
+        private static async Task AppendDownloadSuccessLogAsync(
+            string videoId,
+            string url,
+            string localPath,
+            CancellationToken ct)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine($"Action: DownloadSuccess videoId={videoId}");
+            sb.AppendLine($"SuccessfulUrl: {SanitizeUrlForLog(url)}");
+            sb.AppendLine($"SavedTo: {localPath}");
+            sb.AppendLine($"LogPath: {GetVideoLogPath()}");
+            await AppLogService.Instance.LogHttpDebugAsync("video", $"DownloadSuccess videoId={videoId}", sb.ToString(), ct);
+        }
+
+        private static string? SanitizeUrlForLog(string? url)
+        {
+            if (string.IsNullOrWhiteSpace(url))
+                return url;
+
+            const string marker = "subscription-key=";
+            var idx = url.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+            if (idx < 0)
+                return url;
+
+            var valueStart = idx + marker.Length;
+            var valueEnd = url.IndexOf('&', valueStart);
+            if (valueEnd < 0)
+                valueEnd = url.Length;
+
+            return url[..valueStart] + "<redacted>" + url[valueEnd..];
+        }
+
         /// <summary>
         /// 构造「下载内容」的候选 URL 列表（不发起网络请求）。
         /// 
@@ -93,7 +274,7 @@ namespace TrueFluentPro.Services
         {
             var sb = new StringBuilder();
             sb.AppendLine($"{action} videoId={videoId}");
-            sb.AppendLine($"URL: {url}");
+            sb.AppendLine($"URL: {SanitizeUrlForLog(url)}");
             sb.AppendLine($"HTTP: {(int)response.StatusCode} {response.ReasonPhrase}");
 
             var ctHeader = response.Content?.Headers?.ContentType?.ToString();
@@ -154,15 +335,43 @@ namespace TrueFluentPro.Services
         {
             var url = BuildVideoPollUrl(config, videoId, apiMode);
             var altUrl = (IsAzureEndpoint(config) && apiMode == VideoApiMode.Videos)
-                ? RemovePreviewApiVersion(url)
+                ? BuildVideoPollUrlWithPreview(config, videoId, apiMode)
                 : null;
+            var previewAltUrl = (IsApimGateway(config) && apiMode == VideoApiMode.Videos)
+                ? BuildVideoPollUrlWithPreview(config, videoId, apiMode)
+                : null;
+
+            await AppendRequestPlanLogAsync(
+                $"Poll videoId={videoId}",
+                config,
+                url,
+                !string.IsNullOrWhiteSpace(altUrl) ? altUrl : previewAltUrl,
+                apiMode,
+                prompt: null,
+                genConfig: null,
+                referenceImagePath: null,
+                ct);
 
             async Task<(HttpResponseMessage response, string body, string urlUsed)> SendOnceAsync(string u)
             {
                 var req = new HttpRequestMessage(HttpMethod.Get, u);
                 await SetAuthHeadersAsync(req, config, ct);
+                await AppendPreparedRequestLogAsync($"Poll videoId={videoId}", config, req, ct);
                 var resp = await _httpClient.SendAsync(req, ct);
                 var body = await resp.Content.ReadAsStringAsync(ct);
+
+                if (IsMissingApimSubscriptionKeyResponse(config, resp, body))
+                {
+                    resp.Dispose();
+                    var queryUrl = BuildApimSubscriptionKeyQueryUrl(u, config.ApiKey);
+                    using var retryReq = new HttpRequestMessage(HttpMethod.Get, queryUrl);
+                    await SetAuthHeadersAsync(retryReq, config, ct);
+                    await AppendPreparedRequestLogAsync($"Poll-ApimQueryRetry videoId={videoId}", config, retryReq, ct);
+                    resp = await _httpClient.SendAsync(retryReq, ct);
+                    body = await resp.Content.ReadAsStringAsync(ct);
+                    u = queryUrl;
+                }
+
                 return (resp, body, u);
             }
 
@@ -182,6 +391,15 @@ namespace TrueFluentPro.Services
                 {
                     response.Dispose();
                     (response, json, urlUsed) = await SendOnceAsync(altUrl);
+                }
+
+                if (!response.IsSuccessStatusCode
+                    && (int)response.StatusCode == 404
+                    && !string.IsNullOrWhiteSpace(previewAltUrl)
+                    && !string.Equals(urlUsed, previewAltUrl, StringComparison.OrdinalIgnoreCase))
+                {
+                    response.Dispose();
+                    (response, json, urlUsed) = await SendOnceAsync(previewAltUrl);
                 }
 
             await AppendPollDebugLogAsync(videoId, urlUsed, response, json, ct);
@@ -317,8 +535,19 @@ namespace TrueFluentPro.Services
         {
             var url = BuildVideoCreateUrl(config, VideoApiMode.Videos);
             var altUrl = (IsAzureEndpoint(config))
-                ? RemovePreviewApiVersion(url)
+                ? BuildVideoCreateUrlWithPreview(config, VideoApiMode.Videos)
                 : null;
+
+            await AppendRequestPlanLogAsync(
+                "CreateVideoMultipart",
+                config,
+                url,
+                altUrl,
+                VideoApiMode.Videos,
+                prompt,
+                genConfig,
+                referenceImagePath,
+                ct);
 
             using var formContent = new MultipartFormDataContent();
             formContent.Add(new StringContent(genConfig.VideoModel), "model");
@@ -350,9 +579,24 @@ namespace TrueFluentPro.Services
             using var request = new HttpRequestMessage(HttpMethod.Post, url);
             request.Content = formContent;
             await SetAuthHeadersAsync(request, config, ct);
+            await AppendPreparedRequestLogAsync("CreateVideoMultipart", config, request, ct);
 
             var response = await _httpClient.SendAsync(request, ct);
             var json = await response.Content.ReadAsStringAsync(ct);
+
+            if (IsMissingApimSubscriptionKeyResponse(config, response, json))
+            {
+                response.Dispose();
+                var queryUrl = BuildApimSubscriptionKeyQueryUrl(url, config.ApiKey);
+                using var retryRequest = new HttpRequestMessage(HttpMethod.Post, queryUrl);
+                retryRequest.Content = formContent;
+                await SetAuthHeadersAsync(retryRequest, config, ct);
+                await AppendPreparedRequestLogAsync("CreateVideoMultipart-ApimQueryRetry", config, retryRequest, ct);
+
+                response = await _httpClient.SendAsync(retryRequest, ct);
+                json = await response.Content.ReadAsStringAsync(ct);
+                url = queryUrl;
+            }
 
             await AppendCreateDebugLogAsync("(create-multipart)", url, response, json, ct);
 
@@ -382,6 +626,7 @@ namespace TrueFluentPro.Services
                     using var req2 = new HttpRequestMessage(HttpMethod.Post, altUrl);
                     req2.Content = formContent2;
                     await SetAuthHeadersAsync(req2, config, ct);
+                    await AppendPreparedRequestLogAsync("CreateVideoMultipart-Alt", config, req2, ct);
                     response = await _httpClient.SendAsync(req2, ct);
                     json = await response.Content.ReadAsStringAsync(ct);
 
@@ -427,8 +672,19 @@ namespace TrueFluentPro.Services
         {
             var url = BuildVideoCreateUrl(config, genConfig.VideoApiMode);
             var altUrl = (IsAzureEndpoint(config) && genConfig.VideoApiMode == VideoApiMode.Videos)
-                ? RemovePreviewApiVersion(url)
+                ? BuildVideoCreateUrlWithPreview(config, genConfig.VideoApiMode)
                 : null;
+
+            await AppendRequestPlanLogAsync(
+                "CreateVideoJson",
+                config,
+                url,
+                altUrl,
+                genConfig.VideoApiMode,
+                prompt,
+                genConfig,
+                referenceImagePath: null,
+                ct);
 
             Dictionary<string, object> bodyObj;
             if (IsAzureEndpoint(config))
@@ -480,9 +736,26 @@ namespace TrueFluentPro.Services
                 Content = new StringContent(payloadJson, Encoding.UTF8, "application/json")
             };
             await SetAuthHeadersAsync(request, config, ct);
+            await AppendPreparedRequestLogAsync("CreateVideoJson", config, request, ct);
 
             var response = await _httpClient.SendAsync(request, ct);
             var json = await response.Content.ReadAsStringAsync(ct);
+
+            if (IsMissingApimSubscriptionKeyResponse(config, response, json))
+            {
+                response.Dispose();
+                var queryUrl = BuildApimSubscriptionKeyQueryUrl(url, config.ApiKey);
+                using var retryRequest = new HttpRequestMessage(HttpMethod.Post, queryUrl)
+                {
+                    Content = new StringContent(payloadJson, Encoding.UTF8, "application/json")
+                };
+                await SetAuthHeadersAsync(retryRequest, config, ct);
+                await AppendPreparedRequestLogAsync("CreateVideoJson-ApimQueryRetry", config, retryRequest, ct);
+
+                response = await _httpClient.SendAsync(retryRequest, ct);
+                json = await response.Content.ReadAsStringAsync(ct);
+                url = queryUrl;
+            }
 
             // 404 且有备用 URL → 重试
             if (!response.IsSuccessStatusCode
@@ -497,6 +770,7 @@ namespace TrueFluentPro.Services
                     Content = new StringContent(payloadJson, Encoding.UTF8, "application/json")
                 };
                 await SetAuthHeadersAsync(req2, config, ct);
+                await AppendPreparedRequestLogAsync("CreateVideoJson-Alt", config, req2, ct);
                 response = await _httpClient.SendAsync(req2, ct);
                 json = await response.Content.ReadAsStringAsync(ct);
                 url = altUrl;
@@ -552,13 +826,20 @@ namespace TrueFluentPro.Services
             // 首选下载路径（注意：不同模式含义不同）
             var primaryUrl = BuildVideoDownloadUrl(config, videoId, apiMode);
             var primaryAltUrl = BuildVideoDownloadUrlAlt(config, videoId, apiMode);
+            var primaryVideoContentUrl = BuildVideoDownloadUrlVideoContent(config, videoId, apiMode);
+            var primaryPreviewUrl = ((IsApimGateway(config) || IsAzureEndpoint(config)) && apiMode == VideoApiMode.Videos)
+                ? BuildVideoDownloadUrlWithPreview(config, videoId, apiMode)
+                : null;
+            var primaryVideoContentPreviewUrl = ((IsApimGateway(config) || IsAzureEndpoint(config)) && apiMode == VideoApiMode.Videos)
+                ? BuildVideoDownloadUrlVideoContentWithPreview(config, videoId, apiMode)
+                : null;
 
-            // Azure /openai/v1/videos 示例可能不接受 api-version=preview（返回 404），对这种情况准备无参数回退。
+            // AOAI 现在主路不带 api-version；保留 preview 版本作为回退。
             var primaryUrlNoApiVersion = (IsAzureEndpoint(config) && apiMode == VideoApiMode.Videos)
-                ? RemovePreviewApiVersion(primaryUrl)
+                ? BuildVideoDownloadUrlWithPreview(config, videoId, apiMode)
                 : null;
             var primaryAltUrlNoApiVersion = (IsAzureEndpoint(config) && apiMode == VideoApiMode.Videos)
-                ? RemovePreviewApiVersion(primaryAltUrl)
+                ? BuildVideoDownloadUrlVideoContentWithPreview(config, videoId, apiMode)
                 : null;
 
             // 如果未提供 generationId，先尝试从轮询响应解析出来。
@@ -589,8 +870,20 @@ namespace TrueFluentPro.Services
 
             async Task<bool> TryDownloadOnceAsync(string url)
             {
+                await AppendRequestPlanLogAsync(
+                    $"Download videoId={videoId}",
+                    config,
+                    url,
+                    fallbackUrl: null,
+                    apiMode,
+                    prompt: null,
+                    genConfig: null,
+                    referenceImagePath: null,
+                    ct);
+
                 using var request = new HttpRequestMessage(HttpMethod.Get, url);
                 await SetAuthHeadersAsync(request, config, ct);
+                await AppendPreparedRequestLogAsync($"Download videoId={videoId}", config, request, ct);
 
                 using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
 
@@ -615,6 +908,7 @@ namespace TrueFluentPro.Services
                 using var fileStream = File.Create(localPath);
                 await stream.CopyToAsync(fileStream, ct);
                 _lastSuccessfulDownloadUrl = url;
+                await AppendDownloadSuccessLogAsync(videoId, url, localPath, ct);
                 return true;
             }
 
@@ -647,11 +941,16 @@ namespace TrueFluentPro.Services
             {
                 AddUrl(primaryUrl);
                 AddUrl(primaryAltUrl);
+                AddUrl(primaryVideoContentUrl);
+                AddUrl(primaryPreviewUrl);
+                AddUrl(primaryVideoContentPreviewUrl);
                 AddUrl(primaryUrlNoApiVersion);
                 AddUrl(primaryAltUrlNoApiVersion);
                 AddUrl(fallbackUrl);
                 AddUrl(fallbackAltUrl);
             }
+
+            await AppendDownloadCandidatesLogAsync(videoId, config, urlsToTry, ct);
 
             // 对每个 URL 做少量重试（content 可能延迟可用）
             foreach (var url in urlsToTry)

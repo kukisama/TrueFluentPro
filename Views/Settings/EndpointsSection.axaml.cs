@@ -2,13 +2,17 @@ using System.Linq;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Threading;
+using Avalonia.VisualTree;
 using TrueFluentPro.Models;
-using TrueFluentPro.ViewModels;
+using TrueFluentPro.ViewModels.Settings;
 
 namespace TrueFluentPro.Views.Settings;
 
 public partial class EndpointsSection : UserControl
 {
+    private EndpointsSectionVM? _boundVm;
+
     public EndpointsSection()
     {
         InitializeComponent();
@@ -18,36 +22,23 @@ public partial class EndpointsSection : UserControl
     {
         base.OnLoaded(e);
 
-        if (DataContext is MainWindowViewModel vm)
+        if (DataContext is EndpointsSectionVM vm)
         {
-            // 监听终结点选择变化，同步 AadLoginPanel
-            vm.Settings.PropertyChanged += (_, args) =>
-            {
-                if (args.PropertyName == nameof(SettingsViewModel.SelectedEndpoint))
-                    SyncAadLoginPanel(vm.Settings);
-            };
-            SyncAadLoginPanel(vm.Settings);
-
-            // AAD 登录完成后同步 TenantId 回终结点模型
-            EndpointAadLoginPanel.LoginCompleted += () =>
-            {
-                var ep = vm.Settings.SelectedEndpoint;
-                if (ep == null) return;
-                var newTenant = EndpointAadLoginPanel.TenantId;
-                if (!string.IsNullOrWhiteSpace(newTenant) && newTenant != ep.AzureTenantId)
-                {
-                    ep.AzureTenantId = newTenant;
-                    vm.Settings.NotifyModelChanged();
-                }
-
-                _ = vm.Settings.RefreshAiAuthStatusAsync();
-            };
+            WireHandlers(vm);
+            SyncAadLoginPanel(vm);
         }
     }
 
-    private void SyncAadLoginPanel(SettingsViewModel settings)
+    protected override void OnUnloaded(RoutedEventArgs e)
+    {
+        UnwireHandlers();
+        base.OnUnloaded(e);
+    }
+
+    private void SyncAadLoginPanel(EndpointsSectionVM settings)
     {
         var ep = settings.SelectedEndpoint;
+        ResetTransientUiState();
         if (ep == null) return;
 
         EndpointAadLoginPanel.ProfileKey = $"endpoint_{ep.Id}";
@@ -55,32 +46,35 @@ public partial class EndpointsSection : UserControl
         EndpointAadLoginPanel.ClientId = ep.AzureClientId;
     }
 
-    private void EndpointField_LostFocus(object? sender, RoutedEventArgs e)
-    {
-        if (DataContext is MainWindowViewModel vm)
-            vm.Settings.NotifyEndpointChanged();
-    }
-
     private void AddModel_Click(object? sender, RoutedEventArgs e)
     {
-        if (DataContext is not MainWindowViewModel vm) return;
-        vm.Settings.AddModelToSelectedEndpoint(
-            "new-model", "", "", "", ModelCapability.Text);
+        if (DataContext is not EndpointsSectionVM vm) return;
+        var model = vm.AddBlankModelToSelectedEndpoint();
+        if (model != null)
+        {
+            ExpandAndFocusModel(model, true);
+        }
+    }
+
+    private void AddDiscoveredModel_Click(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: string modelId } || DataContext is not EndpointsSectionVM vm)
+            return;
+
+        var model = vm.AddDiscoveredModelToSelectedEndpoint(modelId);
+        if (model != null)
+        {
+            ExpandAndFocusModel(model, true);
+        }
     }
 
     private void RemoveModel_Click(object? sender, RoutedEventArgs e)
     {
         if (sender is Button btn && btn.Tag is AiModelEntry model &&
-            DataContext is MainWindowViewModel vm)
+            DataContext is EndpointsSectionVM vm)
         {
-            vm.Settings.RemoveModelFromSelectedEndpoint(model);
+            vm.RemoveModelFromSelectedEndpoint(model);
         }
-    }
-
-    private void ModelField_LostFocus(object? sender, RoutedEventArgs e)
-    {
-        if (DataContext is MainWindowViewModel vm)
-            vm.Settings.NotifyModelChanged();
     }
 
     private void ModelCapabilityCombo_Loaded(object? sender, RoutedEventArgs e)
@@ -107,8 +101,8 @@ public partial class EndpointsSection : UserControl
             "Video" => ModelCapability.Video,
             _ => ModelCapability.Text,
         };
-        if (DataContext is MainWindowViewModel vm)
-            vm.Settings.NotifyModelChanged();
+        if (DataContext is EndpointsSectionVM vm)
+            vm.NotifyModelChanged();
     }
 
     // ═══ 模型手风琴（同一时间仅展开一个） ═══
@@ -135,17 +129,67 @@ public partial class EndpointsSection : UserControl
         }
         else
         {
-            if (_expandedModelPanel != null && _expandedModelPanel != detailPanel)
-            {
-                _expandedModelPanel.IsVisible = false;
-                if (_expandedModelHeader != null)
-                    SetExpandIcon(_expandedModelHeader, false);
-            }
+            ExpandModelPanel(detailPanel, header, true);
+        }
+    }
 
-            detailPanel.IsVisible = true;
-            SetExpandIcon(header, true);
-            _expandedModelPanel = detailPanel;
-            _expandedModelHeader = header;
+    public void ResetTransientUiState()
+    {
+        if (EpShowKeyCheckBox != null)
+        {
+            EpShowKeyCheckBox.IsChecked = false;
+        }
+    }
+
+    private void ExpandAndFocusModel(AiModelEntry model, bool focusModelId)
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            var root = this.GetVisualDescendants()
+                .OfType<Border>()
+                .FirstOrDefault(border => border.Name == "ModelItemRoot" && ReferenceEquals(border.Tag, model));
+            if (root == null)
+                return;
+
+            var detailPanel = root.GetVisualDescendants()
+                .OfType<StackPanel>()
+                .FirstOrDefault(panel => panel.Name == "ModelDetailPanel");
+            var header = root.GetVisualDescendants()
+                .OfType<Border>()
+                .FirstOrDefault(border => border.Name == "ModelHeaderBorder");
+
+            if (detailPanel == null || header == null)
+                return;
+
+            ExpandModelPanel(detailPanel, header, focusModelId);
+        }, DispatcherPriority.Background);
+    }
+
+    private void ExpandModelPanel(StackPanel detailPanel, Border header, bool focusModelId)
+    {
+        if (_expandedModelPanel != null && _expandedModelPanel != detailPanel)
+        {
+            _expandedModelPanel.IsVisible = false;
+            if (_expandedModelHeader != null)
+                SetExpandIcon(_expandedModelHeader, false);
+        }
+
+        detailPanel.IsVisible = true;
+        SetExpandIcon(header, true);
+        _expandedModelPanel = detailPanel;
+        _expandedModelHeader = header;
+
+        if (focusModelId)
+        {
+            var modelIdTextBox = detailPanel.Children
+                .OfType<Grid>()
+                .SelectMany(grid => grid.Children.OfType<TextBox>())
+                .FirstOrDefault(textBox => textBox.Name == "ModelIdTextBox");
+            if (modelIdTextBox != null)
+            {
+                modelIdTextBox.Focus();
+                modelIdTextBox.SelectAll();
+            }
         }
     }
 
@@ -157,6 +201,55 @@ public partial class EndpointsSection : UserControl
                 .FirstOrDefault(t => t.Name == "ModelExpandIcon");
             if (icon != null)
                 icon.Text = expanded ? "▼" : "▶";
+        }
+    }
+
+    private void WireHandlers(EndpointsSectionVM vm)
+    {
+        if (ReferenceEquals(_boundVm, vm))
+            return;
+
+        UnwireHandlers();
+        _boundVm = vm;
+
+        vm.PropertyChanged += Settings_PropertyChanged;
+        EndpointAadLoginPanel.LoginCompleted += EndpointAadLoginPanel_LoginCompleted;
+    }
+
+    private void UnwireHandlers()
+    {
+        if (_boundVm != null)
+        {
+            _boundVm.PropertyChanged -= Settings_PropertyChanged;
+        }
+
+        EndpointAadLoginPanel.LoginCompleted -= EndpointAadLoginPanel_LoginCompleted;
+        _boundVm = null;
+    }
+
+    private void Settings_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs args)
+    {
+        if (args.PropertyName == nameof(EndpointsSectionVM.SelectedEndpoint) && _boundVm != null)
+        {
+            SyncAadLoginPanel(_boundVm);
+        }
+    }
+
+    private void EndpointAadLoginPanel_LoginCompleted()
+    {
+        var vm = _boundVm;
+        if (vm == null)
+            return;
+
+        var ep = vm.SelectedEndpoint;
+        if (ep == null)
+            return;
+
+        var newTenant = EndpointAadLoginPanel.TenantId;
+        if (!string.IsNullOrWhiteSpace(newTenant) && newTenant != ep.AzureTenantId)
+        {
+            ep.AzureTenantId = newTenant;
+            vm.NotifyEndpointChanged();
         }
     }
 }

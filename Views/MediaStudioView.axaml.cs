@@ -17,6 +17,7 @@ using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using Microsoft.Extensions.DependencyInjection;
 using TrueFluentPro.Models;
 using TrueFluentPro.Services;
 using TrueFluentPro.ViewModels;
@@ -59,7 +60,8 @@ namespace TrueFluentPro.Views
             if (_initialized) return;
             _initialized = true;
 
-            _viewModel = new MediaStudioViewModel(aiConfig, genConfig, endpoints);
+            var modelRuntimeResolver = App.Services.GetRequiredService<IModelRuntimeResolver>();
+            _viewModel = new MediaStudioViewModel(aiConfig, genConfig, endpoints, modelRuntimeResolver);
             DataContext = _viewModel;
 
             _sessionListBox = this.FindControl<ListBox>("SessionListBox");

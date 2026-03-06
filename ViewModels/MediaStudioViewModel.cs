@@ -22,6 +22,7 @@ namespace TrueFluentPro.ViewModels
         private readonly AiConfig _aiConfig;
         private readonly MediaGenConfig _genConfig;
         private readonly List<AiEndpoint> _endpoints;
+        private readonly IModelRuntimeResolver _modelRuntimeResolver;
         private readonly AiImageGenService _imageService = new();
         private readonly AiVideoGenService _videoService = new();
         private AzureTokenProvider _imageTokenProvider = new("media-image");
@@ -114,11 +115,12 @@ namespace TrueFluentPro.ViewModels
         public ICommand DeleteSessionCommand { get; }
         public ICommand RenameSessionCommand { get; }
 
-        public MediaStudioViewModel(AiConfig aiConfig, MediaGenConfig genConfig, List<AiEndpoint> endpoints)
+        public MediaStudioViewModel(AiConfig aiConfig, MediaGenConfig genConfig, List<AiEndpoint> endpoints, IModelRuntimeResolver modelRuntimeResolver)
         {
             _aiConfig = aiConfig;
             _genConfig = genConfig;
             _endpoints = endpoints;
+            _modelRuntimeResolver = modelRuntimeResolver;
 
             _imageService.SetTokenProvider(_imageTokenProvider);
             _videoService.SetTokenProvider(_videoTokenProvider);
@@ -168,31 +170,24 @@ namespace TrueFluentPro.ViewModels
 
         private async Task TrySilentLoginForMediaAsync()
         {
-            // 图片：优先从新终结点系统读取 AAD 配置，回退到旧 genConfig 字段
-            var imageEp = ResolveEndpoint(_genConfig.ImageModelRef);
-            var imageAuthMode = imageEp?.AuthMode ?? _genConfig.ImageAzureAuthMode;
-            if (imageAuthMode == AzureAuthMode.AAD)
+            var runtimeConfig = BuildRuntimeConfig();
+
+            if (_modelRuntimeResolver.TryResolve(runtimeConfig, _genConfig.ImageModelRef, ModelCapability.Image, out var imageRuntime, out _)
+                && imageRuntime != null
+                && imageRuntime.AzureAuthMode == AzureAuthMode.AAD)
             {
-                // 使用与终结点管理页登录按钮相同的 profileKey，共享同一份 token 缓存
-                var profileKey = imageEp != null ? GetEndpointProfileKey(imageEp) : "media-image";
-                _imageTokenProvider = new AzureTokenProvider(profileKey);
+                _imageTokenProvider = new AzureTokenProvider(imageRuntime.ProfileKey);
                 _imageService.SetTokenProvider(_imageTokenProvider);
-                var tenantId = imageEp?.AzureTenantId ?? _genConfig.ImageAzureTenantId;
-                var clientId = imageEp?.AzureClientId ?? _genConfig.ImageAzureClientId;
-                await _imageTokenProvider.TrySilentLoginAsync(tenantId, clientId);
+                await _imageTokenProvider.TrySilentLoginAsync(imageRuntime.AzureTenantId, imageRuntime.AzureClientId);
             }
 
-            // 视频：同理
-            var videoEp = ResolveEndpoint(_genConfig.VideoModelRef);
-            var videoAuthMode = videoEp?.AuthMode ?? _genConfig.VideoAzureAuthMode;
-            if (videoAuthMode == AzureAuthMode.AAD)
+            if (_modelRuntimeResolver.TryResolve(runtimeConfig, _genConfig.VideoModelRef, ModelCapability.Video, out var videoRuntime, out _)
+                && videoRuntime != null
+                && videoRuntime.AzureAuthMode == AzureAuthMode.AAD)
             {
-                var profileKey = videoEp != null ? GetEndpointProfileKey(videoEp) : "media-video";
-                _videoTokenProvider = new AzureTokenProvider(profileKey);
+                _videoTokenProvider = new AzureTokenProvider(videoRuntime.ProfileKey);
                 _videoService.SetTokenProvider(_videoTokenProvider);
-                var tenantId = videoEp?.AzureTenantId ?? _genConfig.VideoAzureTenantId;
-                var clientId = videoEp?.AzureClientId ?? _genConfig.VideoAzureClientId;
-                await _videoTokenProvider.TrySilentLoginAsync(tenantId, clientId);
+                await _videoTokenProvider.TrySilentLoginAsync(videoRuntime.AzureTenantId, videoRuntime.AzureClientId);
             }
         }
 
@@ -208,6 +203,7 @@ namespace TrueFluentPro.ViewModels
             var session = new MediaSessionViewModel(
                 sessionId, defaultName,
                 sessionDir, _aiConfig, _genConfig, _endpoints,
+                _modelRuntimeResolver,
                 _imageService, _videoService,
                 OnSessionTaskCountChanged,
                 s => SaveSessionMeta(s));
@@ -506,6 +502,7 @@ namespace TrueFluentPro.ViewModels
                         _aiConfig,
                         _genConfig,
                         _endpoints,
+                        _modelRuntimeResolver,
                         _imageService,
                         _videoService,
                         OnSessionTaskCountChanged,
@@ -840,6 +837,14 @@ namespace TrueFluentPro.ViewModels
             if (reference == null || _endpoints == null) return null;
             return _endpoints.FirstOrDefault(e => e.Id == reference.EndpointId && e.IsEnabled);
         }
+
+        private AzureSpeechConfig BuildRuntimeConfig()
+            => new()
+            {
+                AiConfig = _aiConfig,
+                MediaGenConfig = _genConfig,
+                Endpoints = _endpoints
+            };
 
         private static string ConvertPathForSave(string? path, string sessionDirectory)
         {

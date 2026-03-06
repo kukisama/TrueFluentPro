@@ -13,6 +13,7 @@ namespace TrueFluentPro.ViewModels.Settings
 {
     public class InsightSectionVM : SettingsSectionBase
     {
+        private readonly IModelRuntimeResolver _modelRuntimeResolver;
         private string _insightSystemPrompt = "";
         private string _insightUserContentTemplate = "";
         private bool _autoInsightBufferOutput = true;
@@ -29,8 +30,9 @@ namespace TrueFluentPro.ViewModels.Settings
         private string _aiTestReasoning = "";
         private string _aiAuthStatus = "认证状态：未检测";
 
-        public InsightSectionVM()
+        public InsightSectionVM(IModelRuntimeResolver modelRuntimeResolver)
         {
+            _modelRuntimeResolver = modelRuntimeResolver;
             TestEndpointCommand = new RelayCommand(async _ => await TestAiConnection());
         }
 
@@ -132,12 +134,14 @@ namespace TrueFluentPro.ViewModels.Settings
                     return;
                 }
 
-                var (endpoint, _) = Config.ResolveModel(reference);
-                if (endpoint == null)
+                if (!_modelRuntimeResolver.TryResolve(Config, reference, ModelCapability.Text, out var runtime, out var errorMessage)
+                    || runtime == null)
                 {
-                    AiAuthStatus = "认证状态：当前模型对应终结点不存在";
+                    AiAuthStatus = $"认证状态：{errorMessage}";
                     return;
                 }
+
+                var endpoint = runtime.Endpoint;
 
                 if (endpoint.ProviderType != AiProviderType.AzureOpenAi)
                 {
@@ -176,9 +180,9 @@ namespace TrueFluentPro.ViewModels.Settings
                 return;
             }
 
-            var (testConfig, endpoint, tokenProvider) = testInfo.Value;
+            var (testRequest, endpoint, tokenProvider) = testInfo.Value;
 
-            if (!testConfig.IsValid)
+            if (!testRequest.IsValid)
             {
                 AiTestStatus = "请填写必要的配置信息";
                 return;
@@ -196,13 +200,13 @@ namespace TrueFluentPro.ViewModels.Settings
                 var reasoningReceived = false;
 
                 await service.StreamChatAsync(
-                    testConfig,
+                    testRequest,
                     "You are a helpful assistant.",
                     "Provide one short answer and think step-by-step.",
                     chunk => { received = true; },
                     cts.Token,
                     AiChatProfile.Summary,
-                    enableReasoning: testConfig.SummaryEnableReasoning,
+                    enableReasoning: testRequest.SummaryEnableReasoning,
                     onOutcome: null,
                     onReasoningChunk: chunk =>
                     {
@@ -212,7 +216,7 @@ namespace TrueFluentPro.ViewModels.Settings
 
                 if (reasoningReceived)
                     AiTestReasoning = reasoningBuilder.ToString();
-                else if (testConfig.SummaryEnableReasoning)
+                else if (testRequest.SummaryEnableReasoning)
                     AiTestReasoning = "未收到思考内容。";
 
                 AiTestStatus = received ? "连接成功！AI 服务可用。" : "连接成功但未收到响应，请检查模型配置。";
@@ -236,37 +240,31 @@ namespace TrueFluentPro.ViewModels.Settings
             }
         }
 
-        private async Task<(AiConfig config, AiEndpoint endpoint, AzureTokenProvider? tokenProvider)?> BuildAiTestContextAsync()
+        private async Task<(AiChatRequestConfig request, AiEndpoint endpoint, AzureTokenProvider? tokenProvider)?> BuildAiTestContextAsync()
         {
             var selected = SelectedSummaryModel ?? SelectedInsightModel ?? SelectedQuickModel;
             var reference = selected?.Reference;
             if (reference == null)
                 return null;
 
-            var (endpoint, model) = Config.ResolveModel(reference);
-            if (endpoint == null || model == null)
+            if (!_modelRuntimeResolver.TryResolve(Config, reference, ModelCapability.Text, out var runtime, out var errorMessage)
+                || runtime == null)
+            {
+                AiTestStatus = errorMessage;
                 return null;
+            }
+
+            var endpoint = runtime.Endpoint;
 
             AzureTokenProvider? tokenProvider = null;
-
-            var cfg = new AiConfig
-            {
-                ProviderType = endpoint.ProviderType,
-                ApiEndpoint = endpoint.BaseUrl?.Trim() ?? "",
-                ApiKey = endpoint.ApiKey?.Trim() ?? "",
-                ApiVersion = string.IsNullOrWhiteSpace(endpoint.ApiVersion) ? "2024-02-01" : endpoint.ApiVersion.Trim(),
-                AzureAuthMode = endpoint.AuthMode,
-                AzureTenantId = endpoint.AzureTenantId ?? "",
-                AzureClientId = endpoint.AzureClientId ?? "",
-                SummaryEnableReasoning = SummaryEnableReasoning
-            };
+            var request = runtime.CreateChatRequest(SummaryEnableReasoning);
 
             if (endpoint.AuthMode == AzureAuthMode.AAD)
             {
-                tokenProvider = new AzureTokenProvider(GetEndpointProfileKey(endpoint));
+                tokenProvider = new AzureTokenProvider(runtime.ProfileKey);
                 var silentLoggedIn = await tokenProvider.TrySilentLoginAsync(
-                    endpoint.AzureTenantId,
-                    endpoint.AzureClientId);
+                    runtime.AzureTenantId,
+                    runtime.AzureClientId);
 
                 if (!silentLoggedIn)
                 {
@@ -290,22 +288,7 @@ namespace TrueFluentPro.ViewModels.Settings
                     : "认证状态：OpenAI 兼容 API Key 已配置";
             }
 
-            if (endpoint.IsAzureEndpoint)
-            {
-                var deployment = string.IsNullOrWhiteSpace(model.DeploymentName)
-                    ? model.ModelId
-                    : model.DeploymentName;
-                cfg.QuickDeploymentName = deployment;
-                cfg.SummaryDeploymentName = deployment;
-            }
-            else
-            {
-                cfg.QuickModelName = model.ModelId;
-                cfg.SummaryModelName = model.ModelId;
-            }
-
-            ConfigViewHelper.ApplyModelDeploymentFallbacks(cfg);
-            return (cfg, endpoint, tokenProvider);
+            return (request, endpoint, tokenProvider);
         }
     }
 }

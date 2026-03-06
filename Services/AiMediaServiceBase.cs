@@ -24,12 +24,39 @@ namespace TrueFluentPro.Services
             TokenProvider = provider;
         }
 
+        private static bool LooksLikeAzureOpenAiEndpoint(string? endpoint)
+        {
+            if (string.IsNullOrWhiteSpace(endpoint)
+                || !Uri.TryCreate(endpoint, UriKind.Absolute, out var uri))
+            {
+                return false;
+            }
+
+            return uri.Host.EndsWith(".openai.azure.com", StringComparison.OrdinalIgnoreCase);
+        }
+
         /// <summary>
-        /// 判断是否为 Azure OpenAI 终结点（ProviderType == AzureOpenAi 或 AuthMode == AAD 均视为 Azure）。
-        /// AAD 认证必然是 Azure 终结点，即使 ProviderType 未显式设置为 AzureOpenAi，URL 也应走 /openai/v1/... 路径。
+        /// 媒体链路中的 AOAI 判定遵循当前约定：仅官方 Azure OpenAI 主机名（*.openai.azure.com）视为 AOAI。
+        /// APIM / 其他代理即使承载 Azure 资源，也按 OpenAI Compatible 访问路径处理。
         /// </summary>
         protected static bool IsAzureEndpoint(AiConfig config)
-            => config.IsAzureEndpoint;
+            => LooksLikeAzureOpenAiEndpoint(config.ApiEndpoint);
+
+        /// <summary>
+        /// 判断是否为 APIM 网关前门。
+        /// 这类终结点常暴露 OpenAI Compatible 路径（如 /openai/v1/...），
+        /// 但在 API Key 模式下要求客户端携带 APIM 订阅键头，而不是 Bearer。
+        /// </summary>
+        protected static bool IsApimGateway(AiConfig config)
+        {
+            if (string.IsNullOrWhiteSpace(config.ApiEndpoint)
+                || !Uri.TryCreate(config.ApiEndpoint, UriKind.Absolute, out var uri))
+            {
+                return false;
+            }
+
+            return uri.Host.EndsWith(".azure-api.net", StringComparison.OrdinalIgnoreCase);
+        }
 
         /// <summary>
         /// 构建 API 基础 URL（去掉末尾的 /v1 等）
@@ -43,25 +70,26 @@ namespace TrueFluentPro.Services
         }
 
         /// <summary>
-        /// 设置认证头（支持 OpenAI Compatible、Azure OpenAI api-key 和 AAD Bearer）
+        /// 设置认证头。
+        /// 媒体链路中的认证只分两类：AAD(Bearer Token) / api-key。
+        /// - AOAI (*.openai.azure.com) 使用 api-key 或 AAD Bearer
+        /// - APIM 使用 api-key
+        /// - 其他 OpenAI Compatible 使用 Bearer api-key
         /// </summary>
         protected async Task SetAuthHeadersAsync(HttpRequestMessage request, AiConfig config, CancellationToken ct = default)
         {
-            if (IsAzureEndpoint(config))
+            if (config.AzureAuthMode == AzureAuthMode.AAD)
             {
-                if (config.AzureAuthMode == AzureAuthMode.AAD)
-                {
-                    if (TokenProvider?.IsLoggedIn != true)
-                        throw new InvalidOperationException(
-                            "Azure AAD 认证未登录。请先在设置中完成 AAD 登录，或切换为 API Key 认证模式。");
+                if (TokenProvider?.IsLoggedIn != true)
+                    throw new InvalidOperationException(
+                        "Azure AAD 认证未登录。请先在设置中完成 AAD 登录，或切换为 API Key 认证模式。");
 
-                    var token = await TokenProvider.GetTokenAsync(ct);
-                    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-                }
-                else
-                {
-                    request.Headers.Add("api-key", config.ApiKey);
-                }
+                var token = await TokenProvider.GetTokenAsync(ct);
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            }
+            else if (IsAzureEndpoint(config) || IsApimGateway(config))
+            {
+                request.Headers.TryAddWithoutValidation("api-key", config.ApiKey);
             }
             else
             {
@@ -71,20 +99,45 @@ namespace TrueFluentPro.Services
         }
 
         /// <summary>
-        /// 设置认证头（同步版本，用于不需要 AAD 的场景）
+        /// 设置认证头（同步版本，仅用于 api-key 场景）。
         /// </summary>
         protected static void SetAuthHeaders(HttpRequestMessage request, AiConfig config)
         {
-            if (IsAzureEndpoint(config))
+            if (config.AzureAuthMode == AzureAuthMode.AAD)
             {
-                // 同步版本不支持 AAD，始终用 api-key
-                request.Headers.Add("api-key", config.ApiKey);
+                throw new InvalidOperationException("AAD 认证需要异步 TokenProvider，不能使用同步认证设置。");
+            }
+            else if (IsAzureEndpoint(config) || IsApimGateway(config))
+            {
+                request.Headers.TryAddWithoutValidation("api-key", config.ApiKey);
             }
             else
             {
                 request.Headers.Authorization =
                     new AuthenticationHeaderValue("Bearer", config.ApiKey);
             }
+        }
+
+        /// <summary>
+        /// 判断 APIM 是否返回“缺少订阅键”。
+        /// </summary>
+        protected static bool IsMissingApimSubscriptionKeyResponse(AiConfig config, HttpResponseMessage response, string? body)
+        {
+            if (!IsApimGateway(config))
+                return false;
+
+            return (int)response.StatusCode == 401
+                && !string.IsNullOrWhiteSpace(body)
+                && body.IndexOf("missing subscription key", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        /// <summary>
+        /// 为 APIM 兼容场景构造带 subscription-key query 的 URL。
+        /// </summary>
+        protected static string BuildApimSubscriptionKeyQueryUrl(string url, string apiKey)
+        {
+            var separator = url.Contains('?') ? '&' : '?';
+            return $"{url}{separator}subscription-key={Uri.EscapeDataString(apiKey)}";
         }
 
         /// <summary>
@@ -156,8 +209,7 @@ namespace TrueFluentPro.Services
             {
                 if (apiMode == VideoApiMode.Videos)
                 {
-                    // 注：部分示例不带 api-version，但 Azure 通常要求。这里默认带上，必要时由调用方回退到不带参数。
-                    return $"{baseUrl}/openai/v1/videos?api-version=preview";
+                    return $"{baseUrl}/openai/v1/videos";
                 }
 
                 return $"{baseUrl}/openai/v1/video/generations/jobs?api-version=preview";
@@ -166,6 +218,17 @@ namespace TrueFluentPro.Services
             if (baseUrl.EndsWith("/v1"))
                 return $"{baseUrl}/videos";
             return $"{baseUrl}/v1/videos";
+        }
+
+        protected static string? BuildVideoCreateUrlWithPreview(AiConfig config, VideoApiMode apiMode)
+        {
+            if (apiMode != VideoApiMode.Videos)
+                return null;
+
+            var url = BuildVideoCreateUrl(config, apiMode);
+            return url.Contains("api-version=", StringComparison.OrdinalIgnoreCase)
+                ? url
+                : $"{url}?api-version=preview";
         }
 
         /// <summary>
@@ -187,7 +250,7 @@ namespace TrueFluentPro.Services
             {
                 if (apiMode == VideoApiMode.Videos)
                 {
-                    return $"{baseUrl}/openai/v1/videos/{videoId}?api-version=preview";
+                    return $"{baseUrl}/openai/v1/videos/{videoId}";
                 }
 
                 return $"{baseUrl}/openai/v1/video/generations/jobs/{videoId}?api-version=preview";
@@ -196,6 +259,21 @@ namespace TrueFluentPro.Services
             if (baseUrl.EndsWith("/v1"))
                 return $"{baseUrl}/videos/{videoId}";
             return $"{baseUrl}/v1/videos/{videoId}";
+        }
+
+        /// <summary>
+        /// 构建 Videos API URL（轮询状态备用路径，带 preview query）。
+        /// 用于 APIM/代理层只导入了带 api-version 的视频操作定义时回退尝试。
+        /// </summary>
+        protected static string? BuildVideoPollUrlWithPreview(AiConfig config, string videoId, VideoApiMode apiMode)
+        {
+            if (apiMode != VideoApiMode.Videos)
+                return null;
+
+            var url = BuildVideoPollUrl(config, videoId, apiMode);
+            return url.Contains("api-version=", StringComparison.OrdinalIgnoreCase)
+                ? url
+                : $"{url}?api-version=preview";
         }
 
         /// <summary>
@@ -217,7 +295,7 @@ namespace TrueFluentPro.Services
             {
                 if (apiMode == VideoApiMode.Videos)
                 {
-                    return $"{baseUrl}/openai/v1/videos/{videoId}/content?api-version=preview";
+                    return $"{baseUrl}/openai/v1/videos/{videoId}/content";
                 }
 
                 return $"{baseUrl}/openai/v1/video/generations/jobs/{videoId}/content?api-version=preview";
@@ -241,7 +319,7 @@ namespace TrueFluentPro.Services
             {
                 if (apiMode == VideoApiMode.Videos)
                 {
-                    return $"{baseUrl}/openai/v1/videos/{videoId}/content/video?api-version=preview";
+                    return $"{baseUrl}/openai/v1/videos/{videoId}/content/video";
                 }
 
                 return $"{baseUrl}/openai/v1/video/generations/jobs/{videoId}/content?api-version=preview";
@@ -250,6 +328,56 @@ namespace TrueFluentPro.Services
             if (baseUrl.EndsWith("/v1"))
                 return $"{baseUrl}/videos/{videoId}/content";
             return $"{baseUrl}/v1/videos/{videoId}/content";
+        }
+
+        /// <summary>
+        /// 构建 Videos API URL（下载内容备用路径，/content/video）。
+        /// 某些 APIM / 代理后端会暴露该形式而不是 /content。
+        /// </summary>
+        protected static string? BuildVideoDownloadUrlVideoContent(AiConfig config, string videoId, VideoApiMode apiMode)
+        {
+            if (apiMode != VideoApiMode.Videos)
+                return null;
+
+            var baseUrl = config.ApiEndpoint.TrimEnd('/');
+
+            if (IsAzureEndpoint(config))
+            {
+                return $"{baseUrl}/openai/v1/videos/{videoId}/content/video";
+            }
+
+            if (baseUrl.EndsWith("/v1"))
+                return $"{baseUrl}/videos/{videoId}/content/video";
+            return $"{baseUrl}/v1/videos/{videoId}/content/video";
+        }
+
+        /// <summary>
+        /// 构建 Videos API URL（下载内容备用路径，带 preview query）。
+        /// 用于 APIM/代理层只导入带 api-version 的视频下载操作定义时回退尝试。
+        /// </summary>
+        protected static string? BuildVideoDownloadUrlWithPreview(AiConfig config, string videoId, VideoApiMode apiMode)
+        {
+            if (apiMode != VideoApiMode.Videos)
+                return null;
+
+            var url = BuildVideoDownloadUrl(config, videoId, apiMode);
+            return url.Contains("api-version=", StringComparison.OrdinalIgnoreCase)
+                ? url
+                : $"{url}?api-version=preview";
+        }
+
+        /// <summary>
+        /// 构建 Videos API URL（下载内容备用路径，/content/video + preview query）。
+        /// </summary>
+        protected static string? BuildVideoDownloadUrlVideoContentWithPreview(AiConfig config, string videoId, VideoApiMode apiMode)
+        {
+            var url = BuildVideoDownloadUrlVideoContent(config, videoId, apiMode);
+            if (string.IsNullOrWhiteSpace(url))
+                return null;
+
+            return url.Contains("api-version=", StringComparison.OrdinalIgnoreCase)
+                ? url
+                : $"{url}?api-version=preview";
         }
 
         /// <summary>
@@ -265,7 +393,7 @@ namespace TrueFluentPro.Services
             if (IsAzureEndpoint(config))
             {
                 // 官方示例：/openai/v1/video/generations/{generationId}/content/video?api-version=preview
-                return $"{baseUrl}/openai/v1/video/generations/{generationId}/content/video?api-version=preview";
+                return $"{baseUrl}/openai/v1/video/generations/{generationId}/content/video";
             }
 
             // OpenAI Compatible：目前项目只实现 /videos/{id}/content；如后续 provider 返回 generationId，可在此扩展。
@@ -285,7 +413,7 @@ namespace TrueFluentPro.Services
 
             if (IsAzureEndpoint(config))
             {
-                return $"{baseUrl}/openai/v1/video/generations/{generationId}/content?api-version=preview";
+                return $"{baseUrl}/openai/v1/video/generations/{generationId}/content";
             }
 
             if (baseUrl.EndsWith("/v1"))

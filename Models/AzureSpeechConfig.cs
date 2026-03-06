@@ -151,7 +151,7 @@ namespace TrueFluentPro.Models
         public bool DeleteWavAfterMp3 { get; set; } = true;
 
         public bool ExportSrtSubtitles { get; set; } = false;
-        public bool ExportVttSubtitles { get; set; } = false;
+        public bool ExportVttSubtitles { get; set; } = true;
 
         public int DefaultFontSize { get; set; } = 38;
 

@@ -29,17 +29,26 @@ namespace TrueFluentPro.Models
 
     public class AiConfig
     {
+        private static bool LooksLikeAzureOpenAiEndpoint(string? endpoint)
+        {
+            if (string.IsNullOrWhiteSpace(endpoint)
+                || !System.Uri.TryCreate(endpoint, System.UriKind.Absolute, out var uri))
+            {
+                return false;
+            }
+
+            var host = uri.Host;
+            return host.EndsWith(".openai.azure.com", System.StringComparison.OrdinalIgnoreCase)
+                   || host.EndsWith(".services.ai.azure.com", System.StringComparison.OrdinalIgnoreCase);
+        }
+
         public AiProviderType ProviderType { get; set; } = AiProviderType.OpenAiCompatible;
 
         public string ApiEndpoint { get; set; } = "";
         public string ApiKey { get; set; } = "";
         public string ModelName { get; set; } = "gpt-4o-mini";
-        public string SummaryModelName { get; set; } = "";
-        public string QuickModelName { get; set; } = "";
 
         public string DeploymentName { get; set; } = "";
-        public string SummaryDeploymentName { get; set; } = "";
-        public string QuickDeploymentName { get; set; } = "";
         public string ApiVersion { get; set; } = "2024-02-01";
 
         // --- AAD 认证 ---
@@ -48,11 +57,14 @@ namespace TrueFluentPro.Models
         public string AzureClientId { get; set; } = "";
 
         /// <summary>
-        /// 是否为 Azure OpenAI 终结点（ProviderType 或 AAD 认证均视为 Azure，微软已统一 URL 格式）。
+        /// 是否为 Azure OpenAI 终结点。
+        /// ProviderType、AAD 认证，或官方 Azure OpenAI 域名（*.openai.azure.com / *.services.ai.azure.com）
+        /// 任一命中都视为 Azure，避免 API Key 模式下仅因 ProviderType 未正确设置而误走 OpenAI Compatible 认证。
         /// </summary>
         [JsonIgnore]
         public bool IsAzureEndpoint => ProviderType == AiProviderType.AzureOpenAi
-                                       || AzureAuthMode == AzureAuthMode.AAD;
+                           || AzureAuthMode == AzureAuthMode.AAD
+                           || LooksLikeAzureOpenAiEndpoint(ApiEndpoint);
 
         public bool SummaryEnableReasoning { get; set; } = false;
 
@@ -64,7 +76,7 @@ namespace TrueFluentPro.Models
 
         public string ReviewUserContentTemplate { get; set; } = "以下是会议字幕内容:\n\n{subtitle}\n\n---\n\n{prompt}";
 
-        // --- 终结点模型引用（3.4 新增，与旧字段并存以便迁移） ---
+        // --- 终结点模型引用 ---
         public ModelReference? InsightModelRef { get; set; }
         public ModelReference? SummaryModelRef { get; set; }
         public ModelReference? QuickModelRef { get; set; }
@@ -109,51 +121,5 @@ namespace TrueFluentPro.Models
             }
         };
 
-        [JsonIgnore]
-        public bool IsValid => !string.IsNullOrWhiteSpace(ApiEndpoint)
-                            && (AzureAuthMode == AzureAuthMode.AAD || !string.IsNullOrWhiteSpace(ApiKey))
-                            && (IsAzureEndpoint
-                                ? !string.IsNullOrWhiteSpace(DeploymentName)
-                                    || !string.IsNullOrWhiteSpace(SummaryDeploymentName)
-                                    || !string.IsNullOrWhiteSpace(QuickDeploymentName)
-                                : !string.IsNullOrWhiteSpace(ModelName)
-                                    || !string.IsNullOrWhiteSpace(SummaryModelName)
-                                    || !string.IsNullOrWhiteSpace(QuickModelName));
-
-        public string GetModelName(AiChatProfile profile)
-        {
-            if (profile == AiChatProfile.Summary)
-            {
-                if (!string.IsNullOrWhiteSpace(SummaryModelName))
-                    return SummaryModelName;
-                if (!string.IsNullOrWhiteSpace(QuickModelName))
-                    return QuickModelName;
-                return ModelName;
-            }
-
-            if (!string.IsNullOrWhiteSpace(QuickModelName))
-                return QuickModelName;
-            if (!string.IsNullOrWhiteSpace(SummaryModelName))
-                return SummaryModelName;
-            return ModelName;
-        }
-
-        public string GetDeploymentName(AiChatProfile profile)
-        {
-            if (profile == AiChatProfile.Summary)
-            {
-                if (!string.IsNullOrWhiteSpace(SummaryDeploymentName))
-                    return SummaryDeploymentName;
-                if (!string.IsNullOrWhiteSpace(QuickDeploymentName))
-                    return QuickDeploymentName;
-                return DeploymentName;
-            }
-
-            if (!string.IsNullOrWhiteSpace(QuickDeploymentName))
-                return QuickDeploymentName;
-            if (!string.IsNullOrWhiteSpace(SummaryDeploymentName))
-                return SummaryDeploymentName;
-            return DeploymentName;
-        }
     }
 }

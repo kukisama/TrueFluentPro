@@ -1,9 +1,10 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:vm="using:TrueFluentPro.ViewModels"
+             xmlns:vm="using:TrueFluentPro.ViewModels.Settings"
              xmlns:models="using:TrueFluentPro.Models"
+             xmlns:views="clr-namespace:TrueFluentPro.Views"
              x:Class="TrueFluentPro.Views.Settings.SubscriptionSection"
-             x:DataType="vm:MainWindowViewModel"
+             x:DataType="vm:SubscriptionSectionVM"
              x:CompileBindings="False">
     <Border BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
             BorderThickness="1" CornerRadius="8" Padding="20" Margin="0,0,0,0">
@@ -16,26 +17,26 @@
             <StackPanel Orientation="Horizontal" Spacing="8">
                 <TextBlock Text="当前订阅:" VerticalAlignment="Center"/>
                 <ComboBox MinWidth="200"
-                          ItemsSource="{Binding ConfigVM.SubscriptionNames}"
-                          SelectedIndex="{Binding ConfigVM.ActiveSubscriptionIndex, Mode=TwoWay}"
-                          IsEnabled="{Binding ConfigVM.IsConfigurationEnabled}"/>
+                          ItemsSource="{Binding $parent[views:SettingsView].DataContext.ConfigVM.SubscriptionNames}"
+                          SelectedIndex="{Binding $parent[views:SettingsView].DataContext.ConfigVM.ActiveSubscriptionIndex, Mode=TwoWay}"
+                          IsEnabled="{Binding $parent[views:SettingsView].DataContext.ConfigVM.IsConfigurationEnabled}"/>
                 <Ellipse Width="12" Height="12" StrokeThickness="2"
                          VerticalAlignment="Center" Margin="4,0"
-                         Fill="{Binding ConfigVM.SubscriptionLampFill}"
-                         Stroke="{Binding ConfigVM.SubscriptionLampStroke}"
-                         Opacity="{Binding ConfigVM.SubscriptionLampOpacity}"
-                         ToolTip.Tip="{Binding ConfigVM.SubscriptionValidationStatusMessage}"/>
+                         Fill="{Binding $parent[views:SettingsView].DataContext.ConfigVM.SubscriptionLampFill}"
+                         Stroke="{Binding $parent[views:SettingsView].DataContext.ConfigVM.SubscriptionLampStroke}"
+                         Opacity="{Binding $parent[views:SettingsView].DataContext.ConfigVM.SubscriptionLampOpacity}"
+                         ToolTip.Tip="{Binding $parent[views:SettingsView].DataContext.ConfigVM.SubscriptionValidationStatusMessage}"/>
             </StackPanel>
 
             <!-- 订阅 CRUD -->
-            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
-                <Border Grid.Column="0" BorderBrush="Gray" BorderThickness="1" Margin="0,0,10,0">
+            <Grid ColumnDefinitions="190,*" ColumnSpacing="12">
+                <Border Grid.Column="0" BorderBrush="Gray" BorderThickness="1" Margin="0,0,4,0">
                     <Grid RowDefinitions="Auto,*">
                         <TextBlock Grid.Row="0" Text="订阅列表" FontWeight="Bold" Margin="10,10,10,5"/>
                         <ListBox Grid.Row="1" Name="SubscriptionListBox" Margin="10"
                                  MinHeight="120"
-                                 ItemsSource="{Binding Settings.Subscriptions}"
-                                 SelectedItem="{Binding Settings.SelectedSubscription, Mode=TwoWay}"
+                                 ItemsSource="{Binding Subscriptions}"
+                                 SelectedItem="{Binding SelectedSubscription, Mode=TwoWay}"
                                  SelectionMode="Single">
                             <ListBox.ItemTemplate>
                                 <DataTemplate DataType="models:AzureSubscription">
@@ -49,45 +50,50 @@
                     </Grid>
                 </Border>
 
-                <StackPanel Grid.Column="1" Spacing="10" MinWidth="320">
+                <StackPanel Grid.Column="1" Spacing="10" HorizontalAlignment="Left">
                     <TextBlock Text="订阅配置" FontWeight="Bold"/>
                     <StackPanel Spacing="5">
                         <TextBlock Text="订阅名称"/>
-                        <TextBox Text="{Binding Settings.SubscriptionEditorName, Mode=TwoWay}"
-                                 Watermark="例如：生产环境、测试环境"/>
+                        <TextBox Text="{Binding SubscriptionEditorName, Mode=TwoWay}"
+                                 Watermark="例如：生产环境、测试环境"
+                                 Width="420"
+                                 MaxWidth="420"
+                                 HorizontalAlignment="Left"/>
                     </StackPanel>
                     <StackPanel Spacing="5">
                         <TextBlock Text="订阅密钥"/>
-                        <TextBox Text="{Binding Settings.SubscriptionEditorKey, Mode=TwoWay}"
+                        <TextBox Text="{Binding SubscriptionEditorKey, Mode=TwoWay}"
                                  Watermark="输入 Azure 语音服务订阅密钥"
-                                 MaxWidth="280" Width="280"
+                                 MaxWidth="420" Width="420"
+                                 HorizontalAlignment="Left"
                                  PasswordChar="*"
                                  RevealPassword="{Binding IsChecked, ElementName=SubShowPwdCheckBox}"/>
                         <CheckBox Name="SubShowPwdCheckBox" Content="显示密钥" FontSize="10" Margin="0,2,0,0"/>
                     </StackPanel>
                     <StackPanel Spacing="5">
                         <TextBlock Text="终结点"/>
-                        <TextBox Text="{Binding Settings.SubscriptionEditorEndpoint, Mode=TwoWay}"
+                        <TextBox Text="{Binding SubscriptionEditorEndpoint, Mode=TwoWay}"
                                  Watermark="例如: https://southeastasia.api.cognitive.microsoft.com/"
-                                 MaxWidth="400" Width="400"/>
+                                 MaxWidth="420" Width="420"
+                                 HorizontalAlignment="Left"/>
                         <TextBlock FontSize="10" Foreground="Gray"
                                    Text="国际版: https://{区域}.api.cognitive.microsoft.com/&#x0a;中国版: https://{区域}.api.cognitive.azure.cn/"
                                    TextWrapping="Wrap"/>
-                        <TextBlock Text="{Binding Settings.SubscriptionEditorRegionHint}"
+                        <TextBlock Text="{Binding SubscriptionEditorRegionHint}"
                                    FontSize="10" Foreground="DarkGreen" TextWrapping="Wrap"/>
                     </StackPanel>
-                    <StackPanel Orientation="Horizontal" Spacing="5" Margin="0,10,0,0">
-                        <Button Content="添加" Width="60" Command="{Binding Settings.AddSubscriptionCommand}"/>
-                        <Button Content="更新" Width="60" Command="{Binding Settings.UpdateSubscriptionCommand}"/>
-                        <Button Content="删除" Width="60" Command="{Binding Settings.DeleteSubscriptionCommand}"/>
-                        <Button Content="测试" Width="60" Command="{Binding Settings.TestSubscriptionCommand}"/>
+                    <StackPanel Orientation="Horizontal" Spacing="5" Margin="0,10,0,0" HorizontalAlignment="Left">
+                        <Button Content="添加" Width="60" Command="{Binding AddSubscriptionCommand}"/>
+                        <Button Content="更新" Width="60" Command="{Binding UpdateSubscriptionCommand}"/>
+                        <Button Content="删除" Width="60" Command="{Binding DeleteSubscriptionCommand}"/>
+                        <Button Content="测试" Width="60" Command="{Binding TestSubscriptionCommand}"/>
                     </StackPanel>
-                    <TextBlock Text="{Binding Settings.SubscriptionMessage}" FontSize="11" Foreground="Gray" TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding SubscriptionMessage}" FontSize="11" Foreground="Gray" TextWrapping="Wrap"/>
 
                     <Separator Margin="0,8,0,4"/>
-                    <Button Content="全部测试速度" Padding="12,6" Command="{Binding Settings.TestAllSubscriptionsCommand}"/>
-                    <TextBlock Text="{Binding Settings.TestAllResult}" FontSize="11" Foreground="Gray"
-                               TextWrapping="Wrap" IsVisible="{Binding Settings.ShowTestAllResult}"/>
+                    <Button Content="全部测试速度" Padding="12,6" Command="{Binding TestAllSubscriptionsCommand}" HorizontalAlignment="Left"/>
+                    <TextBlock Text="{Binding TestAllResult}" FontSize="11" Foreground="Gray"
+                               TextWrapping="Wrap" IsVisible="{Binding ShowTestAllResult}"/>
                 </StackPanel>
             </Grid>
         </StackPanel>

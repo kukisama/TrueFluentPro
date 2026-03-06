@@ -1,8 +1,8 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:vm="using:TrueFluentPro.ViewModels"
+             xmlns:vm="using:TrueFluentPro.ViewModels.Settings"
              x:Class="TrueFluentPro.Views.Settings.ImageGenSection"
-             x:DataType="vm:MainWindowViewModel"
+             x:DataType="vm:ImageGenSectionVM"
              x:CompileBindings="False">
     <Border BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
             BorderThickness="1" CornerRadius="8" Padding="20">
@@ -13,8 +13,8 @@
             <StackPanel Spacing="6">
                 <TextBlock Text="图片模型:" VerticalAlignment="Center"/>
                 <ComboBox MinWidth="250"
-                          ItemsSource="{Binding Settings.ImageModels}"
-                          SelectedItem="{Binding Settings.SelectedImageModel, Mode=TwoWay}"/>
+                          ItemsSource="{Binding ImageModels}"
+                          SelectedItem="{Binding SelectedImageModel, Mode=TwoWay}"/>
                 <TextBlock FontSize="10" Foreground="Gray" Text="仅显示具有 [图片] 能力的终结点模型"/>
             </StackPanel>
 
@@ -23,23 +23,23 @@
             <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="6" ColumnSpacing="8">
                 <TextBlock Grid.Row="0" Grid.Column="0" Text="尺寸:" VerticalAlignment="Center"/>
                 <ComboBox Grid.Row="0" Grid.Column="1" MinWidth="180"
-                          ItemsSource="{Binding Settings.ImageSizeOptions}"
-                          SelectedItem="{Binding Settings.ImageSize, Mode=TwoWay}"/>
+                          ItemsSource="{Binding ImageSizeOptions}"
+                          SelectedItem="{Binding ImageSize, Mode=TwoWay}"/>
 
                 <TextBlock Grid.Row="1" Grid.Column="0" Text="质量:" VerticalAlignment="Center"/>
                 <ComboBox Grid.Row="1" Grid.Column="1" MinWidth="180"
-                          ItemsSource="{Binding Settings.ImageQualityOptions}"
-                          SelectedItem="{Binding Settings.ImageQuality, Mode=TwoWay}"/>
+                          ItemsSource="{Binding ImageQualityOptions}"
+                          SelectedItem="{Binding ImageQuality, Mode=TwoWay}"/>
 
                 <TextBlock Grid.Row="2" Grid.Column="0" Text="格式:" VerticalAlignment="Center"/>
                 <ComboBox Grid.Row="2" Grid.Column="1" MinWidth="180"
-                          ItemsSource="{Binding Settings.ImageFormatOptions}"
-                          SelectedItem="{Binding Settings.ImageFormat, Mode=TwoWay}"/>
+                          ItemsSource="{Binding ImageFormatOptions}"
+                          SelectedItem="{Binding ImageFormat, Mode=TwoWay}"/>
 
                 <TextBlock Grid.Row="3" Grid.Column="0" Text="数量:" VerticalAlignment="Center"/>
                 <ComboBox Grid.Row="3" Grid.Column="1" MinWidth="120"
-                          ItemsSource="{Binding Settings.ImageCountOptions}"
-                          SelectedItem="{Binding Settings.ImageCount, Mode=TwoWay}"/>
+                          ItemsSource="{Binding ImageCountOptions}"
+                          SelectedItem="{Binding ImageCount, Mode=TwoWay}"/>
             </Grid>
         </StackPanel>
     </Border>

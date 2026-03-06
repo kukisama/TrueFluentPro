@@ -80,7 +80,8 @@ namespace TrueFluentPro.ViewModels
         public MainWindowViewModel(
             ConfigurationService configService,
             AzureSubscriptionValidator subscriptionValidator,
-            SettingsViewModel settingsViewModel)
+            SettingsViewModel settingsViewModel,
+            IModelRuntimeResolver modelRuntimeResolver)
         {
             _configService = configService;
             Settings = settingsViewModel;
@@ -134,6 +135,7 @@ namespace TrueFluentPro.ViewModels
             BatchProcessing = new BatchProcessingViewModel(
                 () => _config,
                 msg => StatusMessage = msg,
+                modelRuntimeResolver,
                 _aiInsightService,
                 FileLibrary,
                 Playback,
@@ -166,6 +168,7 @@ namespace TrueFluentPro.ViewModels
             AiInsight = new AiInsightViewModel(
                 _aiInsightService,
                 azureTokenProvider,
+                modelRuntimeResolver,
                 () => _config,
                 () => _history,
                 msg => StatusMessage = msg,
@@ -344,6 +347,8 @@ namespace TrueFluentPro.ViewModels
         private void OnConfigVMConfigUpdatedFromExternal(AzureSpeechConfig config)
         {
             _config = config;
+
+            Settings.Initialize(config);
 
             AudioDevices.UpdateConfig();
 

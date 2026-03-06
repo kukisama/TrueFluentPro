@@ -1,12 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using Avalonia.Threading;
-using TrueFluentPro.Helpers;
 using TrueFluentPro.Models;
 using TrueFluentPro.Services;
 using TrueFluentPro.ViewModels.Settings;
@@ -20,6 +20,7 @@ namespace TrueFluentPro.ViewModels
     public class SettingsViewModel : ViewModelBase
     {
         private readonly ConfigurationService _configService;
+        private readonly ISettingsImportExportService _settingsImportExportService;
         private AzureSpeechConfig _config = new();
 
         private Timer? _debounceTimer;
@@ -39,38 +40,40 @@ namespace TrueFluentPro.ViewModels
         public VideoGenSectionVM VideoGenVM { get; }
         public AboutSectionVM AboutVM { get; }
 
-        // 旧版 AI 配置兼容字段（仅用于 LoadFrom/ApplyTo 迁移）
-        private int _aiProviderTypeIndex;
-        private string _aiApiEndpoint = "";
-        private string _aiApiKey = "";
-        private string _quickModelName = "";
-        private string _summaryModelName = "";
-        private string _quickDeploymentName = "";
-        private string _summaryDeploymentName = "";
-        private string _aiApiVersion = "2024-02-01";
-        private int _aiAzureAuthModeIndex;
-        private string _aiAzureTenantId = "";
-        private string _aiAzureClientId = "";
-
         public event Action<AzureSpeechConfig>? ConfigSaved;
 
         public SettingsViewModel(
             ConfigurationService configService,
-            AzureSubscriptionValidator subscriptionValidator)
+            AzureSubscriptionValidator subscriptionValidator,
+            IAiEndpointModelDiscoveryService modelDiscoveryService,
+            ISettingsImportExportService settingsImportExportService,
+            IModelRuntimeResolver modelRuntimeResolver)
         {
             _configService = configService;
+            _settingsImportExportService = settingsImportExportService;
 
             // 创建分区 ViewModel
             SubscriptionVM = new SubscriptionSectionVM(subscriptionValidator);
-            EndpointsVM = new EndpointsSectionVM();
+            EndpointsVM = new EndpointsSectionVM(modelDiscoveryService);
             StorageVM = new StorageSectionVM();
             RecognitionVM = new RecognitionSectionVM();
             TextVM = new TextSectionVM();
-            InsightVM = new InsightSectionVM();
+            InsightVM = new InsightSectionVM(modelRuntimeResolver);
             ReviewVM = new ReviewSectionVM();
             ImageGenVM = new ImageGenSectionVM();
             VideoGenVM = new VideoGenSectionVM();
             AboutVM = new AboutSectionVM();
+
+            SubscribeSectionPropertyForwarding(SubscriptionVM);
+            SubscribeSectionPropertyForwarding(EndpointsVM);
+            SubscribeSectionPropertyForwarding(StorageVM);
+            SubscribeSectionPropertyForwarding(RecognitionVM);
+            SubscribeSectionPropertyForwarding(TextVM);
+            SubscribeSectionPropertyForwarding(InsightVM);
+            SubscribeSectionPropertyForwarding(ReviewVM);
+            SubscribeSectionPropertyForwarding(ImageGenVM);
+            SubscribeSectionPropertyForwarding(VideoGenVM);
+            SubscribeSectionPropertyForwarding(AboutVM);
 
             // 统一订阅所有分区的 Changed 事件
             SubscriptionVM.Changed += MarkDirty;
@@ -86,6 +89,7 @@ namespace TrueFluentPro.ViewModels
 
             // 终结点变更 → 刷新模型列表
             EndpointsVM.EndpointsChanged += RefreshModelOptions;
+            EndpointsVM.EndpointsChanged += () => _ = RefreshAiAuthStatusAsync();
         }
 
         // ═══ 向后兼容的公共属性（转发到分区 ViewModel） ═══
@@ -245,19 +249,7 @@ namespace TrueFluentPro.ViewModels
             VideoGenVM.LoadFrom(_config);
             AboutVM.LoadFrom(_config);
 
-            // 旧版 AI 配置兼容加载
             var ai = _config.AiConfig ?? new AiConfig();
-            _aiProviderTypeIndex = ai.ProviderType == AiProviderType.AzureOpenAi ? 1 : 0;
-            _aiApiEndpoint = ai.ApiEndpoint;
-            _aiApiKey = ai.ApiKey;
-            _quickModelName = string.IsNullOrWhiteSpace(ai.QuickModelName) ? ai.ModelName : ai.QuickModelName;
-            _summaryModelName = string.IsNullOrWhiteSpace(ai.SummaryModelName) ? ai.ModelName : ai.SummaryModelName;
-            _quickDeploymentName = string.IsNullOrWhiteSpace(ai.QuickDeploymentName) ? ai.DeploymentName : ai.QuickDeploymentName;
-            _summaryDeploymentName = string.IsNullOrWhiteSpace(ai.SummaryDeploymentName) ? ai.DeploymentName : ai.SummaryDeploymentName;
-            _aiApiVersion = string.IsNullOrWhiteSpace(ai.ApiVersion) ? "2024-02-01" : ai.ApiVersion;
-            _aiAzureAuthModeIndex = ai.AzureAuthMode == AzureAuthMode.AAD ? 1 : 0;
-            _aiAzureTenantId = ai.AzureTenantId;
-            _aiAzureClientId = ai.AzureClientId;
 
             // 构建模型列表并分发到各分区
             var textModels = BuildModelOptions(ModelCapability.Text);
@@ -306,6 +298,17 @@ namespace TrueFluentPro.ViewModels
 
         public async Task RefreshAiAuthStatusAsync() => await InsightVM.RefreshAiAuthStatusAsync();
 
+        private void SubscribeSectionPropertyForwarding(INotifyPropertyChanged section)
+        {
+            section.PropertyChanged += (_, args) =>
+            {
+                if (!string.IsNullOrWhiteSpace(args.PropertyName))
+                {
+                    OnPropertyChanged(args.PropertyName);
+                }
+            };
+        }
+
         // ═══ 自动保存 (debounce) ═══
 
         private void MarkDirty()
@@ -342,6 +345,40 @@ namespace TrueFluentPro.ViewModels
             }
         }
 
+        public SettingsTransferPackage CreateExportPackage()
+        {
+            PauseAutoSave();
+            ApplyToConfig();
+            AutoSaveStatus = "✓ 已生成可导出的资源配置";
+            return _settingsImportExportService.CreateExportPackage(_config);
+        }
+
+        public async Task ImportPackageAsync(SettingsTransferPackage package)
+        {
+            PauseAutoSave();
+
+            try
+            {
+                ApplyToConfig();
+                _config = _settingsImportExportService.ApplyImportPackage(_config, package);
+                LoadFromConfig();
+                await _configService.SaveConfigAsync(_config);
+                AutoSaveStatus = "✓ 资源配置已导入并立即生效";
+                ConfigSaved?.Invoke(_config);
+            }
+            catch (Exception ex)
+            {
+                AutoSaveStatus = $"导入失败: {ex.Message}";
+                throw;
+            }
+        }
+
+        private void PauseAutoSave()
+        {
+            _isDirty = false;
+            _debounceTimer?.Change(Timeout.Infinite, Timeout.Infinite);
+        }
+
         private void ApplyToConfig()
         {
             // 收集各分区状态到配置模型
@@ -355,22 +392,6 @@ namespace TrueFluentPro.ViewModels
             ImageGenVM.ApplyTo(_config);
             VideoGenVM.ApplyTo(_config);
             AboutVM.ApplyTo(_config);
-
-            // 旧版 AI 配置兼容写回
-            var ai = _config.AiConfig ?? new AiConfig();
-            ai.ProviderType = _aiProviderTypeIndex == 1 ? AiProviderType.AzureOpenAi : AiProviderType.OpenAiCompatible;
-            ai.ApiEndpoint = _aiApiEndpoint?.Trim() ?? "";
-            ai.ApiKey = _aiApiKey?.Trim() ?? "";
-            ai.QuickModelName = _quickModelName?.Trim() ?? "";
-            ai.SummaryModelName = _summaryModelName?.Trim() ?? "";
-            ai.QuickDeploymentName = _quickDeploymentName?.Trim() ?? "";
-            ai.SummaryDeploymentName = _summaryDeploymentName?.Trim() ?? "";
-            ConfigViewHelper.ApplyModelDeploymentFallbacks(ai);
-            ai.ApiVersion = _aiApiVersion?.Trim() ?? "2024-02-01";
-            ai.AzureAuthMode = _aiAzureAuthModeIndex == 1 ? AzureAuthMode.AAD : AzureAuthMode.ApiKey;
-            ai.AzureTenantId = _aiAzureTenantId ?? "";
-            ai.AzureClientId = _aiAzureClientId ?? "";
-            _config.AiConfig = ai;
 
             EndpointsVM.SyncEndpointsToConfig();
         }

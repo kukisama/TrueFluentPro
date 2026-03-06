@@ -10,6 +10,7 @@ namespace TrueFluentPro.ViewModels.Settings
     {
         private ModelOption? _selectedVideoModel;
         private List<ModelOption> _videoModels = new();
+        private bool _suppressVideoModelAutoApiMode;
 
         private int _videoApiModeIndex;
         private int _videoWidth = 1280;
@@ -29,8 +30,23 @@ namespace TrueFluentPro.ViewModels.Settings
         private List<int> _videoVariantsOptions = new() { 1 };
 
         public List<ModelOption> VideoModels { get => _videoModels; set => SetProperty(ref _videoModels, value); }
-        public ModelOption? SelectedVideoModel { get => _selectedVideoModel;
-            set => Set(ref _selectedVideoModel, value, then: RefreshVideoCapabilityOptions); }
+        public ModelOption? SelectedVideoModel
+        {
+            get => _selectedVideoModel;
+            set
+            {
+                if (SetProperty(ref _selectedVideoModel, value))
+                {
+                    if (!_suppressVideoModelAutoApiMode && value != null)
+                    {
+                        SetVideoApiModeIndexInternal(0);
+                    }
+
+                    RefreshVideoCapabilityOptions();
+                    OnChanged();
+                }
+            }
+        }
 
         public List<string> VideoAspectRatioOptions { get => _videoAspectRatioOptions; private set => SetProperty(ref _videoAspectRatioOptions, value); }
         public List<string> VideoResolutionOptions { get => _videoResolutionOptions; private set => SetProperty(ref _videoResolutionOptions, value); }
@@ -41,8 +57,18 @@ namespace TrueFluentPro.ViewModels.Settings
             set => Set(ref _videoAspectRatio, value, then: SyncVideoDimensionsFromSelection); }
         public string VideoResolution { get => _videoResolution;
             set => Set(ref _videoResolution, value, then: SyncVideoDimensionsFromSelection); }
-        public int VideoApiModeIndex { get => _videoApiModeIndex;
-            set => Set(ref _videoApiModeIndex, value, then: RefreshVideoCapabilityOptions); }
+        public int VideoApiModeIndex
+        {
+            get => _videoApiModeIndex;
+            set
+            {
+                if (SetProperty(ref _videoApiModeIndex, value))
+                {
+                    RefreshVideoCapabilityOptions();
+                    OnChanged();
+                }
+            }
+        }
 
         public int VideoWidth { get => _videoWidth; private set => SetProperty(ref _videoWidth, value); }
         public int VideoHeight { get => _videoHeight; private set => SetProperty(ref _videoHeight, value); }
@@ -61,7 +87,7 @@ namespace TrueFluentPro.ViewModels.Settings
             config.MediaGenConfig ??= new MediaGenConfig();
             var media = config.MediaGenConfig;
 
-            VideoApiModeIndex = media.VideoApiMode == VideoApiMode.Videos ? 1 : 0;
+            SetVideoApiModeIndexInternal(media.VideoApiMode == VideoApiMode.Videos ? 0 : 1);
             VideoPollIntervalMs = media.VideoPollIntervalMs <= 0 ? 3000 : media.VideoPollIntervalMs;
 
             _videoAspectRatio = string.IsNullOrWhiteSpace(media.VideoAspectRatio) ? "16:9" : media.VideoAspectRatio;
@@ -85,7 +111,7 @@ namespace TrueFluentPro.ViewModels.Settings
         {
             var media = config.MediaGenConfig;
 
-            media.VideoApiMode = VideoApiModeIndex == 1 ? VideoApiMode.Videos : VideoApiMode.SoraJobs;
+            media.VideoApiMode = VideoApiModeIndex == 0 ? VideoApiMode.Videos : VideoApiMode.SoraJobs;
             media.VideoAspectRatio = _videoAspectRatio ?? "16:9";
             media.VideoResolution = _videoResolution ?? "720p";
             media.VideoWidth = Math.Max(64, VideoWidth);
@@ -96,22 +122,7 @@ namespace TrueFluentPro.ViewModels.Settings
 
             media.MaxLoadedSessionsInMemory = Math.Clamp(MaxLoadedSessionsInMemory, 1, 64);
             media.OutputDirectory = MediaOutputDirectory?.Trim() ?? "";
-
-            if (SelectedVideoModel?.Reference != null)
-            {
-                media.VideoModel = SelectedVideoModel.Reference.ModelId;
-                media.VideoModelRef = SelectedVideoModel.Reference;
-                var (vidEp, _) = config.ResolveModel(SelectedVideoModel.Reference);
-                if (vidEp != null)
-                {
-                    media.VideoProviderType = vidEp.ProviderType;
-                    media.VideoApiEndpoint = vidEp.BaseUrl?.Trim() ?? "";
-                    media.VideoApiKey = vidEp.ApiKey?.Trim() ?? "";
-                    media.VideoAzureAuthMode = vidEp.AuthMode;
-                    media.VideoAzureTenantId = vidEp.AzureTenantId ?? "";
-                    media.VideoAzureClientId = vidEp.AzureClientId ?? "";
-                }
-            }
+            media.VideoModelRef = SelectedVideoModel?.Reference;
         }
 
         public void SelectModels(ModelReference? videoModelRef, List<ModelOption> videoModels)
@@ -131,14 +142,16 @@ namespace TrueFluentPro.ViewModels.Settings
         {
             var match = reference == null ? null
                 : options.FirstOrDefault(o => o.Reference.EndpointId == reference.EndpointId && o.Reference.ModelId == reference.ModelId);
+            _suppressVideoModelAutoApiMode = true;
             setter(match);
+            _suppressVideoModelAutoApiMode = false;
             OnPropertyChanged(propertyName);
         }
 
         private void RefreshVideoCapabilityOptions()
         {
-            var mode = VideoApiModeIndex == 1 ? VideoApiMode.Videos : VideoApiMode.SoraJobs;
-            var modelId = SelectedVideoModel?.Reference?.ModelId ?? Config.MediaGenConfig.VideoModel;
+            var mode = VideoApiModeIndex == 0 ? VideoApiMode.Videos : VideoApiMode.SoraJobs;
+            var modelId = SelectedVideoModel?.Reference?.ModelId ?? string.Empty;
             var profile = VideoCapabilityResolver.ResolveProfile(mode, modelId);
 
             VideoAspectRatioOptions = profile.AspectRatioOptions.ToList();
@@ -160,8 +173,8 @@ namespace TrueFluentPro.ViewModels.Settings
 
         private void SyncVideoDimensionsFromSelection()
         {
-            var mode = VideoApiModeIndex == 1 ? VideoApiMode.Videos : VideoApiMode.SoraJobs;
-            var modelId = SelectedVideoModel?.Reference?.ModelId ?? Config.MediaGenConfig.VideoModel;
+            var mode = VideoApiModeIndex == 0 ? VideoApiMode.Videos : VideoApiMode.SoraJobs;
+            var modelId = SelectedVideoModel?.Reference?.ModelId ?? string.Empty;
             if (VideoCapabilityResolver.TryResolveSize(mode, modelId, VideoAspectRatio, VideoResolution, out var w, out var h))
             {
                 VideoWidth = w;
@@ -171,8 +184,8 @@ namespace TrueFluentPro.ViewModels.Settings
 
         private void ApplyVideoSizeToAspectResolution(int width, int height)
         {
-            var mode = VideoApiModeIndex == 1 ? VideoApiMode.Videos : VideoApiMode.SoraJobs;
-            var modelId = SelectedVideoModel?.Reference?.ModelId ?? Config.MediaGenConfig.VideoModel;
+            var mode = VideoApiModeIndex == 0 ? VideoApiMode.Videos : VideoApiMode.SoraJobs;
+            var modelId = SelectedVideoModel?.Reference?.ModelId ?? string.Empty;
             var profile = VideoCapabilityResolver.ResolveProfile(mode, modelId);
 
             foreach (var aspect in profile.AspectRatioOptions)
@@ -190,6 +203,15 @@ namespace TrueFluentPro.ViewModels.Settings
             }
 
             SyncVideoDimensionsFromSelection();
+        }
+
+        private void SetVideoApiModeIndexInternal(int value)
+        {
+            if (_videoApiModeIndex == value)
+                return;
+
+            _videoApiModeIndex = value;
+            OnPropertyChanged(nameof(VideoApiModeIndex));
         }
     }
 }
