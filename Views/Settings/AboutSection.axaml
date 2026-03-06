@@ -1,0 +1,107 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:TrueFluentPro.ViewModels"
+             xmlns:icons="https://github.com/projektanker/icons.avalonia"
+             x:Class="TrueFluentPro.Views.Settings.AboutSection"
+             x:DataType="vm:MainWindowViewModel"
+             x:CompileBindings="False">
+    <Border BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+            BorderThickness="1" CornerRadius="8" Padding="20">
+        <StackPanel Spacing="12">
+            <TextBlock Text="关于" Theme="{StaticResource SubtitleTextBlockStyle}"/>
+            <Separator/>
+            <CheckBox Content="启用自动更新（启动后静默检查并下载，完成后弹窗确认）"
+                      IsChecked="{Binding Settings.IsAutoUpdateEnabled, Mode=TwoWay}"/>
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button Padding="10,5" Command="{Binding ShowHelpCommand}">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <icons:Icon Value="fa-solid fa-circle-question" FontSize="14"/>
+                        <TextBlock Text="说明" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+                <Button Padding="10,5" Command="{Binding ShowAboutCommand}">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <icons:Icon Value="fa-solid fa-circle-info" FontSize="14"/>
+                        <TextBlock Text="关于" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+                <Button Padding="10,5" Command="{Binding OpenProjectGitHubCommand}">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <icons:Icon Value="fa-brands fa-github" FontSize="14"/>
+                        <TextBlock Text="GitHub" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+                <Button Padding="10,5" Command="{Binding CheckForUpdateCommand}">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <icons:Icon Value="fa-solid fa-arrows-rotate" FontSize="14"/>
+                        <TextBlock Text="检查更新" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button Padding="10,5" Command="{Binding OpenAzureSpeechPortalCommand}">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <icons:Icon Value="fa-solid fa-microphone" FontSize="14"/>
+                        <TextBlock Text="Azure Speech" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+                <Button Padding="10,5" Command="{Binding Open21vAzureSpeechPortalCommand}">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <icons:Icon Value="fa-solid fa-microphone" FontSize="14"/>
+                        <TextBlock Text="21v Azure Speech" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+                <Button Padding="10,5" Command="{Binding OpenStoragePortalCommand}">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <icons:Icon Value="fa-solid fa-database" FontSize="14"/>
+                        <TextBlock Text="Storage" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+                <Button Padding="10,5" Command="{Binding Open21vStoragePortalCommand}">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <icons:Icon Value="fa-solid fa-database" FontSize="14"/>
+                        <TextBlock Text="21v Storage" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+                <Button Padding="10,5" Command="{Binding OpenFoundryPortalCommand}">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <icons:Icon Value="fa-solid fa-brain" FontSize="14"/>
+                        <TextBlock Text="Microsoft Foundry" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+            </StackPanel>
+
+            <!-- 更新面板：检测到新版本时显示 -->
+            <Border IsVisible="{Binding IsUpdateAvailable}"
+                    Background="{DynamicResource SurfaceBrush}"
+                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1" CornerRadius="6" Padding="12,10">
+                <StackPanel Spacing="8">
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <TextBlock Text="{Binding UpdateVersionText}"
+                                   FontWeight="SemiBold" VerticalAlignment="Center"/>
+                        <Button Content="立即更新" Padding="12,5"
+                                Classes="accent"
+                                Command="{Binding DownloadAndApplyUpdateCommand}"
+                                IsVisible="{Binding !IsDownloading}"/>
+                    </StackPanel>
+                    <!-- 下载进度条 -->
+                    <StackPanel IsVisible="{Binding IsDownloading}" Spacing="4">
+                        <ProgressBar Minimum="0" Maximum="1"
+                                     Value="{Binding DownloadProgress}"
+                                     Height="4"/>
+                        <TextBlock FontSize="11" Foreground="Gray">
+                            <TextBlock.Text>
+                                <MultiBinding StringFormat="下载中... {0:P0}">
+                                    <Binding Path="DownloadProgress"/>
+                                </MultiBinding>
+                            </TextBlock.Text>
+                        </TextBlock>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <TextBlock Text="{Binding AppVersion}" FontSize="11" Foreground="Gray"/>
+        </StackPanel>
+    </Border>
+</UserControl>

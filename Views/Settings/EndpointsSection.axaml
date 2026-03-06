@@ -1,0 +1,172 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:TrueFluentPro.ViewModels"
+             xmlns:models="using:TrueFluentPro.Models"
+             xmlns:controls="clr-namespace:TrueFluentPro.Controls"
+             x:Class="TrueFluentPro.Views.Settings.EndpointsSection"
+             x:DataType="vm:MainWindowViewModel"
+             x:CompileBindings="False">
+    <Border BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+            BorderThickness="1" CornerRadius="8" Padding="20">
+        <StackPanel Spacing="12">
+            <TextBlock Text="AI 终结点管理" Theme="{StaticResource SubtitleTextBlockStyle}"/>
+            <Separator/>
+            <TextBlock Text="统一管理 AI 服务终结点与模型注册" Foreground="Gray" FontSize="12"/>
+
+            <Grid ColumnDefinitions="200,*" ColumnSpacing="12" MinHeight="200">
+                <!-- 终结点列表 -->
+                <Border Grid.Column="0" BorderBrush="Gray" BorderThickness="1" CornerRadius="4">
+                    <Grid RowDefinitions="*,Auto">
+                        <ListBox Grid.Row="0"
+                                 ItemsSource="{Binding Settings.Endpoints}"
+                                 SelectedItem="{Binding Settings.SelectedEndpoint, Mode=TwoWay}"
+                                 SelectionMode="Single">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate DataType="models:AiEndpoint">
+                                    <StackPanel Orientation="Horizontal" Spacing="6" Margin="4">
+                                        <TextBlock Text="{Binding Name}" FontWeight="Bold"/>
+                                        <TextBlock Text="{Binding IsEnabled, StringFormat='[{0}]'}"
+                                                   FontSize="10" Foreground="Gray" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                        <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="4" Margin="4">
+                            <Button Content="+ 添加" Padding="8,4" FontSize="11"
+                                    Command="{Binding Settings.AddEndpointCommand}"/>
+                            <Button Content="删除" Padding="8,4" FontSize="11"
+                                    Command="{Binding Settings.RemoveEndpointCommand}"/>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <!-- 终结点详情 -->
+                <StackPanel Grid.Column="1" Spacing="8"
+                            IsVisible="{Binding Settings.SelectedEndpoint, Converter={x:Static ObjectConverters.IsNotNull}}">
+                    <StackPanel Spacing="5">
+                        <TextBlock Text="终结点名称"/>
+                        <TextBox Text="{Binding Settings.SelectedEndpoint.Name, Mode=TwoWay}"
+                                 LostFocus="EndpointField_LostFocus"
+                                 Watermark="例如: t99e"/>
+                    </StackPanel>
+                    <StackPanel Spacing="5">
+                        <TextBlock Text="API 地址"/>
+                        <TextBox Text="{Binding Settings.SelectedEndpoint.BaseUrl, Mode=TwoWay}"
+                                 LostFocus="EndpointField_LostFocus"
+                                 Watermark="例如: https://api.openai.com"/>
+                    </StackPanel>
+
+                    <!-- 认证方式 -->
+                    <StackPanel Spacing="5">
+                        <TextBlock Text="认证方式"/>
+                        <ComboBox MinWidth="200"
+                                  SelectedIndex="{Binding Settings.SelectedEndpointAuthMode, Mode=TwoWay}">
+                            <ComboBoxItem Content="API Key (默认)"/>
+                            <ComboBoxItem Content="Microsoft Entra ID (AAD)"/>
+                        </ComboBox>
+                    </StackPanel>
+                    <StackPanel Spacing="5" IsVisible="{Binding !Settings.IsSelectedEndpointAad}">
+                        <TextBlock Text="API 密钥"/>
+                        <TextBox Text="{Binding Settings.SelectedEndpoint.ApiKey, Mode=TwoWay}"
+                                 LostFocus="EndpointField_LostFocus"
+                                 Watermark="sk-..." PasswordChar="*"
+                                 RevealPassword="{Binding IsChecked, ElementName=EpShowKeyCheckBox}"/>
+                        <CheckBox Name="EpShowKeyCheckBox" Content="显示密钥" FontSize="10"/>
+                    </StackPanel>
+                    <StackPanel Spacing="5" IsVisible="{Binding Settings.IsSelectedEndpointAad}">
+                        <TextBlock Text="Tenant ID"/>
+                        <TextBox Text="{Binding Settings.SelectedEndpoint.AzureTenantId, Mode=TwoWay}"
+                                 LostFocus="EndpointField_LostFocus"
+                                 Watermark="Azure AD Tenant ID"/>
+                        <TextBlock Text="Client ID"/>
+                        <TextBox Text="{Binding Settings.SelectedEndpoint.AzureClientId, Mode=TwoWay}"
+                                 LostFocus="EndpointField_LostFocus"
+                                 Watermark="Azure AD Client ID"/>
+                        <controls:AadLoginPanel x:Name="EndpointAadLoginPanel"
+                                                  Margin="0,4,0,0"
+                                                  HideTenantClientFields="True"/>
+                    </StackPanel>
+
+                    <CheckBox Content="启用此终结点"
+                              Checked="EndpointField_LostFocus"
+                              Unchecked="EndpointField_LostFocus"
+                              IsChecked="{Binding Settings.SelectedEndpoint.IsEnabled, Mode=TwoWay}"/>
+
+                    <Separator Margin="0,6,0,6"/>
+                    <TextBlock Text="模型列表" FontWeight="Bold"/>
+                    <TextBlock Text="点击模型条目展开编辑，同一时间仅展开一个" FontSize="10" Foreground="Gray"/>
+                    <ItemsControl ItemsSource="{Binding Settings.SelectedEndpointModels}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="models:AiModelEntry">
+                                <Border BorderBrush="Gray" BorderThickness="1" CornerRadius="4"
+                                        Margin="0,2" Tag="{Binding}">
+                                    <StackPanel>
+                                        <!-- 折叠头部：点击展开/收缩 -->
+                                        <Border Padding="8,6" Cursor="Hand"
+                                                PointerPressed="ModelHeader_PointerPressed"
+                                                Tag="{Binding}"
+                                                Background="Transparent">
+                                            <Grid ColumnDefinitions="Auto,*,Auto">
+                                                <TextBlock Grid.Column="0" Text="▶" FontSize="10"
+                                                           VerticalAlignment="Center" Margin="0,0,6,0"
+                                                           Name="ModelExpandIcon"/>
+                                                <TextBlock Grid.Column="1" FontSize="11" VerticalAlignment="Center">
+                                                    <TextBlock.Text>
+                                                        <MultiBinding StringFormat="{}{0} {1}">
+                                                            <Binding Path="ModelId"/>
+                                                            <Binding Path="DisplayName" FallbackValue=""/>
+                                                        </MultiBinding>
+                                                    </TextBlock.Text>
+                                                </TextBlock>
+                                                <Button Grid.Column="2" Content="✕" Padding="4,2" FontSize="10"
+                                                        VerticalAlignment="Center"
+                                                        Click="RemoveModel_Click" Tag="{Binding}"/>
+                                            </Grid>
+                                        </Border>
+                                        <!-- 展开内容：默认隐藏 -->
+                                        <StackPanel Name="ModelDetailPanel" IsVisible="False"
+                                                    Spacing="4" Margin="8,0,8,6">
+                                            <Grid ColumnDefinitions="80,*" ColumnSpacing="6">
+                                                <TextBlock Grid.Column="0" Text="模型 ID:" FontSize="11" VerticalAlignment="Center"/>
+                                                <TextBox Grid.Column="1" Text="{Binding ModelId, Mode=TwoWay}"
+                                                         Watermark="模型 ID" FontSize="11" Padding="4,2"
+                                                         LostFocus="ModelField_LostFocus"/>
+                                            </Grid>
+                                            <Grid ColumnDefinitions="80,*" ColumnSpacing="6">
+                                                <TextBlock Grid.Column="0" Text="显示名:" FontSize="11" VerticalAlignment="Center"/>
+                                                <TextBox Grid.Column="1" Text="{Binding DisplayName, Mode=TwoWay}"
+                                                         Watermark="显示名称 (可选)" FontSize="11" Padding="4,2"
+                                                         LostFocus="ModelField_LostFocus"/>
+                                            </Grid>
+                                            <Grid ColumnDefinitions="80,*" ColumnSpacing="6">
+                                                <TextBlock Grid.Column="0" Text="部署名:" FontSize="11" VerticalAlignment="Center"/>
+                                                <TextBox Grid.Column="1" Text="{Binding DeploymentName, Mode=TwoWay}"
+                                                         Watermark="Azure 部署名 (可选)" FontSize="11" Padding="4,2"
+                                                         LostFocus="ModelField_LostFocus"/>
+                                            </Grid>
+                                            <Grid ColumnDefinitions="80,*" ColumnSpacing="6">
+                                                <TextBlock Grid.Column="0" Text="能力:" FontSize="11" VerticalAlignment="Center"/>
+                                                <ComboBox Grid.Column="1" MinWidth="120" FontSize="11" Padding="4,2"
+                                                          Tag="{Binding}"
+                                                          Loaded="ModelCapabilityCombo_Loaded"
+                                                          SelectionChanged="ModelCapability_SelectionChanged">
+                                                    <ComboBox.Items>
+                                                        <ComboBoxItem Content="文字" Tag="Text"/>
+                                                        <ComboBoxItem Content="图片" Tag="Image"/>
+                                                        <ComboBoxItem Content="视频" Tag="Video"/>
+                                                    </ComboBox.Items>
+                                                </ComboBox>
+                                            </Grid>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <Button Content="+ 添加模型" Padding="8,4" FontSize="11"
+                            Click="AddModel_Click"/>
+                </StackPanel>
+            </Grid>
+        </StackPanel>
+    </Border>
+</UserControl>
