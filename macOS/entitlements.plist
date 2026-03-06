@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- 麦克风输入 -->
+  <key>com.apple.security.device.audio-input</key>
+  <true/>
+
+  <!-- .NET JIT 编译需要 -->
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+
+  <!-- .NET 运行时需要 -->
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+
+  <!-- 网络访问（调用 Azure AI 服务） -->
+  <key>com.apple.security.network.client</key>
+  <true/>
+</dict>
+</plist>

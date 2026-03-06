@@ -1,0 +1,86 @@
+# macOS 构建工作流
+# 从 main 分支推送或手动触发时，在 GitHub macOS Runner 上构建 .app Bundle
+# 不影响现有 Windows release.yml 工作流
+
+name: Build macOS
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '*.md'
+      - 'tools/IconTool/**'
+      - 'tools/IconGen/**'
+      - 'tools/reference/**'
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - '*.md'
+  workflow_dispatch:
+
+jobs:
+  build-macos:
+    runs-on: macos-14    # Apple Silicon (M1) Runner
+    strategy:
+      matrix:
+        rid: [osx-arm64, osx-x64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore TrueFluentPro.csproj -r ${{ matrix.rid }}
+
+      - name: Publish (${{ matrix.rid }})
+        run: |
+          dotnet publish TrueFluentPro.csproj \
+            -c Release \
+            -r ${{ matrix.rid }} \
+            --self-contained true \
+            -o artifacts/publish
+
+      - name: Create .app Bundle
+        run: |
+          APP="artifacts/TrueFluentPro.app"
+          mkdir -p "$APP/Contents/MacOS"
+          mkdir -p "$APP/Contents/Resources"
+
+          # 复制发布产出到 .app 内部
+          cp -R artifacts/publish/* "$APP/Contents/MacOS/"
+
+          # 复制 Info.plist
+          cp macOS/Info.plist "$APP/Contents/"
+
+          # 复制图标（如果 .icns 存在）
+          if [ -f "macOS/AppIcon.icns" ]; then
+            cp macOS/AppIcon.icns "$APP/Contents/Resources/"
+          fi
+
+          # 设置执行权限
+          chmod +x "$APP/Contents/MacOS/TrueFluentPro"
+
+      - name: Verify .app Structure
+        run: |
+          echo "=== .app Bundle 结构 ==="
+          find artifacts/TrueFluentPro.app -maxdepth 3 -type f | head -20
+          echo ""
+          echo "=== 主程序执行权限 ==="
+          ls -la artifacts/TrueFluentPro.app/Contents/MacOS/TrueFluentPro
+          echo ""
+          echo "=== Info.plist ==="
+          cat artifacts/TrueFluentPro.app/Contents/Info.plist
+
+      - name: Create zip
+        run: |
+          cd artifacts
+          zip -r -y TrueFluentPro-${{ matrix.rid }}.zip TrueFluentPro.app
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-${{ matrix.rid }}
+          path: artifacts/TrueFluentPro-${{ matrix.rid }}.zip

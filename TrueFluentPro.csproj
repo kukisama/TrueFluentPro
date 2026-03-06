@@ -5,14 +5,20 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
-    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- app.manifest 仅在 Windows 构建时生效（macOS/Linux 发布时自动跳过） -->
+    <ApplicationManifest Condition="!$(RuntimeIdentifier.StartsWith('osx')) AND !$(RuntimeIdentifier.StartsWith('linux'))">app.manifest</ApplicationManifest>
     <AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault>
 
     <AppIconPng>Assets\AppIcon.png</AppIconPng>
     <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
   </PropertyGroup>
-  
-  
+
+  <!-- macOS 构建时添加条件编译符号 -->
+  <PropertyGroup Condition="$(RuntimeIdentifier.StartsWith('osx'))">
+    <DefineConstants>$(DefineConstants);MACOS_BUILD</DefineConstants>
+  </PropertyGroup>
+
+  <!-- ═══ 跨平台依赖（所有平台共享） ═══ -->
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="11.3.11" />
     <PackageReference Include="Avalonia.AvaloniaEdit" Version="11.4.1" />
@@ -36,6 +42,10 @@
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <PackageReference Include="Projektanker.Icons.Avalonia.FontAwesome" Version="9.6.2" />
     <PackageReference Include="SkiaSharp" Version="2.88.9" />
+  </ItemGroup>
+
+  <!-- ═══ Windows 专属依赖（macOS/Linux 发布时自动排除，日常 Windows 开发不受影响） ═══ -->
+  <ItemGroup Condition="!$(RuntimeIdentifier.StartsWith('osx')) AND !$(RuntimeIdentifier.StartsWith('linux'))">
     <PackageReference Include="Microsoft.Windows.SDK.NET" Version="10.0.18362.6-preview" />
   </ItemGroup>
 
@@ -53,8 +63,9 @@
     <None Include="RELEASE_NOTES.md" CopyToOutputDirectory="PreserveNewest" Condition="!Exists('Assets\RELEASE_NOTES.md') and Exists('RELEASE_NOTES.md')" />
   </ItemGroup>
 
-  <!-- 构建后自动编译 Updater 并拷贝到输出目录 -->
-  <Target Name="BuildAndCopyUpdater" AfterTargets="Build">
+  <!-- 构建后自动编译 Updater 并拷贝到输出目录（仅 Windows，macOS/Linux 构建时跳过） -->
+  <Target Name="BuildAndCopyUpdater" AfterTargets="Build"
+          Condition="!$(RuntimeIdentifier.StartsWith('osx')) AND !$(RuntimeIdentifier.StartsWith('linux'))">
     <Exec Command="dotnet build &quot;$(ProjectDir)tools\Updater\Updater.csproj&quot; -c $(Configuration) -v q --nologo" />
     <ItemGroup>
       <UpdaterFiles Include="$(ProjectDir)tools\Updater\bin\$(Configuration)\net10.0\Updater.exe" Condition="Exists('$(ProjectDir)tools\Updater\bin\$(Configuration)\net10.0\Updater.exe')" />
