@@ -1,0 +1,93 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:TrueFluentPro.ViewModels"
+             x:Class="TrueFluentPro.Views.Settings.StorageSection"
+             x:DataType="vm:MainWindowViewModel"
+             x:CompileBindings="False">
+    <Border BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+            BorderThickness="1" CornerRadius="8" Padding="20">
+        <StackPanel Spacing="12">
+            <TextBlock Text="录音与存储" Theme="{StaticResource SubtitleTextBlockStyle}"/>
+            <Separator/>
+
+            <TextBlock Text="录音设置" FontWeight="Bold"/>
+            <CheckBox Content="边翻译边录音（直接输出 MP3）"
+                      IsChecked="{Binding Settings.EnableRecording, Mode=TwoWay}"/>
+            <StackPanel Orientation="Horizontal" Spacing="10">
+                <TextBlock Text="MP3 码率 (kbps)" VerticalAlignment="Center"/>
+                <NumericUpDown Value="{Binding Settings.RecordingMp3BitrateKbps, Mode=TwoWay}"
+                               Minimum="32" Maximum="320" Width="120" FormatString="F0"
+                               IsEnabled="{Binding Settings.EnableRecording}"/>
+            </StackPanel>
+
+            <Separator Margin="0,8,0,8"/>
+            <TextBlock Text="会话目录" FontWeight="Bold"/>
+            <StackPanel Spacing="5">
+                <TextBlock Text="会话记录保存目录"/>
+                <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Left">
+                    <TextBox Width="280" MaxWidth="280"
+                             Text="{Binding Settings.SessionDirectory, Mode=TwoWay}"
+                             Watermark="留空使用默认目录"/>
+                    <Button Content="..." Width="30"
+                            VerticalAlignment="Center"
+                            Click="BrowseSessionDirectory_Click"/>
+                </StackPanel>
+            </StackPanel>
+
+            <Separator Margin="0,8,0,8"/>
+            <TextBlock Text="批量转写" FontWeight="Bold"/>
+            <StackPanel Spacing="5">
+                <TextBlock Text="存储账号连接字符串"/>
+                <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Left">
+                    <TextBox Width="280" MaxWidth="280"
+                             Text="{Binding Settings.BatchStorageConnectionString, Mode=TwoWay}"
+                             Watermark="DefaultEndpointsProtocol=https;AccountName=...;AccountKey=..."/>
+                    <Button Content="验证" Width="60"
+                            VerticalAlignment="Center"
+                            Command="{Binding Settings.ValidateBatchStorageCommand}"/>
+                </StackPanel>
+                <TextBlock Text="{Binding Settings.BatchStorageStatus}" FontSize="10" Foreground="Gray" TextWrapping="Wrap"/>
+            </StackPanel>
+
+            <StackPanel Spacing="5">
+                <TextBlock Text="诊断日志"/>
+                <ComboBox MinWidth="220"
+                          SelectedIndex="{Binding Settings.BatchLogLevelIndex, Mode=TwoWay}">
+                    <ComboBoxItem Content="关闭"/>
+                    <ComboBoxItem Content="仅失败"/>
+                    <ComboBoxItem Content="成功 + 失败"/>
+                </ComboBox>
+            </StackPanel>
+
+            <StackPanel Spacing="5">
+                <TextBlock Text="强制重新生成"/>
+                <CheckBox Content="批量处理：强制重新生成字幕和复盘"
+                          IsChecked="{Binding Settings.BatchForceRegeneration, Mode=TwoWay}"/>
+                <CheckBox Content="右键处理：强制重新生成字幕和复盘"
+                          IsChecked="{Binding Settings.ContextMenuForceRegeneration, Mode=TwoWay}"/>
+            </StackPanel>
+
+            <Separator Margin="0,8,0,8"/>
+            <TextBlock Text="批量字幕切分" FontWeight="Bold"/>
+            <CheckBox Content="启用按句子切分"
+                      IsChecked="{Binding Settings.EnableBatchSentenceSplit, Mode=TwoWay}"/>
+            <CheckBox Content="逗号也作为断句"
+                      IsChecked="{Binding Settings.BatchSplitOnComma, Mode=TwoWay}"/>
+            <StackPanel Orientation="Horizontal" Spacing="10">
+                <TextBlock Text="每句最大字数" VerticalAlignment="Center"/>
+                <NumericUpDown Value="{Binding Settings.BatchMaxChars, Mode=TwoWay}"
+                               Minimum="6" Maximum="80" Width="120" FormatString="F0"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Spacing="10">
+                <TextBlock Text="每句最长时长(秒)" VerticalAlignment="Center"/>
+                <NumericUpDown Value="{Binding Settings.BatchMaxDuration, Mode=TwoWay}"
+                               Minimum="1" Maximum="15" Width="120" FormatString="F1"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Spacing="10">
+                <TextBlock Text="停顿断句阈值(ms)" VerticalAlignment="Center"/>
+                <NumericUpDown Value="{Binding Settings.BatchPauseSplitMs, Mode=TwoWay}"
+                               Minimum="100" Maximum="2000" Width="120" FormatString="F0"/>
+            </StackPanel>
+        </StackPanel>
+    </Border>
+</UserControl>

@@ -1,0 +1,31 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:TrueFluentPro.ViewModels"
+             x:Class="TrueFluentPro.Views.Settings.AudioSection"
+             x:DataType="vm:MainWindowViewModel"
+             x:CompileBindings="False">
+    <Border BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+            BorderThickness="1" CornerRadius="8" Padding="20">
+        <StackPanel Spacing="12">
+            <TextBlock Text="音频设备" Theme="{StaticResource SubtitleTextBlockStyle}"/>
+            <Separator/>
+            <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto" RowSpacing="8" ColumnSpacing="8">
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="麦克风:" VerticalAlignment="Center"/>
+                <ComboBox Grid.Row="0" Grid.Column="1" MinWidth="220"
+                          ItemsSource="{Binding AudioDevices.AudioDevicesList}"
+                          SelectedItem="{Binding AudioDevices.SelectedAudioDevice, Mode=TwoWay}"
+                          IsEnabled="{Binding AudioDevices.IsInputDeviceUiEnabled}"/>
+
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="系统回环:" VerticalAlignment="Center"/>
+                <ComboBox Grid.Row="1" Grid.Column="1" MinWidth="220"
+                          ItemsSource="{Binding AudioDevices.OutputDevicesList}"
+                          SelectedItem="{Binding AudioDevices.SelectedOutputDevice, Mode=TwoWay}"
+                          IsEnabled="{Binding AudioDevices.IsOutputDeviceUiEnabled}"/>
+
+                <Button Grid.Row="0" Grid.Column="2" Content="刷新" Padding="8,4"
+                        Command="{Binding AudioDevices.RefreshAudioDevicesCommand}"
+                        IsEnabled="{Binding AudioDevices.IsAudioDeviceRefreshEnabled}"/>
+            </Grid>
+        </StackPanel>
+    </Border>
+</UserControl>

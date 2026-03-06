@@ -1,0 +1,72 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:TrueFluentPro.ViewModels"
+             xmlns:controls="clr-namespace:TrueFluentPro.Controls"
+             x:Class="TrueFluentPro.Views.Settings.InsightSection"
+             x:DataType="vm:MainWindowViewModel"
+             x:CompileBindings="False">
+    <Border BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+            BorderThickness="1" CornerRadius="8" Padding="20">
+        <StackPanel Spacing="12">
+            <TextBlock Text="洞察" Theme="{StaticResource SubtitleTextBlockStyle}"/>
+            <Separator/>
+
+            <!-- 模型选择 (终结点引用) -->
+            <TextBlock Text="洞察模型选择（终结点引用）" FontWeight="Bold"/>
+            <TextBlock Text="选择具有 [文字] 能力的终结点模型" FontSize="11" Foreground="Gray"/>
+            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="6" ColumnSpacing="8">
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="洞察模型:" VerticalAlignment="Center"/>
+                <ComboBox Grid.Row="0" Grid.Column="1" MinWidth="250"
+                          ItemsSource="{Binding Settings.TextModels}"
+                          SelectedItem="{Binding Settings.SelectedInsightModel, Mode=TwoWay}"/>
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="快问模型:" VerticalAlignment="Center"/>
+                <ComboBox Grid.Row="1" Grid.Column="1" MinWidth="250"
+                          ItemsSource="{Binding Settings.TextModels}"
+                          SelectedItem="{Binding Settings.SelectedQuickModel, Mode=TwoWay}"/>
+                <TextBlock Grid.Row="2" Grid.Column="0" Text="总结模型:" VerticalAlignment="Center"/>
+                <ComboBox Grid.Row="2" Grid.Column="1" MinWidth="250"
+                          ItemsSource="{Binding Settings.TextModels}"
+                          SelectedItem="{Binding Settings.SelectedSummaryModel, Mode=TwoWay}"/>
+            </Grid>
+
+            <Separator Margin="0,8,0,8"/>
+
+            <CheckBox Content="总结模型开启思考" FontSize="11"
+                      IsChecked="{Binding Settings.SummaryEnableReasoning, Mode=TwoWay}"/>
+
+            <TextBlock Text="{Binding Settings.AiAuthStatus}" FontSize="11" Foreground="Gray" TextWrapping="Wrap"/>
+
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button Content="测试连接" Width="100"
+                        Command="{Binding Settings.TestEndpointCommand}"/>
+                <TextBlock Text="{Binding Settings.AiTestStatus}" FontSize="11" Foreground="Gray" TextWrapping="Wrap"/>
+            </StackPanel>
+            <StackPanel Spacing="4">
+                <TextBlock Text="思考内容(测试)" FontSize="11" Foreground="Gray"/>
+                <TextBox Text="{Binding Settings.AiTestReasoning}" AcceptsReturn="True"
+                         Height="80" TextWrapping="Wrap" IsReadOnly="True"/>
+            </StackPanel>
+
+            <Separator Margin="0,8,0,8"/>
+
+            <TextBlock Text="系统提示词" FontWeight="SemiBold"/>
+            <CheckBox Content="自动洞察一次性刷新（缓冲输出）" FontSize="11"
+                      IsChecked="{Binding Settings.AutoInsightBufferOutput, Mode=TwoWay}"/>
+            <StackPanel Spacing="4">
+                <TextBlock Text="洞察系统提示词" FontSize="11" Foreground="Gray"/>
+                <TextBox Text="{Binding Settings.InsightSystemPrompt, Mode=TwoWay}"
+                         AcceptsReturn="True" Height="100" TextWrapping="Wrap"/>
+            </StackPanel>
+            <StackPanel Spacing="4">
+                <TextBlock Text="洞察用户内容模板" FontSize="11" Foreground="Gray"/>
+                <TextBox Text="{Binding Settings.InsightUserContentTemplate, Mode=TwoWay}"
+                         AcceptsReturn="True" Height="100" TextWrapping="Wrap"/>
+                <TextBlock FontSize="10" Foreground="Gray" Text="占位符：{history} 翻译历史、{question} 用户问题"/>
+            </StackPanel>
+
+            <Separator Margin="0,8,0,8"/>
+            <controls:PresetButtonsEditor Name="PresetButtonsEditorControl"
+                                          Items="{Binding Settings.PresetButtons}"/>
+        </StackPanel>
+    </Border>
+</UserControl>

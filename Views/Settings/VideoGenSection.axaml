@@ -1,0 +1,85 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:TrueFluentPro.ViewModels"
+             x:Class="TrueFluentPro.Views.Settings.VideoGenSection"
+             x:DataType="vm:MainWindowViewModel"
+             x:CompileBindings="False">
+    <Border BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+            BorderThickness="1" CornerRadius="8" Padding="20">
+        <StackPanel Spacing="12">
+            <TextBlock Text="视频生成" Theme="{StaticResource SubtitleTextBlockStyle}"/>
+            <Separator/>
+
+            <StackPanel Spacing="6">
+                <TextBlock Text="视频模型:" VerticalAlignment="Center"/>
+                <ComboBox MinWidth="250"
+                          ItemsSource="{Binding Settings.VideoModels}"
+                          SelectedItem="{Binding Settings.SelectedVideoModel, Mode=TwoWay}"/>
+                <TextBlock FontSize="10" Foreground="Gray" Text="仅显示具有 [视频] 能力的终结点模型"/>
+            </StackPanel>
+
+            <Separator Margin="0,8,0,8"/>
+            <TextBlock Text="默认参数" FontWeight="Bold"/>
+
+            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="6" ColumnSpacing="8">
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="API 模式:" VerticalAlignment="Center"/>
+                    <ComboBox Grid.Row="0" Grid.Column="1" MinWidth="220"
+                          SelectedIndex="{Binding Settings.VideoApiModeIndex, Mode=TwoWay}">
+                      <ComboBoxItem Content="sora1 (/openai/v1/video/generations/jobs)"/>
+                      <ComboBoxItem Content="sora2 (/openai/v1/videos)"/>
+                </ComboBox>
+
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="比例:" VerticalAlignment="Center"/>
+                <ComboBox Grid.Row="1" Grid.Column="1" MinWidth="120"
+                          ItemsSource="{Binding Settings.VideoAspectRatioOptions}"
+                          SelectedItem="{Binding Settings.VideoAspectRatio, Mode=TwoWay}"/>
+
+                <TextBlock Grid.Row="2" Grid.Column="0" Text="分辨率:" VerticalAlignment="Center"/>
+                <ComboBox Grid.Row="2" Grid.Column="1" MinWidth="120"
+                          ItemsSource="{Binding Settings.VideoResolutionOptions}"
+                          SelectedItem="{Binding Settings.VideoResolution, Mode=TwoWay}"/>
+
+                <TextBlock Grid.Row="3" Grid.Column="0" Text="默认时长(秒):" VerticalAlignment="Center"/>
+                <ComboBox Grid.Row="3" Grid.Column="1" MinWidth="120"
+                          ItemsSource="{Binding Settings.VideoSecondsOptions}"
+                          SelectedItem="{Binding Settings.VideoSeconds, Mode=TwoWay}"/>
+
+                <TextBlock Grid.Row="4" Grid.Column="0" Text="默认数量:" VerticalAlignment="Center"/>
+                <ComboBox Grid.Row="4" Grid.Column="1" MinWidth="120"
+                          ItemsSource="{Binding Settings.VideoVariantsOptions}"
+                          SelectedItem="{Binding Settings.VideoVariants, Mode=TwoWay}"/>
+            </Grid>
+
+            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto" RowSpacing="6" ColumnSpacing="8">
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="目标像素:" VerticalAlignment="Center"/>
+                <TextBlock Grid.Row="0" Grid.Column="1">
+                    <TextBlock.Text>
+                        <MultiBinding StringFormat="{}{0} x {1}">
+                            <Binding Path="Settings.VideoWidth"/>
+                            <Binding Path="Settings.VideoHeight"/>
+                        </MultiBinding>
+                    </TextBlock.Text>
+                </TextBlock>
+
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="轮询间隔(ms):" VerticalAlignment="Center"/>
+                <NumericUpDown Grid.Row="1" Grid.Column="1"
+                               Value="{Binding Settings.VideoPollIntervalMs, Mode=TwoWay}"
+                               Minimum="500" Maximum="60000" Width="140" FormatString="F0"/>
+            </Grid>
+
+            <Separator Margin="0,8,0,8"/>
+            <TextBlock Text="Media Studio 运行参数" FontWeight="Bold"/>
+            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto" RowSpacing="6" ColumnSpacing="8">
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="内存会话上限:" VerticalAlignment="Center"/>
+                <NumericUpDown Grid.Row="0" Grid.Column="1"
+                               Value="{Binding Settings.MaxLoadedSessionsInMemory, Mode=TwoWay}"
+                               Minimum="1" Maximum="64" Width="140" FormatString="F0"/>
+
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="输出目录:" VerticalAlignment="Center"/>
+                <TextBox Grid.Row="1" Grid.Column="1"
+                         Text="{Binding Settings.MediaOutputDirectory, Mode=TwoWay}"
+                         Watermark="留空使用会话默认目录"/>
+            </Grid>
+        </StackPanel>
+    </Border>
+</UserControl>

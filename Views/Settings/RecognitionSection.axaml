@@ -1,0 +1,95 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:TrueFluentPro.ViewModels"
+             x:Class="TrueFluentPro.Views.Settings.RecognitionSection"
+             x:DataType="vm:MainWindowViewModel"
+             x:CompileBindings="False">
+    <Border BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+            BorderThickness="1" CornerRadius="8" Padding="20">
+        <StackPanel Spacing="12">
+            <TextBlock Text="语音识别" Theme="{StaticResource SubtitleTextBlockStyle}"/>
+            <Separator/>
+
+            <TextBlock Text="识别策略" FontWeight="Bold"/>
+            <CheckBox Content="过滤语气助词"
+                      IsChecked="{Binding Settings.FilterModalParticles, Mode=TwoWay}"/>
+            <StackPanel Spacing="5">
+                <TextBlock Text="最大历史记录数量"/>
+                <NumericUpDown Value="{Binding Settings.MaxHistoryItems, Mode=TwoWay}"
+                               Minimum="5" Maximum="100" Width="120" FormatString="F0"
+                               HorizontalAlignment="Left"/>
+            </StackPanel>
+            <StackPanel Spacing="5">
+                <TextBlock Text="实时字幕最大长度"/>
+                <NumericUpDown Value="{Binding Settings.RealtimeMaxLength, Mode=TwoWay}"
+                               Minimum="50" Maximum="500" Width="120" FormatString="F0"
+                               HorizontalAlignment="Left"/>
+            </StackPanel>
+            <StackPanel Spacing="5">
+                <TextBlock Text="Chunk 时长 (ms)"/>
+                <NumericUpDown Value="{Binding Settings.ChunkDurationMs, Mode=TwoWay}"
+                               Minimum="20" Maximum="2000" Width="120" FormatString="F0"
+                               HorizontalAlignment="Left"/>
+                <TextBlock FontSize="10" Foreground="Gray" Text="默认 200ms；可改为 500ms（延迟更高）"/>
+            </StackPanel>
+
+            <Separator Margin="0,8,0,8"/>
+            <TextBlock Text="静音超时" FontWeight="Bold"/>
+            <CheckBox Content="启用静音超时"
+                      IsChecked="{Binding Settings.EnableAutoTimeout, Mode=TwoWay}"/>
+            <StackPanel Spacing="5">
+                <TextBlock Text="初始静音超时 (秒)"/>
+                <NumericUpDown Value="{Binding Settings.InitialSilenceTimeoutSeconds, Mode=TwoWay}"
+                               Minimum="1" Maximum="300" Width="120" FormatString="F0"
+                               HorizontalAlignment="Left"
+                               IsEnabled="{Binding Settings.EnableAutoTimeout}"/>
+            </StackPanel>
+            <StackPanel Spacing="5">
+                <TextBlock Text="断句静音超时 (秒)"/>
+                <NumericUpDown Value="{Binding Settings.EndSilenceTimeoutSeconds, Mode=TwoWay}"
+                               Minimum="1" Maximum="30" Width="120" FormatString="F0"
+                               HorizontalAlignment="Left"
+                               IsEnabled="{Binding Settings.EnableAutoTimeout}"/>
+            </StackPanel>
+
+            <Separator Margin="0,8,0,8"/>
+            <TextBlock Text="无回显重连" FontWeight="Bold"/>
+            <CheckBox Content="有音频输入但无回显时自动重连"
+                      IsChecked="{Binding Settings.EnableNoResponseRestart, Mode=TwoWay}"/>
+            <StackPanel Spacing="5">
+                <TextBlock Text="无回显阈值 (秒)"/>
+                <NumericUpDown Value="{Binding Settings.NoResponseRestartSeconds, Mode=TwoWay}"
+                               Minimum="1" Maximum="30" Width="120" FormatString="F0"
+                               HorizontalAlignment="Left"
+                               IsEnabled="{Binding Settings.EnableNoResponseRestart}"/>
+            </StackPanel>
+            <StackPanel Spacing="5">
+                <TextBlock Text="音频活动阈值"/>
+                <NumericUpDown Value="{Binding Settings.AudioActivityThreshold, Mode=TwoWay}"
+                               Minimum="50" Maximum="8000" Width="120" FormatString="F0"
+                               HorizontalAlignment="Left"
+                               IsEnabled="{Binding Settings.EnableNoResponseRestart}"/>
+            </StackPanel>
+            <StackPanel Spacing="5">
+                <TextBlock Text="电平显示放大倍数"/>
+                <NumericUpDown Value="{Binding Settings.AudioLevelGain, Mode=TwoWay}"
+                               Minimum="0.5" Maximum="10" Width="120" FormatString="F1"
+                               HorizontalAlignment="Left"/>
+            </StackPanel>
+            <StackPanel Spacing="5">
+                <TextBlock Text="自动增益预设"/>
+                <ComboBox MinWidth="140"
+                          HorizontalAlignment="Left"
+                          SelectedIndex="{Binding Settings.AutoGainPresetIndex, Mode=TwoWay}">
+                    <ComboBoxItem Content="关闭"/>
+                    <ComboBoxItem Content="低"/>
+                    <ComboBoxItem Content="中"/>
+                    <ComboBoxItem Content="高"/>
+                </ComboBox>
+            </StackPanel>
+            <CheckBox Content="在字幕中显示 *触发重连* 提示"
+                      IsChecked="{Binding Settings.ShowReconnectMarker, Mode=TwoWay}"
+                      IsEnabled="{Binding Settings.EnableNoResponseRestart}"/>
+        </StackPanel>
+    </Border>
+</UserControl>

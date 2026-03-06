@@ -1,0 +1,42 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:TrueFluentPro.ViewModels"
+             x:Class="TrueFluentPro.Views.Settings.TextSection"
+             x:DataType="vm:MainWindowViewModel"
+             x:CompileBindings="False">
+    <Border BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+            BorderThickness="1" CornerRadius="8" Padding="20">
+        <StackPanel Spacing="12">
+            <TextBlock Text="字幕与文本" Theme="{StaticResource SubtitleTextBlockStyle}"/>
+            <Separator/>
+
+            <TextBlock Text="字幕输出" FontWeight="Bold"/>
+            <CheckBox Content="生成 SRT 字幕" IsChecked="{Binding Settings.ExportSrt, Mode=TwoWay}"/>
+            <CheckBox Content="生成 VTT 字幕" IsChecked="{Binding Settings.ExportVtt, Mode=TwoWay}"/>
+            <TextBlock FontSize="10" Foreground="Gray" Text="字幕与录音同目录保存，可同时勾选"/>
+
+            <Separator Margin="0,8,0,8"/>
+            <TextBlock Text="实时翻译字号" FontWeight="Bold"/>
+            <StackPanel Spacing="5">
+                <TextBlock Text="默认字号"/>
+                <ComboBox Name="DefaultFontSizeComboBox" MinWidth="100"
+                          SelectionChanged="FontSizeComboBox_SelectionChanged">
+                    <ComboBoxItem Tag="24" Content="24"/>
+                    <ComboBoxItem Tag="26" Content="26"/>
+                    <ComboBoxItem Tag="28" Content="28"/>
+                    <ComboBoxItem Tag="30" Content="30"/>
+                    <ComboBoxItem Tag="32" Content="32"/>
+                    <ComboBoxItem Tag="34" Content="34"/>
+                    <ComboBoxItem Tag="36" Content="36"/>
+                    <ComboBoxItem Tag="38" Content="38"/>
+                    <ComboBoxItem Tag="40" Content="40"/>
+                    <ComboBoxItem Tag="42" Content="42"/>
+                    <ComboBoxItem Tag="44" Content="44"/>
+                    <ComboBoxItem Tag="46" Content="46"/>
+                    <ComboBoxItem Tag="48" Content="48"/>
+                    <ComboBoxItem Tag="50" Content="50"/>
+                </ComboBox>
+            </StackPanel>
+        </StackPanel>
+    </Border>
+</UserControl>
