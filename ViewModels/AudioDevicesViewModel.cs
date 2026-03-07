@@ -128,7 +128,7 @@ namespace TrueFluentPro.ViewModels
             set => SetSelectedOutputDevice(value, persistSelection: true);
         }
 
-        public bool IsAudioSourceSelectionEnabled => OperatingSystem.IsWindows() && !_isTranslatingProvider();
+        public bool IsAudioSourceSelectionEnabled => OperatingSystem.IsWindows();
 
         public bool IsAudioDeviceSelectionEnabled
         {
@@ -188,6 +188,18 @@ namespace TrueFluentPro.ViewModels
             }
         }
 
+        public bool IsRecordingMicOnly
+        {
+            get => _configProvider().RecordingMode == RecordingMode.MicOnly;
+            set
+            {
+                if (value)
+                {
+                    SetRecordingMode(RecordingMode.MicOnly);
+                }
+            }
+        }
+
         public void SetAudioLevel(double level)
         {
             AudioLevel = level;
@@ -228,6 +240,7 @@ namespace TrueFluentPro.ViewModels
             OnPropertyChanged(nameof(IsOutputDeviceSelectionEnabled));
             OnPropertyChanged(nameof(IsRecordingLoopbackOnly));
             OnPropertyChanged(nameof(IsRecordingLoopbackMix));
+            OnPropertyChanged(nameof(IsRecordingMicOnly));
             OnPropertyChanged(nameof(IsInputRecognitionEnabled));
             OnPropertyChanged(nameof(IsOutputRecognitionEnabled));
             OnPropertyChanged(nameof(IsInputDeviceUiEnabled));
@@ -236,14 +249,6 @@ namespace TrueFluentPro.ViewModels
 
         public void RefreshAudioDevices(bool persistSelection)
         {
-            if (_isTranslatingProvider())
-            {
-                IsAudioDeviceSelectionEnabled = false;
-                IsAudioDeviceRefreshEnabled = false;
-                IsOutputDeviceSelectionEnabled = false;
-                return;
-            }
-
             var config = _configProvider();
             var currentInputId = _selectedAudioDevice?.DeviceId ?? config.SelectedAudioDeviceId;
             var currentOutputId = _selectedOutputDevice?.DeviceId ?? config.SelectedOutputDeviceId;
@@ -402,9 +407,11 @@ namespace TrueFluentPro.ViewModels
             {
                 config.UseInputForRecognition = nextEnabled;
                 config.SelectedAudioDeviceId = deviceId;
-                UpdateRecognitionModeFromToggles();
+                var applied = UpdateRecognitionModeFromToggles();
 
                 _configSaver("InputDeviceSelected");
+                var deviceName = device?.DisplayName ?? "无";
+                _statusSetter(BuildDeviceChangeStatusMessage("麦克风输入", deviceName, applied));
             }
         }
 
@@ -444,9 +451,11 @@ namespace TrueFluentPro.ViewModels
             {
                 config.UseOutputForRecognition = nextEnabled;
                 config.SelectedOutputDeviceId = deviceId;
-                UpdateRecognitionModeFromToggles();
+                var applied = UpdateRecognitionModeFromToggles();
 
                 _configSaver("OutputDeviceSelected");
+                var deviceName = device?.DisplayName ?? "无";
+                _statusSetter(BuildDeviceChangeStatusMessage("系统回环", deviceName, applied));
             }
         }
 
@@ -464,18 +473,20 @@ namespace TrueFluentPro.ViewModels
             if (!_isTranslatingProvider())
             {
                 _translationServiceUpdater(config);
+                _statusSetter($"录制来源已切换为“{FormatRecordingMode(mode)}”。");
             }
             else
             {
                 var applied = _tryApplyLiveAudioRouting();
                 _statusSetter(applied
-                    ? $"录制模式已切换为{(mode == RecordingMode.LoopbackOnly ? "仅环回" : "环回+麦克风")}（已实时生效）"
-                    : $"录制模式已切换为{(mode == RecordingMode.LoopbackOnly ? "仅环回" : "环回+麦克风")}，将在下次启动翻译时生效");
+                    ? $"录制来源已切换为“{FormatRecordingMode(mode)}”，已立即生效。"
+                    : $"录制来源已切换为“{FormatRecordingMode(mode)}”，将于下次开始翻译时生效。");
             }
 
             _configSaver("RecordingModeChanged");
             OnPropertyChanged(nameof(IsRecordingLoopbackOnly));
             OnPropertyChanged(nameof(IsRecordingLoopbackMix));
+            OnPropertyChanged(nameof(IsRecordingMicOnly));
         }
 
         private void SetInputRecognitionEnabled(bool enabled)
@@ -512,7 +523,7 @@ namespace TrueFluentPro.ViewModels
             OnPropertyChanged(nameof(IsOutputDeviceUiEnabled));
         }
 
-        private void UpdateRecognitionModeFromToggles()
+        private bool UpdateRecognitionModeFromToggles()
         {
             var config = _configProvider();
             if (config.UseOutputForRecognition && !config.UseInputForRecognition)
@@ -526,9 +537,11 @@ namespace TrueFluentPro.ViewModels
 
             _audioSourceModeIndex = AudioSourceModeToIndex(config.AudioSourceMode);
 
+            var applied = false;
+
             if (_isTranslatingProvider())
             {
-                _tryApplyLiveAudioRouting();
+                applied = _tryApplyLiveAudioRouting();
             }
             else
             {
@@ -538,6 +551,7 @@ namespace TrueFluentPro.ViewModels
             LogAudioModeSnapshot("识别路由已更新");
 
             OnPropertyChanged(nameof(AudioSourceModeIndex));
+            return applied;
         }
 
         public void NormalizeRecognitionToggles()
@@ -571,8 +585,25 @@ namespace TrueFluentPro.ViewModels
             {
                 RecordingMode.LoopbackOnly => "仅环回",
                 RecordingMode.LoopbackWithMic => "环回+麦克风",
+                RecordingMode.MicOnly => "仅麦克风",
                 _ => mode.ToString()
             };
+        }
+
+        private string BuildDeviceChangeStatusMessage(string label, string deviceName, bool applied)
+        {
+            var target = string.Equals(deviceName, "无", StringComparison.Ordinal)
+                ? $"{label}已关闭"
+                : $"{label}已切换到“{deviceName}”";
+
+            if (!_isTranslatingProvider())
+            {
+                return $"{target}。";
+            }
+
+            return applied
+                ? $"{target}，已立即生效。"
+                : $"{target}，将于下次开始翻译时生效。";
         }
 
         private static int AudioSourceModeToIndex(AudioSourceMode mode)

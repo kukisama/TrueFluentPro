@@ -1,0 +1,89 @@
+{
+  "id": "builtin.openai.compatible",
+  "vendor": "OpenAI Compatible",
+  "endpointType": "OpenAiCompatible",
+  "displayName": "OpenAI Compatible",
+  "subtitle": "原生 OpenAI 或第三方兼容服务（含普通代理）",
+  "glyph": "◎",
+  "summary": "默认按标准 OpenAI 兼容接口处理：文本走 /v1/chat/completions，图片走 /v1/images，API Key 默认走 Authorization: Bearer。",
+  "defaultNamePrefix": "OpenAI Compatible",
+  "iconAssetPath": "Assets/EndpointProfiles/Icons/openai-compatible.svg",
+  "tags": ["builtin", "openai-compatible"],
+  "defaults": {
+    "providerType": "OpenAiCompatible",
+    "authMode": "ApiKey",
+    "apiKeyHeaderMode": "Bearer",
+    "textApiProtocolMode": "ChatCompletionsV1",
+    "imageApiRouteMode": "V1Images",
+    "apiVersion": "",
+    "supportsAad": false,
+    "clearAzureIdentityFields": true
+  },
+  "auth": {
+    "supportedModes": ["ApiKey"],
+    "supportedApiKeyHeaderModes": ["Bearer", "ApiKeyHeader"],
+    "defaultMode": "ApiKey",
+    "defaultApiKeyHeaderMode": "Bearer",
+    "supportsSubscriptionKeyQueryFallback": false
+  },
+  "modelDiscovery": {
+    "urlCandidates": [
+      "{baseUrl}/models",
+      "{baseUrl}/v1/models"
+    ]
+  },
+  "text": {
+    "preferredProtocol": "ChatCompletionsV1",
+    "appendApiVersionWhenPresent": false,
+    "deploymentChatCompletionsUrlCandidates": [],
+    "responsesUrlCandidates": [
+      "{baseUrl}/v1/responses"
+    ],
+    "chatCompletionsV1UrlCandidates": [
+      "{baseUrl}/v1/chat/completions"
+    ],
+    "chatCompletionsRawUrlCandidates": [
+      "{baseUrl}/chat/completions"
+    ]
+  },
+  "image": {
+    "appendApiVersionWhenPresent": false,
+    "deploymentGenerateUrlCandidates": [],
+    "generateUrlCandidates": [
+      "{baseUrl}/v1/images/generations"
+    ],
+    "editUrlCandidates": [
+      "{baseUrl}/v1/images/edits"
+    ]
+  },
+  "video": {
+    "apiModeOptions": [
+      {
+        "mode": "Videos",
+        "displayName": "videos (/v1/videos)",
+        "description": "标准 OpenAI Compatible 视频接口，当前资料包仅声明这一种视频模式。"
+      }
+    ],
+    "supportedApiModes": [
+      "Videos"
+    ],
+    "appendApiVersionWhenPresent": false,
+    "createUrlCandidates": [
+      "{baseUrl}/v1/videos"
+    ],
+    "pollUrlCandidates": [
+      "{baseUrl}/v1/videos/{videoId}"
+    ],
+    "downloadUrlCandidates": [
+      "{baseUrl}/v1/videos/{videoId}/content"
+    ],
+    "downloadVideoContentUrlCandidates": [
+      "{baseUrl}/v1/videos/{videoId}/content/video"
+    ],
+    "jobsCreateUrlCandidates": [],
+    "jobsPollUrlCandidates": [],
+    "jobsDownloadUrlCandidates": [],
+    "generationDownloadUrlCandidates": [],
+    "generationDownloadVideoContentUrlCandidates": []
+  }
+}

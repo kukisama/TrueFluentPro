@@ -67,6 +67,7 @@ namespace TrueFluentPro.ViewModels.Settings
         public ICommand DeleteSubscriptionCommand { get; }
         public ICommand TestSubscriptionCommand { get; }
         public ICommand TestAllSubscriptionsCommand { get; }
+        public event Action<string>? StatusRequested;
 
         /// <summary>内部访问配置，由宿主在 Initialize 时注入</summary>
         internal AzureSpeechConfig Config { get; set; } = new();
@@ -283,6 +284,14 @@ namespace TrueFluentPro.ViewModels.Settings
             }
 
             TestAllResult = text.TrimEnd();
+        }
+
+        public void NotifyStatus(string message)
+        {
+            if (string.IsNullOrWhiteSpace(message))
+                return;
+
+            StatusRequested?.Invoke(message);
         }
 
         private async Task<(bool, string)> ValidateSubscriptionAsync(string key, string region, string endpoint)

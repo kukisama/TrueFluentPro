@@ -9,6 +9,13 @@ namespace TrueFluentPro.Models
         AzureOpenAi
     }
 
+    public enum EndpointApiType
+    {
+        OpenAiCompatible,
+        AzureOpenAi,
+        ApiManagementGateway
+    }
+
     public enum AiChatProfile
     {
         Quick,
@@ -21,6 +28,28 @@ namespace TrueFluentPro.Models
         AAD
     }
 
+    public enum ApiKeyHeaderMode
+    {
+        Auto,
+        ApiKeyHeader,
+        Bearer
+    }
+
+    public enum TextApiProtocolMode
+    {
+        Auto,
+        ChatCompletionsV1,
+        ChatCompletionsRaw,
+        Responses
+    }
+
+    public enum ImageApiRouteMode
+    {
+        Auto,
+        V1Images,
+        ImagesRaw
+    }
+
     public class InsightPresetButton
     {
         public string Name { get; set; } = "";
@@ -29,19 +58,8 @@ namespace TrueFluentPro.Models
 
     public class AiConfig
     {
-        private static bool LooksLikeAzureOpenAiEndpoint(string? endpoint)
-        {
-            if (string.IsNullOrWhiteSpace(endpoint)
-                || !System.Uri.TryCreate(endpoint, System.UriKind.Absolute, out var uri))
-            {
-                return false;
-            }
-
-            var host = uri.Host;
-            return host.EndsWith(".openai.azure.com", System.StringComparison.OrdinalIgnoreCase)
-                   || host.EndsWith(".services.ai.azure.com", System.StringComparison.OrdinalIgnoreCase);
-        }
-
+        public string ProfileId { get; set; } = "";
+        public EndpointApiType EndpointType { get; set; } = EndpointApiType.OpenAiCompatible;
         public AiProviderType ProviderType { get; set; } = AiProviderType.OpenAiCompatible;
 
         public string ApiEndpoint { get; set; } = "";
@@ -53,18 +71,18 @@ namespace TrueFluentPro.Models
 
         // --- AAD 认证 ---
         public AzureAuthMode AzureAuthMode { get; set; } = AzureAuthMode.ApiKey;
+        public ApiKeyHeaderMode ApiKeyHeaderMode { get; set; } = ApiKeyHeaderMode.Auto;
+        public TextApiProtocolMode TextApiProtocolMode { get; set; } = TextApiProtocolMode.Auto;
+        public ImageApiRouteMode ImageApiRouteMode { get; set; } = ImageApiRouteMode.Auto;
         public string AzureTenantId { get; set; } = "";
         public string AzureClientId { get; set; } = "";
 
         /// <summary>
         /// 是否为 Azure OpenAI 终结点。
-        /// ProviderType、AAD 认证，或官方 Azure OpenAI 域名（*.openai.azure.com / *.services.ai.azure.com）
-        /// 任一命中都视为 Azure，避免 API Key 模式下仅因 ProviderType 未正确设置而误走 OpenAI Compatible 认证。
+        /// 仅由终结点类型决定，不再基于域名或 ProviderType 猜测。
         /// </summary>
         [JsonIgnore]
-        public bool IsAzureEndpoint => ProviderType == AiProviderType.AzureOpenAi
-                           || AzureAuthMode == AzureAuthMode.AAD
-                           || LooksLikeAzureOpenAiEndpoint(ApiEndpoint);
+        public bool IsAzureEndpoint => EndpointType == EndpointApiType.AzureOpenAi;
 
         public bool SummaryEnableReasoning { get; set; } = false;
 

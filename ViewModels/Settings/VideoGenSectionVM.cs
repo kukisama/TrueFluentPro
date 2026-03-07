@@ -2,12 +2,22 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using TrueFluentPro.Models;
+using TrueFluentPro.Models.EndpointProfiles;
 using TrueFluentPro.Services;
+using TrueFluentPro.Services.EndpointProfiles;
 
 namespace TrueFluentPro.ViewModels.Settings
 {
     public class VideoGenSectionVM : SettingsSectionBase
     {
+        public sealed class VideoApiModeOptionView
+        {
+            public required VideoApiMode Mode { get; init; }
+            public required string DisplayName { get; init; }
+            public string Description { get; init; } = "";
+            public override string ToString() => DisplayName;
+        }
+
         private ModelOption? _selectedVideoModel;
         private List<ModelOption> _videoModels = new();
         private bool _suppressVideoModelAutoApiMode;
@@ -28,6 +38,15 @@ namespace TrueFluentPro.ViewModels.Settings
         private List<string> _videoResolutionOptions = new() { "720p" };
         private List<int> _videoSecondsOptions = new() { 4, 8, 12 };
         private List<int> _videoVariantsOptions = new() { 1 };
+        private List<VideoApiModeOptionView> _videoApiModeOptions = new()
+        {
+            new VideoApiModeOptionView
+            {
+                Mode = VideoApiMode.Videos,
+                DisplayName = "videos (/v1/videos)",
+                Description = "标准视频接口。"
+            }
+        };
 
         public List<ModelOption> VideoModels { get => _videoModels; set => SetProperty(ref _videoModels, value); }
         public ModelOption? SelectedVideoModel
@@ -42,6 +61,7 @@ namespace TrueFluentPro.ViewModels.Settings
                         SetVideoApiModeIndexInternal(0);
                     }
 
+                    RefreshVideoApiModeOptions();
                     RefreshVideoCapabilityOptions();
                     OnChanged();
                 }
@@ -52,6 +72,9 @@ namespace TrueFluentPro.ViewModels.Settings
         public List<string> VideoResolutionOptions { get => _videoResolutionOptions; private set => SetProperty(ref _videoResolutionOptions, value); }
         public List<int> VideoSecondsOptions { get => _videoSecondsOptions; private set => SetProperty(ref _videoSecondsOptions, value); }
         public List<int> VideoVariantsOptions { get => _videoVariantsOptions; private set => SetProperty(ref _videoVariantsOptions, value); }
+        public List<VideoApiModeOptionView> VideoApiModeOptions { get => _videoApiModeOptions; private set => SetProperty(ref _videoApiModeOptions, value); }
+        public string SelectedVideoApiModeDescription
+            => VideoApiModeOptions.ElementAtOrDefault(VideoApiModeIndex)?.Description ?? "";
 
         public string VideoAspectRatio { get => _videoAspectRatio;
             set => Set(ref _videoAspectRatio, value, then: SyncVideoDimensionsFromSelection); }
@@ -64,6 +87,7 @@ namespace TrueFluentPro.ViewModels.Settings
             {
                 if (SetProperty(ref _videoApiModeIndex, value))
                 {
+                    OnPropertyChanged(nameof(SelectedVideoApiModeDescription));
                     RefreshVideoCapabilityOptions();
                     OnChanged();
                 }
@@ -95,6 +119,7 @@ namespace TrueFluentPro.ViewModels.Settings
             _videoSeconds = media.VideoSeconds <= 0 ? 5 : media.VideoSeconds;
             _videoVariants = media.VideoVariants <= 0 ? 1 : media.VideoVariants;
 
+            RefreshVideoApiModeOptions();
             RefreshVideoCapabilityOptions();
             ApplyVideoSizeToAspectResolution(media.VideoWidth, media.VideoHeight);
 
@@ -110,8 +135,14 @@ namespace TrueFluentPro.ViewModels.Settings
         public override void ApplyTo(AzureSpeechConfig config)
         {
             var media = config.MediaGenConfig;
+            var supportedModes = GetCurrentSupportedVideoApiModes();
 
-            media.VideoApiMode = VideoApiModeIndex == 0 ? VideoApiMode.Videos : VideoApiMode.SoraJobs;
+            media.VideoApiMode = supportedModes.ElementAtOrDefault(VideoApiModeIndex);
+            if (!supportedModes.Contains(media.VideoApiMode))
+            {
+                media.VideoApiMode = VideoApiMode.Videos;
+            }
+
             media.VideoAspectRatio = _videoAspectRatio ?? "16:9";
             media.VideoResolution = _videoResolution ?? "720p";
             media.VideoWidth = Math.Max(64, VideoWidth);
@@ -129,6 +160,7 @@ namespace TrueFluentPro.ViewModels.Settings
         {
             VideoModels = videoModels;
             SelectModelOption(videoModelRef, videoModels, v => _selectedVideoModel = v, nameof(SelectedVideoModel));
+            RefreshVideoApiModeOptions();
         }
 
         public void RefreshModels(List<ModelOption> videoModels)
@@ -136,6 +168,7 @@ namespace TrueFluentPro.ViewModels.Settings
             var videoRef = SelectedVideoModel?.Reference;
             VideoModels = videoModels;
             SelectModelOption(videoRef, videoModels, v => _selectedVideoModel = v, nameof(SelectedVideoModel));
+            RefreshVideoApiModeOptions();
         }
 
         private void SelectModelOption(ModelReference? reference, List<ModelOption> options, Action<ModelOption?> setter, string propertyName)
@@ -148,9 +181,102 @@ namespace TrueFluentPro.ViewModels.Settings
             OnPropertyChanged(propertyName);
         }
 
+        private void RefreshVideoApiModeOptions()
+        {
+            var modeOptions = GetCurrentVideoApiModeOptions();
+            VideoApiModeOptions = modeOptions
+                .ToList();
+
+            if (VideoApiModeIndex >= VideoApiModeOptions.Count)
+            {
+                SetVideoApiModeIndexInternal(0);
+            }
+
+            OnPropertyChanged(nameof(SelectedVideoApiModeDescription));
+        }
+
+        private List<VideoApiModeOptionView> GetCurrentVideoApiModeOptions()
+        {
+            var endpoint = GetSelectedEndpoint();
+            var videoConfig = EndpointProfileRuntimeResolver.Resolve(endpoint?.ProfileId, endpoint?.EndpointType ?? EndpointApiType.OpenAiCompatible)
+                ?.Video;
+
+            var configuredOptions = videoConfig?.ApiModeOptions ?? new List<EndpointProfileVideoApiModeOption>();
+
+            var options = configuredOptions
+                .Select(option => Enum.TryParse<VideoApiMode>(option.Mode, ignoreCase: true, out var parsed)
+                    ? new VideoApiModeOptionView
+                    {
+                        Mode = parsed,
+                        DisplayName = string.IsNullOrWhiteSpace(option.DisplayName) ? parsed.ToString() : option.DisplayName,
+                        Description = option.Description ?? ""
+                    }
+                    : null)
+                .Where(option => option != null)
+                .Select(option => option!)
+                .GroupBy(option => option.Mode)
+                .Select(group => group.First())
+                .ToList();
+
+            if (options.Count > 0)
+            {
+                return options;
+            }
+
+            var fallbackModes = videoConfig?.SupportedApiModes
+                ?? new List<string>();
+
+            options = fallbackModes
+                .Select(mode => Enum.TryParse<VideoApiMode>(mode, ignoreCase: true, out var parsed)
+                    ? new VideoApiModeOptionView
+                    {
+                        Mode = parsed,
+                        DisplayName = parsed.ToString(),
+                        Description = ""
+                    }
+                    : null)
+                .Where(option => option != null)
+                .Select(option => option!)
+                .GroupBy(option => option.Mode)
+                .Select(group => group.First())
+                .ToList();
+
+            if (options.Count == 0)
+            {
+                options.Add(new VideoApiModeOptionView
+                {
+                    Mode = VideoApiMode.Videos,
+                    DisplayName = "videos (/v1/videos)",
+                    Description = "标准视频接口。"
+                });
+            }
+
+            return options;
+        }
+
+        private List<VideoApiMode> GetCurrentSupportedVideoApiModes()
+            => GetCurrentVideoApiModeOptions().Select(option => option.Mode).ToList();
+
+        private AiEndpoint? GetSelectedEndpoint()
+        {
+            var endpointId = SelectedVideoModel?.Reference?.EndpointId;
+            if (string.IsNullOrWhiteSpace(endpointId))
+            {
+                return null;
+            }
+
+            return Config?.Endpoints?.FirstOrDefault(endpoint => endpoint.Id == endpointId);
+        }
+
         private void RefreshVideoCapabilityOptions()
         {
-            var mode = VideoApiModeIndex == 0 ? VideoApiMode.Videos : VideoApiMode.SoraJobs;
+            var supportedModes = GetCurrentSupportedVideoApiModes();
+            var mode = supportedModes.ElementAtOrDefault(VideoApiModeIndex);
+            if (!supportedModes.Contains(mode))
+            {
+                mode = VideoApiMode.Videos;
+            }
+
             var modelId = SelectedVideoModel?.Reference?.ModelId ?? string.Empty;
             var profile = VideoCapabilityResolver.ResolveProfile(mode, modelId);
 
@@ -173,7 +299,13 @@ namespace TrueFluentPro.ViewModels.Settings
 
         private void SyncVideoDimensionsFromSelection()
         {
-            var mode = VideoApiModeIndex == 0 ? VideoApiMode.Videos : VideoApiMode.SoraJobs;
+            var supportedModes = GetCurrentSupportedVideoApiModes();
+            var mode = supportedModes.ElementAtOrDefault(VideoApiModeIndex);
+            if (!supportedModes.Contains(mode))
+            {
+                mode = VideoApiMode.Videos;
+            }
+
             var modelId = SelectedVideoModel?.Reference?.ModelId ?? string.Empty;
             if (VideoCapabilityResolver.TryResolveSize(mode, modelId, VideoAspectRatio, VideoResolution, out var w, out var h))
             {
@@ -184,7 +316,13 @@ namespace TrueFluentPro.ViewModels.Settings
 
         private void ApplyVideoSizeToAspectResolution(int width, int height)
         {
-            var mode = VideoApiModeIndex == 0 ? VideoApiMode.Videos : VideoApiMode.SoraJobs;
+            var supportedModes = GetCurrentSupportedVideoApiModes();
+            var mode = supportedModes.ElementAtOrDefault(VideoApiModeIndex);
+            if (!supportedModes.Contains(mode))
+            {
+                mode = VideoApiMode.Videos;
+            }
+
             var modelId = SelectedVideoModel?.Reference?.ModelId ?? string.Empty;
             var profile = VideoCapabilityResolver.ResolveProfile(mode, modelId);
 

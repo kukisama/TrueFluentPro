@@ -42,6 +42,7 @@
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <PackageReference Include="Projektanker.Icons.Avalonia.FontAwesome" Version="9.6.2" />
     <PackageReference Include="SkiaSharp" Version="2.88.9" />
+    <PackageReference Include="Svg.Controls.Skia.Avalonia" Version="11.3.9.2" />
   </ItemGroup>
 
   <!-- ═══ Windows 专属依赖（macOS/Linux 发布时自动排除，日常 Windows 开发不受影响） ═══ -->

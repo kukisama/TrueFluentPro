@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using TrueFluentPro.Models;
+using TrueFluentPro.Services.EndpointProfiles;
 
 namespace TrueFluentPro.Services
 {
@@ -36,9 +37,21 @@ namespace TrueFluentPro.Services
         {
             if (IsAzureEndpoint(config))
             {
+                if (config.AzureAuthMode != AzureAuthMode.AAD && config.ApiKeyHeaderMode == ApiKeyHeaderMode.Bearer)
+                    return "Authorization: Bearer (manual override)";
+
                 return config.AzureAuthMode == AzureAuthMode.AAD
                     ? "Authorization: Bearer (Azure AAD)"
                     : "api-key (Azure API Key)";
+            }
+
+            if (config.AzureAuthMode != AzureAuthMode.AAD)
+            {
+                if (config.ApiKeyHeaderMode == ApiKeyHeaderMode.ApiKeyHeader)
+                    return "api-key (manual override)";
+
+                if (config.ApiKeyHeaderMode == ApiKeyHeaderMode.Bearer)
+                    return "Authorization: Bearer (manual override)";
             }
 
             if (IsApimGateway(config) && config.AzureAuthMode != AzureAuthMode.AAD)
@@ -221,17 +234,20 @@ namespace TrueFluentPro.Services
                     urlsToTry.Add(u);
             }
 
-            // 首选下载路径（注意：不同模式含义不同）
-            var primaryUrl = BuildVideoDownloadUrl(config, videoId, apiMode);
-            var primaryAltUrl = BuildVideoDownloadUrlAlt(config, videoId, apiMode);
-
-            // Azure /openai/v1/videos 示例可能不接受 api-version=preview（返回 404），对这种情况准备无参数回退。
-            var primaryUrlNoApiVersion = (IsAzureEndpoint(config) && apiMode == VideoApiMode.Videos)
-                ? RemovePreviewApiVersion(primaryUrl)
-                : null;
-            var primaryAltUrlNoApiVersion = (IsAzureEndpoint(config) && apiMode == VideoApiMode.Videos)
-                ? RemovePreviewApiVersion(primaryAltUrl)
-                : null;
+            var primaryUrls = EndpointProfileUrlBuilder.BuildVideoDownloadUrlCandidates(
+                config.ApiEndpoint,
+                config.ProfileId,
+                config.EndpointType,
+                config.ApiVersion,
+                videoId,
+                apiMode);
+            var contentVideoUrls = EndpointProfileUrlBuilder.BuildVideoDownloadVideoContentUrlCandidates(
+                config.ApiEndpoint,
+                config.ProfileId,
+                config.EndpointType,
+                config.ApiVersion,
+                videoId,
+                apiMode);
 
             string? fallbackUrl = null;
             string? fallbackAltUrl = null;
@@ -248,15 +264,17 @@ namespace TrueFluentPro.Services
                 AddUrl(fallbackUrl);
                 AddUrl(fallbackAltUrl);
                 // jobs 内容作为兜底
-                AddUrl(primaryUrl);
-                AddUrl(primaryAltUrl);
+                foreach (var url in primaryUrls)
+                    AddUrl(url);
+                foreach (var url in contentVideoUrls)
+                    AddUrl(url);
             }
             else
             {
-                AddUrl(primaryUrl);
-                AddUrl(primaryAltUrl);
-                AddUrl(primaryUrlNoApiVersion);
-                AddUrl(primaryAltUrlNoApiVersion);
+                foreach (var url in primaryUrls)
+                    AddUrl(url);
+                foreach (var url in contentVideoUrls)
+                    AddUrl(url);
                 AddUrl(fallbackUrl);
                 AddUrl(fallbackAltUrl);
             }
@@ -333,19 +351,21 @@ namespace TrueFluentPro.Services
         public async Task<(string status, int progress, string? generationId, string? failureReason)> PollStatusDetailsAsync(
             AiConfig config, string videoId, CancellationToken ct, VideoApiMode apiMode)
         {
-            var url = BuildVideoPollUrl(config, videoId, apiMode);
-            var altUrl = (IsAzureEndpoint(config) && apiMode == VideoApiMode.Videos)
-                ? BuildVideoPollUrlWithPreview(config, videoId, apiMode)
-                : null;
-            var previewAltUrl = (IsApimGateway(config) && apiMode == VideoApiMode.Videos)
-                ? BuildVideoPollUrlWithPreview(config, videoId, apiMode)
-                : null;
+            var pollCandidates = EndpointProfileUrlBuilder.BuildVideoPollUrlCandidates(
+                config.ApiEndpoint,
+                config.ProfileId,
+                config.EndpointType,
+                config.ApiVersion,
+                videoId,
+                apiMode);
+            var url = pollCandidates.Count > 0 ? pollCandidates[0] : BuildVideoPollUrl(config, videoId, apiMode);
+            var altUrl = pollCandidates.Count > 1 ? pollCandidates[1] : null;
 
             await AppendRequestPlanLogAsync(
                 $"Poll videoId={videoId}",
                 config,
                 url,
-                !string.IsNullOrWhiteSpace(altUrl) ? altUrl : previewAltUrl,
+                altUrl,
                 apiMode,
                 prompt: null,
                 genConfig: null,
@@ -383,23 +403,17 @@ namespace TrueFluentPro.Services
 
             try
             {
-                // 某些示例/后端可能不接受 api-version=preview，且会返回 404；对该情况做一次回退。
-                if (!response.IsSuccessStatusCode
-                    && (int)response.StatusCode == 404
-                    && !string.IsNullOrWhiteSpace(altUrl)
-                    && !string.Equals(url, altUrl, StringComparison.OrdinalIgnoreCase))
+                for (var i = 1; i < pollCandidates.Count; i++)
                 {
-                    response.Dispose();
-                    (response, json, urlUsed) = await SendOnceAsync(altUrl);
-                }
+                    if (response.IsSuccessStatusCode || (int)response.StatusCode != 404)
+                        break;
 
-                if (!response.IsSuccessStatusCode
-                    && (int)response.StatusCode == 404
-                    && !string.IsNullOrWhiteSpace(previewAltUrl)
-                    && !string.Equals(urlUsed, previewAltUrl, StringComparison.OrdinalIgnoreCase))
-                {
+                    var nextUrl = pollCandidates[i];
+                    if (string.Equals(urlUsed, nextUrl, StringComparison.OrdinalIgnoreCase))
+                        continue;
+
                     response.Dispose();
-                    (response, json, urlUsed) = await SendOnceAsync(previewAltUrl);
+                    (response, json, urlUsed) = await SendOnceAsync(nextUrl);
                 }
 
             await AppendPollDebugLogAsync(videoId, urlUsed, response, json, ct);
@@ -533,10 +547,14 @@ namespace TrueFluentPro.Services
             bool hasRefImage,
             CancellationToken ct)
         {
-            var url = BuildVideoCreateUrl(config, VideoApiMode.Videos);
-            var altUrl = (IsAzureEndpoint(config))
-                ? BuildVideoCreateUrlWithPreview(config, VideoApiMode.Videos)
-                : null;
+            var createCandidates = EndpointProfileUrlBuilder.BuildVideoCreateUrlCandidates(
+                config.ApiEndpoint,
+                config.ProfileId,
+                config.EndpointType,
+                config.ApiVersion,
+                VideoApiMode.Videos);
+            var url = createCandidates.Count > 0 ? createCandidates[0] : BuildVideoCreateUrl(config, VideoApiMode.Videos);
+            var altUrl = createCandidates.Count > 1 ? createCandidates[1] : null;
 
             await AppendRequestPlanLogAsync(
                 "CreateVideoMultipart",
@@ -670,10 +688,14 @@ namespace TrueFluentPro.Services
             MediaGenConfig genConfig,
             CancellationToken ct)
         {
-            var url = BuildVideoCreateUrl(config, genConfig.VideoApiMode);
-            var altUrl = (IsAzureEndpoint(config) && genConfig.VideoApiMode == VideoApiMode.Videos)
-                ? BuildVideoCreateUrlWithPreview(config, genConfig.VideoApiMode)
-                : null;
+            var createCandidates = EndpointProfileUrlBuilder.BuildVideoCreateUrlCandidates(
+                config.ApiEndpoint,
+                config.ProfileId,
+                config.EndpointType,
+                config.ApiVersion,
+                genConfig.VideoApiMode);
+            var url = createCandidates.Count > 0 ? createCandidates[0] : BuildVideoCreateUrl(config, genConfig.VideoApiMode);
+            var altUrl = createCandidates.Count > 1 ? createCandidates[1] : null;
 
             await AppendRequestPlanLogAsync(
                 "CreateVideoJson",
@@ -824,23 +846,20 @@ namespace TrueFluentPro.Services
             string? resolvedGenId = generationId;
 
             // 首选下载路径（注意：不同模式含义不同）
-            var primaryUrl = BuildVideoDownloadUrl(config, videoId, apiMode);
-            var primaryAltUrl = BuildVideoDownloadUrlAlt(config, videoId, apiMode);
-            var primaryVideoContentUrl = BuildVideoDownloadUrlVideoContent(config, videoId, apiMode);
-            var primaryPreviewUrl = ((IsApimGateway(config) || IsAzureEndpoint(config)) && apiMode == VideoApiMode.Videos)
-                ? BuildVideoDownloadUrlWithPreview(config, videoId, apiMode)
-                : null;
-            var primaryVideoContentPreviewUrl = ((IsApimGateway(config) || IsAzureEndpoint(config)) && apiMode == VideoApiMode.Videos)
-                ? BuildVideoDownloadUrlVideoContentWithPreview(config, videoId, apiMode)
-                : null;
-
-            // AOAI 现在主路不带 api-version；保留 preview 版本作为回退。
-            var primaryUrlNoApiVersion = (IsAzureEndpoint(config) && apiMode == VideoApiMode.Videos)
-                ? BuildVideoDownloadUrlWithPreview(config, videoId, apiMode)
-                : null;
-            var primaryAltUrlNoApiVersion = (IsAzureEndpoint(config) && apiMode == VideoApiMode.Videos)
-                ? BuildVideoDownloadUrlVideoContentWithPreview(config, videoId, apiMode)
-                : null;
+            var primaryUrls = EndpointProfileUrlBuilder.BuildVideoDownloadUrlCandidates(
+                config.ApiEndpoint,
+                config.ProfileId,
+                config.EndpointType,
+                config.ApiVersion,
+                videoId,
+                apiMode);
+            var primaryVideoContentUrls = EndpointProfileUrlBuilder.BuildVideoDownloadVideoContentUrlCandidates(
+                config.ApiEndpoint,
+                config.ProfileId,
+                config.EndpointType,
+                config.ApiVersion,
+                videoId,
+                apiMode);
 
             // 如果未提供 generationId，先尝试从轮询响应解析出来。
             // 备注：即使 status 不是终态，部分后端也可能已经返回 generations[].id。
@@ -934,18 +953,17 @@ namespace TrueFluentPro.Services
                 AddUrl(fallbackUrl);
                 AddUrl(fallbackAltUrl);
                 // jobs 内容作为兜底（部分环境会一直 404）
-                AddUrl(primaryUrl);
-                AddUrl(primaryAltUrl);
+                foreach (var url in primaryUrls)
+                    AddUrl(url);
+                foreach (var url in primaryVideoContentUrls)
+                    AddUrl(url);
             }
             else
             {
-                AddUrl(primaryUrl);
-                AddUrl(primaryAltUrl);
-                AddUrl(primaryVideoContentUrl);
-                AddUrl(primaryPreviewUrl);
-                AddUrl(primaryVideoContentPreviewUrl);
-                AddUrl(primaryUrlNoApiVersion);
-                AddUrl(primaryAltUrlNoApiVersion);
+                foreach (var url in primaryUrls)
+                    AddUrl(url);
+                foreach (var url in primaryVideoContentUrls)
+                    AddUrl(url);
                 AddUrl(fallbackUrl);
                 AddUrl(fallbackAltUrl);
             }

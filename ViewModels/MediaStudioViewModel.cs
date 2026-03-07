@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Text.Json.Serialization;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -148,6 +149,94 @@ namespace TrueFluentPro.ViewModels
             }
 
             _ = TrySilentLoginForMediaAsync();
+        }
+
+        public void UpdateConfiguration(AiConfig aiConfig, MediaGenConfig genConfig, List<AiEndpoint> endpoints)
+        {
+            CopyAiConfig(aiConfig, _aiConfig);
+            CopyMediaGenConfig(genConfig, _genConfig);
+
+            _endpoints.Clear();
+            _endpoints.AddRange(endpoints ?? new List<AiEndpoint>());
+
+            _ = TrySilentLoginForMediaAsync();
+        }
+
+        private static void CopyAiConfig(AiConfig source, AiConfig target)
+        {
+            source ??= new AiConfig();
+
+            target.ProfileId = source.ProfileId;
+            target.EndpointType = source.EndpointType;
+            target.ProviderType = source.ProviderType;
+            target.ApiEndpoint = source.ApiEndpoint;
+            target.ApiKey = source.ApiKey;
+            target.ModelName = source.ModelName;
+            target.DeploymentName = source.DeploymentName;
+            target.ApiVersion = source.ApiVersion;
+            target.AzureAuthMode = source.AzureAuthMode;
+            target.ApiKeyHeaderMode = source.ApiKeyHeaderMode;
+            target.TextApiProtocolMode = source.TextApiProtocolMode;
+            target.ImageApiRouteMode = source.ImageApiRouteMode;
+            target.AzureTenantId = source.AzureTenantId;
+            target.AzureClientId = source.AzureClientId;
+            target.SummaryEnableReasoning = source.SummaryEnableReasoning;
+            target.InsightSystemPrompt = source.InsightSystemPrompt;
+            target.ReviewSystemPrompt = source.ReviewSystemPrompt;
+            target.InsightUserContentTemplate = source.InsightUserContentTemplate;
+            target.ReviewUserContentTemplate = source.ReviewUserContentTemplate;
+            target.InsightModelRef = CloneReference(source.InsightModelRef);
+            target.SummaryModelRef = CloneReference(source.SummaryModelRef);
+            target.QuickModelRef = CloneReference(source.QuickModelRef);
+            target.ReviewModelRef = CloneReference(source.ReviewModelRef);
+            target.AutoInsightBufferOutput = source.AutoInsightBufferOutput;
+            target.PresetButtons = source.PresetButtons?.Select(button => new InsightPresetButton
+            {
+                Name = button.Name,
+                Prompt = button.Prompt
+            }).ToList() ?? new List<InsightPresetButton>();
+            target.ReviewSheets = source.ReviewSheets?.Select(sheet => new ReviewSheetPreset
+            {
+                Name = sheet.Name,
+                FileTag = sheet.FileTag,
+                Prompt = sheet.Prompt
+            }).ToList() ?? new List<ReviewSheetPreset>();
+        }
+
+        private static void CopyMediaGenConfig(MediaGenConfig source, MediaGenConfig target)
+        {
+            source ??= new MediaGenConfig();
+
+            target.ImageModelRef = CloneReference(source.ImageModelRef);
+            target.VideoModelRef = CloneReference(source.VideoModelRef);
+            target.ImageModel = source.ImageModel;
+            target.ImageSize = source.ImageSize;
+            target.ImageQuality = source.ImageQuality;
+            target.ImageFormat = source.ImageFormat;
+            target.ImageCount = source.ImageCount;
+            target.VideoModel = source.VideoModel;
+            target.VideoApiMode = source.VideoApiMode;
+            target.VideoWidth = source.VideoWidth;
+            target.VideoHeight = source.VideoHeight;
+            target.VideoAspectRatio = source.VideoAspectRatio;
+            target.VideoResolution = source.VideoResolution;
+            target.VideoSeconds = source.VideoSeconds;
+            target.VideoVariants = source.VideoVariants;
+            target.VideoPollIntervalMs = source.VideoPollIntervalMs;
+            target.MaxLoadedSessionsInMemory = source.MaxLoadedSessionsInMemory;
+            target.OutputDirectory = source.OutputDirectory;
+        }
+
+        private static ModelReference? CloneReference(ModelReference? reference)
+        {
+            if (reference == null)
+                return null;
+
+            return new ModelReference
+            {
+                EndpointId = reference.EndpointId,
+                ModelId = reference.ModelId
+            };
         }
 
         /// <summary>

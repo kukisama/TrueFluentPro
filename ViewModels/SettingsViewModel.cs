@@ -9,6 +9,7 @@ using System.Windows.Input;
 using Avalonia.Threading;
 using TrueFluentPro.Models;
 using TrueFluentPro.Services;
+using TrueFluentPro.Services.EndpointTesting;
 using TrueFluentPro.ViewModels.Settings;
 
 namespace TrueFluentPro.ViewModels
@@ -38,23 +39,29 @@ namespace TrueFluentPro.ViewModels
         public ReviewSectionVM ReviewVM { get; }
         public ImageGenSectionVM ImageGenVM { get; }
         public VideoGenSectionVM VideoGenVM { get; }
+        public TransferSectionVM TransferVM { get; }
         public AboutSectionVM AboutVM { get; }
 
         public event Action<AzureSpeechConfig>? ConfigSaved;
+        public event Action<string>? StatusNotificationRequested;
 
         public SettingsViewModel(
             ConfigurationService configService,
             AzureSubscriptionValidator subscriptionValidator,
             IAiEndpointModelDiscoveryService modelDiscoveryService,
+            IEndpointTemplateService endpointTemplateService,
             ISettingsImportExportService settingsImportExportService,
-            IModelRuntimeResolver modelRuntimeResolver)
+            ISettingsTransferFileService settingsTransferFileService,
+            IModelRuntimeResolver modelRuntimeResolver,
+            IAboutSectionService aboutSectionService,
+            IEndpointBatchTestService endpointBatchTestService)
         {
             _configService = configService;
             _settingsImportExportService = settingsImportExportService;
 
             // 创建分区 ViewModel
             SubscriptionVM = new SubscriptionSectionVM(subscriptionValidator);
-            EndpointsVM = new EndpointsSectionVM(modelDiscoveryService);
+            EndpointsVM = new EndpointsSectionVM(modelDiscoveryService, endpointTemplateService, endpointBatchTestService);
             StorageVM = new StorageSectionVM();
             RecognitionVM = new RecognitionSectionVM();
             TextVM = new TextSectionVM();
@@ -62,7 +69,8 @@ namespace TrueFluentPro.ViewModels
             ReviewVM = new ReviewSectionVM();
             ImageGenVM = new ImageGenSectionVM();
             VideoGenVM = new VideoGenSectionVM();
-            AboutVM = new AboutSectionVM();
+            TransferVM = new TransferSectionVM(settingsTransferFileService, CreateExportPackage, ImportPackageAsync, ReportStatus);
+            AboutVM = new AboutSectionVM(aboutSectionService, ReportStatus);
 
             SubscribeSectionPropertyForwarding(SubscriptionVM);
             SubscribeSectionPropertyForwarding(EndpointsVM);
@@ -90,6 +98,8 @@ namespace TrueFluentPro.ViewModels
             // 终结点变更 → 刷新模型列表
             EndpointsVM.EndpointsChanged += RefreshModelOptions;
             EndpointsVM.EndpointsChanged += () => _ = RefreshAiAuthStatusAsync();
+            SubscriptionVM.StatusRequested += ReportStatus;
+            EndpointsVM.StatusRequested += ReportStatus;
         }
 
         // ═══ 向后兼容的公共属性（转发到分区 ViewModel） ═══
@@ -298,6 +308,12 @@ namespace TrueFluentPro.ViewModels
 
         public async Task RefreshAiAuthStatusAsync() => await InsightVM.RefreshAiAuthStatusAsync();
 
+        public void ReportStatus(string message)
+        {
+            AutoSaveStatus = message;
+            StatusNotificationRequested?.Invoke(message);
+        }
+
         private void SubscribeSectionPropertyForwarding(INotifyPropertyChanged section)
         {
             section.PropertyChanged += (_, args) =>
@@ -363,7 +379,7 @@ namespace TrueFluentPro.ViewModels
                 _config = _settingsImportExportService.ApplyImportPackage(_config, package);
                 LoadFromConfig();
                 await _configService.SaveConfigAsync(_config);
-                AutoSaveStatus = "✓ 资源配置已导入并立即生效";
+                AutoSaveStatus = BuildImportSuccessStatus(package);
                 ConfigSaved?.Invoke(_config);
             }
             catch (Exception ex)
@@ -371,6 +387,16 @@ namespace TrueFluentPro.ViewModels
                 AutoSaveStatus = $"导入失败: {ex.Message}";
                 throw;
             }
+        }
+
+        private static string BuildImportSuccessStatus(SettingsTransferPackage package)
+        {
+            return package.Version switch
+            {
+                1 => "✓ 已导入 v1 旧版资源级配置；废弃字段已自动忽略，当前支持的终结点与模型引用已生效",
+                2 => "✓ 已导入 v2 资源级配置；当前终结点类型、模型清单与模型引用已生效",
+                _ => $"✓ 已导入 v{package.Version} 资源级配置"
+            };
         }
 
         private void PauseAutoSave()

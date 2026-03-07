@@ -52,11 +52,14 @@ namespace TrueFluentPro.Services
         private TimeSpan _lastSubtitleEnd = TimeSpan.Zero;
 
         private readonly SemaphoreSlim _restartLock = new(1, 1);
+        private readonly object _managedReconnectLock = new();
         private CancellationTokenSource? _noResponseMonitorCts;
         private Task? _noResponseMonitorTask;
+        private CancellationTokenSource? _managedReconnectCts;
         private DateTime _lastRecognitionUtc = DateTime.MinValue;
         private DateTime _lastAudioActivityUtc = DateTime.MinValue;
         private DateTime _lastDiagnosticsUtc = DateTime.MinValue;
+        private int _managedReconnectAttempt;
         private double _smoothedAudioLevel;
         private bool _lastChunkHadActivity;
         private bool _recognizeLoopbackEnabled;
@@ -110,13 +113,14 @@ namespace TrueFluentPro.Services
                 OnStatusChanged?.Invoke(this, $"创建会话文件失败: {ex.Message}");
             }
         }
-        public async Task StartTranslationAsync()
+        public async Task<bool> StartTranslationAsync()
         {
             if (_isTranslating)
-                return;
+                return true;
 
             try
             {
+                ResetManagedReconnectState();
                 _currentRunStamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
                 _sessionStartUtc = DateTime.UtcNow;
                 _audioConfig = CreateAudioConfigAndStartSource();
@@ -142,11 +146,14 @@ namespace TrueFluentPro.Services
                     ? $"正在监听：{inputName}... (已启用语气助词过滤)"
                     : $"正在监听：{inputName}...";
                 OnStatusChanged?.Invoke(this, statusMessage);
+                return true;
             }
             catch (Exception ex)
             {
                 OnStatusChanged?.Invoke(this, $"启动翻译失败: {ex.Message}");
                 await CleanupAudioAsync().ConfigureAwait(false);
+                _isTranslating = false;
+                return false;
             }
         }
 
@@ -158,6 +165,7 @@ namespace TrueFluentPro.Services
             try
             {
                 StopNoResponseMonitor();
+                ResetManagedReconnectState();
                 lock (_liveRoutingDebounceLock)
                 {
                     _liveRoutingDebounceCts?.Cancel();
@@ -194,6 +202,7 @@ namespace TrueFluentPro.Services
             if (e.Result.Reason == ResultReason.TranslatedSpeech)
             {
                 _lastRecognitionUtc = DateTime.UtcNow;
+                ResetManagedReconnectState();
                 string originalText = e.Result.Text;
                 string translatedText = e.Result.Translations.ContainsKey(_config.TargetLanguage)
                     ? e.Result.Translations[_config.TargetLanguage]
@@ -223,6 +232,7 @@ namespace TrueFluentPro.Services
             if (e.Result.Reason == ResultReason.TranslatingSpeech)
             {
                 _lastRecognitionUtc = DateTime.UtcNow;
+                ResetManagedReconnectState();
                 string originalText = e.Result.Text;
                 string translatedText = e.Result.Translations.ContainsKey(_config.TargetLanguage)
                     ? e.Result.Translations[_config.TargetLanguage]
@@ -249,12 +259,14 @@ namespace TrueFluentPro.Services
         {
             if (e.Reason == CancellationReason.Error)
             {
-                OnStatusChanged?.Invoke(this, $"翻译错误: {e.ErrorCode}, {e.ErrorDetails}");
+                OnStatusChanged?.Invoke(this, $"语音服务连接异常：{e.ErrorCode}。系统将尝试自动恢复。{(string.IsNullOrWhiteSpace(e.ErrorDetails) ? string.Empty : $" 详情：{e.ErrorDetails}")}");
+                ScheduleManagedReconnect($"检测到连接异常（{e.ErrorCode}）", immediateFirstAttempt: true);
             }
         }
 
         private void OnSessionStarted(object? sender, SessionEventArgs e)
         {
+            ResetManagedReconnectState();
             var inputName = GetInputDisplayName();
             var statusMessage = _config.FilterModalParticles
                 ? $"正在监听：{inputName}... (已启用语气助词过滤) (点击停止退出)"
@@ -674,8 +686,6 @@ namespace TrueFluentPro.Services
                         }
                     }
 
-                    OnStatusChanged?.Invoke(this,
-                        $"已热切换音频路由：识别(回环={(recLoopback ? "开" : "关")},麦克风={(recMic ? "开" : "关")})");
                     PublishDiagnostics(force: true);
                 }
                 catch (Exception ex)
@@ -722,8 +732,6 @@ namespace TrueFluentPro.Services
                 }
 
                 _auditLog?.Invoke($"[翻译流] 识别热重建 完成 新拓扑[回环:{newSource.HasLoopbackCapture},麦:{newSource.HasMicCapture}]");
-                OnStatusChanged?.Invoke(this,
-                    $"识别采集已实时切换：回环={(enableLoopback ? "开" : "关")}, 麦克风={(enableMic ? "开" : "关")}");
             }
         }
 
@@ -839,6 +847,7 @@ namespace TrueFluentPro.Services
             {
                 RecordingMode.LoopbackOnly => (true, false),
                 RecordingMode.LoopbackWithMic => (true, true),
+                RecordingMode.MicOnly => (false, true),
                 _ => (true, true)
             };
         }
@@ -1056,7 +1065,7 @@ namespace TrueFluentPro.Services
                         continue;
                     }
 
-                    await RestartRecognitionAsync($"无回显超过 {thresholdSeconds} 秒").ConfigureAwait(false);
+                    ScheduleManagedReconnect($"无回显超过 {thresholdSeconds} 秒", immediateFirstAttempt: true);
                 }
             }, token);
         }
@@ -1069,35 +1078,132 @@ namespace TrueFluentPro.Services
             _noResponseMonitorTask = null;
         }
 
-        private async Task RestartRecognitionAsync(string reason)
+        private void ResetManagedReconnectState()
         {
-            await _restartLock.WaitAsync().ConfigureAwait(false);
-            try
+            lock (_managedReconnectLock)
             {
-                if (!_isTranslating || _recognizer == null || _audioConfig == null)
+                _managedReconnectAttempt = 0;
+                _managedReconnectCts?.Cancel();
+                _managedReconnectCts?.Dispose();
+                _managedReconnectCts = null;
+            }
+        }
+
+        private void ScheduleManagedReconnect(string reason, bool immediateFirstAttempt)
+        {
+            if (!_isTranslating || _audioConfig == null)
+            {
+                return;
+            }
+
+            CancellationTokenSource reconnectCts;
+            int attempt;
+            int delaySeconds;
+
+            lock (_managedReconnectLock)
+            {
+                if (_managedReconnectCts != null)
                 {
                     return;
                 }
 
+                attempt = _managedReconnectAttempt + 1;
+                delaySeconds = GetReconnectDelaySeconds(attempt, immediateFirstAttempt);
+                reconnectCts = new CancellationTokenSource();
+                _managedReconnectCts = reconnectCts;
+                _managedReconnectAttempt = attempt;
+            }
+
+            var status = delaySeconds > 0
+                ? $"{reason}，{delaySeconds} 秒后将进行第 {attempt} 次重试。"
+                : $"{reason}，正在进行第 {attempt} 次重试。";
+            OnStatusChanged?.Invoke(this, status);
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    if (delaySeconds > 0)
+                    {
+                        await Task.Delay(TimeSpan.FromSeconds(delaySeconds), reconnectCts.Token).ConfigureAwait(false);
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
+                finally
+                {
+                    lock (_managedReconnectLock)
+                    {
+                        if (ReferenceEquals(_managedReconnectCts, reconnectCts))
+                        {
+                            _managedReconnectCts?.Dispose();
+                            _managedReconnectCts = null;
+                        }
+                    }
+                }
+
+                var success = await RestartRecognitionAsync($"{reason}（第 {attempt} 次）").ConfigureAwait(false);
+                if (!success && _isTranslating)
+                {
+                    ScheduleManagedReconnect(reason, immediateFirstAttempt: false);
+                }
+            });
+        }
+
+        private int GetReconnectDelaySeconds(int attempt, bool immediateFirstAttempt)
+        {
+            var baseDelay = Math.Max(2, _config.NoResponseRestartSeconds);
+            if (attempt <= 1 && immediateFirstAttempt)
+            {
+                return 0;
+            }
+
+            if (attempt <= 1)
+            {
+                return baseDelay;
+            }
+
+            var factor = (int)Math.Pow(2, Math.Min(attempt - 2, 3));
+            return Math.Min(baseDelay * factor, 30);
+        }
+
+        private async Task<bool> RestartRecognitionAsync(string reason)
+        {
+            await _restartLock.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                if (!_isTranslating || _audioConfig == null)
+                {
+                    return false;
+                }
+
                 OnReconnectTriggered?.Invoke(this, reason);
-                OnStatusChanged?.Invoke(this, $"{reason}，正在重连...");
+                OnStatusChanged?.Invoke(this, $"{reason}，正在恢复语音连接...");
 
                 try
                 {
-                    await _recognizer.StopContinuousRecognitionAsync().ConfigureAwait(false);
+                    if (_recognizer != null)
+                    {
+                        await _recognizer.StopContinuousRecognitionAsync().ConfigureAwait(false);
+                    }
                 }
                 catch
                 {
                     // ignore stop failures
                 }
 
-                _recognizer.Recognized -= OnRecognized;
-                _recognizer.Recognizing -= OnRecognizing;
-                _recognizer.Canceled -= OnCanceled;
-                _recognizer.SessionStarted -= OnSessionStarted;
-                _recognizer.SessionStopped -= OnSessionStopped;
+                if (_recognizer != null)
+                {
+                    _recognizer.Recognized -= OnRecognized;
+                    _recognizer.Recognizing -= OnRecognizing;
+                    _recognizer.Canceled -= OnCanceled;
+                    _recognizer.SessionStarted -= OnSessionStarted;
+                    _recognizer.SessionStopped -= OnSessionStopped;
 
-                _recognizer.Dispose();
+                    _recognizer.Dispose();
+                }
                 _recognizer = null;
 
                 var speechConfig = CreateSpeechConfig();
@@ -1111,10 +1217,14 @@ namespace TrueFluentPro.Services
 
                 await _recognizer.StartContinuousRecognitionAsync().ConfigureAwait(false);
                 _lastRecognitionUtc = DateTime.UtcNow;
+                OnStatusChanged?.Invoke(this, "语音连接已恢复，翻译继续进行。"
+                );
+                return true;
             }
             catch (Exception ex)
             {
-                OnStatusChanged?.Invoke(this, $"重连失败: {ex.Message}");
+                OnStatusChanged?.Invoke(this, $"本次重试未成功：{ex.Message}");
+                return false;
             }
             finally
             {
@@ -1218,6 +1328,8 @@ namespace TrueFluentPro.Services
                     _audioConfig = null;
                 }
             }
+
+            ResetManagedReconnectState();
 
             if (!string.IsNullOrWhiteSpace(wavPath) && _config.EnableRecording)
             {

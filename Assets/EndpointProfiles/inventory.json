@@ -1,0 +1,179 @@
+{
+  "description": "终结点资料包改造前的现状盘点：哪些字段经常变化、当前落盘在哪里、主要散落在哪些代码文件。该文件面向开发者，用于后续继续把差异性从主程序抽离。",
+  "options": [
+    {
+      "key": "profile-id",
+      "displayName": "资料包标识",
+      "description": "终结点实例现在开始保存 ProfileId，用来把用户实例和内置厂商资料包真正关联起来。",
+      "persistedToUserConfig": true,
+      "developerManaged": true,
+      "currentFields": ["AiEndpoint.ProfileId", "AiConfig.ProfileId", "TransferAiEndpoint.ProfileId"],
+      "relatedProfiles": ["builtin.microsoft.azure-openai", "builtin.microsoft.apim-gateway", "builtin.openai.compatible"]
+    },
+    {
+      "key": "endpoint-type",
+      "displayName": "终结点分类",
+      "description": "AOAI / APIM / OpenAI Compatible 的模板切换入口，决定默认认证、默认协议路线与 UI 展示。",
+      "persistedToUserConfig": true,
+      "developerManaged": true,
+      "currentFields": ["AiEndpoint.EndpointType", "TransferAiEndpoint.EndpointType"],
+      "relatedProfiles": ["builtin.microsoft.azure-openai", "builtin.microsoft.apim-gateway", "builtin.openai.compatible"]
+    },
+    {
+      "key": "auth-mode",
+      "displayName": "认证模式",
+      "description": "是否使用 API Key 或 AAD；当前默认值由模板注入，运行时又在多个服务里参与判定。",
+      "persistedToUserConfig": true,
+      "developerManaged": true,
+      "currentFields": ["AiEndpoint.AuthMode", "AiEndpoint.ApiKeyHeaderMode", "AiEndpoint.AzureTenantId", "AiEndpoint.AzureClientId"],
+      "relatedProfiles": ["builtin.microsoft.azure-openai", "builtin.microsoft.apim-gateway", "builtin.openai.compatible"]
+    },
+    {
+      "key": "text-route",
+      "displayName": "文本接口路线",
+      "description": "Auto / /v1/chat/completions / /chat/completions / /responses；现阶段是最典型的厂商差异点之一。",
+      "persistedToUserConfig": true,
+      "developerManaged": true,
+      "currentFields": ["AiEndpoint.TextApiProtocolMode"],
+      "relatedProfiles": ["builtin.microsoft.azure-openai", "builtin.microsoft.apim-gateway", "builtin.openai.compatible"]
+    },
+    {
+      "key": "image-route",
+      "displayName": "图片接口路线",
+      "description": "Auto / /v1/images / /images；APIM 还额外涉及 deployment 风格候选路由。",
+      "persistedToUserConfig": true,
+      "developerManaged": true,
+      "currentFields": ["AiEndpoint.ImageApiRouteMode", "AiModelEntry.DeploymentName"],
+      "relatedProfiles": ["builtin.microsoft.azure-openai", "builtin.microsoft.apim-gateway", "builtin.openai.compatible"]
+    },
+    {
+      "key": "api-version",
+      "displayName": "API 版本",
+      "description": "当前只有 Azure deployments 文本路径会在留空时回退到默认版本，其它链路尽量保留显式值。",
+      "persistedToUserConfig": true,
+      "developerManaged": true,
+      "currentFields": ["AiEndpoint.ApiVersion"],
+      "relatedProfiles": ["builtin.microsoft.azure-openai", "builtin.microsoft.apim-gateway"]
+    },
+    {
+      "key": "model-discovery",
+      "displayName": "模型发现候选路径",
+      "description": "当前模型发现已可优先读取资料包中的候选 URL 列表；OpenAI Compatible / APIM 都可以通过 profile 声明候选路径。",
+      "persistedToUserConfig": false,
+      "developerManaged": true,
+      "currentFields": ["AiEndpoint.BaseUrl", "AiEndpoint.ApiKeyHeaderMode", "EndpointProfileDefinition.ModelDiscovery.UrlCandidates"],
+      "relatedProfiles": ["builtin.microsoft.apim-gateway", "builtin.openai.compatible"]
+    },
+    {
+      "key": "route-recipes",
+      "displayName": "资料包路由配方",
+      "description": "内置 profile 现已可声明文本、图片、视频的候选 URL 列表，并由运行时代码、详情预览与测试预览统一消费。",
+      "persistedToUserConfig": false,
+      "developerManaged": true,
+      "currentFields": [
+        "EndpointProfileDefinition.Text.DeploymentChatCompletionsUrlCandidates",
+        "EndpointProfileDefinition.Text.ResponsesUrlCandidates",
+        "EndpointProfileDefinition.Text.ChatCompletionsV1UrlCandidates",
+        "EndpointProfileDefinition.Text.ChatCompletionsRawUrlCandidates",
+        "EndpointProfileDefinition.Image.GenerateUrlCandidates",
+        "EndpointProfileDefinition.Image.EditUrlCandidates",
+        "EndpointProfileDefinition.Image.DeploymentGenerateUrlCandidates",
+        "EndpointProfileDefinition.Video.CreateUrlCandidates",
+        "EndpointProfileDefinition.Video.PollUrlCandidates",
+        "EndpointProfileDefinition.Video.DownloadUrlCandidates",
+        "EndpointProfileDefinition.Video.DownloadVideoContentUrlCandidates",
+        "EndpointProfileDefinition.Video.JobsCreateUrlCandidates",
+        "EndpointProfileDefinition.Video.JobsPollUrlCandidates",
+        "EndpointProfileDefinition.Video.JobsDownloadUrlCandidates",
+        "EndpointProfileDefinition.Video.GenerationDownloadUrlCandidates",
+        "EndpointProfileDefinition.Video.GenerationDownloadVideoContentUrlCandidates"
+      ],
+      "relatedProfiles": ["builtin.microsoft.azure-openai", "builtin.microsoft.apim-gateway", "builtin.openai.compatible"]
+    },
+    {
+      "key": "runtime-resolution",
+      "displayName": "运行时解析",
+      "description": "最终请求不是直接从 UI 字段读，而是通过 Endpoint + ModelReference 解析得到。",
+      "persistedToUserConfig": false,
+      "developerManaged": true,
+      "currentFields": ["ModelRuntimeResolution.EndpointType", "ModelRuntimeResolution.ApiVersion", "ModelRuntimeResolution.EffectiveDeploymentName"],
+      "relatedProfiles": ["builtin.microsoft.azure-openai", "builtin.microsoft.apim-gateway", "builtin.openai.compatible"]
+    },
+    {
+      "key": "import-export",
+      "displayName": "导入导出映射",
+      "description": "终结点类型、模型清单和协议选项都会经过导入导出模型再次映射，属于容易遗漏的散点。",
+      "persistedToUserConfig": true,
+      "developerManaged": true,
+      "currentFields": ["TransferAiEndpoint.EndpointType", "TransferAiEndpoint.ApiKeyHeaderMode", "TransferAiEndpoint.TextApiProtocolMode", "TransferAiEndpoint.ImageApiRouteMode"],
+      "relatedProfiles": ["builtin.microsoft.azure-openai", "builtin.microsoft.apim-gateway", "builtin.openai.compatible"]
+    }
+  ],
+  "hotspots": [
+    {
+      "filePath": "Models/AiEndpoint.cs",
+      "summary": "终结点实例主模型；当前终端用户会保存的大部分厂商差异字段都在这里。",
+      "optionKeys": ["profile-id", "endpoint-type", "auth-mode", "text-route", "image-route", "api-version"]
+    },
+    {
+      "filePath": "Models/AiConfig.cs",
+      "summary": "历史兼容与运行时请求模型的桥接层，仍承载部分终结点级差异。",
+      "optionKeys": ["profile-id", "endpoint-type", "auth-mode", "text-route", "image-route", "api-version"]
+    },
+    {
+      "filePath": "Models/SettingsTransferPackage.cs",
+      "summary": "导入导出 DTO，负责把终结点差异写入 / 读回资源包 JSON。",
+      "optionKeys": ["profile-id", "import-export", "endpoint-type", "auth-mode", "text-route", "image-route"]
+    },
+    {
+      "filePath": "Services/EndpointTemplateService.cs",
+      "summary": "当前硬编码模板入口；是这次资料包化改造的首个替换点。",
+      "optionKeys": ["endpoint-type", "auth-mode", "text-route", "image-route", "api-version"]
+    },
+    {
+      "filePath": "Services/AiEndpointModelDiscoveryService.cs",
+      "summary": "模型拉取候选路径与认证头策略仍散落在这里，但 OpenAI Compatible / APIM 模型发现都已开始优先吃 profile 配置。",
+      "optionKeys": ["profile-id", "model-discovery", "auth-mode"]
+    },
+    {
+      "filePath": "Services/AiInsightService.cs",
+      "summary": "文本 URL 组装、responses/chat-completions 映射、APIM subscription-key query fallback 和文本请求体策略都在这里。",
+      "optionKeys": ["profile-id", "text-route", "route-recipes", "api-version", "auth-mode"]
+    },
+    {
+      "filePath": "Services/AiMediaServiceBase.cs",
+      "summary": "图片 / 视频 URL 候选、APIM query fallback、认证头自动规则的集中散点；当前三类内置终结点的文本/图片/视频路线都已可由 profile recipe 驱动。",
+      "optionKeys": ["profile-id", "image-route", "route-recipes", "auth-mode", "api-version"]
+    },
+    {
+      "filePath": "Services/AiImageGenService.cs",
+      "summary": "图片生成/编辑实际执行层，负责按 profile 候选 URL 尝试、必要时切换下一条路线，并在 APIM 下支持 subscription-key query retry。",
+      "optionKeys": ["profile-id", "image-route", "route-recipes", "auth-mode", "api-version"]
+    },
+    {
+      "filePath": "Services/AiVideoGenService.cs",
+      "summary": "视频创建、轮询、下载的多候选 URL 与回退规则；现在会按 profile 候选顺序尝试，不再只为 APIM 单独维护一套。",
+      "optionKeys": ["profile-id", "route-recipes", "auth-mode", "api-version"]
+    },
+    {
+      "filePath": "Services/SettingsImportExportService.cs",
+      "summary": "终结点实例与导入导出 DTO 的双向映射点。",
+      "optionKeys": ["profile-id", "import-export", "endpoint-type", "auth-mode", "text-route", "image-route"]
+    },
+    {
+      "filePath": "Services/IModelRuntimeResolver.cs",
+      "summary": "运行时解析后透出的最终请求字段集合，是未来 recipe 执行引擎的重要桥位。",
+      "optionKeys": ["profile-id", "runtime-resolution", "endpoint-type", "api-version"]
+    },
+    {
+      "filePath": "ViewModels/Settings/EndpointsSectionVM.cs",
+      "summary": "终结点创建、切换类型、保存和高级选项变更的 UI 收口点。",
+      "optionKeys": ["endpoint-type", "auth-mode", "text-route", "image-route", "api-version"]
+    },
+    {
+      "filePath": "ViewModels/Settings/InsightSectionVM.cs",
+      "summary": "设置页测试连接与请求预览入口；现在也会跟随 profile 生成三类内置终结点的文本候选 URL 与认证说明。",
+      "optionKeys": ["profile-id", "text-route", "route-recipes", "auth-mode", "api-version"]
+    }
+  ]
+}

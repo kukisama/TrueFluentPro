@@ -13,21 +13,6 @@
             <Separator/>
             <TextBlock Text="管理 Azure 语音服务订阅" Foreground="Gray" FontSize="12"/>
 
-            <!-- 当前订阅选择 (仍绑定 ConfigVM) -->
-            <StackPanel Orientation="Horizontal" Spacing="8">
-                <TextBlock Text="当前订阅:" VerticalAlignment="Center"/>
-                <ComboBox MinWidth="200"
-                          ItemsSource="{Binding $parent[views:SettingsView].DataContext.ConfigVM.SubscriptionNames}"
-                          SelectedIndex="{Binding $parent[views:SettingsView].DataContext.ConfigVM.ActiveSubscriptionIndex, Mode=TwoWay}"
-                          IsEnabled="{Binding $parent[views:SettingsView].DataContext.ConfigVM.IsConfigurationEnabled}"/>
-                <Ellipse Width="12" Height="12" StrokeThickness="2"
-                         VerticalAlignment="Center" Margin="4,0"
-                         Fill="{Binding $parent[views:SettingsView].DataContext.ConfigVM.SubscriptionLampFill}"
-                         Stroke="{Binding $parent[views:SettingsView].DataContext.ConfigVM.SubscriptionLampStroke}"
-                         Opacity="{Binding $parent[views:SettingsView].DataContext.ConfigVM.SubscriptionLampOpacity}"
-                         ToolTip.Tip="{Binding $parent[views:SettingsView].DataContext.ConfigVM.SubscriptionValidationStatusMessage}"/>
-            </StackPanel>
-
             <!-- 订阅 CRUD -->
             <Grid ColumnDefinitions="190,*" ColumnSpacing="12">
                 <Border Grid.Column="0" BorderBrush="Gray" BorderThickness="1" Margin="0,0,4,0">
@@ -62,13 +47,20 @@
                     </StackPanel>
                     <StackPanel Spacing="5">
                         <TextBlock Text="订阅密钥"/>
-                        <TextBox Text="{Binding SubscriptionEditorKey, Mode=TwoWay}"
-                                 Watermark="输入 Azure 语音服务订阅密钥"
-                                 MaxWidth="420" Width="420"
-                                 HorizontalAlignment="Left"
-                                 PasswordChar="*"
-                                 RevealPassword="{Binding IsChecked, ElementName=SubShowPwdCheckBox}"/>
-                        <CheckBox Name="SubShowPwdCheckBox" Content="显示密钥" FontSize="10" Margin="0,2,0,0"/>
+                        <Grid ColumnDefinitions="420,Auto" ColumnSpacing="8" HorizontalAlignment="Left">
+                            <TextBox Grid.Column="0"
+                                     Text="{Binding SubscriptionEditorKey, Mode=TwoWay}"
+                                     Watermark="输入 Azure 语音服务订阅密钥"
+                                     MaxWidth="420" Width="420"
+                                     HorizontalAlignment="Left"
+                                     PasswordChar="*"/>
+                            <Button Grid.Column="1"
+                                    Content="⧉"
+                                    Width="36"
+                                    Height="32"
+                                    ToolTip.Tip="复制密钥"
+                                    Click="CopySubscriptionKey_Click"/>
+                        </Grid>
                     </StackPanel>
                     <StackPanel Spacing="5">
                         <TextBlock Text="终结点"/>
@@ -76,23 +68,20 @@
                                  Watermark="例如: https://southeastasia.api.cognitive.microsoft.com/"
                                  MaxWidth="420" Width="420"
                                  HorizontalAlignment="Left"/>
-                        <TextBlock FontSize="10" Foreground="Gray"
-                                   Text="国际版: https://{区域}.api.cognitive.microsoft.com/&#x0a;中国版: https://{区域}.api.cognitive.azure.cn/"
-                                   TextWrapping="Wrap"/>
                         <TextBlock Text="{Binding SubscriptionEditorRegionHint}"
                                    FontSize="10" Foreground="DarkGreen" TextWrapping="Wrap"/>
                     </StackPanel>
-                    <StackPanel Orientation="Horizontal" Spacing="5" Margin="0,10,0,0" HorizontalAlignment="Left">
-                        <Button Content="添加" Width="60" Command="{Binding AddSubscriptionCommand}"/>
-                        <Button Content="更新" Width="60" Command="{Binding UpdateSubscriptionCommand}"/>
-                        <Button Content="删除" Width="60" Command="{Binding DeleteSubscriptionCommand}"/>
-                        <Button Content="测试" Width="60" Command="{Binding TestSubscriptionCommand}"/>
+                    <StackPanel Orientation="Horizontal" Spacing="5" Margin="0,4,0,0" HorizontalAlignment="Left">
+                        <Button Content="添加" Width="60" Height="32" Command="{Binding AddSubscriptionCommand}"/>
+                        <Button Content="更新" Width="60" Height="32" Command="{Binding UpdateSubscriptionCommand}"/>
+                        <Button Content="删除" Width="60" Height="32" Command="{Binding DeleteSubscriptionCommand}"/>
+                        <Button Content="测试" Width="60" Height="32" Command="{Binding TestSubscriptionCommand}"/>
+                        <Button Content="测试全部" Width="92" Height="32" Command="{Binding TestAllSubscriptionsCommand}"/>
                     </StackPanel>
-                    <TextBlock Text="{Binding SubscriptionMessage}" FontSize="11" Foreground="Gray" TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding SubscriptionMessage}" FontSize="11" Foreground="Gray" TextWrapping="Wrap"
+                               Margin="0,4,0,0"/>
 
-                    <Separator Margin="0,8,0,4"/>
-                    <Button Content="全部测试速度" Padding="12,6" Command="{Binding TestAllSubscriptionsCommand}" HorizontalAlignment="Left"/>
-                    <TextBlock Text="{Binding TestAllResult}" FontSize="11" Foreground="Gray"
+                    <TextBlock Text="{Binding TestAllResult}" FontSize="11" Foreground="Gray" Margin="0,2,0,0"
                                TextWrapping="Wrap" IsVisible="{Binding ShowTestAllResult}"/>
                 </StackPanel>
             </Grid>

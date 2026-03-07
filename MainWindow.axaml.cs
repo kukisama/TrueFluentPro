@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using TrueFluentPro.Services;
 using TrueFluentPro.ViewModels;
+using TrueFluentPro.Models;
 using System;
 using FluentAvalonia.UI.Controls;
 
@@ -47,6 +48,12 @@ public partial class MainWindow : Window
     protected override void OnDataContextChanged(EventArgs e)
     {
         base.OnDataContextChanged(e);
+
+        if (_viewModel != null)
+        {
+            _viewModel.Settings.ConfigSaved -= OnSettingsConfigSaved;
+        }
+
         _viewModel = DataContext as MainWindowViewModel;
         if (_viewModel != null)
         {
@@ -55,6 +62,8 @@ public partial class MainWindow : Window
                 NavView.SelectedItem = NavView.SettingsItem;
                 ShowPage(MainWindowViewModel.NavTagSettings);
             };
+
+            _viewModel.Settings.ConfigSaved += OnSettingsConfigSaved;
         }
     }
 
@@ -189,6 +198,19 @@ public partial class MainWindow : Window
                 config.MediaGenConfig,
                 config.Endpoints);
         }
+    }
+
+    private void OnSettingsConfigSaved(AzureSpeechConfig config)
+    {
+        if (!_mediaStudioInitialized)
+        {
+            return;
+        }
+
+        MediaStudioViewPage.UpdateConfiguration(
+            config.AiConfig ?? new TrueFluentPro.Models.AiConfig(),
+            config.MediaGenConfig,
+            config.Endpoints);
     }
 
 }

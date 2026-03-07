@@ -1,0 +1,36 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        d:DesignWidth="760"
+        d:DesignHeight="620"
+        x:Class="TrueFluentPro.Views.EndpointInfoDialog"
+        Title="终结点详细信息"
+        Width="760"
+        Height="620"
+        WindowStartupLocation="CenterOwner">
+
+    <Grid RowDefinitions="Auto,*,Auto" Margin="18" RowSpacing="12">
+        <StackPanel Grid.Row="0" Spacing="4">
+            <TextBlock x:Name="TitleTextBlock" FontSize="18" FontWeight="Bold"/>
+            <TextBlock Text="这里展示当前终结点模板推导出的认证方式、接口路线和 URL 示例，不会修改配置。"
+                       Foreground="Gray"
+                       TextWrapping="Wrap"/>
+        </StackPanel>
+
+        <TextBox Grid.Row="1"
+                 x:Name="DetailsTextBox"
+                 IsReadOnly="True"
+                 AcceptsReturn="True"
+                 TextWrapping="Wrap"
+                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                 ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                 FontFamily="Consolas"/>
+
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10">
+            <Button x:Name="TestAllButton" Content="一键测试" Width="96" IsVisible="False"/>
+            <Button x:Name="CloseButton" Content="关闭" Width="96" IsDefault="True"/>
+        </StackPanel>
+    </Grid>
+</Window>

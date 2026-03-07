@@ -3,25 +3,16 @@ using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
-using Avalonia.Platform.Storage;
-using System.IO;
-using System.Text.Encodings.Web;
-using System.Text.Json;
-using TrueFluentPro.Models;
-using TrueFluentPro.ViewModels;
 
 namespace TrueFluentPro.Views;
 
 public partial class SettingsView : UserControl
 {
-    private bool _suppressScrollSync;
+    private const double SectionTopPadding = 12;
+
     private Control[]? _sectionControls;
-    private static readonly JsonSerializerOptions TransferJsonOptions = new()
-    {
-        WriteIndented = true,
-        PropertyNameCaseInsensitive = true,
-        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
-    };
+    private bool _isUpdatingSelectionFromScroll;
+    private double? _pendingNavScrollOffsetY;
 
     public SettingsView()
     {
@@ -34,7 +25,7 @@ public partial class SettingsView : UserControl
 
         // 缓存所有 Section UserControl
         _sectionControls = SectionsPanel.Children
-            .OfType<UserControl>()
+            .OfType<Control>()
             .Where(c => c.Name?.StartsWith("Section_") == true)
             .ToArray<Control>();
 
@@ -46,7 +37,7 @@ public partial class SettingsView : UserControl
     /// <summary>点击左侧导航 → 滚动到对应分区</summary>
     private void OnNavSectionChanged(object? sender, SelectionChangedEventArgs e)
     {
-        if (_suppressScrollSync) return;
+        if (_isUpdatingSelectionFromScroll) return;
         if (e.AddedItems.Count == 0) return;
 
         ResetTransientSectionStates();
@@ -66,55 +57,35 @@ public partial class SettingsView : UserControl
         if (transform != null)
         {
             var pos = transform.Value.Transform(new Point(0, 0));
-            var newOffset = SettingsScroller.Offset.Y + pos.Y;
-            _suppressScrollSync = true;
-            SettingsScroller.Offset = new Avalonia.Vector(SettingsScroller.Offset.X, Math.Max(0, newOffset));
-            _suppressScrollSync = false;
+            var requestedOffset = SettingsScroller.Offset.Y + pos.Y - SectionTopPadding;
+            var maxOffset = Math.Max(0, SettingsScroller.Extent.Height - SettingsScroller.Bounds.Height);
+            var actualOffset = Math.Clamp(requestedOffset, 0, maxOffset);
+            _pendingNavScrollOffsetY = actualOffset;
+            SettingsScroller.Offset = new Avalonia.Vector(SettingsScroller.Offset.X, actualOffset);
         }
     }
 
     /// <summary>右侧滚动 → 更新左侧导航高亮</summary>
     private void OnSettingsScrollChanged(object? sender, ScrollChangedEventArgs e)
     {
-        if (_sectionControls == null || _sectionControls.Length == 0) return;
-
-        Control? topVisible = null;
-        double bestY = double.NegativeInfinity;
-
-        foreach (var section in _sectionControls)
+        if (_pendingNavScrollOffsetY.HasValue)
         {
-            var transform = section.TransformToVisual(SettingsScroller);
-            if (transform == null) continue;
+            var pendingOffsetY = _pendingNavScrollOffsetY.Value;
+            _pendingNavScrollOffsetY = null;
 
-            var pos = transform.Value.Transform(new Point(0, 0));
-            if (pos.Y <= 40 && pos.Y > bestY)
+            if (Math.Abs(SettingsScroller.Offset.Y - pendingOffsetY) <= 0.5)
             {
-                topVisible = section;
-                bestY = pos.Y;
+                return;
             }
         }
 
-        if (topVisible == null)
-        {
-            foreach (var section in _sectionControls)
-            {
-                var transform = section.TransformToVisual(SettingsScroller);
-                if (transform == null) continue;
-                var pos = transform.Value.Transform(new Point(0, 0));
-                if (pos.Y >= 0)
-                {
-                    topVisible = section;
-                    break;
-                }
-            }
-        }
-
-        if (topVisible == null) return;
+        var activeSection = GetActiveSectionForViewport();
+        if (activeSection == null) return;
 
         var targetIndex = -1;
         for (int i = 0; i < NavListBox.ItemCount; i++)
         {
-            if (NavListBox.ContainerFromIndex(i) is ListBoxItem li && li.Tag as string == topVisible.Name)
+            if (NavListBox.ContainerFromIndex(i) is ListBoxItem li && li.Tag as string == activeSection.Name)
             {
                 targetIndex = i;
                 break;
@@ -124,129 +95,69 @@ public partial class SettingsView : UserControl
         if (targetIndex >= 0 && NavListBox.SelectedIndex != targetIndex)
         {
             ResetTransientSectionStates();
-            _suppressScrollSync = true;
+            _isUpdatingSelectionFromScroll = true;
             NavListBox.SelectedIndex = targetIndex;
-            _suppressScrollSync = false;
+            _isUpdatingSelectionFromScroll = false;
         }
+    }
+
+    private Control? GetActiveSectionForViewport()
+    {
+        if (_sectionControls == null || _sectionControls.Length == 0)
+        {
+            return null;
+        }
+
+        var viewportHeight = SettingsScroller.Bounds.Height;
+        if (viewportHeight <= 0)
+        {
+            return _sectionControls[0];
+        }
+
+        var remainingScroll = SettingsScroller.Extent.Height - viewportHeight - SettingsScroller.Offset.Y;
+        var isNearBottom = remainingScroll <= 24;
+        var anchorY = SectionTopPadding;
+
+        Control? firstVisibleSection = null;
+        Control? lastVisibleSection = null;
+
+        foreach (var section in _sectionControls)
+        {
+            var transform = section.TransformToVisual(SettingsScroller);
+            if (transform == null)
+            {
+                continue;
+            }
+
+            var top = transform.Value.Transform(new Point(0, 0)).Y;
+            var bottom = top + section.Bounds.Height;
+            var isVisible = bottom > 0 && top < viewportHeight;
+
+            if (!isVisible)
+            {
+                continue;
+            }
+
+            firstVisibleSection ??= section;
+            lastVisibleSection = section;
+
+            if (top <= anchorY && bottom > anchorY)
+            {
+                return section;
+            }
+        }
+
+        if (isNearBottom && lastVisibleSection != null)
+        {
+            return lastVisibleSection;
+        }
+
+        return firstVisibleSection ?? _sectionControls.LastOrDefault();
     }
 
     private void ResetTransientSectionStates()
     {
         Section_Subscription?.ResetTransientUiState();
         Section_Endpoints?.ResetTransientUiState();
-    }
-
-    private async void OnExportSettingsPackageClick(object? sender, RoutedEventArgs e)
-    {
-        if (DataContext is not MainWindowViewModel vm)
-        {
-            return;
-        }
-
-        var topLevel = TopLevel.GetTopLevel(this);
-        var provider = topLevel?.StorageProvider;
-        if (provider == null)
-        {
-            vm.StatusMessage = "导出失败：无法获取文件保存能力";
-            return;
-        }
-
-        try
-        {
-            var package = vm.Settings.CreateExportPackage();
-            var targetFile = await provider.SaveFilePickerAsync(new FilePickerSaveOptions
-            {
-                Title = "导出资源配置",
-                SuggestedFileName = $"truefluentpro-resource-config-{DateTime.Now:yyyyMMdd-HHmmss}",
-                DefaultExtension = "json",
-                FileTypeChoices = new[]
-                {
-                    new FilePickerFileType("JSON 文件")
-                    {
-                        Patterns = new[] { "*.json" }
-                    }
-                }
-            });
-
-            if (targetFile == null)
-            {
-                return;
-            }
-
-            await using var stream = await targetFile.OpenWriteAsync();
-            await JsonSerializer.SerializeAsync(stream, package, TransferJsonOptions);
-
-            var filePath = targetFile.TryGetLocalPath() ?? targetFile.Name ?? "已选文件";
-            vm.StatusMessage = $"资源配置已导出：{filePath}";
-        }
-        catch (Exception ex)
-        {
-            vm.StatusMessage = $"导出失败: {ex.Message}";
-        }
-    }
-
-    private async void OnImportSettingsPackageClick(object? sender, RoutedEventArgs e)
-    {
-        if (DataContext is not MainWindowViewModel vm)
-        {
-            return;
-        }
-
-        var topLevel = TopLevel.GetTopLevel(this);
-        var provider = topLevel?.StorageProvider;
-        if (provider == null)
-        {
-            vm.StatusMessage = "导入失败：无法获取文件选择能力";
-            return;
-        }
-
-        try
-        {
-            var files = await provider.OpenFilePickerAsync(new FilePickerOpenOptions
-            {
-                Title = "导入资源配置",
-                AllowMultiple = false,
-                FileTypeFilter = new[]
-                {
-                    new FilePickerFileType("JSON 文件")
-                    {
-                        Patterns = new[] { "*.json" }
-                    }
-                }
-            });
-
-            if (files == null || files.Count == 0)
-            {
-                return;
-            }
-
-            var selectedFile = files[0];
-            SettingsTransferPackage? package;
-            var localPath = selectedFile.TryGetLocalPath();
-            if (!string.IsNullOrWhiteSpace(localPath) && File.Exists(localPath))
-            {
-                var json = await File.ReadAllTextAsync(localPath);
-                package = JsonSerializer.Deserialize<SettingsTransferPackage>(json, TransferJsonOptions);
-            }
-            else
-            {
-                await using var stream = await selectedFile.OpenReadAsync();
-                package = await JsonSerializer.DeserializeAsync<SettingsTransferPackage>(stream, TransferJsonOptions);
-            }
-
-            if (package == null)
-            {
-                throw new InvalidOperationException("文件内容为空或格式不正确。");
-            }
-
-            await vm.Settings.ImportPackageAsync(package);
-
-            var displayName = selectedFile.TryGetLocalPath() ?? selectedFile.Name ?? "所选文件";
-            vm.StatusMessage = $"资源配置已导入并立即生效：{displayName}";
-        }
-        catch (Exception ex)
-        {
-            vm.StatusMessage = $"导入失败: {ex.Message}";
-        }
     }
 }

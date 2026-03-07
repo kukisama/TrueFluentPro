@@ -6,6 +6,7 @@ namespace TrueFluentPro.Models
     public enum RecordingMode
     {
         LoopbackOnly = 0,
-        LoopbackWithMic = 1
+        LoopbackWithMic = 1,
+        MicOnly = 2
     }
 }

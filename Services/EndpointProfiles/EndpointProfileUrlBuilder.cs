@@ -1,0 +1,591 @@
+using System;
+using System.Collections.Generic;
+using TrueFluentPro.Models;
+
+namespace TrueFluentPro.Services.EndpointProfiles;
+
+public static class EndpointProfileUrlBuilder
+{
+    public static IReadOnlyList<string> BuildImageGenerateUrlCandidates(
+        string baseUrl,
+        string? profileId,
+        EndpointApiType endpointType,
+        ImageApiRouteMode configuredMode,
+        string? deploymentName,
+        string? apiVersion)
+    {
+        var normalizedBaseUrl = NormalizeBaseUrl(baseUrl);
+        if (string.IsNullOrWhiteSpace(normalizedBaseUrl))
+            return Array.Empty<string>();
+
+        var urls = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var profile = EndpointProfileRuntimeResolver.Resolve(profileId, endpointType);
+
+        void AddUrl(string? url)
+        {
+            if (string.IsNullOrWhiteSpace(url))
+                return;
+            if (seen.Add(url))
+                urls.Add(url);
+        }
+
+        if (configuredMode == ImageApiRouteMode.Auto)
+        {
+            foreach (var deploymentUrl in BuildConfiguredUrls(
+                         normalizedBaseUrl,
+                         profile?.Image.DeploymentGenerateUrlCandidates,
+                         apiVersion,
+                         profile?.Image.AppendApiVersionWhenPresent == true,
+                         new Dictionary<string, string?> { ["deployment"] = deploymentName }))
+            {
+                AddUrl(deploymentUrl);
+            }
+
+            foreach (var configuredUrl in BuildConfiguredUrls(
+                         normalizedBaseUrl,
+                         profile?.Image.GenerateUrlCandidates,
+                         apiVersion,
+                         profile?.Image.AppendApiVersionWhenPresent == true))
+            {
+                AddUrl(configuredUrl);
+            }
+
+            if (urls.Count > 0)
+                return urls;
+        }
+
+        foreach (var fallbackUrl in BuildFallbackImageUrls(normalizedBaseUrl, endpointType, configuredMode, apiVersion, "generations"))
+            AddUrl(fallbackUrl);
+
+        return urls;
+    }
+
+    public static IReadOnlyList<string> BuildImageGenerateUrlCandidatesForRoute(
+        string baseUrl,
+        string? apiVersion,
+        EndpointApiType endpointType,
+        ImageApiRouteMode routeMode)
+        => BuildFallbackImageUrls(NormalizeBaseUrl(baseUrl), endpointType, routeMode, apiVersion, "generations");
+
+    public static IReadOnlyList<string> BuildImageEditUrlCandidates(
+        string baseUrl,
+        string? profileId,
+        EndpointApiType endpointType,
+        ImageApiRouteMode configuredMode,
+        string? apiVersion)
+    {
+        var normalizedBaseUrl = NormalizeBaseUrl(baseUrl);
+        if (string.IsNullOrWhiteSpace(normalizedBaseUrl))
+            return Array.Empty<string>();
+
+        var urls = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var profile = EndpointProfileRuntimeResolver.Resolve(profileId, endpointType);
+
+        void AddUrl(string? url)
+        {
+            if (string.IsNullOrWhiteSpace(url))
+                return;
+            if (seen.Add(url))
+                urls.Add(url);
+        }
+
+        if (configuredMode == ImageApiRouteMode.Auto)
+        {
+            foreach (var configuredUrl in BuildConfiguredUrls(
+                         normalizedBaseUrl,
+                         profile?.Image.EditUrlCandidates,
+                         apiVersion,
+                         profile?.Image.AppendApiVersionWhenPresent == true))
+            {
+                AddUrl(configuredUrl);
+            }
+
+            if (urls.Count > 0)
+                return urls;
+        }
+
+        foreach (var fallbackUrl in BuildFallbackImageUrls(normalizedBaseUrl, endpointType, configuredMode, apiVersion, "edits"))
+            AddUrl(fallbackUrl);
+
+        return urls;
+    }
+
+    public static TextApiProtocolMode GetEffectiveTextProtocol(
+        string? profileId,
+        EndpointApiType endpointType,
+        TextApiProtocolMode configuredMode,
+        bool isAzureEndpoint)
+    {
+        if (isAzureEndpoint)
+            return TextApiProtocolMode.Auto;
+
+        if (configuredMode != TextApiProtocolMode.Auto)
+            return configuredMode;
+
+        var profile = EndpointProfileRuntimeResolver.Resolve(profileId, endpointType);
+        if (profile != null
+            && Enum.TryParse<TextApiProtocolMode>(profile.Text.PreferredProtocol, ignoreCase: true, out var preferred)
+            && preferred != TextApiProtocolMode.Auto)
+        {
+            return preferred;
+        }
+
+        return endpointType == EndpointApiType.ApiManagementGateway
+            ? TextApiProtocolMode.Responses
+            : TextApiProtocolMode.ChatCompletionsV1;
+    }
+
+    public static string GetEffectiveTextApiVersion(
+        string? apiVersion,
+        bool isAzureEndpoint)
+    {
+        if (!string.IsNullOrWhiteSpace(apiVersion))
+            return apiVersion.Trim();
+
+        return isAzureEndpoint ? "2024-02-01" : string.Empty;
+    }
+
+    public static IReadOnlyList<string> BuildTextUrlCandidates(
+        string baseUrl,
+        string? profileId,
+        EndpointApiType endpointType,
+        TextApiProtocolMode configuredMode,
+        bool isAzureEndpoint,
+        string? deploymentName,
+        string? apiVersion)
+    {
+        var normalizedBaseUrl = NormalizeBaseUrl(baseUrl);
+        var urls = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var protocol = GetEffectiveTextProtocol(profileId, endpointType, configuredMode, isAzureEndpoint);
+        var effectiveApiVersion = GetEffectiveTextApiVersion(apiVersion, isAzureEndpoint);
+
+        void AddUrl(string? url)
+        {
+            if (string.IsNullOrWhiteSpace(url))
+                return;
+
+            if (seen.Add(url))
+                urls.Add(url);
+        }
+
+        if (string.IsNullOrWhiteSpace(normalizedBaseUrl))
+            return urls;
+
+        var profile = EndpointProfileRuntimeResolver.Resolve(profileId, endpointType);
+        if (isAzureEndpoint)
+        {
+            var deploymentConfiguredUrls = BuildConfiguredUrls(
+                normalizedBaseUrl,
+                profile?.Text.DeploymentChatCompletionsUrlCandidates,
+                effectiveApiVersion,
+                profile?.Text.AppendApiVersionWhenPresent == true,
+                new Dictionary<string, string?>
+                {
+                    ["deployment"] = string.IsNullOrWhiteSpace(deploymentName)
+                        ? "{deployment}"
+                        : deploymentName.Trim()
+                });
+
+            foreach (var configuredUrl in deploymentConfiguredUrls)
+                AddUrl(configuredUrl);
+
+            if (deploymentConfiguredUrls.Count > 0)
+                return urls;
+
+            var deployment = string.IsNullOrWhiteSpace(deploymentName)
+                ? "{deployment}"
+                : deploymentName.Trim();
+
+            AddUrl($"{normalizedBaseUrl}/openai/deployments/{Uri.EscapeDataString(deployment)}/chat/completions?api-version={Uri.EscapeDataString(effectiveApiVersion)}");
+            return urls;
+        }
+
+        var configuredUrls = protocol switch
+        {
+            TextApiProtocolMode.Responses => BuildConfiguredUrls(
+                normalizedBaseUrl,
+                profile?.Text.ResponsesUrlCandidates,
+                effectiveApiVersion,
+                profile?.Text.AppendApiVersionWhenPresent == true),
+            TextApiProtocolMode.ChatCompletionsRaw => BuildConfiguredUrls(
+                normalizedBaseUrl,
+                profile?.Text.ChatCompletionsRawUrlCandidates,
+                effectiveApiVersion,
+                profile?.Text.AppendApiVersionWhenPresent == true),
+            _ => BuildConfiguredUrls(
+                normalizedBaseUrl,
+                profile?.Text.ChatCompletionsV1UrlCandidates,
+                effectiveApiVersion,
+                profile?.Text.AppendApiVersionWhenPresent == true)
+        };
+
+        foreach (var configuredUrl in configuredUrls)
+            AddUrl(configuredUrl);
+
+        if (configuredUrls.Count > 0)
+            return urls;
+
+        string fallbackUrl = protocol switch
+        {
+            TextApiProtocolMode.Responses => normalizedBaseUrl.EndsWith("/responses", StringComparison.OrdinalIgnoreCase)
+                ? normalizedBaseUrl
+                : $"{normalizedBaseUrl}/responses",
+            TextApiProtocolMode.ChatCompletionsRaw => normalizedBaseUrl.EndsWith("/chat/completions", StringComparison.OrdinalIgnoreCase)
+                ? normalizedBaseUrl
+                : $"{normalizedBaseUrl}/chat/completions",
+            _ => normalizedBaseUrl.EndsWith("/v1", StringComparison.OrdinalIgnoreCase)
+                ? $"{normalizedBaseUrl}/chat/completions"
+                : normalizedBaseUrl.EndsWith("/chat/completions", StringComparison.OrdinalIgnoreCase)
+                    ? normalizedBaseUrl
+                    : $"{normalizedBaseUrl}/v1/chat/completions"
+        };
+
+        if (!string.IsNullOrWhiteSpace(effectiveApiVersion)
+            && endpointType != EndpointApiType.OpenAiCompatible)
+            AddUrl(AppendApiVersion(fallbackUrl, effectiveApiVersion));
+
+        AddUrl(fallbackUrl);
+        return urls;
+    }
+
+    public static IReadOnlyList<string> BuildVideoCreateUrlCandidates(
+        string baseUrl,
+        string? profileId,
+        EndpointApiType endpointType,
+        string? apiVersion,
+        VideoApiMode apiMode)
+    {
+        var normalizedBaseUrl = NormalizeBaseUrl(baseUrl);
+        if (string.IsNullOrWhiteSpace(normalizedBaseUrl))
+            return Array.Empty<string>();
+
+        var profile = EndpointProfileRuntimeResolver.Resolve(profileId, endpointType);
+        var configuredUrls = BuildConfiguredUrls(
+            normalizedBaseUrl,
+            apiMode == VideoApiMode.Videos
+                ? profile?.Video.CreateUrlCandidates
+                : profile?.Video.JobsCreateUrlCandidates,
+            apiVersion,
+            profile?.Video.AppendApiVersionWhenPresent == true);
+
+        if (configuredUrls.Count > 0)
+            return configuredUrls;
+
+        if (endpointType == EndpointApiType.AzureOpenAi)
+        {
+            return apiMode == VideoApiMode.Videos
+                ? new[] { $"{normalizedBaseUrl}/openai/v1/videos", $"{normalizedBaseUrl}/openai/v1/videos?api-version=preview" }
+                : new[] { $"{normalizedBaseUrl}/openai/v1/video/generations/jobs?api-version=preview" };
+        }
+
+        var url = normalizedBaseUrl.EndsWith("/v1", StringComparison.OrdinalIgnoreCase)
+            ? $"{normalizedBaseUrl}/videos"
+            : $"{normalizedBaseUrl}/v1/videos";
+
+        return endpointType != EndpointApiType.OpenAiCompatible && !string.IsNullOrWhiteSpace(apiVersion)
+            ? new[] { AppendApiVersion(url, apiVersion.Trim()), url }
+            : new[] { url };
+    }
+
+    public static IReadOnlyList<string> BuildVideoPollUrlCandidates(
+        string baseUrl,
+        string? profileId,
+        EndpointApiType endpointType,
+        string? apiVersion,
+        string videoId,
+        VideoApiMode apiMode)
+    {
+        var normalizedBaseUrl = NormalizeBaseUrl(baseUrl);
+        if (string.IsNullOrWhiteSpace(normalizedBaseUrl))
+            return Array.Empty<string>();
+
+        return BuildConfiguredOrFallbackVideoUrls(
+            normalizedBaseUrl,
+            profileId,
+            endpointType,
+            apiVersion,
+            new Dictionary<string, string?> { ["videoId"] = videoId },
+            profile => apiMode == VideoApiMode.Videos ? profile.Video.PollUrlCandidates : profile.Video.JobsPollUrlCandidates,
+            endpointType == EndpointApiType.AzureOpenAi
+                ? (apiMode == VideoApiMode.Videos
+                    ? $"{normalizedBaseUrl}/openai/v1/videos/{Uri.EscapeDataString(videoId)}"
+                    : $"{normalizedBaseUrl}/openai/v1/video/generations/jobs/{Uri.EscapeDataString(videoId)}?api-version=preview")
+                : normalizedBaseUrl.EndsWith("/v1", StringComparison.OrdinalIgnoreCase)
+                    ? $"{normalizedBaseUrl}/videos/{Uri.EscapeDataString(videoId)}"
+                    : $"{normalizedBaseUrl}/v1/videos/{Uri.EscapeDataString(videoId)}",
+            endpointType == EndpointApiType.AzureOpenAi && apiMode == VideoApiMode.Videos
+                ? $"{normalizedBaseUrl}/openai/v1/videos/{Uri.EscapeDataString(videoId)}?api-version=preview"
+                : null);
+    }
+
+    public static IReadOnlyList<string> BuildVideoDownloadUrlCandidates(
+        string baseUrl,
+        string? profileId,
+        EndpointApiType endpointType,
+        string? apiVersion,
+        string videoId,
+        VideoApiMode apiMode)
+    {
+        var normalizedBaseUrl = NormalizeBaseUrl(baseUrl);
+        if (string.IsNullOrWhiteSpace(normalizedBaseUrl))
+            return Array.Empty<string>();
+
+        return BuildConfiguredOrFallbackVideoUrls(
+            normalizedBaseUrl,
+            profileId,
+            endpointType,
+            apiVersion,
+            new Dictionary<string, string?> { ["videoId"] = videoId },
+            profile => apiMode == VideoApiMode.Videos ? profile.Video.DownloadUrlCandidates : profile.Video.JobsDownloadUrlCandidates,
+            endpointType == EndpointApiType.AzureOpenAi
+                ? (apiMode == VideoApiMode.Videos
+                    ? $"{normalizedBaseUrl}/openai/v1/videos/{Uri.EscapeDataString(videoId)}/content"
+                    : $"{normalizedBaseUrl}/openai/v1/video/generations/jobs/{Uri.EscapeDataString(videoId)}/content?api-version=preview")
+                : normalizedBaseUrl.EndsWith("/v1", StringComparison.OrdinalIgnoreCase)
+                    ? $"{normalizedBaseUrl}/videos/{Uri.EscapeDataString(videoId)}/content"
+                    : $"{normalizedBaseUrl}/v1/videos/{Uri.EscapeDataString(videoId)}/content",
+            endpointType == EndpointApiType.AzureOpenAi && apiMode == VideoApiMode.Videos
+                ? $"{normalizedBaseUrl}/openai/v1/videos/{Uri.EscapeDataString(videoId)}/content?api-version=preview"
+                : null);
+    }
+
+    public static IReadOnlyList<string> BuildVideoDownloadVideoContentUrlCandidates(
+        string baseUrl,
+        string? profileId,
+        EndpointApiType endpointType,
+        string? apiVersion,
+        string videoId,
+        VideoApiMode apiMode)
+    {
+        var normalizedBaseUrl = NormalizeBaseUrl(baseUrl);
+        if (string.IsNullOrWhiteSpace(normalizedBaseUrl))
+            return Array.Empty<string>();
+
+        return BuildConfiguredOrFallbackVideoUrls(
+            normalizedBaseUrl,
+            profileId,
+            endpointType,
+            apiVersion,
+            new Dictionary<string, string?> { ["videoId"] = videoId },
+            profile => apiMode == VideoApiMode.Videos
+                ? profile.Video.DownloadVideoContentUrlCandidates
+                : profile.Video.JobsDownloadUrlCandidates,
+            endpointType == EndpointApiType.AzureOpenAi
+                ? (apiMode == VideoApiMode.Videos
+                    ? $"{normalizedBaseUrl}/openai/v1/videos/{Uri.EscapeDataString(videoId)}/content/video"
+                    : $"{normalizedBaseUrl}/openai/v1/video/generations/jobs/{Uri.EscapeDataString(videoId)}/content?api-version=preview")
+                : normalizedBaseUrl.EndsWith("/v1", StringComparison.OrdinalIgnoreCase)
+                    ? $"{normalizedBaseUrl}/videos/{Uri.EscapeDataString(videoId)}/content/video"
+                    : $"{normalizedBaseUrl}/v1/videos/{Uri.EscapeDataString(videoId)}/content/video",
+            endpointType == EndpointApiType.AzureOpenAi && apiMode == VideoApiMode.Videos
+                ? $"{normalizedBaseUrl}/openai/v1/videos/{Uri.EscapeDataString(videoId)}/content/video?api-version=preview"
+                : null);
+    }
+
+    public static IReadOnlyList<string> BuildVideoGenerationDownloadUrlCandidates(
+        string baseUrl,
+        string? profileId,
+        EndpointApiType endpointType,
+        string? apiVersion,
+        string generationId,
+        bool preferVideoContent)
+    {
+        var normalizedBaseUrl = NormalizeBaseUrl(baseUrl);
+        if (string.IsNullOrWhiteSpace(normalizedBaseUrl))
+            return Array.Empty<string>();
+
+        return BuildConfiguredOrFallbackVideoUrls(
+            normalizedBaseUrl,
+            profileId,
+            endpointType,
+            apiVersion,
+            new Dictionary<string, string?> { ["videoId"] = generationId },
+            profile => preferVideoContent
+                ? profile.Video.GenerationDownloadVideoContentUrlCandidates
+                : profile.Video.GenerationDownloadUrlCandidates,
+            endpointType == EndpointApiType.AzureOpenAi
+                ? (preferVideoContent
+                    ? $"{normalizedBaseUrl}/openai/v1/video/generations/{Uri.EscapeDataString(generationId)}/content/video"
+                    : $"{normalizedBaseUrl}/openai/v1/video/generations/{Uri.EscapeDataString(generationId)}/content")
+                : normalizedBaseUrl.EndsWith("/v1", StringComparison.OrdinalIgnoreCase)
+                    ? $"{normalizedBaseUrl}/videos/{Uri.EscapeDataString(generationId)}/content"
+                    : $"{normalizedBaseUrl}/v1/videos/{Uri.EscapeDataString(generationId)}/content");
+    }
+
+    private static IReadOnlyList<string> BuildConfiguredOrFallbackVideoUrls(
+        string normalizedBaseUrl,
+        string? profileId,
+        EndpointApiType endpointType,
+        string? apiVersion,
+        IReadOnlyDictionary<string, string?> replacements,
+        Func<Models.EndpointProfiles.EndpointProfileDefinition, IEnumerable<string>> selector,
+        string fallbackUrl,
+        string? secondaryFallbackUrl = null)
+    {
+        var profile = EndpointProfileRuntimeResolver.Resolve(profileId, endpointType);
+        var configuredUrls = BuildConfiguredUrls(
+            normalizedBaseUrl,
+            profile == null ? null : selector(profile),
+            apiVersion,
+            profile?.Video.AppendApiVersionWhenPresent == true,
+            replacements);
+
+        if (configuredUrls.Count > 0)
+            return configuredUrls;
+
+        var urls = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        void AddUrl(string? url)
+        {
+            if (string.IsNullOrWhiteSpace(url))
+                return;
+            if (seen.Add(url))
+                urls.Add(url);
+        }
+
+        if (endpointType != EndpointApiType.OpenAiCompatible && !string.IsNullOrWhiteSpace(apiVersion))
+            AddUrl(AppendApiVersion(fallbackUrl, apiVersion.Trim()));
+
+        AddUrl(fallbackUrl);
+        AddUrl(secondaryFallbackUrl);
+        return urls;
+    }
+
+    private static IReadOnlyList<string> BuildConfiguredUrls(
+        string normalizedBaseUrl,
+        IEnumerable<string>? templates,
+        string? apiVersion,
+        bool appendApiVersionWhenPresent,
+        IReadOnlyDictionary<string, string?>? replacements = null)
+    {
+        var urls = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        void AddRange(IReadOnlyList<string> items)
+        {
+            foreach (var item in items)
+            {
+                if (seen.Add(item))
+                    urls.Add(item);
+            }
+        }
+
+        if (appendApiVersionWhenPresent && !string.IsNullOrWhiteSpace(apiVersion))
+        {
+            AddRange(EndpointProfileRuntimeResolver.BuildUrls(
+                normalizedBaseUrl,
+                templates,
+                apiVersion,
+                appendApiVersionWhenPresent: true,
+                replacements));
+        }
+
+        AddRange(EndpointProfileRuntimeResolver.BuildUrls(
+            normalizedBaseUrl,
+            templates,
+            apiVersion,
+            appendApiVersionWhenPresent: false,
+            replacements));
+
+        return urls;
+    }
+
+    private static IReadOnlyList<string> BuildFallbackImageUrls(
+        string normalizedBaseUrl,
+        EndpointApiType endpointType,
+        ImageApiRouteMode configuredMode,
+        string? apiVersion,
+        string action)
+    {
+        var urls = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        void AddUrl(string? url)
+        {
+            if (string.IsNullOrWhiteSpace(url))
+                return;
+            if (seen.Add(url))
+                urls.Add(url);
+        }
+
+        if (string.IsNullOrWhiteSpace(normalizedBaseUrl))
+            return urls;
+
+        if (endpointType == EndpointApiType.AzureOpenAi)
+        {
+            AddUrl($"{normalizedBaseUrl}/openai/v1/images/{action}");
+            return urls;
+        }
+
+        static string BuildOpenAiCompatibleImageUrl(string baseUrl, ImageApiRouteMode mode, string imageAction)
+        {
+            if (mode == ImageApiRouteMode.ImagesRaw)
+            {
+                return baseUrl.EndsWith($"/images/{imageAction}", StringComparison.OrdinalIgnoreCase)
+                    ? baseUrl
+                    : $"{baseUrl}/images/{imageAction}";
+            }
+
+            if (baseUrl.EndsWith("/v1", StringComparison.OrdinalIgnoreCase))
+                return $"{baseUrl}/images/{imageAction}";
+
+            return baseUrl.EndsWith($"/images/{imageAction}", StringComparison.OrdinalIgnoreCase)
+                ? baseUrl
+                : $"{baseUrl}/v1/images/{imageAction}";
+        }
+
+        static string AppendApiVersion(string url, string version)
+        {
+            if (string.IsNullOrWhiteSpace(version)
+                || url.IndexOf("api-version=", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return url;
+            }
+
+            var separator = url.Contains('?') ? '&' : '?';
+            return $"{url}{separator}api-version={Uri.EscapeDataString(version)}";
+        }
+
+        void AddWithOptionalVersion(string url)
+        {
+            if (!string.IsNullOrWhiteSpace(apiVersion) && endpointType == EndpointApiType.ApiManagementGateway)
+                AddUrl(AppendApiVersion(url, apiVersion.Trim()));
+            AddUrl(url);
+        }
+
+        switch (configuredMode)
+        {
+            case ImageApiRouteMode.V1Images:
+                AddWithOptionalVersion(BuildOpenAiCompatibleImageUrl(normalizedBaseUrl, ImageApiRouteMode.V1Images, action));
+                break;
+            case ImageApiRouteMode.ImagesRaw:
+                AddWithOptionalVersion(BuildOpenAiCompatibleImageUrl(normalizedBaseUrl, ImageApiRouteMode.ImagesRaw, action));
+                break;
+            default:
+                AddWithOptionalVersion(BuildOpenAiCompatibleImageUrl(normalizedBaseUrl, ImageApiRouteMode.V1Images, action));
+                AddWithOptionalVersion(BuildOpenAiCompatibleImageUrl(normalizedBaseUrl, ImageApiRouteMode.ImagesRaw, action));
+                break;
+        }
+
+        return urls;
+    }
+
+    private static string NormalizeBaseUrl(string? baseUrl)
+        => (baseUrl ?? string.Empty).Trim().TrimEnd('/');
+
+    private static string AppendApiVersion(string url, string apiVersion)
+    {
+        if (string.IsNullOrWhiteSpace(apiVersion)
+            || url.IndexOf("api-version=", StringComparison.OrdinalIgnoreCase) >= 0)
+        {
+            return url;
+        }
+
+        var separator = url.Contains('?') ? '&' : '?';
+        return $"{url}{separator}api-version={Uri.EscapeDataString(apiVersion)}";
+    }
+}

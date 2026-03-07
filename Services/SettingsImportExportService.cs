@@ -39,13 +39,17 @@ namespace TrueFluentPro.Services
                 Endpoints = exportableEndpoints.Select(endpoint => new TransferAiEndpoint
                 {
                     Id = endpoint.Id,
+                    ProfileId = endpoint.ProfileId,
                     Name = endpoint.Name,
                     IsEnabled = endpoint.IsEnabled,
-                    ProviderType = endpoint.ProviderType,
+                    EndpointType = endpoint.EndpointType,
                     BaseUrl = endpoint.BaseUrl,
                     ApiKey = endpoint.ApiKey,
                     ApiVersion = endpoint.ApiVersion,
                     AuthMode = endpoint.AuthMode,
+                    ApiKeyHeaderMode = endpoint.ApiKeyHeaderMode,
+                    TextApiProtocolMode = endpoint.TextApiProtocolMode,
+                    ImageApiRouteMode = endpoint.ImageApiRouteMode,
                     Models = endpoint.Models.Select(model => new TransferAiModel
                     {
                         ModelId = model.ModelId,
@@ -131,7 +135,7 @@ namespace TrueFluentPro.Services
                 throw new InvalidOperationException("这不是受支持的资源配置文件，请选择通过本程序导出的 JSON 文件。");
             }
 
-            if (package.Version != 1)
+            if (package.Version is not 1 and not 2)
             {
                 throw new InvalidOperationException($"暂不支持的配置文件版本：v{package.Version}");
             }
@@ -185,13 +189,20 @@ namespace TrueFluentPro.Services
                 result.Add(new AiEndpoint
                 {
                     Id = endpointId,
+                    ProfileId = string.IsNullOrWhiteSpace(endpoint.ProfileId)
+                        ? MapProfileId(endpoint.EndpointType)
+                        : endpoint.ProfileId.Trim(),
                     Name = endpoint.Name?.Trim() ?? "",
                     IsEnabled = endpoint.IsEnabled,
-                    ProviderType = endpoint.ProviderType,
+                    EndpointType = endpoint.EndpointType,
+                    ProviderType = MapProviderType(endpoint.EndpointType),
                     BaseUrl = endpoint.BaseUrl?.Trim() ?? "",
                     ApiKey = endpoint.ApiKey?.Trim() ?? "",
                     ApiVersion = endpoint.ApiVersion?.Trim() ?? "",
                     AuthMode = endpoint.AuthMode,
+                    ApiKeyHeaderMode = endpoint.ApiKeyHeaderMode,
+                    TextApiProtocolMode = endpoint.TextApiProtocolMode,
+                    ImageApiRouteMode = endpoint.ImageApiRouteMode,
                     AzureTenantId = "",
                     AzureClientId = "",
                     Models = (endpoint.Models ?? new List<TransferAiModel>()).Select(model => new AiModelEntry
@@ -250,6 +261,19 @@ namespace TrueFluentPro.Services
 
         private static bool IsImportableEndpoint(TransferAiEndpoint endpoint)
             => endpoint.AuthMode != AzureAuthMode.AAD;
+
+        private static AiProviderType MapProviderType(EndpointApiType endpointType)
+            => endpointType == EndpointApiType.AzureOpenAi
+                ? AiProviderType.AzureOpenAi
+                : AiProviderType.OpenAiCompatible;
+
+        private static string MapProfileId(EndpointApiType endpointType)
+            => endpointType switch
+            {
+                EndpointApiType.AzureOpenAi => "builtin.microsoft.azure-openai",
+                EndpointApiType.ApiManagementGateway => "builtin.microsoft.apim-gateway",
+                _ => "builtin.openai.compatible"
+            };
 
     }
 }

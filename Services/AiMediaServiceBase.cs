@@ -1,9 +1,13 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Threading;
 using System.Threading.Tasks;
 using TrueFluentPro.Models;
+using TrueFluentPro.Models.EndpointProfiles;
+using TrueFluentPro.Services.EndpointProfiles;
 
 namespace TrueFluentPro.Services
 {
@@ -24,23 +28,11 @@ namespace TrueFluentPro.Services
             TokenProvider = provider;
         }
 
-        private static bool LooksLikeAzureOpenAiEndpoint(string? endpoint)
-        {
-            if (string.IsNullOrWhiteSpace(endpoint)
-                || !Uri.TryCreate(endpoint, UriKind.Absolute, out var uri))
-            {
-                return false;
-            }
-
-            return uri.Host.EndsWith(".openai.azure.com", StringComparison.OrdinalIgnoreCase);
-        }
-
         /// <summary>
-        /// 媒体链路中的 AOAI 判定遵循当前约定：仅官方 Azure OpenAI 主机名（*.openai.azure.com）视为 AOAI。
-        /// APIM / 其他代理即使承载 Azure 资源，也按 OpenAI Compatible 访问路径处理。
+        /// 媒体链路中的 AOAI 判定只遵循终结点类型。
         /// </summary>
         protected static bool IsAzureEndpoint(AiConfig config)
-            => LooksLikeAzureOpenAiEndpoint(config.ApiEndpoint);
+            => config.EndpointType == EndpointApiType.AzureOpenAi;
 
         /// <summary>
         /// 判断是否为 APIM 网关前门。
@@ -48,15 +40,7 @@ namespace TrueFluentPro.Services
         /// 但在 API Key 模式下要求客户端携带 APIM 订阅键头，而不是 Bearer。
         /// </summary>
         protected static bool IsApimGateway(AiConfig config)
-        {
-            if (string.IsNullOrWhiteSpace(config.ApiEndpoint)
-                || !Uri.TryCreate(config.ApiEndpoint, UriKind.Absolute, out var uri))
-            {
-                return false;
-            }
-
-            return uri.Host.EndsWith(".azure-api.net", StringComparison.OrdinalIgnoreCase);
-        }
+            => config.EndpointType == EndpointApiType.ApiManagementGateway;
 
         /// <summary>
         /// 构建 API 基础 URL（去掉末尾的 /v1 等）
@@ -75,6 +59,7 @@ namespace TrueFluentPro.Services
         /// - AOAI (*.openai.azure.com) 使用 api-key 或 AAD Bearer
         /// - APIM 使用 api-key
         /// - 其他 OpenAI Compatible 使用 Bearer api-key
+        /// - 若终结点显式配置了 API Key 发送方式，则优先使用显式值
         /// </summary>
         protected async Task SetAuthHeadersAsync(HttpRequestMessage request, AiConfig config, CancellationToken ct = default)
         {
@@ -87,14 +72,9 @@ namespace TrueFluentPro.Services
                 var token = await TokenProvider.GetTokenAsync(ct);
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
             }
-            else if (IsAzureEndpoint(config) || IsApimGateway(config))
-            {
-                request.Headers.TryAddWithoutValidation("api-key", config.ApiKey);
-            }
             else
             {
-                request.Headers.Authorization =
-                    new AuthenticationHeaderValue("Bearer", config.ApiKey);
+                ApplyApiKeyHeader(request, config);
             }
         }
 
@@ -107,15 +87,24 @@ namespace TrueFluentPro.Services
             {
                 throw new InvalidOperationException("AAD 认证需要异步 TokenProvider，不能使用同步认证设置。");
             }
-            else if (IsAzureEndpoint(config) || IsApimGateway(config))
-            {
-                request.Headers.TryAddWithoutValidation("api-key", config.ApiKey);
-            }
             else
             {
-                request.Headers.Authorization =
-                    new AuthenticationHeaderValue("Bearer", config.ApiKey);
+                ApplyApiKeyHeader(request, config);
             }
+        }
+
+        private static void ApplyApiKeyHeader(HttpRequestMessage request, AiConfig config)
+        {
+            var mode = GetEffectiveApiKeyHeaderMode(config);
+
+            if (mode == ApiKeyHeaderMode.ApiKeyHeader)
+            {
+                request.Headers.TryAddWithoutValidation("api-key", config.ApiKey);
+                return;
+            }
+
+            request.Headers.Authorization =
+                new AuthenticationHeaderValue("Bearer", config.ApiKey);
         }
 
         /// <summary>
@@ -123,7 +112,7 @@ namespace TrueFluentPro.Services
         /// </summary>
         protected static bool IsMissingApimSubscriptionKeyResponse(AiConfig config, HttpResponseMessage response, string? body)
         {
-            if (!IsApimGateway(config))
+            if (!SupportsSubscriptionKeyQueryFallback(config))
                 return false;
 
             return (int)response.StatusCode == 401
@@ -140,50 +129,94 @@ namespace TrueFluentPro.Services
             return $"{url}{separator}subscription-key={Uri.EscapeDataString(apiKey)}";
         }
 
+        protected static string DescribeMediaAuthStrategy(AiConfig config)
+        {
+            if (config.AzureAuthMode == AzureAuthMode.AAD)
+                return "Authorization: Bearer (Azure AAD)";
+
+            var mode = GetEffectiveApiKeyHeaderMode(config);
+
+            return mode == ApiKeyHeaderMode.ApiKeyHeader
+                ? "api-key Header"
+                : "Authorization: Bearer";
+        }
+
         /// <summary>
         /// 构建 Images API URL（生成）
         /// </summary>
         protected static string BuildImageUrl(AiConfig config)
-        {
-            var baseUrl = config.ApiEndpoint.TrimEnd('/');
+            => EndpointProfileUrlBuilder.BuildImageGenerateUrlCandidates(
+                config.ApiEndpoint,
+                config.ProfileId,
+                config.EndpointType,
+                config.ImageApiRouteMode,
+                config.DeploymentName,
+                config.ApiVersion)[0];
 
-            if (IsAzureEndpoint(config))
-            {
-                // 旧方式（传统 Azure 部署路径）：
-                // return $"{baseUrl}/openai/deployments/{config.DeploymentName}/images/generations?api-version={config.ApiVersion}";
+        protected static IReadOnlyList<string> BuildImageGenerateCandidateUrls(AiConfig config)
+            => EndpointProfileUrlBuilder.BuildImageGenerateUrlCandidates(
+                config.ApiEndpoint,
+                config.ProfileId,
+                config.EndpointType,
+                config.ImageApiRouteMode,
+                config.DeploymentName,
+                config.ApiVersion);
 
-                // 新方式：走 OpenAI 兼容路径
-                return $"{baseUrl}/openai/v1/images/generations";
-            }
+        protected static IReadOnlyList<string> BuildApimDeploymentImageGenerateCandidateUrls(AiConfig config)
+            => EndpointProfileUrlBuilder.BuildImageGenerateUrlCandidates(
+                config.ApiEndpoint,
+                config.ProfileId,
+                config.EndpointType,
+                ImageApiRouteMode.Auto,
+                config.DeploymentName,
+                config.ApiVersion)
+                .Where(url => url.IndexOf("/deployments/", StringComparison.OrdinalIgnoreCase) >= 0)
+                .ToList();
 
-            // OpenAI Compatible
-            if (baseUrl.EndsWith("/v1"))
-                return $"{baseUrl}/images/generations";
-            return $"{baseUrl}/v1/images/generations";
-        }
+        protected static IReadOnlyList<string> BuildImageGenerateCandidateUrlsForRoute(AiConfig config, ImageApiRouteMode routeMode)
+            => EndpointProfileUrlBuilder.BuildImageGenerateUrlCandidatesForRoute(
+                config.ApiEndpoint,
+                config.ApiVersion,
+                config.EndpointType,
+                routeMode);
 
         /// <summary>
         /// 构建 Images Edits API URL（编辑/参考图）
         /// gpt-image-1.5 附加参考图时使用 /images/edits 终结点，且需要 multipart/form-data。
         /// </summary>
         protected static string BuildImageEditUrl(AiConfig config)
+            => EndpointProfileUrlBuilder.BuildImageEditUrlCandidates(
+                config.ApiEndpoint,
+                config.ProfileId,
+                config.EndpointType,
+                config.ImageApiRouteMode,
+                config.ApiVersion)[0];
+
+        protected static IReadOnlyList<string> BuildImageEditCandidateUrls(AiConfig config)
+            => EndpointProfileUrlBuilder.BuildImageEditUrlCandidates(
+                config.ApiEndpoint,
+                config.ProfileId,
+                config.EndpointType,
+                config.ImageApiRouteMode,
+                config.ApiVersion);
+
+        private static EndpointProfileDefinition? ResolveProfile(AiConfig config)
+            => EndpointProfileRuntimeResolver.Resolve(config.ProfileId, config.EndpointType);
+
+        private static ApiKeyHeaderMode GetEffectiveApiKeyHeaderMode(AiConfig config)
         {
-            var baseUrl = config.ApiEndpoint.TrimEnd('/');
+            if (config.ApiKeyHeaderMode != ApiKeyHeaderMode.Auto)
+                return config.ApiKeyHeaderMode;
 
-            if (IsAzureEndpoint(config))
-            {
-                // 旧方式（传统 Azure 部署路径，/images/edits 返回 404）：
-                // return $"{baseUrl}/openai/deployments/{config.DeploymentName}/images/edits?api-version={config.ApiVersion}";
+            var profileDefault = ResolveProfile(config)?.Defaults.ApiKeyHeaderMode ?? ApiKeyHeaderMode.Auto;
+            if (profileDefault != ApiKeyHeaderMode.Auto)
+                return profileDefault;
 
-                // 新方式：走 OpenAI 兼容路径
-                return $"{baseUrl}/openai/v1/images/edits";
-            }
-
-            // OpenAI Compatible
-            if (baseUrl.EndsWith("/v1"))
-                return $"{baseUrl}/images/edits";
-            return $"{baseUrl}/v1/images/edits";
+            return ApiKeyHeaderMode.Bearer;
         }
+
+        private static bool SupportsSubscriptionKeyQueryFallback(AiConfig config)
+            => ResolveProfile(config)?.Auth.SupportsSubscriptionKeyQueryFallback == true;
 
         /// <summary>
         /// 构建 Videos API URL（创建）
@@ -202,33 +235,33 @@ namespace TrueFluentPro.Services
         /// - OpenAI Compatible: /v1/videos
         /// </summary>
         protected static string BuildVideoCreateUrl(AiConfig config, VideoApiMode apiMode)
-        {
-            var baseUrl = config.ApiEndpoint.TrimEnd('/');
-
-            if (IsAzureEndpoint(config))
-            {
-                if (apiMode == VideoApiMode.Videos)
-                {
-                    return $"{baseUrl}/openai/v1/videos";
-                }
-
-                return $"{baseUrl}/openai/v1/video/generations/jobs?api-version=preview";
-            }
-
-            if (baseUrl.EndsWith("/v1"))
-                return $"{baseUrl}/videos";
-            return $"{baseUrl}/v1/videos";
-        }
+            => EndpointProfileUrlBuilder.BuildVideoCreateUrlCandidates(
+                config.ApiEndpoint,
+                config.ProfileId,
+                config.EndpointType,
+                config.ApiVersion,
+                apiMode)[0];
 
         protected static string? BuildVideoCreateUrlWithPreview(AiConfig config, VideoApiMode apiMode)
         {
             if (apiMode != VideoApiMode.Videos)
                 return null;
 
-            var url = BuildVideoCreateUrl(config, apiMode);
-            return url.Contains("api-version=", StringComparison.OrdinalIgnoreCase)
-                ? url
-                : $"{url}?api-version=preview";
+            foreach (var url in EndpointProfileUrlBuilder.BuildVideoCreateUrlCandidates(
+                         config.ApiEndpoint,
+                         config.ProfileId,
+                         config.EndpointType,
+                         config.ApiVersion,
+                         apiMode))
+            {
+                if (url.Contains("api-version=", StringComparison.OrdinalIgnoreCase))
+                    return url;
+            }
+
+            var fallbackUrl = BuildVideoCreateUrl(config, apiMode);
+            return fallbackUrl.Contains("api-version=", StringComparison.OrdinalIgnoreCase)
+                ? fallbackUrl
+                : $"{fallbackUrl}?api-version=preview";
         }
 
         /// <summary>
@@ -243,23 +276,13 @@ namespace TrueFluentPro.Services
         /// 构建 Videos API URL（轮询状态）
         /// </summary>
         protected static string BuildVideoPollUrl(AiConfig config, string videoId, VideoApiMode apiMode)
-        {
-            var baseUrl = config.ApiEndpoint.TrimEnd('/');
-
-            if (IsAzureEndpoint(config))
-            {
-                if (apiMode == VideoApiMode.Videos)
-                {
-                    return $"{baseUrl}/openai/v1/videos/{videoId}";
-                }
-
-                return $"{baseUrl}/openai/v1/video/generations/jobs/{videoId}?api-version=preview";
-            }
-
-            if (baseUrl.EndsWith("/v1"))
-                return $"{baseUrl}/videos/{videoId}";
-            return $"{baseUrl}/v1/videos/{videoId}";
-        }
+            => EndpointProfileUrlBuilder.BuildVideoPollUrlCandidates(
+                config.ApiEndpoint,
+                config.ProfileId,
+                config.EndpointType,
+                config.ApiVersion,
+                videoId,
+                apiMode)[0];
 
         /// <summary>
         /// 构建 Videos API URL（轮询状态备用路径，带 preview query）。
@@ -270,10 +293,22 @@ namespace TrueFluentPro.Services
             if (apiMode != VideoApiMode.Videos)
                 return null;
 
-            var url = BuildVideoPollUrl(config, videoId, apiMode);
-            return url.Contains("api-version=", StringComparison.OrdinalIgnoreCase)
-                ? url
-                : $"{url}?api-version=preview";
+            foreach (var url in EndpointProfileUrlBuilder.BuildVideoPollUrlCandidates(
+                         config.ApiEndpoint,
+                         config.ProfileId,
+                         config.EndpointType,
+                         config.ApiVersion,
+                         videoId,
+                         apiMode))
+            {
+                if (url.Contains("api-version=", StringComparison.OrdinalIgnoreCase))
+                    return url;
+            }
+
+            var fallbackUrl = BuildVideoPollUrl(config, videoId, apiMode);
+            return fallbackUrl.Contains("api-version=", StringComparison.OrdinalIgnoreCase)
+                ? fallbackUrl
+                : $"{fallbackUrl}?api-version=preview";
         }
 
         /// <summary>
@@ -288,23 +323,13 @@ namespace TrueFluentPro.Services
         /// 构建 Videos API URL（下载内容）
         /// </summary>
         protected static string BuildVideoDownloadUrl(AiConfig config, string videoId, VideoApiMode apiMode)
-        {
-            var baseUrl = config.ApiEndpoint.TrimEnd('/');
-
-            if (IsAzureEndpoint(config))
-            {
-                if (apiMode == VideoApiMode.Videos)
-                {
-                    return $"{baseUrl}/openai/v1/videos/{videoId}/content";
-                }
-
-                return $"{baseUrl}/openai/v1/video/generations/jobs/{videoId}/content?api-version=preview";
-            }
-
-            if (baseUrl.EndsWith("/v1"))
-                return $"{baseUrl}/videos/{videoId}/content";
-            return $"{baseUrl}/v1/videos/{videoId}/content";
-        }
+            => EndpointProfileUrlBuilder.BuildVideoDownloadUrlCandidates(
+                config.ApiEndpoint,
+                config.ProfileId,
+                config.EndpointType,
+                config.ApiVersion,
+                videoId,
+                apiMode)[0];
 
         /// <summary>
         /// 构建 Videos API URL（下载内容备用路径）。
@@ -313,21 +338,18 @@ namespace TrueFluentPro.Services
         /// </summary>
         protected static string BuildVideoDownloadUrlAlt(AiConfig config, string videoId, VideoApiMode apiMode)
         {
-            var baseUrl = config.ApiEndpoint.TrimEnd('/');
+            var contentVideoCandidates = EndpointProfileUrlBuilder.BuildVideoDownloadVideoContentUrlCandidates(
+                config.ApiEndpoint,
+                config.ProfileId,
+                config.EndpointType,
+                config.ApiVersion,
+                videoId,
+                apiMode);
 
-            if (IsAzureEndpoint(config))
-            {
-                if (apiMode == VideoApiMode.Videos)
-                {
-                    return $"{baseUrl}/openai/v1/videos/{videoId}/content/video";
-                }
+            if (contentVideoCandidates.Count > 0)
+                return contentVideoCandidates[0];
 
-                return $"{baseUrl}/openai/v1/video/generations/jobs/{videoId}/content?api-version=preview";
-            }
-
-            if (baseUrl.EndsWith("/v1"))
-                return $"{baseUrl}/videos/{videoId}/content";
-            return $"{baseUrl}/v1/videos/{videoId}/content";
+            return BuildVideoDownloadUrl(config, videoId, apiMode);
         }
 
         /// <summary>
@@ -335,21 +357,15 @@ namespace TrueFluentPro.Services
         /// 某些 APIM / 代理后端会暴露该形式而不是 /content。
         /// </summary>
         protected static string? BuildVideoDownloadUrlVideoContent(AiConfig config, string videoId, VideoApiMode apiMode)
-        {
-            if (apiMode != VideoApiMode.Videos)
-                return null;
-
-            var baseUrl = config.ApiEndpoint.TrimEnd('/');
-
-            if (IsAzureEndpoint(config))
-            {
-                return $"{baseUrl}/openai/v1/videos/{videoId}/content/video";
-            }
-
-            if (baseUrl.EndsWith("/v1"))
-                return $"{baseUrl}/videos/{videoId}/content/video";
-            return $"{baseUrl}/v1/videos/{videoId}/content/video";
-        }
+            => apiMode != VideoApiMode.Videos
+                ? null
+                : EndpointProfileUrlBuilder.BuildVideoDownloadVideoContentUrlCandidates(
+                    config.ApiEndpoint,
+                    config.ProfileId,
+                    config.EndpointType,
+                    config.ApiVersion,
+                    videoId,
+                    apiMode)[0];
 
         /// <summary>
         /// 构建 Videos API URL（下载内容备用路径，带 preview query）。
@@ -360,10 +376,22 @@ namespace TrueFluentPro.Services
             if (apiMode != VideoApiMode.Videos)
                 return null;
 
-            var url = BuildVideoDownloadUrl(config, videoId, apiMode);
-            return url.Contains("api-version=", StringComparison.OrdinalIgnoreCase)
-                ? url
-                : $"{url}?api-version=preview";
+            foreach (var url in EndpointProfileUrlBuilder.BuildVideoDownloadUrlCandidates(
+                         config.ApiEndpoint,
+                         config.ProfileId,
+                         config.EndpointType,
+                         config.ApiVersion,
+                         videoId,
+                         apiMode))
+            {
+                if (url.Contains("api-version=", StringComparison.OrdinalIgnoreCase))
+                    return url;
+            }
+
+            var fallbackUrl = BuildVideoDownloadUrl(config, videoId, apiMode);
+            return fallbackUrl.Contains("api-version=", StringComparison.OrdinalIgnoreCase)
+                ? fallbackUrl
+                : $"{fallbackUrl}?api-version=preview";
         }
 
         /// <summary>
@@ -371,13 +399,28 @@ namespace TrueFluentPro.Services
         /// </summary>
         protected static string? BuildVideoDownloadUrlVideoContentWithPreview(AiConfig config, string videoId, VideoApiMode apiMode)
         {
-            var url = BuildVideoDownloadUrlVideoContent(config, videoId, apiMode);
-            if (string.IsNullOrWhiteSpace(url))
+            if (apiMode != VideoApiMode.Videos)
                 return null;
 
-            return url.Contains("api-version=", StringComparison.OrdinalIgnoreCase)
-                ? url
-                : $"{url}?api-version=preview";
+            foreach (var url in EndpointProfileUrlBuilder.BuildVideoDownloadVideoContentUrlCandidates(
+                         config.ApiEndpoint,
+                         config.ProfileId,
+                         config.EndpointType,
+                         config.ApiVersion,
+                         videoId,
+                         apiMode))
+            {
+                if (url.Contains("api-version=", StringComparison.OrdinalIgnoreCase))
+                    return url;
+            }
+
+            var fallbackUrl = BuildVideoDownloadUrlVideoContent(config, videoId, apiMode);
+            if (string.IsNullOrWhiteSpace(fallbackUrl))
+                return null;
+
+            return fallbackUrl.Contains("api-version=", StringComparison.OrdinalIgnoreCase)
+                ? fallbackUrl
+                : $"{fallbackUrl}?api-version=preview";
         }
 
         /// <summary>
@@ -387,20 +430,13 @@ namespace TrueFluentPro.Services
         /// 若 jobs/{taskId}/content 返回 404，可回退尝试此路径。
         /// </summary>
         protected static string BuildVideoGenerationDownloadUrl(AiConfig config, string generationId)
-        {
-            var baseUrl = config.ApiEndpoint.TrimEnd('/');
-
-            if (IsAzureEndpoint(config))
-            {
-                // 官方示例：/openai/v1/video/generations/{generationId}/content/video?api-version=preview
-                return $"{baseUrl}/openai/v1/video/generations/{generationId}/content/video";
-            }
-
-            // OpenAI Compatible：目前项目只实现 /videos/{id}/content；如后续 provider 返回 generationId，可在此扩展。
-            if (baseUrl.EndsWith("/v1"))
-                return $"{baseUrl}/videos/{generationId}/content";
-            return $"{baseUrl}/v1/videos/{generationId}/content";
-        }
+            => EndpointProfileUrlBuilder.BuildVideoGenerationDownloadUrlCandidates(
+                config.ApiEndpoint,
+                config.ProfileId,
+                config.EndpointType,
+                config.ApiVersion,
+                generationId,
+                preferVideoContent: true)[0];
 
         /// <summary>
         /// 构建 Videos API URL（下载内容，使用 generationId，非 /video 子路径）。
@@ -408,17 +444,12 @@ namespace TrueFluentPro.Services
         /// 备注：不同后端/版本可能会把内容端点暴露为 /content 或 /content/video。
         /// </summary>
         protected static string BuildVideoGenerationDownloadUrlAlt(AiConfig config, string generationId)
-        {
-            var baseUrl = config.ApiEndpoint.TrimEnd('/');
-
-            if (IsAzureEndpoint(config))
-            {
-                return $"{baseUrl}/openai/v1/video/generations/{generationId}/content";
-            }
-
-            if (baseUrl.EndsWith("/v1"))
-                return $"{baseUrl}/videos/{generationId}/content";
-            return $"{baseUrl}/v1/videos/{generationId}/content";
-        }
+            => EndpointProfileUrlBuilder.BuildVideoGenerationDownloadUrlCandidates(
+                config.ApiEndpoint,
+                config.ProfileId,
+                config.EndpointType,
+                config.ApiVersion,
+                generationId,
+                preferVideoContent: false)[0];
     }
 }

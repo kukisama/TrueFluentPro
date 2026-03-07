@@ -178,7 +178,7 @@ namespace TrueFluentPro.ViewModels
                 if (!TryBuildInsightRuntimeConfig(config, out var runtimeRequest, out var endpoint, out _))
                     return;
 
-                if (runtimeRequest.ProviderType != AiProviderType.AzureOpenAi
+                if (!runtimeRequest.IsAzureEndpoint
                     || runtimeRequest.AzureAuthMode != AzureAuthMode.AAD)
                     return;
 

@@ -1,0 +1,29 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:TrueFluentPro.ViewModels.Settings"
+             x:Class="TrueFluentPro.Views.Settings.TransferSection"
+             x:DataType="vm:TransferSectionVM"
+             x:CompileBindings="False">
+    <Border BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+            BorderThickness="1" CornerRadius="8" Padding="20">
+        <StackPanel Spacing="12">
+            <TextBlock Text="配置迁移" Theme="{StaticResource SubtitleTextBlockStyle}"/>
+            <Separator/>
+            <TextBlock Text="导出或导入可迁移资源：Speech、存储、AI 终结点与模型选择。不会包含 AAD 登录字段和个人化细项。"
+                       Foreground="Gray"
+                       TextWrapping="Wrap"/>
+            <StackPanel Orientation="Horizontal" Spacing="12">
+                <Button Content="导出"
+                        MinWidth="120"
+                        Padding="16,8"
+                        IsEnabled="{Binding !IsBusy}"
+                        Click="OnExportSettingsPackageClick"/>
+                <Button Content="导入"
+                        MinWidth="120"
+                        Padding="16,8"
+                        IsEnabled="{Binding !IsBusy}"
+                        Click="OnImportSettingsPackageClick"/>
+            </StackPanel>
+        </StackPanel>
+    </Border>
+</UserControl>

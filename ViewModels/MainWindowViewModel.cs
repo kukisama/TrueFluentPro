@@ -47,8 +47,6 @@ namespace TrueFluentPro.ViewModels
         private EditorDisplayMode _editorDisplayMode = EditorDisplayMode.Translated;
 
         private readonly AiInsightService _aiInsightService;
-        private readonly UpdateService _updateService = new();
-
         public AudioDevicesViewModel AudioDevices { get; }
         public ConfigViewModel ConfigVM { get; }
         public FileLibraryViewModel FileLibrary { get; }
@@ -70,10 +68,6 @@ namespace TrueFluentPro.ViewModels
         private volatile bool _isConfigLoaded;
         private string? _pendingReviewAudioPath;
 
-        private bool _isUpdateAvailable;
-        private string _updateVersionText = "";
-        private bool _isDownloading;
-        private double _downloadProgress;
         private int _pendingReviewSequence;
         private int _lastDispatchedReviewSequence;
 
@@ -85,6 +79,7 @@ namespace TrueFluentPro.ViewModels
         {
             _configService = configService;
             Settings = settingsViewModel;
+            Settings.StatusNotificationRequested += message => StatusMessage = message;
             var azureTokenProvider = new AzureTokenProvider("ai");
             _aiInsightService = new AiInsightService(azureTokenProvider);
             _config = new AzureSpeechConfig();
@@ -234,61 +229,9 @@ namespace TrueFluentPro.ViewModels
                 canExecute: _ => true
             );
 
-            OpenAzureSpeechPortalCommand = new RelayCommand(
-                execute: _ => OpenUrl("https://portal.azure.com/#view/Microsoft_Azure_ProjectOxford/CognitiveServicesHub/~/SpeechServices"),
-                canExecute: _ => true
-            );
-
-            Open21vAzureSpeechPortalCommand = new RelayCommand(
-                execute: _ => OpenUrl("https://portal.azure.cn/#create/Microsoft.CognitiveServicesSpeechServices"),
-                canExecute: _ => true
-            );
-
-            OpenStoragePortalCommand = new RelayCommand(
-                execute: _ => OpenUrl("https://portal.azure.com/#create/Microsoft.StorageAccount"),
-                canExecute: _ => true
-            );
-
-            Open21vStoragePortalCommand = new RelayCommand(
-                execute: _ => OpenUrl("https://portal.azure.cn/#create/Microsoft.StorageAccount"),
-                canExecute: _ => true
-            );
-
-            OpenFoundryPortalCommand = new RelayCommand(
-                execute: _ => OpenUrl("https://ai.azure.com"),
-                canExecute: _ => true
-            );
-
-            OpenProjectGitHubCommand = new RelayCommand(
-                execute: _ => OpenUrl("https://github.com/kukisama/TrueFluentPro"),
-                canExecute: _ => true
-            );
-
-            AppVersion = LoadAppVersion();
-
-            ShowAboutCommand = new RelayCommand(
-                execute: async _ => await ShowAbout(),
-                canExecute: _ => true
-            );
-
-            ShowHelpCommand = new RelayCommand(
-                execute: async _ => await ShowHelp(),
-                canExecute: _ => true
-            );
-
             ShowMediaStudioCommand = new RelayCommand(
                 execute: _ => ShowMediaStudio(),
                 canExecute: _ => true
-            );
-
-            CheckForUpdateCommand = new RelayCommand(
-                execute: async _ => await CheckForUpdateAsync(silent: false),
-                canExecute: _ => !_isDownloading
-            );
-
-            DownloadAndApplyUpdateCommand = new RelayCommand(
-                execute: async _ => await DownloadAndApplyUpdateAsync(),
-                canExecute: _ => _isUpdateAvailable && !_isDownloading
             );
 
             RegisterPostShowInitializationAction(
@@ -296,7 +239,7 @@ namespace TrueFluentPro.ViewModels
                 async () =>
                 {
                     await Task.Delay(3000);
-                    await CheckForUpdateAsync(silent: true);
+                    await Settings.AboutVM.CheckForUpdateOnStartupAsync();
                 });
         }
 
@@ -341,7 +284,10 @@ namespace TrueFluentPro.ViewModels
             ((RelayCommand)StartTranslationCommand).RaiseCanExecuteChanged();
             ((RelayCommand)ToggleTranslationCommand).RaiseCanExecuteChanged();
 
-            StatusMessage = $"配置已加载，文件位置: {ConfigVM.GetConfigFilePath()}";
+            var loadReport = _configService.LastLoadReport;
+            StatusMessage = loadReport?.UsedFallbackConfig == true && !string.IsNullOrWhiteSpace(loadReport.WarningMessage)
+                ? loadReport.WarningMessage!
+                : $"配置已加载，文件位置: {ConfigVM.GetConfigFilePath()}";
         }
 
         private void OnConfigVMConfigUpdatedFromExternal(AzureSpeechConfig config)

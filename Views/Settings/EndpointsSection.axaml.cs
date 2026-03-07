@@ -1,10 +1,14 @@
 using System.Linq;
+using System.Threading;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using TrueFluentPro.Models;
+using TrueFluentPro.ViewModels.EndpointTesting;
+using TrueFluentPro.Views;
+using TrueFluentPro.Views.EndpointTesting;
 using TrueFluentPro.ViewModels.Settings;
 
 namespace TrueFluentPro.Views.Settings;
@@ -44,6 +48,57 @@ public partial class EndpointsSection : UserControl
         EndpointAadLoginPanel.ProfileKey = $"endpoint_{ep.Id}";
         EndpointAadLoginPanel.TenantId = ep.AzureTenantId;
         EndpointAadLoginPanel.ClientId = ep.AzureClientId;
+    }
+
+    private async void CreateEndpoint_Click(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not EndpointsSectionVM vm)
+            return;
+
+        var owner = TopLevel.GetTopLevel(this) as Window;
+        if (owner == null)
+            return;
+
+        var dialog = new EndpointCreateDialog(vm.EndpointTypeOptions);
+        var result = await dialog.ShowDialog<EndpointCreateDialogResult?>(owner);
+        if (result == null)
+            return;
+
+        vm.CreateEndpoint(result.EndpointName, result.EndpointType);
+    }
+
+    private async void CopyApiKey_Click(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not EndpointsSectionVM { SelectedEndpoint: { } endpoint } vm)
+            return;
+
+        var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+        if (clipboard == null)
+            return;
+
+        await clipboard.SetTextAsync(endpoint.ApiKey ?? string.Empty);
+        vm.NotifyStatus("已复制 API 密钥");
+    }
+
+    private async void ShowEndpointInfo_Click(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not EndpointsSectionVM { SelectedEndpoint: { } endpoint } vm)
+            return;
+
+        var owner = TopLevel.GetTopLevel(this) as Window;
+        if (owner == null)
+            return;
+
+        var dialog = new EndpointInfoDialog($"{endpoint.Name} · 详细信息", vm.GetSelectedEndpointInspectionDetails());
+        dialog.TestAllRequestedAsync = async () =>
+        {
+            var resultViewModel = new EndpointBatchTestDialogViewModel(endpoint.Name);
+            var resultDialog = new EndpointBatchTestDialog(
+                resultViewModel,
+                (progress, cancellationToken) => vm.RunSelectedEndpointTestAsync(progress, cancellationToken));
+            await resultDialog.ShowDialog(dialog);
+        };
+        await dialog.ShowDialog(owner);
     }
 
     private void AddModel_Click(object? sender, RoutedEventArgs e)
@@ -135,10 +190,46 @@ public partial class EndpointsSection : UserControl
 
     public void ResetTransientUiState()
     {
-        if (EpShowKeyCheckBox != null)
+    }
+
+    private void EndpointsListBox_PointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        if (e.InitialPressMouseButton != MouseButton.Right)
+            return;
+
+        if (DataContext is not EndpointsSectionVM vm)
+            return;
+
+        var visual = e.Source as Control;
+        var listBoxItem = visual?.GetVisualAncestors().OfType<ListBoxItem>().FirstOrDefault();
+        if (listBoxItem?.DataContext is not AiEndpoint endpoint)
+            return;
+
+        vm.SelectedEndpoint = endpoint;
+
+        var flyout = new MenuFlyout();
+
+        var editItem = new MenuItem { Header = "编辑" };
+        foreach (var option in vm.EndpointTypeOptions)
         {
-            EpShowKeyCheckBox.IsChecked = false;
+            var typeItem = new MenuItem
+            {
+                Header = option.DisplayName,
+                IsEnabled = option.Type != endpoint.EndpointType
+            };
+            typeItem.Click += (_, _) => vm.ChangeEndpointType(endpoint, option.Type);
+            editItem.Items.Add(typeItem);
         }
+
+        flyout.Items.Add(editItem);
+        flyout.Items.Add(new Separator());
+
+        var deleteItem = new MenuItem { Header = "删除" };
+        deleteItem.Click += (_, _) => vm.RemoveEndpoint(endpoint);
+        flyout.Items.Add(deleteItem);
+
+        flyout.ShowAt(EndpointsListBox, true);
+        e.Handled = true;
     }
 
     private void ExpandAndFocusModel(AiModelEntry model, bool focusModelId)
@@ -229,7 +320,8 @@ public partial class EndpointsSection : UserControl
 
     private void Settings_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs args)
     {
-        if (args.PropertyName == nameof(EndpointsSectionVM.SelectedEndpoint) && _boundVm != null)
+        if (_boundVm != null && args.PropertyName is nameof(EndpointsSectionVM.SelectedEndpoint)
+            or nameof(EndpointsSectionVM.SelectedEndpointAuthMode))
         {
             SyncAadLoginPanel(_boundVm);
         }

@@ -27,25 +27,9 @@
                     <ListBoxItem Tag="Section_Audio" Content="音频设备"/>
                     <ListBoxItem Tag="Section_Recognition" Content="语音识别"/>
                     <ListBoxItem Tag="Section_Text" Content="字幕与文本"/>
+                    <ListBoxItem Tag="Section_Transfer" Content="配置迁移"/>
                     <ListBoxItem Tag="Section_About" Content="关于"/>
                 </ListBox>
-
-                <Border Grid.Row="1"
-                        Margin="10,12,10,12"
-                        Padding="12"
-                        CornerRadius="10"
-                        BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
-                        BorderThickness="1">
-                    <StackPanel Spacing="8">
-                        <TextBlock Text="配置迁移" FontWeight="SemiBold"/>
-                        <TextBlock Text="导出/导入可迁移资源：Speech、存储、AI 终结点与模型选择。不会包含 AAD 登录字段和个人化细项。"
-                                   FontSize="11"
-                                   Foreground="Gray"
-                                   TextWrapping="Wrap"/>
-                        <Button Content="导出 JSON" Click="OnExportSettingsPackageClick"/>
-                        <Button Content="导入 JSON" Click="OnImportSettingsPackageClick"/>
-                    </StackPanel>
-                </Border>
             </Grid>
         </Border>
 
@@ -74,6 +58,8 @@
                                                DataContext="{Binding Settings.RecognitionVM}"/>
                 <settings:TextSection          Name="Section_Text"
                                                DataContext="{Binding Settings.TextVM}"/>
+                <settings:TransferSection      Name="Section_Transfer"
+                                               DataContext="{Binding Settings.TransferVM}"/>
                 <settings:AboutSection         Name="Section_About"
                                               DataContext="{Binding Settings.AboutVM}"/>
             </StackPanel>

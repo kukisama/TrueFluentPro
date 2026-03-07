@@ -10,9 +10,9 @@ namespace TrueFluentPro.Models
     public class SettingsTransferPackage
     {
         public string Format { get; set; } = "TrueFluentPro.ResourceConfig";
-        public int Version { get; set; } = 1;
+        public int Version { get; set; } = 2;
         public DateTimeOffset ExportedAt { get; set; } = DateTimeOffset.Now;
-        public string Description { get; set; } = "仅包含 Azure Speech、存储、API Key 型 AI 终结点与模型选择；不包含 AAD 登录字段、AAD 认证端点和细微个性化配置。";
+        public string Description { get; set; } = "仅包含 Azure Speech、存储、AI 终结点（按 EndpointType）、模型清单与模型引用；不包含 AAD 登录字段、AAD 认证端点和细微个性化配置。";
         public TransferSpeechConfig Speech { get; set; } = new();
         public TransferStorageConfig Storage { get; set; } = new();
         public List<TransferAiEndpoint> Endpoints { get; set; } = new();
@@ -43,13 +43,17 @@ namespace TrueFluentPro.Models
     public class TransferAiEndpoint
     {
         public string Id { get; set; } = "";
+        public string ProfileId { get; set; } = "";
         public string Name { get; set; } = "";
         public bool IsEnabled { get; set; } = true;
-        public AiProviderType ProviderType { get; set; } = AiProviderType.OpenAiCompatible;
+        public EndpointApiType EndpointType { get; set; } = EndpointApiType.OpenAiCompatible;
         public string BaseUrl { get; set; } = "";
         public string ApiKey { get; set; } = "";
         public string ApiVersion { get; set; } = "";
         public AzureAuthMode AuthMode { get; set; } = AzureAuthMode.ApiKey;
+        public ApiKeyHeaderMode ApiKeyHeaderMode { get; set; } = ApiKeyHeaderMode.Auto;
+        public TextApiProtocolMode TextApiProtocolMode { get; set; } = TextApiProtocolMode.Auto;
+        public ImageApiRouteMode ImageApiRouteMode { get; set; } = ImageApiRouteMode.Auto;
         public List<TransferAiModel> Models { get; set; } = new();
     }
 

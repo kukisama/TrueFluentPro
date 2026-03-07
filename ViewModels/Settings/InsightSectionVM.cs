@@ -8,6 +8,7 @@ using System.Windows.Input;
 using TrueFluentPro.Helpers;
 using TrueFluentPro.Models;
 using TrueFluentPro.Services;
+using TrueFluentPro.Services.EndpointProfiles;
 
 namespace TrueFluentPro.ViewModels.Settings
 {
@@ -28,6 +29,7 @@ namespace TrueFluentPro.ViewModels.Settings
 
         private string _aiTestStatus = "";
         private string _aiTestReasoning = "";
+        private string _aiTestRequestInfo = "";
         private string _aiAuthStatus = "认证状态：未检测";
 
         public InsightSectionVM(IModelRuntimeResolver modelRuntimeResolver)
@@ -52,6 +54,7 @@ namespace TrueFluentPro.ViewModels.Settings
 
         public string AiTestStatus { get => _aiTestStatus; set => SetProperty(ref _aiTestStatus, value); }
         public string AiTestReasoning { get => _aiTestReasoning; set => SetProperty(ref _aiTestReasoning, value); }
+        public string AiTestRequestInfo { get => _aiTestRequestInfo; set => SetProperty(ref _aiTestRequestInfo, value); }
         public string AiAuthStatus { get => _aiAuthStatus; set => SetProperty(ref _aiAuthStatus, value); }
 
         public ICommand TestEndpointCommand { get; }
@@ -142,20 +145,21 @@ namespace TrueFluentPro.ViewModels.Settings
                 }
 
                 var endpoint = runtime.Endpoint;
+                var headerModeDescription = DescribeApiKeyMode(endpoint);
 
-                if (endpoint.ProviderType != AiProviderType.AzureOpenAi)
+                if (!endpoint.IsAzureEndpoint)
                 {
                     AiAuthStatus = string.IsNullOrWhiteSpace(endpoint.ApiKey)
-                        ? "认证状态：OpenAI 兼容 API Key 未配置"
-                        : "认证状态：OpenAI 兼容 API Key 已配置";
+                        ? $"认证状态：OpenAI 兼容 API Key 未配置（发送方式：{headerModeDescription}）"
+                        : $"认证状态：OpenAI 兼容 API Key 已配置（发送方式：{headerModeDescription}）";
                     return;
                 }
 
                 if (endpoint.AuthMode != AzureAuthMode.AAD)
                 {
                     AiAuthStatus = string.IsNullOrWhiteSpace(endpoint.ApiKey)
-                        ? "认证状态：API Key 未配置"
-                        : "认证状态：API Key 已配置";
+                        ? $"认证状态：API Key 未配置（发送方式：{headerModeDescription}）"
+                        : $"认证状态：API Key 已配置（发送方式：{headerModeDescription}）";
                     return;
                 }
 
@@ -190,6 +194,7 @@ namespace TrueFluentPro.ViewModels.Settings
 
             AiTestStatus = "正在连接...";
             AiTestReasoning = "";
+            AiTestRequestInfo = DescribeTestRequest(testRequest);
 
             try
             {
@@ -227,7 +232,7 @@ namespace TrueFluentPro.ViewModels.Settings
             }
             catch (Exception ex)
             {
-                if (endpoint.ProviderType == AiProviderType.AzureOpenAi
+                if (endpoint.IsAzureEndpoint
                     && endpoint.AuthMode == AzureAuthMode.AAD
                     && ex.Message.Contains("401", StringComparison.OrdinalIgnoreCase))
                 {
@@ -290,5 +295,83 @@ namespace TrueFluentPro.ViewModels.Settings
 
             return (request, endpoint, tokenProvider);
         }
+
+        private static string DescribeApiKeyMode(AiEndpoint endpoint)
+        {
+            if (endpoint.AuthMode == AzureAuthMode.AAD)
+                return "AAD Bearer";
+
+            return endpoint.ApiKeyHeaderMode switch
+            {
+                ApiKeyHeaderMode.ApiKeyHeader => "api-key Header（手动）",
+                ApiKeyHeaderMode.Bearer => "Authorization: Bearer（手动）",
+                _ => endpoint.IsAzureEndpoint
+                    ? "自动 => api-key Header"
+                    : "自动 => Authorization: Bearer"
+            };
+        }
+
+        private static string DescribeTestRequest(AiChatRequestConfig request)
+        {
+            var url = BuildTestUrl(request);
+            var auth = DescribeTestAuth(request);
+            var route = DescribeTextProtocol(request);
+            return $"测试请求：{auth} | {route} | {url}";
+        }
+
+        private static string DescribeTestAuth(AiChatRequestConfig request)
+        {
+            if (request.AzureAuthMode == AzureAuthMode.AAD)
+                return "AAD Bearer";
+
+            var mode = request.ApiKeyHeaderMode;
+            if (mode == ApiKeyHeaderMode.Auto)
+            {
+                mode = request.IsAzureEndpoint || request.EndpointType == EndpointApiType.ApiManagementGateway
+                    ? ApiKeyHeaderMode.ApiKeyHeader
+                    : ApiKeyHeaderMode.Bearer;
+            }
+
+            return mode == ApiKeyHeaderMode.ApiKeyHeader
+                ? "api-key Header"
+                : "Authorization: Bearer";
+        }
+
+        private static string BuildTestUrl(AiChatRequestConfig request)
+            => string.Join(
+                Environment.NewLine,
+                EndpointProfileUrlBuilder.BuildTextUrlCandidates(
+                    request.ApiEndpoint,
+                    request.ProfileId,
+                    request.EndpointType,
+                    request.TextApiProtocolMode,
+                    request.IsAzureEndpoint,
+                    request.DeploymentName,
+                    request.ApiVersion));
+
+        private static string DescribeTextProtocol(AiChatRequestConfig request)
+        {
+            var protocol = GetEffectiveTextApiProtocol(request);
+            return protocol switch
+            {
+                TextApiProtocolMode.Responses => "responses",
+                TextApiProtocolMode.ChatCompletionsRaw => "chat/completions",
+                TextApiProtocolMode.ChatCompletionsV1 => "v1/chat/completions",
+                _ => request.IsAzureEndpoint ? "azure deployments chat/completions" : "auto"
+            };
+        }
+
+        private static TextApiProtocolMode GetEffectiveTextApiProtocol(AiChatRequestConfig request)
+            => EndpointProfileUrlBuilder.GetEffectiveTextProtocol(
+                request.ProfileId,
+                request.EndpointType,
+                request.TextApiProtocolMode,
+                request.IsAzureEndpoint);
+
+        private static string GetEffectiveApiVersion(AiChatRequestConfig request, TextApiProtocolMode protocol)
+            => EndpointProfileUrlBuilder.GetEffectiveTextApiVersion(request.ApiVersion, request.IsAzureEndpoint);
+
+        private static bool IsApimGateway(AiChatRequestConfig request)
+            => request.EndpointType == EndpointApiType.ApiManagementGateway;
     }
 }

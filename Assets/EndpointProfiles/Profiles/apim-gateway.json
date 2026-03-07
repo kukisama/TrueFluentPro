@@ -1,0 +1,100 @@
+{
+    "id": "builtin.microsoft.apim-gateway",
+    "vendor": "Microsoft",
+    "endpointType": "ApiManagementGateway",
+    "displayName": "APIM 网关",
+    "subtitle": "通过 Azure API Management 暴露的 OpenAI 兼容入口",
+    "glyph": "⇄",
+    "summary": "默认按网关思路处理：文本优先 /responses，API Key 优先走 api-key Header，图片优先自动试 deployments、/v1/images 与 /images。",
+    "defaultNamePrefix": "APIM 网关",
+    "iconAssetPath": "Assets/EndpointProfiles/Icons/apim-gateway.svg",
+    "tags": [
+        "builtin",
+        "azure",
+        "apim"
+    ],
+    "defaults": {
+        "providerType": "OpenAiCompatible",
+        "authMode": "ApiKey",
+        "apiKeyHeaderMode": "ApiKeyHeader",
+        "textApiProtocolMode": "Responses",
+        "imageApiRouteMode": "Auto",
+        "apiVersion": "2025-03-01-preview",
+        "supportsAad": false,
+        "clearAzureIdentityFields": true
+    },
+    "auth": {
+        "supportedModes": [
+            "ApiKey"
+        ],
+        "supportedApiKeyHeaderModes": [
+            "ApiKeyHeader",
+            "Bearer"
+        ],
+        "defaultMode": "ApiKey",
+        "defaultApiKeyHeaderMode": "Bearer",
+        "supportsSubscriptionKeyQueryFallback": true
+    },
+    "modelDiscovery": {
+        "urlCandidates": [
+            "{baseUrl}/models",
+            "{baseUrl}/v1/models"
+        ]
+    },
+    "text": {
+        "preferredProtocol": "Responses",
+        "appendApiVersionWhenPresent": true,
+        "responsesUrlCandidates": [
+            "{baseUrl}/responses"
+        ],
+        "chatCompletionsV1UrlCandidates": [
+            "{baseUrl}/v1/chat/completions"
+        ],
+        "chatCompletionsRawUrlCandidates": [
+            "{baseUrl}/chat/completions"
+        ]
+    },
+    "image": {
+        "appendApiVersionWhenPresent": true,
+        "deploymentGenerateUrlCandidates": [
+            "{baseUrl}/deployments/{deployment}/images/generations"
+        ],
+        "generateUrlCandidates": [
+            "{baseUrl}/v1/images/generations",
+            "{baseUrl}/images/generations"
+        ],
+        "editUrlCandidates": [
+            "{baseUrl}/v1/images/edits",
+            "{baseUrl}/images/edits"
+        ]
+    },
+    "video": {
+        "apiModeOptions": [
+            {
+                "mode": "Videos",
+                "displayName": "videos (/v1/videos)",
+                "description": "通过网关暴露的标准 /v1/videos 路线；是否补 api-version 与具体后缀由资料包候选控制。"
+            }
+        ],
+        "supportedApiModes": [
+            "Videos"
+        ],
+        "appendApiVersionWhenPresent": true,
+        "createUrlCandidates": [
+            "{baseUrl}/videos",
+            "{baseUrl}/v1/videos"
+        ],
+        "pollUrlCandidates": [
+            "{baseUrl}/videos/{videoId}",
+            "{baseUrl}/v1/videos/{videoId}"
+        ],
+        "downloadUrlCandidates": [
+            "{baseUrl}/videos/{videoId}/content",
+            "{baseUrl}/v1/videos/{videoId}/content"
+        ],
+        "downloadVideoContentUrlCandidates": [
+            "{baseUrl}/videos/{videoId}/content/video",
+            "{baseUrl}/v1/videos/{videoId}/content/video"
+        ]
+    }
+}

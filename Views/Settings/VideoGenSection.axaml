@@ -21,31 +21,36 @@
             <Separator Margin="0,8,0,8"/>
             <TextBlock Text="默认参数" FontWeight="Bold"/>
 
-            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="6" ColumnSpacing="8">
+            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="6" ColumnSpacing="8">
                 <TextBlock Grid.Row="0" Grid.Column="0" Text="API 模式:" VerticalAlignment="Center"/>
                     <ComboBox Grid.Row="0" Grid.Column="1" MinWidth="220"
+                          ItemsSource="{Binding VideoApiModeOptions}"
                           SelectedIndex="{Binding VideoApiModeIndex, Mode=TwoWay}">
-                        <ComboBoxItem Content="sora2 (/openai/v1/videos)"/>
-                        <ComboBoxItem Content="sora1 (/openai/v1/video/generations/jobs)"/>
                 </ComboBox>
+                <TextBlock Grid.Row="1" Grid.Column="1"
+                           Margin="0,0,0,2"
+                           FontSize="10"
+                           Foreground="Gray"
+                           Text="{Binding SelectedVideoApiModeDescription}"
+                           TextWrapping="Wrap"/>
 
-                <TextBlock Grid.Row="1" Grid.Column="0" Text="比例:" VerticalAlignment="Center"/>
-                <ComboBox Grid.Row="1" Grid.Column="1" MinWidth="120"
+                <TextBlock Grid.Row="2" Grid.Column="0" Text="比例:" VerticalAlignment="Center"/>
+                <ComboBox Grid.Row="2" Grid.Column="1" MinWidth="120"
                           ItemsSource="{Binding VideoAspectRatioOptions}"
                           SelectedItem="{Binding VideoAspectRatio, Mode=TwoWay}"/>
 
-                <TextBlock Grid.Row="2" Grid.Column="0" Text="分辨率:" VerticalAlignment="Center"/>
-                <ComboBox Grid.Row="2" Grid.Column="1" MinWidth="120"
+                <TextBlock Grid.Row="3" Grid.Column="0" Text="分辨率:" VerticalAlignment="Center"/>
+                <ComboBox Grid.Row="3" Grid.Column="1" MinWidth="120"
                           ItemsSource="{Binding VideoResolutionOptions}"
                           SelectedItem="{Binding VideoResolution, Mode=TwoWay}"/>
 
-                <TextBlock Grid.Row="3" Grid.Column="0" Text="默认时长(秒):" VerticalAlignment="Center"/>
-                <ComboBox Grid.Row="3" Grid.Column="1" MinWidth="120"
+                <TextBlock Grid.Row="4" Grid.Column="0" Text="默认时长(秒):" VerticalAlignment="Center"/>
+                <ComboBox Grid.Row="4" Grid.Column="1" MinWidth="120"
                           ItemsSource="{Binding VideoSecondsOptions}"
                           SelectedItem="{Binding VideoSeconds, Mode=TwoWay}"/>
 
-                <TextBlock Grid.Row="4" Grid.Column="0" Text="默认数量:" VerticalAlignment="Center"/>
-                <ComboBox Grid.Row="4" Grid.Column="1" MinWidth="120"
+                <TextBlock Grid.Row="5" Grid.Column="0" Text="默认数量:" VerticalAlignment="Center"/>
+                <ComboBox Grid.Row="5" Grid.Column="1" MinWidth="120"
                           ItemsSource="{Binding VideoVariantsOptions}"
                           SelectedItem="{Binding VideoVariants, Mode=TwoWay}"/>
             </Grid>

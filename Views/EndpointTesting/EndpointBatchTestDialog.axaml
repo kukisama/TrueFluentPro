@@ -1,0 +1,129 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="using:TrueFluentPro.ViewModels.EndpointTesting"
+        mc:Ignorable="d"
+        d:DesignWidth="920"
+        d:DesignHeight="720"
+        x:Class="TrueFluentPro.Views.EndpointTesting.EndpointBatchTestDialog"
+        x:DataType="vm:EndpointBatchTestDialogViewModel"
+        Title="{Binding WindowTitle}"
+        Width="920"
+        Height="720"
+        WindowStartupLocation="CenterOwner">
+
+    <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="18" RowSpacing="12">
+        <StackPanel Grid.Row="0" Spacing="4">
+            <TextBlock Text="当前终结点实时测试" FontSize="18" FontWeight="Bold"/>
+            <TextBlock Text="{Binding SummaryText}" Foreground="Gray"/>
+            <TextBlock Text="{Binding GeneratedAtText}" Foreground="Gray" FontSize="12"/>
+        </StackPanel>
+
+        <Border Grid.Row="1"
+                Background="#08FFFFFF"
+                BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                BorderThickness="1"
+                CornerRadius="8"
+                Padding="10">
+            <TextBlock Text="本窗口只测试当前选中的终结点；只会执行模型 ID 已明确填写的模型项。测试过程中会实时显示排队、运行中、完成和失败状态。"
+                       TextWrapping="Wrap"
+                       Foreground="Gray"/>
+        </Border>
+
+        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+            <ItemsControl ItemsSource="{Binding Items}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="vm:EndpointBatchTestItemViewModel">
+                        <Border Margin="0,0,0,10"
+                                Padding="12"
+                                CornerRadius="8"
+                                Background="{Binding CardBackground}"
+                                BorderBrush="{Binding BorderBrush}"
+                                BorderThickness="1">
+                            <StackPanel Spacing="8">
+                                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                                    <Border Grid.Column="0"
+                                            Padding="8,2"
+                                            CornerRadius="999"
+                                            Background="#12FFFFFF"
+                                            BorderBrush="{Binding BorderBrush}"
+                                            BorderThickness="1">
+                                        <TextBlock Text="{Binding StatusText}"
+                                                   Foreground="{Binding StatusForeground}"
+                                                   FontWeight="Bold"/>
+                                    </Border>
+                                    <StackPanel Grid.Column="1" Spacing="2">
+                                        <TextBlock Text="{Binding Title}" FontWeight="Bold" TextWrapping="Wrap"/>
+                                        <TextBlock Text="{Binding Subtitle}" Foreground="Gray" FontSize="12" TextWrapping="Wrap"/>
+                                    </StackPanel>
+                                    <TextBlock Grid.Column="2"
+                                               Text="{Binding DurationText}"
+                                               IsVisible="{Binding HasDuration}"
+                                               Foreground="Gray"
+                                               VerticalAlignment="Center"/>
+                                </Grid>
+
+                                <TextBlock Text="{Binding Summary}" TextWrapping="Wrap"/>
+
+                                <Border IsVisible="{Binding HasRequestSummary}"
+                                        Padding="10"
+                                        CornerRadius="6"
+                                        Background="#06000000"
+                                        BorderBrush="#22000000"
+                                        BorderThickness="1">
+                                    <StackPanel Spacing="4">
+                                        <TextBlock Text="请求线索" FontSize="12" FontWeight="Bold"/>
+                                        <TextBlock Text="{Binding RequestSummary}"
+                                                   FontSize="12"
+                                                   FontFamily="Consolas"
+                                                   TextWrapping="Wrap"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <Border IsVisible="{Binding HasDetails}"
+                                        Padding="10"
+                                        CornerRadius="6"
+                                        Background="{Binding DetailBackground}"
+                                        BorderBrush="{Binding BorderBrush}"
+                                        BorderThickness="1">
+                                    <StackPanel Spacing="4">
+                                        <TextBlock Text="详细信息" FontSize="12" FontWeight="Bold"/>
+                                        <TextBox Text="{Binding Details}"
+                                                 IsReadOnly="True"
+                                                 AcceptsReturn="True"
+                                                 TextWrapping="Wrap"
+                                                 MinHeight="72"
+                                                 FontFamily="Consolas"
+                                                 Background="Transparent"
+                                                 BorderThickness="0"
+                                                 Padding="0"/>
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+
+        <Grid Grid.Row="3" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10">
+            <TextBlock Grid.Column="0"
+                       Text="{Binding StatusText}"
+                       VerticalAlignment="Center"
+                       Foreground="Gray"/>
+            <Button Grid.Column="1"
+                    x:Name="CancelButton"
+                    Content="取消"
+                    Width="96"
+                    IsVisible="{Binding CanCancel}"
+                    IsEnabled="{Binding CanCancel}"/>
+            <Button Grid.Column="2"
+                    x:Name="CloseButton"
+                    Content="关闭"
+                    Width="96"
+                    IsDefault="True"
+                    IsEnabled="{Binding CanClose}"/>
+        </Grid>
+    </Grid>
+</Window>

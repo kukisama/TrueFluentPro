@@ -1,0 +1,102 @@
+{
+  "id": "builtin.microsoft.azure-openai",
+  "vendor": "Microsoft",
+  "endpointType": "AzureOpenAi",
+  "displayName": "Azure OpenAI",
+  "subtitle": "官方 Azure OpenAI / Azure AI Foundry OpenAI 资源",
+  "glyph": "☁",
+  "summary": "默认使用 Azure deployments 路线，API Key 走 api-key Header；如需 Microsoft Entra ID，可在详情里切换。",
+  "defaultNamePrefix": "Azure OpenAI",
+  "iconAssetPath": "Assets/EndpointProfiles/Icons/azure-openai.svg",
+  "tags": ["builtin", "azure", "aoai"],
+  "defaults": {
+    "providerType": "AzureOpenAi",
+    "authMode": "ApiKey",
+    "apiKeyHeaderMode": "ApiKeyHeader",
+    "textApiProtocolMode": "Auto",
+    "imageApiRouteMode": "Auto",
+    "apiVersion": "2024-02-01",
+    "supportsAad": true,
+    "clearAzureIdentityFields": false
+  },
+  "auth": {
+    "supportedModes": ["ApiKey", "AAD"],
+    "supportedApiKeyHeaderModes": ["ApiKeyHeader"],
+    "defaultMode": "ApiKey",
+    "defaultApiKeyHeaderMode": "ApiKeyHeader",
+    "supportsSubscriptionKeyQueryFallback": false
+  },
+  "modelDiscovery": {
+    "urlCandidates": []
+  },
+  "text": {
+    "preferredProtocol": "Auto",
+    "appendApiVersionWhenPresent": true,
+    "deploymentChatCompletionsUrlCandidates": [
+      "{baseUrl}/openai/deployments/{deployment}/chat/completions"
+    ],
+    "responsesUrlCandidates": [],
+    "chatCompletionsV1UrlCandidates": [],
+    "chatCompletionsRawUrlCandidates": []
+  },
+  "image": {
+    "appendApiVersionWhenPresent": false,
+    "deploymentGenerateUrlCandidates": [],
+    "generateUrlCandidates": [
+      "{baseUrl}/openai/v1/images/generations"
+    ],
+    "editUrlCandidates": [
+      "{baseUrl}/openai/v1/images/edits"
+    ]
+  },
+  "video": {
+    "apiModeOptions": [
+      {
+        "mode": "Videos",
+        "displayName": "sora2 (/openai/v1/videos)",
+        "description": "OpenAI Videos 风格接口，适合当前主流 AOAI 视频模型与更标准的 /videos 路线。"
+      },
+      {
+        "mode": "SoraJobs",
+        "displayName": "sora1 (/openai/v1/video/generations/jobs)",
+        "description": "AOAI 旧版 Jobs 风格异步接口，创建、轮询与下载路径独立，当前仅 AOAI 资料包保留。"
+      }
+    ],
+    "supportedApiModes": [
+      "Videos",
+      "SoraJobs"
+    ],
+    "appendApiVersionWhenPresent": false,
+    "createUrlCandidates": [
+      "{baseUrl}/openai/v1/videos",
+      "{baseUrl}/openai/v1/videos?api-version=preview"
+    ],
+    "pollUrlCandidates": [
+      "{baseUrl}/openai/v1/videos/{videoId}",
+      "{baseUrl}/openai/v1/videos/{videoId}?api-version=preview"
+    ],
+    "downloadUrlCandidates": [
+      "{baseUrl}/openai/v1/videos/{videoId}/content",
+      "{baseUrl}/openai/v1/videos/{videoId}/content?api-version=preview"
+    ],
+    "downloadVideoContentUrlCandidates": [
+      "{baseUrl}/openai/v1/videos/{videoId}/content/video",
+      "{baseUrl}/openai/v1/videos/{videoId}/content/video?api-version=preview"
+    ],
+    "jobsCreateUrlCandidates": [
+      "{baseUrl}/openai/v1/video/generations/jobs?api-version=preview"
+    ],
+    "jobsPollUrlCandidates": [
+      "{baseUrl}/openai/v1/video/generations/jobs/{videoId}?api-version=preview"
+    ],
+    "jobsDownloadUrlCandidates": [
+      "{baseUrl}/openai/v1/video/generations/jobs/{videoId}/content?api-version=preview"
+    ],
+    "generationDownloadUrlCandidates": [
+      "{baseUrl}/openai/v1/video/generations/{videoId}/content"
+    ],
+    "generationDownloadVideoContentUrlCandidates": [
+      "{baseUrl}/openai/v1/video/generations/{videoId}/content/video"
+    ]
+  }
+}

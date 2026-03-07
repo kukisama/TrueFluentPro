@@ -16,34 +16,45 @@ namespace TrueFluentPro.Models
     /// <summary>一个 AI 终结点（Provider 实例）</summary>
     public class AiEndpoint : ObservableObject
     {
-        private static bool LooksLikeAzureOpenAiEndpoint(string? endpoint)
-        {
-            if (string.IsNullOrWhiteSpace(endpoint)
-                || !Uri.TryCreate(endpoint, UriKind.Absolute, out var uri))
-            {
-                return false;
-            }
-
-            var host = uri.Host;
-            return host.EndsWith(".openai.azure.com", StringComparison.OrdinalIgnoreCase)
-                   || host.EndsWith(".services.ai.azure.com", StringComparison.OrdinalIgnoreCase);
-        }
-
         private string _id = "";
+        private string _profileId = "";
         private string _name = "";
         private bool _isEnabled = true;
+        private EndpointApiType _endpointType = EndpointApiType.OpenAiCompatible;
         private AiProviderType _providerType = AiProviderType.OpenAiCompatible;
         private string _baseUrl = "";
         private string _apiKey = "";
         private string _apiVersion = "";
         private AzureAuthMode _authMode = AzureAuthMode.ApiKey;
+        private ApiKeyHeaderMode _apiKeyHeaderMode = ApiKeyHeaderMode.Auto;
+        private TextApiProtocolMode _textApiProtocolMode = TextApiProtocolMode.Auto;
+        private ImageApiRouteMode _imageApiRouteMode = ImageApiRouteMode.Auto;
         private string _azureTenantId = "";
         private string _azureClientId = "";
         private List<AiModelEntry> _models = new();
 
         public string Id { get => _id; set => SetProperty(ref _id, value); }
+    public string ProfileId { get => _profileId; set => SetProperty(ref _profileId, value); }
         public string Name { get => _name; set => SetProperty(ref _name, value); }
         public bool IsEnabled { get => _isEnabled; set => SetProperty(ref _isEnabled, value); }
+
+        public EndpointApiType EndpointType
+        {
+            get => _endpointType;
+            set
+            {
+                if (SetProperty(ref _endpointType, value))
+                {
+                    OnPropertyChanged(nameof(IsAzureEndpoint));
+                    OnPropertyChanged(nameof(EndpointTypeDisplayName));
+                    OnPropertyChanged(nameof(EndpointTypeGlyph));
+                    OnPropertyChanged(nameof(EndpointTypeMonogram));
+                    OnPropertyChanged(nameof(EndpointTypeBadgeBackground));
+                    OnPropertyChanged(nameof(EndpointTypeSubtitle));
+                    OnPropertyChanged(nameof(EndpointTypeIconAssetPath));
+                }
+            }
+        }
 
         // --- 连接信息 ---
         public AiProviderType ProviderType
@@ -86,17 +97,74 @@ namespace TrueFluentPro.Models
             }
         }
 
+        public ApiKeyHeaderMode ApiKeyHeaderMode
+        {
+            get => _apiKeyHeaderMode;
+            set => SetProperty(ref _apiKeyHeaderMode, value);
+        }
+
+        public TextApiProtocolMode TextApiProtocolMode
+        {
+            get => _textApiProtocolMode;
+            set => SetProperty(ref _textApiProtocolMode, value);
+        }
+
+        public ImageApiRouteMode ImageApiRouteMode
+        {
+            get => _imageApiRouteMode;
+            set => SetProperty(ref _imageApiRouteMode, value);
+        }
+
         public string AzureTenantId { get => _azureTenantId; set => SetProperty(ref _azureTenantId, value); }
         public string AzureClientId { get => _azureClientId; set => SetProperty(ref _azureClientId, value); }
 
         /// <summary>
         /// 是否为 Azure OpenAI 终结点。
-        /// ProviderType、AAD 认证，或官方 Azure OpenAI 域名（*.openai.azure.com / *.services.ai.azure.com）
-        /// 任一命中都视为 Azure，避免 API Key 模式下仅因 ProviderType 未正确设置而误走 OpenAI Compatible 认证。
+        /// 仅由终结点类型决定，不再基于域名或 ProviderType 猜测。
         /// </summary>
-        public bool IsAzureEndpoint => ProviderType == AiProviderType.AzureOpenAi
-                           || AuthMode == AzureAuthMode.AAD
-                           || LooksLikeAzureOpenAiEndpoint(BaseUrl);
+        public bool IsAzureEndpoint => EndpointType == EndpointApiType.AzureOpenAi;
+
+        public string EndpointTypeDisplayName => EndpointType switch
+        {
+            EndpointApiType.AzureOpenAi => "Azure OpenAI",
+            EndpointApiType.ApiManagementGateway => "APIM 网关",
+            _ => "OpenAI Compatible"
+        };
+
+        public string EndpointTypeGlyph => EndpointType switch
+        {
+            EndpointApiType.AzureOpenAi => "☰",
+            EndpointApiType.ApiManagementGateway => "⇆",
+            _ => "✦"
+        };
+
+        public string EndpointTypeMonogram => EndpointType switch
+        {
+            EndpointApiType.AzureOpenAi => "AZ",
+            EndpointApiType.ApiManagementGateway => "AP",
+            _ => "OA"
+        };
+
+        public string EndpointTypeBadgeBackground => EndpointType switch
+        {
+            EndpointApiType.AzureOpenAi => "#0078D4",
+            EndpointApiType.ApiManagementGateway => "#6D28D9",
+            _ => "#10A37F"
+        };
+
+        public string EndpointTypeSubtitle => EndpointType switch
+        {
+            EndpointApiType.AzureOpenAi => "官方 Azure OpenAI / Foundry",
+            EndpointApiType.ApiManagementGateway => "Azure API Management 网关",
+            _ => "标准 OpenAI / 兼容服务"
+        };
+
+        public string EndpointTypeIconAssetPath => EndpointType switch
+        {
+            EndpointApiType.AzureOpenAi => "/Assets/EndpointProfiles/Icons/azure-openai.svg",
+            EndpointApiType.ApiManagementGateway => "/Assets/EndpointProfiles/Icons/apim-gateway.svg",
+            _ => "/Assets/EndpointProfiles/Icons/openai-compatible.svg"
+        };
 
         // --- 模型列表 ---
         public List<AiModelEntry> Models { get => _models; set => SetProperty(ref _models, value); }

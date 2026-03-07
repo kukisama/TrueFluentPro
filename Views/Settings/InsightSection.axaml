@@ -41,6 +41,7 @@
                         Command="{Binding TestEndpointCommand}"/>
                 <TextBlock Text="{Binding AiTestStatus}" FontSize="11" Foreground="Gray" TextWrapping="Wrap"/>
             </StackPanel>
+            <TextBlock Text="{Binding AiTestRequestInfo}" FontSize="10" Foreground="Gray" TextWrapping="Wrap"/>
             <StackPanel Spacing="4">
                 <TextBlock Text="思考内容(测试)" FontSize="11" Foreground="Gray"/>
                 <TextBox Text="{Binding AiTestReasoning}" AcceptsReturn="True"

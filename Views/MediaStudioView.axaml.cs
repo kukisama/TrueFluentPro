@@ -96,6 +96,11 @@ namespace TrueFluentPro.Views
                 Avalonia.Interactivity.RoutingStrategies.Tunnel);
         }
 
+        public void UpdateConfiguration(AiConfig aiConfig, MediaGenConfig genConfig, List<AiEndpoint> endpoints)
+        {
+            _viewModel?.UpdateConfiguration(aiConfig, genConfig, endpoints);
+        }
+
         public void Cleanup()
         {
             SaveCurrentSessionScrollState();

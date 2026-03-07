@@ -183,13 +183,7 @@ namespace TrueFluentPro.ViewModels
                 OnPropertyChanged(nameof(TranslationToggleButtonForeground));
                 AudioDevices.NotifyTranslatingChanged();
 
-                if (value)
-                {
-                    // 翻译进行中允许实时切换输入/输出设备，仅禁用刷新
-                    AudioDevices.IsAudioDeviceRefreshEnabled = false;
-                    AudioDevices.NotifyTranslatingChanged();
-                }
-                else
+                if (!value)
                 {
                     AudioDevices.RefreshAudioDevices(persistSelection: false);
                 }
@@ -250,7 +244,7 @@ namespace TrueFluentPro.ViewModels
                 InfoBarSeverity = 3; // Error
             else if (message.Contains("警告") || message.Contains("注意"))
                 InfoBarSeverity = 2; // Warning
-            else if (message.Contains("成功") || message.Contains("已完成") || message.Contains("已加载") || message.Contains("已打开") || message.Contains("已切换") || message.Contains("已停止"))
+            else if (message.Contains("成功") || message.Contains("已完成") || message.Contains("已加载") || message.Contains("已打开") || message.Contains("已切换") || message.Contains("已停止") || message.Contains("已恢复") || message.Contains("已生效") || message.Contains("继续进行") || message.Contains("已导出") || message.Contains("已导入") || message.Contains("已复制"))
                 InfoBarSeverity = 1; // Success
             else
                 InfoBarSeverity = 0; // Informational
@@ -393,7 +387,18 @@ namespace TrueFluentPro.ViewModels
                 _translationService.OnDiagnosticsUpdated += OnDiagnosticsUpdated;
             }
 
-            await _translationService.StartTranslationAsync();
+            var started = await _translationService.StartTranslationAsync();
+            if (!started)
+            {
+                IsTranslating = false;
+                ConfigVM.IsConfigurationEnabled = true;
+
+                ((RelayCommand)StartTranslationCommand).RaiseCanExecuteChanged();
+                ((RelayCommand)ToggleTranslationCommand).RaiseCanExecuteChanged();
+                ((RelayCommand)StopTranslationCommand).RaiseCanExecuteChanged();
+                return;
+            }
+
             IsTranslating = true;
             ConfigVM.IsConfigurationEnabled = false;
             StatusMessage = "正在翻译...";
@@ -495,329 +500,6 @@ namespace TrueFluentPro.ViewModels
             catch (Exception ex)
             {
                 StatusMessage = $"打开历史记录文件夹失败: {ex.Message}";
-            }
-        }
-
-        private void OpenUrl(string url)
-        {
-            try
-            {
-                Process.Start(new ProcessStartInfo
-                {
-                    FileName = url,
-                    UseShellExecute = true
-                });
-
-                StatusMessage = $"已打开链接: {url}";
-            }
-            catch (Exception ex)
-            {
-                StatusMessage = $"打开链接失败: {ex.Message}";
-            }
-        }
-
-        private static string LoadAppVersion()
-        {
-            try
-            {
-                // Try next to executable first, then project root (dev scenario).
-                var candidates = new[]
-                {
-                    Path.Combine(AppContext.BaseDirectory, "Assets", "RELEASE_NOTES.md"),
-                    Path.Combine(AppContext.BaseDirectory, "RELEASE_NOTES.md"),
-                    Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "Assets", "RELEASE_NOTES.md"),
-                    Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "RELEASE_NOTES.md")
-                };
-
-                foreach (var path in candidates)
-                {
-                    if (!File.Exists(path)) continue;
-                    var firstLine = File.ReadLines(path).FirstOrDefault() ?? "";
-                    var match = Regex.Match(firstLine, @"v(\d+\.\d+\.\d+)");
-                    if (match.Success)
-                        return $"版本 {match.Groups[1].Value}";
-                }
-            }
-            catch
-            {
-                // ignore
-            }
-
-            return "版本 未知";
-        }
-
-        private UpdateInfo? _latestUpdate;
-
-        public bool IsUpdateAvailable
-        {
-            get => _isUpdateAvailable;
-            set
-            {
-                if (SetProperty(ref _isUpdateAvailable, value))
-                    RaiseUpdateCommandsCanExecuteChanged();
-            }
-        }
-
-        public string UpdateVersionText
-        {
-            get => _updateVersionText;
-            set => SetProperty(ref _updateVersionText, value);
-        }
-
-        public bool IsDownloading
-        {
-            get => _isDownloading;
-            set
-            {
-                if (SetProperty(ref _isDownloading, value))
-                    RaiseUpdateCommandsCanExecuteChanged();
-            }
-        }
-
-        public double DownloadProgress
-        {
-            get => _downloadProgress;
-            set => SetProperty(ref _downloadProgress, value);
-        }
-
-        private void RaiseUpdateCommandsCanExecuteChanged()
-        {
-            (CheckForUpdateCommand as RelayCommand)?.RaiseCanExecuteChanged();
-            (DownloadAndApplyUpdateCommand as RelayCommand)?.RaiseCanExecuteChanged();
-        }
-
-        private async Task CheckForUpdateAsync(bool silent)
-        {
-            try
-            {
-                // silent=true 来自后台自动检查，受设置控制；silent=false 来自手动按钮，始终执行
-                if (silent && !Settings.IsAutoUpdateEnabled)
-                    return;
-
-                var currentVersion = UpdateService.ParseCurrentVersion();
-                var info = await _updateService.CheckForUpdateAsync(currentVersion);
-
-                if (info == null)
-                {
-                    if (!silent)
-                        StatusMessage = "当前已是最新版本";
-                    return;
-                }
-
-                _latestUpdate = info;
-                await Dispatcher.UIThread.InvokeAsync(() =>
-                {
-                    UpdateVersionText = $"发现新版本 v{info.LatestVersion}";
-                    IsUpdateAvailable = true;
-                });
-
-                if (silent && !string.IsNullOrEmpty(info.DownloadUrl))
-                {
-                    // 自动更新模式：静默下载，完成后弹窗确认
-                    await SilentDownloadAndPromptAsync();
-                }
-                else if (!silent)
-                {
-                    // 手动检查：跳转设置页展示更新面板
-                    StatusMessage = $"发现新版本 v{info.LatestVersion}，请在关于中查看";
-                }
-            }
-            catch
-            {
-                if (!silent)
-                    StatusMessage = "检查更新失败";
-            }
-        }
-
-        /// <summary>
-        /// 自动更新：静默下载 → 弹窗确认 → 启动 Updater 并退出
-        /// </summary>
-        private async Task SilentDownloadAndPromptAsync()
-        {
-            if (_latestUpdate == null || string.IsNullOrEmpty(_latestUpdate.DownloadUrl))
-                return;
-
-            try
-            {
-                IsDownloading = true;
-                DownloadProgress = 0;
-
-                var progress = new Progress<double>(p =>
-                    Dispatcher.UIThread.Post(() => DownloadProgress = p));
-
-                var zipPath = await _updateService.DownloadUpdateAsync(_latestUpdate.DownloadUrl, _latestUpdate.AssetSize, progress);
-
-                if (string.IsNullOrEmpty(zipPath))
-                    return; // 静默失败，不打扰用户
-
-                DownloadProgress = 1.0;
-
-                // 弹窗确认
-                var confirmed = await Dispatcher.UIThread.InvokeAsync(() => ShowUpdateReadyDialog());
-
-                if (confirmed)
-                {
-                    if (!_updateService.LaunchUpdaterAndExit(zipPath))
-                    {
-                        StatusMessage = $"未找到 Updater.exe，更新包已下载到: {zipPath}";
-                    }
-                }
-            }
-            catch
-            {
-                // 静默失败
-            }
-            finally
-            {
-                IsDownloading = false;
-            }
-        }
-
-        /// <summary>
-        /// 显示"更新已准备好"确认弹窗，返回用户是否点击了确定。
-        /// </summary>
-        private async Task<bool> ShowUpdateReadyDialog()
-        {
-            var owner = _mainWindow
-                ?? (Avalonia.Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.MainWindow;
-            if (owner == null) return false;
-
-            var result = false;
-            var dialog = new Window
-            {
-                Title = "更新准备就绪",
-                Width = 400,
-                Height = 180,
-                CanResize = false,
-                WindowStartupLocation = Avalonia.Controls.WindowStartupLocation.CenterOwner,
-                Content = new Avalonia.Controls.StackPanel
-                {
-                    Margin = new Avalonia.Thickness(24),
-                    Spacing = 16,
-                    Children =
-                    {
-                        new Avalonia.Controls.TextBlock
-                        {
-                            Text = $"新版本 v{_latestUpdate?.LatestVersion} 已下载完成。\n点击「确定」将关闭程序并开始更新。",
-                            TextWrapping = Avalonia.Media.TextWrapping.Wrap,
-                            FontSize = 14
-                        },
-                        new Avalonia.Controls.StackPanel
-                        {
-                            Orientation = Avalonia.Layout.Orientation.Horizontal,
-                            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
-                            Spacing = 8,
-                            Children =
-                            {
-                                new Avalonia.Controls.Button { Content = "稍后再说", Padding = new Avalonia.Thickness(16, 6) },
-                                new Avalonia.Controls.Button { Content = "确定", Padding = new Avalonia.Thickness(16, 6), Classes = { "accent" } }
-                            }
-                        }
-                    }
-                }
-            };
-
-            var buttons = ((Avalonia.Controls.StackPanel)((Avalonia.Controls.StackPanel)dialog.Content).Children[1]);
-            ((Avalonia.Controls.Button)buttons.Children[0]).Click += (_, _) => { result = false; dialog.Close(); };
-            ((Avalonia.Controls.Button)buttons.Children[1]).Click += (_, _) => { result = true; dialog.Close(); };
-
-            await dialog.ShowDialog(owner);
-            return result;
-        }
-
-        private async Task DownloadAndApplyUpdateAsync()
-        {
-            if (_latestUpdate == null || string.IsNullOrEmpty(_latestUpdate.DownloadUrl))
-            {
-                StatusMessage = "无可用的下载地址，请前往 GitHub 手动下载";
-                OpenUrl(_latestUpdate?.ReleasePageUrl ?? "https://github.com/kukisama/TrueFluentPro/releases");
-                return;
-            }
-
-            try
-            {
-                IsDownloading = true;
-                DownloadProgress = 0;
-                StatusMessage = "正在下载更新...";
-
-                var progress = new Progress<double>(p =>
-                    Dispatcher.UIThread.Post(() => DownloadProgress = p));
-
-                var zipPath = await _updateService.DownloadUpdateAsync(_latestUpdate.DownloadUrl, _latestUpdate.AssetSize, progress);
-
-                if (string.IsNullOrEmpty(zipPath))
-                {
-                    StatusMessage = "下载更新失败，请检查网络连接";
-                    return;
-                }
-
-                DownloadProgress = 1.0;
-                StatusMessage = "下载完成，正在启动更新...";
-
-                await Task.Delay(500);
-
-                if (!_updateService.LaunchUpdaterAndExit(zipPath))
-                {
-                    StatusMessage = $"未找到 Updater.exe，更新包已下载到: {zipPath}";
-                }
-            }
-            catch (Exception ex)
-            {
-                StatusMessage = $"更新失败: {ex.Message}";
-            }
-            finally
-            {
-                IsDownloading = false;
-            }
-        }
-
-        private async Task ShowAbout()
-        {
-            try
-            {
-                var owner = _mainWindow
-                    ?? (Avalonia.Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.MainWindow;
-
-                var about = new AboutView();
-                if (owner != null)
-                {
-                    await about.ShowDialog(owner);
-                }
-                else
-                {
-                    about.Show();
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine(ex);
-                Console.Error.WriteLine(ex);
-                StatusMessage = $"打开关于失败: {ex.GetType().Name}: {ex.Message}";
-            }
-        }
-
-        private async Task ShowHelp()
-        {
-            try
-            {
-                var owner = _mainWindow
-                    ?? (Avalonia.Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.MainWindow;
-
-                var help = new HelpView();
-                if (owner != null)
-                {
-                    await help.ShowDialog(owner);
-                }
-                else
-                {
-                    help.Show();
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine(ex);
-                Console.Error.WriteLine(ex);
-                StatusMessage = $"打开说明失败: {ex.GetType().Name}: {ex.Message}";
             }
         }
 

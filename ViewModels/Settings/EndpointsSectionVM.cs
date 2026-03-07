@@ -3,26 +3,35 @@ using System.Collections.ObjectModel;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using TrueFluentPro.Helpers;
 using TrueFluentPro.Models;
 using TrueFluentPro.Services;
+using TrueFluentPro.Services.EndpointTesting;
 
 namespace TrueFluentPro.ViewModels.Settings
 {
     public class EndpointsSectionVM : SettingsSectionBase
     {
         private readonly IAiEndpointModelDiscoveryService _modelDiscoveryService;
+        private readonly IEndpointTemplateService _endpointTemplateService;
+        private readonly IEndpointBatchTestService _endpointBatchTestService;
         private ObservableCollection<AiEndpoint> _endpoints = new();
         private ObservableCollection<string> _discoveredModelIds = new();
         private AiEndpoint? _selectedEndpoint;
         private string _endpointDiscoveryStatus = "";
         private bool _isDiscoveringModels;
 
-        public EndpointsSectionVM(IAiEndpointModelDiscoveryService modelDiscoveryService)
+        public EndpointsSectionVM(
+            IAiEndpointModelDiscoveryService modelDiscoveryService,
+            IEndpointTemplateService endpointTemplateService,
+            IEndpointBatchTestService endpointBatchTestService)
         {
             _modelDiscoveryService = modelDiscoveryService;
+            _endpointTemplateService = endpointTemplateService;
+            _endpointBatchTestService = endpointBatchTestService;
             AddEndpointCommand = new RelayCommand(_ => AddEndpoint());
             RemoveEndpointCommand = new RelayCommand(_ => RemoveEndpoint(), _ => SelectedEndpoint != null);
             DiscoverModelsCommand = new RelayCommand(async _ => await DiscoverModelsAsync(), _ => SelectedEndpoint != null && !IsDiscoveringModels);
@@ -30,6 +39,7 @@ namespace TrueFluentPro.ViewModels.Settings
 
         public ObservableCollection<AiEndpoint> Endpoints { get => _endpoints; set => SetProperty(ref _endpoints, value); }
         public ObservableCollection<string> DiscoveredModelIds { get => _discoveredModelIds; set => SetProperty(ref _discoveredModelIds, value); }
+        public IReadOnlyList<EndpointTemplateDefinition> EndpointTypeOptions => _endpointTemplateService.GetTemplates();
 
         public AiEndpoint? SelectedEndpoint
         {
@@ -42,6 +52,11 @@ namespace TrueFluentPro.ViewModels.Settings
                     ((RelayCommand)DiscoverModelsCommand).RaiseCanExecuteChanged();
                     OnPropertyChanged(nameof(SelectedEndpointModels));
                     OnPropertyChanged(nameof(SelectedEndpointAuthMode));
+                    OnPropertyChanged(nameof(SelectedEndpointApiKeyHeaderMode));
+                    OnPropertyChanged(nameof(SelectedEndpointTextApiProtocolMode));
+                    OnPropertyChanged(nameof(SelectedEndpointImageApiRouteMode));
+                    OnPropertyChanged(nameof(SelectedEndpointTypeSummary));
+                    OnPropertyChanged(nameof(CanSelectedEndpointUseAad));
                     OnPropertyChanged(nameof(IsSelectedEndpointAad));
                     OnPropertyChanged(nameof(HasSelectedEndpoint));
                     OnPropertyChanged(nameof(ShowEmptyState));
@@ -59,6 +74,11 @@ namespace TrueFluentPro.ViewModels.Settings
         public bool ShowEmptyState => !HasSelectedEndpoint;
         public bool HasDiscoveredModels => DiscoveredModelIds.Count > 0;
         public bool IsSelectedEndpointAzure => SelectedEndpoint?.IsAzureEndpoint == true;
+        public bool CanSelectedEndpointUseAad => SelectedEndpoint != null
+            && _endpointTemplateService.GetTemplate(SelectedEndpoint).SupportsAad;
+        public string SelectedEndpointTypeSummary => SelectedEndpoint == null
+            ? ""
+            : _endpointTemplateService.BuildBehaviorSummary(SelectedEndpoint);
         public string EndpointDiscoveryStatus { get => _endpointDiscoveryStatus; set => SetProperty(ref _endpointDiscoveryStatus, value); }
         public bool IsDiscoveringModels { get => _isDiscoveringModels; set => SetProperty(ref _isDiscoveringModels, value); }
 
@@ -68,9 +88,15 @@ namespace TrueFluentPro.ViewModels.Settings
             set
             {
                 if (SelectedEndpoint == null) return;
+                if (!CanSelectedEndpointUseAad && value == 1)
+                {
+                    value = 0;
+                }
+
                 SelectedEndpoint.AuthMode = value == 1 ? AzureAuthMode.AAD : AzureAuthMode.ApiKey;
                 OnPropertyChanged(nameof(SelectedEndpointAuthMode));
                 OnPropertyChanged(nameof(IsSelectedEndpointAad));
+                OnPropertyChanged(nameof(SelectedEndpointTypeSummary));
                 SyncEndpointsToConfig();
                 OnChanged();
             }
@@ -78,9 +104,86 @@ namespace TrueFluentPro.ViewModels.Settings
 
         public bool IsSelectedEndpointAad => SelectedEndpointAuthMode == 1;
 
+        public int SelectedEndpointApiKeyHeaderMode
+        {
+            get => (int)(SelectedEndpoint?.ApiKeyHeaderMode ?? ApiKeyHeaderMode.Auto);
+            set
+            {
+                if (SelectedEndpoint == null) return;
+
+                var mode = value switch
+                {
+                    1 => ApiKeyHeaderMode.ApiKeyHeader,
+                    2 => ApiKeyHeaderMode.Bearer,
+                    _ => ApiKeyHeaderMode.Auto,
+                };
+
+                if (SelectedEndpoint.ApiKeyHeaderMode == mode)
+                    return;
+
+                SelectedEndpoint.ApiKeyHeaderMode = mode;
+                OnPropertyChanged(nameof(SelectedEndpointApiKeyHeaderMode));
+                OnPropertyChanged(nameof(SelectedEndpointTypeSummary));
+                SyncEndpointsToConfig();
+                OnChanged();
+            }
+        }
+
+        public int SelectedEndpointTextApiProtocolMode
+        {
+            get => (int)(SelectedEndpoint?.TextApiProtocolMode ?? TextApiProtocolMode.Auto);
+            set
+            {
+                if (SelectedEndpoint == null) return;
+
+                var mode = value switch
+                {
+                    1 => TextApiProtocolMode.ChatCompletionsV1,
+                    2 => TextApiProtocolMode.ChatCompletionsRaw,
+                    3 => TextApiProtocolMode.Responses,
+                    _ => TextApiProtocolMode.Auto,
+                };
+
+                if (SelectedEndpoint.TextApiProtocolMode == mode)
+                    return;
+
+                SelectedEndpoint.TextApiProtocolMode = mode;
+                OnPropertyChanged(nameof(SelectedEndpointTextApiProtocolMode));
+                OnPropertyChanged(nameof(SelectedEndpointTypeSummary));
+                SyncEndpointsToConfig();
+                OnChanged();
+            }
+        }
+
+        public int SelectedEndpointImageApiRouteMode
+        {
+            get => (int)(SelectedEndpoint?.ImageApiRouteMode ?? ImageApiRouteMode.Auto);
+            set
+            {
+                if (SelectedEndpoint == null) return;
+
+                var mode = value switch
+                {
+                    1 => ImageApiRouteMode.V1Images,
+                    2 => ImageApiRouteMode.ImagesRaw,
+                    _ => ImageApiRouteMode.Auto,
+                };
+
+                if (SelectedEndpoint.ImageApiRouteMode == mode)
+                    return;
+
+                SelectedEndpoint.ImageApiRouteMode = mode;
+                OnPropertyChanged(nameof(SelectedEndpointImageApiRouteMode));
+                OnPropertyChanged(nameof(SelectedEndpointTypeSummary));
+                SyncEndpointsToConfig();
+                OnChanged();
+            }
+        }
+
         public ICommand AddEndpointCommand { get; }
         public ICommand RemoveEndpointCommand { get; }
         public ICommand DiscoverModelsCommand { get; }
+        public event Action<string>? StatusRequested;
 
         /// <summary>内部访问配置，由宿主注入</summary>
         internal AzureSpeechConfig Config { get; set; } = new();
@@ -113,13 +216,21 @@ namespace TrueFluentPro.ViewModels.Settings
         }
 
         private void AddEndpoint()
+            => CreateEndpoint(string.Empty, EndpointApiType.OpenAiCompatible);
+
+        public AiEndpoint CreateEndpoint(string? name, EndpointApiType type)
         {
             var ep = new AiEndpoint
             {
                 Id = Guid.NewGuid().ToString(),
-                Name = $"终结点 {Endpoints.Count + 1}",
                 IsEnabled = true,
             };
+
+            _endpointTemplateService.ApplyTemplate(ep, type);
+            ep.Name = string.IsNullOrWhiteSpace(name)
+                ? BuildDefaultEndpointName(type)
+                : name.Trim();
+
             SubscribeEndpoint(ep);
             Endpoints.Add(ep);
             SelectedEndpoint = ep;
@@ -128,6 +239,7 @@ namespace TrueFluentPro.ViewModels.Settings
             SyncEndpointsToConfig();
             EndpointsChanged?.Invoke();
             OnChanged();
+            return ep;
         }
 
         private void RemoveEndpoint()
@@ -136,6 +248,30 @@ namespace TrueFluentPro.ViewModels.Settings
             UnsubscribeEndpoint(SelectedEndpoint);
             Endpoints.Remove(SelectedEndpoint);
             SelectedEndpoint = Endpoints.FirstOrDefault();
+            OnPropertyChanged(nameof(HasEndpoints));
+            OnPropertyChanged(nameof(ShowEmptyState));
+            SyncEndpointsToConfig();
+            EndpointsChanged?.Invoke();
+            OnChanged();
+        }
+
+        public void RemoveEndpoint(AiEndpoint endpoint)
+        {
+            if (endpoint == null)
+                return;
+
+            if (!Endpoints.Contains(endpoint))
+                return;
+
+            var shouldMoveSelection = ReferenceEquals(SelectedEndpoint, endpoint);
+            UnsubscribeEndpoint(endpoint);
+            Endpoints.Remove(endpoint);
+
+            if (shouldMoveSelection)
+            {
+                SelectedEndpoint = Endpoints.FirstOrDefault();
+            }
+
             OnPropertyChanged(nameof(HasEndpoints));
             OnPropertyChanged(nameof(ShowEmptyState));
             SyncEndpointsToConfig();
@@ -208,6 +344,57 @@ namespace TrueFluentPro.ViewModels.Settings
             if (SelectedEndpoint == null)
                 return;
 
+            OnPropertyChanged(nameof(SelectedEndpointTypeSummary));
+            SyncEndpointsToConfig();
+            EndpointsChanged?.Invoke();
+            OnChanged();
+        }
+
+        public string GetSelectedEndpointInspectionDetails()
+            => SelectedEndpoint == null
+                ? "当前未选择终结点。"
+                : _endpointTemplateService.BuildInspectionDetails(SelectedEndpoint);
+
+        public void NotifyStatus(string message)
+        {
+            if (string.IsNullOrWhiteSpace(message))
+                return;
+
+            StatusRequested?.Invoke(message);
+        }
+
+        public Task<EndpointBatchTestReport> RunSelectedEndpointTestAsync(
+            IProgress<EndpointBatchTestProgressSnapshot>? progress = null,
+            CancellationToken cancellationToken = default)
+        {
+            if (SelectedEndpoint == null)
+                throw new InvalidOperationException("当前未选择终结点。");
+
+            return _endpointBatchTestService.TestSelectedEndpointAsync(Config, SelectedEndpoint, progress, cancellationToken);
+        }
+
+        public void ChangeEndpointType(AiEndpoint endpoint, EndpointApiType type)
+        {
+            if (endpoint == null || endpoint.EndpointType == type)
+            {
+                return;
+            }
+
+            _endpointTemplateService.ApplyTemplate(endpoint, type);
+
+            if (ReferenceEquals(endpoint, SelectedEndpoint))
+            {
+                OnPropertyChanged(nameof(SelectedEndpointAuthMode));
+                OnPropertyChanged(nameof(SelectedEndpointApiKeyHeaderMode));
+                OnPropertyChanged(nameof(SelectedEndpointTextApiProtocolMode));
+                OnPropertyChanged(nameof(SelectedEndpointImageApiRouteMode));
+                OnPropertyChanged(nameof(CanSelectedEndpointUseAad));
+                OnPropertyChanged(nameof(IsSelectedEndpointAad));
+                OnPropertyChanged(nameof(IsSelectedEndpointAzure));
+                OnPropertyChanged(nameof(SelectedEndpointTypeSummary));
+            }
+
+            ClearDiscoveredModels();
             SyncEndpointsToConfig();
             EndpointsChanged?.Invoke();
             OnChanged();
@@ -307,16 +494,34 @@ namespace TrueFluentPro.ViewModels.Settings
             if (sender == SelectedEndpoint &&
                 e.PropertyName is nameof(AiEndpoint.BaseUrl)
                     or nameof(AiEndpoint.ApiKey)
+                    or nameof(AiEndpoint.ApiVersion)
+                    or nameof(AiEndpoint.EndpointType)
                     or nameof(AiEndpoint.AuthMode)
+                    or nameof(AiEndpoint.ApiKeyHeaderMode)
+                    or nameof(AiEndpoint.TextApiProtocolMode)
+                    or nameof(AiEndpoint.ImageApiRouteMode)
                     or nameof(AiEndpoint.AzureTenantId)
                     or nameof(AiEndpoint.AzureClientId))
             {
                 ClearDiscoveredModels();
             }
 
-            if (sender == SelectedEndpoint && e.PropertyName == nameof(AiEndpoint.IsAzureEndpoint))
+            if (sender == SelectedEndpoint && e.PropertyName is nameof(AiEndpoint.IsAzureEndpoint)
+                or nameof(AiEndpoint.EndpointType)
+                or nameof(AiEndpoint.AuthMode)
+                or nameof(AiEndpoint.ApiKeyHeaderMode)
+                or nameof(AiEndpoint.TextApiProtocolMode)
+                or nameof(AiEndpoint.ImageApiRouteMode)
+                or nameof(AiEndpoint.ApiVersion))
             {
                 OnPropertyChanged(nameof(IsSelectedEndpointAzure));
+                OnPropertyChanged(nameof(CanSelectedEndpointUseAad));
+                OnPropertyChanged(nameof(SelectedEndpointAuthMode));
+                OnPropertyChanged(nameof(IsSelectedEndpointAad));
+                OnPropertyChanged(nameof(SelectedEndpointApiKeyHeaderMode));
+                OnPropertyChanged(nameof(SelectedEndpointTextApiProtocolMode));
+                OnPropertyChanged(nameof(SelectedEndpointImageApiRouteMode));
+                OnPropertyChanged(nameof(SelectedEndpointTypeSummary));
             }
 
             SyncEndpointsToConfig();
@@ -351,5 +556,14 @@ namespace TrueFluentPro.ViewModels.Settings
                 return ModelCapability.Image;
             return ModelCapability.Text;
         }
+
+        private string BuildDefaultEndpointName(EndpointApiType type)
+        {
+            var prefix = _endpointTemplateService.GetTemplate(type).DefaultNamePrefix;
+            var used = Endpoints
+                .Count(endpoint => endpoint.Name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+            return $"{prefix} {used + 1}";
+        }
+
     }
 }

@@ -2,59 +2,118 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Threading.Tasks;
 using TrueFluentPro.Models;
 
 namespace TrueFluentPro.Services
 {
+    public sealed class ConfigurationLoadReport
+    {
+        public bool UsedFallbackConfig { get; init; }
+        public bool CreatedDefaultConfig { get; init; }
+        public string? WarningMessage { get; init; }
+        public string? InvalidConfigBackupPath { get; init; }
+        public string? RecoverySourcePath { get; init; }
+    }
+
     public class ConfigurationService
     {
         private readonly string _configFilePath;
+        private readonly string _backupConfigFilePath;
+        public ConfigurationLoadReport? LastLoadReport { get; private set; }
 
         public ConfigurationService()
         {
             _configFilePath = PathManager.Instance.ConfigFilePath;
+            _backupConfigFilePath = _configFilePath + ".bak";
         }
 
         public async Task<AzureSpeechConfig> LoadConfigAsync()
         {
+            LastLoadReport = null;
+
+            if (!File.Exists(_configFilePath))
+            {
+                var defaultConfig = new AzureSpeechConfig();
+                PathManager.Instance.SetSessionsPath(defaultConfig.SessionDirectoryOverride);
+                await SaveConfigAsync(defaultConfig);
+                LastLoadReport = new ConfigurationLoadReport
+                {
+                    CreatedDefaultConfig = true,
+                    WarningMessage = "首次启动，已创建新的默认配置文件。"
+                };
+                return defaultConfig;
+            }
+
+            string? timestampBackupPath = null;
             try
             {
-                if (File.Exists(_configFilePath))
+                var config = await TryLoadConfigAsync(_configFilePath);
+                if (config != null)
                 {
-                    var json = await File.ReadAllTextAsync(_configFilePath);
-                    var config = JsonSerializer.Deserialize<AzureSpeechConfig>(json);
-                    if (config != null)
+                    PathManager.Instance.SetSessionsPath(config.SessionDirectoryOverride);
+                    return config;
+                }
+
+                System.Diagnostics.Debug.WriteLine($"主配置文件解析结果为空，将尝试备份配置: {_configFilePath}");
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"加载主配置失败: {ex.Message}");
+                timestampBackupPath = TryCreateTimestampedBackup(_configFilePath);
+            }
+
+            try
+            {
+                var backupConfig = await TryLoadConfigAsync(_backupConfigFilePath);
+                if (backupConfig != null)
+                {
+                    System.Diagnostics.Debug.WriteLine($"主配置加载失败，已回退到备份配置: {_backupConfigFilePath}");
+                    PathManager.Instance.SetSessionsPath(backupConfig.SessionDirectoryOverride);
+                    LastLoadReport = new ConfigurationLoadReport
                     {
-                        PathManager.Instance.SetSessionsPath(config.SessionDirectoryOverride);
-                        return config;
-                    }
+                        UsedFallbackConfig = true,
+                        WarningMessage = BuildLoadFailureWarning(timestampBackupPath, _backupConfigFilePath),
+                        InvalidConfigBackupPath = timestampBackupPath,
+                        RecoverySourcePath = _backupConfigFilePath
+                    };
+                    return backupConfig;
                 }
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"加载配置失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"加载备份配置失败: {ex.Message}");
             }
 
-            var defaultConfig = new AzureSpeechConfig();
-            PathManager.Instance.SetSessionsPath(defaultConfig.SessionDirectoryOverride);
-            await SaveConfigAsync(defaultConfig);
-            return defaultConfig;
+            var fallbackDefaultConfig = new AzureSpeechConfig();
+            PathManager.Instance.SetSessionsPath(fallbackDefaultConfig.SessionDirectoryOverride);
+            LastLoadReport = new ConfigurationLoadReport
+            {
+                UsedFallbackConfig = true,
+                WarningMessage = BuildLoadFailureWarning(timestampBackupPath, null),
+                InvalidConfigBackupPath = timestampBackupPath
+            };
+            return fallbackDefaultConfig;
         }
 
         public async Task SaveConfigAsync(AzureSpeechConfig config)
         {
             try
             {
-                var options = new JsonSerializerOptions
-                {
-                    WriteIndented = true,
-                    Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
-                };
+                Directory.CreateDirectory(Path.GetDirectoryName(_configFilePath)!);
 
-                var json = JsonSerializer.Serialize(config, options);
-                await File.WriteAllTextAsync(_configFilePath, json);
+                var tempFilePath = _configFilePath + ".tmp";
+                var json = JsonSerializer.Serialize(config, CreateSerializerOptions(writeIndented: true));
+                await File.WriteAllTextAsync(tempFilePath, json);
+
+                if (File.Exists(_configFilePath))
+                {
+                    File.Copy(_configFilePath, _backupConfigFilePath, overwrite: true);
+                }
+
+                File.Move(tempFilePath, _configFilePath, overwrite: true);
             }
             catch (Exception ex)
             {
@@ -66,6 +125,71 @@ namespace TrueFluentPro.Services
         public string GetConfigFilePath()
         {
             return _configFilePath;
+        }
+
+        private static async Task<AzureSpeechConfig?> TryLoadConfigAsync(string filePath)
+        {
+            if (!File.Exists(filePath))
+            {
+                return null;
+            }
+
+            var json = await File.ReadAllTextAsync(filePath);
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                return null;
+            }
+
+            return JsonSerializer.Deserialize<AzureSpeechConfig>(json, CreateSerializerOptions(writeIndented: false));
+        }
+
+        private static JsonSerializerOptions CreateSerializerOptions(bool writeIndented)
+        {
+            return new JsonSerializerOptions
+            {
+                WriteIndented = writeIndented,
+                PropertyNameCaseInsensitive = true,
+                AllowTrailingCommas = true,
+                ReadCommentHandling = JsonCommentHandling.Skip,
+                Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+            };
+        }
+
+        private static string? TryCreateTimestampedBackup(string filePath)
+        {
+            try
+            {
+                if (!File.Exists(filePath))
+                {
+                    return null;
+                }
+
+                var directory = Path.GetDirectoryName(filePath);
+                var fileNameWithoutExtension = Path.GetFileNameWithoutExtension(filePath);
+                var extension = Path.GetExtension(filePath);
+                var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+                var backupPath = Path.Combine(directory!, $"{fileNameWithoutExtension}.load-failed.{timestamp}{extension}");
+                File.Copy(filePath, backupPath, overwrite: false);
+                return backupPath;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"创建时间戳备份失败: {ex.Message}");
+                return null;
+            }
+        }
+
+        private static string BuildLoadFailureWarning(string? timestampBackupPath, string? recoverySourcePath)
+        {
+            var backupNote = string.IsNullOrWhiteSpace(timestampBackupPath)
+                ? ""
+                : $" 已按时间戳备份原配置：{timestampBackupPath}";
+
+            var recoveryNote = string.IsNullOrWhiteSpace(recoverySourcePath)
+                ? " 当前已回退到默认配置，请检查配置文件内容，必要时更新到新版本后重试。"
+                : $" 当前已从备份配置恢复：{recoverySourcePath}。请检查主配置文件内容，必要时更新到新版本后重试。";
+
+            return "警告：检测到配置文件可能损坏或版本不兼容，加载主配置失败。" + backupNote + recoveryNote;
         }
     }
 }

@@ -1,0 +1,70 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:models="using:TrueFluentPro.Models"
+        xmlns:controls="clr-namespace:TrueFluentPro.Controls"
+        xmlns:svg="clr-namespace:Avalonia.Svg.Skia;assembly=Svg.Controls.Skia.Avalonia"
+        mc:Ignorable="d"
+        d:DesignWidth="620"
+        d:DesignHeight="420"
+        x:Class="TrueFluentPro.Views.EndpointCreateDialog"
+        Title="新建 AI 终结点"
+        Width="620"
+        Height="420"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner">
+
+    <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="18" RowSpacing="12">
+        <StackPanel Grid.Row="0" Spacing="4">
+            <TextBlock Text="先选终结点 API 类型" FontSize="18" FontWeight="Bold"/>
+            <TextBlock Text="类型会自动注入推荐的路由、鉴权和图片策略，后面仍可在高级项里微调。"
+                       Foreground="Gray"
+                       TextWrapping="Wrap"/>
+        </StackPanel>
+
+        <StackPanel Grid.Row="1" Spacing="4">
+            <TextBlock Text="名称（可选）"/>
+            <TextBox x:Name="EndpointNameTextBox"
+                     Watermark="留空则按类型自动生成，例如：APIM 网关 1"/>
+        </StackPanel>
+
+        <Border Grid.Row="2"
+                BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                BorderThickness="1"
+                CornerRadius="8"
+                Padding="8">
+            <ListBox x:Name="TypeListBox"
+                     SelectionMode="Single">
+                <ListBox.ItemTemplate>
+                    <DataTemplate DataType="models:EndpointTemplateDefinition">
+                        <Border Margin="0,4"
+                                Padding="12"
+                                CornerRadius="8"
+                                BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                                BorderThickness="1">
+                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+                                <Border Width="38" Height="38">
+                                    <svg:Svg Path="{Binding ResolvedIconAssetPath}"
+                                             Stretch="Uniform"
+                                             HorizontalAlignment="Center"
+                                             VerticalAlignment="Center"/>
+                                </Border>
+                                <StackPanel Grid.Column="1" Spacing="4">
+                                    <TextBlock Text="{Binding DisplayName}" FontWeight="Bold"/>
+                                    <TextBlock Text="{Binding Subtitle}" Foreground="Gray" TextWrapping="Wrap"/>
+                                    <TextBlock Text="{Binding Summary}" FontSize="11" Foreground="Gray" TextWrapping="Wrap"/>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+        </Border>
+
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10">
+            <Button x:Name="CancelButton" Content="取消" Width="96" IsCancel="True"/>
+            <Button x:Name="CreateButton" Content="创建" Width="96" IsDefault="True"/>
+        </StackPanel>
+    </Grid>
+</Window>

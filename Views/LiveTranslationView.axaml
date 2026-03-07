@@ -180,6 +180,9 @@
                                     <ToggleButton Content="环回+麦克风"
                                                   Classes="audio-pill"
                                                   IsChecked="{Binding AudioDevices.IsRecordingLoopbackMix, Mode=TwoWay}"/>
+                                    <ToggleButton Content="仅麦克风"
+                                                  Classes="audio-pill"
+                                                  IsChecked="{Binding AudioDevices.IsRecordingMicOnly, Mode=TwoWay}"/>
                                 </StackPanel>
                             </StackPanel>
                             <Button Content="刷新设备" HorizontalAlignment="Stretch"
@@ -190,6 +193,32 @@
                     </Flyout>
                 </Button.Flyout>
             </Button>
+
+            <Border Width="84" Height="22"
+                    Background="Transparent" BorderBrush="{DynamicResource BorderStrongBrush}" BorderThickness="1"
+                    CornerRadius="3" VerticalAlignment="Center"
+                    AutomationProperties.Name="音频活动电平指示器"
+                    ToolTip.Tip="音频活动电平">
+                <Grid>
+                    <Border Height="1" Background="{DynamicResource DividerBrush}" VerticalAlignment="Center"/>
+                    <ItemsControl ItemsSource="{Binding AudioDevices.AudioLevelHistory}" VerticalAlignment="Bottom" Margin="4,3">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal" Spacing="1"/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Width="2"
+                                        Height="{Binding Converter={StaticResource LevelToHeight}}"
+                                        Background="{DynamicResource SuccessBrush}"
+                                        Opacity="0.85"
+                                        VerticalAlignment="Bottom"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Grid>
+            </Border>
         </StackPanel>
 
         <!-- 中间翻译内容区域 -->
@@ -384,7 +413,7 @@
     
         <!-- 底部操作栏 -->
         <Border Grid.Row="2" BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="0,1,0,0" Padding="10,5" Margin="0,4,0,0">
-            <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,*,Auto">
+            <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,*,Auto">
                 <!-- 清空历史 -->
                 <Button Grid.Column="0" Content="清空历史" Command="{Binding ClearHistoryCommand}" 
                         Padding="10,5" Margin="0,0,6,0"
@@ -408,34 +437,8 @@
                         Foreground="{Binding FloatingInsightButtonForeground}"
                         AutomationProperties.Name="切换浮动洞察窗口"
                         ToolTip.Tip="弹出浮动洞察窗口，实时同步 AI 洞察结果"/>
-                <!-- 音频活动电平 -->
-                <Border Grid.Column="4" Width="70" Height="22"
-                        Background="Transparent" BorderBrush="{DynamicResource BorderStrongBrush}" BorderThickness="1"
-                        CornerRadius="3" VerticalAlignment="Center"
-                        AutomationProperties.Name="音频活动电平指示器"
-                        ToolTip.Tip="音频活动电平">
-                    <Grid>
-                        <Border Height="1" Background="{DynamicResource DividerBrush}" VerticalAlignment="Center"/>
-                        <ItemsControl ItemsSource="{Binding AudioDevices.AudioLevelHistory}" VerticalAlignment="Bottom" Margin="4,3">
-                            <ItemsControl.ItemsPanel>
-                                <ItemsPanelTemplate>
-                                    <StackPanel Orientation="Horizontal" Spacing="1"/>
-                                </ItemsPanelTemplate>
-                            </ItemsControl.ItemsPanel>
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Border Width="2"
-                                            Height="{Binding Converter={StaticResource LevelToHeight}}"
-                                            Background="{DynamicResource SuccessBrush}"
-                                            Opacity="0.85"
-                                            VerticalAlignment="Bottom"/>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </Grid>
-                </Border>
                 <!-- 状态信息（右侧） -->
-                <StackPanel Grid.Column="6" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                <StackPanel Grid.Column="5" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                     <TextBlock Text="{Binding StatusMessage}" FontSize="11" Foreground="Gray"
                                VerticalAlignment="Center" MaxWidth="400" TextTrimming="CharacterEllipsis"
                                AutomationProperties.Name="翻译状态信息"/>

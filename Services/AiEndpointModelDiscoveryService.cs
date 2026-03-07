@@ -7,6 +7,8 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using TrueFluentPro.Models;
+using TrueFluentPro.Models.EndpointProfiles;
+using TrueFluentPro.Services.EndpointProfiles;
 
 namespace TrueFluentPro.Services
 {
@@ -16,6 +18,13 @@ namespace TrueFluentPro.Services
         {
             Timeout = TimeSpan.FromSeconds(20)
         };
+
+        private readonly IEndpointProfileCatalogService _profileCatalogService;
+
+        public AiEndpointModelDiscoveryService(IEndpointProfileCatalogService profileCatalogService)
+        {
+            _profileCatalogService = profileCatalogService;
+        }
 
         public async Task<AiEndpointModelDiscoveryResult> DiscoverModelsAsync(AiEndpoint endpoint, CancellationToken cancellationToken = default)
         {
@@ -42,10 +51,10 @@ namespace TrueFluentPro.Services
             }
 
             string? lastError = null;
-            foreach (var url in BuildCandidateUrls(endpoint.BaseUrl))
+            foreach (var url in BuildCandidateUrls(endpoint))
             {
                 using var request = new HttpRequestMessage(HttpMethod.Get, url);
-                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", endpoint.ApiKey.Trim());
+                ApplyApiKeyHeader(request, endpoint);
                 request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
                 try
@@ -88,9 +97,32 @@ namespace TrueFluentPro.Services
                 : $"拉取失败：{lastError}");
         }
 
-        private static IReadOnlyList<string> BuildCandidateUrls(string baseUrl)
+        private static void ApplyApiKeyHeader(HttpRequestMessage request, AiEndpoint endpoint)
         {
-            var normalized = baseUrl.Trim().TrimEnd('/');
+            var mode = endpoint.ApiKeyHeaderMode == ApiKeyHeaderMode.Auto
+                ? ApiKeyHeaderMode.Bearer
+                : endpoint.ApiKeyHeaderMode;
+
+            if (mode == ApiKeyHeaderMode.ApiKeyHeader)
+            {
+                request.Headers.TryAddWithoutValidation("api-key", endpoint.ApiKey.Trim());
+                return;
+            }
+
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", endpoint.ApiKey.Trim());
+        }
+
+        private IReadOnlyList<string> BuildCandidateUrls(AiEndpoint endpoint)
+        {
+            var profile = ResolveProfile(endpoint);
+            var configuredUrls = EndpointProfileRuntimeResolver.BuildUrls(
+                endpoint.BaseUrl,
+                profile?.ModelDiscovery.UrlCandidates);
+
+            if (configuredUrls.Count > 0)
+                return configuredUrls;
+
+            var normalized = endpoint.BaseUrl.Trim().TrimEnd('/');
             var urls = new List<string>();
 
             void Add(string url)
@@ -108,6 +140,18 @@ namespace TrueFluentPro.Services
             }
 
             return urls;
+        }
+
+        private EndpointProfileDefinition? ResolveProfile(AiEndpoint endpoint)
+        {
+            if (!string.IsNullOrWhiteSpace(endpoint.ProfileId))
+            {
+                var byId = _profileCatalogService.FindProfile(endpoint.ProfileId);
+                if (byId != null)
+                    return byId;
+            }
+
+            return _profileCatalogService.GetProfile(endpoint.EndpointType);
         }
 
         private static IReadOnlyList<string> ParseModelIds(string content)

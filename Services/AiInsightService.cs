@@ -8,16 +8,22 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using TrueFluentPro.Models;
+using TrueFluentPro.Services.EndpointProfiles;
 
 namespace TrueFluentPro.Services
 {
     public sealed class AiChatRequestConfig
     {
+        public string ProfileId { get; init; } = "";
+        public EndpointApiType EndpointType { get; init; } = EndpointApiType.OpenAiCompatible;
         public AiProviderType ProviderType { get; init; } = AiProviderType.OpenAiCompatible;
         public string ApiEndpoint { get; init; } = "";
         public string ApiKey { get; init; } = "";
         public string ApiVersion { get; init; } = "2024-02-01";
         public AzureAuthMode AzureAuthMode { get; init; } = AzureAuthMode.ApiKey;
+        public ApiKeyHeaderMode ApiKeyHeaderMode { get; init; } = ApiKeyHeaderMode.Auto;
+        public TextApiProtocolMode TextApiProtocolMode { get; init; } = TextApiProtocolMode.Auto;
+        public ImageApiRouteMode ImageApiRouteMode { get; init; } = ImageApiRouteMode.Auto;
         public string AzureTenantId { get; init; } = "";
         public string AzureClientId { get; init; } = "";
         public bool IsAzureEndpoint { get; init; }
@@ -35,11 +41,16 @@ namespace TrueFluentPro.Services
         {
             return new AiChatRequestConfig
             {
+                ProfileId = config.ProfileId,
+                EndpointType = config.EndpointType,
                 ProviderType = config.ProviderType,
                 ApiEndpoint = config.ApiEndpoint,
                 ApiKey = config.ApiKey,
                 ApiVersion = config.ApiVersion,
                 AzureAuthMode = config.AzureAuthMode,
+                ApiKeyHeaderMode = config.ApiKeyHeaderMode,
+                TextApiProtocolMode = config.TextApiProtocolMode,
+                ImageApiRouteMode = config.ImageApiRouteMode,
                 AzureTenantId = config.AzureTenantId,
                 AzureClientId = config.AzureClientId,
                 IsAzureEndpoint = config.IsAzureEndpoint,
@@ -117,7 +128,7 @@ namespace TrueFluentPro.Services
                 var errorText = await response.Content.ReadAsStringAsync(cancellationToken);
 
                 if (enableReasoning
-                    && request.ProviderType == AiProviderType.OpenAiCompatible
+                    && request.EndpointType != EndpointApiType.AzureOpenAi
                     && (int)response.StatusCode is >= 400 and < 500)
                 {
                     using var fallbackResponse = await SendRequestAsync(
@@ -150,11 +161,11 @@ namespace TrueFluentPro.Services
                 UsedReasoning = enableReasoning
                                 && profile == AiChatProfile.Summary
                                 && request.SummaryEnableReasoning
-                                && request.ProviderType == AiProviderType.OpenAiCompatible,
+                                && request.EndpointType != EndpointApiType.AzureOpenAi,
                 UsedFallback = false
             });
 
-            await StreamResponseAsync(response, onChunk, onReasoningChunk, cancellationToken);
+            await ConsumeResponseAsync(request, response, onChunk, onReasoningChunk, cancellationToken);
         }
 
         private async Task<HttpResponseMessage> SendRequestAsync(
@@ -164,36 +175,226 @@ namespace TrueFluentPro.Services
             bool enableReasoning,
             CancellationToken cancellationToken)
         {
-            var url = BuildUrl(request);
             var body = BuildRequestBody(request, systemPrompt, userContent, enableReasoning);
+            var payloadJson = JsonSerializer.Serialize(body);
+            HttpResponseMessage? lastResponse = null;
 
-            using var httpRequest = new HttpRequestMessage(HttpMethod.Post, url);
-            httpRequest.Content = new StringContent(
-                JsonSerializer.Serialize(body),
-                Encoding.UTF8,
-                "application/json");
-
-            if (request.IsAzureEndpoint)
+            foreach (var url in BuildUrlCandidates(request))
             {
-                if (request.AzureAuthMode == AzureAuthMode.AAD && _tokenProvider?.IsLoggedIn == true)
-                {
-                    var token = await _tokenProvider.GetTokenAsync(cancellationToken);
-                    httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-                }
-                else
-                {
-                    httpRequest.Headers.Add("api-key", request.ApiKey);
-                }
+                lastResponse?.Dispose();
+                lastResponse = await SendSingleRequestAsync(request, url, payloadJson, cancellationToken);
+
+                if (lastResponse.IsSuccessStatusCode)
+                    return lastResponse;
+
+                if (!ShouldTryNextUrl(request, lastResponse))
+                    return lastResponse;
+            }
+
+            return lastResponse ?? throw new HttpRequestException("未能构造任何可用的文本请求 URL。");
+        }
+
+        private async Task<HttpResponseMessage> SendSingleRequestAsync(
+            AiChatRequestConfig request,
+            string url,
+            string payloadJson,
+            CancellationToken cancellationToken)
+        {
+            var response = await SendRequestCoreAsync(request, url, payloadJson, cancellationToken);
+
+            if (!IsMissingApimSubscriptionKeyResponse(request, response))
+                return response;
+
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (!IsMissingApimSubscriptionKeyResponse(request, response, body))
+                return response;
+
+            response.Dispose();
+            var queryUrl = BuildApimSubscriptionKeyQueryUrl(url, request.ApiKey);
+            return await SendRequestCoreAsync(request, queryUrl, payloadJson, cancellationToken);
+        }
+
+        private async Task<HttpResponseMessage> SendRequestCoreAsync(
+            AiChatRequestConfig request,
+            string url,
+            string payloadJson,
+            CancellationToken cancellationToken)
+        {
+            using var httpRequest = new HttpRequestMessage(HttpMethod.Post, url);
+            httpRequest.Content = new StringContent(payloadJson, Encoding.UTF8, "application/json");
+
+            if (request.AzureAuthMode == AzureAuthMode.AAD && _tokenProvider?.IsLoggedIn == true)
+            {
+                var token = await _tokenProvider.GetTokenAsync(cancellationToken);
+                httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
             }
             else
             {
-                httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", request.ApiKey);
+                ApplyApiKeyAuthHeader(httpRequest, request);
             }
 
             return await _httpClient.SendAsync(
                 httpRequest,
                 HttpCompletionOption.ResponseHeadersRead,
                 cancellationToken);
+        }
+
+        private static void ApplyApiKeyAuthHeader(HttpRequestMessage request, AiChatRequestConfig config)
+        {
+            var mode = config.ApiKeyHeaderMode;
+            if (mode == ApiKeyHeaderMode.Auto)
+            {
+                mode = config.IsAzureEndpoint ? ApiKeyHeaderMode.ApiKeyHeader : ApiKeyHeaderMode.Bearer;
+            }
+
+            if (mode == ApiKeyHeaderMode.ApiKeyHeader)
+            {
+                request.Headers.Add("api-key", config.ApiKey);
+                return;
+            }
+
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", config.ApiKey);
+        }
+
+        private static async Task ConsumeResponseAsync(
+            AiChatRequestConfig request,
+            HttpResponseMessage response,
+            Action<string> onChunk,
+            Action<string>? onReasoningChunk,
+            CancellationToken cancellationToken)
+        {
+            var protocol = GetEffectiveTextApiProtocol(request);
+            if (protocol == TextApiProtocolMode.Responses)
+            {
+                await ReadResponsesApiResponseAsync(response, onChunk, onReasoningChunk, cancellationToken);
+                return;
+            }
+
+            await StreamResponseAsync(response, onChunk, onReasoningChunk, cancellationToken);
+        }
+
+        private static async Task ReadResponsesApiResponseAsync(
+            HttpResponseMessage response,
+            Action<string> onChunk,
+            Action<string>? onReasoningChunk,
+            CancellationToken cancellationToken)
+        {
+            var json = await response.Content.ReadAsStringAsync(cancellationToken);
+
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            string? fallbackOutputText = null;
+
+            if (root.TryGetProperty("output_text", out var outputTextElem)
+                && outputTextElem.ValueKind == JsonValueKind.String)
+            {
+                fallbackOutputText = outputTextElem.GetString();
+            }
+
+            var outputBuilder = new StringBuilder();
+            var reasoningBuilder = new StringBuilder();
+
+            if (root.TryGetProperty("output", out var outputElem)
+                && outputElem.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var outputItem in outputElem.EnumerateArray())
+                {
+                    var outputType = outputItem.TryGetProperty("type", out var outputTypeElem)
+                        ? outputTypeElem.GetString() ?? string.Empty
+                        : string.Empty;
+
+                    if (outputType.Equals("reasoning", StringComparison.OrdinalIgnoreCase))
+                    {
+                        AppendResponsesReasoningSummary(outputItem, reasoningBuilder);
+                    }
+
+                    if (!outputItem.TryGetProperty("content", out var contentElem)
+                        || contentElem.ValueKind != JsonValueKind.Array)
+                    {
+                        continue;
+                    }
+
+                    foreach (var contentItem in contentElem.EnumerateArray())
+                    {
+                        var type = contentItem.TryGetProperty("type", out var typeElem)
+                            ? typeElem.GetString() ?? string.Empty
+                            : string.Empty;
+
+                        if ((type == "output_text" || type == "text")
+                            && contentItem.TryGetProperty("text", out var textElem)
+                            && textElem.ValueKind == JsonValueKind.String)
+                        {
+                            outputBuilder.Append(textElem.GetString());
+                        }
+
+                        if (type.Contains("reasoning", StringComparison.OrdinalIgnoreCase)
+                            && contentItem.TryGetProperty("text", out var reasoningTextElem)
+                            && reasoningTextElem.ValueKind == JsonValueKind.String)
+                        {
+                            reasoningBuilder.Append(reasoningTextElem.GetString());
+                        }
+                    }
+                }
+            }
+
+            if (reasoningBuilder.Length > 0 && onReasoningChunk != null)
+            {
+                onReasoningChunk(reasoningBuilder.ToString());
+            }
+
+            if (outputBuilder.Length == 0 && !string.IsNullOrWhiteSpace(fallbackOutputText))
+            {
+                outputBuilder.Append(fallbackOutputText);
+            }
+
+            if (outputBuilder.Length > 0)
+            {
+                onChunk(outputBuilder.ToString());
+                return;
+            }
+
+            throw new InvalidOperationException($"Responses API 返回成功，但未解析到输出文本。原始响应: {json}");
+        }
+
+        private static void AppendResponsesReasoningSummary(JsonElement outputItem, StringBuilder reasoningBuilder)
+        {
+            if (!outputItem.TryGetProperty("summary", out var summaryElem)
+                || summaryElem.ValueKind != JsonValueKind.Array)
+            {
+                return;
+            }
+
+            foreach (var summaryItem in summaryElem.EnumerateArray())
+            {
+                var type = summaryItem.TryGetProperty("type", out var typeElem)
+                    ? typeElem.GetString() ?? string.Empty
+                    : string.Empty;
+
+                if (!type.Contains("summary", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (!summaryItem.TryGetProperty("text", out var textElem)
+                    || textElem.ValueKind != JsonValueKind.String)
+                {
+                    continue;
+                }
+
+                var text = textElem.GetString();
+                if (string.IsNullOrWhiteSpace(text))
+                {
+                    continue;
+                }
+
+                if (reasoningBuilder.Length > 0)
+                {
+                    reasoningBuilder.AppendLine();
+                    reasoningBuilder.AppendLine();
+                }
+
+                reasoningBuilder.Append(text);
+            }
         }
 
         private static async Task StreamResponseAsync(
@@ -291,19 +492,15 @@ namespace TrueFluentPro.Services
             return false;
         }
 
-        private static string BuildUrl(AiChatRequestConfig request)
-        {
-            var baseUrl = request.ApiEndpoint.TrimEnd('/');
-
-            if (request.IsAzureEndpoint)
-            {
-                return $"{baseUrl}/openai/deployments/{request.DeploymentName}/chat/completions?api-version={request.ApiVersion}";
-            }
-
-            if (baseUrl.EndsWith("/v1"))
-                return $"{baseUrl}/chat/completions";
-            return $"{baseUrl}/v1/chat/completions";
-        }
+        private static IReadOnlyList<string> BuildUrlCandidates(AiChatRequestConfig request)
+            => EndpointProfileUrlBuilder.BuildTextUrlCandidates(
+                request.ApiEndpoint,
+                request.ProfileId,
+                request.EndpointType,
+                request.TextApiProtocolMode,
+                request.IsAzureEndpoint,
+                request.DeploymentName,
+                request.ApiVersion);
 
         private static object BuildRequestBody(
             AiChatRequestConfig request,
@@ -311,11 +508,43 @@ namespace TrueFluentPro.Services
             string userContent,
             bool enableReasoning)
         {
+            var protocol = GetEffectiveTextApiProtocol(request);
             var messages = new List<object>
             {
                 new { role = "system", content = systemPrompt },
                 new { role = "user", content = userContent }
             };
+
+            if (protocol == TextApiProtocolMode.Responses)
+            {
+                var input = new List<object>
+                {
+                    new
+                    {
+                        role = "system",
+                        content = new[] { new { type = "input_text", text = systemPrompt } }
+                    },
+                    new
+                    {
+                        role = "user",
+                        content = new[] { new { type = "input_text", text = userContent } }
+                    }
+                };
+
+                var responsesBody = new Dictionary<string, object>
+                {
+                    ["model"] = request.ModelName,
+                    ["input"] = input,
+                    ["stream"] = false
+                };
+
+                if (enableReasoning && request.SummaryEnableReasoning)
+                {
+                    responsesBody["reasoning"] = new { effort = "medium", summary = "auto" };
+                }
+
+                return responsesBody;
+            }
 
             if (request.IsAzureEndpoint)
             {
@@ -336,5 +565,35 @@ namespace TrueFluentPro.Services
 
             return body;
         }
+
+        private static TextApiProtocolMode GetEffectiveTextApiProtocol(AiChatRequestConfig request)
+            => EndpointProfileUrlBuilder.GetEffectiveTextProtocol(
+                request.ProfileId,
+                request.EndpointType,
+                request.TextApiProtocolMode,
+                request.IsAzureEndpoint);
+
+        private static string GetEffectiveApiVersion(AiChatRequestConfig request, TextApiProtocolMode protocol)
+            => EndpointProfileUrlBuilder.GetEffectiveTextApiVersion(request.ApiVersion, request.IsAzureEndpoint);
+
+        private static bool ShouldTryNextUrl(AiChatRequestConfig request, HttpResponseMessage response)
+            => IsApimGateway(request) && (int)response.StatusCode is 404 or 405;
+
+        private static bool IsMissingApimSubscriptionKeyResponse(AiChatRequestConfig request, HttpResponseMessage response)
+            => IsApimGateway(request) && (int)response.StatusCode == 401;
+
+        private static bool IsMissingApimSubscriptionKeyResponse(AiChatRequestConfig request, HttpResponseMessage response, string? body)
+            => IsMissingApimSubscriptionKeyResponse(request, response)
+               && !string.IsNullOrWhiteSpace(body)
+               && body.IndexOf("missing subscription key", StringComparison.OrdinalIgnoreCase) >= 0;
+
+        private static string BuildApimSubscriptionKeyQueryUrl(string url, string apiKey)
+        {
+            var separator = url.Contains('?') ? '&' : '?';
+            return $"{url}{separator}subscription-key={Uri.EscapeDataString(apiKey)}";
+        }
+
+        private static bool IsApimGateway(AiChatRequestConfig request)
+            => request.EndpointType == EndpointApiType.ApiManagementGateway;
     }
 }
