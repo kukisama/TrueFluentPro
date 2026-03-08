@@ -171,7 +171,7 @@ public partial class ReviewModeView : UserControl
 
         var flyout = new MenuFlyout();
 
-        var enqueueItem = new MenuItem { Header = "生成字幕+复盘" };
+        var enqueueItem = new MenuItem { Header = "加入批处理中心" };
         enqueueItem.Click += (_, _) =>
         {
             ViewModel?.BatchProcessing.AuditUiEvent("AudioFileEnqueue", $"flyout-click item={selectedItem.FullPath}");

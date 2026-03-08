@@ -22,12 +22,22 @@ namespace TrueFluentPro.ViewModels
     {
         private readonly ConfigurationService _configService;
         private readonly ISettingsImportExportService _settingsImportExportService;
-        private AzureSpeechConfig _config = new();
+        private readonly Lazy<InsightSectionVM> _insightVm;
+        private readonly Lazy<ReviewSectionVM> _reviewVm;
+        private readonly Lazy<ImageGenSectionVM> _imageGenVm;
+        private readonly Lazy<VideoGenSectionVM> _videoGenVm;
+        private readonly Lazy<TransferSectionVM> _transferVm;
+        private readonly Lazy<AboutSectionVM> _aboutVm;
 
+        private AzureSpeechConfig _config = new();
         private Timer? _debounceTimer;
         private bool _isDirty;
         private string _autoSaveStatus = "";
+
         private const int DebounceMs = 500;
+
+        public event Action<AzureSpeechConfig>? ConfigSaved;
+        public event Action<string>? StatusNotificationRequested;
 
         // ═══ 分区 ViewModel ═══
         public SubscriptionSectionVM SubscriptionVM { get; }
@@ -35,15 +45,12 @@ namespace TrueFluentPro.ViewModels
         public StorageSectionVM StorageVM { get; }
         public RecognitionSectionVM RecognitionVM { get; }
         public TextSectionVM TextVM { get; }
-        public InsightSectionVM InsightVM { get; }
-        public ReviewSectionVM ReviewVM { get; }
-        public ImageGenSectionVM ImageGenVM { get; }
-        public VideoGenSectionVM VideoGenVM { get; }
-        public TransferSectionVM TransferVM { get; }
-        public AboutSectionVM AboutVM { get; }
-
-        public event Action<AzureSpeechConfig>? ConfigSaved;
-        public event Action<string>? StatusNotificationRequested;
+        public InsightSectionVM InsightVM => _insightVm.Value;
+        public ReviewSectionVM ReviewVM => _reviewVm.Value;
+        public ImageGenSectionVM ImageGenVM => _imageGenVm.Value;
+        public VideoGenSectionVM VideoGenVM => _videoGenVm.Value;
+        public TransferSectionVM TransferVM => _transferVm.Value;
+        public AboutSectionVM AboutVM => _aboutVm.Value;
 
         public SettingsViewModel(
             ConfigurationService configService,
@@ -59,43 +66,31 @@ namespace TrueFluentPro.ViewModels
             _configService = configService;
             _settingsImportExportService = settingsImportExportService;
 
-            // 创建分区 ViewModel
             SubscriptionVM = new SubscriptionSectionVM(subscriptionValidator);
             EndpointsVM = new EndpointsSectionVM(modelDiscoveryService, endpointTemplateService, endpointBatchTestService);
             StorageVM = new StorageSectionVM();
             RecognitionVM = new RecognitionSectionVM();
             TextVM = new TextSectionVM();
-            InsightVM = new InsightSectionVM(modelRuntimeResolver);
-            ReviewVM = new ReviewSectionVM();
-            ImageGenVM = new ImageGenSectionVM();
-            VideoGenVM = new VideoGenSectionVM();
-            TransferVM = new TransferSectionVM(settingsTransferFileService, CreateExportPackage, ImportPackageAsync, ReportStatus);
-            AboutVM = new AboutSectionVM(aboutSectionService, ReportStatus);
 
-            SubscribeSectionPropertyForwarding(SubscriptionVM);
-            SubscribeSectionPropertyForwarding(EndpointsVM);
-            SubscribeSectionPropertyForwarding(StorageVM);
-            SubscribeSectionPropertyForwarding(RecognitionVM);
-            SubscribeSectionPropertyForwarding(TextVM);
-            SubscribeSectionPropertyForwarding(InsightVM);
-            SubscribeSectionPropertyForwarding(ReviewVM);
-            SubscribeSectionPropertyForwarding(ImageGenVM);
-            SubscribeSectionPropertyForwarding(VideoGenVM);
-            SubscribeSectionPropertyForwarding(AboutVM);
+            _insightVm = CreateLazySection(() => new InsightSectionVM(modelRuntimeResolver), ConfigureInsightSection);
+            _reviewVm = CreateLazySection(() => new ReviewSectionVM(), ConfigureReviewSection);
+            _imageGenVm = CreateLazySection(() => new ImageGenSectionVM(), ConfigureImageGenSection);
+            _videoGenVm = CreateLazySection(() => new VideoGenSectionVM(), ConfigureVideoGenSection);
+            _aboutVm = CreateLazySection(() => new AboutSectionVM(aboutSectionService, ReportStatus), ConfigureAboutSection);
+            _transferVm = new Lazy<TransferSectionVM>(() => new TransferSectionVM(
+                settingsTransferFileService,
+                CreateExportPackage,
+                CreateFullExportConfig,
+                ImportPackageAsync,
+                ImportFullConfigAsync,
+                ReportStatus));
 
-            // 统一订阅所有分区的 Changed 事件
-            SubscriptionVM.Changed += MarkDirty;
-            EndpointsVM.Changed += MarkDirty;
-            StorageVM.Changed += MarkDirty;
-            RecognitionVM.Changed += MarkDirty;
-            TextVM.Changed += MarkDirty;
-            InsightVM.Changed += MarkDirty;
-            ReviewVM.Changed += MarkDirty;
-            ImageGenVM.Changed += MarkDirty;
-            VideoGenVM.Changed += MarkDirty;
-            AboutVM.Changed += MarkDirty;
+            SubscribeSection(SubscriptionVM);
+            SubscribeSection(EndpointsVM);
+            SubscribeSection(StorageVM);
+            SubscribeSection(RecognitionVM);
+            SubscribeSection(TextVM);
 
-            // 终结点变更 → 刷新模型列表
             EndpointsVM.EndpointsChanged += RefreshModelOptions;
             EndpointsVM.EndpointsChanged += () => _ = RefreshAiAuthStatusAsync();
             SubscriptionVM.StatusRequested += ReportStatus;
@@ -131,7 +126,11 @@ namespace TrueFluentPro.ViewModels
         public void AddModelToSelectedEndpoint(string modelId, string displayName, string groupName, string deploymentName, ModelCapability capabilities) => EndpointsVM.AddModelToSelectedEndpoint(modelId, displayName, groupName, deploymentName, capabilities);
         public void RemoveModelFromSelectedEndpoint(AiModelEntry model) => EndpointsVM.RemoveModelFromSelectedEndpoint(model);
         public void NotifyModelChanged() => EndpointsVM.NotifyModelChanged();
-        public void NotifyEndpointChanged() { EndpointsVM.NotifyEndpointChanged(); _ = RefreshAiAuthStatusAsync(); }
+        public void NotifyEndpointChanged()
+        {
+            EndpointsVM.NotifyEndpointChanged();
+            _ = RefreshAiAuthStatusAsync();
+        }
 
         // — Storage —
         public bool EnableRecording { get => StorageVM.EnableRecording; set => StorageVM.EnableRecording = value; }
@@ -240,36 +239,40 @@ namespace TrueFluentPro.ViewModels
 
         private void LoadFromConfig()
         {
-            // 注入配置引用到需要的分区
             SubscriptionVM.Config = _config;
             EndpointsVM.Config = _config;
             StorageVM.Config = _config;
-            InsightVM.Config = _config;
-            VideoGenVM.Config = _config;
 
-            // 分发加载到各分区
             SubscriptionVM.LoadFrom(_config);
             EndpointsVM.LoadFrom(_config);
             StorageVM.LoadFrom(_config);
             RecognitionVM.LoadFrom(_config);
             TextVM.LoadFrom(_config);
-            InsightVM.LoadFrom(_config);
-            ReviewVM.LoadFrom(_config);
-            ImageGenVM.LoadFrom(_config);
-            VideoGenVM.LoadFrom(_config);
-            AboutVM.LoadFrom(_config);
 
-            var ai = _config.AiConfig ?? new AiConfig();
+            if (_insightVm.IsValueCreated)
+            {
+                ConfigureInsightSection(_insightVm.Value);
+            }
 
-            // 构建模型列表并分发到各分区
-            var textModels = BuildModelOptions(ModelCapability.Text);
-            var imageModels = BuildModelOptions(ModelCapability.Image);
-            var videoModels = BuildModelOptions(ModelCapability.Video);
+            if (_reviewVm.IsValueCreated)
+            {
+                ConfigureReviewSection(_reviewVm.Value);
+            }
 
-            InsightVM.SelectModels(ai, textModels);
-            ReviewVM.SelectModels(ai, textModels);
-            ImageGenVM.SelectModels(_config.MediaGenConfig.ImageModelRef, imageModels);
-            VideoGenVM.SelectModels(_config.MediaGenConfig.VideoModelRef, videoModels);
+            if (_imageGenVm.IsValueCreated)
+            {
+                ConfigureImageGenSection(_imageGenVm.Value);
+            }
+
+            if (_videoGenVm.IsValueCreated)
+            {
+                ConfigureVideoGenSection(_videoGenVm.Value);
+            }
+
+            if (_aboutVm.IsValueCreated)
+            {
+                ConfigureAboutSection(_aboutVm.Value);
+            }
 
             _ = RefreshAiAuthStatusAsync();
         }
@@ -278,14 +281,25 @@ namespace TrueFluentPro.ViewModels
 
         private void RefreshModelOptions()
         {
-            var textModels = BuildModelOptions(ModelCapability.Text);
-            var imageModels = BuildModelOptions(ModelCapability.Image);
-            var videoModels = BuildModelOptions(ModelCapability.Video);
+            if (_insightVm.IsValueCreated)
+            {
+                _insightVm.Value.RefreshModels(BuildModelOptions(ModelCapability.Text));
+            }
 
-            InsightVM.RefreshModels(textModels);
-            ReviewVM.RefreshModels(textModels);
-            ImageGenVM.RefreshModels(imageModels);
-            VideoGenVM.RefreshModels(videoModels);
+            if (_reviewVm.IsValueCreated)
+            {
+                _reviewVm.Value.RefreshModels(BuildModelOptions(ModelCapability.Text));
+            }
+
+            if (_imageGenVm.IsValueCreated)
+            {
+                _imageGenVm.Value.RefreshModels(BuildModelOptions(ModelCapability.Image));
+            }
+
+            if (_videoGenVm.IsValueCreated)
+            {
+                _videoGenVm.Value.RefreshModels(BuildModelOptions(ModelCapability.Video));
+            }
         }
 
         private List<ModelOption> BuildModelOptions(ModelCapability required)
@@ -306,12 +320,71 @@ namespace TrueFluentPro.ViewModels
                 .ToList();
         }
 
-        public async Task RefreshAiAuthStatusAsync() => await InsightVM.RefreshAiAuthStatusAsync();
+        public async Task RefreshAiAuthStatusAsync()
+        {
+            if (_insightVm.IsValueCreated)
+            {
+                await _insightVm.Value.RefreshAiAuthStatusAsync();
+            }
+        }
 
         public void ReportStatus(string message)
         {
             AutoSaveStatus = message;
             StatusNotificationRequested?.Invoke(message);
+        }
+
+        private Lazy<T> CreateLazySection<T>(Func<T> factory, Action<T> configure)
+            where T : class, ISettingsSection, INotifyPropertyChanged
+        {
+            return new Lazy<T>(() =>
+            {
+                var section = factory();
+                SubscribeSection(section);
+                configure(section);
+                return section;
+            });
+        }
+
+        private void SubscribeSection(INotifyPropertyChanged section)
+        {
+            SubscribeSectionPropertyForwarding(section);
+
+            if (section is ISettingsSection settingsSection)
+            {
+                settingsSection.Changed += MarkDirty;
+            }
+        }
+
+        private void ConfigureInsightSection(InsightSectionVM section)
+        {
+            section.Config = _config;
+            section.LoadFrom(_config);
+            section.SelectModels(_config.AiConfig ?? new AiConfig(), BuildModelOptions(ModelCapability.Text));
+        }
+
+        private void ConfigureReviewSection(ReviewSectionVM section)
+        {
+            section.LoadFrom(_config);
+            section.SelectModels(_config.AiConfig ?? new AiConfig(), BuildModelOptions(ModelCapability.Text));
+        }
+
+        private void ConfigureImageGenSection(ImageGenSectionVM section)
+        {
+            section.LoadFrom(_config);
+            section.SelectModels(_config.MediaGenConfig.ImageModelRef, BuildModelOptions(ModelCapability.Image));
+        }
+
+        private void ConfigureVideoGenSection(VideoGenSectionVM section)
+        {
+            section.Config = _config;
+            section.LoadFrom(_config);
+            section.SelectModels(_config.MediaGenConfig.VideoModelRef, BuildModelOptions(ModelCapability.Video));
+        }
+
+        private void ConfigureAboutSection(AboutSectionVM section)
+        {
+            section.LoadFrom(_config);
         }
 
         private void SubscribeSectionPropertyForwarding(INotifyPropertyChanged section)
@@ -345,7 +418,11 @@ namespace TrueFluentPro.ViewModels
 
         private async Task FlushSaveAsync()
         {
-            if (!_isDirty) return;
+            if (!_isDirty)
+            {
+                return;
+            }
+
             _isDirty = false;
 
             try
@@ -365,8 +442,16 @@ namespace TrueFluentPro.ViewModels
         {
             PauseAutoSave();
             ApplyToConfig();
-            AutoSaveStatus = "✓ 已生成可导出的资源配置";
+            AutoSaveStatus = "✓ 已生成可导出的基本AI配置";
             return _settingsImportExportService.CreateExportPackage(_config);
+        }
+
+        public AzureSpeechConfig CreateFullExportConfig()
+        {
+            PauseAutoSave();
+            ApplyToConfig();
+            AutoSaveStatus = "✓ 已生成可导出的完整配置";
+            return _settingsImportExportService.CreateFullExportConfig(_config);
         }
 
         public async Task ImportPackageAsync(SettingsTransferPackage package)
@@ -380,6 +465,26 @@ namespace TrueFluentPro.ViewModels
                 LoadFromConfig();
                 await _configService.SaveConfigAsync(_config);
                 AutoSaveStatus = BuildImportSuccessStatus(package);
+                ConfigSaved?.Invoke(_config);
+            }
+            catch (Exception ex)
+            {
+                AutoSaveStatus = $"导入失败: {ex.Message}";
+                throw;
+            }
+        }
+
+        public async Task ImportFullConfigAsync(AzureSpeechConfig config)
+        {
+            PauseAutoSave();
+
+            try
+            {
+                ApplyToConfig();
+                _config = _settingsImportExportService.NormalizeImportedFullConfig(config);
+                LoadFromConfig();
+                await _configService.SaveConfigAsync(_config);
+                AutoSaveStatus = "✓ 已导入完整配置；AAD 相关字段与 AAD 认证端点已自动忽略";
                 ConfigSaved?.Invoke(_config);
             }
             catch (Exception ex)
@@ -407,17 +512,36 @@ namespace TrueFluentPro.ViewModels
 
         private void ApplyToConfig()
         {
-            // 收集各分区状态到配置模型
             SubscriptionVM.ApplyTo(_config);
             EndpointsVM.ApplyTo(_config);
             StorageVM.ApplyTo(_config);
             RecognitionVM.ApplyTo(_config);
             TextVM.ApplyTo(_config);
-            InsightVM.ApplyTo(_config);
-            ReviewVM.ApplyTo(_config);
-            ImageGenVM.ApplyTo(_config);
-            VideoGenVM.ApplyTo(_config);
-            AboutVM.ApplyTo(_config);
+
+            if (_insightVm.IsValueCreated)
+            {
+                _insightVm.Value.ApplyTo(_config);
+            }
+
+            if (_reviewVm.IsValueCreated)
+            {
+                _reviewVm.Value.ApplyTo(_config);
+            }
+
+            if (_imageGenVm.IsValueCreated)
+            {
+                _imageGenVm.Value.ApplyTo(_config);
+            }
+
+            if (_videoGenVm.IsValueCreated)
+            {
+                _videoGenVm.Value.ApplyTo(_config);
+            }
+
+            if (_aboutVm.IsValueCreated)
+            {
+                _aboutVm.Value.ApplyTo(_config);
+            }
 
             EndpointsVM.SyncEndpointsToConfig();
         }

@@ -11,22 +11,31 @@
         <StackPanel Spacing="12">
             <TextBlock Text="配置迁移" Theme="{StaticResource SubtitleTextBlockStyle}"/>
             <Separator/>
-            <TextBlock Text="导出或导入可迁移资源：Speech、存储、AI 终结点与模型选择。不会包含 AAD 登录字段和个人化细项。"
-                       Foreground="Gray"
-                       TextWrapping="Wrap"/>
             <StackPanel Orientation="Horizontal" Spacing="12">
                 <Button MinWidth="120"
                         Padding="16,8"
                         IsEnabled="{Binding !IsBusy}"
-                        Click="OnExportSettingsPackageClick">
+                        ToolTip.Tip="导出当前完整配置，包含主题、语言、录音、字幕、批处理、AI 与媒体等基础设置；不会包含 AAD 登录字段和 AAD 认证端点。"
+                        Click="OnExportFullConfigClick">
                     <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
-                        <icons:Icon Value="fa-solid fa-file-export" FontSize="12"/>
-                        <TextBlock Text="导出" VerticalAlignment="Center"/>
+                        <icons:Icon Value="fa-solid fa-box-archive" FontSize="12"/>
+                        <TextBlock Text="导出完整配置" VerticalAlignment="Center"/>
                     </StackPanel>
                 </Button>
                 <Button MinWidth="120"
                         Padding="16,8"
                         IsEnabled="{Binding !IsBusy}"
+                        ToolTip.Tip="仅导出 Speech、存储、AI 终结点与模型选择等可迁移的基本 AI 配置；不会包含 AAD 登录字段、AAD 认证端点和个性化细项。"
+                        Click="OnExportBasicAiConfigClick">
+                    <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+                        <icons:Icon Value="fa-solid fa-file-export" FontSize="12"/>
+                        <TextBlock Text="导出基本AI配置" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+                <Button MinWidth="120"
+                        Padding="16,8"
+                        IsEnabled="{Binding !IsBusy}"
+                        ToolTip.Tip="自动识别并导入“基本AI配置”或“完整配置”JSON；导入完整配置时会自动忽略 AAD 登录字段和 AAD 认证端点。"
                         Click="OnImportSettingsPackageClick">
                     <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
                         <icons:Icon Value="fa-solid fa-file-import" FontSize="12"/>

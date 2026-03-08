@@ -11,7 +11,7 @@ public partial class TransferSection : UserControl
         InitializeComponent();
     }
 
-    private async void OnExportSettingsPackageClick(object? sender, RoutedEventArgs e)
+    private async void OnExportFullConfigClick(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not TransferSectionVM vm)
         {
@@ -25,7 +25,24 @@ public partial class TransferSection : UserControl
             return;
         }
 
-        await vm.ExportAsync(provider);
+        await vm.ExportFullConfigAsync(provider);
+    }
+
+    private async void OnExportBasicAiConfigClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not TransferSectionVM vm)
+        {
+            return;
+        }
+
+        var provider = TopLevel.GetTopLevel(this)?.StorageProvider;
+        if (provider == null)
+        {
+            vm.ReportStorageProviderUnavailable(isImport: false);
+            return;
+        }
+
+        await vm.ExportBasicAiConfigAsync(provider);
     }
 
     private async void OnImportSettingsPackageClick(object? sender, RoutedEventArgs e)

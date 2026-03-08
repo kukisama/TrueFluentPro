@@ -19,6 +19,12 @@ namespace TrueFluentPro.ViewModels
     {
         private readonly ObservableCollection<BatchTaskItem> _batchTasks = new();
         private readonly ObservableCollection<BatchQueueItem> _batchQueueItems = new();
+        private readonly ObservableCollection<BatchBucketNavItem> _packageBuckets = new();
+        private readonly ObservableCollection<BatchPackageItem> _pendingPackages = new();
+        private readonly ObservableCollection<BatchPackageItem> _runningPackages = new();
+        private readonly ObservableCollection<BatchPackageItem> _failedPackages = new();
+        private readonly ObservableCollection<BatchPackageItem> _completedPackages = new();
+        private readonly ObservableCollection<BatchPackageItem> _removedPackages = new();
         private int _batchConcurrencyLimit = 10;
         private bool _isBatchRunning;
         private CancellationTokenSource? _batchCts;
@@ -33,6 +39,8 @@ namespace TrueFluentPro.ViewModels
 
         private readonly ObservableCollection<ReviewSheetState> _reviewSheets = new();
         private ReviewSheetState? _selectedReviewSheet;
+        private BatchPackageItem? _selectedPackage;
+        private BatchBucketNavItem? _selectedPackageBucket;
 
         private readonly Func<AzureSpeechConfig> _configProvider;
         private readonly Action<string> _statusSetter;
@@ -41,6 +49,7 @@ namespace TrueFluentPro.ViewModels
         private readonly FileLibraryViewModel _fileLibrary;
         private readonly PlaybackViewModel _playback;
         private readonly ConfigurationService _configService;
+        private readonly IBatchPackageStateService _batchPackageStateService;
         private readonly Action _notifyReviewLampChanged;
 
         public RelayCommand LoadBatchTasksCommand { get; }
@@ -56,6 +65,15 @@ namespace TrueFluentPro.ViewModels
         public RelayCommand GenerateSpeechSubtitleCommand { get; }
         public RelayCommand CancelSpeechSubtitleCommand { get; }
         public RelayCommand GenerateBatchSpeechSubtitleCommand { get; }
+        public RelayCommand RemovePackageCommand { get; }
+        public RelayCommand RestorePackageCommand { get; }
+        public RelayCommand PausePackageCommand { get; }
+        public RelayCommand ResumePackageCommand { get; }
+        public RelayCommand EnqueuePackageCommand { get; }
+        public RelayCommand RegeneratePackageCommand { get; }
+        public RelayCommand RegenerateSubtaskCommand { get; }
+        public RelayCommand StartPackageCommand { get; }
+        public RelayCommand TogglePackageExpandedCommand { get; }
 
         private bool IsAiConfigured => TryBuildReviewRuntimeConfig(_configProvider(), out _, out _, out _);
 
@@ -67,6 +85,7 @@ namespace TrueFluentPro.ViewModels
             FileLibraryViewModel fileLibrary,
             PlaybackViewModel playback,
             ConfigurationService configService,
+            IBatchPackageStateService batchPackageStateService,
             Action notifyReviewLampChanged)
         {
             _configProvider = configProvider;
@@ -76,7 +95,10 @@ namespace TrueFluentPro.ViewModels
             _fileLibrary = fileLibrary;
             _playback = playback;
             _configService = configService;
+            _batchPackageStateService = batchPackageStateService;
             _notifyReviewLampChanged = notifyReviewLampChanged;
+
+            InitializePackageBuckets();
 
             LoadBatchTasksCommand = new RelayCommand(
                 execute: _ => LoadBatchTasksFromLibrary());
@@ -134,12 +156,111 @@ namespace TrueFluentPro.ViewModels
             GenerateBatchSpeechSubtitleCommand = new RelayCommand(
                 execute: _ => GenerateBatchSpeechSubtitle(),
                 canExecute: _ => CanGenerateBatchSpeechSubtitle());
+
+            RemovePackageCommand = new RelayCommand(
+                execute: param => RemovePackage(param as BatchPackageItem),
+                canExecute: param => CanRemovePackage(param as BatchPackageItem));
+
+            RestorePackageCommand = new RelayCommand(
+                execute: param => RestorePackage(param as BatchPackageItem),
+                canExecute: param => CanRestorePackage(param as BatchPackageItem));
+
+            PausePackageCommand = new RelayCommand(
+                execute: param => PausePackage(param as BatchPackageItem),
+                canExecute: param => CanPausePackage(param as BatchPackageItem));
+
+            ResumePackageCommand = new RelayCommand(
+                execute: param => ResumePackage(param as BatchPackageItem),
+                canExecute: param => CanResumePackage(param as BatchPackageItem));
+
+            EnqueuePackageCommand = new RelayCommand(
+                execute: param => EnqueuePackage(param as BatchPackageItem),
+                canExecute: param => CanEnqueuePackage(param as BatchPackageItem));
+
+            StartPackageCommand = new RelayCommand(
+                execute: param => StartPackage(param as BatchPackageItem),
+                canExecute: param => CanStartPackage(param as BatchPackageItem));
+
+            RegeneratePackageCommand = new RelayCommand(
+                execute: param => RegeneratePackage(param as BatchPackageItem),
+                canExecute: param => CanRegeneratePackage(param as BatchPackageItem));
+
+            RegenerateSubtaskCommand = new RelayCommand(
+                execute: param => RegenerateSubtask(param as BatchSubtaskItem),
+                canExecute: param => CanRegenerateSubtask(param as BatchSubtaskItem));
+
+            TogglePackageExpandedCommand = new RelayCommand(
+                execute: param => TogglePackageExpanded(param as BatchPackageItem),
+                canExecute: param => param is BatchPackageItem);
         }
 
         // ── Properties ──
 
         public ObservableCollection<BatchTaskItem> BatchTasks => _batchTasks;
         public ObservableCollection<BatchQueueItem> BatchQueueItems => _batchQueueItems;
+        public ObservableCollection<BatchBucketNavItem> PackageBuckets => _packageBuckets;
+        public ObservableCollection<BatchPackageItem> PendingPackages => _pendingPackages;
+        public ObservableCollection<BatchPackageItem> RunningPackages => _runningPackages;
+        public ObservableCollection<BatchPackageItem> FailedPackages => _failedPackages;
+        public ObservableCollection<BatchPackageItem> CompletedPackages => _completedPackages;
+        public ObservableCollection<BatchPackageItem> RemovedPackages => _removedPackages;
+        public string CurrentBucketTitle => SelectedPackageBucket?.Title ?? "待处理";
+        public bool IsCurrentBucketPending => string.Equals(SelectedPackageBucket?.Key, "pending", StringComparison.OrdinalIgnoreCase);
+        public bool IsCurrentBucketRunning => string.Equals(SelectedPackageBucket?.Key, "running", StringComparison.OrdinalIgnoreCase);
+        public bool IsCurrentBucketCompleted => string.Equals(SelectedPackageBucket?.Key, "completed", StringComparison.OrdinalIgnoreCase);
+        public bool IsCurrentBucketFailed => string.Equals(SelectedPackageBucket?.Key, "failed", StringComparison.OrdinalIgnoreCase);
+        public bool IsCurrentBucketRemoved => string.Equals(SelectedPackageBucket?.Key, "removed", StringComparison.OrdinalIgnoreCase);
+
+        public BatchBucketNavItem? SelectedPackageBucket
+        {
+            get => _selectedPackageBucket;
+            set
+            {
+                if (SetProperty(ref _selectedPackageBucket, value))
+                {
+                    OnPropertyChanged(nameof(CurrentBucketPackages));
+                    OnPropertyChanged(nameof(CurrentBucketTitle));
+                    OnPropertyChanged(nameof(IsCurrentBucketPending));
+                    OnPropertyChanged(nameof(IsCurrentBucketRunning));
+                    OnPropertyChanged(nameof(IsCurrentBucketCompleted));
+                    OnPropertyChanged(nameof(IsCurrentBucketFailed));
+                    OnPropertyChanged(nameof(IsCurrentBucketRemoved));
+                    if (value == null)
+                    {
+                        return;
+                    }
+
+                    var current = CurrentBucketPackages;
+                    if (SelectedPackage != null && current.Contains(SelectedPackage))
+                    {
+                        return;
+                    }
+
+                    SelectedPackage = current.FirstOrDefault();
+                }
+            }
+        }
+
+        public ObservableCollection<BatchPackageItem> CurrentBucketPackages
+            => GetBucketCollection(SelectedPackageBucket?.Key);
+
+        public BatchPackageItem? SelectedPackage
+        {
+            get => _selectedPackage;
+            set
+            {
+                if (SetProperty(ref _selectedPackage, value))
+                {
+                    RemovePackageCommand.RaiseCanExecuteChanged();
+                    RestorePackageCommand.RaiseCanExecuteChanged();
+                    PausePackageCommand.RaiseCanExecuteChanged();
+                    ResumePackageCommand.RaiseCanExecuteChanged();
+                    EnqueuePackageCommand.RaiseCanExecuteChanged();
+                    StartPackageCommand.RaiseCanExecuteChanged();
+                    RegeneratePackageCommand.RaiseCanExecuteChanged();
+                }
+            }
+        }
 
         public int BatchConcurrencyLimit
         {
@@ -416,6 +537,9 @@ namespace TrueFluentPro.ViewModels
                 sheet.Markdown = "";
                 sheet.StatusMessage = "";
             }
+
+            LoadBatchTasksFromLibrary();
+            RefreshPackageProjections();
         }
 
         // ── Private helpers ──
@@ -466,6 +590,732 @@ namespace TrueFluentPro.ViewModels
             BatchQueueStatusText = total == 0
                 ? "队列为空"
                 : $"队列 {completed}/{total} 完成，运行 {running}，等待 {pending}，失败 {failed}";
+
+            RefreshPackageProjections();
+        }
+
+        private void InitializePackageBuckets()
+        {
+            _packageBuckets.Clear();
+            _packageBuckets.Add(new BatchBucketNavItem { Key = "pending", Title = "待处理", IconValue = "fa-regular fa-clock" });
+            _packageBuckets.Add(new BatchBucketNavItem { Key = "running", Title = "处理中", IconValue = "fa-solid fa-arrows-rotate" });
+            _packageBuckets.Add(new BatchBucketNavItem { Key = "completed", Title = "处理完成", IconValue = "fa-solid fa-check" });
+            _packageBuckets.Add(new BatchBucketNavItem { Key = "failed", Title = "失败", IconValue = "fa-solid fa-triangle-exclamation" });
+            _packageBuckets.Add(new BatchBucketNavItem { Key = "removed", Title = "删除", IconValue = "fa-regular fa-trash-can" });
+            SelectedPackageBucket = _packageBuckets.FirstOrDefault();
+        }
+
+        private ObservableCollection<BatchPackageItem> GetBucketCollection(string? key)
+        {
+            return key switch
+            {
+                "running" => _runningPackages,
+                "completed" => _completedPackages,
+                "failed" => _failedPackages,
+                "removed" => _removedPackages,
+                _ => _pendingPackages
+            };
+        }
+
+        private bool CanStartPackage(BatchPackageItem? package)
+            => package != null && !package.IsRemoved && package.State is ProcessingDisplayState.Pending or ProcessingDisplayState.Partial or ProcessingDisplayState.Failed;
+
+        private void StartPackage(BatchPackageItem? package)
+        {
+            EnqueuePackage(package);
+        }
+
+        private void RefreshBucketCounts()
+        {
+            foreach (var bucket in _packageBuckets)
+            {
+                bucket.Count = bucket.Key switch
+                {
+                    "pending" => _pendingPackages.Count,
+                    "running" => _runningPackages.Count,
+                    "completed" => _completedPackages.Count,
+                    "failed" => _failedPackages.Count,
+                    "removed" => _removedPackages.Count,
+                    _ => 0
+                };
+            }
+
+            OnPropertyChanged(nameof(CurrentBucketPackages));
+        }
+
+        public void RefreshPackageProjections()
+        {
+            _batchPackageStateService.EnsurePackages(_fileLibrary.AudioFiles);
+
+            var batchSheets = GetBatchReviewSheets();
+            var packages = _fileLibrary.AudioFiles
+                .Select(audioFile => BuildPackageItem(audioFile, batchSheets))
+                .OrderBy(package => package.DisplayName, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            NormalizeExpandedPackages(packages);
+
+            ReplacePackageCollection(_pendingPackages, packages.Where(package =>
+                package.State is ProcessingDisplayState.Pending or ProcessingDisplayState.Partial));
+            ReplacePackageCollection(_runningPackages, packages.Where(package =>
+                package.State == ProcessingDisplayState.Running));
+            ReplacePackageCollection(_failedPackages, packages.Where(package =>
+                package.State == ProcessingDisplayState.Failed));
+            ReplacePackageCollection(_completedPackages, packages.Where(package => package.State == ProcessingDisplayState.Completed));
+            ReplacePackageCollection(_removedPackages, packages.Where(package => package.State == ProcessingDisplayState.Removed));
+            RefreshBucketCounts();
+
+            var selectedPath = SelectedPackage?.FullPath;
+            SelectedPackage = packages.FirstOrDefault(package =>
+                                   string.Equals(package.FullPath, selectedPath, StringComparison.OrdinalIgnoreCase))
+                               ?? CurrentBucketPackages.FirstOrDefault()
+                               ?? _runningPackages.FirstOrDefault()
+                               ?? _pendingPackages.FirstOrDefault()
+                               ?? _failedPackages.FirstOrDefault()
+                               ?? _completedPackages.FirstOrDefault()
+                               ?? _removedPackages.FirstOrDefault();
+
+            _fileLibrary.ApplyAudioProcessingSnapshots(packages.Select(CreateAudioSnapshot).ToList());
+        }
+
+        private void NormalizeExpandedPackages(IReadOnlyList<BatchPackageItem> packages)
+        {
+            var expandedPackages = packages.Where(package => package.IsExpanded).ToList();
+            if (expandedPackages.Count <= 1)
+            {
+                return;
+            }
+
+            var keepExpanded = expandedPackages.FirstOrDefault(package =>
+                                   string.Equals(package.FullPath, SelectedPackage?.FullPath, StringComparison.OrdinalIgnoreCase))
+                               ?? expandedPackages.First();
+
+            foreach (var package in expandedPackages)
+            {
+                var shouldExpand = ReferenceEquals(package, keepExpanded);
+                if (package.IsExpanded == shouldExpand)
+                {
+                    continue;
+                }
+
+                package.IsExpanded = shouldExpand;
+                _batchPackageStateService.SetExpanded(package.FullPath, shouldExpand);
+            }
+        }
+
+        private BatchPackageItem BuildPackageItem(MediaFileItem audioFile, IReadOnlyCollection<ReviewSheetPreset> batchSheets)
+        {
+            var batchTask = _batchTasks.FirstOrDefault(item =>
+                string.Equals(item.FullPath, audioFile.FullPath, StringComparison.OrdinalIgnoreCase));
+            var queueItems = _batchQueueItems
+                .Where(item => string.Equals(item.FullPath, audioFile.FullPath, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            var package = new BatchPackageItem
+            {
+                DisplayName = audioFile.Name,
+                FullPath = audioFile.FullPath,
+                IsExpanded = _batchPackageStateService.IsExpanded(audioFile.FullPath),
+                IsPaused = _batchPackageStateService.IsPaused(audioFile.FullPath),
+                IsRemoved = _batchPackageStateService.IsRemoved(audioFile.FullPath)
+            };
+
+            var subtaskProgressSum = 0d;
+            var completedCount = 0;
+            var failedCount = 0;
+            var activeCount = 0;
+
+            var hasSpeechLayer = ShouldGenerateSpeechSubtitleForReview || FileLibraryViewModel.HasSpeechSubtitle(audioFile.FullPath);
+
+            if (hasSpeechLayer)
+            {
+                var speechQueueItem = SelectPreferredQueueItem(queueItems,
+                    item => item.QueueType == BatchQueueItemType.SpeechSubtitle);
+                var speechState = BuildSpeechSubtask(audioFile.FullPath, speechQueueItem);
+                speechState.IndentMargin = new Avalonia.Thickness(24, 6, 0, 0);
+                package.Subtasks.Add(speechState);
+            }
+
+            foreach (var sheet in batchSheets)
+            {
+                var queueItem = SelectPreferredQueueItem(queueItems, item =>
+                    item.QueueType == BatchQueueItemType.ReviewSheet
+                    && string.Equals(item.SheetTag, sheet.FileTag, StringComparison.OrdinalIgnoreCase));
+                var reviewSubtask = BuildReviewSubtask(audioFile.FullPath, sheet, queueItem);
+                reviewSubtask.IndentMargin = new Avalonia.Thickness(hasSpeechLayer ? 48 : 24, 6, 0, 0);
+                package.Subtasks.Add(reviewSubtask);
+            }
+
+            foreach (var subtask in package.Subtasks)
+            {
+                subtaskProgressSum += Math.Clamp(subtask.Progress, 0, 1);
+                if (subtask.State == ProcessingDisplayState.Completed)
+                {
+                    completedCount++;
+                }
+                else if (subtask.State == ProcessingDisplayState.Failed)
+                {
+                    failedCount++;
+                }
+                else if (subtask.State is ProcessingDisplayState.Pending or ProcessingDisplayState.Running)
+                {
+                    activeCount++;
+                }
+            }
+
+            package.TotalCount = package.Subtasks.Count;
+            package.CompletedCount = completedCount;
+            package.FailedCount = failedCount;
+            package.Progress = package.TotalCount == 0 ? 0 : subtaskProgressSum / package.TotalCount;
+
+            if (package.IsRemoved)
+            {
+                package.State = ProcessingDisplayState.Removed;
+                package.StateText = "已删除";
+                package.SummaryText = package.TotalCount == 0
+                    ? "已从批处理中心移除"
+                    : $"已移除 · 完成 {completedCount}/{package.TotalCount}";
+                return package;
+            }
+
+            if (package.IsPaused)
+            {
+                package.State = ProcessingDisplayState.Pending;
+                package.StateText = "已暂停";
+                package.SummaryText = package.TotalCount == 0
+                    ? "已暂停，等待重新加入队列"
+                    : $"已暂停 · 完成 {completedCount}/{package.TotalCount}";
+                return package;
+            }
+
+            if (package.TotalCount > 0 && completedCount >= package.TotalCount)
+            {
+                package.State = ProcessingDisplayState.Completed;
+                package.StateText = "已完成";
+                package.SummaryText = $"完成 {completedCount}/{package.TotalCount}";
+                return package;
+            }
+
+            if (activeCount > 0)
+            {
+                package.State = queueItems.Any(item => item.Status == BatchTaskStatus.Running)
+                    ? ProcessingDisplayState.Running
+                    : ProcessingDisplayState.Pending;
+                package.StateText = package.State == ProcessingDisplayState.Running ? "处理中" : "待处理";
+                package.SummaryText = package.TotalCount == 0
+                    ? (batchTask?.StatusMessage ?? "待处理")
+                    : $"完成 {completedCount}/{package.TotalCount} · 运行 {activeCount}";
+                return package;
+            }
+
+            if (completedCount > 0)
+            {
+                package.State = failedCount > 0 ? ProcessingDisplayState.Failed : ProcessingDisplayState.Partial;
+                package.StateText = failedCount > 0 ? "部分失败" : "部分完成";
+                package.SummaryText = failedCount > 0
+                    ? $"完成 {completedCount}/{package.TotalCount} · 失败 {failedCount}"
+                    : $"完成 {completedCount}/{package.TotalCount}";
+                return package;
+            }
+
+            if (failedCount > 0 || batchTask?.Status == BatchTaskStatus.Failed)
+            {
+                package.State = ProcessingDisplayState.Failed;
+                package.StateText = "失败";
+                package.SummaryText = batchTask?.StatusMessage ?? "有子任务失败";
+                return package;
+            }
+
+            package.State = ProcessingDisplayState.Pending;
+            package.StateText = "未处理";
+            package.SummaryText = package.TotalCount == 0 ? "当前未配置批处理子任务" : $"待处理 {package.TotalCount} 项";
+            return package;
+        }
+
+        private static BatchQueueItem? SelectPreferredQueueItem(
+            IEnumerable<BatchQueueItem> queueItems,
+            Func<BatchQueueItem, bool> predicate)
+        {
+            return queueItems
+                .Where(predicate)
+                .OrderByDescending(item => item.Status switch
+                {
+                    BatchTaskStatus.Running => 4,
+                    BatchTaskStatus.Pending => 3,
+                    BatchTaskStatus.Failed => 2,
+                    BatchTaskStatus.Completed => 1,
+                    _ => 0
+                })
+                .FirstOrDefault();
+        }
+
+        private BatchSubtaskItem BuildSpeechSubtask(string audioPath, BatchQueueItem? queueItem)
+        {
+            var completed = FileLibraryViewModel.HasSpeechSubtitle(audioPath);
+            if (queueItem != null && queueItem.Status != BatchTaskStatus.Completed)
+            {
+                return new BatchSubtaskItem
+                {
+                    Title = "Speech 字幕",
+                    AudioPath = audioPath,
+                    Tag = "speech",
+                    IconValue = "fa-solid fa-closed-captioning",
+                    IsSpeechSubtask = true,
+                    CanRegenerate = queueItem.Status != BatchTaskStatus.Running,
+                    State = MapQueueStatus(queueItem.Status),
+                    StatusText = queueItem.StatusMessage,
+                    Progress = queueItem.Progress,
+                    IsActive = queueItem.CanCancel
+                };
+            }
+
+            return new BatchSubtaskItem
+            {
+                Title = "Speech 字幕",
+                AudioPath = audioPath,
+                Tag = "speech",
+                IconValue = "fa-solid fa-closed-captioning",
+                IsSpeechSubtask = true,
+                CanRegenerate = true,
+                State = completed ? ProcessingDisplayState.Completed : ProcessingDisplayState.Pending,
+                StatusText = completed ? "已完成" : "待处理",
+                Progress = completed ? 1 : 0,
+                IsActive = false
+            };
+        }
+
+        private BatchSubtaskItem BuildReviewSubtask(string audioPath, ReviewSheetPreset sheet, BatchQueueItem? queueItem)
+        {
+            var reviewPath = GetReviewSheetPath(audioPath, sheet.FileTag);
+            var completed = File.Exists(reviewPath);
+            if (queueItem != null && queueItem.Status != BatchTaskStatus.Completed)
+            {
+                return new BatchSubtaskItem
+                {
+                    Title = sheet.Name,
+                    AudioPath = audioPath,
+                    Tag = sheet.FileTag,
+                    IconValue = "fa-solid fa-brain",
+                    IsSpeechSubtask = false,
+                    CanRegenerate = queueItem.Status != BatchTaskStatus.Running,
+                    State = MapQueueStatus(queueItem.Status),
+                    StatusText = queueItem.StatusMessage,
+                    Progress = queueItem.Progress,
+                    IsActive = queueItem.CanCancel
+                };
+            }
+
+            return new BatchSubtaskItem
+            {
+                Title = sheet.Name,
+                AudioPath = audioPath,
+                Tag = sheet.FileTag,
+                IconValue = "fa-solid fa-brain",
+                IsSpeechSubtask = false,
+                CanRegenerate = true,
+                State = completed ? ProcessingDisplayState.Completed : ProcessingDisplayState.Pending,
+                StatusText = completed ? "已完成" : "待处理",
+                Progress = completed ? 1 : 0,
+                IsActive = false
+            };
+        }
+
+        private static ProcessingDisplayState MapQueueStatus(BatchTaskStatus status)
+        {
+            return status switch
+            {
+                BatchTaskStatus.Completed => ProcessingDisplayState.Completed,
+                BatchTaskStatus.Running => ProcessingDisplayState.Running,
+                BatchTaskStatus.Failed => ProcessingDisplayState.Failed,
+                _ => ProcessingDisplayState.Pending
+            };
+        }
+
+        private static AudioFileProcessingSnapshot CreateAudioSnapshot(BatchPackageItem package)
+        {
+            return new AudioFileProcessingSnapshot
+            {
+                AudioPath = package.FullPath,
+                State = package.State,
+                BadgeText = package.StateText,
+                DetailText = package.SummaryText
+            };
+        }
+
+        private static void ReplacePackageCollection(ObservableCollection<BatchPackageItem> target, IEnumerable<BatchPackageItem> items)
+        {
+            target.Clear();
+            foreach (var item in items)
+            {
+                target.Add(item);
+            }
+        }
+
+        private bool CanRemovePackage(BatchPackageItem? package)
+            => package?.CanDelete == true;
+
+        private bool CanRestorePackage(BatchPackageItem? package)
+            => package?.IsRemoved == true;
+
+        private bool CanPausePackage(BatchPackageItem? package)
+            => package?.CanPause == true;
+
+        private bool CanResumePackage(BatchPackageItem? package)
+            => package?.CanResume == true;
+
+        private bool CanEnqueuePackage(BatchPackageItem? package)
+            => package?.CanEnqueue == true;
+
+        private bool CanRegeneratePackage(BatchPackageItem? package)
+            => package != null && !package.IsRemoved && package.State != ProcessingDisplayState.Running;
+
+        private bool CanRegenerateSubtask(BatchSubtaskItem? subtask)
+            => subtask?.CanRegenerate == true && subtask.State != ProcessingDisplayState.Running;
+
+        private void RemovePackage(BatchPackageItem? package)
+        {
+            if (package == null)
+            {
+                return;
+            }
+
+            _batchPackageStateService.SetRemoved(package.FullPath, true);
+            LoadBatchTasksFromLibrary();
+            RefreshPackageProjections();
+        }
+
+        private void RestorePackage(BatchPackageItem? package)
+        {
+            if (package == null)
+            {
+                return;
+            }
+
+            _batchPackageStateService.SetRemoved(package.FullPath, false);
+            LoadBatchTasksFromLibrary();
+            RefreshPackageProjections();
+        }
+
+        private void PausePackage(BatchPackageItem? package)
+        {
+            if (package == null)
+            {
+                return;
+            }
+
+            _batchPackageStateService.SetPaused(package.FullPath, true);
+
+            var parent = BatchTasks.FirstOrDefault(item =>
+                string.Equals(item.FullPath, package.FullPath, StringComparison.OrdinalIgnoreCase));
+
+            foreach (var queueItem in _batchQueueItems.Where(item =>
+                         string.Equals(item.FullPath, package.FullPath, StringComparison.OrdinalIgnoreCase)))
+            {
+                queueItem.PauseRequested = true;
+                if (queueItem.Status == BatchTaskStatus.Running)
+                {
+                    queueItem.Cts?.Cancel();
+                }
+                else if (queueItem.Status == BatchTaskStatus.Pending)
+                {
+                    UpdateQueueItem(queueItem, BatchTaskStatus.Pending, queueItem.Progress, "已暂停");
+                }
+            }
+
+            if (parent != null)
+            {
+                UpdateBatchItem(parent, BatchTaskStatus.Pending, parent.Progress, "已暂停");
+            }
+
+            BatchStatusMessage = $"已暂停：{package.DisplayName}";
+            RefreshPackageProjections();
+        }
+
+        private void ResumePackage(BatchPackageItem? package)
+        {
+            if (package == null)
+            {
+                return;
+            }
+
+            _batchPackageStateService.SetPaused(package.FullPath, false);
+
+            foreach (var queueItem in _batchQueueItems.Where(item =>
+                         string.Equals(item.FullPath, package.FullPath, StringComparison.OrdinalIgnoreCase)
+                         && item.Status == BatchTaskStatus.Pending))
+            {
+                queueItem.PauseRequested = false;
+                UpdateQueueItem(queueItem, BatchTaskStatus.Pending, queueItem.Progress, "待处理");
+            }
+
+            BatchStatusMessage = $"已继续：{package.DisplayName}";
+            RefreshPackageProjections();
+
+            if (_batchQueueItems.Any(item => item.Status == BatchTaskStatus.Pending && !_batchPackageStateService.IsPaused(item.FullPath)))
+            {
+                StartBatchQueueRunner("任务已继续");
+            }
+        }
+
+        private void EnqueuePackage(BatchPackageItem? package)
+        {
+            if (package == null)
+            {
+                return;
+            }
+
+            _batchPackageStateService.SetRemoved(package.FullPath, false);
+            _batchPackageStateService.SetPaused(package.FullPath, false);
+            RemoveQueueItemsForPackage(package.FullPath, item => item.Status == BatchTaskStatus.Failed);
+
+            var batchItem = BatchTasks.FirstOrDefault(item =>
+                string.Equals(item.FullPath, package.FullPath, StringComparison.OrdinalIgnoreCase));
+
+            if (batchItem == null)
+            {
+                LoadBatchTasksFromLibrary();
+                batchItem = BatchTasks.FirstOrDefault(item =>
+                    string.Equals(item.FullPath, package.FullPath, StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (batchItem == null)
+            {
+                BatchStatusMessage = $"未找到可入队的文件：{package.DisplayName}";
+                RefreshPackageProjections();
+                return;
+            }
+
+            var reviewSheets = GetBatchReviewSheets();
+            var enableReview = IsAiConfigured && reviewSheets.Count > 0;
+            var enableSpeech = ShouldGenerateSpeechSubtitleForReview;
+            var added = PrepareAndEnqueueSingleItem(batchItem, reviewSheets, enableSpeech, enableReview, false);
+
+            BatchStatusMessage = added > 0
+                ? $"已加入任务队列：{package.DisplayName}"
+                : $"{package.DisplayName} 当前没有需要重新加入的子任务";
+
+            RefreshPackageProjections();
+
+            if (added > 0)
+            {
+                StartBatchQueueRunner("任务已加入队列");
+            }
+        }
+
+        private void RegeneratePackage(BatchPackageItem? package)
+        {
+            if (package == null)
+            {
+                return;
+            }
+
+            _batchPackageStateService.SetRemoved(package.FullPath, false);
+            _batchPackageStateService.SetPaused(package.FullPath, false);
+            RemoveQueueItemsForPackage(package.FullPath, _ => true);
+
+            var batchItem = GetOrCreateBatchTaskForAudio(package.FullPath, package.DisplayName);
+            if (batchItem == null)
+            {
+                BatchStatusMessage = $"未找到可重新生成的文件包：{package.DisplayName}";
+                return;
+            }
+
+            var reviewSheets = GetBatchReviewSheets();
+            var enableReview = IsAiConfigured && reviewSheets.Count > 0;
+            var enableSpeech = ShouldGenerateSpeechSubtitleForReview;
+            var added = PrepareAndEnqueueSingleItem(batchItem, reviewSheets, enableSpeech, enableReview, true);
+
+            BatchStatusMessage = added > 0
+                ? $"已重新生成整个文件包：{package.DisplayName}"
+                : $"{package.DisplayName} 当前没有可重新生成的任务";
+
+            RefreshPackageProjections();
+
+            if (added > 0)
+            {
+                StartBatchQueueRunner("整包重新生成已加入队列");
+            }
+        }
+
+        private void RegenerateSubtask(BatchSubtaskItem? subtask)
+        {
+            if (subtask == null || string.IsNullOrWhiteSpace(subtask.AudioPath))
+            {
+                return;
+            }
+
+            _batchPackageStateService.SetRemoved(subtask.AudioPath, false);
+            _batchPackageStateService.SetPaused(subtask.AudioPath, false);
+
+            var batchItem = GetOrCreateBatchTaskForAudio(subtask.AudioPath, Path.GetFileName(subtask.AudioPath));
+            if (batchItem == null)
+            {
+                BatchStatusMessage = "未找到对应文件包，无法重新生成该任务";
+                return;
+            }
+
+            if (subtask.IsSpeechSubtask)
+            {
+                ForceEnqueueSpeechSubtitle(batchItem);
+                BatchStatusMessage = $"已重新生成任务：{subtask.Title}";
+                RefreshPackageProjections();
+                StartBatchQueueRunner("Speech 任务已加入队列");
+                return;
+            }
+
+            var preset = GetBatchReviewSheets().FirstOrDefault(sheet =>
+                string.Equals(sheet.FileTag, subtask.Tag, StringComparison.OrdinalIgnoreCase));
+            if (preset == null)
+            {
+                BatchStatusMessage = $"未找到复盘任务配置：{subtask.Tag}";
+                return;
+            }
+
+            ForceEnqueueReviewQueueItem(batchItem, preset);
+            BatchStatusMessage = $"已重新生成任务：{subtask.Title}";
+            RefreshPackageProjections();
+            StartBatchQueueRunner("复盘任务已加入队列");
+        }
+
+        private void TogglePackageExpanded(BatchPackageItem? package)
+        {
+            if (package == null)
+            {
+                return;
+            }
+
+            var isExpanded = !package.IsExpanded;
+
+            if (isExpanded)
+            {
+                foreach (var other in EnumerateAllPackages())
+                {
+                    if (ReferenceEquals(other, package) || !other.IsExpanded)
+                    {
+                        continue;
+                    }
+
+                    _batchPackageStateService.SetExpanded(other.FullPath, false);
+                    other.IsExpanded = false;
+                }
+            }
+
+            _batchPackageStateService.SetExpanded(package.FullPath, isExpanded);
+            package.IsExpanded = isExpanded;
+        }
+
+        private IEnumerable<BatchPackageItem> EnumerateAllPackages()
+        {
+            foreach (var item in _pendingPackages)
+            {
+                yield return item;
+            }
+
+            foreach (var item in _runningPackages)
+            {
+                yield return item;
+            }
+
+            foreach (var item in _failedPackages)
+            {
+                yield return item;
+            }
+
+            foreach (var item in _completedPackages)
+            {
+                yield return item;
+            }
+
+            foreach (var item in _removedPackages)
+            {
+                yield return item;
+            }
+        }
+
+        private void RemoveQueueItemsForPackage(string audioPath, Func<BatchQueueItem, bool> predicate)
+        {
+            var toRemove = _batchQueueItems
+                .Where(item => string.Equals(item.FullPath, audioPath, StringComparison.OrdinalIgnoreCase))
+                .Where(predicate)
+                .ToList();
+
+            foreach (var item in toRemove)
+            {
+                _batchQueueItems.Remove(item);
+            }
+        }
+
+        private BatchTaskItem? GetOrCreateBatchTaskForAudio(string audioPath, string fileName)
+        {
+            var item = BatchTasks.FirstOrDefault(task =>
+                string.Equals(task.FullPath, audioPath, StringComparison.OrdinalIgnoreCase));
+            if (item != null)
+            {
+                return item;
+            }
+
+            LoadBatchTasksFromLibrary();
+            item = BatchTasks.FirstOrDefault(task =>
+                string.Equals(task.FullPath, audioPath, StringComparison.OrdinalIgnoreCase));
+
+            if (item != null)
+            {
+                return item;
+            }
+
+            item = new BatchTaskItem
+            {
+                FileName = fileName,
+                FullPath = audioPath,
+                Status = BatchTaskStatus.Pending,
+                Progress = 0,
+                StatusMessage = "待处理"
+            };
+
+            _batchTasks.Add(item);
+            return item;
+        }
+
+        private void ForceEnqueueSpeechSubtitle(BatchTaskItem batchItem)
+        {
+            RemoveQueueItemsForPackage(batchItem.FullPath, item => item.QueueType == BatchQueueItemType.SpeechSubtitle);
+
+            _batchQueueItems.Add(new BatchQueueItem
+            {
+                FileName = batchItem.FileName,
+                FullPath = batchItem.FullPath,
+                SheetName = "speech 字幕",
+                SheetTag = "speech",
+                Prompt = "",
+                QueueType = BatchQueueItemType.SpeechSubtitle,
+                Status = BatchTaskStatus.Pending,
+                Progress = 0,
+                StatusMessage = "待处理"
+            });
+
+            UpdateBatchItem(batchItem, BatchTaskStatus.Pending, 0, "待生成 speech 字幕");
+        }
+
+        private void ForceEnqueueReviewQueueItem(BatchTaskItem batchItem, ReviewSheetPreset sheet)
+        {
+            RemoveQueueItemsForPackage(batchItem.FullPath, item =>
+                item.QueueType == BatchQueueItemType.ReviewSheet
+                && string.Equals(item.SheetTag, sheet.FileTag, StringComparison.OrdinalIgnoreCase));
+
+            _batchQueueItems.Add(new BatchQueueItem
+            {
+                FileName = batchItem.FileName,
+                FullPath = batchItem.FullPath,
+                SheetName = sheet.Name,
+                SheetTag = sheet.FileTag,
+                Prompt = sheet.Prompt,
+                QueueType = BatchQueueItemType.ReviewSheet,
+                Status = BatchTaskStatus.Pending,
+                Progress = 0,
+                StatusMessage = "待处理"
+            });
+
+            UpdateBatchItem(batchItem, BatchTaskStatus.Pending, 0, $"待生成 {sheet.Name}");
         }
 
         // ── Batch task loading ──
@@ -475,13 +1325,17 @@ namespace TrueFluentPro.ViewModels
             if (_fileLibrary.AudioFiles.Count == 0)
             {
                 _fileLibrary.RefreshAudioLibrary();
-                OnAudioLibraryRefreshed();
             }
 
             var batchSheets = GetBatchReviewSheets();
             _batchTasks.Clear();
             foreach (var audio in _fileLibrary.AudioFiles)
             {
+                if (_batchPackageStateService.IsRemoved(audio.FullPath))
+                {
+                    continue;
+                }
+
                 var totalSheets = batchSheets.Count;
                 var completedSheets = 0;
                 foreach (var sheet in batchSheets)
@@ -534,6 +1388,7 @@ namespace TrueFluentPro.ViewModels
                 ? "未找到可批处理的音频文件"
                 : $"已载入 {_batchTasks.Count} 条批处理任务");
             BatchStatusMessage = "";
+            RefreshPackageProjections();
         }
 
         private List<ReviewSheetPreset> GetBatchReviewSheets()
@@ -551,6 +1406,7 @@ namespace TrueFluentPro.ViewModels
             _batchTasks.Clear();
             _statusSetter("批处理任务已清空");
             BatchStatusMessage = "";
+            RefreshPackageProjections();
         }
 
         private bool CanStartBatchProcessing()
@@ -948,9 +1804,12 @@ namespace TrueFluentPro.ViewModels
                         {
                             var next = await Dispatcher.UIThread.InvokeAsync(() =>
                             {
-                                var item = _batchQueueItems.FirstOrDefault(i => i.Status == BatchTaskStatus.Pending);
+                                var item = _batchQueueItems.FirstOrDefault(i =>
+                                    i.Status == BatchTaskStatus.Pending
+                                    && !_batchPackageStateService.IsPaused(i.FullPath));
                                 if (item != null)
                                 {
+                                    item.PauseRequested = false;
                                     item.Status = BatchTaskStatus.Running;
                                     item.StatusMessage = "调度中";
                                 }
@@ -1017,6 +1876,16 @@ namespace TrueFluentPro.ViewModels
             queueItem.Cts?.Cancel();
             queueItem.Cts = CancellationTokenSource.CreateLinkedTokenSource(token);
             var localToken = queueItem.Cts.Token;
+
+            if (_batchPackageStateService.IsPaused(queueItem.FullPath))
+            {
+                UpdateQueueItem(queueItem, BatchTaskStatus.Pending, queueItem.Progress, "已暂停");
+                if (parentItem != null)
+                {
+                    UpdateBatchItem(parentItem, BatchTaskStatus.Pending, parentItem.Progress, "已暂停");
+                }
+                return;
+            }
 
             UpdateQueueItem(queueItem, BatchTaskStatus.Running, 0.1, "生成中");
             if (ShouldWriteBatchLogSuccess)
@@ -1141,6 +2010,16 @@ namespace TrueFluentPro.ViewModels
             }
             catch (OperationCanceledException)
             {
+                if (queueItem.PauseRequested || _batchPackageStateService.IsPaused(queueItem.FullPath))
+                {
+                    UpdateQueueItem(queueItem, BatchTaskStatus.Pending, queueItem.Progress, "已暂停");
+                    if (parentItem != null)
+                    {
+                        UpdateBatchItem(parentItem, BatchTaskStatus.Pending, parentItem.Progress, "已暂停");
+                    }
+                    return;
+                }
+
                 UpdateQueueItem(queueItem, BatchTaskStatus.Failed, 0, "已取消");
                 if (ShouldWriteBatchLogFailure)
                 {
@@ -1261,6 +2140,16 @@ namespace TrueFluentPro.ViewModels
             }
             catch (OperationCanceledException)
             {
+                if (queueItem.PauseRequested || _batchPackageStateService.IsPaused(queueItem.FullPath))
+                {
+                    UpdateQueueItem(queueItem, BatchTaskStatus.Pending, queueItem.Progress, "已暂停");
+                    if (parentItem != null)
+                    {
+                        UpdateBatchItem(parentItem, BatchTaskStatus.Pending, parentItem.Progress, "已暂停");
+                    }
+                    return;
+                }
+
                 UpdateQueueItem(queueItem, BatchTaskStatus.Failed, 0, "已取消");
                 if (ShouldWriteBatchLogFailure)
                 {
@@ -1367,16 +2256,18 @@ namespace TrueFluentPro.ViewModels
                 item.Progress = progress;
                 item.StatusMessage = message;
                 UpdateBatchQueueStatusText();
+                RefreshPackageProjections();
             });
         }
 
-        private static void UpdateBatchItem(BatchTaskItem item, BatchTaskStatus status, double progress, string message)
+        private void UpdateBatchItem(BatchTaskItem item, BatchTaskStatus status, double progress, string message)
         {
             Dispatcher.UIThread.Post(() =>
             {
                 item.Status = status;
                 item.Progress = progress;
                 item.StatusMessage = message;
+                RefreshPackageProjections();
             });
         }
 
@@ -1935,6 +2826,8 @@ namespace TrueFluentPro.ViewModels
 
             EnsureBatchLogFile();
 
+            _batchPackageStateService.SetRemoved(batchItem.FullPath, false);
+
             PrepareAndEnqueueSingleItem(batchItem, reviewSheets, enableSpeech, enableReview,
                 config.ContextMenuForceRegeneration);
 
@@ -1945,6 +2838,7 @@ namespace TrueFluentPro.ViewModels
 
             UpdateBatchQueueStatusText();
             StartBatchQueueRunner("已加入队列");
+            RefreshPackageProjections();
         }
 
         // ── Speech subtitle generation ──

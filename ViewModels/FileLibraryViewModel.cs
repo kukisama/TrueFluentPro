@@ -4,6 +4,9 @@ using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.IO;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using Avalonia.Threading;
 using TrueFluentPro.Helpers;
 using TrueFluentPro.Models;
 using TrueFluentPro.Services;
@@ -25,10 +28,17 @@ namespace TrueFluentPro.ViewModels
         private bool _isLoadingSubtitleCues;
 
         private readonly Func<AzureSpeechConfig> _configProvider;
+        private readonly IBatchPackageStateService _batchPackageStateService;
         private readonly Action<string> _statusSetter;
         private readonly Action<MediaFileItem?> _onAudioFileSelected;
         private readonly Func<bool> _suppressSubtitleSeekProvider;
         private readonly Action<SubtitleCue?> _onSubtitleCueSelected;
+        private int _audioLibraryRefreshVersion;
+
+        private sealed class AudioLibrarySnapshot
+        {
+            public required List<MediaFileItem> AudioFiles { get; init; }
+        }
 
         public RelayCommand RefreshAudioLibraryCommand { get; }
 
@@ -44,12 +54,14 @@ namespace TrueFluentPro.ViewModels
 
         public FileLibraryViewModel(
             Func<AzureSpeechConfig> configProvider,
+            IBatchPackageStateService batchPackageStateService,
             Action<string> statusSetter,
             Action<MediaFileItem?> onAudioFileSelected,
             Func<bool> suppressSubtitleSeekProvider,
             Action<SubtitleCue?> onSubtitleCueSelected)
         {
             _configProvider = configProvider;
+            _batchPackageStateService = batchPackageStateService;
             _statusSetter = statusSetter;
             _onAudioFileSelected = onAudioFileSelected;
             _suppressSubtitleSeekProvider = suppressSubtitleSeekProvider;
@@ -148,14 +160,41 @@ namespace TrueFluentPro.ViewModels
 
         public void RefreshAudioLibrary()
         {
-            _audioFiles.Clear();
-            _subtitleFiles.Clear();
-            SubtitleCues = new ObservableCollection<SubtitleCue>();
+            _ = RefreshAudioLibraryAsync();
+        }
 
-            var sessionsPath = PathManager.Instance.SessionsPath;
-            if (!Directory.Exists(sessionsPath))
+        public async Task RefreshAudioLibraryAsync(CancellationToken cancellationToken = default)
+        {
+            var refreshVersion = Interlocked.Increment(ref _audioLibraryRefreshVersion);
+            AudioLibrarySnapshot snapshot;
+            try
+            {
+                snapshot = await Task.Run(() => BuildAudioLibrarySnapshot(cancellationToken), cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
             {
                 return;
+            }
+
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (refreshVersion != _audioLibraryRefreshVersion)
+                {
+                    return;
+                }
+
+                ApplyAudioLibrarySnapshot(snapshot);
+            });
+        }
+
+        private AudioLibrarySnapshot BuildAudioLibrarySnapshot(CancellationToken cancellationToken)
+        {
+            var sessionsPath = PathManager.Instance.SessionsPath;
+            var audioFiles = new List<MediaFileItem>();
+
+            if (!Directory.Exists(sessionsPath))
+            {
+                return new AudioLibrarySnapshot { AudioFiles = audioFiles };
             }
 
             var files = Directory.GetFiles(sessionsPath, "*.mp3")
@@ -164,19 +203,169 @@ namespace TrueFluentPro.ViewModels
 
             foreach (var file in files)
             {
-                _audioFiles.Add(new MediaFileItem
+                cancellationToken.ThrowIfCancellationRequested();
+                audioFiles.Add(new MediaFileItem
                 {
                     Name = Path.GetFileName(file),
                     FullPath = file
                 });
             }
 
-            if (_selectedAudioFile != null && !_audioFiles.Any(item => item.FullPath == _selectedAudioFile.FullPath))
+            return new AudioLibrarySnapshot
+            {
+                AudioFiles = audioFiles
+            };
+        }
+
+        private void ApplyAudioLibrarySnapshot(AudioLibrarySnapshot snapshot)
+        {
+            var selectedAudioPath = _selectedAudioFile?.FullPath;
+
+            _batchPackageStateService.EnsurePackages(snapshot.AudioFiles);
+            _audioFiles.Clear();
+            _subtitleFiles.Clear();
+            SubtitleCues = new ObservableCollection<SubtitleCue>();
+
+            foreach (var file in snapshot.AudioFiles)
+            {
+                _audioFiles.Add(file);
+            }
+
+            if (!string.IsNullOrWhiteSpace(selectedAudioPath))
+            {
+                var matchedAudio = _audioFiles.FirstOrDefault(item =>
+                    string.Equals(item.FullPath, selectedAudioPath, StringComparison.OrdinalIgnoreCase));
+                if (matchedAudio != null)
+                {
+                    SelectedAudioFile = matchedAudio;
+                }
+                else
+                {
+                    SelectedAudioFile = null;
+                }
+            }
+            else if (_selectedAudioFile != null)
             {
                 SelectedAudioFile = null;
             }
 
+            RefreshAudioProcessingIndicators();
+
             AudioLibraryRefreshed?.Invoke();
+        }
+
+        public void RefreshAudioProcessingIndicators()
+        {
+            var snapshots = BuildDefaultProcessingSnapshots();
+            ApplyAudioProcessingSnapshots(snapshots);
+        }
+
+        public void ApplyAudioProcessingSnapshots(IEnumerable<AudioFileProcessingSnapshot> snapshots)
+        {
+            var snapshotMap = snapshots
+                .Where(snapshot => !string.IsNullOrWhiteSpace(snapshot.AudioPath))
+                .GroupBy(snapshot => snapshot.AudioPath, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(group => group.Key, group => group.Last(), StringComparer.OrdinalIgnoreCase);
+
+            foreach (var audioFile in _audioFiles)
+            {
+                if (snapshotMap.TryGetValue(audioFile.FullPath, out var snapshot))
+                {
+                    ApplyAudioProcessingSnapshot(audioFile, snapshot);
+                }
+                else
+                {
+                    ApplyAudioProcessingSnapshot(audioFile, new AudioFileProcessingSnapshot
+                    {
+                        AudioPath = audioFile.FullPath,
+                        State = ProcessingDisplayState.None
+                    });
+                }
+            }
+        }
+
+        private IReadOnlyList<AudioFileProcessingSnapshot> BuildDefaultProcessingSnapshots()
+        {
+            var batchSheets = _configProvider().AiConfig?.ReviewSheets?
+                .Where(sheet => sheet.IncludeInBatch)
+                .ToList() ?? new List<ReviewSheetPreset>();
+
+            var snapshots = new List<AudioFileProcessingSnapshot>(_audioFiles.Count);
+            foreach (var audioFile in _audioFiles)
+            {
+                snapshots.Add(BuildDefaultProcessingSnapshot(audioFile, batchSheets));
+            }
+
+            return snapshots;
+        }
+
+        private AudioFileProcessingSnapshot BuildDefaultProcessingSnapshot(
+            MediaFileItem audioFile,
+            IReadOnlyCollection<ReviewSheetPreset> batchSheets)
+        {
+            if (_batchPackageStateService.IsRemoved(audioFile.FullPath))
+            {
+                return new AudioFileProcessingSnapshot
+                {
+                    AudioPath = audioFile.FullPath,
+                    State = ProcessingDisplayState.Removed,
+                    BadgeText = "已删除",
+                    DetailText = "已从批处理中心移除"
+                };
+            }
+
+            var hasSpeechSubtitle = HasSpeechSubtitle(audioFile.FullPath);
+            var completedSheets = batchSheets.Count(sheet => File.Exists(GetReviewSheetPath(audioFile.FullPath, sheet.FileTag)));
+            var totalSheets = batchSheets.Count;
+
+            if (totalSheets > 0 && completedSheets >= totalSheets)
+            {
+                return new AudioFileProcessingSnapshot
+                {
+                    AudioPath = audioFile.FullPath,
+                    State = ProcessingDisplayState.Completed,
+                    BadgeText = "已完成",
+                    DetailText = hasSpeechSubtitle
+                        ? $"字幕完成 · 复盘 {completedSheets}/{totalSheets}"
+                        : $"复盘 {completedSheets}/{totalSheets}"
+                };
+            }
+
+            if (hasSpeechSubtitle || completedSheets > 0)
+            {
+                return new AudioFileProcessingSnapshot
+                {
+                    AudioPath = audioFile.FullPath,
+                    State = ProcessingDisplayState.Partial,
+                    BadgeText = "进行中",
+                    DetailText = totalSheets > 0
+                        ? $"字幕 {(hasSpeechSubtitle ? "已生成" : "未生成")} · 复盘 {completedSheets}/{totalSheets}"
+                        : (hasSpeechSubtitle ? "字幕已生成" : "待处理")
+                };
+            }
+
+            return new AudioFileProcessingSnapshot
+            {
+                AudioPath = audioFile.FullPath,
+                State = ProcessingDisplayState.Pending,
+                BadgeText = "未处理",
+                DetailText = totalSheets > 0 ? $"复盘 0/{totalSheets}" : "待处理"
+            };
+        }
+
+        private static void ApplyAudioProcessingSnapshot(MediaFileItem audioFile, AudioFileProcessingSnapshot snapshot)
+        {
+            audioFile.ProcessingState = snapshot.State;
+            audioFile.ProcessingBadgeText = snapshot.BadgeText;
+            audioFile.ProcessingDetailText = snapshot.DetailText;
+        }
+
+        private static string GetReviewSheetPath(string audioFilePath, string fileTag)
+        {
+            var directory = Path.GetDirectoryName(audioFilePath) ?? PathManager.Instance.SessionsPath;
+            var baseName = Path.GetFileNameWithoutExtension(audioFilePath);
+            var tag = string.IsNullOrWhiteSpace(fileTag) ? "summary" : fileTag.Trim();
+            return Path.Combine(directory, baseName + $".ai.{tag}.md");
         }
 
         public void LoadSubtitleFilesForAudio(MediaFileItem? audioFile)

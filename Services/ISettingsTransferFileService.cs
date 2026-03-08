@@ -7,8 +7,19 @@ namespace TrueFluentPro.Services;
 
 public interface ISettingsTransferFileService
 {
-    Task<string?> ExportAsync(IStorageProvider provider, SettingsTransferPackage package, CancellationToken cancellationToken = default);
+    Task<string?> ExportBasicAiConfigAsync(IStorageProvider provider, SettingsTransferPackage package, CancellationToken cancellationToken = default);
+    Task<string?> ExportFullConfigAsync(IStorageProvider provider, AzureSpeechConfig config, CancellationToken cancellationToken = default);
     Task<SettingsTransferImportResult?> ImportAsync(IStorageProvider provider, CancellationToken cancellationToken = default);
 }
 
-public sealed record SettingsTransferImportResult(SettingsTransferPackage Package, string DisplayName);
+public enum SettingsTransferImportKind
+{
+    BasicAiConfig,
+    FullConfig
+}
+
+public sealed record SettingsTransferImportResult(
+    SettingsTransferImportKind Kind,
+    string DisplayName,
+    SettingsTransferPackage? BasicPackage = null,
+    AzureSpeechConfig? FullConfig = null);

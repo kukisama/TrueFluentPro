@@ -125,8 +125,8 @@
                     <Button Name="ReviewNavButton"
                             Classes="shell-nav-action"
                             Click="ReviewNavButton_Click"
-                            ToolTip.Tip="复盘批处理 (Ctrl+2)"
-                            AutomationProperties.Name="复盘批处理 (Ctrl+2)">
+                            ToolTip.Tip="复盘处理 (Ctrl+2)"
+                            AutomationProperties.Name="复盘处理 (Ctrl+2)">
                         <Grid ColumnDefinitions="20,*" ColumnSpacing="10">
                             <icons:Icon Grid.Column="0"
                                         Value="fa-solid fa-bars-progress"
@@ -134,7 +134,24 @@
                                         HorizontalAlignment="Center"
                                         VerticalAlignment="Center"/>
                             <TextBlock Grid.Column="1"
-                                       Text="复盘批处理"
+                                       Text="复盘处理"
+                                       VerticalAlignment="Center"
+                                       IsVisible="{Binding IsMainNavPaneOpen}"/>
+                        </Grid>
+                    </Button>
+                    <Button Name="BatchNavButton"
+                            Classes="shell-nav-action"
+                            Click="BatchNavButton_Click"
+                            ToolTip.Tip="批处理中心 (Ctrl+3)"
+                            AutomationProperties.Name="批处理中心 (Ctrl+3)">
+                        <Grid ColumnDefinitions="20,*" ColumnSpacing="10">
+                            <icons:Icon Grid.Column="0"
+                                        Value="fa-solid fa-layer-group"
+                                        FontSize="15"
+                                        HorizontalAlignment="Center"
+                                        VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="1"
+                                       Text="批处理中心"
                                        VerticalAlignment="Center"
                                        IsVisible="{Binding IsMainNavPaneOpen}"/>
                         </Grid>
@@ -142,8 +159,8 @@
                     <Button Name="MediaNavButton"
                             Classes="shell-nav-action"
                             Click="MediaNavButton_Click"
-                            ToolTip.Tip="Media Studio (Ctrl+3)"
-                            AutomationProperties.Name="Media Studio (Ctrl+3)">
+                            ToolTip.Tip="Media Studio (Ctrl+4)"
+                            AutomationProperties.Name="Media Studio (Ctrl+4)">
                         <Grid ColumnDefinitions="20,*" ColumnSpacing="10">
                             <icons:Icon Grid.Column="0"
                                         Value="fa-regular fa-images"
@@ -179,8 +196,8 @@
                     <Button Name="SettingsNavButton"
                             Classes="shell-nav-action"
                             Click="SettingsNavButton_Click"
-                            ToolTip.Tip="打开设置"
-                            AutomationProperties.Name="打开设置">
+                            ToolTip.Tip="打开设置 (Ctrl+5 / Ctrl+,)"
+                            AutomationProperties.Name="打开设置 (Ctrl+5 / Ctrl+,)">
                         <Grid ColumnDefinitions="20,*" ColumnSpacing="10">
                             <icons:Icon Grid.Column="0"
                                         Value="fa-solid fa-gear"
@@ -198,10 +215,7 @@
         </Border>
 
         <Panel Grid.Column="1">
-            <views:LiveTranslationView Name="LiveView" IsVisible="True"/>
-            <views:ReviewModeView Name="ReviewView" IsVisible="False"/>
-            <views:MediaStudioView Name="MediaStudioViewPage" IsVisible="False"/>
-            <views:SettingsView Name="SettingsViewPage" IsVisible="False"/>
+            <ContentControl Name="PageHost"/>
             <ui:InfoBar IsOpen="{Binding IsInfoBarOpen, Mode=TwoWay}"
                         Message="{Binding InfoBarMessage}"
                         Severity="{Binding InfoBarSeverity}"

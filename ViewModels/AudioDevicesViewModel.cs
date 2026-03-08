@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using Avalonia.Controls;
@@ -32,6 +34,14 @@ namespace TrueFluentPro.ViewModels
         private bool _suppressDeviceSelectionPersistence;
         private double _audioLevel;
         private readonly ObservableCollection<double> _audioLevelHistory;
+        private int _refreshVersion;
+
+        private sealed class AudioDevicesSnapshot
+        {
+            public required List<AudioDeviceInfo> InputDevices { get; init; }
+            public required List<AudioDeviceInfo> OutputDevices { get; init; }
+            public required bool IsWindows { get; init; }
+        }
 
         public ICommand RefreshAudioDevicesCommand { get; }
 
@@ -249,13 +259,70 @@ namespace TrueFluentPro.ViewModels
 
         public void RefreshAudioDevices(bool persistSelection)
         {
+            _ = RefreshAudioDevicesAsync(persistSelection);
+        }
+
+        public async Task RefreshAudioDevicesAsync(bool persistSelection, CancellationToken cancellationToken = default)
+        {
             var config = _configProvider();
             var currentInputId = _selectedAudioDevice?.DeviceId ?? config.SelectedAudioDeviceId;
             var currentOutputId = _selectedOutputDevice?.DeviceId ?? config.SelectedOutputDeviceId;
+            var refreshVersion = Interlocked.Increment(ref _refreshVersion);
+
+            AudioDevicesSnapshot snapshot;
+            try
+            {
+                snapshot = await Task.Run(() => BuildAudioDevicesSnapshot(cancellationToken), cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (refreshVersion != _refreshVersion)
+                {
+                    return;
+                }
+
+                ApplyAudioDevicesSnapshot(snapshot, currentInputId, currentOutputId, persistSelection);
+            });
+        }
+
+        private AudioDevicesSnapshot BuildAudioDevicesSnapshot(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (!OperatingSystem.IsWindows())
+            {
+                return new AudioDevicesSnapshot
+                {
+                    IsWindows = false,
+                    InputDevices = new List<AudioDeviceInfo>(),
+                    OutputDevices = new List<AudioDeviceInfo>()
+                };
+            }
+
+            var inputDevices = AudioDeviceEnumerator.GetActiveDevices(AudioDeviceType.Capture).ToList();
+            cancellationToken.ThrowIfCancellationRequested();
+            var outputDevices = AudioDeviceEnumerator.GetActiveDevices(AudioDeviceType.Render).ToList();
+
+            return new AudioDevicesSnapshot
+            {
+                IsWindows = true,
+                InputDevices = inputDevices,
+                OutputDevices = outputDevices
+            };
+        }
+
+        private void ApplyAudioDevicesSnapshot(AudioDevicesSnapshot snapshot, string? currentInputId, string? currentOutputId, bool persistSelection)
+        {
+            var config = _configProvider();
 
             _logger("DeviceRefreshStart",
                 $"persist={persistSelection} inputId='{currentInputId}' outputId='{currentOutputId}' " +
-                $"inputName='{_selectedAudioDevice?.DisplayName ?? ""}' outputName='{_selectedOutputDevice?.DisplayName ?? ""}'");
+                $"isWindows={snapshot.IsWindows} inputs={snapshot.InputDevices.Count} outputs={snapshot.OutputDevices.Count}");
 
             _suppressDeviceSelectionPersistence = true;
             try
@@ -263,7 +330,7 @@ namespace TrueFluentPro.ViewModels
                 _audioDevices.Clear();
                 _outputDevices.Clear();
 
-                if (!OperatingSystem.IsWindows())
+                if (!snapshot.IsWindows)
                 {
                     IsAudioDeviceSelectionEnabled = false;
                     IsAudioDeviceRefreshEnabled = false;
@@ -273,26 +340,24 @@ namespace TrueFluentPro.ViewModels
                     return;
                 }
 
-                var inputDevices = AudioDeviceEnumerator.GetActiveDevices(AudioDeviceType.Capture);
                 _audioDevices.Add(new AudioDeviceInfo
                 {
                     DeviceId = "",
                     DisplayName = "无",
                     DeviceType = AudioDeviceType.Capture
                 });
-                foreach (var device in inputDevices)
+                foreach (var device in snapshot.InputDevices)
                 {
                     _audioDevices.Add(device);
                 }
 
-                var outputDevices = AudioDeviceEnumerator.GetActiveDevices(AudioDeviceType.Render);
                 _outputDevices.Add(new AudioDeviceInfo
                 {
                     DeviceId = "",
                     DisplayName = "无",
                     DeviceType = AudioDeviceType.Render
                 });
-                foreach (var device in outputDevices)
+                foreach (var device in snapshot.OutputDevices)
                 {
                     _outputDevices.Add(device);
                 }
@@ -378,12 +443,12 @@ namespace TrueFluentPro.ViewModels
 
             var nextEnabled = device != null && !string.IsNullOrWhiteSpace(device.DeviceId);
 
-            if (_suppressDeviceSelectionPersistence && device == null)
+            if (_suppressDeviceSelectionPersistence && device == null && persistSelection)
             {
                 return;
             }
 
-            if (device == null && _audioDevices.Count > 0)
+            if (device == null && _audioDevices.Count > 0 && persistSelection)
             {
                 return;
             }
@@ -422,12 +487,12 @@ namespace TrueFluentPro.ViewModels
 
             var nextEnabled = device != null && !string.IsNullOrWhiteSpace(device.DeviceId);
 
-            if (_suppressDeviceSelectionPersistence && device == null)
+            if (_suppressDeviceSelectionPersistence && device == null && persistSelection)
             {
                 return;
             }
 
-            if (device == null && _outputDevices.Count > 0)
+            if (device == null && _outputDevices.Count > 0 && persistSelection)
             {
                 return;
             }

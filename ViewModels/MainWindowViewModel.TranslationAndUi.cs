@@ -336,6 +336,7 @@ namespace TrueFluentPro.ViewModels
 
         public const string NavTagLive = "live";
         public const string NavTagReview = "review";
+        public const string NavTagBatch = "batch";
         public const string NavTagMedia = "media";
         public const string NavTagSettings = "settings";
 

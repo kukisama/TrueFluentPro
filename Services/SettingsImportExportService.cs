@@ -9,6 +9,45 @@ namespace TrueFluentPro.Services
 {
     public class SettingsImportExportService : ISettingsImportExportService
     {
+        public AzureSpeechConfig CreateFullExportConfig(AzureSpeechConfig config)
+            => SanitizeFullConfig(config);
+
+        public AzureSpeechConfig NormalizeImportedFullConfig(AzureSpeechConfig config)
+            => SanitizeFullConfig(config);
+
+        private static AzureSpeechConfig SanitizeFullConfig(AzureSpeechConfig config)
+        {
+            var result = CloneConfig(config);
+            result.Endpoints = (result.Endpoints ?? new List<AiEndpoint>())
+                .Where(IsImportableEndpoint)
+                .Select(endpoint =>
+                {
+                    endpoint.AzureTenantId = "";
+                    endpoint.AzureClientId = "";
+                    return endpoint;
+                })
+                .ToList();
+
+            var ai = result.AiConfig ??= new AiConfig();
+            ai.AzureTenantId = "";
+            ai.AzureClientId = "";
+            if (ai.AzureAuthMode == AzureAuthMode.AAD)
+            {
+                ai.AzureAuthMode = AzureAuthMode.ApiKey;
+            }
+
+            var media = result.MediaGenConfig ??= new MediaGenConfig();
+
+            ai.InsightModelRef = NormalizeReference(result, ai.InsightModelRef, ModelCapability.Text);
+            ai.SummaryModelRef = NormalizeReference(result, ai.SummaryModelRef, ModelCapability.Text);
+            ai.QuickModelRef = NormalizeReference(result, ai.QuickModelRef, ModelCapability.Text);
+            ai.ReviewModelRef = NormalizeReference(result, ai.ReviewModelRef, ModelCapability.Text);
+            media.ImageModelRef = NormalizeReference(result, media.ImageModelRef, ModelCapability.Image);
+            media.VideoModelRef = NormalizeReference(result, media.VideoModelRef, ModelCapability.Video);
+
+            return result;
+        }
+
         public SettingsTransferPackage CreateExportPackage(AzureSpeechConfig config)
         {
             var ai = config.AiConfig ?? new AiConfig();

@@ -4,49 +4,42 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Styling;
 using System;
+using System.Collections.Generic;
 using TrueFluentPro.Models;
 using TrueFluentPro.Services;
 using TrueFluentPro.ViewModels;
+using TrueFluentPro.Views;
 
 namespace TrueFluentPro;
 
 public partial class MainWindow : Window
 {
     private const double CompactNavWidth = 52;
-    private const double ExpandedNavWidth = 164;
+    private const double ExpandedNavWidth = 176;
 
     private double _paneExpansionWidth;
     private MainWindowViewModel? _viewModel;
     private bool _mediaStudioInitialized;
     private bool _isApplyingNavPaneState;
+    private readonly Dictionary<string, Control> _pageCache = new(StringComparer.Ordinal);
+
+    private MediaStudioView? MediaStudioViewPage => GetCachedPage<MediaStudioView>(MainWindowViewModel.NavTagMedia);
 
     public MainWindow()
     {
-        Console.WriteLine("MainWindow constructor called");
+        InitializeComponent();
+
         try
         {
-            InitializeComponent();
-            Console.WriteLine("InitializeComponent completed");
-
-            try
+            var icon = AppIconProvider.WindowIcon;
+            if (icon != null)
             {
-                var icon = AppIconProvider.WindowIcon;
-                if (icon != null)
-                {
-                    Icon = icon;
-                }
+                Icon = icon;
             }
-            catch
-            {
-                // ignore icon failures
-            }
-
-            Console.WriteLine("MainWindow constructor completed (ViewModel set by DI)");
         }
-        catch (Exception ex)
+        catch
         {
-            Console.WriteLine($"Error in MainWindow constructor: {ex.Message}");
-            Console.WriteLine($"Stack trace: {ex.StackTrace}");
+            // ignore icon failures
         }
     }
 
@@ -72,6 +65,11 @@ public partial class MainWindow : Window
             ApplyThemeMode(_viewModel.CurrentThemeMode);
             ApplyMainNavPaneState(_viewModel.IsMainNavPaneOpen);
             UpdateShellNavSelection();
+
+            foreach (var page in _pageCache.Values)
+            {
+                UpdatePageDataContext(page);
+            }
         }
     }
 
@@ -85,7 +83,6 @@ public partial class MainWindow : Window
     protected override void OnOpened(EventArgs e)
     {
         base.OnOpened(e);
-        Show();
         _viewModel?.NotifyMainWindowShown();
         ApplyMainNavPaneState(_viewModel?.IsMainNavPaneOpen ?? false);
         ShowPage(_viewModel?.SelectedNavTag ?? MainWindowViewModel.NavTagLive);
@@ -136,6 +133,10 @@ public partial class MainWindow : Window
                 e.Handled = true;
                 break;
             case Key.D4 when ctrl:
+                SelectNavItemByIndex(3);
+                e.Handled = true;
+                break;
+            case Key.D5 when ctrl:
                 ShowPage(MainWindowViewModel.NavTagSettings);
                 e.Handled = true;
                 break;
@@ -157,6 +158,9 @@ public partial class MainWindow : Window
                 ShowPage(MainWindowViewModel.NavTagReview);
                 break;
             case 2:
+                ShowPage(MainWindowViewModel.NavTagBatch);
+                break;
+            case 3:
                 ShowPage(MainWindowViewModel.NavTagMedia);
                 break;
             default:
@@ -167,20 +171,12 @@ public partial class MainWindow : Window
 
     private void ShowPage(string tag)
     {
-        var newVisible = tag switch
-        {
-            MainWindowViewModel.NavTagLive => (Control)LiveView,
-            MainWindowViewModel.NavTagReview => (Control)ReviewView,
-            MainWindowViewModel.NavTagMedia => (Control)MediaStudioViewPage,
-            MainWindowViewModel.NavTagSettings => (Control)SettingsViewPage,
-            _ => (Control)LiveView
-        };
+        tag = NormalizeNavTag(tag);
+        var page = GetOrCreatePage(tag);
 
-        var pages = new Control[] { LiveView, ReviewView, MediaStudioViewPage, SettingsViewPage };
-
-        foreach (var page in pages)
+        if (!ReferenceEquals(PageHost.Content, page))
         {
-            page.IsVisible = page == newVisible;
+            PageHost.Content = page;
         }
 
         if (_viewModel != null)
@@ -194,10 +190,74 @@ public partial class MainWindow : Window
         {
             _mediaStudioInitialized = true;
             var config = _viewModel.ConfigVM.Config;
-            MediaStudioViewPage.Initialize(
+            var mediaStudioView = MediaStudioViewPage;
+            mediaStudioView?.Initialize(
                 config.AiConfig ?? new AiConfig(),
                 config.MediaGenConfig,
                 config.Endpoints);
+        }
+    }
+
+    private static string NormalizeNavTag(string? tag)
+    {
+        return tag switch
+        {
+            MainWindowViewModel.NavTagReview => MainWindowViewModel.NavTagReview,
+            MainWindowViewModel.NavTagBatch => MainWindowViewModel.NavTagBatch,
+            MainWindowViewModel.NavTagMedia => MainWindowViewModel.NavTagMedia,
+            MainWindowViewModel.NavTagSettings => MainWindowViewModel.NavTagSettings,
+            _ => MainWindowViewModel.NavTagLive
+        };
+    }
+
+    private T? GetCachedPage<T>(string tag) where T : Control
+    {
+        return _pageCache.TryGetValue(tag, out var page) ? page as T : null;
+    }
+
+    private Control GetOrCreatePage(string tag)
+    {
+        tag = NormalizeNavTag(tag);
+
+        if (_pageCache.TryGetValue(tag, out var existingPage))
+        {
+            UpdatePageDataContext(existingPage);
+            return existingPage;
+        }
+
+        var page = CreatePage(tag);
+        _pageCache[tag] = page;
+        return page;
+    }
+
+    private Control CreatePage(string tag)
+    {
+        return tag switch
+        {
+            MainWindowViewModel.NavTagReview => CreateBoundPage(new ReviewModeView()),
+            MainWindowViewModel.NavTagBatch => CreateBoundPage(new BatchCenterView()),
+            MainWindowViewModel.NavTagMedia => new MediaStudioView(),
+            MainWindowViewModel.NavTagSettings => CreateBoundPage(new SettingsView()),
+            _ => CreateBoundPage(new LiveTranslationView())
+        };
+    }
+
+    private T CreateBoundPage<T>(T page) where T : Control
+    {
+        UpdatePageDataContext(page);
+        return page;
+    }
+
+    private void UpdatePageDataContext(Control page)
+    {
+        if (page is MediaStudioView)
+        {
+            return;
+        }
+
+        if (!ReferenceEquals(page.DataContext, _viewModel))
+        {
+            page.DataContext = _viewModel;
         }
     }
 
@@ -208,7 +268,8 @@ public partial class MainWindow : Window
             return;
         }
 
-        MediaStudioViewPage.UpdateConfiguration(
+        var mediaStudioView = MediaStudioViewPage;
+        mediaStudioView?.UpdateConfiguration(
             config.AiConfig ?? new AiConfig(),
             config.MediaGenConfig,
             config.Endpoints);
@@ -230,7 +291,10 @@ public partial class MainWindow : Window
         try
         {
             ApplyWindowWidthForPaneState(isOpen);
-            ShellNavRail.Width = isOpen ? ExpandedNavWidth : CompactNavWidth;
+            if (ShellNavRail != null)
+            {
+                ShellNavRail.Width = isOpen ? ExpandedNavWidth : CompactNavWidth;
+            }
         }
         finally
         {
@@ -264,6 +328,7 @@ public partial class MainWindow : Window
     {
         LiveNavButton.Classes.Set("selected", _viewModel?.SelectedNavTag == MainWindowViewModel.NavTagLive);
         ReviewNavButton.Classes.Set("selected", _viewModel?.SelectedNavTag == MainWindowViewModel.NavTagReview);
+        BatchNavButton.Classes.Set("selected", _viewModel?.SelectedNavTag == MainWindowViewModel.NavTagBatch);
         MediaNavButton.Classes.Set("selected", _viewModel?.SelectedNavTag == MainWindowViewModel.NavTagMedia);
         SettingsNavButton.Classes.Set("selected", _viewModel?.SelectedNavTag == MainWindowViewModel.NavTagSettings);
     }
@@ -286,6 +351,11 @@ public partial class MainWindow : Window
     private void ReviewNavButton_Click(object? sender, RoutedEventArgs e)
     {
         ShowPage(MainWindowViewModel.NavTagReview);
+    }
+
+    private void BatchNavButton_Click(object? sender, RoutedEventArgs e)
+    {
+        ShowPage(MainWindowViewModel.NavTagBatch);
     }
 
     private void MediaNavButton_Click(object? sender, RoutedEventArgs e)

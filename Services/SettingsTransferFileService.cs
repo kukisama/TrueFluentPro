@@ -18,12 +18,33 @@ public sealed class SettingsTransferFileService : ISettingsTransferFileService
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
     };
 
-    public async Task<string?> ExportAsync(IStorageProvider provider, SettingsTransferPackage package, CancellationToken cancellationToken = default)
+    public Task<string?> ExportBasicAiConfigAsync(IStorageProvider provider, SettingsTransferPackage package, CancellationToken cancellationToken = default)
+        => ExportAsync(
+            provider,
+            package,
+            title: "导出基本AI配置",
+            suggestedFileName: $"truefluentpro-basic-ai-config-{DateTime.Now:yyyyMMdd-HHmmss}",
+            cancellationToken);
+
+    public Task<string?> ExportFullConfigAsync(IStorageProvider provider, AzureSpeechConfig config, CancellationToken cancellationToken = default)
+        => ExportAsync(
+            provider,
+            config,
+            title: "导出完整配置",
+            suggestedFileName: $"truefluentpro-full-config-{DateTime.Now:yyyyMMdd-HHmmss}",
+            cancellationToken);
+
+    private static async Task<string?> ExportAsync<T>(
+        IStorageProvider provider,
+        T data,
+        string title,
+        string suggestedFileName,
+        CancellationToken cancellationToken = default)
     {
         var targetFile = await provider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
-            Title = "导出资源配置",
-            SuggestedFileName = $"truefluentpro-resource-config-{DateTime.Now:yyyyMMdd-HHmmss}",
+            Title = title,
+            SuggestedFileName = suggestedFileName,
             DefaultExtension = "json",
             FileTypeChoices =
             [
@@ -41,7 +62,7 @@ public sealed class SettingsTransferFileService : ISettingsTransferFileService
 
         await using var stream = await targetFile.OpenWriteAsync();
         cancellationToken.ThrowIfCancellationRequested();
-        await JsonSerializer.SerializeAsync(stream, package, TransferJsonOptions, cancellationToken);
+        await JsonSerializer.SerializeAsync(stream, data, TransferJsonOptions, cancellationToken);
 
         return targetFile.TryGetLocalPath() ?? targetFile.Name ?? "已选文件";
     }
@@ -50,7 +71,7 @@ public sealed class SettingsTransferFileService : ISettingsTransferFileService
     {
         var files = await provider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
-            Title = "导入资源配置",
+            Title = "导入配置",
             AllowMultiple = false,
             FileTypeFilter =
             [
@@ -67,25 +88,74 @@ public sealed class SettingsTransferFileService : ISettingsTransferFileService
         }
 
         var selectedFile = files[0];
-        SettingsTransferPackage? package;
         var localPath = selectedFile.TryGetLocalPath();
+        string json;
         if (!string.IsNullOrWhiteSpace(localPath) && File.Exists(localPath))
         {
-            var json = await File.ReadAllTextAsync(localPath, cancellationToken);
-            package = JsonSerializer.Deserialize<SettingsTransferPackage>(json, TransferJsonOptions);
+            json = await File.ReadAllTextAsync(localPath, cancellationToken);
         }
         else
         {
             await using var stream = await selectedFile.OpenReadAsync();
-            package = await JsonSerializer.DeserializeAsync<SettingsTransferPackage>(stream, TransferJsonOptions, cancellationToken);
+            using var reader = new StreamReader(stream);
+            json = await reader.ReadToEndAsync(cancellationToken);
         }
 
-        if (package == null)
+        if (string.IsNullOrWhiteSpace(json))
         {
             throw new InvalidOperationException("文件内容为空或格式不正确。");
         }
 
         var displayName = selectedFile.TryGetLocalPath() ?? selectedFile.Name ?? "所选文件";
-        return new SettingsTransferImportResult(package, displayName);
+        using var document = JsonDocument.Parse(json, new JsonDocumentOptions
+        {
+            AllowTrailingCommas = true,
+            CommentHandling = JsonCommentHandling.Skip
+        });
+
+        var root = document.RootElement;
+        if (TryGetPropertyIgnoreCase(root, "Format", out var formatElement)
+            && formatElement.ValueKind == JsonValueKind.String
+            && string.Equals(formatElement.GetString(), "TrueFluentPro.ResourceConfig", StringComparison.OrdinalIgnoreCase))
+        {
+            var package = JsonSerializer.Deserialize<SettingsTransferPackage>(json, TransferJsonOptions)
+                ?? throw new InvalidOperationException("基本AI配置文件内容为空或格式不正确。");
+
+            return new SettingsTransferImportResult(
+                SettingsTransferImportKind.BasicAiConfig,
+                displayName,
+                BasicPackage: package);
+        }
+
+        if (!TryGetPropertyIgnoreCase(root, "Subscriptions", out _)
+            && !TryGetPropertyIgnoreCase(root, "AiConfig", out _)
+            && !TryGetPropertyIgnoreCase(root, "SourceLanguage", out _)
+            && !TryGetPropertyIgnoreCase(root, "TargetLanguage", out _))
+        {
+            throw new InvalidOperationException("无法识别导入文件格式。请导入“基本AI配置”或“完整配置”导出的 JSON 文件。");
+        }
+
+        var fullConfig = JsonSerializer.Deserialize<AzureSpeechConfig>(json, TransferJsonOptions)
+            ?? throw new InvalidOperationException("完整配置文件内容为空或格式不正确。");
+
+        return new SettingsTransferImportResult(
+            SettingsTransferImportKind.FullConfig,
+            displayName,
+            FullConfig: fullConfig);
+    }
+
+    private static bool TryGetPropertyIgnoreCase(JsonElement element, string propertyName, out JsonElement value)
+    {
+        foreach (var property in element.EnumerateObject())
+        {
+            if (string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase))
+            {
+                value = property.Value;
+                return true;
+            }
+        }
+
+        value = default;
+        return false;
     }
 }

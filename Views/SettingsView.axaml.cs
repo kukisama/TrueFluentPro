@@ -1,22 +1,60 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using TrueFluentPro.ViewModels;
 
 namespace TrueFluentPro.Views;
 
 public partial class SettingsView : UserControl
 {
     private const double SectionTopPadding = 12;
+    private static readonly IReadOnlyDictionary<string, Func<MainWindowViewModel, object>> LazySectionDataContextResolvers
+        = new Dictionary<string, Func<MainWindowViewModel, object>>(StringComparer.Ordinal)
+    {
+        ["Section_Insight"] = vm => vm.Settings.InsightVM,
+        ["Section_Review"] = vm => vm.Settings.ReviewVM,
+        ["Section_ImageGen"] = vm => vm.Settings.ImageGenVM,
+        ["Section_VideoGen"] = vm => vm.Settings.VideoGenVM,
+        ["Section_Transfer"] = vm => vm.Settings.TransferVM,
+        ["Section_About"] = vm => vm.Settings.AboutVM
+    };
+    private static readonly HashSet<string> LazySectionNames = new(LazySectionDataContextResolvers.Keys, StringComparer.Ordinal);
 
     private Control[]? _sectionControls;
     private bool _isUpdatingSelectionFromScroll;
     private double? _pendingNavScrollOffsetY;
+    private readonly HashSet<string> _boundLazySections = new(StringComparer.Ordinal);
 
     public SettingsView()
     {
         InitializeComponent();
+    }
+
+    protected override void OnDataContextChanged(EventArgs e)
+    {
+        base.OnDataContextChanged(e);
+
+        _boundLazySections.Clear();
+
+        if (_sectionControls == null)
+        {
+            return;
+        }
+
+        foreach (var section in _sectionControls)
+        {
+            if (!LazySectionNames.Contains(section.Name ?? string.Empty))
+            {
+                continue;
+            }
+
+            section.ClearValue(DataContextProperty);
+        }
+
+        EnsureVisibleSectionDataContexts();
     }
 
     protected override void OnLoaded(RoutedEventArgs e)
@@ -28,6 +66,8 @@ public partial class SettingsView : UserControl
             .OfType<Control>()
             .Where(c => c.Name?.StartsWith("Section_") == true)
             .ToArray<Control>();
+
+        EnsureVisibleSectionDataContexts();
 
         // 默认选中第一项
         if (NavListBox.SelectedIndex < 0 && NavListBox.ItemCount > 0)
@@ -52,6 +92,8 @@ public partial class SettingsView : UserControl
 
         var target = _sectionControls?.FirstOrDefault(c => c.Name == tag);
         if (target == null) return;
+
+        EnsureLazySectionDataContext(target);
 
         var transform = target.TransformToVisual(SettingsScroller);
         if (transform != null)
@@ -78,6 +120,8 @@ public partial class SettingsView : UserControl
                 return;
             }
         }
+
+        EnsureVisibleSectionDataContexts();
 
         var activeSection = GetActiveSectionForViewport();
         if (activeSection == null) return;
@@ -159,5 +203,75 @@ public partial class SettingsView : UserControl
     {
         Section_Subscription?.ResetTransientUiState();
         Section_Endpoints?.ResetTransientUiState();
+    }
+
+    private void EnsureVisibleSectionDataContexts()
+    {
+        if (_sectionControls == null || _sectionControls.Length == 0)
+        {
+            return;
+        }
+
+        var viewportHeight = SettingsScroller.Bounds.Height;
+        if (viewportHeight <= 0)
+        {
+            foreach (var section in _sectionControls.Take(4))
+            {
+                EnsureLazySectionDataContext(section);
+            }
+
+            return;
+        }
+
+        foreach (var section in _sectionControls)
+        {
+            var transform = section.TransformToVisual(SettingsScroller);
+            if (transform == null)
+            {
+                continue;
+            }
+
+            var top = transform.Value.Transform(new Point(0, 0)).Y;
+            var bottom = top + section.Bounds.Height;
+            if (bottom > -48 && top < viewportHeight + 48)
+            {
+                EnsureLazySectionDataContext(section);
+            }
+        }
+    }
+
+    private void EnsureLazySectionDataContext(Control? section)
+    {
+        if (section == null || string.IsNullOrWhiteSpace(section.Name))
+        {
+            return;
+        }
+
+        if (DataContext is not MainWindowViewModel vm)
+        {
+            return;
+        }
+
+        if (!TryResolveLazySectionDataContext(section.Name, vm, out var targetDataContext))
+        {
+            return;
+        }
+
+        if (_boundLazySections.Contains(section.Name) && ReferenceEquals(section.DataContext, targetDataContext))
+        {
+            return;
+        }
+
+        section.DataContext = targetDataContext;
+        _boundLazySections.Add(section.Name);
+    }
+
+    private static bool TryResolveLazySectionDataContext(string sectionName, MainWindowViewModel vm, out object? dataContext)
+    {
+        dataContext = LazySectionDataContextResolvers.TryGetValue(sectionName, out var resolver)
+            ? resolver(vm)
+            : null;
+
+        return dataContext != null;
     }
 }

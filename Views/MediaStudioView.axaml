@@ -3,6 +3,7 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:controls="using:TrueFluentPro.Controls"
+        xmlns:icons="https://github.com/projektanker/icons.avalonia"
         mc:Ignorable="d" d:DesignWidth="1000" d:DesignHeight="700"
         x:Class="TrueFluentPro.Views.MediaStudioView"
         x:CompileBindings="False">
@@ -60,47 +61,44 @@
         </Style>
     </UserControl.Styles>
 
-        <Grid RowDefinitions="Auto,*,Auto"
+        <Grid RowDefinitions="*,Auto"
                     Background="{DynamicResource PageBackgroundBrush}">
-        <!-- ===== 顶部工具栏 ===== -->
-                <Border Grid.Row="0" Classes="toolbar-surface"
-                    BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="0,0,0,1" Padding="12,10" MinHeight="56">
-            <Grid ColumnDefinitions="Auto,*,Auto">
-                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6">
-                    <Button Content="＋ 新建会话" Command="{Binding NewSessionCommand}" Padding="10,5"/>
-                    <Button Content="删除会话" Command="{Binding DeleteSessionCommand}" Padding="10,5"/>
-                </StackPanel>
-                <TextBlock Grid.Column="1" Text="🎨 Media Studio"
-                           FontSize="15" FontWeight="SemiBold"
-                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                    <TextBlock Text="{Binding StatusText}" FontSize="12" Foreground="{DynamicResource TextSubtleBrush}"
-                               VerticalAlignment="Center"/>
-                </StackPanel>
-            </Grid>
-        </Border>
 
         <!-- ===== 主体区域（左右分栏） ===== -->
-        <Grid Grid.Row="1" ColumnDefinitions="216,12,*" Margin="12,12,12,10">
+        <Grid Grid.Row="0" ColumnDefinitions="216,12,*" Margin="12,12,12,10">
             <!-- 左侧会话列表 -->
-            <Border Grid.Column="0" Classes="app-card">
+            <Border Grid.Column="0"
+                    Classes="nav-surface"
+                    Background="{DynamicResource NavPanelBackgroundBrush}"
+                    BorderBrush="{DynamicResource CardBorderBrush}"
+                    BorderThickness="0,0,1,0"
+                    Padding="6,12,6,0">
                 <Grid RowDefinitions="Auto,*">
-                    <TextBlock Grid.Row="0" Text="会话列表" FontSize="13" FontWeight="SemiBold"
-                               Margin="14,12,14,8" Foreground="{DynamicResource TextDarkBrush}"/>
+                    <StackPanel Grid.Row="0" Spacing="8" Margin="6,0,6,10">
+                        <Button Content="＋ 新建会话"
+                                Command="{Binding NewSessionCommand}"
+                                Padding="10,6"
+                                HorizontalAlignment="Stretch"/>
+                    </StackPanel>
                     <ListBox Grid.Row="1"
                              x:Name="SessionListBox"
                              Classes="sidebar-nav-list"
                              ItemsSource="{Binding Sessions}"
                              SelectedItem="{Binding CurrentSession}"
-                             Margin="4,0" Padding="0"
+                             Margin="0,0,2,0" Padding="0"
                              Background="Transparent"
                              KeyDown="SessionListBox_KeyDown">
                         <ListBox.ItemTemplate>
                             <DataTemplate>
-                                <Grid ColumnDefinitions="*,Auto" Margin="0" PointerPressed="SessionItem_PointerPressed">
-                                    <TextBlock Grid.Column="0" Text="{Binding SessionName}"
+                                <Grid Classes="sidebar-nav-item-content"
+                                      ColumnDefinitions="18,*,Auto"
+                                      ColumnSpacing="10"
+                                      Margin="0"
+                                      PointerPressed="SessionItem_PointerPressed">
+                                    <icons:Icon Grid.Column="0" Value="fa-regular fa-comments" FontSize="14"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding SessionName}"
                                                VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                                    <Ellipse Grid.Column="1" Width="8" Height="8"
+                                    <Ellipse Grid.Column="2" Width="8" Height="8"
                                              Fill="{DynamicResource IndicatorGreenBrush}"
                                              IsVisible="{Binding HasBadge}"
                                              VerticalAlignment="Center" Margin="6,0,2,0"/>
@@ -465,7 +463,7 @@
         </Grid>
 
         <!-- ===== 底部状态栏 ===== -->
-        <Border Grid.Row="2" Classes="toolbar-surface"
+        <Border Grid.Row="1" Classes="toolbar-surface"
             Background="{DynamicResource NavPanelBackgroundBrush}"
             BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="0,1,0,0" Padding="12,6">
             <Grid ColumnDefinitions="*,Auto">

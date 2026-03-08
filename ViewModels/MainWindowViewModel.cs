@@ -77,7 +77,8 @@ namespace TrueFluentPro.ViewModels
             ConfigurationService configService,
             AzureSubscriptionValidator subscriptionValidator,
             SettingsViewModel settingsViewModel,
-            IModelRuntimeResolver modelRuntimeResolver)
+            IModelRuntimeResolver modelRuntimeResolver,
+            IBatchPackageStateService batchPackageStateService)
         {
             _configService = configService;
             Settings = settingsViewModel;
@@ -113,6 +114,7 @@ namespace TrueFluentPro.ViewModels
 
             FileLibrary = new FileLibraryViewModel(
                 () => _config,
+                batchPackageStateService,
                 msg => StatusMessage = msg,
                 audioFile =>
                 {
@@ -137,6 +139,7 @@ namespace TrueFluentPro.ViewModels
                 FileLibrary,
                 Playback,
                 configService,
+                batchPackageStateService,
                 () => ConfigVM.NotifyReviewLampChanged());
 
             FileLibrary.SubtitleCuesLoaded += OnFileLibrarySubtitleCuesLoaded;
@@ -157,10 +160,10 @@ namespace TrueFluentPro.ViewModels
                 async () => await Dispatcher.UIThread.InvokeAsync(() => ConfigVM.TriggerSubscriptionValidation()));
             RegisterPostShowInitializationAction(
                 "AudioDevicesRefresh",
-                async () => await Dispatcher.UIThread.InvokeAsync(() => AudioDevices.RefreshAudioDevices(persistSelection: false)));
+                async () => await AudioDevices.RefreshAudioDevicesAsync(persistSelection: false));
             RegisterPostShowInitializationAction(
                 "AudioLibraryRefresh",
-                async () => await Dispatcher.UIThread.InvokeAsync(() => FileLibrary.RefreshAudioLibrary()));
+                async () => await FileLibrary.RefreshAudioLibraryAsync());
 
             AiInsight = new AiInsightViewModel(
                 _aiInsightService,

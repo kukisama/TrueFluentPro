@@ -37,6 +37,7 @@ public partial class App : Application
         services.AddSingleton<IModelRuntimeResolver, ModelRuntimeResolver>();
         services.AddSingleton<IAboutSectionService, AboutSectionService>();
         services.AddSingleton<IEndpointBatchTestService, EndpointBatchTestService>();
+        services.AddSingleton<IBatchPackageStateService, BatchPackageStateService>();
 
         // --- ViewModel ---
         services.AddSingleton<SettingsViewModel>();
