@@ -18,6 +18,12 @@ namespace TrueFluentPro.Services
         public string? RecoverySourcePath { get; init; }
     }
 
+    public sealed class ShellStartupPreferences
+    {
+        public ThemeModePreference ThemeMode { get; init; } = ThemeModePreference.System;
+        public bool IsMainNavPaneOpen { get; init; }
+    }
+
     public class ConfigurationService
     {
         private readonly string _configFilePath;
@@ -98,6 +104,15 @@ namespace TrueFluentPro.Services
             return fallbackDefaultConfig;
         }
 
+        public ShellStartupPreferences LoadShellStartupPreferences()
+        {
+            var defaultPreferences = new ShellStartupPreferences();
+
+            return TryLoadShellStartupPreferences(_configFilePath)
+                ?? TryLoadShellStartupPreferences(_backupConfigFilePath)
+                ?? defaultPreferences;
+        }
+
         public async Task SaveConfigAsync(AzureSpeechConfig config)
         {
             try
@@ -141,6 +156,74 @@ namespace TrueFluentPro.Services
             }
 
             return JsonSerializer.Deserialize<AzureSpeechConfig>(json, CreateSerializerOptions(writeIndented: false));
+        }
+
+        private static ShellStartupPreferences? TryLoadShellStartupPreferences(string filePath)
+        {
+            try
+            {
+                if (!File.Exists(filePath))
+                {
+                    return null;
+                }
+
+                var json = File.ReadAllText(filePath);
+                if (string.IsNullOrWhiteSpace(json))
+                {
+                    return null;
+                }
+
+                using var document = JsonDocument.Parse(json, new JsonDocumentOptions
+                {
+                    AllowTrailingCommas = true,
+                    CommentHandling = JsonCommentHandling.Skip
+                });
+
+                var root = document.RootElement;
+                var themeMode = ThemeModePreference.System;
+                var isMainNavPaneOpen = false;
+
+                if (TryGetPropertyIgnoreCase(root, "ThemeMode", out var themeElement) && themeElement.ValueKind == JsonValueKind.String)
+                {
+                    var themeRaw = themeElement.GetString();
+                    if (!string.IsNullOrWhiteSpace(themeRaw) && Enum.TryParse<ThemeModePreference>(themeRaw, ignoreCase: true, out var parsedTheme))
+                    {
+                        themeMode = parsedTheme;
+                    }
+                }
+
+                if (TryGetPropertyIgnoreCase(root, "IsMainNavPaneOpen", out var navElement) &&
+                    (navElement.ValueKind == JsonValueKind.True || navElement.ValueKind == JsonValueKind.False))
+                {
+                    isMainNavPaneOpen = navElement.GetBoolean();
+                }
+
+                return new ShellStartupPreferences
+                {
+                    ThemeMode = themeMode,
+                    IsMainNavPaneOpen = isMainNavPaneOpen
+                };
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"读取启动壳层偏好失败: {ex.Message}");
+                return null;
+            }
+        }
+
+        private static bool TryGetPropertyIgnoreCase(JsonElement element, string propertyName, out JsonElement value)
+        {
+            foreach (var property in element.EnumerateObject())
+            {
+                if (string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase))
+                {
+                    value = property.Value;
+                    return true;
+                }
+            }
+
+            value = default;
+            return false;
         }
 
         private static JsonSerializerOptions CreateSerializerOptions(bool writeIndented)

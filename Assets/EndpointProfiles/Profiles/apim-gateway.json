@@ -5,7 +5,7 @@
     "displayName": "APIM 网关",
     "subtitle": "通过 Azure API Management 暴露的 OpenAI 兼容入口",
     "glyph": "⇄",
-    "summary": "默认按网关思路处理：文本优先 /responses，API Key 优先走 api-key Header，图片优先自动试 deployments、/v1/images 与 /images。",
+    "summary": "文本优先 /responses，API Key 优先走 api-key Header，图片优先自动试 deployments、/v1/images 与 /images。",
     "defaultNamePrefix": "APIM 网关",
     "iconAssetPath": "Assets/EndpointProfiles/Icons/apim-gateway.svg",
     "tags": [
@@ -43,29 +43,35 @@
     },
     "text": {
         "preferredProtocol": "Responses",
-        "appendApiVersionWhenPresent": true,
         "responsesUrlCandidates": [
+            "{baseUrl}/responses?api-version={apiVersion}",
             "{baseUrl}/responses"
         ],
         "chatCompletionsV1UrlCandidates": [
+            "{baseUrl}/v1/chat/completions?api-version={apiVersion}",
             "{baseUrl}/v1/chat/completions"
         ],
         "chatCompletionsRawUrlCandidates": [
+            "{baseUrl}/chat/completions?api-version={apiVersion}",
             "{baseUrl}/chat/completions"
         ]
     },
     "image": {
-        "appendApiVersionWhenPresent": true,
         "deploymentGenerateUrlCandidates": [
+            "{baseUrl}/deployments/{deployment}/images/generations?api-version={apiVersion}",
             "{baseUrl}/deployments/{deployment}/images/generations"
         ],
         "generateUrlCandidates": [
+            "{baseUrl}/v1/images/generations?api-version={apiVersion}",
+            "{baseUrl}/images/generations?api-version={apiVersion}",
             "{baseUrl}/v1/images/generations",
             "{baseUrl}/images/generations"
         ],
         "editUrlCandidates": [
-            "{baseUrl}/v1/images/edits",
-            "{baseUrl}/images/edits"
+            "{baseUrl}/images/edits?api-version={apiVersion}",
+            "{baseUrl}/v1/images/edits?api-version={apiVersion}",
+            "{baseUrl}/images/edits",
+            "{baseUrl}/v1/images/edits"
         ]
     },
     "video": {
@@ -76,12 +82,23 @@
                 "description": "通过网关暴露的标准 /v1/videos 路线；是否补 api-version 与具体后缀由资料包候选控制。"
             }
         ],
+        "modelModeBindings": [
+            {
+                "mode": "Videos",
+                "modelPatterns": [
+                    "sora-2",
+                    "sora-2*",
+                    "sora",
+                    "sora-1",
+                    "sora-1*"
+                ],
+                "description": "当前 APIM 内置资料包只声明 Videos 模式，相关视频模型统一走网关暴露的 /videos 路线。"
+            }
+        ],
         "supportedApiModes": [
             "Videos"
         ],
-        "appendApiVersionWhenPresent": true,
         "createUrlCandidates": [
-            "{baseUrl}/videos",
             "{baseUrl}/v1/videos"
         ],
         "pollUrlCandidates": [

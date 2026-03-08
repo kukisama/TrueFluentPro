@@ -31,6 +31,59 @@ namespace TrueFluentPro.ViewModels
             }
         }
 
+        public ICommand CycleThemeModeCommand { get; }
+
+        public event Action<ThemeModePreference>? ThemeModeChanged;
+        public event Action<bool>? MainNavPaneStateChanged;
+
+        public ThemeModePreference CurrentThemeMode
+        {
+            get => _currentThemeMode;
+            private set
+            {
+                if (!SetProperty(ref _currentThemeMode, value))
+                {
+                    return;
+                }
+
+                OnPropertyChanged(nameof(ThemeToggleIconValue));
+                OnPropertyChanged(nameof(ThemeToggleToolTip));
+                ThemeModeChanged?.Invoke(value);
+            }
+        }
+
+        public bool IsMainNavPaneOpen
+        {
+            get => _isMainNavPaneOpen;
+            private set
+            {
+                if (!SetProperty(ref _isMainNavPaneOpen, value))
+                {
+                    return;
+                }
+
+                MainNavPaneStateChanged?.Invoke(value);
+            }
+        }
+
+        public string ThemeToggleIconValue => CurrentThemeMode switch
+        {
+            ThemeModePreference.Light => "fa-solid fa-sun",
+            ThemeModePreference.Dark => "fa-solid fa-moon",
+            _ => "fa-solid fa-circle-half-stroke"
+        };
+
+        public string ThemeToggleToolTip
+        {
+            get
+            {
+                var nextMode = GetNextThemeMode(CurrentThemeMode);
+                return $"当前主题：{GetThemeModeDisplayName(CurrentThemeMode)}，点击切换到{GetThemeModeDisplayName(nextMode)}";
+            }
+        }
+
+        public bool IsSettingsPageSelected => SelectedNavTag == NavTagSettings;
+
         public string CurrentTranslated
         {
             get => _currentTranslated;
@@ -308,6 +361,7 @@ namespace TrueFluentPro.ViewModels
                     OnPropertyChanged(nameof(IsReviewMode));
                     OnPropertyChanged(nameof(IsLiveModeSelected));
                     OnPropertyChanged(nameof(IsReviewModeSelected));
+                    OnPropertyChanged(nameof(IsSettingsPageSelected));
                 }
             }
         }
@@ -332,6 +386,7 @@ namespace TrueFluentPro.ViewModels
                     OnPropertyChanged(nameof(IsReviewMode));
                     OnPropertyChanged(nameof(IsLiveModeSelected));
                     OnPropertyChanged(nameof(IsReviewModeSelected));
+                    OnPropertyChanged(nameof(IsSettingsPageSelected));
                 }
             }
         }
@@ -507,6 +562,88 @@ namespace TrueFluentPro.ViewModels
         {
             // Media Studio is now embedded as a page in the main window.
             // This method is kept for backward compatibility with ShowMediaStudioCommand.
+        }
+
+        private void SyncThemeModeFromConfig()
+        {
+            CurrentThemeMode = _config.ThemeMode;
+        }
+
+        public void ApplyStartupShellPreferences(ShellStartupPreferences preferences)
+        {
+            CurrentThemeMode = preferences.ThemeMode;
+            IsMainNavPaneOpen = preferences.IsMainNavPaneOpen;
+        }
+
+        private void SyncMainNavPaneStateFromConfig()
+        {
+            IsMainNavPaneOpen = _config.IsMainNavPaneOpen;
+        }
+
+        public void UpdateMainNavPaneState(bool isOpen)
+        {
+            IsMainNavPaneOpen = isOpen;
+
+            if (_config.IsMainNavPaneOpen == isOpen)
+            {
+                return;
+            }
+
+            _config.IsMainNavPaneOpen = isOpen;
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await _configService.SaveConfigAsync(_config).ConfigureAwait(false);
+                }
+                catch
+                {
+                }
+            });
+        }
+
+        private void CycleThemeMode()
+        {
+            var nextMode = GetNextThemeMode(CurrentThemeMode);
+            CurrentThemeMode = nextMode;
+            _config.ThemeMode = nextMode;
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await _configService.SaveConfigAsync(_config).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        StatusMessage = $"主题设置保存失败: {ex.Message}";
+                    });
+                }
+            });
+
+            StatusMessage = $"主题已切换为{GetThemeModeDisplayName(nextMode)}";
+        }
+
+        private static ThemeModePreference GetNextThemeMode(ThemeModePreference currentMode)
+        {
+            return currentMode switch
+            {
+                ThemeModePreference.System => ThemeModePreference.Light,
+                ThemeModePreference.Light => ThemeModePreference.Dark,
+                _ => ThemeModePreference.System
+            };
+        }
+
+        private static string GetThemeModeDisplayName(ThemeModePreference mode)
+        {
+            return mode switch
+            {
+                ThemeModePreference.Light => "浅色",
+                ThemeModePreference.Dark => "深色",
+                _ => "跟随系统"
+            };
         }
 
         private void ShowFloatingSubtitles()

@@ -6,6 +6,7 @@
         d:DesignWidth="760"
         d:DesignHeight="620"
         x:Class="TrueFluentPro.Views.EndpointInfoDialog"
+        x:CompileBindings="False"
         Title="终结点详细信息"
         Width="760"
         Height="620"
@@ -19,14 +20,27 @@
                        TextWrapping="Wrap"/>
         </StackPanel>
 
-        <TextBox Grid.Row="1"
-                 x:Name="DetailsTextBox"
-                 IsReadOnly="True"
-                 AcceptsReturn="True"
-                 TextWrapping="Wrap"
-                 ScrollViewer.VerticalScrollBarVisibility="Auto"
-                 ScrollViewer.HorizontalScrollBarVisibility="Auto"
-                 FontFamily="Consolas"/>
+        <Border Grid.Row="1"
+                Padding="12"
+                BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                BorderThickness="1"
+                CornerRadius="8"
+                Background="#06FFFFFF">
+            <Grid>
+                <ScrollViewer x:Name="DetailsScrollViewer">
+                    <StackPanel x:Name="DetailsContentPanel" Spacing="12" />
+                </ScrollViewer>
+                <TextBox x:Name="DetailsFallbackTextBox"
+                         IsVisible="False"
+                         IsReadOnly="True"
+                         AcceptsReturn="True"
+                         TextWrapping="Wrap"
+                         FontFamily="Consolas"
+                         Background="Transparent"
+                         BorderThickness="0"
+                         Padding="0"/>
+            </Grid>
+        </Border>
 
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10">
             <Button x:Name="TestAllButton" Content="一键测试" Width="96" IsVisible="False"/>

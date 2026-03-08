@@ -3,19 +3,21 @@
              xmlns:vm="using:TrueFluentPro.ViewModels.Settings"
              xmlns:models="using:TrueFluentPro.Models"
              xmlns:views="clr-namespace:TrueFluentPro.Views"
+             xmlns:icons="https://github.com/projektanker/icons.avalonia"
              x:Class="TrueFluentPro.Views.Settings.SubscriptionSection"
              x:DataType="vm:SubscriptionSectionVM"
              x:CompileBindings="False">
-    <Border BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+        <Border Classes="app-card"
+            BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
             BorderThickness="1" CornerRadius="8" Padding="20" Margin="0,0,0,0">
         <StackPanel Spacing="12">
             <TextBlock Text="Azure Speech" Theme="{StaticResource SubtitleTextBlockStyle}"/>
             <Separator/>
-            <TextBlock Text="管理 Azure 语音服务订阅" Foreground="Gray" FontSize="12"/>
+            <TextBlock Text="管理 Azure 语音服务订阅" Classes="section-description"/>
 
             <!-- 订阅 CRUD -->
             <Grid ColumnDefinitions="190,*" ColumnSpacing="12">
-                <Border Grid.Column="0" BorderBrush="Gray" BorderThickness="1" Margin="0,0,4,0">
+                <Border Grid.Column="0" Classes="sub-card" BorderBrush="{DynamicResource SubCardBorderBrush}" BorderThickness="1" Margin="0,0,4,0">
                     <Grid RowDefinitions="Auto,*">
                         <TextBlock Grid.Row="0" Text="订阅列表" FontWeight="Bold" Margin="10,10,10,5"/>
                         <ListBox Grid.Row="1" Name="SubscriptionListBox" Margin="10"
@@ -55,11 +57,12 @@
                                      HorizontalAlignment="Left"
                                      PasswordChar="*"/>
                             <Button Grid.Column="1"
-                                    Content="⧉"
                                     Width="36"
                                     Height="32"
                                     ToolTip.Tip="复制密钥"
-                                    Click="CopySubscriptionKey_Click"/>
+                                    Click="CopySubscriptionKey_Click">
+                                <icons:Icon Value="fa-regular fa-copy" FontSize="13"/>
+                            </Button>
                         </Grid>
                     </StackPanel>
                     <StackPanel Spacing="5">
@@ -72,11 +75,36 @@
                                    FontSize="10" Foreground="DarkGreen" TextWrapping="Wrap"/>
                     </StackPanel>
                     <StackPanel Orientation="Horizontal" Spacing="5" Margin="0,4,0,0" HorizontalAlignment="Left">
-                        <Button Content="添加" Width="60" Height="32" Command="{Binding AddSubscriptionCommand}"/>
-                        <Button Content="更新" Width="60" Height="32" Command="{Binding UpdateSubscriptionCommand}"/>
-                        <Button Content="删除" Width="60" Height="32" Command="{Binding DeleteSubscriptionCommand}"/>
-                        <Button Content="测试" Width="60" Height="32" Command="{Binding TestSubscriptionCommand}"/>
-                        <Button Content="测试全部" Width="92" Height="32" Command="{Binding TestAllSubscriptionsCommand}"/>
+                        <Button Width="88" Height="32" Command="{Binding AddSubscriptionCommand}">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <icons:Icon Value="fa-solid fa-plus" FontSize="12"/>
+                                <TextBlock Text="添加" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+                        <Button Width="88" Height="32" Command="{Binding UpdateSubscriptionCommand}">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <icons:Icon Value="fa-solid fa-pen" FontSize="12"/>
+                                <TextBlock Text="更新" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+                        <Button Width="88" Height="32" Command="{Binding DeleteSubscriptionCommand}">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <icons:Icon Value="fa-solid fa-trash" FontSize="12"/>
+                                <TextBlock Text="删除" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+                        <Button Width="88" Height="32" Command="{Binding TestSubscriptionCommand}">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <icons:Icon Value="fa-solid fa-check" FontSize="12"/>
+                                <TextBlock Text="测试" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+                        <Button Width="108" Height="32" Command="{Binding TestAllSubscriptionsCommand}">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <icons:Icon Value="fa-solid fa-check-double" FontSize="12"/>
+                                <TextBlock Text="测试全部" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
                     </StackPanel>
                     <TextBlock Text="{Binding SubscriptionMessage}" FontSize="11" Foreground="Gray" TextWrapping="Wrap"
                                Margin="0,4,0,0"/>

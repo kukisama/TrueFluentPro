@@ -29,17 +29,6 @@
             <Setter Property="Margin" Value="8,4,120,4"/>
             <Setter Property="HorizontalAlignment" Value="Left"/>
         </Style>
-        <!-- 会话列表选中项 -->
-        <Style Selector="ListBoxItem:selected">
-            <Setter Property="Background" Value="{DynamicResource AccentBlueBrush}"/>
-            <Setter Property="Foreground" Value="White"/>
-        </Style>
-        <Style Selector="ListBoxItem:selected TextBlock">
-            <Setter Property="Foreground" Value="White"/>
-        </Style>
-        <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
-            <Setter Property="Foreground" Value="White"/>
-        </Style>
         <!-- 参数区域标签 -->
         <Style Selector="TextBlock.param-label">
             <Setter Property="VerticalAlignment" Value="Center"/>
@@ -71,9 +60,11 @@
         </Style>
     </UserControl.Styles>
 
-    <Grid RowDefinitions="Auto,*,Auto">
+        <Grid RowDefinitions="Auto,*,Auto"
+                    Background="{DynamicResource PageBackgroundBrush}">
         <!-- ===== 顶部工具栏 ===== -->
-        <Border Grid.Row="0" BorderBrush="{DynamicResource BorderMediumBrush}" BorderThickness="0,0,0,1" Padding="10,8">
+                <Border Grid.Row="0" Classes="toolbar-surface"
+                    BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="0,0,0,1" Padding="12,10" MinHeight="56">
             <Grid ColumnDefinitions="Auto,*,Auto">
                 <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6">
                     <Button Content="＋ 新建会话" Command="{Binding NewSessionCommand}" Padding="10,5"/>
@@ -90,14 +81,15 @@
         </Border>
 
         <!-- ===== 主体区域（左右分栏） ===== -->
-        <Grid Grid.Row="1" ColumnDefinitions="200,1,*">
+        <Grid Grid.Row="1" ColumnDefinitions="216,12,*" Margin="12,12,12,10">
             <!-- 左侧会话列表 -->
-            <Border Grid.Column="0" Background="{DynamicResource SidebarBrush}">
+            <Border Grid.Column="0" Classes="app-card">
                 <Grid RowDefinitions="Auto,*">
                     <TextBlock Grid.Row="0" Text="会话列表" FontSize="13" FontWeight="SemiBold"
-                               Margin="12,10,12,6" Foreground="{DynamicResource TextDarkBrush}"/>
+                               Margin="14,12,14,8" Foreground="{DynamicResource TextDarkBrush}"/>
                     <ListBox Grid.Row="1"
                              x:Name="SessionListBox"
+                             Classes="sidebar-nav-list"
                              ItemsSource="{Binding Sessions}"
                              SelectedItem="{Binding CurrentSession}"
                              Margin="4,0" Padding="0"
@@ -105,7 +97,7 @@
                              KeyDown="SessionListBox_KeyDown">
                         <ListBox.ItemTemplate>
                             <DataTemplate>
-                                <Grid ColumnDefinitions="*,Auto" Margin="4,3" PointerPressed="SessionItem_PointerPressed">
+                                <Grid ColumnDefinitions="*,Auto" Margin="0" PointerPressed="SessionItem_PointerPressed">
                                     <TextBlock Grid.Column="0" Text="{Binding SessionName}"
                                                VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
                                     <Ellipse Grid.Column="1" Width="8" Height="8"
@@ -120,7 +112,7 @@
             </Border>
 
             <!-- 分隔线 -->
-            <Border Grid.Column="1" Background="{DynamicResource BorderMediumBrush}"/>
+            <Border Grid.Column="1" Background="Transparent"/>
 
             <!-- 右侧内容区 -->
             <Grid Grid.Column="2" RowDefinitions="*,Auto"
@@ -139,7 +131,7 @@
                                               IsVisible="{Binding IsActiveSession}">
 
                 <!-- 聊天消息区 -->
-                <Border Grid.Row="0" Margin="0">
+                <Border Grid.Row="0" Classes="app-card" Margin="0,0,0,10">
                     <Grid>
                         <ScrollViewer x:Name="SessionScrollViewer"
                                       VerticalScrollBarVisibility="Auto"
@@ -192,7 +184,7 @@
                                                         </ItemsControl.ItemsPanel>
                                                         <ItemsControl.ItemTemplate>
                                                             <DataTemplate>
-                                                                <Border Margin="2" CornerRadius="4"
+                                                                <Border Margin="2" CornerRadius="6"
                                                                         Background="{DynamicResource MediaItemBrush}" Padding="4"
                                                                         Cursor="Hand"
                                                                         PointerPressed="MediaThumbnail_PointerPressed"
@@ -208,7 +200,7 @@
                                                                         <Border HorizontalAlignment="Left"
                                                                                 VerticalAlignment="Top"
                                                                                 Margin="6"
-                                                                                CornerRadius="10"
+                                                                                CornerRadius="8"
                                                                                 Padding="10,4"
                                                                                 Background="#CC000000"
                                                                                 IsVisible="{Binding Converter={StaticResource FirstFrameBadgeVisibilityConverter}}">
@@ -272,7 +264,7 @@
                                 </Border>
 
                 <!-- ===== 底部输入区 ===== -->
-                <Border Grid.Row="1" BorderBrush="{DynamicResource BorderMediumBrush}" BorderThickness="0,1,0,0" Padding="10,8">
+                <Border Grid.Row="1" Classes="app-card" Padding="12,10">
                     <Grid RowDefinitions="Auto,Auto,Auto">
                         <!-- 参数行 -->
                         <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="10" Margin="0,0,0,6">
@@ -336,7 +328,7 @@
                         <!-- 输入行 -->
                         <Grid Grid.Row="1" ColumnDefinitions="*,Auto">
                             <Grid Grid.Column="0" RowDefinitions="Auto,Auto">
-                                <Border Grid.Row="0"
+                                <Border Grid.Row="0" Classes="sub-card"
                                         BorderBrush="{DynamicResource InputBorderBrush}"
                                         BorderThickness="1"
                                         CornerRadius="6"
@@ -473,7 +465,9 @@
         </Grid>
 
         <!-- ===== 底部状态栏 ===== -->
-        <Border Grid.Row="2" Background="{DynamicResource SurfaceAltBrush}" BorderBrush="{DynamicResource BorderMediumBrush}" BorderThickness="0,1,0,0" Padding="10,4">
+        <Border Grid.Row="2" Classes="toolbar-surface"
+            Background="{DynamicResource NavPanelBackgroundBrush}"
+            BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="0,1,0,0" Padding="12,6">
             <Grid ColumnDefinitions="*,Auto">
                 <TextBlock Grid.Column="0" Text="{Binding StatusText}"
                            FontSize="12" Foreground="{DynamicResource TextSubtleBrush}" VerticalAlignment="Center"/>

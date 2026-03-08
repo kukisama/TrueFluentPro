@@ -54,8 +54,8 @@ public sealed class EndpointTemplateService : IEndpointTemplateService
 
         if (defaults.ClearAzureIdentityFields)
         {
-            endpoint.AzureTenantId = "";
-            endpoint.AzureClientId = "";
+            endpoint.AzureTenantId = string.Empty;
+            endpoint.AzureClientId = string.Empty;
         }
     }
 
@@ -72,109 +72,160 @@ public sealed class EndpointTemplateService : IEndpointTemplateService
                 _ => endpoint.IsAzureEndpoint ? "api-key Header（自动）" : "Authorization: Bearer（自动）"
             };
 
-        var text = GetEffectiveTextProtocol(endpoint) switch
-        {
-            TextApiProtocolMode.ChatCompletionsV1 => "/v1/chat/completions",
-            TextApiProtocolMode.ChatCompletionsRaw => "/chat/completions",
-            TextApiProtocolMode.Responses => "/responses",
-            _ => endpoint.EndpointType == EndpointApiType.ApiManagementGateway
-                ? "/responses（自动）"
-                : endpoint.IsAzureEndpoint
-                    ? "Azure deployments（自动）"
-                    : "/v1/chat/completions（自动）"
-        };
+        var textUrls = BuildTextPreviewUrlList(endpoint);
+        var imageUrls = BuildImagePreviewUrlList(endpoint);
+        var videoUrls = BuildVideoPreviewUrlList(endpoint);
 
-        var image = endpoint.ImageApiRouteMode switch
-        {
-            ImageApiRouteMode.V1Images => "/v1/images",
-            ImageApiRouteMode.ImagesRaw => "/images",
-            _ => endpoint.EndpointType == EndpointApiType.ApiManagementGateway
-                ? "/v1/images → /images（自动兜底）"
-                : endpoint.IsAzureEndpoint
-                    ? "Azure 官方图片路线（自动）"
-                    : "/v1/images（自动）"
-        };
+        var text = textUrls.Count > 0 ? "按资料包声明执行" : "资料包未声明";
+        var image = imageUrls.Count > 0 ? "按资料包声明执行" : "资料包未声明";
+        var video = videoUrls.Count > 0 ? "按资料包声明执行" : "资料包未声明";
 
         var version = string.IsNullOrWhiteSpace(endpoint.ApiVersion)
             ? "未显式填写"
             : endpoint.ApiVersion.Trim();
 
-        return $"当前模板策略：文本 {text}；图片 {image}；认证 {auth}；API 版本 {version}。";
+        return $"当前模板策略：文本 {text}；图片 {image}；视频 {video}；认证 {auth}；API 版本 {version}。";
     }
 
-    public string BuildInspectionDetails(AiEndpoint endpoint)
+    public EndpointInspectionDetails BuildInspectionDetailsModel(AiEndpoint endpoint)
     {
         ArgumentNullException.ThrowIfNull(endpoint);
 
         var template = GetTemplate(endpoint);
-        var auth = DescribeAuth(endpoint);
-        var textModels = DescribeModels(endpoint, ModelCapability.Text);
-        var imageModels = DescribeModels(endpoint, ModelCapability.Image);
-        var videoModels = DescribeModels(endpoint, ModelCapability.Video);
-        var textRoute = DescribeTextRoute(endpoint);
-        var imageRoute = DescribeImageRoute(endpoint);
-        var videoRoute = DescribeVideoRoute(endpoint);
-        var textPreview = BuildTextPreviewUrl(endpoint);
-        var imagePreview = BuildImagePreviewUrls(endpoint);
-        var videoPreview = BuildVideoPreviewUrls(endpoint);
-        var version = string.IsNullOrWhiteSpace(endpoint.ApiVersion)
-            ? (endpoint.IsAzureEndpoint ? "2024-02-01（Azure deployments 默认回退）" : "未显式填写")
-            : endpoint.ApiVersion.Trim();
+        var summaryRows = new List<EndpointInspectionRow>
+        {
+            new("终结点 API 类型", template.DisplayName),
+            new("模板说明", template.Subtitle),
+            new("原始地址", string.IsNullOrWhiteSpace(endpoint.BaseUrl) ? "未填写" : endpoint.BaseUrl.Trim()),
+            new("当前认证", DescribeAuth(endpoint))
+        };
 
-        return $"""
-终结点名称
-{endpoint.Name}
+        var version = GetApiVersionDescription(endpoint);
+        if (!string.IsNullOrWhiteSpace(version))
+        {
+            summaryRows.Add(new EndpointInspectionRow("API 版本", version));
+        }
 
-终结点 API 类型
-{template.DisplayName}
+        var sections = new List<EndpointInspectionSection>();
+        AppendCapabilitySectionModel(sections, endpoint, ModelCapability.Text, "文字能力", DescribeTextRoute(endpoint), BuildTextPreviewUrlList(endpoint));
+        AppendCapabilitySectionModel(sections, endpoint, ModelCapability.Image, "图片能力", DescribeImageRoute(endpoint), BuildImagePreviewUrlList(endpoint));
+        AppendCapabilitySectionModel(sections, endpoint, ModelCapability.Video, "视频能力", DescribeVideoRoute(endpoint), BuildVideoPreviewUrlList(endpoint));
 
-模板说明
-{template.Subtitle}
+        return new EndpointInspectionDetails(
+            string.IsNullOrWhiteSpace(endpoint.Name) ? "当前终结点" : endpoint.Name,
+            "这里展示当前终结点资料包已声明的认证方式、接口路线和 URL 示例，不会修改配置。",
+            summaryRows,
+            sections,
+            string.Empty);
+    }
 
-原始地址
-{(string.IsNullOrWhiteSpace(endpoint.BaseUrl) ? "未填写" : endpoint.BaseUrl.Trim())}
+    public string BuildInspectionDetails(AiEndpoint endpoint)
+    {
+        var details = BuildInspectionDetailsModel(endpoint);
+        var lines = new List<string>
+        {
+            $"# {EscapeMarkdown(details.Title)}",
+            string.Empty,
+            EscapeMarkdown(details.Intro),
+            string.Empty,
+            "## 基本信息",
+            string.Empty
+        };
 
-当前认证
-{auth}
+        foreach (var row in details.SummaryRows)
+        {
+            lines.Add($"{EscapeMarkdown(row.Label)}：{EscapeMarkdown(row.Value)}");
+        }
 
-【文字能力】
-模型
-{textModels}
+        foreach (var section in details.Sections)
+        {
+            lines.Add(string.Empty);
+            lines.Add($"## {EscapeMarkdown(section.Heading)}");
+            lines.Add(string.Empty);
 
-接口路线
-{textRoute}
+            foreach (var row in section.Rows)
+            {
+                lines.Add($"{EscapeMarkdown(row.Label)}：{EscapeMarkdown(row.Value)}");
+            }
 
-请求 URL 示例
-{textPreview}
+            if (section.UrlItems.Count > 0)
+            {
+                lines.Add(string.Empty);
+                lines.Add($"URL 地址：共 {section.UrlItems.Count} 条资料包声明，带 * 表示首选命中地址");
+                foreach (var urlItem in section.UrlItems)
+                {
+                    lines.Add($"{EscapeMarkdown(urlItem.Label)}：{EscapeMarkdown(urlItem.Url)}");
+                }
+            }
+        }
 
-【图片能力】
-模型
-{imageModels}
+        if (!string.IsNullOrWhiteSpace(details.FooterNote))
+        {
+            lines.Add(string.Empty);
+            lines.Add(EscapeMarkdown(details.FooterNote));
+        }
 
-接口路线
-{imageRoute}
+        return string.Join(Environment.NewLine, lines);
+    }
 
-请求 URL 示例
-{imagePreview}
+    private static void AppendCapabilitySectionModel(
+        List<EndpointInspectionSection> sections,
+        AiEndpoint endpoint,
+        ModelCapability capability,
+        string heading,
+        string route,
+        IReadOnlyList<string> previewUrls)
+    {
+        var models = GetCapabilityModels(endpoint, capability);
+        if (models.Count == 0)
+            return;
 
-【视频能力】
-模型
-{videoModels}
+        var rows = new List<EndpointInspectionRow>
+        {
+            new("模型", string.Join("、", models)),
+            new("接口路线", route)
+        };
 
-接口路线
-{videoRoute}
+        var urlItems = previewUrls.Count == 0
+            ? new List<EndpointInspectionUrlItem>
+            {
+                new("URL 示例", "资料包未声明；本工具不再自动补兜底路线，请厂商补齐资料包。")
+            }
+            : BuildUrlItems(previewUrls);
 
-请求 URL 示例
-{videoPreview}
+        sections.Add(new EndpointInspectionSection(heading, rows, urlItems));
+    }
 
-API 版本
-{version}
+    private static void AppendCapabilitySection(
+        List<string> lines,
+        AiEndpoint endpoint,
+        ModelCapability capability,
+        string heading,
+        string route,
+        IReadOnlyList<string> previewUrls)
+    {
+        var models = GetCapabilityModels(endpoint, capability);
+        if (models.Count == 0)
+            return;
 
-说明
-- 终结点地址按你填写的原样保存。
-- 这里展示的是当前模板 + 当前终结点字段推导出的文字 / 图片 / 视频请求示例，不会修改你的配置。
-- 若后续切换终结点类型，这里的文本 / 图片路线与认证方式也会随模板一起变化。
-""";
+        lines.Add(string.Empty);
+        lines.Add($"## {heading}");
+        lines.Add(string.Empty);
+        lines.Add($"模型：{EscapeMarkdown(string.Join("、", models))}");
+        lines.Add($"接口路线：{EscapeMarkdown(route)}");
+
+        if (previewUrls.Count == 0)
+        {
+            lines.Add("URL 示例：资料包未声明；本工具不再自动补兜底路线，请厂商补齐资料包。");
+            return;
+        }
+
+        lines.Add(string.Empty);
+        lines.Add($"URL 示例：共 {previewUrls.Count} 条资料包候选");
+        for (var i = 0; i < previewUrls.Count; i++)
+        {
+            lines.Add($"候选 {i + 1}：{EscapeMarkdown(previewUrls[i])}");
+        }
     }
 
     private static string DescribeAuth(AiEndpoint endpoint)
@@ -194,22 +245,25 @@ API 版本
 
     private static string DescribeTextRoute(AiEndpoint endpoint)
     {
+        var urls = BuildTextPreviewUrlList(endpoint);
+        if (urls.Count == 0)
+            return "资料包未声明文字请求路线";
+
         if (endpoint.IsAzureEndpoint)
-            return "Azure deployments / chat/completions";
+            return "资料包声明的 Azure deployments 文字路线";
 
         return GetEffectiveTextProtocol(endpoint) switch
         {
-            TextApiProtocolMode.Responses => "/responses",
-            TextApiProtocolMode.ChatCompletionsRaw => "/chat/completions",
-            _ => endpoint.EndpointType == EndpointApiType.ApiManagementGateway
-                ? "/v1/chat/completions（资料包候选）"
-                : "/v1/chat/completions"
+            TextApiProtocolMode.Responses => "/responses（资料包）",
+            TextApiProtocolMode.ChatCompletionsRaw => "/chat/completions（资料包）",
+            TextApiProtocolMode.ChatCompletionsV1 => "/v1/chat/completions（资料包）",
+            _ => "资料包已声明，但未标注首选文本协议"
         };
     }
 
     private static string DescribeImageRoute(AiEndpoint endpoint)
     {
-        var urls = EndpointProfileUrlBuilder.BuildImageGenerateUrlCandidates(
+        var urls = EndpointProfileUrlBuilder.BuildConfiguredImageGenerateUrlCandidates(
             endpoint.BaseUrl ?? string.Empty,
             endpoint.ProfileId,
             endpoint.EndpointType,
@@ -218,36 +272,30 @@ API 版本
             endpoint.ApiVersion);
 
         if (urls.Count == 0)
-            return endpoint.ImageApiRouteMode == ImageApiRouteMode.ImagesRaw
-                ? "/images/generations"
-                : "/v1/images/generations";
+            return "资料包未声明图片生成路线";
 
-        return string.Join(Environment.NewLine, urls.Select(url => ExtractImageRouteLabel(url)).Distinct(StringComparer.OrdinalIgnoreCase));
+        return string.Join(Environment.NewLine, urls.Select(ExtractImageRouteLabel).Distinct(StringComparer.OrdinalIgnoreCase));
     }
 
     private static string DescribeVideoRoute(AiEndpoint endpoint)
     {
-        if (endpoint.IsAzureEndpoint)
-        {
-            return "/openai/v1/videos（sora2）\n/openai/v1/video/generations/jobs?api-version=preview（sora1 兼容）";
-        }
-
-        return endpoint.EndpointType == EndpointApiType.ApiManagementGateway
-            ? "/v1/videos（按资料包候选顺序尝试，必要时自动补 api-version）"
-            : "/v1/videos";
+        var urls = BuildVideoPreviewUrlList(endpoint);
+        return urls.Count == 0
+            ? "资料包未声明视频路线"
+            : "按资料包声明的视频创建 / 轮询 / 下载路线执行";
     }
 
-    private static string BuildTextPreviewUrl(AiEndpoint endpoint)
+    private static IReadOnlyList<string> BuildTextPreviewUrlList(AiEndpoint endpoint)
     {
         var baseUrl = endpoint.BaseUrl?.Trim().TrimEnd('/') ?? string.Empty;
         if (string.IsNullOrWhiteSpace(baseUrl))
-            return "未填写地址，暂无法生成示例 URL。";
+            return Array.Empty<string>();
 
         var deployment = endpoint.Models.FirstOrDefault(model => model.Capabilities.HasFlag(ModelCapability.Text))?.DeploymentName;
         if (string.IsNullOrWhiteSpace(deployment))
             deployment = endpoint.Models.FirstOrDefault(model => model.Capabilities.HasFlag(ModelCapability.Text))?.ModelId;
 
-        var urls = EndpointProfileUrlBuilder.BuildTextUrlCandidates(
+        var urls = EndpointProfileUrlBuilder.BuildConfiguredTextUrlCandidates(
             baseUrl,
             endpoint.ProfileId,
             endpoint.EndpointType,
@@ -256,22 +304,23 @@ API 版本
             string.IsNullOrWhiteSpace(deployment) ? "{deployment}" : deployment.Trim(),
             endpoint.ApiVersion);
 
-        return urls.Count == 0
-            ? "未填写地址，暂无法生成示例 URL。"
-            : string.Join(Environment.NewLine, urls.Distinct(StringComparer.OrdinalIgnoreCase));
+        return urls
+            .Select(NormalizePreviewUrlForDisplay)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
-    private static string BuildImagePreviewUrls(AiEndpoint endpoint)
+    private static IReadOnlyList<string> BuildImagePreviewUrlList(AiEndpoint endpoint)
     {
         var baseUrl = endpoint.BaseUrl?.Trim().TrimEnd('/') ?? string.Empty;
         if (string.IsNullOrWhiteSpace(baseUrl))
-            return "未填写地址，暂无法生成示例 URL。";
+            return Array.Empty<string>();
 
         var deployment = endpoint.Models.FirstOrDefault(model => model.Capabilities.HasFlag(ModelCapability.Image))?.DeploymentName;
         if (string.IsNullOrWhiteSpace(deployment))
             deployment = endpoint.Models.FirstOrDefault(model => model.Capabilities.HasFlag(ModelCapability.Image))?.ModelId;
 
-        var urls = EndpointProfileUrlBuilder.BuildImageGenerateUrlCandidates(
+        var urls = EndpointProfileUrlBuilder.BuildConfiguredImageGenerateUrlCandidates(
             baseUrl,
             endpoint.ProfileId,
             endpoint.EndpointType,
@@ -279,51 +328,41 @@ API 版本
             deployment,
             endpoint.ApiVersion);
 
-        return urls.Count == 0
-            ? "未填写地址，暂无法生成示例 URL。"
-            : string.Join(Environment.NewLine, urls.Distinct(StringComparer.OrdinalIgnoreCase));
+        return urls
+            .Select(NormalizePreviewUrlForDisplay)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
-    private static string BuildVideoPreviewUrls(AiEndpoint endpoint)
+    private static IReadOnlyList<string> BuildVideoPreviewUrlList(AiEndpoint endpoint)
     {
         var baseUrl = endpoint.BaseUrl?.Trim().TrimEnd('/') ?? string.Empty;
         if (string.IsNullOrWhiteSpace(baseUrl))
-            return "未填写地址，暂无法生成示例 URL。";
+            return Array.Empty<string>();
 
         var urls = new List<string>();
 
-        if (endpoint.IsAzureEndpoint)
-        {
-            urls.Add($"创建（sora2）: {baseUrl}/openai/v1/videos");
-            urls.Add($"轮询（sora2）: {baseUrl}/openai/v1/videos/{{video_id}}");
-            urls.Add($"下载（sora2）: {baseUrl}/openai/v1/videos/{{video_id}}/content");
-            urls.Add($"创建（sora1 兼容）: {baseUrl}/openai/v1/video/generations/jobs?api-version=preview");
-            urls.Add($"轮询（sora1 兼容）: {baseUrl}/openai/v1/video/generations/jobs/{{job_id}}?api-version=preview");
-            urls.Add($"下载（sora1 兼容）: {baseUrl}/openai/v1/video/generations/jobs/{{job_id}}/content?api-version=preview");
-            return string.Join(Environment.NewLine, urls);
-        }
-
-        var createUrls = EndpointProfileUrlBuilder.BuildVideoCreateUrlCandidates(
+        var createUrls = EndpointProfileUrlBuilder.BuildConfiguredVideoCreateUrlCandidates(
             baseUrl,
             endpoint.ProfileId,
             endpoint.EndpointType,
             endpoint.ApiVersion,
             VideoApiMode.Videos);
-        var pollUrls = EndpointProfileUrlBuilder.BuildVideoPollUrlCandidates(
+        var pollUrls = EndpointProfileUrlBuilder.BuildConfiguredVideoPollUrlCandidates(
             baseUrl,
             endpoint.ProfileId,
             endpoint.EndpointType,
             endpoint.ApiVersion,
             "{video_id}",
             VideoApiMode.Videos);
-        var downloadUrls = EndpointProfileUrlBuilder.BuildVideoDownloadUrlCandidates(
+        var downloadUrls = EndpointProfileUrlBuilder.BuildConfiguredVideoDownloadUrlCandidates(
             baseUrl,
             endpoint.ProfileId,
             endpoint.EndpointType,
             endpoint.ApiVersion,
             "{video_id}",
             VideoApiMode.Videos);
-        var contentVideoUrls = EndpointProfileUrlBuilder.BuildVideoDownloadVideoContentUrlCandidates(
+        var contentVideoUrls = EndpointProfileUrlBuilder.BuildConfiguredVideoDownloadVideoContentUrlCandidates(
             baseUrl,
             endpoint.ProfileId,
             endpoint.EndpointType,
@@ -331,28 +370,31 @@ API 版本
             "{video_id}",
             VideoApiMode.Videos);
 
-        foreach (var createUrl in createUrls.Distinct(StringComparer.OrdinalIgnoreCase))
+        foreach (var createUrl in createUrls.Select(NormalizePreviewUrlForDisplay).Distinct(StringComparer.OrdinalIgnoreCase))
             urls.Add($"创建: {createUrl}");
-        foreach (var pollUrl in pollUrls.Distinct(StringComparer.OrdinalIgnoreCase))
+        foreach (var pollUrl in pollUrls.Select(NormalizePreviewUrlForDisplay).Distinct(StringComparer.OrdinalIgnoreCase))
             urls.Add($"轮询: {pollUrl}");
-        foreach (var downloadUrl in downloadUrls.Distinct(StringComparer.OrdinalIgnoreCase))
+        foreach (var downloadUrl in downloadUrls.Select(NormalizePreviewUrlForDisplay).Distinct(StringComparer.OrdinalIgnoreCase))
             urls.Add($"下载: {downloadUrl}");
-        foreach (var contentVideoUrl in contentVideoUrls.Distinct(StringComparer.OrdinalIgnoreCase))
+        foreach (var contentVideoUrl in contentVideoUrls.Select(NormalizePreviewUrlForDisplay).Distinct(StringComparer.OrdinalIgnoreCase))
             urls.Add($"下载(video): {contentVideoUrl}");
-        return string.Join(Environment.NewLine, urls);
+
+        return urls;
     }
 
-    private static string DescribeModels(AiEndpoint endpoint, ModelCapability capability)
-    {
-        var models = endpoint.Models
+    private static IReadOnlyList<string> GetCapabilityModels(AiEndpoint endpoint, ModelCapability capability)
+        => endpoint.Models
             .Where(model => model.Capabilities.HasFlag(capability))
-            .Select(model => string.IsNullOrWhiteSpace(model.ModelId) ? "（未命名模型）" : model.ModelId.Trim())
+            .Select(model => string.IsNullOrWhiteSpace(model.ModelId) ? "未填写模型 ID" : model.ModelId.Trim())
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        return models.Count == 0
-            ? "未配置该类型模型"
-            : string.Join("、", models);
+    private static string GetApiVersionDescription(AiEndpoint endpoint)
+    {
+        if (!string.IsNullOrWhiteSpace(endpoint.ApiVersion))
+            return endpoint.ApiVersion.Trim();
+
+        return string.Empty;
     }
 
     private static TextApiProtocolMode GetEffectiveTextProtocol(AiEndpoint endpoint)
@@ -361,14 +403,6 @@ API 版本
             endpoint.EndpointType,
             endpoint.TextApiProtocolMode,
             endpoint.IsAzureEndpoint);
-
-    private static ImageApiRouteMode GetEffectiveImageRouteMode(AiEndpoint endpoint)
-    {
-        if (endpoint.ImageApiRouteMode != ImageApiRouteMode.Auto)
-            return endpoint.ImageApiRouteMode;
-
-        return ImageApiRouteMode.V1Images;
-    }
 
     private static string ExtractImageRouteLabel(string url)
     {
@@ -386,26 +420,48 @@ API 版本
         return url;
     }
 
-    private static string BuildImageUrl(string baseUrl, ImageApiRouteMode mode)
-        => mode == ImageApiRouteMode.ImagesRaw
-            ? AppendPath(baseUrl, "images/generations")
-            : AppendPath(baseUrl, "v1/images/generations");
+    private static string EscapeMarkdown(string value)
+        => string.IsNullOrWhiteSpace(value)
+            ? string.Empty
+            : value.Replace("|", "\\|").Replace("\r", string.Empty).Trim();
 
-    private static string AppendPath(string baseUrl, string path)
+    private static string NormalizePreviewUrlForDisplay(string value)
+        => string.IsNullOrWhiteSpace(value)
+            ? string.Empty
+            : value
+                .Replace("%7B", "{", StringComparison.OrdinalIgnoreCase)
+                .Replace("%7D", "}", StringComparison.OrdinalIgnoreCase);
+
+    private static List<EndpointInspectionUrlItem> BuildUrlItems(IReadOnlyList<string> previewUrls)
     {
-        var normalizedPath = path.TrimStart('/');
-        return baseUrl.EndsWith($"/{normalizedPath}", StringComparison.OrdinalIgnoreCase)
-            ? baseUrl
-            : $"{baseUrl}/{normalizedPath}";
+        var result = new List<EndpointInspectionUrlItem>(previewUrls.Count);
+        var groupCounters = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var raw in previewUrls)
+        {
+            var groupKey = ExtractUrlGroupKey(raw);
+            var nextIndex = groupCounters.TryGetValue(groupKey, out var current) ? current + 1 : 1;
+            groupCounters[groupKey] = nextIndex;
+            var label = nextIndex == 1 ? "地址 1*" : $"地址 {nextIndex}";
+            result.Add(new EndpointInspectionUrlItem(label, raw));
+        }
+
+        return result;
     }
 
-    private static string AppendOptionalApiVersion(string url, string? apiVersion)
+    private static string ExtractUrlGroupKey(string value)
     {
-        if (string.IsNullOrWhiteSpace(apiVersion))
-            return url;
+        if (string.IsNullOrWhiteSpace(value))
+            return string.Empty;
 
-        var separator = url.Contains('?') ? '&' : '?';
-        return $"{url}{separator}api-version={Uri.EscapeDataString(apiVersion.Trim())}";
+        var colonIndex = value.IndexOf(':');
+        if (colonIndex <= 0)
+            return string.Empty;
+
+        var prefix = value[..colonIndex].Trim();
+        return prefix.Contains('/') || prefix.StartsWith("http", StringComparison.OrdinalIgnoreCase)
+            ? string.Empty
+            : prefix;
     }
 
     private static EndpointTemplateDefinition MapTemplate(EndpointProfileDefinition profile)
@@ -418,6 +474,7 @@ API 版本
             Glyph = profile.Glyph,
             Summary = profile.Summary,
             DefaultNamePrefix = profile.DefaultNamePrefix,
+            DefaultApiVersion = profile.Defaults.ApiVersion?.Trim() ?? string.Empty,
             IconAssetPath = profile.IconAssetPath,
             SupportsAad = profile.Defaults.SupportsAad
         };

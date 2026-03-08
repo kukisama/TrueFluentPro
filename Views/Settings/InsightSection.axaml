@@ -2,10 +2,12 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:TrueFluentPro.ViewModels.Settings"
              xmlns:controls="clr-namespace:TrueFluentPro.Controls"
+             xmlns:icons="https://github.com/projektanker/icons.avalonia"
              x:Class="TrueFluentPro.Views.Settings.InsightSection"
              x:DataType="vm:InsightSectionVM"
              x:CompileBindings="False">
-    <Border BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+        <Border Classes="app-card"
+            BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
             BorderThickness="1" CornerRadius="8" Padding="20">
         <StackPanel Spacing="12">
             <TextBlock Text="洞察" Theme="{StaticResource SubtitleTextBlockStyle}"/>
@@ -37,8 +39,13 @@
             <TextBlock Text="{Binding AiAuthStatus}" FontSize="11" Foreground="Gray" TextWrapping="Wrap"/>
 
             <StackPanel Orientation="Horizontal" Spacing="8">
-                <Button Content="测试连接" Width="100"
-                        Command="{Binding TestEndpointCommand}"/>
+                <Button Width="112"
+                        Command="{Binding TestEndpointCommand}">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <icons:Icon Value="fa-solid fa-check" FontSize="12"/>
+                        <TextBlock Text="测试连接" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
                 <TextBlock Text="{Binding AiTestStatus}" FontSize="11" Foreground="Gray" TextWrapping="Wrap"/>
             </StackPanel>
             <TextBlock Text="{Binding AiTestRequestInfo}" FontSize="10" Foreground="Gray" TextWrapping="Wrap"/>

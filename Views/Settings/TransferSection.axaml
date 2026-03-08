@@ -1,10 +1,12 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:TrueFluentPro.ViewModels.Settings"
+             xmlns:icons="https://github.com/projektanker/icons.avalonia"
              x:Class="TrueFluentPro.Views.Settings.TransferSection"
              x:DataType="vm:TransferSectionVM"
              x:CompileBindings="False">
-    <Border BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+        <Border Classes="app-card"
+            BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
             BorderThickness="1" CornerRadius="8" Padding="20">
         <StackPanel Spacing="12">
             <TextBlock Text="配置迁移" Theme="{StaticResource SubtitleTextBlockStyle}"/>
@@ -13,16 +15,24 @@
                        Foreground="Gray"
                        TextWrapping="Wrap"/>
             <StackPanel Orientation="Horizontal" Spacing="12">
-                <Button Content="导出"
-                        MinWidth="120"
+                <Button MinWidth="120"
                         Padding="16,8"
                         IsEnabled="{Binding !IsBusy}"
-                        Click="OnExportSettingsPackageClick"/>
-                <Button Content="导入"
-                        MinWidth="120"
+                        Click="OnExportSettingsPackageClick">
+                    <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+                        <icons:Icon Value="fa-solid fa-file-export" FontSize="12"/>
+                        <TextBlock Text="导出" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+                <Button MinWidth="120"
                         Padding="16,8"
                         IsEnabled="{Binding !IsBusy}"
-                        Click="OnImportSettingsPackageClick"/>
+                        Click="OnImportSettingsPackageClick">
+                    <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+                        <icons:Icon Value="fa-solid fa-file-import" FontSize="12"/>
+                        <TextBlock Text="导入" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
             </StackPanel>
         </StackPanel>
     </Border>

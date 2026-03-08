@@ -1,5 +1,7 @@
+using System;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -89,14 +91,30 @@ public partial class EndpointsSection : UserControl
         if (owner == null)
             return;
 
-        var dialog = new EndpointInfoDialog($"{endpoint.Name} · 详细信息", vm.GetSelectedEndpointInspectionDetails());
+        EndpointInfoDialog dialog;
+        try
+        {
+            var inspectionModel = vm.GetSelectedEndpointInspectionModel();
+            dialog = inspectionModel == null
+                ? new EndpointInfoDialog($"{endpoint.Name} · 详细信息", vm.GetSelectedEndpointInspectionDetails())
+                : new EndpointInfoDialog($"{endpoint.Name} · 详细信息", inspectionModel);
+        }
+        catch (Exception ex)
+        {
+            Services.CrashLogger.Write("EndpointsSection.ShowEndpointInfo_Click", ex, isTerminating: false);
+            dialog = new EndpointInfoDialog(
+                $"{endpoint.Name} · 详细信息（降级显示）",
+                $"终结点详细信息\n\n结构化详情初始化失败，已自动降级为纯文本展示。\n\n{vm.GetSelectedEndpointInspectionDetails()}");
+        }
+
         dialog.TestAllRequestedAsync = async () =>
         {
             var resultViewModel = new EndpointBatchTestDialogViewModel(endpoint.Name);
             var resultDialog = new EndpointBatchTestDialog(
                 resultViewModel,
                 (progress, cancellationToken) => vm.RunSelectedEndpointTestAsync(progress, cancellationToken));
-            await resultDialog.ShowDialog(dialog);
+            resultDialog.Show(owner);
+            await Task.CompletedTask;
         };
         await dialog.ShowDialog(owner);
     }

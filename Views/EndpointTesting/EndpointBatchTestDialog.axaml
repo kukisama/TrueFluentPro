@@ -3,6 +3,7 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:vm="using:TrueFluentPro.ViewModels.EndpointTesting"
+    xmlns:i="using:TrueFluentPro.Views.EndpointTesting"
         mc:Ignorable="d"
         d:DesignWidth="920"
         d:DesignHeight="720"
@@ -26,7 +27,7 @@
                 BorderThickness="1"
                 CornerRadius="8"
                 Padding="10">
-            <TextBlock Text="本窗口只测试当前选中的终结点；只会执行模型 ID 已明确填写的模型项。测试过程中会实时显示排队、运行中、完成和失败状态。"
+            <TextBlock Text="本窗口只测试当前选中的终结点；只会执行模型 ID 已明确填写的模型项。测试严格按资料包声明的 URL 候选执行，回退候选会拆成独立并发任务；视频当前只验证创建接口，不再轮询或下载。"
                        TextWrapping="Wrap"
                        Foreground="Gray"/>
         </Border>
@@ -42,29 +43,64 @@
                                 BorderBrush="{Binding BorderBrush}"
                                 BorderThickness="1">
                             <StackPanel Spacing="8">
-                                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
-                                    <Border Grid.Column="0"
-                                            Padding="8,2"
-                                            CornerRadius="999"
-                                            Background="#12FFFFFF"
-                                            BorderBrush="{Binding BorderBrush}"
-                                            BorderThickness="1">
-                                        <TextBlock Text="{Binding StatusText}"
-                                                   Foreground="{Binding StatusForeground}"
-                                                   FontWeight="Bold"/>
-                                    </Border>
-                                    <StackPanel Grid.Column="1" Spacing="2">
-                                        <TextBlock Text="{Binding Title}" FontWeight="Bold" TextWrapping="Wrap"/>
-                                        <TextBlock Text="{Binding Subtitle}" Foreground="Gray" FontSize="12" TextWrapping="Wrap"/>
-                                    </StackPanel>
-                                    <TextBlock Grid.Column="2"
-                                               Text="{Binding DurationText}"
-                                               IsVisible="{Binding HasDuration}"
-                                               Foreground="Gray"
-                                               VerticalAlignment="Center"/>
-                                </Grid>
+                                <Border Padding="0"
+                                        Background="Transparent"
+                                        PointerPressed="ItemHeader_PointerPressed"
+                                        Cursor="Hand">
+                                    <StackPanel Spacing="8">
+                                        <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="10">
+                                            <Border Grid.Column="0"
+                                                    Padding="8,2"
+                                                    CornerRadius="999"
+                                                    Background="#12FFFFFF"
+                                                    BorderBrush="{Binding BorderBrush}"
+                                                    BorderThickness="1">
+                                                <TextBlock Text="{Binding StatusText}"
+                                                           Foreground="{Binding StatusForeground}"
+                                                           FontWeight="Bold"/>
+                                            </Border>
+                                            <StackPanel Grid.Column="1" Spacing="2">
+                                                <TextBlock Text="{Binding Title}" FontWeight="Bold" TextWrapping="Wrap"/>
+                                                <TextBlock Text="{Binding Subtitle}" Foreground="Gray" FontSize="12" TextWrapping="Wrap"/>
+                                            </StackPanel>
+                                            <TextBlock Grid.Column="2"
+                                                       Text="{Binding DurationText}"
+                                                       IsVisible="{Binding HasDuration}"
+                                                       Foreground="Gray"
+                                                       VerticalAlignment="Center"/>
+                                            <TextBlock Grid.Column="3"
+                                                       Text="{Binding ExpandGlyph}"
+                                                       Foreground="{Binding StatusForeground}"
+                                                       FontWeight="Bold"
+                                                       FontSize="13"
+                                                       VerticalAlignment="Center"/>
+                                        </Grid>
 
-                                <TextBlock Text="{Binding Summary}" TextWrapping="Wrap"/>
+                                        <TextBlock Text="{Binding Summary}" TextWrapping="Wrap"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <StackPanel Spacing="8" IsVisible="{Binding IsExpanded}">
+                                <Border IsVisible="{Binding HasRequestUrl}"
+                                        Padding="10"
+                                        CornerRadius="6"
+                                        Background="#06000000"
+                                        BorderBrush="#22000000"
+                                        BorderThickness="1">
+                                    <StackPanel Spacing="4">
+                                        <TextBlock Text="最终访问 URL" FontSize="12" FontWeight="Bold"/>
+                                        <TextBox Text="{Binding RequestUrlText}"
+                                                 IsReadOnly="True"
+                                                 AcceptsReturn="True"
+                                                 TextWrapping="Wrap"
+                                                 MinHeight="56"
+                                                 FontSize="12"
+                                                 FontFamily="Consolas"
+                                                 Background="Transparent"
+                                                 BorderThickness="0"
+                                                 Padding="0"/>
+                                    </StackPanel>
+                                </Border>
 
                                 <Border IsVisible="{Binding HasRequestSummary}"
                                         Padding="10"
@@ -73,11 +109,17 @@
                                         BorderBrush="#22000000"
                                         BorderThickness="1">
                                     <StackPanel Spacing="4">
-                                        <TextBlock Text="请求线索" FontSize="12" FontWeight="Bold"/>
-                                        <TextBlock Text="{Binding RequestSummary}"
-                                                   FontSize="12"
-                                                   FontFamily="Consolas"
-                                                   TextWrapping="Wrap"/>
+                                        <TextBlock Text="请求摘要" FontSize="12" FontWeight="Bold"/>
+                                        <TextBox Text="{Binding RequestSummary}"
+                                                 IsReadOnly="True"
+                                                 AcceptsReturn="True"
+                                                 TextWrapping="Wrap"
+                                                 MinHeight="56"
+                                                 FontSize="12"
+                                                 FontFamily="Consolas"
+                                                 Background="Transparent"
+                                                 BorderThickness="0"
+                                                 Padding="0"/>
                                     </StackPanel>
                                 </Border>
 
@@ -100,6 +142,7 @@
                                                  Padding="0"/>
                                     </StackPanel>
                                 </Border>
+                                </StackPanel>
                             </StackPanel>
                         </Border>
                     </DataTemplate>

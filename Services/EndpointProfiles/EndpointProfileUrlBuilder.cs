@@ -1,11 +1,64 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using TrueFluentPro.Models;
 
 namespace TrueFluentPro.Services.EndpointProfiles;
 
 public static class EndpointProfileUrlBuilder
 {
+    public static IReadOnlyList<string> BuildConfiguredTextUrlCandidates(
+        string baseUrl,
+        string? profileId,
+        EndpointApiType endpointType,
+        TextApiProtocolMode configuredMode,
+        bool isAzureEndpoint,
+        string? deploymentName,
+        string? apiVersion)
+    {
+        var normalizedBaseUrl = NormalizeBaseUrl(baseUrl);
+        if (string.IsNullOrWhiteSpace(normalizedBaseUrl))
+            return Array.Empty<string>();
+
+        var profile = EndpointProfileRuntimeResolver.Resolve(profileId, endpointType);
+        if (profile is null)
+            return Array.Empty<string>();
+
+        var effectiveApiVersion = GetEffectiveTextApiVersion(profileId, endpointType, apiVersion, isAzureEndpoint);
+
+        if (isAzureEndpoint)
+        {
+            return BuildConfiguredUrls(
+                normalizedBaseUrl,
+                profile.Text.DeploymentChatCompletionsUrlCandidates,
+                effectiveApiVersion,
+                new Dictionary<string, string?>
+                {
+                    ["deployment"] = string.IsNullOrWhiteSpace(deploymentName)
+                        ? "{deployment}"
+                        : deploymentName.Trim()
+                });
+        }
+
+        var protocol = ResolveConfiguredTextProtocol(profile, configuredMode);
+        return protocol switch
+        {
+            TextApiProtocolMode.Responses => BuildConfiguredUrls(
+                normalizedBaseUrl,
+                profile.Text.ResponsesUrlCandidates,
+                effectiveApiVersion),
+            TextApiProtocolMode.ChatCompletionsRaw => BuildConfiguredUrls(
+                normalizedBaseUrl,
+                profile.Text.ChatCompletionsRawUrlCandidates,
+                effectiveApiVersion),
+            TextApiProtocolMode.ChatCompletionsV1 => BuildConfiguredUrls(
+                normalizedBaseUrl,
+                profile.Text.ChatCompletionsV1UrlCandidates,
+                effectiveApiVersion),
+            _ => Array.Empty<string>()
+        };
+    }
+
     public static IReadOnlyList<string> BuildImageGenerateUrlCandidates(
         string baseUrl,
         string? profileId,
@@ -21,6 +74,7 @@ public static class EndpointProfileUrlBuilder
         var urls = new List<string>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var profile = EndpointProfileRuntimeResolver.Resolve(profileId, endpointType);
+        var effectiveApiVersion = GetEffectiveEndpointApiVersion(profileId, endpointType, apiVersion);
 
         void AddUrl(string? url)
         {
@@ -35,8 +89,7 @@ public static class EndpointProfileUrlBuilder
             foreach (var deploymentUrl in BuildConfiguredUrls(
                          normalizedBaseUrl,
                          profile?.Image.DeploymentGenerateUrlCandidates,
-                         apiVersion,
-                         profile?.Image.AppendApiVersionWhenPresent == true,
+                         effectiveApiVersion,
                          new Dictionary<string, string?> { ["deployment"] = deploymentName }))
             {
                 AddUrl(deploymentUrl);
@@ -45,8 +98,7 @@ public static class EndpointProfileUrlBuilder
             foreach (var configuredUrl in BuildConfiguredUrls(
                          normalizedBaseUrl,
                          profile?.Image.GenerateUrlCandidates,
-                         apiVersion,
-                         profile?.Image.AppendApiVersionWhenPresent == true))
+                         effectiveApiVersion))
             {
                 AddUrl(configuredUrl);
             }
@@ -55,7 +107,7 @@ public static class EndpointProfileUrlBuilder
                 return urls;
         }
 
-        foreach (var fallbackUrl in BuildFallbackImageUrls(normalizedBaseUrl, endpointType, configuredMode, apiVersion, "generations"))
+        foreach (var fallbackUrl in BuildFallbackImageUrls(normalizedBaseUrl, endpointType, configuredMode, effectiveApiVersion, "generations"))
             AddUrl(fallbackUrl);
 
         return urls;
@@ -66,7 +118,12 @@ public static class EndpointProfileUrlBuilder
         string? apiVersion,
         EndpointApiType endpointType,
         ImageApiRouteMode routeMode)
-        => BuildFallbackImageUrls(NormalizeBaseUrl(baseUrl), endpointType, routeMode, apiVersion, "generations");
+        => BuildFallbackImageUrls(
+            NormalizeBaseUrl(baseUrl),
+            endpointType,
+            routeMode,
+            GetEffectiveEndpointApiVersion(null, endpointType, apiVersion),
+            "generations");
 
     public static IReadOnlyList<string> BuildImageEditUrlCandidates(
         string baseUrl,
@@ -82,6 +139,7 @@ public static class EndpointProfileUrlBuilder
         var urls = new List<string>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var profile = EndpointProfileRuntimeResolver.Resolve(profileId, endpointType);
+        var effectiveApiVersion = GetEffectiveEndpointApiVersion(profileId, endpointType, apiVersion);
 
         void AddUrl(string? url)
         {
@@ -96,8 +154,7 @@ public static class EndpointProfileUrlBuilder
             foreach (var configuredUrl in BuildConfiguredUrls(
                          normalizedBaseUrl,
                          profile?.Image.EditUrlCandidates,
-                         apiVersion,
-                         profile?.Image.AppendApiVersionWhenPresent == true))
+                         effectiveApiVersion))
             {
                 AddUrl(configuredUrl);
             }
@@ -106,10 +163,161 @@ public static class EndpointProfileUrlBuilder
                 return urls;
         }
 
-        foreach (var fallbackUrl in BuildFallbackImageUrls(normalizedBaseUrl, endpointType, configuredMode, apiVersion, "edits"))
+        foreach (var fallbackUrl in BuildFallbackImageUrls(normalizedBaseUrl, endpointType, configuredMode, effectiveApiVersion, "edits"))
             AddUrl(fallbackUrl);
 
         return urls;
+    }
+
+    public static IReadOnlyList<string> BuildConfiguredImageGenerateUrlCandidates(
+        string baseUrl,
+        string? profileId,
+        EndpointApiType endpointType,
+        ImageApiRouteMode configuredMode,
+        string? deploymentName,
+        string? apiVersion)
+    {
+        var normalizedBaseUrl = NormalizeBaseUrl(baseUrl);
+        if (string.IsNullOrWhiteSpace(normalizedBaseUrl))
+            return Array.Empty<string>();
+
+        var profile = EndpointProfileRuntimeResolver.Resolve(profileId, endpointType);
+        if (profile is null)
+            return Array.Empty<string>();
+
+        var effectiveApiVersion = GetEffectiveEndpointApiVersion(profileId, endpointType, apiVersion);
+
+        var urls = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        void AddRange(IReadOnlyList<string> source)
+        {
+            foreach (var item in source)
+            {
+                if (seen.Add(item))
+                    urls.Add(item);
+            }
+        }
+
+        if (configuredMode == ImageApiRouteMode.Auto)
+        {
+            AddRange(BuildConfiguredUrls(
+                normalizedBaseUrl,
+                profile.Image.DeploymentGenerateUrlCandidates,
+                effectiveApiVersion,
+                new Dictionary<string, string?> { ["deployment"] = deploymentName }));
+        }
+
+        AddRange(FilterImageCandidatesByRouteMode(
+            BuildConfiguredUrls(
+                normalizedBaseUrl,
+                profile.Image.GenerateUrlCandidates,
+                effectiveApiVersion),
+            configuredMode));
+
+        return urls;
+    }
+
+    public static IReadOnlyList<string> BuildConfiguredVideoCreateUrlCandidates(
+        string baseUrl,
+        string? profileId,
+        EndpointApiType endpointType,
+        string? apiVersion,
+        VideoApiMode apiMode)
+    {
+        var normalizedBaseUrl = NormalizeBaseUrl(baseUrl);
+        if (string.IsNullOrWhiteSpace(normalizedBaseUrl))
+            return Array.Empty<string>();
+
+        var profile = EndpointProfileRuntimeResolver.Resolve(profileId, endpointType);
+        if (profile is null)
+            return Array.Empty<string>();
+
+        var effectiveApiVersion = GetEffectiveEndpointApiVersion(profileId, endpointType, apiVersion);
+
+        return BuildConfiguredUrls(
+            normalizedBaseUrl,
+            apiMode == VideoApiMode.Videos
+                ? profile.Video.CreateUrlCandidates
+                : profile.Video.JobsCreateUrlCandidates,
+            effectiveApiVersion);
+    }
+
+    public static IReadOnlyList<string> BuildConfiguredVideoPollUrlCandidates(
+        string baseUrl,
+        string? profileId,
+        EndpointApiType endpointType,
+        string? apiVersion,
+        string videoId,
+        VideoApiMode apiMode)
+    {
+        var normalizedBaseUrl = NormalizeBaseUrl(baseUrl);
+        if (string.IsNullOrWhiteSpace(normalizedBaseUrl))
+            return Array.Empty<string>();
+
+        var profile = EndpointProfileRuntimeResolver.Resolve(profileId, endpointType);
+        if (profile is null)
+            return Array.Empty<string>();
+
+        var effectiveApiVersion = GetEffectiveEndpointApiVersion(profileId, endpointType, apiVersion);
+
+        return BuildConfiguredUrls(
+            normalizedBaseUrl,
+            apiMode == VideoApiMode.Videos ? profile.Video.PollUrlCandidates : profile.Video.JobsPollUrlCandidates,
+            effectiveApiVersion,
+            new Dictionary<string, string?> { ["videoId"] = videoId });
+    }
+
+    public static IReadOnlyList<string> BuildConfiguredVideoDownloadUrlCandidates(
+        string baseUrl,
+        string? profileId,
+        EndpointApiType endpointType,
+        string? apiVersion,
+        string videoId,
+        VideoApiMode apiMode)
+    {
+        var normalizedBaseUrl = NormalizeBaseUrl(baseUrl);
+        if (string.IsNullOrWhiteSpace(normalizedBaseUrl))
+            return Array.Empty<string>();
+
+        var profile = EndpointProfileRuntimeResolver.Resolve(profileId, endpointType);
+        if (profile is null)
+            return Array.Empty<string>();
+
+        var effectiveApiVersion = GetEffectiveEndpointApiVersion(profileId, endpointType, apiVersion);
+
+        return BuildConfiguredUrls(
+            normalizedBaseUrl,
+            apiMode == VideoApiMode.Videos ? profile.Video.DownloadUrlCandidates : profile.Video.JobsDownloadUrlCandidates,
+            effectiveApiVersion,
+            new Dictionary<string, string?> { ["videoId"] = videoId });
+    }
+
+    public static IReadOnlyList<string> BuildConfiguredVideoDownloadVideoContentUrlCandidates(
+        string baseUrl,
+        string? profileId,
+        EndpointApiType endpointType,
+        string? apiVersion,
+        string videoId,
+        VideoApiMode apiMode)
+    {
+        var normalizedBaseUrl = NormalizeBaseUrl(baseUrl);
+        if (string.IsNullOrWhiteSpace(normalizedBaseUrl))
+            return Array.Empty<string>();
+
+        var profile = EndpointProfileRuntimeResolver.Resolve(profileId, endpointType);
+        if (profile is null)
+            return Array.Empty<string>();
+
+        var effectiveApiVersion = GetEffectiveEndpointApiVersion(profileId, endpointType, apiVersion);
+
+        return BuildConfiguredUrls(
+            normalizedBaseUrl,
+            apiMode == VideoApiMode.Videos
+                ? profile.Video.DownloadVideoContentUrlCandidates
+                : profile.Video.JobsDownloadUrlCandidates,
+            effectiveApiVersion,
+            new Dictionary<string, string?> { ["videoId"] = videoId });
     }
 
     public static TextApiProtocolMode GetEffectiveTextProtocol(
@@ -137,12 +345,30 @@ public static class EndpointProfileUrlBuilder
             : TextApiProtocolMode.ChatCompletionsV1;
     }
 
-    public static string GetEffectiveTextApiVersion(
-        string? apiVersion,
-        bool isAzureEndpoint)
+    public static string GetEffectiveEndpointApiVersion(
+        string? profileId,
+        EndpointApiType endpointType,
+        string? apiVersion)
     {
         if (!string.IsNullOrWhiteSpace(apiVersion))
             return apiVersion.Trim();
+
+        var profile = EndpointProfileRuntimeResolver.Resolve(profileId, endpointType);
+        if (!string.IsNullOrWhiteSpace(profile?.Defaults.ApiVersion))
+            return profile.Defaults.ApiVersion.Trim();
+
+        return string.Empty;
+    }
+
+    public static string GetEffectiveTextApiVersion(
+        string? profileId,
+        EndpointApiType endpointType,
+        string? apiVersion,
+        bool isAzureEndpoint)
+    {
+        var effectiveApiVersion = GetEffectiveEndpointApiVersion(profileId, endpointType, apiVersion);
+        if (!string.IsNullOrWhiteSpace(effectiveApiVersion))
+            return effectiveApiVersion;
 
         return isAzureEndpoint ? "2024-02-01" : string.Empty;
     }
@@ -160,7 +386,7 @@ public static class EndpointProfileUrlBuilder
         var urls = new List<string>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var protocol = GetEffectiveTextProtocol(profileId, endpointType, configuredMode, isAzureEndpoint);
-        var effectiveApiVersion = GetEffectiveTextApiVersion(apiVersion, isAzureEndpoint);
+        var effectiveApiVersion = GetEffectiveTextApiVersion(profileId, endpointType, apiVersion, isAzureEndpoint);
 
         void AddUrl(string? url)
         {
@@ -181,7 +407,6 @@ public static class EndpointProfileUrlBuilder
                 normalizedBaseUrl,
                 profile?.Text.DeploymentChatCompletionsUrlCandidates,
                 effectiveApiVersion,
-                profile?.Text.AppendApiVersionWhenPresent == true,
                 new Dictionary<string, string?>
                 {
                     ["deployment"] = string.IsNullOrWhiteSpace(deploymentName)
@@ -208,18 +433,15 @@ public static class EndpointProfileUrlBuilder
             TextApiProtocolMode.Responses => BuildConfiguredUrls(
                 normalizedBaseUrl,
                 profile?.Text.ResponsesUrlCandidates,
-                effectiveApiVersion,
-                profile?.Text.AppendApiVersionWhenPresent == true),
+                effectiveApiVersion),
             TextApiProtocolMode.ChatCompletionsRaw => BuildConfiguredUrls(
                 normalizedBaseUrl,
                 profile?.Text.ChatCompletionsRawUrlCandidates,
-                effectiveApiVersion,
-                profile?.Text.AppendApiVersionWhenPresent == true),
+                effectiveApiVersion),
             _ => BuildConfiguredUrls(
                 normalizedBaseUrl,
                 profile?.Text.ChatCompletionsV1UrlCandidates,
-                effectiveApiVersion,
-                profile?.Text.AppendApiVersionWhenPresent == true)
+                effectiveApiVersion)
         };
 
         foreach (var configuredUrl in configuredUrls)
@@ -263,13 +485,13 @@ public static class EndpointProfileUrlBuilder
             return Array.Empty<string>();
 
         var profile = EndpointProfileRuntimeResolver.Resolve(profileId, endpointType);
+        var effectiveApiVersion = GetEffectiveEndpointApiVersion(profileId, endpointType, apiVersion);
         var configuredUrls = BuildConfiguredUrls(
             normalizedBaseUrl,
             apiMode == VideoApiMode.Videos
                 ? profile?.Video.CreateUrlCandidates
                 : profile?.Video.JobsCreateUrlCandidates,
-            apiVersion,
-            profile?.Video.AppendApiVersionWhenPresent == true);
+            effectiveApiVersion);
 
         if (configuredUrls.Count > 0)
             return configuredUrls;
@@ -285,8 +507,8 @@ public static class EndpointProfileUrlBuilder
             ? $"{normalizedBaseUrl}/videos"
             : $"{normalizedBaseUrl}/v1/videos";
 
-        return endpointType != EndpointApiType.OpenAiCompatible && !string.IsNullOrWhiteSpace(apiVersion)
-            ? new[] { AppendApiVersion(url, apiVersion.Trim()), url }
+        return endpointType != EndpointApiType.OpenAiCompatible && !string.IsNullOrWhiteSpace(effectiveApiVersion)
+            ? new[] { AppendApiVersion(url, effectiveApiVersion), url }
             : new[] { url };
     }
 
@@ -426,11 +648,11 @@ public static class EndpointProfileUrlBuilder
         string? secondaryFallbackUrl = null)
     {
         var profile = EndpointProfileRuntimeResolver.Resolve(profileId, endpointType);
+        var effectiveApiVersion = GetEffectiveEndpointApiVersion(profileId, endpointType, apiVersion);
         var configuredUrls = BuildConfiguredUrls(
             normalizedBaseUrl,
             profile == null ? null : selector(profile),
-            apiVersion,
-            profile?.Video.AppendApiVersionWhenPresent == true,
+            effectiveApiVersion,
             replacements);
 
         if (configuredUrls.Count > 0)
@@ -447,51 +669,37 @@ public static class EndpointProfileUrlBuilder
                 urls.Add(url);
         }
 
-        if (endpointType != EndpointApiType.OpenAiCompatible && !string.IsNullOrWhiteSpace(apiVersion))
-            AddUrl(AppendApiVersion(fallbackUrl, apiVersion.Trim()));
+        if (endpointType != EndpointApiType.OpenAiCompatible && !string.IsNullOrWhiteSpace(effectiveApiVersion))
+            AddUrl(AppendApiVersion(fallbackUrl, effectiveApiVersion));
 
         AddUrl(fallbackUrl);
         AddUrl(secondaryFallbackUrl);
         return urls;
     }
 
+    private static TextApiProtocolMode ResolveConfiguredTextProtocol(
+        Models.EndpointProfiles.EndpointProfileDefinition profile,
+        TextApiProtocolMode configuredMode)
+    {
+        if (configuredMode != TextApiProtocolMode.Auto)
+            return configuredMode;
+
+        return Enum.TryParse<TextApiProtocolMode>(profile.Text.PreferredProtocol, ignoreCase: true, out var preferred)
+            ? preferred
+            : TextApiProtocolMode.Auto;
+    }
+
     private static IReadOnlyList<string> BuildConfiguredUrls(
         string normalizedBaseUrl,
         IEnumerable<string>? templates,
         string? apiVersion,
-        bool appendApiVersionWhenPresent,
         IReadOnlyDictionary<string, string?>? replacements = null)
     {
-        var urls = new List<string>();
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        void AddRange(IReadOnlyList<string> items)
-        {
-            foreach (var item in items)
-            {
-                if (seen.Add(item))
-                    urls.Add(item);
-            }
-        }
-
-        if (appendApiVersionWhenPresent && !string.IsNullOrWhiteSpace(apiVersion))
-        {
-            AddRange(EndpointProfileRuntimeResolver.BuildUrls(
-                normalizedBaseUrl,
-                templates,
-                apiVersion,
-                appendApiVersionWhenPresent: true,
-                replacements));
-        }
-
-        AddRange(EndpointProfileRuntimeResolver.BuildUrls(
+        return EndpointProfileRuntimeResolver.BuildUrls(
             normalizedBaseUrl,
             templates,
             apiVersion,
-            appendApiVersionWhenPresent: false,
-            replacements));
-
-        return urls;
+            replacements);
     }
 
     private static IReadOnlyList<string> BuildFallbackImageUrls(
@@ -572,6 +780,26 @@ public static class EndpointProfileUrlBuilder
         }
 
         return urls;
+    }
+
+    private static IReadOnlyList<string> FilterImageCandidatesByRouteMode(
+        IReadOnlyList<string> urls,
+        ImageApiRouteMode routeMode)
+    {
+        if (routeMode == ImageApiRouteMode.Auto)
+            return urls;
+
+        return urls
+            .Where(url => routeMode switch
+            {
+                ImageApiRouteMode.V1Images => url.IndexOf("/v1/images/", StringComparison.OrdinalIgnoreCase) >= 0
+                                              || url.IndexOf("/openai/v1/images/", StringComparison.OrdinalIgnoreCase) >= 0,
+                ImageApiRouteMode.ImagesRaw => url.IndexOf("/images/", StringComparison.OrdinalIgnoreCase) >= 0
+                                               && url.IndexOf("/v1/images/", StringComparison.OrdinalIgnoreCase) < 0
+                                               && url.IndexOf("/openai/v1/images/", StringComparison.OrdinalIgnoreCase) < 0,
+                _ => true
+            })
+            .ToList();
     }
 
     private static string NormalizeBaseUrl(string? baseUrl)

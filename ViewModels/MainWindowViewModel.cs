@@ -45,6 +45,8 @@ namespace TrueFluentPro.ViewModels
         private ConfigurationService _configService;
         private TextEditorType _editorType = TextEditorType.Advanced;
         private EditorDisplayMode _editorDisplayMode = EditorDisplayMode.Translated;
+        private ThemeModePreference _currentThemeMode = ThemeModePreference.System;
+        private bool _isMainNavPaneOpen;
 
         private readonly AiInsightService _aiInsightService;
         public AudioDevicesViewModel AudioDevices { get; }
@@ -176,8 +178,6 @@ namespace TrueFluentPro.ViewModels
             CrashLogger.SetContextProvider(BuildCrashContextSnapshot);
             CrashLogger.AddBreadcrumb("MainWindowViewModel initialized");
 
-            _ = LoadConfigAsync();
-
             StartTranslationCommand = new RelayCommand(
                 execute: _ => StartTranslation(),
                 canExecute: _ => !IsTranslating && _config.IsValid()
@@ -234,6 +234,11 @@ namespace TrueFluentPro.ViewModels
                 canExecute: _ => true
             );
 
+            CycleThemeModeCommand = new RelayCommand(
+                execute: _ => CycleThemeMode(),
+                canExecute: _ => true
+            );
+
             RegisterPostShowInitializationAction(
                 "UpdateCheck",
                 async () =>
@@ -241,6 +246,8 @@ namespace TrueFluentPro.ViewModels
                     await Task.Delay(3000);
                     await Settings.AboutVM.CheckForUpdateOnStartupAsync();
                 });
+
+            _ = LoadConfigAsync();
         }
 
         private async Task LoadConfigAsync()
@@ -275,6 +282,8 @@ namespace TrueFluentPro.ViewModels
 
             // Apply default font size from config
             Controls.AdvancedRichTextBox.DefaultFontSizeValue = _config.DefaultFontSize;
+            SyncThemeModeFromConfig();
+            SyncMainNavPaneStateFromConfig();
 
             BatchProcessing.NormalizeSpeechSubtitleOption();
             BatchProcessing.RefreshCommandStates();
@@ -302,6 +311,8 @@ namespace TrueFluentPro.ViewModels
             BatchProcessing.RefreshCommandStates();
             BatchProcessing.RebuildReviewSheets();
             AiInsight.UpdateConfig();
+            SyncThemeModeFromConfig();
+            SyncMainNavPaneStateFromConfig();
 
             ((RelayCommand)StartTranslationCommand).RaiseCanExecuteChanged();
             ((RelayCommand)ToggleTranslationCommand).RaiseCanExecuteChanged();
@@ -319,6 +330,8 @@ namespace TrueFluentPro.ViewModels
             BatchProcessing.RefreshCommandStates();
             BatchProcessing.RebuildReviewSheets();
             AiInsight.UpdateConfig();
+            SyncThemeModeFromConfig();
+            SyncMainNavPaneStateFromConfig();
 
             ((RelayCommand)StartTranslationCommand).RaiseCanExecuteChanged();
             ((RelayCommand)ToggleTranslationCommand).RaiseCanExecuteChanged();

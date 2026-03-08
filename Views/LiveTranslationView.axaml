@@ -5,6 +5,7 @@
              xmlns:vm="using:TrueFluentPro.ViewModels"
              xmlns:models="using:TrueFluentPro.Models"
              xmlns:controls="using:TrueFluentPro.Controls"
+             xmlns:icons="https://github.com/projektanker/icons.avalonia"
              xmlns:md="clr-namespace:Markdown.Avalonia;assembly=Markdown.Avalonia"
              mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="600"
              x:Class="TrueFluentPro.Views.LiveTranslationView"
@@ -67,31 +68,38 @@
         </Style>
     </UserControl.Styles>
 
-    <Grid RowDefinitions="Auto,*,Auto">
+    <Grid RowDefinitions="Auto,*,Auto"
+          Background="{DynamicResource PageBackgroundBrush}">
         <!-- 订阅与输入选择区域（紧凑工具栏） -->
-        <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8" Margin="10,4,10,8"
-                    VerticalAlignment="Center">
-            <!-- 订阅选择 -->
-            <TextBlock Text="订阅:" VerticalAlignment="Center"/>
-            <ComboBox Name="SubscriptionComboBox" MinWidth="150" 
-                      ItemsSource="{Binding ConfigVM.SubscriptionNames}" 
-                      SelectedIndex="{Binding ConfigVM.ActiveSubscriptionIndex, Mode=TwoWay}"
-                      IsEnabled="{Binding ConfigVM.IsConfigurationEnabled}"
-                      AutomationProperties.Name="Azure 订阅选择"
-                      ToolTip.Tip="选择要使用的Azure订阅"/>
-            <Ellipse Width="12" Height="12" StrokeThickness="2"
-                     VerticalAlignment="Center"
-                     Fill="{Binding ConfigVM.SubscriptionLampFill}"
-                     Stroke="{Binding ConfigVM.SubscriptionLampStroke}"
-                     Opacity="{Binding ConfigVM.SubscriptionLampOpacity}"
-                     ToolTip.Tip="{Binding ConfigVM.SubscriptionValidationStatusMessage}"/>
+        <Border Grid.Row="0" Classes="toolbar-surface"
+                BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="0,0,0,1"
+            Padding="12,10" Margin="0,0,0,10" MinHeight="56">
+            <WrapPanel Orientation="Horizontal" ItemHeight="36"
+                   VerticalAlignment="Center">
+                <!-- 订阅选择 -->
+            <TextBlock Text="订阅:" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                <ComboBox Name="SubscriptionComboBox" MinWidth="150" 
+                          ItemsSource="{Binding ConfigVM.SubscriptionNames}" 
+                          SelectedIndex="{Binding ConfigVM.ActiveSubscriptionIndex, Mode=TwoWay}"
+                          IsEnabled="{Binding ConfigVM.IsConfigurationEnabled}"
+                  Margin="0,0,8,0"
+                          AutomationProperties.Name="Azure 订阅选择"
+                          ToolTip.Tip="选择要使用的Azure订阅"/>
+                <Ellipse Width="12" Height="12" StrokeThickness="2"
+                         VerticalAlignment="Center"
+                         Fill="{Binding ConfigVM.SubscriptionLampFill}"
+                         Stroke="{Binding ConfigVM.SubscriptionLampStroke}"
+                         Opacity="{Binding ConfigVM.SubscriptionLampOpacity}"
+                 Margin="0,0,8,0"
+                         ToolTip.Tip="{Binding ConfigVM.SubscriptionValidationStatusMessage}"/>
 
-            <!-- 语言对 -->
-            <TextBlock Text="源语言:" VerticalAlignment="Center" Margin="8,0,0,0"/>
-            <ComboBox Name="SourceLanguageComboBox" MinWidth="100"
-                      IsEnabled="{Binding ConfigVM.IsConfigurationEnabled}"
-                      AutomationProperties.Name="源语言"
-                      SelectedIndex="{Binding ConfigVM.SourceLanguageIndex}">
+                <!-- 语言对 -->
+            <TextBlock Text="源语言:" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                <ComboBox Name="SourceLanguageComboBox" MinWidth="100"
+                          IsEnabled="{Binding ConfigVM.IsConfigurationEnabled}"
+                          AutomationProperties.Name="源语言"
+                  Margin="0,0,4,0"
+                          SelectedIndex="{Binding ConfigVM.SourceLanguageIndex}">
                 <ComboBoxItem Tag="auto" Content="自动识别"/>
                 <ComboBoxItem Tag="en" Content="英语"/>
                 <ComboBoxItem Tag="zh-CN" Content="中文"/>
@@ -100,11 +108,12 @@
                 <ComboBoxItem Tag="fr-FR" Content="法语"/>
                 <ComboBoxItem Tag="de-DE" Content="德语"/>
                 <ComboBoxItem Tag="es" Content="西班牙语"/>
-            </ComboBox>
-            <TextBlock Text="→" VerticalAlignment="Center" FontSize="16" FontWeight="Bold"/>
-            <ComboBox Name="TargetLanguageComboBox" MinWidth="100"
+                </ComboBox>
+                    <TextBlock Text="→" VerticalAlignment="Center" FontSize="16" FontWeight="Bold" Margin="0,0,4,0"/>
+                <ComboBox Name="TargetLanguageComboBox" MinWidth="100"
                       IsEnabled="{Binding ConfigVM.IsConfigurationEnabled}"
                       AutomationProperties.Name="目标语言"
+                        Margin="0,0,8,0"
                       SelectedIndex="{Binding ConfigVM.TargetLanguageIndex}">
                 <ComboBoxItem Tag="en" Content="英语"/>
                 <ComboBoxItem Tag="zh-CN" Content="中文"/>
@@ -113,21 +122,21 @@
                 <ComboBoxItem Tag="fr-FR" Content="法语"/>
                 <ComboBoxItem Tag="de-DE" Content="德语"/>
                 <ComboBoxItem Tag="es" Content="西班牙语"/>
-            </ComboBox>
+                </ComboBox>
 
-            <!-- 开始/停止翻译 -->
-            <Button Content="{Binding TranslationToggleButtonText}"
+                <!-- 开始/停止翻译 -->
+                <Button Content="{Binding TranslationToggleButtonText}"
                     Command="{Binding ToggleTranslationCommand}"
                     Background="{Binding TranslationToggleButtonBackground}"
                     Foreground="{Binding TranslationToggleButtonForeground}"
-                    Padding="10,5" Margin="8,0,0,0"
+                    Padding="10,5" Margin="0,0,8,0"
                     AutomationProperties.Name="开始/停止翻译 (F5/F6)"
                     ToolTip.Tip="F5 开始翻译, F6 停止翻译"/>
 
             <!-- 3.3 翻译状态脉冲动画：录音指示器 -->
-            <Ellipse Name="RecordingIndicator" Width="10" Height="10"
-                     Fill="Red" VerticalAlignment="Center" Margin="6,0,0,0"
-                     IsVisible="{Binding IsTranslating}">
+                 <Ellipse Name="RecordingIndicator" Width="10" Height="10"
+                        Fill="Red" VerticalAlignment="Center" Margin="6,0,0,0"
+                        IsVisible="{Binding IsTranslating}">
                 <Ellipse.Styles>
                     <Style Selector="Ellipse#RecordingIndicator">
                         <Style.Animations>
@@ -145,10 +154,10 @@
                         </Style.Animations>
                     </Style>
                 </Ellipse.Styles>
-            </Ellipse>
+                </Ellipse>
 
             <!-- 音频设备 Flyout -->
-            <Button Content="🎧 音频设备" Padding="8,5"
+                <Button Content="🎧 音频设备" Padding="8,5" Margin="8,0,8,0"
                     ToolTip.Tip="配置麦克风、系统回环和录制来源">
                 <Button.Flyout>
                     <Flyout Placement="BottomEdgeAlignedLeft">
@@ -192,11 +201,12 @@
                         </StackPanel>
                     </Flyout>
                 </Button.Flyout>
-            </Button>
+                </Button>
 
-            <Border Width="84" Height="22"
+                <Border Width="84" Height="22"
                     Background="Transparent" BorderBrush="{DynamicResource BorderStrongBrush}" BorderThickness="1"
-                    CornerRadius="3" VerticalAlignment="Center"
+                    CornerRadius="6" VerticalAlignment="Center"
+                    Margin="0,0,8,0"
                     AutomationProperties.Name="音频活动电平指示器"
                     ToolTip.Tip="音频活动电平">
                 <Grid>
@@ -218,13 +228,19 @@
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
                 </Grid>
-            </Border>
-        </StackPanel>
+                </Border>
+            </WrapPanel>
+        </Border>
 
         <!-- 中间翻译内容区域 -->
-        <Grid Grid.Row="1" Margin="10,0,10,0" ColumnDefinitions="*,*">
+        <Grid Grid.Row="1" Margin="12,0,12,0" ColumnSpacing="0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="3*" MinWidth="420"/>
+                <ColumnDefinition Width="10"/>
+                <ColumnDefinition Width="2*" MinWidth="300"/>
+            </Grid.ColumnDefinitions>
             <!-- 左侧实时翻译区域 -->
-            <Border Grid.Column="0" BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="1" Margin="0,0,5,0">
+            <Border Grid.Column="0" Classes="app-card" BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="1">
                 <Grid RowDefinitions="Auto,*,Auto">
                     <DockPanel Grid.Row="0" Margin="5">
                         <TextBlock Text="实时翻译" FontWeight="Bold" DockPanel.Dock="Left"/>
@@ -242,19 +258,19 @@
                     </DockPanel>
 
                     <Grid Grid.Row="1" Margin="5">
-                        <Border BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="1" IsVisible="{Binding IsSingleView}">
+                        <Border Classes="sub-card" BorderBrush="{DynamicResource SubCardBorderBrush}" BorderThickness="1" CornerRadius="6" IsVisible="{Binding IsSingleView}">
                             <controls:ConfigurableTextEditor x:Name="UnifiedEditor"
                                                              Text="{Binding DisplayedText, Mode=TwoWay}"
                                                              Placeholder="{Binding DisplayPlaceholder}"
                                                              EditorType="Advanced"/>
                         </Border>
                         <Grid RowDefinitions="*,6,*" IsVisible="{Binding IsBilingualView}">
-                            <Border Grid.Row="0" BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="1">
+                            <Border Grid.Row="0" Classes="sub-card" BorderBrush="{DynamicResource SubCardBorderBrush}" BorderThickness="1" CornerRadius="6">
                                 <controls:ConfigurableTextEditor Text="{Binding CurrentOriginal, Mode=TwoWay}"
                                                                  Placeholder="原文将在这里显示..."
                                                                  EditorType="Advanced"/>
                             </Border>
-                            <Border Grid.Row="2" BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="1">
+                            <Border Grid.Row="2" Classes="sub-card" BorderBrush="{DynamicResource SubCardBorderBrush}" BorderThickness="1" CornerRadius="6">
                                 <controls:ConfigurableTextEditor Text="{Binding CurrentTranslated, Mode=TwoWay}"
                                                                  Placeholder="译文将在这里显示..."
                                                                  EditorType="Advanced"/>
@@ -263,9 +279,17 @@
                     </Grid>
                 </Grid>
             </Border>
+
+            <GridSplitter Grid.Column="1"
+                          Width="10"
+                          Background="Transparent"
+                          HorizontalAlignment="Stretch"
+                          VerticalAlignment="Stretch"
+                          ResizeDirection="Columns"
+                          ShowsPreview="True"/>
             
             <!-- 右侧历史/洞察区域 -->
-            <Border Grid.Column="1" BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="1" Margin="5,0,0,0">
+            <Border Grid.Column="2" Classes="app-card" BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="1">
                 <TabControl>
                     <TabItem Header="历史记录">
                         <Grid RowDefinitions="Auto,*,Auto">
@@ -273,23 +297,23 @@
                             <ListBox Grid.Row="1" ItemsSource="{Binding History}" Margin="5">
                                 <ListBox.ItemTemplate>
                                     <DataTemplate DataType="models:TranslationItem">
-                                        <Border Margin="0,4" BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="1" CornerRadius="4" Padding="6">
+                                        <Border Classes="sub-card" Margin="0,4" BorderBrush="{DynamicResource SubCardBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="6">
                                             <Expander>
                                                 <Expander.Header>
                                                     <StackPanel Spacing="2">
                                                         <DockPanel>
-                                                            <TextBlock Text="{Binding Timestamp, StringFormat=\{0:HH:mm:ss\}}" FontWeight="Bold" DockPanel.Dock="Left"/>
+                                                            <TextBlock Text="{Binding Timestamp, StringFormat=\{0:yyyy-MM-dd HH:mm:ss\}}" FontWeight="Bold" DockPanel.Dock="Left"/>
                                                             <TextBlock Text="{Binding TranslatedText}" Foreground="{DynamicResource PrimaryBrush}"
                                                                        TextTrimming="CharacterEllipsis" Margin="8,0,0,0"/>
                                                         </DockPanel>
-                                                        <TextBlock Text="{Binding OriginalText}" Foreground="Gray"
+                                                        <TextBlock Text="{Binding OriginalText}" Foreground="{DynamicResource TextSubtleBrush}"
                                                                    TextTrimming="CharacterEllipsis"/>
                                                     </StackPanel>
                                                 </Expander.Header>
                                                 <StackPanel Spacing="6" Margin="0,6,0,0">
-                                                    <TextBlock Text="原文" FontSize="10" Foreground="Gray"/>
+                                                    <TextBlock Text="原文" FontSize="10" Foreground="{DynamicResource TextSubtleBrush}"/>
                                                     <TextBlock Text="{Binding OriginalText}" TextWrapping="Wrap"/>
-                                                    <TextBlock Text="译文" FontSize="10" Foreground="Gray"/>
+                                                    <TextBlock Text="译文" FontSize="10" Foreground="{DynamicResource TextSubtleBrush}"/>
                                                     <TextBlock Text="{Binding TranslatedText}" TextWrapping="Wrap" Foreground="{DynamicResource PrimaryBrush}"/>
                                                 </StackPanel>
                                             </Expander>
@@ -303,11 +327,11 @@
                         <Grid RowDefinitions="Auto,Auto,Auto,Auto,*,Auto">
                             <!-- AI 状态 -->
                             <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="8,8,8,4" Spacing="10">
-                                <TextBlock Text="未配置 AI 服务" Foreground="Orange"
+                                <TextBlock Text="未配置 AI 服务" Foreground="{DynamicResource WarningBrush}"
                                            VerticalAlignment="Center"
                                            FontSize="11"
                                            IsVisible="{Binding !AiInsight.IsAiConfigured}"/>
-                                <TextBlock Text="AI 服务已就绪" Foreground="Green"
+                                <TextBlock Text="AI 服务已就绪" Foreground="{DynamicResource SuccessBrush}"
                                            VerticalAlignment="Center"
                                            FontSize="11"
                                            IsVisible="{Binding AiInsight.IsAiConfigured}"/>
@@ -342,9 +366,9 @@
                             </Grid>
 
                             <!-- 自动循环洞察 -->
-                            <Border Grid.Row="3" Margin="8,4" Padding="8,6"
-                                    Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource DividerBrush}"
-                                    BorderThickness="1" CornerRadius="4">
+                                <Border Grid.Row="3" Classes="sub-card" Margin="8,4" Padding="8,6"
+                                    Background="{DynamicResource SubCardBackgroundBrush}" BorderBrush="{DynamicResource SubCardBorderBrush}"
+                                    BorderThickness="1" CornerRadius="6">
                                 <Grid RowDefinitions="Auto,Auto">
                                     <!-- 控制行：自动洞察模式、间隔、启停 -->
                                     <WrapPanel Grid.Row="0" Orientation="Horizontal">
@@ -379,8 +403,8 @@
                             </Border>
 
                             <!-- Markdown 渲染结果区 -->
-                            <Border Grid.Row="4" Margin="8,4" BorderBrush="{DynamicResource BorderSubtleBrush}"
-                                    BorderThickness="1" CornerRadius="4">
+                            <Border Grid.Row="4" Classes="sub-card" Margin="8,4" BorderBrush="{DynamicResource SubCardBorderBrush}"
+                                    BorderThickness="1" CornerRadius="6">
                                 <Grid>
                                     <ScrollViewer IsVisible="{Binding !AiInsight.IsInsightEmpty}">
                                         <md:MarkdownScrollViewer Markdown="{Binding AiInsight.InsightMarkdown}"/>
@@ -388,12 +412,12 @@
                                     <!-- 加载指示器 -->
                                     <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
                                                 IsVisible="{Binding AiInsight.IsInsightLoading}">
-                                        <TextBlock Text="AI 正在分析..." Foreground="Gray"
+                                        <TextBlock Text="AI 正在分析..." Foreground="{DynamicResource TextSubtleBrush}"
                                                    FontSize="12" HorizontalAlignment="Center"/>
                                     </StackPanel>
                                     <!-- 空状态提示 -->
                                     <TextBlock Text="选择预设模板或输入问题开始分析"
-                                               Foreground="Gray" FontSize="12"
+                                               Foreground="{DynamicResource TextSubtleBrush}" FontSize="12"
                                                HorizontalAlignment="Center" VerticalAlignment="Center"
                                                IsVisible="{Binding AiInsight.IsInsightEmpty}"/>
                                 </Grid>
@@ -412,38 +436,58 @@
         </Grid>
     
         <!-- 底部操作栏 -->
-        <Border Grid.Row="2" BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="0,1,0,0" Padding="10,5" Margin="0,4,0,0">
+        <Border Grid.Row="2" Classes="toolbar-surface" BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="0,1,0,0" Padding="10,6" Margin="0,8,0,0">
             <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,*,Auto">
                 <!-- 清空历史 -->
-                <Button Grid.Column="0" Content="清空历史" Command="{Binding ClearHistoryCommand}" 
+                <Button Grid.Column="0" Command="{Binding ClearHistoryCommand}" 
                         Padding="10,5" Margin="0,0,6,0"
-                        AutomationProperties.Name="清空翻译历史"/>
+                        AutomationProperties.Name="清空翻译历史">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <icons:Icon Value="fa-solid fa-trash-can" FontSize="12"/>
+                        <TextBlock Text="清空历史" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
                 <!-- 查看历史记录 -->
-                <Button Grid.Column="1" Content="查看历史记录" Command="{Binding OpenHistoryFolderCommand}" 
+                <Button Grid.Column="1" Command="{Binding OpenHistoryFolderCommand}" 
                         Padding="10,5" Margin="0,0,6,0"
                         AutomationProperties.Name="打开历史记录文件夹"
-                        ToolTip.Tip="打开本地历史记录文件夹，查看保存的翻译文件"/>
+                        ToolTip.Tip="打开本地历史记录文件夹，查看保存的翻译文件">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <icons:Icon Value="fa-solid fa-folder-open" FontSize="12"/>
+                        <TextBlock Text="查看历史记录" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
                 <!-- 浮动字幕 -->
-                <Button Grid.Column="2" Content="浮动字幕" Command="{Binding ShowFloatingSubtitlesCommand}" 
+                <Button Grid.Column="2" Command="{Binding ShowFloatingSubtitlesCommand}" 
                         Padding="10,5" Margin="0,0,6,0"
                         Background="{Binding FloatingSubtitleButtonBackground}"
                         Foreground="{Binding FloatingSubtitleButtonForeground}"
                         AutomationProperties.Name="切换浮动字幕窗口"
-                        ToolTip.Tip="使用可拖动的透明字幕框提供服务"/>
+                        ToolTip.Tip="使用可拖动的透明字幕框提供服务">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <icons:Icon Value="fa-solid fa-closed-captioning" FontSize="12"/>
+                        <TextBlock Text="浮动字幕" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
                 <!-- 浮动洞察 -->
-                <Button Grid.Column="3" Content="🧠 浮动洞察" Command="{Binding ShowFloatingInsightCommand}" 
+                <Button Grid.Column="3" Command="{Binding ShowFloatingInsightCommand}" 
                         Padding="10,5" Margin="0,0,6,0"
                         Background="{Binding FloatingInsightButtonBackground}"
                         Foreground="{Binding FloatingInsightButtonForeground}"
                         AutomationProperties.Name="切换浮动洞察窗口"
-                        ToolTip.Tip="弹出浮动洞察窗口，实时同步 AI 洞察结果"/>
+                        ToolTip.Tip="弹出浮动洞察窗口，实时同步 AI 洞察结果">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <icons:Icon Value="fa-solid fa-brain" FontSize="12"/>
+                        <TextBlock Text="浮动洞察" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
                 <!-- 状态信息（右侧） -->
                 <StackPanel Grid.Column="5" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                    <TextBlock Text="{Binding StatusMessage}" FontSize="11" Foreground="Gray"
+                    <TextBlock Text="{Binding StatusMessage}" FontSize="11" Foreground="{DynamicResource TextSubtleBrush}"
                                VerticalAlignment="Center" MaxWidth="400" TextTrimming="CharacterEllipsis"
                                AutomationProperties.Name="翻译状态信息"/>
                     <TextBlock Text="{Binding ConfigVM.SubscriptionValidationStatusMessage}" 
-                               FontSize="10" Foreground="Gray" VerticalAlignment="Center"
+                               FontSize="10" Foreground="{DynamicResource TextSubtleBrush}" VerticalAlignment="Center"
                                AutomationProperties.Name="订阅验证状态"/>
                 </StackPanel>
             </Grid>

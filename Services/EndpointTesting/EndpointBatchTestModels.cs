@@ -32,6 +32,7 @@ public sealed class EndpointBatchTestItem
 	public EndpointBatchTestStatus Status { get; init; }
 	public string Summary { get; init; } = "";
 	public string Details { get; init; } = "";
+	public string RequestUrlText { get; init; } = "";
 	public string RequestSummary { get; init; } = "";
 	public TimeSpan Duration { get; init; }
 
@@ -51,6 +52,7 @@ public sealed class EndpointBatchTestProgressItem
 	public EndpointBatchTestLiveState State { get; init; }
 	public string Summary { get; init; } = "";
 	public string Details { get; init; } = "";
+	public string RequestUrlText { get; init; } = "";
 	public string RequestSummary { get; init; } = "";
 	public TimeSpan Duration { get; init; }
 }

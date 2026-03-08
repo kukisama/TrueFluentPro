@@ -48,7 +48,10 @@ public partial class App : Application
         {
             desktop.ShutdownMode = ShutdownMode.OnMainWindowClose;
             var mainWindow = new MainWindow();
+            var configService = Services.GetRequiredService<ConfigurationService>();
+            var startupShellPreferences = configService.LoadShellStartupPreferences();
             var vm = Services.GetRequiredService<MainWindowViewModel>();
+            vm.ApplyStartupShellPreferences(startupShellPreferences);
             vm.SetMainWindow(mainWindow);
             mainWindow.DataContext = vm;
             desktop.MainWindow = mainWindow;

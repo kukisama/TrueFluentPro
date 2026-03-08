@@ -33,7 +33,6 @@ public static class EndpointProfileRuntimeResolver
         string baseUrl,
         IEnumerable<string>? urlTemplates,
         string? apiVersion = null,
-        bool appendApiVersionWhenPresent = false,
         IReadOnlyDictionary<string, string?>? replacements = null)
     {
         var urls = new List<string>();
@@ -45,14 +44,9 @@ public static class EndpointProfileRuntimeResolver
 
         foreach (var template in urlTemplates ?? Enumerable.Empty<string>())
         {
-            var expanded = ExpandUrlTemplate(normalizedBaseUrl, template, replacements);
+            var expanded = ExpandUrlTemplate(normalizedBaseUrl, template, apiVersion, replacements);
             if (string.IsNullOrWhiteSpace(expanded))
                 continue;
-
-            if (appendApiVersionWhenPresent && !string.IsNullOrWhiteSpace(apiVersion))
-            {
-                expanded = AppendApiVersion(expanded, apiVersion.Trim());
-            }
 
             if (seen.Add(expanded))
             {
@@ -66,6 +60,7 @@ public static class EndpointProfileRuntimeResolver
     private static string? ExpandUrlTemplate(
         string baseUrl,
         string? template,
+        string? apiVersion,
         IReadOnlyDictionary<string, string?>? replacements)
     {
         if (string.IsNullOrWhiteSpace(template))
@@ -73,6 +68,14 @@ public static class EndpointProfileRuntimeResolver
 
         var expanded = template.Trim();
         expanded = expanded.Replace("{baseUrl}", baseUrl, StringComparison.OrdinalIgnoreCase);
+
+        if (expanded.IndexOf("{apiVersion}", StringComparison.OrdinalIgnoreCase) >= 0)
+        {
+            if (string.IsNullOrWhiteSpace(apiVersion))
+                return null;
+
+            expanded = expanded.Replace("{apiVersion}", Uri.EscapeDataString(apiVersion.Trim()), StringComparison.OrdinalIgnoreCase);
+        }
 
         foreach (var pair in replacements ?? new Dictionary<string, string?>())
         {
@@ -97,17 +100,5 @@ public static class EndpointProfileRuntimeResolver
 
         var relative = expanded.TrimStart('/');
         return $"{baseUrl}/{relative}";
-    }
-
-    private static string AppendApiVersion(string url, string apiVersion)
-    {
-        if (string.IsNullOrWhiteSpace(apiVersion)
-            || url.IndexOf("api-version=", StringComparison.OrdinalIgnoreCase) >= 0)
-        {
-            return url;
-        }
-
-        var separator = url.Contains('?') ? '&' : '?';
-        return $"{url}{separator}api-version={Uri.EscapeDataString(apiVersion)}";
     }
 }

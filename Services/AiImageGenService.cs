@@ -22,6 +22,8 @@ namespace TrueFluentPro.Services
         public double GenerateSeconds { get; set; }
         /// <summary>下载传输耗时（秒）：从 headers 返回到 body 读取完毕</summary>
         public double DownloadSeconds { get; set; }
+        public string RequestUrl { get; set; } = "";
+        public IReadOnlyList<string> AttemptedUrls { get; set; } = Array.Empty<string>();
     }
 
     /// <summary>
@@ -46,6 +48,7 @@ namespace TrueFluentPro.Services
             public required HttpResponseMessage Response { get; init; }
             public required string Url { get; init; }
             public string? ErrorText { get; init; }
+            public IReadOnlyList<string> AttemptedUrls { get; init; } = Array.Empty<string>();
         }
 
         private static string FormatResponseHeaders(HttpResponseMessage response)
@@ -86,6 +89,8 @@ namespace TrueFluentPro.Services
             var totalStopwatch = System.Diagnostics.Stopwatch.StartNew();
 
             HttpResponseMessage? response = null;
+            var requestUrl = string.Empty;
+            IReadOnlyList<string> attemptedUrls = Array.Empty<string>();
 
             var validReferenceImages = (referenceImagePaths ?? Array.Empty<string>())
                 .Where(p => !string.IsNullOrWhiteSpace(p) && File.Exists(p))
@@ -119,6 +124,8 @@ namespace TrueFluentPro.Services
                     .ToList();
                 var editAttempt = await SendImageEditRequestAsync(config, prompt, genConfig, validReferenceImages, authModeText, imageNames, ct);
                 response = editAttempt.Response;
+                requestUrl = editAttempt.Url;
+                attemptedUrls = editAttempt.AttemptedUrls;
 
                 // 不回退，直接暴露错误
                 if (response == null)
@@ -165,6 +172,8 @@ namespace TrueFluentPro.Services
                 var authModeText = DescribeMediaAuthStrategy(config);
                 var generateAttempt = await SendImageGenerateRequestAsync(config, bodyObj, authModeText, ct);
                 response = generateAttempt.Response;
+                requestUrl = generateAttempt.Url;
+                attemptedUrls = generateAttempt.AttemptedUrls;
 
                 if (!response.IsSuccessStatusCode)
                 {
@@ -264,7 +273,9 @@ namespace TrueFluentPro.Services
                 {
                     Images = results,
                     GenerateSeconds = generateSeconds,
-                    DownloadSeconds = downloadSeconds
+                    DownloadSeconds = downloadSeconds,
+                    RequestUrl = requestUrl,
+                    AttemptedUrls = attemptedUrls
                 };
             }
         }
@@ -377,14 +388,16 @@ namespace TrueFluentPro.Services
             CancellationToken ct)
         {
             ImageAttemptResult? lastAttempt = null;
+            var attemptedUrls = new List<string>();
 
             foreach (var url in candidateUrls)
             {
+                attemptedUrls.Add(url);
                 var response = await SendJsonImageRequestAsync(config, url, jsonBody, authModeText, ct, "ImageGenerate");
 
                 if (response.IsSuccessStatusCode)
                 {
-                    return new ImageAttemptResult { Response = response, Url = url };
+                    return new ImageAttemptResult { Response = response, Url = url, AttemptedUrls = attemptedUrls.ToList() };
                 }
 
                 var errorText = await response.Content.ReadAsStringAsync(ct);
@@ -394,15 +407,16 @@ namespace TrueFluentPro.Services
                     response.Dispose();
 
                     var queryUrl = BuildApimSubscriptionKeyQueryUrl(url, config.ApiKey);
+                    attemptedUrls.Add(queryUrl);
                     response = await SendJsonImageRequestAsync(config, queryUrl, jsonBody, authModeText, ct, "ImageGenerate-ApimQueryRetry");
 
                     if (response.IsSuccessStatusCode)
                     {
-                        return new ImageAttemptResult { Response = response, Url = queryUrl };
+                        return new ImageAttemptResult { Response = response, Url = queryUrl, AttemptedUrls = attemptedUrls.ToList() };
                     }
 
                     errorText = await response.Content.ReadAsStringAsync(ct);
-                    lastAttempt = new ImageAttemptResult { Response = response, Url = queryUrl, ErrorText = errorText };
+                    lastAttempt = new ImageAttemptResult { Response = response, Url = queryUrl, ErrorText = errorText, AttemptedUrls = attemptedUrls.ToList() };
 
                     if (ShouldTryNextImageCandidate(response))
                     {
@@ -412,7 +426,7 @@ namespace TrueFluentPro.Services
                     return lastAttempt;
                 }
 
-                lastAttempt = new ImageAttemptResult { Response = response, Url = url, ErrorText = errorText };
+                lastAttempt = new ImageAttemptResult { Response = response, Url = url, ErrorText = errorText, AttemptedUrls = attemptedUrls.ToList() };
 
                 if (ShouldTryNextImageCandidate(response))
                     continue;
@@ -447,9 +461,11 @@ namespace TrueFluentPro.Services
             CancellationToken ct)
         {
             ImageAttemptResult? lastAttempt = null;
+            var attemptedUrls = new List<string>();
 
             foreach (var url in BuildImageEditCandidateUrls(config))
             {
+                attemptedUrls.Add(url);
                 var response = await SendEditImageRequestAsync(
                     config,
                     url,
@@ -463,7 +479,7 @@ namespace TrueFluentPro.Services
 
                 if (response.IsSuccessStatusCode)
                 {
-                    return new ImageAttemptResult { Response = response, Url = url };
+                    return new ImageAttemptResult { Response = response, Url = url, AttemptedUrls = attemptedUrls.ToList() };
                 }
 
                 var errorText = await response.Content.ReadAsStringAsync(ct);
@@ -473,6 +489,7 @@ namespace TrueFluentPro.Services
                     response.Dispose();
 
                     var queryUrl = BuildApimSubscriptionKeyQueryUrl(url, config.ApiKey);
+                    attemptedUrls.Add(queryUrl);
                     response = await SendEditImageRequestAsync(
                         config,
                         queryUrl,
@@ -486,11 +503,11 @@ namespace TrueFluentPro.Services
 
                     if (response.IsSuccessStatusCode)
                     {
-                        return new ImageAttemptResult { Response = response, Url = queryUrl };
+                        return new ImageAttemptResult { Response = response, Url = queryUrl, AttemptedUrls = attemptedUrls.ToList() };
                     }
 
                     errorText = await response.Content.ReadAsStringAsync(ct);
-                    lastAttempt = new ImageAttemptResult { Response = response, Url = queryUrl, ErrorText = errorText };
+                    lastAttempt = new ImageAttemptResult { Response = response, Url = queryUrl, ErrorText = errorText, AttemptedUrls = attemptedUrls.ToList() };
 
                     if (ShouldTryNextImageCandidate(response))
                     {
@@ -500,7 +517,7 @@ namespace TrueFluentPro.Services
                     return lastAttempt;
                 }
 
-                lastAttempt = new ImageAttemptResult { Response = response, Url = url, ErrorText = errorText };
+                lastAttempt = new ImageAttemptResult { Response = response, Url = url, ErrorText = errorText, AttemptedUrls = attemptedUrls.ToList() };
 
                 if (ShouldTryNextImageCandidate(response))
                     continue;

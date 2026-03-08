@@ -5,7 +5,8 @@
              x:Class="TrueFluentPro.Views.Settings.AboutSection"
              x:DataType="vm:AboutSectionVM"
              x:CompileBindings="False">
-    <Border BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+        <Border Classes="app-card"
+            BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
             BorderThickness="1" CornerRadius="8" Padding="20">
         <StackPanel Spacing="12">
             <TextBlock Text="关于" Theme="{StaticResource SubtitleTextBlockStyle}"/>

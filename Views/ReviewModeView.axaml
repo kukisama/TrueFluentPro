@@ -47,18 +47,26 @@
         </Style>
     </UserControl.Styles>
 
-    <Grid ColumnDefinitions="280,Auto,*,Auto,320" Margin="10">
+    <Grid Margin="12"
+          Background="{DynamicResource PageBackgroundBrush}">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="292" MinWidth="240"/>
+            <ColumnDefinition Width="12"/>
+            <ColumnDefinition Width="*" MinWidth="320"/>
+            <ColumnDefinition Width="12"/>
+            <ColumnDefinition Width="332" MinWidth="320"/>
+        </Grid.ColumnDefinitions>
         <!-- 左侧文件与批处理 -->
-        <Border Grid.Column="0" BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="1" CornerRadius="4" Padding="8"
-                MinWidth="200">
+        <Border Grid.Column="0" Classes="app-card" BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="10"
+            >
             <TabControl>
                 <TabItem Header="文件库" AutomationProperties.Name="文件库">
                     <StackPanel Spacing="10">
                         <!-- 3.7 文件拖放区 -->
-                        <Border Name="DropZone"
+                        <Border Name="DropZone" Classes="sub-card"
                                 BorderBrush="{DynamicResource BorderMediumBrush}"
                                 BorderThickness="2"
-                                CornerRadius="6"
+                            CornerRadius="6"
                                 Padding="12,8"
                                 Background="{DynamicResource SurfaceAltBrush}"
                                 DragDrop.AllowDrop="True"
@@ -74,27 +82,27 @@
                         </Border>
 
                         <DockPanel>
-                            <TextBlock Text="音频文件" FontSize="11" Foreground="Gray" DockPanel.Dock="Left"/>
+                            <TextBlock Text="音频文件" FontSize="11" Foreground="{DynamicResource TextSubtleBrush}" DockPanel.Dock="Left"/>
                             <Button Content="刷新" Width="50" Padding="6,2" Command="{Binding FileLibrary.RefreshAudioLibraryCommand}"
                                     HorizontalAlignment="Right" DockPanel.Dock="Right"
                                     AutomationProperties.Name="刷新音频文件列表"/>
                         </DockPanel>
-                        <ListBox Name="AudioFileListBox" Height="160"
+                        <ListBox Name="AudioFileListBox" Classes="sidebar-nav-list" Height="160"
                                  ItemsSource="{Binding FileLibrary.AudioFiles}" SelectedItem="{Binding FileLibrary.SelectedAudioFile}"
                                  Focusable="False"
                                  AutomationProperties.Name="音频文件列表"
                                  PointerReleased="AudioFileListBox_PointerReleased">
                             <ListBox.ItemTemplate>
                                 <DataTemplate DataType="models:MediaFileItem">
-                                    <Border Padding="2">
+                                    <Border Padding="0">
                                         <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis"/>
                                     </Border>
                                 </DataTemplate>
                             </ListBox.ItemTemplate>
                         </ListBox>
 
-                        <TextBlock Text="字幕文件" FontSize="11" Foreground="Gray"/>
-                        <ListBox ItemsSource="{Binding FileLibrary.SubtitleFiles}" SelectedItem="{Binding FileLibrary.SelectedSubtitleFile}" Height="120"
+                        <TextBlock Text="字幕文件" FontSize="11" Foreground="{DynamicResource TextSubtleBrush}"/>
+                        <ListBox Classes="sidebar-nav-list" ItemsSource="{Binding FileLibrary.SubtitleFiles}" SelectedItem="{Binding FileLibrary.SelectedSubtitleFile}" Height="120"
                                  AutomationProperties.Name="字幕文件列表">
                             <ListBox.ItemTemplate>
                                 <DataTemplate DataType="models:MediaFileItem">
@@ -102,7 +110,7 @@
                                 </DataTemplate>
                             </ListBox.ItemTemplate>
                         </ListBox>
-                        <TextBlock Text="Speech 字幕将在复盘/批处理中按需自动生成" FontSize="10" Foreground="Gray"/>
+                        <TextBlock Text="Speech 字幕将在复盘/批处理中按需自动生成" FontSize="10" Foreground="{DynamicResource TextSubtleBrush}"/>
                     </StackPanel>
                 </TabItem>
                 <TabItem Header="批处理" AutomationProperties.Name="批处理">
@@ -113,16 +121,16 @@
                             <Button Content="清空" Padding="6,3"
                                     Command="{Binding BatchProcessing.ClearBatchTasksCommand}"/>
                         </StackPanel>
-                        <Border BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="1" CornerRadius="4" Padding="6">
+                        <Border Classes="sub-card" BorderBrush="{DynamicResource SubCardBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="6">
                             <ListBox ItemsSource="{Binding BatchProcessing.BatchTasks}" Height="220">
                                 <ListBox.ItemTemplate>
                                     <DataTemplate DataType="models:BatchTaskItem">
                                         <StackPanel Spacing="2" Margin="0,2">
                                             <TextBlock Text="{Binding FileName}" TextTrimming="CharacterEllipsis"/>
                                             <StackPanel Orientation="Horizontal" Spacing="6">
-                                                <TextBlock Text="{Binding StatusMessage}" FontSize="10" Foreground="Gray"/>
-                                                <TextBlock Text="{Binding ReviewStatusText}" FontSize="10" Foreground="Gray"/>
-                                                <TextBlock Text="字幕" FontSize="10" Foreground="Gray"
+                                                <TextBlock Text="{Binding StatusMessage}" FontSize="10" Foreground="{DynamicResource TextSubtleBrush}"/>
+                                                <TextBlock Text="{Binding ReviewStatusText}" FontSize="10" Foreground="{DynamicResource TextSubtleBrush}"/>
+                                                <TextBlock Text="字幕" FontSize="10" Foreground="{DynamicResource TextSubtleBrush}"
                                                            IsVisible="{Binding HasAiSubtitle}"/>
                                             </StackPanel>
                                             <ProgressBar Minimum="0" Maximum="1" Height="4"
@@ -132,8 +140,8 @@
                                 </ListBox.ItemTemplate>
                             </ListBox>
                         </Border>
-                        <TextBlock Text="队列池" FontSize="11" Foreground="Gray"/>
-                        <Border BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="1" CornerRadius="4" Padding="6">
+                        <TextBlock Text="队列池" FontSize="11" Foreground="{DynamicResource TextSubtleBrush}"/>
+                        <Border Classes="sub-card" BorderBrush="{DynamicResource SubCardBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="6">
                             <ListBox ItemsSource="{Binding BatchProcessing.BatchQueueItems}" Height="160">
                                 <ListBox.ItemTemplate>
                                     <DataTemplate x:CompileBindings="False">
@@ -141,8 +149,8 @@
                                             <StackPanel Spacing="2">
                                                 <TextBlock Text="{Binding FileName}" TextTrimming="CharacterEllipsis"/>
                                                 <StackPanel Orientation="Horizontal" Spacing="6">
-                                                    <TextBlock Text="{Binding SheetName}" FontSize="10" Foreground="Gray"/>
-                                                    <TextBlock Text="{Binding StatusMessage}" FontSize="10" Foreground="Gray"/>
+                                                    <TextBlock Text="{Binding SheetName}" FontSize="10" Foreground="{DynamicResource TextSubtleBrush}"/>
+                                                    <TextBlock Text="{Binding StatusMessage}" FontSize="10" Foreground="{DynamicResource TextSubtleBrush}"/>
                                                 </StackPanel>
                                                 <ProgressBar Minimum="0" Maximum="1" Height="4"
                                                              Value="{Binding Progress}"/>
@@ -156,7 +164,7 @@
                                 </ListBox.ItemTemplate>
                             </ListBox>
                         </Border>
-                        <TextBlock Text="{Binding BatchProcessing.BatchQueueStatusText}" Foreground="Gray" FontSize="10"/>
+                        <TextBlock Text="{Binding BatchProcessing.BatchQueueStatusText}" Foreground="{DynamicResource TextSubtleBrush}" FontSize="10"/>
                         <StackPanel Orientation="Horizontal" Spacing="6">
                             <Button Content="刷新队列" Padding="8,3"
                                     Command="{Binding BatchProcessing.RefreshBatchQueueCommand}"
@@ -172,19 +180,20 @@
                             <Button Content="停止" Padding="8,4"
                                     Command="{Binding BatchProcessing.StopBatchCommand}"/>
                         </StackPanel>
-                        <TextBlock Text="{Binding BatchProcessing.BatchStatusMessage}" Foreground="Gray" FontSize="11"/>
+                        <TextBlock Text="{Binding BatchProcessing.BatchStatusMessage}" Foreground="{DynamicResource TextSubtleBrush}" FontSize="11"/>
                     </StackPanel>
                 </TabItem>
             </TabControl>
         </Border>
 
         <!-- 左侧 GridSplitter -->
-        <GridSplitter Grid.Column="1" Width="6" Background="{DynamicResource BorderSubtleBrush}"
+        <GridSplitter Grid.Column="1" Width="12" Background="Transparent"
                   HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
-                  ResizeDirection="Columns"/>
+                  ResizeDirection="Columns"
+                  ShowsPreview="True"/>
 
         <!-- 中部播放器与字幕 -->
-        <Border Grid.Column="2" BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="1" CornerRadius="4" Padding="8">
+        <Border Grid.Column="2" Classes="app-card" BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="10">
             <Grid RowDefinitions="Auto,Auto,*">
                 <StackPanel Grid.Row="0" Spacing="6">
                     <TextBlock Text="音频播放" FontWeight="Bold"/>
@@ -195,7 +204,7 @@
                         <Button Content="⏸" Width="40" Height="32" FontSize="16" Command="{Binding Playback.PauseAudioCommand}"
                                 IsEnabled="{Binding Playback.IsPauseEnabled}" IsVisible="{Binding Playback.IsPauseEnabled}"
                                 AutomationProperties.Name="暂停音频"/>
-                        <TextBlock Text="{Binding Playback.PlaybackTimeText}" VerticalAlignment="Center" Foreground="Gray"/>
+                        <TextBlock Text="{Binding Playback.PlaybackTimeText}" VerticalAlignment="Center" Foreground="{DynamicResource TextSubtleBrush}"/>
                     </StackPanel>
                 </StackPanel>
                 <Grid Grid.Row="1" RowDefinitions="Auto,Auto" Margin="0,6,0,6">
@@ -208,7 +217,7 @@
                     <Slider Grid.Row="1" Name="PlaybackSlider" Minimum="0" Maximum="1"
                             Value="{Binding Playback.PlaybackProgress, Mode=TwoWay}"/>
                 </Grid>
-                <Border Grid.Row="2" BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="1" CornerRadius="4">
+                <Border Grid.Row="2" Classes="sub-card" BorderBrush="{DynamicResource SubCardBorderBrush}" BorderThickness="1" CornerRadius="6">
                     <ListBox Name="SubtitleCueListBox" ItemsSource="{Binding FileLibrary.SubtitleCues}" SelectedItem="{Binding FileLibrary.SelectedSubtitleCue}" Margin="0" Padding="0"
                              Background="Transparent"
                              DoubleTapped="SubtitleCueListBox_DoubleTapped"
@@ -216,7 +225,7 @@
                         <ListBox.ItemTemplate>
                             <DataTemplate DataType="models:SubtitleCue">
                                 <StackPanel Margin="0,2">
-                                    <TextBlock Text="{Binding RangeText}" FontSize="10" Foreground="Gray"/>
+                                    <TextBlock Text="{Binding RangeText}" FontSize="10" Foreground="{DynamicResource TextSubtleBrush}"/>
                                     <TextBlock Text="{Binding Text}" TextTrimming="CharacterEllipsis"/>
                                 </StackPanel>
                             </DataTemplate>
@@ -227,13 +236,14 @@
         </Border>
 
         <!-- 右侧 GridSplitter -->
-        <GridSplitter Grid.Column="3" Width="6" Background="{DynamicResource BorderSubtleBrush}"
+        <GridSplitter Grid.Column="3" Width="12" Background="Transparent"
                   HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
-                  ResizeDirection="Columns"/>
+                  ResizeDirection="Columns"
+                  ShowsPreview="True"/>
 
         <!-- 右侧复盘洞察总结 -->
-        <Border Grid.Column="4" BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="1" CornerRadius="4" Padding="8"
-            MinWidth="240">
+        <Border Grid.Column="4" Classes="app-card" BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="10"
+            >
             <Grid RowDefinitions="Auto,*,Auto">
                 <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                     <TextBlock Text="复盘洞察" FontWeight="Bold"/>
@@ -243,7 +253,7 @@
                              Opacity="{Binding ConfigVM.ReviewSummaryLampOpacity}"
                              VerticalAlignment="Center"/>
                 </StackPanel>
-                <Border Grid.Row="1" BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="1" CornerRadius="4" Margin="0,8,0,8">
+                <Border Grid.Row="1" Classes="sub-card" BorderBrush="{DynamicResource SubCardBorderBrush}" BorderThickness="1" CornerRadius="6" Margin="0,8,0,8">
                     <TabControl ItemsSource="{Binding BatchProcessing.ReviewSheets}"
                                 SelectedItem="{Binding BatchProcessing.SelectedReviewSheet, Mode=TwoWay}">
                         <TabControl.ItemTemplate>
@@ -261,7 +271,7 @@
                                         </md:MarkdownScrollViewer.Engine>
                                     </md:MarkdownScrollViewer>
                                     <TextBlock Text="选择音频与字幕后生成内容"
-                                               Foreground="Gray" FontSize="12"
+                                               Foreground="{DynamicResource TextSubtleBrush}" FontSize="12"
                                                HorizontalAlignment="Center" VerticalAlignment="Center"
                                                IsVisible="{Binding IsEmpty}"/>
                                 </Grid>
@@ -270,7 +280,7 @@
                     </TabControl>
                 </Border>
                 <StackPanel Grid.Row="2" Orientation="Vertical" Spacing="6">
-                    <TextBlock Text="{Binding BatchProcessing.ReviewSummaryStatusMessage}" FontSize="11" Foreground="Gray"/>
+                    <TextBlock Text="{Binding BatchProcessing.ReviewSummaryStatusMessage}" FontSize="11" Foreground="{DynamicResource TextSubtleBrush}"/>
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="6">
                         <Button Content="生成内容" Padding="8,4"
                                 Command="{Binding BatchProcessing.GenerateReviewSummaryCommand}"/>

@@ -4,11 +4,13 @@
              xmlns:models="using:TrueFluentPro.Models"
              xmlns:controls="clr-namespace:TrueFluentPro.Controls"
              xmlns:svg="clr-namespace:Avalonia.Svg.Skia;assembly=Svg.Controls.Skia.Avalonia"
+             xmlns:icons="https://github.com/projektanker/icons.avalonia"
              x:Name="Root"
              x:Class="TrueFluentPro.Views.Settings.EndpointsSection"
              x:DataType="vm:EndpointsSectionVM"
              x:CompileBindings="False">
-    <Border BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+        <Border Classes="app-card"
+            BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
             BorderThickness="1" CornerRadius="8" Padding="20">
         <Border.Styles>
             <Style Selector="Border.endpoint-disabled-card">
@@ -26,11 +28,11 @@
         <StackPanel Spacing="12">
             <TextBlock Text="AI 终结点管理" Theme="{StaticResource SubtitleTextBlockStyle}"/>
             <Separator/>
-            <TextBlock Text="统一管理 AI 服务终结点与模型注册" Foreground="Gray" FontSize="12"/>
+            <TextBlock Text="统一管理 AI 服务终结点与模型注册" Classes="section-description"/>
 
             <Grid ColumnDefinitions="172,*" ColumnSpacing="12" MinHeight="340">
                 <!-- 终结点列表 -->
-                <Border Grid.Column="0" BorderBrush="Gray" BorderThickness="1" CornerRadius="4" MinHeight="320">
+                <Border Grid.Column="0" Classes="sub-card" BorderBrush="{DynamicResource SubCardBorderBrush}" BorderThickness="1" CornerRadius="4" MinHeight="320">
                     <Grid RowDefinitions="*,Auto">
                         <Grid Grid.Row="0">
                             <ListBox x:Name="EndpointsListBox"
@@ -74,13 +76,17 @@
                             </Border>
                         </Grid>
                         <Button Grid.Row="1"
-                            Content="添加"
                             Margin="8"
                             Padding="0,10"
                             FontSize="13"
                             FontWeight="Bold"
                             HorizontalAlignment="Stretch"
-                            Click="CreateEndpoint_Click"/>
+                            Click="CreateEndpoint_Click">
+                            <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
+                                <icons:Icon Value="fa-solid fa-plus" FontSize="12"/>
+                                <TextBlock Text="添加" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
                     </Grid>
                 </Border>
 
@@ -88,7 +94,8 @@
                 <StackPanel Grid.Column="1" Spacing="8" HorizontalAlignment="Left"
                             Opacity="{Binding SelectedEndpointOpacity}"
                             IsVisible="{Binding SelectedEndpoint, Converter={x:Static ObjectConverters.IsNotNull}}">
-                    <Border BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                        <Border Classes="sub-card"
+                            BorderBrush="{DynamicResource SubCardBorderBrush}"
                             Classes.endpoint-disabled-panel="{Binding !SelectedEndpoint.IsEnabled}"
                             BorderThickness="1" CornerRadius="8" Padding="12" MaxWidth="520">
                         <StackPanel Spacing="4">
@@ -114,17 +121,11 @@
                                         Width="36"
                                         Height="36"
                                         Padding="0"
-                                        FontSize="16"
-                                        FontWeight="Bold"
                                         VerticalContentAlignment="Center"
                                         HorizontalContentAlignment="Center"
                                         Click="ShowEndpointInfo_Click"
                                         ToolTip.Tip="点击查看：文字 / 图片 / 视频三类能力的认证方式、接口路线与拼装后的 URL 示例">
-                                    <TextBlock Text="i"
-                                               FontSize="16"
-                                               FontWeight="Bold"
-                                               VerticalAlignment="Center"
-                                               HorizontalAlignment="Center"/>
+                                    <icons:Icon Value="fa-solid fa-circle-info" FontSize="15"/>
                                 </Button>
                             </Grid>
                         </StackPanel>
@@ -149,10 +150,18 @@
                     <StackPanel Spacing="5">
                         <TextBlock Text="API 版本（可选）"/>
                         <TextBox Text="{Binding SelectedEndpoint.ApiVersion, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                 Watermark="例如: 2025-03-01-preview；留空时仅 Azure 官方 deployments 路径回退到默认版本"
+                                 Watermark="{Binding SelectedEndpointApiVersionWatermark}"
                                  Width="420"
                                  MaxWidth="420"
                                  HorizontalAlignment="Left"/>
+                        <TextBlock Text="{Binding SelectedEndpointApiVersionNote}"
+                                   FontSize="11"
+                                   Foreground="Gray"
+                                   TextWrapping="Wrap"
+                                   Width="420"
+                                   MaxWidth="420"
+                                   HorizontalAlignment="Left"
+                                   IsVisible="{Binding SelectedEndpointApiVersionNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                     </StackPanel>
 
                     <StackPanel Spacing="5" IsVisible="{Binding CanSelectedEndpointUseAad}">
@@ -174,11 +183,12 @@
                                      PasswordChar="*"
                                      MaxWidth="420"/>
                             <Button Grid.Column="1"
-                                    Content="⧉"
                                     Width="36"
                                     Height="32"
                                     ToolTip.Tip="复制密钥"
-                                    Click="CopyApiKey_Click"/>
+                                    Click="CopyApiKey_Click">
+                                <icons:Icon Value="fa-regular fa-copy" FontSize="13"/>
+                            </Button>
                         </Grid>
                     </StackPanel>
                     <StackPanel Spacing="5" IsVisible="{Binding IsSelectedEndpointAad}">
@@ -201,11 +211,11 @@
 
                     <Separator Margin="0,6,0,6"/>
                     <TextBlock Text="模型列表" FontWeight="Bold"/>
-                    <TextBlock Text="点击模型条目展开编辑；新建后会直接展开并把光标放到模型 ID。" FontSize="10" Foreground="Gray"/>
+                    <TextBlock Text="点击模型条目展开编辑；新建后会直接展开并把光标放到模型 ID。" Classes="field-note"/>
                     <ItemsControl ItemsSource="{Binding SelectedEndpointModels}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate DataType="models:AiModelEntry">
-                                <Border Name="ModelItemRoot" BorderBrush="Gray" BorderThickness="1" CornerRadius="4"
+                                <Border Name="ModelItemRoot" BorderBrush="{DynamicResource SubCardBorderBrush}" BorderThickness="1" CornerRadius="4"
                                         Margin="0,2" Tag="{Binding}">
                                     <StackPanel>
                                         <!-- 折叠头部：点击展开/收缩 -->
@@ -218,9 +228,12 @@
                                                            VerticalAlignment="Center" Margin="0,0,6,0"
                                                            Name="ModelExpandIcon"/>
                                                 <TextBlock Grid.Column="1" Text="{Binding DisplayTitle}" FontSize="11" VerticalAlignment="Center"/>
-                                                <Button Grid.Column="2" Content="✕" Padding="4,2" FontSize="10"
+                                                <Button Grid.Column="2" Padding="4,2" FontSize="10"
                                                         VerticalAlignment="Center"
-                                                        Click="RemoveModel_Click" Tag="{Binding}"/>
+                                                        Click="RemoveModel_Click" Tag="{Binding}"
+                                                        ToolTip.Tip="删除模型">
+                                                    <icons:Icon Value="fa-solid fa-xmark" FontSize="10"/>
+                                                </Button>
                                             </Grid>
                                         </Border>
                                         <!-- 展开内容：默认隐藏 -->
@@ -258,21 +271,36 @@
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
                     <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,4,0,0">
-                        <Button Content="+ 添加空模型" Padding="8,4" FontSize="11"
-                                Click="AddModel_Click"/>
-                        <Button Content="从终结点拉取模型" Padding="8,4" FontSize="11"
-                                Command="{Binding DiscoverModelsCommand}"/>
+                        <Button Padding="8,4" FontSize="11"
+                                Click="AddModel_Click">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <icons:Icon Value="fa-solid fa-plus" FontSize="11"/>
+                                <TextBlock Text="添加空模型" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+                        <Button Padding="8,4" FontSize="11"
+                                Command="{Binding DiscoverModelsCommand}">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <icons:Icon Value="fa-solid fa-arrows-rotate" FontSize="11"/>
+                                <TextBlock Text="从终结点拉取模型" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
                     </StackPanel>
                     <TextBlock Text="{Binding EndpointDiscoveryStatus}" FontSize="11" Foreground="Gray" TextWrapping="Wrap"
                                IsVisible="{Binding EndpointDiscoveryStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                     <ItemsControl ItemsSource="{Binding DiscoveredModelIds}" IsVisible="{Binding HasDiscoveredModels}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate DataType="x:String">
-                                <Border BorderBrush="Gray" BorderThickness="1" CornerRadius="4" Margin="0,2" Padding="8,6">
+                                <Border Classes="sub-card" BorderBrush="{DynamicResource SubCardBorderBrush}" BorderThickness="1" CornerRadius="4" Margin="0,2" Padding="8,6">
                                     <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
                                         <TextBlock Grid.Column="0" Text="{Binding .}" VerticalAlignment="Center"/>
-                                        <Button Grid.Column="1" Content="添加" Padding="8,2" Tag="{Binding .}"
-                                                Click="AddDiscoveredModel_Click"/>
+                                        <Button Grid.Column="1" Padding="8,2" Tag="{Binding .}"
+                                                Click="AddDiscoveredModel_Click">
+                                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                                <icons:Icon Value="fa-solid fa-plus" FontSize="10"/>
+                                                <TextBlock Text="添加" VerticalAlignment="Center"/>
+                                            </StackPanel>
+                                        </Button>
                                     </Grid>
                                 </Border>
                             </DataTemplate>
@@ -280,13 +308,18 @@
                     </ItemsControl>
                 </StackPanel>
 
-                <Border Grid.Column="1" CornerRadius="8" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                <Border Grid.Column="1" Classes="sub-card" CornerRadius="8" BorderBrush="{DynamicResource SubCardBorderBrush}"
                         BorderThickness="1" Padding="24" IsVisible="{Binding ShowEmptyState}">
                     <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="10" Margin="12">
                         <TextBlock Text="先创建一个 AI 终结点" FontWeight="Bold" FontSize="16" HorizontalAlignment="Center"/>
                         <TextBlock Text="先选终结点 API 类型，再填写地址与密钥；高级路由默认已按模板注入。"
                                    Foreground="Gray" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="420"/>
-                        <Button Content="创建第一个终结点" Padding="12,6" Click="CreateEndpoint_Click"/>
+                        <Button Padding="12,6" Click="CreateEndpoint_Click">
+                            <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
+                                <icons:Icon Value="fa-solid fa-plus" FontSize="12"/>
+                                <TextBlock Text="创建第一个终结点" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
                     </StackPanel>
                 </Border>
             </Grid>

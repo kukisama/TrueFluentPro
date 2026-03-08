@@ -1,18 +1,24 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Interactivity;
+using Avalonia.Styling;
+using System;
+using TrueFluentPro.Models;
 using TrueFluentPro.Services;
 using TrueFluentPro.ViewModels;
-using TrueFluentPro.Models;
-using System;
-using FluentAvalonia.UI.Controls;
 
 namespace TrueFluentPro;
 
 public partial class MainWindow : Window
 {
+    private const double CompactNavWidth = 52;
+    private const double ExpandedNavWidth = 164;
+
+    private double _paneExpansionWidth;
     private MainWindowViewModel? _viewModel;
     private bool _mediaStudioInitialized;
+    private bool _isApplyingNavPaneState;
 
     public MainWindow()
     {
@@ -34,8 +40,7 @@ public partial class MainWindow : Window
             {
                 // ignore icon failures
             }
-            
-            // ViewModel is created and assigned by App.axaml.cs via DI
+
             Console.WriteLine("MainWindow constructor completed (ViewModel set by DI)");
         }
         catch (Exception ex)
@@ -52,18 +57,21 @@ public partial class MainWindow : Window
         if (_viewModel != null)
         {
             _viewModel.Settings.ConfigSaved -= OnSettingsConfigSaved;
+            _viewModel.ThemeModeChanged -= OnThemeModeChanged;
+            _viewModel.MainNavPaneStateChanged -= OnMainNavPaneStateChanged;
         }
 
         _viewModel = DataContext as MainWindowViewModel;
         if (_viewModel != null)
         {
-            _viewModel.NavigateToSettings = () =>
-            {
-                NavView.SelectedItem = NavView.SettingsItem;
-                ShowPage(MainWindowViewModel.NavTagSettings);
-            };
+            _viewModel.NavigateToSettings = () => ShowPage(MainWindowViewModel.NavTagSettings);
 
             _viewModel.Settings.ConfigSaved += OnSettingsConfigSaved;
+            _viewModel.ThemeModeChanged += OnThemeModeChanged;
+            _viewModel.MainNavPaneStateChanged += OnMainNavPaneStateChanged;
+            ApplyThemeMode(_viewModel.CurrentThemeMode);
+            ApplyMainNavPaneState(_viewModel.IsMainNavPaneOpen);
+            UpdateShellNavSelection();
         }
     }
 
@@ -77,27 +85,28 @@ public partial class MainWindow : Window
     protected override void OnOpened(EventArgs e)
     {
         base.OnOpened(e);
-        this.Show();
+        Show();
         _viewModel?.NotifyMainWindowShown();
-
-        // Select first navigation item on startup
-        if (NavView.MenuItems.Count > 0)
-        {
-            NavView.SelectedItem = NavView.MenuItems[0];
-        }
+        ApplyMainNavPaneState(_viewModel?.IsMainNavPaneOpen ?? false);
+        ShowPage(_viewModel?.SelectedNavTag ?? MainWindowViewModel.NavTagLive);
     }
 
-    // 3.5 响应式侧边栏：窗口宽度 < 1200 时自动折叠 NavigationView 到 Compact 模式
     protected override void OnSizeChanged(SizeChangedEventArgs e)
     {
         base.OnSizeChanged(e);
-        if (NavView != null)
+
+        if (_isApplyingNavPaneState || _viewModel?.IsMainNavPaneOpen != true)
         {
-            NavView.IsPaneOpen = e.NewSize.Width >= 1200;
+            return;
+        }
+
+        var minimumExpandedWindowWidth = MinWidth + (ExpandedNavWidth - CompactNavWidth);
+        if (e.NewSize.Width < minimumExpandedWindowWidth)
+        {
+            _viewModel.UpdateMainNavPaneState(false);
         }
     }
 
-    // 3.1 全局快捷键
     protected override void OnKeyDown(KeyEventArgs e)
     {
         base.OnKeyDown(e);
@@ -127,11 +136,10 @@ public partial class MainWindow : Window
                 e.Handled = true;
                 break;
             case Key.D4 when ctrl:
-                SelectNavItemByIndex(3);
+                ShowPage(MainWindowViewModel.NavTagSettings);
                 e.Handled = true;
                 break;
             case Key.OemComma when ctrl:
-                NavView.SelectedItem = NavView.SettingsItem;
                 ShowPage(MainWindowViewModel.NavTagSettings);
                 e.Handled = true;
                 break;
@@ -140,29 +148,20 @@ public partial class MainWindow : Window
 
     private void SelectNavItemByIndex(int index)
     {
-        if (index < NavView.MenuItems.Count)
+        switch (index)
         {
-            NavView.SelectedItem = NavView.MenuItems[index];
-        }
-        else
-        {
-            // Out-of-bounds index (e.g. Ctrl+4) navigates to Settings
-            NavView.SelectedItem = NavView.SettingsItem;
-            ShowPage(MainWindowViewModel.NavTagSettings);
-        }
-    }
-
-    private void NavView_SelectionChanged(object? sender, NavigationViewSelectionChangedEventArgs e)
-    {
-        if (e.IsSettingsSelected)
-        {
-            ShowPage(MainWindowViewModel.NavTagSettings);
-            return;
-        }
-
-        if (e.SelectedItem is NavigationViewItem navItem && navItem.Tag is string tag)
-        {
-            ShowPage(tag);
+            case 0:
+                ShowPage(MainWindowViewModel.NavTagLive);
+                break;
+            case 1:
+                ShowPage(MainWindowViewModel.NavTagReview);
+                break;
+            case 2:
+                ShowPage(MainWindowViewModel.NavTagMedia);
+                break;
+            default:
+                ShowPage(MainWindowViewModel.NavTagSettings);
+                break;
         }
     }
 
@@ -189,12 +188,14 @@ public partial class MainWindow : Window
             _viewModel.SelectedNavTag = tag;
         }
 
+        UpdateShellNavSelection();
+
         if (tag == MainWindowViewModel.NavTagMedia && _viewModel != null && !_mediaStudioInitialized)
         {
             _mediaStudioInitialized = true;
             var config = _viewModel.ConfigVM.Config;
             MediaStudioViewPage.Initialize(
-                config.AiConfig ?? new TrueFluentPro.Models.AiConfig(),
+                config.AiConfig ?? new AiConfig(),
                 config.MediaGenConfig,
                 config.Endpoints);
         }
@@ -208,9 +209,107 @@ public partial class MainWindow : Window
         }
 
         MediaStudioViewPage.UpdateConfiguration(
-            config.AiConfig ?? new TrueFluentPro.Models.AiConfig(),
+            config.AiConfig ?? new AiConfig(),
             config.MediaGenConfig,
             config.Endpoints);
     }
 
+    private void OnThemeModeChanged(ThemeModePreference mode)
+    {
+        ApplyThemeMode(mode);
+    }
+
+    private void OnMainNavPaneStateChanged(bool isOpen)
+    {
+        ApplyMainNavPaneState(isOpen);
+    }
+
+    private void ApplyMainNavPaneState(bool isOpen)
+    {
+        _isApplyingNavPaneState = true;
+        try
+        {
+            ApplyWindowWidthForPaneState(isOpen);
+            ShellNavRail.Width = isOpen ? ExpandedNavWidth : CompactNavWidth;
+        }
+        finally
+        {
+            _isApplyingNavPaneState = false;
+        }
+    }
+
+    private void ApplyWindowWidthForPaneState(bool isOpen)
+    {
+        var targetExpansionWidth = isOpen ? ExpandedNavWidth - CompactNavWidth : 0;
+        var delta = targetExpansionWidth - _paneExpansionWidth;
+        if (Math.Abs(delta) < 0.5)
+        {
+            return;
+        }
+
+        if (WindowState != WindowState.Normal)
+        {
+            _paneExpansionWidth = targetExpansionWidth;
+            return;
+        }
+
+        var oldWidth = Width;
+        var newWidth = Math.Max(MinWidth, oldWidth + delta);
+        Width = newWidth;
+
+        _paneExpansionWidth = targetExpansionWidth;
+    }
+
+    private void UpdateShellNavSelection()
+    {
+        LiveNavButton.Classes.Set("selected", _viewModel?.SelectedNavTag == MainWindowViewModel.NavTagLive);
+        ReviewNavButton.Classes.Set("selected", _viewModel?.SelectedNavTag == MainWindowViewModel.NavTagReview);
+        MediaNavButton.Classes.Set("selected", _viewModel?.SelectedNavTag == MainWindowViewModel.NavTagMedia);
+        SettingsNavButton.Classes.Set("selected", _viewModel?.SelectedNavTag == MainWindowViewModel.NavTagSettings);
+    }
+
+    private void ToggleShellNavButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_viewModel == null)
+        {
+            return;
+        }
+
+        _viewModel.UpdateMainNavPaneState(!_viewModel.IsMainNavPaneOpen);
+    }
+
+    private void LiveNavButton_Click(object? sender, RoutedEventArgs e)
+    {
+        ShowPage(MainWindowViewModel.NavTagLive);
+    }
+
+    private void ReviewNavButton_Click(object? sender, RoutedEventArgs e)
+    {
+        ShowPage(MainWindowViewModel.NavTagReview);
+    }
+
+    private void MediaNavButton_Click(object? sender, RoutedEventArgs e)
+    {
+        ShowPage(MainWindowViewModel.NavTagMedia);
+    }
+
+    private void SettingsNavButton_Click(object? sender, RoutedEventArgs e)
+    {
+        ShowPage(MainWindowViewModel.NavTagSettings);
+    }
+
+    private static void ApplyThemeMode(ThemeModePreference mode)
+    {
+        if (Application.Current == null)
+        {
+            return;
+        }
+
+        Application.Current.RequestedThemeVariant = mode switch
+        {
+            ThemeModePreference.Light => ThemeVariant.Light,
+            ThemeModePreference.Dark => ThemeVariant.Dark,
+            _ => ThemeVariant.Default
+        };
+    }
 }

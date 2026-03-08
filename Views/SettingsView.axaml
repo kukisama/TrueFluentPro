@@ -4,31 +4,138 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="using:TrueFluentPro.ViewModels"
              xmlns:settings="clr-namespace:TrueFluentPro.Views.Settings"
+             xmlns:icons="https://github.com/projektanker/icons.avalonia"
              mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="700"
              x:Class="TrueFluentPro.Views.SettingsView"
              x:DataType="vm:MainWindowViewModel"
              x:CompileBindings="False">
 
-    <Grid ColumnDefinitions="180,*" RowDefinitions="*,Auto">
+    <UserControl.Styles>
+        <Style Selector="ListBox#NavListBox">
+            <Setter Property="Padding" Value="0"/>
+        </Style>
+        <Style Selector="ListBox#NavListBox > ListBoxItem">
+            <Setter Property="Margin" Value="0,2,0,2"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="MinHeight" Value="40"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+        </Style>
+        <Style Selector="ListBox#NavListBox > ListBoxItem /template/ ContentPresenter">
+            <Setter Property="Padding" Value="18,9,12,9"/>
+            <Setter Property="CornerRadius" Value="10"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+            <Setter Property="ClipToBounds" Value="False"/>
+        </Style>
+        <Style Selector="ListBox#NavListBox > ListBoxItem icons|Icon">
+            <Setter Property="Width" Value="18"/>
+            <Setter Property="Height" Value="18"/>
+            <Setter Property="HorizontalAlignment" Value="Center"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="ListBox#NavListBox > ListBoxItem:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource SurfaceHoverBrush}"/>
+        </Style>
+        <Style Selector="ListBox#NavListBox > ListBoxItem:selected /template/ ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource AccentBlueBrush}"/>
+            <Setter Property="Foreground" Value="White"/>
+        </Style>
+        <Style Selector="ListBox#NavListBox > ListBoxItem:selected TextBlock">
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+        </Style>
+        <Style Selector="ListBox#NavListBox > ListBoxItem:selected icons|Icon">
+            <Setter Property="Foreground" Value="White"/>
+        </Style>
+        <Style Selector="ListBox#NavListBox > ListBoxItem:pointerover TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+        </Style>
+    </UserControl.Styles>
+
+        <Grid ColumnDefinitions="180,*" RowDefinitions="*,Auto"
+          Background="{DynamicResource PageBackgroundBrush}">
         <!-- 左侧锚点导航 -->
-        <Border Grid.Column="0" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
-                BorderThickness="0,0,1,0" Padding="0,12,0,0">
+        <Border Grid.Column="0"
+            Classes="nav-surface"
+            Background="{DynamicResource NavPanelBackgroundBrush}"
+            BorderBrush="{DynamicResource CardBorderBrush}"
+                BorderThickness="0,0,1,0" Padding="6,12,6,0">
             <Grid RowDefinitions="*,Auto">
                 <ListBox Name="NavListBox" SelectionMode="Single"
                          SelectionChanged="OnNavSectionChanged"
-                         Background="Transparent" Margin="4,0">
-                    <ListBoxItem Tag="Section_Subscription" Content="Azure Speech"/>
-                    <ListBoxItem Tag="Section_Endpoints" Content="AI 终结点"/>
-                    <ListBoxItem Tag="Section_Storage" Content="录音与存储"/>
-                    <ListBoxItem Tag="Section_Insight" Content="洞察"/>
-                    <ListBoxItem Tag="Section_Review" Content="复盘预设"/>
-                    <ListBoxItem Tag="Section_ImageGen" Content="图片生成"/>
-                    <ListBoxItem Tag="Section_VideoGen" Content="视频生成"/>
-                    <ListBoxItem Tag="Section_Audio" Content="音频设备"/>
-                    <ListBoxItem Tag="Section_Recognition" Content="语音识别"/>
-                    <ListBoxItem Tag="Section_Text" Content="字幕与文本"/>
-                    <ListBoxItem Tag="Section_Transfer" Content="配置迁移"/>
-                    <ListBoxItem Tag="Section_About" Content="关于"/>
+                         Background="Transparent" Margin="0,0,2,0">
+                    <ListBoxItem Tag="Section_Subscription">
+                        <Grid ColumnDefinitions="18,*" ColumnSpacing="10">
+                            <icons:Icon Grid.Column="0" Value="fa-solid fa-microphone-lines" FontSize="14"/>
+                            <TextBlock Grid.Column="1" Text="Azure Speech" VerticalAlignment="Center"/>
+                        </Grid>
+                    </ListBoxItem>
+                    <ListBoxItem Tag="Section_Endpoints">
+                        <Grid ColumnDefinitions="18,*" ColumnSpacing="10">
+                            <icons:Icon Grid.Column="0" Value="fa-solid fa-plug" FontSize="14"/>
+                            <TextBlock Grid.Column="1" Text="AI 终结点" VerticalAlignment="Center"/>
+                        </Grid>
+                    </ListBoxItem>
+                    <ListBoxItem Tag="Section_Storage">
+                        <Grid ColumnDefinitions="18,*" ColumnSpacing="10">
+                            <icons:Icon Grid.Column="0" Value="fa-solid fa-hard-drive" FontSize="14"/>
+                            <TextBlock Grid.Column="1" Text="录音与存储" VerticalAlignment="Center"/>
+                        </Grid>
+                    </ListBoxItem>
+                    <ListBoxItem Tag="Section_Insight">
+                        <Grid ColumnDefinitions="18,*" ColumnSpacing="10">
+                            <icons:Icon Grid.Column="0" Value="fa-solid fa-lightbulb" FontSize="14"/>
+                            <TextBlock Grid.Column="1" Text="洞察" VerticalAlignment="Center"/>
+                        </Grid>
+                    </ListBoxItem>
+                    <ListBoxItem Tag="Section_Review">
+                        <Grid ColumnDefinitions="18,*" ColumnSpacing="10">
+                            <icons:Icon Grid.Column="0" Value="fa-solid fa-clipboard-list" FontSize="14"/>
+                            <TextBlock Grid.Column="1" Text="复盘预设" VerticalAlignment="Center"/>
+                        </Grid>
+                    </ListBoxItem>
+                    <ListBoxItem Tag="Section_ImageGen">
+                        <Grid ColumnDefinitions="18,*" ColumnSpacing="10">
+                            <icons:Icon Grid.Column="0" Value="fa-solid fa-image" FontSize="14"/>
+                            <TextBlock Grid.Column="1" Text="图片生成" VerticalAlignment="Center"/>
+                        </Grid>
+                    </ListBoxItem>
+                    <ListBoxItem Tag="Section_VideoGen">
+                        <Grid ColumnDefinitions="18,*" ColumnSpacing="10">
+                            <icons:Icon Grid.Column="0" Value="fa-solid fa-video" FontSize="14"/>
+                            <TextBlock Grid.Column="1" Text="视频生成" VerticalAlignment="Center"/>
+                        </Grid>
+                    </ListBoxItem>
+                    <ListBoxItem Tag="Section_Audio">
+                        <Grid ColumnDefinitions="18,*" ColumnSpacing="10">
+                            <icons:Icon Grid.Column="0" Value="fa-solid fa-headphones" FontSize="14"/>
+                            <TextBlock Grid.Column="1" Text="音频设备" VerticalAlignment="Center"/>
+                        </Grid>
+                    </ListBoxItem>
+                    <ListBoxItem Tag="Section_Recognition">
+                        <Grid ColumnDefinitions="18,*" ColumnSpacing="10">
+                            <icons:Icon Grid.Column="0" Value="fa-solid fa-wave-square" FontSize="14"/>
+                            <TextBlock Grid.Column="1" Text="语音识别" VerticalAlignment="Center"/>
+                        </Grid>
+                    </ListBoxItem>
+                    <ListBoxItem Tag="Section_Text">
+                        <Grid ColumnDefinitions="18,*" ColumnSpacing="10">
+                            <icons:Icon Grid.Column="0" Value="fa-solid fa-closed-captioning" FontSize="14"/>
+                            <TextBlock Grid.Column="1" Text="字幕与文本" VerticalAlignment="Center"/>
+                        </Grid>
+                    </ListBoxItem>
+                    <ListBoxItem Tag="Section_Transfer">
+                        <Grid ColumnDefinitions="18,*" ColumnSpacing="10">
+                            <icons:Icon Grid.Column="0" Value="fa-solid fa-right-left" FontSize="14"/>
+                            <TextBlock Grid.Column="1" Text="配置迁移" VerticalAlignment="Center"/>
+                        </Grid>
+                    </ListBoxItem>
+                    <ListBoxItem Tag="Section_About">
+                        <Grid ColumnDefinitions="18,*" ColumnSpacing="10">
+                            <icons:Icon Grid.Column="0" Value="fa-solid fa-circle-info" FontSize="14"/>
+                            <TextBlock Grid.Column="1" Text="关于" VerticalAlignment="Center"/>
+                        </Grid>
+                    </ListBoxItem>
                 </ListBox>
             </Grid>
         </Border>
@@ -36,6 +143,7 @@
         <!-- 右侧瀑布流内容 -->
         <ScrollViewer Grid.Column="1" Name="SettingsScroller"
                       ScrollChanged="OnSettingsScrollChanged"
+                      Background="{DynamicResource PageBackgroundBrush}"
                       HorizontalScrollBarVisibility="Disabled">
             <StackPanel Name="SectionsPanel" Spacing="16" Margin="24,12,24,24">
                 <settings:SubscriptionSection  Name="Section_Subscription"
@@ -67,9 +175,10 @@
 
         <!-- 状态栏 -->
         <Border Grid.Row="1" Grid.ColumnSpan="2"
-                BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                BorderBrush="{DynamicResource CardBorderBrush}"
+                Background="{DynamicResource NavPanelBackgroundBrush}"
                 BorderThickness="0,1,0,0" Padding="12,6">
-            <TextBlock Text="{Binding Settings.AutoSaveStatus}" FontSize="11" Foreground="Gray"/>
+            <TextBlock Text="{Binding Settings.AutoSaveStatus}" FontSize="11" Foreground="{DynamicResource TextSubtleBrush}"/>
         </Border>
     </Grid>
 </UserControl>

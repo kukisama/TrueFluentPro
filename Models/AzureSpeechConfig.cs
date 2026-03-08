@@ -22,6 +22,14 @@ namespace TrueFluentPro.Models
         High
     }
 
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public enum ThemeModePreference
+    {
+        System,
+        Light,
+        Dark
+    }
+
     public class AzureSubscription
     {
         public string Name { get; set; } = "";
@@ -113,6 +121,9 @@ namespace TrueFluentPro.Models
     {
         public List<AzureSubscription> Subscriptions { get; set; } = new();
         public int ActiveSubscriptionIndex { get; set; } = 0;
+
+        public ThemeModePreference ThemeMode { get; set; } = ThemeModePreference.System;
+        public bool IsMainNavPaneOpen { get; set; } = false;
 
         public string SourceLanguage { get; set; } = "auto";
         public string TargetLanguage { get; set; } = "zh-CN";

@@ -1,4 +1,5 @@
 using TrueFluentPro.Models;
+using TrueFluentPro.Services.EndpointProfiles;
 
 namespace TrueFluentPro.Services
 {
@@ -15,7 +16,10 @@ namespace TrueFluentPro.Services
         public string DisplayName => string.IsNullOrWhiteSpace(Model.DisplayName) ? Model.ModelId : Model.DisplayName;
         public string ApiEndpoint => Endpoint.BaseUrl?.Trim() ?? "";
         public string ApiKey => Endpoint.ApiKey?.Trim() ?? "";
-        public string ApiVersion => Endpoint.ApiVersion?.Trim() ?? "";
+        public string ApiVersion => EndpointProfileUrlBuilder.GetEffectiveEndpointApiVersion(
+            Endpoint.ProfileId,
+            Endpoint.EndpointType,
+            Endpoint.ApiVersion);
         public EndpointApiType EndpointType => Endpoint.EndpointType;
         public AiProviderType ProviderType => Endpoint.ProviderType;
         public AzureAuthMode AzureAuthMode => Endpoint.AuthMode;

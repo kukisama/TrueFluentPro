@@ -12,9 +12,20 @@
                 <!-- ===== Light 主题 ===== -->
                 <ResourceDictionary x:Key="Light">
                     <!-- 表面/背景 -->
+                    <SolidColorBrush x:Key="PageBackgroundBrush" Color="#FFF3F5F8"/>
+                    <SolidColorBrush x:Key="NavPanelBackgroundBrush" Color="#FFF6F7F9"/>
+                    <SolidColorBrush x:Key="CardBackgroundBrush" Color="#FFFFFFFF"/>
+                    <SolidColorBrush x:Key="CardBorderBrush" Color="#FFE2E8F0"/>
+                    <SolidColorBrush x:Key="SubCardBackgroundBrush" Color="#FFF8FAFC"/>
+                    <SolidColorBrush x:Key="SubCardBorderBrush" Color="#FFE5E7EB"/>
                     <SolidColorBrush x:Key="SurfaceBrush" Color="#FFF8FAFC"/>
                     <SolidColorBrush x:Key="SurfaceAltBrush" Color="#FFF5F5F5"/>
                     <SolidColorBrush x:Key="SurfaceHoverBrush" Color="#FFF1F5F9"/>
+                    <SolidColorBrush x:Key="SettingsPageBackgroundBrush" Color="#FFF3F5F8"/>
+                    <SolidColorBrush x:Key="SettingsNavBackgroundBrush" Color="#FFF6F7F9"/>
+                    <SolidColorBrush x:Key="SettingsCardBackgroundBrush" Color="#FFFFFFFF"/>
+                    <SolidColorBrush x:Key="SettingsCardBorderBrush" Color="#FFE2E8F0"/>
+                    <SolidColorBrush x:Key="SettingsCardInnerBackgroundBrush" Color="#FFF8FAFC"/>
                     <SolidColorBrush x:Key="UserMessageBrush" Color="#FFE3F2FD"/>
                     <SolidColorBrush x:Key="AiMessageBrush" Color="#FFF5F5F5"/>
                     <SolidColorBrush x:Key="MediaItemBrush" Color="#FFEEEEEE"/>
@@ -52,9 +63,20 @@
                 <!-- ===== Dark 主题 ===== -->
                 <ResourceDictionary x:Key="Dark">
                     <!-- 表面/背景 -->
+                    <SolidColorBrush x:Key="PageBackgroundBrush" Color="#FF151A20"/>
+                    <SolidColorBrush x:Key="NavPanelBackgroundBrush" Color="#FF181E25"/>
+                    <SolidColorBrush x:Key="CardBackgroundBrush" Color="#FF1D242D"/>
+                    <SolidColorBrush x:Key="CardBorderBrush" Color="#FF313A45"/>
+                    <SolidColorBrush x:Key="SubCardBackgroundBrush" Color="#FF222B35"/>
+                    <SolidColorBrush x:Key="SubCardBorderBrush" Color="#FF38424F"/>
                     <SolidColorBrush x:Key="SurfaceBrush" Color="#FF1E1E1E"/>
                     <SolidColorBrush x:Key="SurfaceAltBrush" Color="#FF2D2D2D"/>
                     <SolidColorBrush x:Key="SurfaceHoverBrush" Color="#FF333333"/>
+                    <SolidColorBrush x:Key="SettingsPageBackgroundBrush" Color="#FF151A20"/>
+                    <SolidColorBrush x:Key="SettingsNavBackgroundBrush" Color="#FF181E25"/>
+                    <SolidColorBrush x:Key="SettingsCardBackgroundBrush" Color="#FF1D242D"/>
+                    <SolidColorBrush x:Key="SettingsCardBorderBrush" Color="#FF313A45"/>
+                    <SolidColorBrush x:Key="SettingsCardInnerBackgroundBrush" Color="#FF222B35"/>
                     <SolidColorBrush x:Key="UserMessageBrush" Color="#FF1E3A5F"/>
                     <SolidColorBrush x:Key="AiMessageBrush" Color="#FF2D2D2D"/>
                     <SolidColorBrush x:Key="MediaItemBrush" Color="#FF363636"/>
@@ -95,6 +117,8 @@
     <Application.Styles>
         <sty:FluentAvaloniaTheme />
         <StyleInclude Source="avares://AvaloniaEdit/Themes/Fluent/AvaloniaEdit.xaml" />
+        <StyleInclude Source="avares://TrueFluentPro/Styles/AppSurfaces.axaml" />
+        <StyleInclude Source="avares://TrueFluentPro/Styles/AppTypography.axaml" />
 
         <!-- 全局文本选中样式：蓝底白字（类似 CMD 终端） -->
         <Style Selector="TextBox">

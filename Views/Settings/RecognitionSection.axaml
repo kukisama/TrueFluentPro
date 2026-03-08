@@ -4,7 +4,8 @@
              x:Class="TrueFluentPro.Views.Settings.RecognitionSection"
              x:DataType="vm:RecognitionSectionVM"
              x:CompileBindings="False">
-    <Border BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+        <Border Classes="app-card"
+            BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
             BorderThickness="1" CornerRadius="8" Padding="20">
         <StackPanel Spacing="12">
             <TextBlock Text="语音识别" Theme="{StaticResource SubtitleTextBlockStyle}"/>

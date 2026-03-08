@@ -1702,7 +1702,7 @@ namespace TrueFluentPro.ViewModels
         public bool IsAssistant => Role != "user";
         public bool HasMedia => MediaPaths.Count > 0;
 
-        public string TimestampText => Timestamp.ToString("HH:mm:ss");
+        public string TimestampText => Timestamp.ToString("yyyy-MM-dd HH:mm:ss");
 
         public ChatMessageViewModel(MediaChatMessage message)
         {

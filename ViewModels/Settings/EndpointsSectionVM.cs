@@ -55,6 +55,8 @@ namespace TrueFluentPro.ViewModels.Settings
                     OnPropertyChanged(nameof(SelectedEndpointApiKeyHeaderMode));
                     OnPropertyChanged(nameof(SelectedEndpointTextApiProtocolMode));
                     OnPropertyChanged(nameof(SelectedEndpointImageApiRouteMode));
+                    OnPropertyChanged(nameof(SelectedEndpointApiVersionWatermark));
+                    OnPropertyChanged(nameof(SelectedEndpointApiVersionNote));
                     OnPropertyChanged(nameof(SelectedEndpointTypeSummary));
                     OnPropertyChanged(nameof(CanSelectedEndpointUseAad));
                     OnPropertyChanged(nameof(IsSelectedEndpointAad));
@@ -79,6 +81,18 @@ namespace TrueFluentPro.ViewModels.Settings
         public string SelectedEndpointTypeSummary => SelectedEndpoint == null
             ? ""
             : _endpointTemplateService.BuildBehaviorSummary(SelectedEndpoint);
+        public string SelectedEndpointApiVersionWatermark => SelectedEndpoint == null
+            ? string.Empty
+            : _endpointTemplateService.GetTemplate(SelectedEndpoint).DefaultApiVersion;
+        public string SelectedEndpointApiVersionNote => SelectedEndpoint switch
+        {
+            null => string.Empty,
+            { EndpointType: EndpointApiType.AzureOpenAi } => "说明：此字段主要影响 AOAI 文本 deployments 路线；图片 / 视频是否带版本取决于资料包候选，视频候选当前可能包含无版本与 preview。",
+            { EndpointType: EndpointApiType.ApiManagementGateway } => "说明：APIM 是否带 api-version 取决于资料包候选；文本、图片、视频三类路线可能各不相同。",
+            _ => string.IsNullOrWhiteSpace(_endpointTemplateService.GetTemplate(SelectedEndpoint).DefaultApiVersion)
+                ? "说明：当前模板默认不要求 api-version；留空时业务侧通常会按不传版本处理。"
+                : "说明：界面可留空，业务会优先按模板推荐值解析。"
+        };
         public string EndpointDiscoveryStatus { get => _endpointDiscoveryStatus; set => SetProperty(ref _endpointDiscoveryStatus, value); }
         public bool IsDiscoveringModels { get => _isDiscoveringModels; set => SetProperty(ref _isDiscoveringModels, value); }
 
@@ -355,6 +369,11 @@ namespace TrueFluentPro.ViewModels.Settings
                 ? "当前未选择终结点。"
                 : _endpointTemplateService.BuildInspectionDetails(SelectedEndpoint);
 
+        public EndpointInspectionDetails? GetSelectedEndpointInspectionModel()
+            => SelectedEndpoint == null
+                ? null
+                : _endpointTemplateService.BuildInspectionDetailsModel(SelectedEndpoint);
+
         public void NotifyStatus(string message)
         {
             if (string.IsNullOrWhiteSpace(message))
@@ -521,6 +540,8 @@ namespace TrueFluentPro.ViewModels.Settings
                 OnPropertyChanged(nameof(SelectedEndpointApiKeyHeaderMode));
                 OnPropertyChanged(nameof(SelectedEndpointTextApiProtocolMode));
                 OnPropertyChanged(nameof(SelectedEndpointImageApiRouteMode));
+                OnPropertyChanged(nameof(SelectedEndpointApiVersionWatermark));
+                OnPropertyChanged(nameof(SelectedEndpointApiVersionNote));
                 OnPropertyChanged(nameof(SelectedEndpointTypeSummary));
             }
 

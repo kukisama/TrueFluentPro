@@ -19,7 +19,6 @@ public sealed class EndpointProfileModelDiscoverySettings
 public sealed class EndpointProfileTextSettings
 {
     public string PreferredProtocol { get; set; } = "";
-    public bool AppendApiVersionWhenPresent { get; set; }
     public List<string> DeploymentChatCompletionsUrlCandidates { get; set; } = new();
     public List<string> ResponsesUrlCandidates { get; set; } = new();
     public List<string> ChatCompletionsV1UrlCandidates { get; set; } = new();
@@ -28,7 +27,6 @@ public sealed class EndpointProfileTextSettings
 
 public sealed class EndpointProfileImageSettings
 {
-    public bool AppendApiVersionWhenPresent { get; set; }
     public List<string> GenerateUrlCandidates { get; set; } = new();
     public List<string> EditUrlCandidates { get; set; } = new();
     public List<string> DeploymentGenerateUrlCandidates { get; set; } = new();
@@ -37,8 +35,8 @@ public sealed class EndpointProfileImageSettings
 public sealed class EndpointProfileVideoSettings
 {
     public List<EndpointProfileVideoApiModeOption> ApiModeOptions { get; set; } = new();
+    public List<EndpointProfileVideoModelModeBinding> ModelModeBindings { get; set; } = new();
     public List<string> SupportedApiModes { get; set; } = new();
-    public bool AppendApiVersionWhenPresent { get; set; }
     public List<string> CreateUrlCandidates { get; set; } = new();
     public List<string> PollUrlCandidates { get; set; } = new();
     public List<string> DownloadUrlCandidates { get; set; } = new();
@@ -54,5 +52,12 @@ public sealed class EndpointProfileVideoApiModeOption
 {
     public string Mode { get; set; } = "";
     public string DisplayName { get; set; } = "";
+    public string Description { get; set; } = "";
+}
+
+public sealed class EndpointProfileVideoModelModeBinding
+{
+    public string Mode { get; set; } = "";
+    public List<string> ModelPatterns { get; set; } = new();
     public string Description { get; set; } = "";
 }

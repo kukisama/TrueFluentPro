@@ -395,7 +395,7 @@ namespace TrueFluentPro.ViewModels
             var ordered = history.Reverse().ToList();
             foreach (var item in ordered)
             {
-                sb.AppendLine($"[{item.Timestamp:HH:mm:ss}]");
+                sb.AppendLine($"[{item.Timestamp:yyyy-MM-dd HH:mm:ss}]");
                 sb.AppendLine($"  原文: {item.OriginalText}");
                 sb.AppendLine($"  译文: {item.TranslatedText}");
                 sb.AppendLine();
@@ -438,6 +438,8 @@ namespace TrueFluentPro.ViewModels
             {
                 _statusSetter("自动洞察已启动，每收到新翻译数据时自动分析");
             }
+
+            AutoInsightTick();
         }
 
         private void StopAutoInsight()

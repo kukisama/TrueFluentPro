@@ -324,7 +324,7 @@ namespace TrueFluentPro.Services
                 using (var fileStream = new FileStream(_currentSessionFilePath, FileMode.Append, FileAccess.Write, FileShare.ReadWrite))
                 using (var writer = new StreamWriter(fileStream))
                 {
-                    writer.WriteLine($"[{item.Timestamp:HH:mm:ss}]");
+                    writer.WriteLine($"[{item.Timestamp:yyyy-MM-dd HH:mm:ss}]");
                     writer.WriteLine($"原文: {item.OriginalText}");
                     writer.WriteLine($"译文: {item.TranslatedText}");
                     writer.WriteLine();

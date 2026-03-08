@@ -6,14 +6,19 @@
         xmlns:models="using:TrueFluentPro.Models"
         xmlns:controls="using:TrueFluentPro.Controls"
         xmlns:ui="using:FluentAvalonia.UI.Controls"
+        xmlns:icons="https://github.com/projektanker/icons.avalonia"
         xmlns:views="using:TrueFluentPro.Views"
-        mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="600"
+        mc:Ignorable="d"
+        d:DesignWidth="1440"
+        d:DesignHeight="860"
         x:Class="TrueFluentPro.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         x:CompileBindings="False"
         Title="译见 Pro"
-        MinWidth="1000" MinHeight="550"
-        >
+        Width="1440"
+        Height="860"
+        MinWidth="1000"
+        MinHeight="550">
 
     <Design.DataContext>
         <vm:MainWindowViewModel/>
@@ -23,54 +28,188 @@
         <controls:LevelToHeightConverter x:Key="LevelToHeight" MaxHeight="16"/>
     </Window.Resources>
 
-    <!-- 主体：NavigationView 直接占满窗口 -->
-    <ui:NavigationView Name="NavView"
-                       IsBackButtonVisible="False"
-                       IsPaneOpen="True"
-                       IsSettingsVisible="True"
-                       PaneDisplayMode="Left"
-                       SelectionChanged="NavView_SelectionChanged">
+    <Window.Styles>
+        <Style Selector="Button.shell-nav-action">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="10,8"/>
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="Margin" Value="6,0,6,6"/>
+            <Setter Property="MinHeight" Value="40"/>
+        </Style>
+        <Style Selector="Button.shell-nav-action:pointerover">
+            <Setter Property="Background" Value="{DynamicResource SurfaceHoverBrush}"/>
+        </Style>
+        <Style Selector="Button.shell-nav-action.selected">
+            <Setter Property="Background" Value="{DynamicResource AccentBlueBrush}"/>
+            <Setter Property="Foreground" Value="White"/>
+        </Style>
+        <Style Selector="Button.shell-nav-action.selected TextBlock">
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+        </Style>
+        <Style Selector="Button.shell-nav-action.selected icons|Icon">
+            <Setter Property="Foreground" Value="White"/>
+        </Style>
+        <Style Selector="Button.shell-nav-action:pressed">
+            <Setter Property="Background" Value="{DynamicResource SubCardBackgroundBrush}"/>
+        </Style>
+        <Style Selector="Button.shell-nav-toggle">
+            <Setter Property="Width" Value="40"/>
+            <Setter Property="Height" Value="40"/>
+            <Setter Property="Margin" Value="6,0,6,8"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="CornerRadius" Value="8"/>
+        </Style>
+        <Style Selector="Button.shell-nav-toggle:pointerover">
+            <Setter Property="Background" Value="{DynamicResource SurfaceHoverBrush}"/>
+        </Style>
+        <Style Selector="ui|InfoBar">
+            <Setter Property="Padding" Value="8,2"/>
+            <Setter Property="MinHeight" Value="30"/>
+            <Setter Property="FontSize" Value="11"/>
+        </Style>
+        <Style Selector="ui|InfoBar TextBlock">
+            <Setter Property="TextWrapping" Value="NoWrap"/>
+            <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+            <Setter Property="MaxLines" Value="1"/>
+        </Style>
+    </Window.Styles>
 
-        <ui:NavigationView.MenuItems>
-            <ui:NavigationViewItem Content="实时翻译" Tag="live"
-                                   AutomationProperties.Name="实时翻译 (Ctrl+1)"
-                                   ToolTip.Tip="实时翻译 (Ctrl+1)">
-                <ui:NavigationViewItem.IconSource>
-                    <ui:SymbolIconSource Symbol="Microphone"/>
-                </ui:NavigationViewItem.IconSource>
-            </ui:NavigationViewItem>
-            <ui:NavigationViewItem Content="复盘批处理" Tag="review"
-                                   AutomationProperties.Name="复盘批处理 (Ctrl+2)"
-                                   ToolTip.Tip="复盘批处理 (Ctrl+2)">
-                <ui:NavigationViewItem.IconSource>
-                    <ui:SymbolIconSource Symbol="Library"/>
-                </ui:NavigationViewItem.IconSource>
-            </ui:NavigationViewItem>
-            <ui:NavigationViewItem Content="Media Studio" Tag="media"
-                                   AutomationProperties.Name="Media Studio (Ctrl+3)"
-                                   ToolTip.Tip="Media Studio (Ctrl+3)">
-                <ui:NavigationViewItem.IconSource>
-                    <ui:SymbolIconSource Symbol="Image"/>
-                </ui:NavigationViewItem.IconSource>
-            </ui:NavigationViewItem>
-        </ui:NavigationView.MenuItems>
+    <Grid ColumnDefinitions="Auto,*"
+          Background="{DynamicResource PageBackgroundBrush}">
+        <Border Name="ShellNavRail"
+                Grid.Column="0"
+                Width="52"
+                Background="{DynamicResource NavPanelBackgroundBrush}"
+                BorderBrush="{DynamicResource CardBorderBrush}"
+                BorderThickness="0,0,1,0">
+            <Grid RowDefinitions="Auto,*,Auto">
+                <StackPanel Grid.Row="0" Margin="0,8,0,0">
+                    <Button Classes="shell-nav-toggle"
+                            Click="ToggleShellNavButton_Click"
+                            ToolTip.Tip="展开/收起导航"
+                            AutomationProperties.Name="展开或收起导航">
+                        <icons:Icon Value="fa-solid fa-bars"
+                                    FontSize="14"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"/>
+                    </Button>
+                </StackPanel>
 
-        <ui:NavigationView.Content>
-            <Panel>
-                <views:LiveTranslationView Name="LiveView" IsVisible="True"/>
-                <views:ReviewModeView Name="ReviewView" IsVisible="False"/>
-                <views:MediaStudioView Name="MediaStudioViewPage" IsVisible="False"/>
-                <views:SettingsView Name="SettingsViewPage" IsVisible="False"/>
-                <!-- InfoBar 覆盖在右下角，不占布局空间 -->
-                <ui:InfoBar IsOpen="{Binding IsInfoBarOpen, Mode=TwoWay}"
-                            Message="{Binding InfoBarMessage}"
-                            Severity="{Binding InfoBarSeverity}"
-                            IsClosable="True"
-                            HorizontalAlignment="Right"
-                            VerticalAlignment="Bottom"
-                            MaxWidth="500"
-                            Margin="0,0,8,8"/>
-            </Panel>
-        </ui:NavigationView.Content>
-    </ui:NavigationView>
+                <StackPanel Grid.Row="1">
+                    <Button Name="LiveNavButton"
+                            Classes="shell-nav-action selected"
+                            Click="LiveNavButton_Click"
+                            ToolTip.Tip="实时翻译 (Ctrl+1)"
+                            AutomationProperties.Name="实时翻译 (Ctrl+1)">
+                        <Grid ColumnDefinitions="20,*" ColumnSpacing="10">
+                            <icons:Icon Grid.Column="0"
+                                        Value="fa-solid fa-microphone-lines"
+                                        FontSize="15"
+                                        HorizontalAlignment="Center"
+                                        VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="1"
+                                       Text="实时翻译"
+                                       VerticalAlignment="Center"
+                                       IsVisible="{Binding IsMainNavPaneOpen}"/>
+                        </Grid>
+                    </Button>
+                    <Button Name="ReviewNavButton"
+                            Classes="shell-nav-action"
+                            Click="ReviewNavButton_Click"
+                            ToolTip.Tip="复盘批处理 (Ctrl+2)"
+                            AutomationProperties.Name="复盘批处理 (Ctrl+2)">
+                        <Grid ColumnDefinitions="20,*" ColumnSpacing="10">
+                            <icons:Icon Grid.Column="0"
+                                        Value="fa-solid fa-bars-progress"
+                                        FontSize="15"
+                                        HorizontalAlignment="Center"
+                                        VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="1"
+                                       Text="复盘批处理"
+                                       VerticalAlignment="Center"
+                                       IsVisible="{Binding IsMainNavPaneOpen}"/>
+                        </Grid>
+                    </Button>
+                    <Button Name="MediaNavButton"
+                            Classes="shell-nav-action"
+                            Click="MediaNavButton_Click"
+                            ToolTip.Tip="Media Studio (Ctrl+3)"
+                            AutomationProperties.Name="Media Studio (Ctrl+3)">
+                        <Grid ColumnDefinitions="20,*" ColumnSpacing="10">
+                            <icons:Icon Grid.Column="0"
+                                        Value="fa-regular fa-images"
+                                        FontSize="15"
+                                        HorizontalAlignment="Center"
+                                        VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="1"
+                                       Text="Media Studio"
+                                       VerticalAlignment="Center"
+                                       IsVisible="{Binding IsMainNavPaneOpen}"/>
+                        </Grid>
+                    </Button>
+                </StackPanel>
+
+                <StackPanel Grid.Row="2" Margin="0,0,0,8">
+                    <Button Name="ThemeNavButton"
+                            Classes="shell-nav-action"
+                            Command="{Binding CycleThemeModeCommand}"
+                            ToolTip.Tip="{Binding ThemeToggleToolTip}"
+                            AutomationProperties.Name="切换主题模式">
+                        <Grid ColumnDefinitions="20,*" ColumnSpacing="10">
+                            <icons:Icon Grid.Column="0"
+                                        Value="{Binding ThemeToggleIconValue}"
+                                        FontSize="15"
+                                        HorizontalAlignment="Center"
+                                        VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="1"
+                                       Text="主题"
+                                       VerticalAlignment="Center"
+                                       IsVisible="{Binding IsMainNavPaneOpen}"/>
+                        </Grid>
+                    </Button>
+                    <Button Name="SettingsNavButton"
+                            Classes="shell-nav-action"
+                            Click="SettingsNavButton_Click"
+                            ToolTip.Tip="打开设置"
+                            AutomationProperties.Name="打开设置">
+                        <Grid ColumnDefinitions="20,*" ColumnSpacing="10">
+                            <icons:Icon Grid.Column="0"
+                                        Value="fa-solid fa-gear"
+                                        FontSize="15"
+                                        HorizontalAlignment="Center"
+                                        VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="1"
+                                       Text="设置"
+                                       VerticalAlignment="Center"
+                                       IsVisible="{Binding IsMainNavPaneOpen}"/>
+                        </Grid>
+                    </Button>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <Panel Grid.Column="1">
+            <views:LiveTranslationView Name="LiveView" IsVisible="True"/>
+            <views:ReviewModeView Name="ReviewView" IsVisible="False"/>
+            <views:MediaStudioView Name="MediaStudioViewPage" IsVisible="False"/>
+            <views:SettingsView Name="SettingsViewPage" IsVisible="False"/>
+            <ui:InfoBar IsOpen="{Binding IsInfoBarOpen, Mode=TwoWay}"
+                        Message="{Binding InfoBarMessage}"
+                        Severity="{Binding InfoBarSeverity}"
+                        IsClosable="True"
+                        HorizontalAlignment="Right"
+                        VerticalAlignment="Bottom"
+                        MaxWidth="760"
+                        Margin="0,0,20,16"/>
+        </Panel>
+    </Grid>
 </Window>

@@ -1,10 +1,12 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:TrueFluentPro.ViewModels"
+             xmlns:icons="https://github.com/projektanker/icons.avalonia"
              x:Class="TrueFluentPro.Views.Settings.AudioSection"
              x:DataType="vm:AudioDevicesViewModel"
              x:CompileBindings="False">
-    <Border BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+        <Border Classes="app-card"
+            BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
             BorderThickness="1" CornerRadius="8" Padding="20">
         <StackPanel Spacing="12">
             <TextBlock Text="音频设备" Theme="{StaticResource SubtitleTextBlockStyle}"/>
@@ -32,9 +34,14 @@
                                   IsChecked="{Binding IsRecordingMicOnly, Mode=TwoWay}"/>
                 </StackPanel>
 
-                <Button Grid.Row="0" Grid.Column="2" Content="刷新" Padding="8,4"
+                <Button Grid.Row="0" Grid.Column="2" Padding="8,4"
                         Command="{Binding RefreshAudioDevicesCommand}"
-                        IsEnabled="{Binding IsAudioDeviceRefreshEnabled}"/>
+                        IsEnabled="{Binding IsAudioDeviceRefreshEnabled}">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <icons:Icon Value="fa-solid fa-arrows-rotate" FontSize="12"/>
+                        <TextBlock Text="刷新" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
             </Grid>
         </StackPanel>
     </Border>

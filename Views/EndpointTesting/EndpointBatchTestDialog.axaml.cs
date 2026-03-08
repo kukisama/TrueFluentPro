@@ -2,6 +2,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Controls;
+using Avalonia.Input;
 using TrueFluentPro.ViewModels.EndpointTesting;
 using TrueFluentPro.Services.EndpointTesting;
 
@@ -80,6 +81,18 @@ public partial class EndpointBatchTestDialog : Window
         if (DataContext is IDisposable disposable)
         {
             disposable.Dispose();
+        }
+    }
+
+    private void ItemHeader_PointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (sender is not Control { DataContext: EndpointBatchTestItemViewModel itemViewModel })
+            return;
+
+        if (DataContext is EndpointBatchTestDialogViewModel dialogViewModel)
+        {
+            dialogViewModel.ToggleExpanded(itemViewModel);
+            e.Handled = true;
         }
     }
 }

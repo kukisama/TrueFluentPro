@@ -9,6 +9,7 @@ namespace TrueFluentPro.Models
         public string Glyph { get; init; } = "";
         public string Summary { get; init; } = "";
         public string DefaultNamePrefix { get; init; } = "";
+        public string DefaultApiVersion { get; init; } = "";
         public string IconAssetPath { get; init; } = "";
         public string ResolvedIconAssetPath => string.IsNullOrWhiteSpace(IconAssetPath)
             ? ""

@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Linq;
 using TrueFluentPro.Models;
 using TrueFluentPro.Services.EndpointProfiles;
 
@@ -17,6 +18,11 @@ namespace TrueFluentPro.Services
     public class AiVideoGenService : AiMediaServiceBase
     {
         private string? _lastSuccessfulDownloadUrl;
+
+        public string LastCreateRequestUrl { get; private set; } = string.Empty;
+        public IReadOnlyList<string> LastCreateAttemptedUrls { get; private set; } = Array.Empty<string>();
+        public string LastPollRequestUrl { get; private set; } = string.Empty;
+        public IReadOnlyList<string> LastPollAttemptedUrls { get; private set; } = Array.Empty<string>();
 
         private static string GetVideoLogPath()
             => PathManager.Instance.GetLogFile("video_http_debug.log");
@@ -351,6 +357,10 @@ namespace TrueFluentPro.Services
         public async Task<(string status, int progress, string? generationId, string? failureReason)> PollStatusDetailsAsync(
             AiConfig config, string videoId, CancellationToken ct, VideoApiMode apiMode)
         {
+            var attemptedUrls = new List<string>();
+            LastPollRequestUrl = string.Empty;
+            LastPollAttemptedUrls = Array.Empty<string>();
+
             var pollCandidates = EndpointProfileUrlBuilder.BuildVideoPollUrlCandidates(
                 config.ApiEndpoint,
                 config.ProfileId,
@@ -374,6 +384,7 @@ namespace TrueFluentPro.Services
 
             async Task<(HttpResponseMessage response, string body, string urlUsed)> SendOnceAsync(string u)
             {
+                attemptedUrls.Add(u);
                 var req = new HttpRequestMessage(HttpMethod.Get, u);
                 await SetAuthHeadersAsync(req, config, ct);
                 await AppendPreparedRequestLogAsync($"Poll videoId={videoId}", config, req, ct);
@@ -384,6 +395,7 @@ namespace TrueFluentPro.Services
                 {
                     resp.Dispose();
                     var queryUrl = BuildApimSubscriptionKeyQueryUrl(u, config.ApiKey);
+                    attemptedUrls.Add(queryUrl);
                     using var retryReq = new HttpRequestMessage(HttpMethod.Get, queryUrl);
                     await SetAuthHeadersAsync(retryReq, config, ct);
                     await AppendPreparedRequestLogAsync($"Poll-ApimQueryRetry videoId={videoId}", config, retryReq, ct);
@@ -400,6 +412,7 @@ namespace TrueFluentPro.Services
             string urlUsed;
 
             (response, json, urlUsed) = await SendOnceAsync(url);
+            LastPollRequestUrl = urlUsed;
 
             try
             {
@@ -414,7 +427,10 @@ namespace TrueFluentPro.Services
 
                     response.Dispose();
                     (response, json, urlUsed) = await SendOnceAsync(nextUrl);
+                    LastPollRequestUrl = urlUsed;
                 }
+
+            LastPollAttemptedUrls = attemptedUrls.ToList();
 
             await AppendPollDebugLogAsync(videoId, urlUsed, response, json, ct);
 
@@ -517,18 +533,21 @@ namespace TrueFluentPro.Services
             string prompt,
             MediaGenConfig genConfig,
             string? referenceImagePath,
-            CancellationToken ct)
+            CancellationToken ct,
+            IReadOnlyList<string>? createUrlCandidatesOverride = null,
+            bool allowFallbacks = true,
+            bool allowApimSubscriptionKeyQueryFallback = true)
         {
             var hasRefImage = !string.IsNullOrWhiteSpace(referenceImagePath) && File.Exists(referenceImagePath);
 
             // ── sora-2 (Videos 模式)：使用 multipart/form-data（与 OpenAI 官方一致） ──
             if (genConfig.VideoApiMode == VideoApiMode.Videos)
             {
-                return await CreateVideoMultipartAsync(config, prompt, genConfig, referenceImagePath, hasRefImage, ct);
+                return await CreateVideoMultipartAsync(config, prompt, genConfig, referenceImagePath, hasRefImage, ct, createUrlCandidatesOverride, allowFallbacks, allowApimSubscriptionKeyQueryFallback);
             }
 
             // ── sora-1 (SoraJobs 模式)：使用 JSON body ──
-            return await CreateVideoJsonAsync(config, prompt, genConfig, ct);
+            return await CreateVideoJsonAsync(config, prompt, genConfig, ct, createUrlCandidatesOverride, allowFallbacks, allowApimSubscriptionKeyQueryFallback);
         }
 
         /// <summary>
@@ -545,16 +564,25 @@ namespace TrueFluentPro.Services
             MediaGenConfig genConfig,
             string? referenceImagePath,
             bool hasRefImage,
-            CancellationToken ct)
+            CancellationToken ct,
+            IReadOnlyList<string>? createUrlCandidatesOverride,
+            bool allowFallbacks,
+            bool allowApimSubscriptionKeyQueryFallback)
         {
-            var createCandidates = EndpointProfileUrlBuilder.BuildVideoCreateUrlCandidates(
-                config.ApiEndpoint,
-                config.ProfileId,
-                config.EndpointType,
-                config.ApiVersion,
-                VideoApiMode.Videos);
+            var attemptedUrls = new List<string>();
+            LastCreateRequestUrl = string.Empty;
+            LastCreateAttemptedUrls = Array.Empty<string>();
+
+            var createCandidates = createUrlCandidatesOverride is { Count: > 0 }
+                ? createUrlCandidatesOverride
+                : EndpointProfileUrlBuilder.BuildVideoCreateUrlCandidates(
+                    config.ApiEndpoint,
+                    config.ProfileId,
+                    config.EndpointType,
+                    config.ApiVersion,
+                    VideoApiMode.Videos);
             var url = createCandidates.Count > 0 ? createCandidates[0] : BuildVideoCreateUrl(config, VideoApiMode.Videos);
-            var altUrl = createCandidates.Count > 1 ? createCandidates[1] : null;
+            var altUrl = allowFallbacks && createCandidates.Count > 1 ? createCandidates[1] : null;
 
             await AppendRequestPlanLogAsync(
                 "CreateVideoMultipart",
@@ -599,10 +627,12 @@ namespace TrueFluentPro.Services
             await SetAuthHeadersAsync(request, config, ct);
             await AppendPreparedRequestLogAsync("CreateVideoMultipart", config, request, ct);
 
+            attemptedUrls.Add(url);
             var response = await _httpClient.SendAsync(request, ct);
             var json = await response.Content.ReadAsStringAsync(ct);
+            LastCreateRequestUrl = url;
 
-            if (IsMissingApimSubscriptionKeyResponse(config, response, json))
+            if (allowApimSubscriptionKeyQueryFallback && IsMissingApimSubscriptionKeyResponse(config, response, json))
             {
                 response.Dispose();
                 var queryUrl = BuildApimSubscriptionKeyQueryUrl(url, config.ApiKey);
@@ -611,15 +641,17 @@ namespace TrueFluentPro.Services
                 await SetAuthHeadersAsync(retryRequest, config, ct);
                 await AppendPreparedRequestLogAsync("CreateVideoMultipart-ApimQueryRetry", config, retryRequest, ct);
 
+                attemptedUrls.Add(queryUrl);
                 response = await _httpClient.SendAsync(retryRequest, ct);
                 json = await response.Content.ReadAsStringAsync(ct);
                 url = queryUrl;
+                LastCreateRequestUrl = url;
             }
 
             await AppendCreateDebugLogAsync("(create-multipart)", url, response, json, ct);
 
             // 如果 multipart 返回 404/415（Azure 某些版本可能不支持 multipart），回退到 JSON
-            if (!response.IsSuccessStatusCode && (int)response.StatusCode is 404 or 415)
+            if (allowFallbacks && !response.IsSuccessStatusCode && (int)response.StatusCode is 404 or 415)
             {
                 response.Dispose();
 
@@ -645,17 +677,19 @@ namespace TrueFluentPro.Services
                     req2.Content = formContent2;
                     await SetAuthHeadersAsync(req2, config, ct);
                     await AppendPreparedRequestLogAsync("CreateVideoMultipart-Alt", config, req2, ct);
+                    attemptedUrls.Add(altUrl);
                     response = await _httpClient.SendAsync(req2, ct);
                     json = await response.Content.ReadAsStringAsync(ct);
+                    LastCreateRequestUrl = altUrl;
 
                     await AppendCreateDebugLogAsync("(create-multipart-alt)", altUrl, response, json, ct);
                 }
 
                 // 如果 multipart 还是不行，回退到 JSON（Azure 文档中的 curl 用 JSON）
-                if (!response.IsSuccessStatusCode && (int)response.StatusCode is 404 or 415)
+                if (allowFallbacks && !response.IsSuccessStatusCode && (int)response.StatusCode is 404 or 415)
                 {
                     response.Dispose();
-                    return await CreateVideoJsonAsync(config, prompt, genConfig, ct);
+                    return await CreateVideoJsonAsync(config, prompt, genConfig, ct, createUrlCandidatesOverride, allowFallbacks: false, allowApimSubscriptionKeyQueryFallback);
                 }
             }
 
@@ -663,10 +697,12 @@ namespace TrueFluentPro.Services
             {
                 var sc = (int)response.StatusCode;
                 var rp = response.ReasonPhrase;
+                LastCreateAttemptedUrls = attemptedUrls.ToList();
                 response.Dispose();
                 throw new HttpRequestException($"视频创建失败: {sc} {rp}. {json}");
             }
 
+            LastCreateAttemptedUrls = attemptedUrls.ToList();
             using (response)
             {
                 using var doc = JsonDocument.Parse(json);
@@ -686,16 +722,25 @@ namespace TrueFluentPro.Services
             AiConfig config,
             string prompt,
             MediaGenConfig genConfig,
-            CancellationToken ct)
+            CancellationToken ct,
+            IReadOnlyList<string>? createUrlCandidatesOverride,
+            bool allowFallbacks,
+            bool allowApimSubscriptionKeyQueryFallback)
         {
-            var createCandidates = EndpointProfileUrlBuilder.BuildVideoCreateUrlCandidates(
-                config.ApiEndpoint,
-                config.ProfileId,
-                config.EndpointType,
-                config.ApiVersion,
-                genConfig.VideoApiMode);
+            var attemptedUrls = new List<string>();
+            LastCreateRequestUrl = string.Empty;
+            LastCreateAttemptedUrls = Array.Empty<string>();
+
+            var createCandidates = createUrlCandidatesOverride is { Count: > 0 }
+                ? createUrlCandidatesOverride
+                : EndpointProfileUrlBuilder.BuildVideoCreateUrlCandidates(
+                    config.ApiEndpoint,
+                    config.ProfileId,
+                    config.EndpointType,
+                    config.ApiVersion,
+                    genConfig.VideoApiMode);
             var url = createCandidates.Count > 0 ? createCandidates[0] : BuildVideoCreateUrl(config, genConfig.VideoApiMode);
-            var altUrl = createCandidates.Count > 1 ? createCandidates[1] : null;
+            var altUrl = allowFallbacks && createCandidates.Count > 1 ? createCandidates[1] : null;
 
             await AppendRequestPlanLogAsync(
                 "CreateVideoJson",
@@ -760,10 +805,12 @@ namespace TrueFluentPro.Services
             await SetAuthHeadersAsync(request, config, ct);
             await AppendPreparedRequestLogAsync("CreateVideoJson", config, request, ct);
 
+            attemptedUrls.Add(url);
             var response = await _httpClient.SendAsync(request, ct);
             var json = await response.Content.ReadAsStringAsync(ct);
+            LastCreateRequestUrl = url;
 
-            if (IsMissingApimSubscriptionKeyResponse(config, response, json))
+            if (allowApimSubscriptionKeyQueryFallback && IsMissingApimSubscriptionKeyResponse(config, response, json))
             {
                 response.Dispose();
                 var queryUrl = BuildApimSubscriptionKeyQueryUrl(url, config.ApiKey);
@@ -774,13 +821,16 @@ namespace TrueFluentPro.Services
                 await SetAuthHeadersAsync(retryRequest, config, ct);
                 await AppendPreparedRequestLogAsync("CreateVideoJson-ApimQueryRetry", config, retryRequest, ct);
 
+                attemptedUrls.Add(queryUrl);
                 response = await _httpClient.SendAsync(retryRequest, ct);
                 json = await response.Content.ReadAsStringAsync(ct);
                 url = queryUrl;
+                LastCreateRequestUrl = url;
             }
 
             // 404 且有备用 URL → 重试
-            if (!response.IsSuccessStatusCode
+            if (allowFallbacks
+                && !response.IsSuccessStatusCode
                 && (int)response.StatusCode == 404
                 && !string.IsNullOrWhiteSpace(altUrl)
                 && !string.Equals(url, altUrl, StringComparison.OrdinalIgnoreCase))
@@ -793,9 +843,11 @@ namespace TrueFluentPro.Services
                 };
                 await SetAuthHeadersAsync(req2, config, ct);
                 await AppendPreparedRequestLogAsync("CreateVideoJson-Alt", config, req2, ct);
+                attemptedUrls.Add(altUrl);
                 response = await _httpClient.SendAsync(req2, ct);
                 json = await response.Content.ReadAsStringAsync(ct);
                 url = altUrl;
+                LastCreateRequestUrl = url;
             }
 
             await AppendCreateDebugLogAsync("(create-json)", url, response, json, ct);
@@ -804,10 +856,12 @@ namespace TrueFluentPro.Services
             {
                 var sc = (int)response.StatusCode;
                 var rp = response.ReasonPhrase;
+                LastCreateAttemptedUrls = attemptedUrls.ToList();
                 response.Dispose();
                 throw new HttpRequestException($"视频创建失败: {sc} {rp}. {json}");
             }
 
+            LastCreateAttemptedUrls = attemptedUrls.ToList();
             using (response)
             {
                 using var doc = JsonDocument.Parse(json);

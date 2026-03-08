@@ -10,5 +10,6 @@ public interface IEndpointTemplateService
     EndpointTemplateDefinition GetTemplate(AiEndpoint endpoint);
     void ApplyTemplate(AiEndpoint endpoint, EndpointApiType type);
     string BuildBehaviorSummary(AiEndpoint endpoint);
+    EndpointInspectionDetails BuildInspectionDetailsModel(AiEndpoint endpoint);
     string BuildInspectionDetails(AiEndpoint endpoint);
 }

@@ -31,16 +31,14 @@
   },
   "text": {
     "preferredProtocol": "Auto",
-    "appendApiVersionWhenPresent": true,
     "deploymentChatCompletionsUrlCandidates": [
-      "{baseUrl}/openai/deployments/{deployment}/chat/completions"
+      "{baseUrl}/openai/deployments/{deployment}/chat/completions?api-version={apiVersion}"
     ],
     "responsesUrlCandidates": [],
     "chatCompletionsV1UrlCandidates": [],
     "chatCompletionsRawUrlCandidates": []
   },
   "image": {
-    "appendApiVersionWhenPresent": false,
     "deploymentGenerateUrlCandidates": [],
     "generateUrlCandidates": [
       "{baseUrl}/openai/v1/images/generations"
@@ -62,11 +60,22 @@
         "description": "AOAI 旧版 Jobs 风格异步接口，创建、轮询与下载路径独立，当前仅 AOAI 资料包保留。"
       }
     ],
+    "modelModeBindings": [
+      {
+        "mode": "Videos",
+        "modelPatterns": ["sora-2", "sora-2*"],
+        "description": "sora-2 及其变体优先使用 /openai/v1/videos。"
+      },
+      {
+        "mode": "SoraJobs",
+        "modelPatterns": ["sora", "sora-1", "sora-1*"],
+        "description": "旧版 sora / sora-1 优先使用 jobs 路线。"
+      }
+    ],
     "supportedApiModes": [
       "Videos",
       "SoraJobs"
     ],
-    "appendApiVersionWhenPresent": false,
     "createUrlCandidates": [
       "{baseUrl}/openai/v1/videos",
       "{baseUrl}/openai/v1/videos?api-version=preview"

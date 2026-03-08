@@ -186,6 +186,18 @@ public sealed class EndpointBatchTestDialogViewModel : ViewModelBase, IDisposabl
     {
         _refreshTimer.Stop();
     }
+
+    public void ToggleExpanded(EndpointBatchTestItemViewModel target)
+    {
+        if (target == null)
+            return;
+
+        var shouldExpand = !target.IsExpanded;
+        foreach (var item in Items)
+        {
+            item.IsExpanded = shouldExpand && ReferenceEquals(item, target);
+        }
+    }
 }
 
 public sealed class EndpointBatchTestItemViewModel : ViewModelBase
@@ -194,6 +206,7 @@ public sealed class EndpointBatchTestItemViewModel : ViewModelBase
     private string _title = string.Empty;
     private string _subtitle = string.Empty;
     private string _summary = string.Empty;
+    private string _requestUrlText = string.Empty;
     private string _requestSummary = string.Empty;
     private string _details = string.Empty;
     private string _durationText = string.Empty;
@@ -201,6 +214,7 @@ public sealed class EndpointBatchTestItemViewModel : ViewModelBase
     private string _borderBrush = "#33107C10";
     private string _cardBackground = "#08107C10";
     private string _detailBackground = "#06107C10";
+    private bool _isExpanded;
 
     public EndpointBatchTestItemViewModel(EndpointBatchTestProgressItem item)
     {
@@ -211,6 +225,7 @@ public sealed class EndpointBatchTestItemViewModel : ViewModelBase
     public string Title { get => _title; private set => SetProperty(ref _title, value); }
     public string Subtitle { get => _subtitle; private set => SetProperty(ref _subtitle, value); }
     public string Summary { get => _summary; private set => SetProperty(ref _summary, value); }
+    public string RequestUrlText { get => _requestUrlText; private set => SetProperty(ref _requestUrlText, value); }
     public string RequestSummary { get => _requestSummary; private set => SetProperty(ref _requestSummary, value); }
     public string Details { get => _details; private set => SetProperty(ref _details, value); }
     public string DurationText { get => _durationText; private set => SetProperty(ref _durationText, value); }
@@ -218,6 +233,9 @@ public sealed class EndpointBatchTestItemViewModel : ViewModelBase
     public string BorderBrush { get => _borderBrush; private set => SetProperty(ref _borderBrush, value); }
     public string CardBackground { get => _cardBackground; private set => SetProperty(ref _cardBackground, value); }
     public string DetailBackground { get => _detailBackground; private set => SetProperty(ref _detailBackground, value); }
+    public bool IsExpanded { get => _isExpanded; set => SetProperty(ref _isExpanded, value); }
+    public string ExpandGlyph => IsExpanded ? "▼" : "▶";
+    public bool HasRequestUrl => !string.IsNullOrWhiteSpace(RequestUrlText);
     public bool HasRequestSummary => !string.IsNullOrWhiteSpace(RequestSummary);
     public bool HasDetails => !string.IsNullOrWhiteSpace(Details);
     public bool HasDuration => !string.IsNullOrWhiteSpace(DurationText);
@@ -242,6 +260,7 @@ public sealed class EndpointBatchTestItemViewModel : ViewModelBase
             ? item.EndpointTypeName
             : $"{item.EndpointTypeName} · 模型 {item.ModelId}";
         Summary = item.Summary;
+        RequestUrlText = item.RequestUrlText;
         RequestSummary = item.RequestSummary;
         Details = item.Details;
         DurationText = item.Duration > TimeSpan.Zero
@@ -258,8 +277,10 @@ public sealed class EndpointBatchTestItemViewModel : ViewModelBase
             _ => ("#8A8886", "#338A8886", "#068A8886", "#068A8886")
         };
 
+        OnPropertyChanged(nameof(HasRequestUrl));
         OnPropertyChanged(nameof(HasRequestSummary));
         OnPropertyChanged(nameof(HasDetails));
         OnPropertyChanged(nameof(HasDuration));
+        OnPropertyChanged(nameof(ExpandGlyph));
     }
 }

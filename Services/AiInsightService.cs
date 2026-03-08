@@ -67,6 +67,12 @@ namespace TrueFluentPro.Services
         public bool UsedFallback { get; set; }
     }
 
+    public sealed class AiRequestTrace
+    {
+        public IReadOnlyList<string> AttemptedUrls { get; init; } = Array.Empty<string>();
+        public string FinalUrl { get; init; } = "";
+    }
+
     public class AiInsightService
     {
         private static readonly HttpClient _httpClient = new()
@@ -90,7 +96,11 @@ namespace TrueFluentPro.Services
             AiChatProfile profile = AiChatProfile.Quick,
             bool enableReasoning = false,
             Action<AiRequestOutcome>? onOutcome = null,
-            Action<string>? onReasoningChunk = null)
+            Action<string>? onReasoningChunk = null,
+            Action<AiRequestTrace>? onTrace = null,
+            IReadOnlyList<string>? urlCandidatesOverride = null,
+            bool allowNextUrlRetry = true,
+            bool allowApimSubscriptionKeyQueryRetry = true)
         {
             var request = AiChatRequestConfig.FromLegacyConfig(config, profile);
             return StreamChatAsync(
@@ -102,7 +112,11 @@ namespace TrueFluentPro.Services
                 profile,
                 enableReasoning,
                 onOutcome,
-                onReasoningChunk);
+                onReasoningChunk,
+                onTrace,
+                urlCandidatesOverride,
+                allowNextUrlRetry,
+                allowApimSubscriptionKeyQueryRetry);
         }
 
         public async Task StreamChatAsync(
@@ -114,104 +128,140 @@ namespace TrueFluentPro.Services
             AiChatProfile profile = AiChatProfile.Quick,
             bool enableReasoning = false,
             Action<AiRequestOutcome>? onOutcome = null,
-            Action<string>? onReasoningChunk = null)
+            Action<string>? onReasoningChunk = null,
+            Action<AiRequestTrace>? onTrace = null,
+            IReadOnlyList<string>? urlCandidatesOverride = null,
+            bool allowNextUrlRetry = true,
+            bool allowApimSubscriptionKeyQueryRetry = true)
         {
-            using var response = await SendRequestAsync(
+            var (response, trace) = await SendRequestAsync(
                 request,
                 systemPrompt,
                 userContent,
                 enableReasoning,
-                cancellationToken);
-
-            if (!response.IsSuccessStatusCode)
+                cancellationToken,
+                urlCandidatesOverride,
+                allowNextUrlRetry,
+                allowApimSubscriptionKeyQueryRetry);
+            using (response)
             {
-                var errorText = await response.Content.ReadAsStringAsync(cancellationToken);
+                onTrace?.Invoke(trace);
 
-                if (enableReasoning
-                    && request.EndpointType != EndpointApiType.AzureOpenAi
-                    && (int)response.StatusCode is >= 400 and < 500)
+                if (!response.IsSuccessStatusCode)
                 {
-                    using var fallbackResponse = await SendRequestAsync(
-                        request,
-                        systemPrompt,
-                        userContent,
-                        enableReasoning: false,
-                        cancellationToken);
+                    var errorText = await response.Content.ReadAsStringAsync(cancellationToken);
 
-                    if (fallbackResponse.IsSuccessStatusCode)
+                    if (enableReasoning
+                        && request.EndpointType != EndpointApiType.AzureOpenAi
+                        && (int)response.StatusCode is >= 400 and < 500)
                     {
-                        onOutcome?.Invoke(new AiRequestOutcome
+                        var (fallbackResponse, fallbackTrace) = await SendRequestAsync(
+                            request,
+                            systemPrompt,
+                            userContent,
+                            enableReasoning: false,
+                            cancellationToken,
+                            urlCandidatesOverride,
+                            allowNextUrlRetry,
+                            allowApimSubscriptionKeyQueryRetry);
+                        using (fallbackResponse)
                         {
-                            UsedReasoning = false,
-                            UsedFallback = true
-                        });
-                        await StreamResponseAsync(fallbackResponse, onChunk, onReasoningChunk, cancellationToken);
-                        return;
+                            onTrace?.Invoke(fallbackTrace);
+
+                            if (fallbackResponse.IsSuccessStatusCode)
+                            {
+                                onOutcome?.Invoke(new AiRequestOutcome
+                                {
+                                    UsedReasoning = false,
+                                    UsedFallback = true
+                                });
+                                await StreamResponseAsync(fallbackResponse, onChunk, onReasoningChunk, cancellationToken);
+                                return;
+                            }
+
+                            var fallbackText = await fallbackResponse.Content.ReadAsStringAsync(cancellationToken);
+                            throw new HttpRequestException($"Request failed: {(int)fallbackResponse.StatusCode} {fallbackResponse.ReasonPhrase}. {fallbackText}");
+                        }
                     }
 
-                    var fallbackText = await fallbackResponse.Content.ReadAsStringAsync(cancellationToken);
-                    throw new HttpRequestException($"Request failed: {(int)fallbackResponse.StatusCode} {fallbackResponse.ReasonPhrase}. {fallbackText}");
+                    throw new HttpRequestException($"Request failed: {(int)response.StatusCode} {response.ReasonPhrase}. {errorText}");
                 }
 
-                throw new HttpRequestException($"Request failed: {(int)response.StatusCode} {response.ReasonPhrase}. {errorText}");
+                onOutcome?.Invoke(new AiRequestOutcome
+                {
+                    UsedReasoning = enableReasoning
+                                    && profile == AiChatProfile.Summary
+                                    && request.SummaryEnableReasoning
+                                    && request.EndpointType != EndpointApiType.AzureOpenAi,
+                    UsedFallback = false
+                });
+
+                await ConsumeResponseAsync(request, response, onChunk, onReasoningChunk, cancellationToken);
             }
-
-            onOutcome?.Invoke(new AiRequestOutcome
-            {
-                UsedReasoning = enableReasoning
-                                && profile == AiChatProfile.Summary
-                                && request.SummaryEnableReasoning
-                                && request.EndpointType != EndpointApiType.AzureOpenAi,
-                UsedFallback = false
-            });
-
-            await ConsumeResponseAsync(request, response, onChunk, onReasoningChunk, cancellationToken);
         }
 
-        private async Task<HttpResponseMessage> SendRequestAsync(
+        private async Task<(HttpResponseMessage Response, AiRequestTrace Trace)> SendRequestAsync(
             AiChatRequestConfig request,
             string systemPrompt,
             string userContent,
             bool enableReasoning,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            IReadOnlyList<string>? urlCandidatesOverride,
+            bool allowNextUrlRetry,
+            bool allowApimSubscriptionKeyQueryRetry)
         {
             var body = BuildRequestBody(request, systemPrompt, userContent, enableReasoning);
             var payloadJson = JsonSerializer.Serialize(body);
             HttpResponseMessage? lastResponse = null;
+            var attemptedUrls = new List<string>();
+            string finalUrl = string.Empty;
 
-            foreach (var url in BuildUrlCandidates(request))
+            var urlCandidates = urlCandidatesOverride is { Count: > 0 }
+                ? urlCandidatesOverride
+                : BuildUrlCandidates(request);
+
+            foreach (var url in urlCandidates)
             {
                 lastResponse?.Dispose();
-                lastResponse = await SendSingleRequestAsync(request, url, payloadJson, cancellationToken);
+                var attempt = await SendSingleRequestAsync(request, url, payloadJson, cancellationToken, allowApimSubscriptionKeyQueryRetry);
+                lastResponse = attempt.Response;
+                attemptedUrls.AddRange(attempt.AttemptedUrls);
+                finalUrl = attempt.FinalUrl;
 
                 if (lastResponse.IsSuccessStatusCode)
-                    return lastResponse;
+                    return (lastResponse, new AiRequestTrace { AttemptedUrls = attemptedUrls, FinalUrl = finalUrl });
 
-                if (!ShouldTryNextUrl(request, lastResponse))
-                    return lastResponse;
+                if (!allowNextUrlRetry || !ShouldTryNextUrl(request, lastResponse))
+                    return (lastResponse, new AiRequestTrace { AttemptedUrls = attemptedUrls, FinalUrl = finalUrl });
             }
 
-            return lastResponse ?? throw new HttpRequestException("未能构造任何可用的文本请求 URL。");
+            return lastResponse is not null
+                ? (lastResponse, new AiRequestTrace { AttemptedUrls = attemptedUrls, FinalUrl = finalUrl })
+                : throw new HttpRequestException("未能构造任何可用的文本请求 URL。");
         }
 
-        private async Task<HttpResponseMessage> SendSingleRequestAsync(
+        private async Task<(HttpResponseMessage Response, IReadOnlyList<string> AttemptedUrls, string FinalUrl)> SendSingleRequestAsync(
             AiChatRequestConfig request,
             string url,
             string payloadJson,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            bool allowApimSubscriptionKeyQueryRetry)
         {
+            var attemptedUrls = new List<string> { url };
             var response = await SendRequestCoreAsync(request, url, payloadJson, cancellationToken);
 
-            if (!IsMissingApimSubscriptionKeyResponse(request, response))
-                return response;
+            if (!allowApimSubscriptionKeyQueryRetry || !IsMissingApimSubscriptionKeyResponse(request, response))
+                return (response, attemptedUrls, url);
 
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
             if (!IsMissingApimSubscriptionKeyResponse(request, response, body))
-                return response;
+                return (response, attemptedUrls, url);
 
             response.Dispose();
             var queryUrl = BuildApimSubscriptionKeyQueryUrl(url, request.ApiKey);
-            return await SendRequestCoreAsync(request, queryUrl, payloadJson, cancellationToken);
+            attemptedUrls.Add(queryUrl);
+            var retriedResponse = await SendRequestCoreAsync(request, queryUrl, payloadJson, cancellationToken);
+            return (retriedResponse, attemptedUrls, queryUrl);
         }
 
         private async Task<HttpResponseMessage> SendRequestCoreAsync(
@@ -574,7 +624,11 @@ namespace TrueFluentPro.Services
                 request.IsAzureEndpoint);
 
         private static string GetEffectiveApiVersion(AiChatRequestConfig request, TextApiProtocolMode protocol)
-            => EndpointProfileUrlBuilder.GetEffectiveTextApiVersion(request.ApiVersion, request.IsAzureEndpoint);
+            => EndpointProfileUrlBuilder.GetEffectiveTextApiVersion(
+                request.ProfileId,
+                request.EndpointType,
+                request.ApiVersion,
+                request.IsAzureEndpoint);
 
         private static bool ShouldTryNextUrl(AiChatRequestConfig request, HttpResponseMessage response)
             => IsApimGateway(request) && (int)response.StatusCode is 404 or 405;

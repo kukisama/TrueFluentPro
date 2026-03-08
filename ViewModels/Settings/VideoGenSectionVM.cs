@@ -58,10 +58,10 @@ namespace TrueFluentPro.ViewModels.Settings
                 {
                     if (!_suppressVideoModelAutoApiMode && value != null)
                     {
-                        SetVideoApiModeIndexInternal(0);
+                        RefreshVideoApiModeOptions();
+                        ApplyProfileMappedVideoMode(value.Reference?.ModelId);
                     }
 
-                    RefreshVideoApiModeOptions();
                     RefreshVideoCapabilityOptions();
                     OnChanged();
                 }
@@ -111,7 +111,6 @@ namespace TrueFluentPro.ViewModels.Settings
             config.MediaGenConfig ??= new MediaGenConfig();
             var media = config.MediaGenConfig;
 
-            SetVideoApiModeIndexInternal(media.VideoApiMode == VideoApiMode.Videos ? 0 : 1);
             VideoPollIntervalMs = media.VideoPollIntervalMs <= 0 ? 3000 : media.VideoPollIntervalMs;
 
             _videoAspectRatio = string.IsNullOrWhiteSpace(media.VideoAspectRatio) ? "16:9" : media.VideoAspectRatio;
@@ -120,6 +119,8 @@ namespace TrueFluentPro.ViewModels.Settings
             _videoVariants = media.VideoVariants <= 0 ? 1 : media.VideoVariants;
 
             RefreshVideoApiModeOptions();
+            var resolvedMode = ResolveProfileMappedVideoApiMode(media.VideoModelRef?.ModelId, media.VideoApiMode);
+            SetVideoApiModeIndexInternal(GetVideoApiModeIndex(resolvedMode));
             RefreshVideoCapabilityOptions();
             ApplyVideoSizeToAspectResolution(media.VideoWidth, media.VideoHeight);
 
@@ -161,6 +162,7 @@ namespace TrueFluentPro.ViewModels.Settings
             VideoModels = videoModels;
             SelectModelOption(videoModelRef, videoModels, v => _selectedVideoModel = v, nameof(SelectedVideoModel));
             RefreshVideoApiModeOptions();
+            ApplyProfileMappedVideoMode(videoModelRef?.ModelId);
         }
 
         public void RefreshModels(List<ModelOption> videoModels)
@@ -169,6 +171,7 @@ namespace TrueFluentPro.ViewModels.Settings
             VideoModels = videoModels;
             SelectModelOption(videoRef, videoModels, v => _selectedVideoModel = v, nameof(SelectedVideoModel));
             RefreshVideoApiModeOptions();
+            ApplyProfileMappedVideoMode(videoRef?.ModelId);
         }
 
         private void SelectModelOption(ModelReference? reference, List<ModelOption> options, Action<ModelOption?> setter, string propertyName)
@@ -193,6 +196,12 @@ namespace TrueFluentPro.ViewModels.Settings
             }
 
             OnPropertyChanged(nameof(SelectedVideoApiModeDescription));
+        }
+
+        private void ApplyProfileMappedVideoMode(string? modelId)
+        {
+            var resolved = ResolveProfileMappedVideoApiMode(modelId, GetCurrentVideoApiMode());
+            SetVideoApiModeIndexInternal(GetVideoApiModeIndex(resolved));
         }
 
         private List<VideoApiModeOptionView> GetCurrentVideoApiModeOptions()
@@ -256,6 +265,26 @@ namespace TrueFluentPro.ViewModels.Settings
 
         private List<VideoApiMode> GetCurrentSupportedVideoApiModes()
             => GetCurrentVideoApiModeOptions().Select(option => option.Mode).ToList();
+
+        private VideoApiMode GetCurrentVideoApiMode()
+        {
+            var supportedModes = GetCurrentSupportedVideoApiModes();
+            var mode = supportedModes.ElementAtOrDefault(VideoApiModeIndex);
+            return supportedModes.Contains(mode) ? mode : VideoApiMode.Videos;
+        }
+
+        private VideoApiMode ResolveProfileMappedVideoApiMode(string? modelId, VideoApiMode fallbackMode)
+            => EndpointProfileVideoModeResolver.ResolveVideoApiMode(
+                GetSelectedEndpoint()?.ProfileId,
+                GetSelectedEndpoint()?.EndpointType ?? EndpointApiType.OpenAiCompatible,
+                modelId,
+                fallbackMode);
+
+        private int GetVideoApiModeIndex(VideoApiMode mode)
+        {
+            var index = VideoApiModeOptions.FindIndex(option => option.Mode == mode);
+            return index >= 0 ? index : 0;
+        }
 
         private AiEndpoint? GetSelectedEndpoint()
         {

@@ -369,7 +369,11 @@ namespace TrueFluentPro.ViewModels.Settings
                 request.IsAzureEndpoint);
 
         private static string GetEffectiveApiVersion(AiChatRequestConfig request, TextApiProtocolMode protocol)
-            => EndpointProfileUrlBuilder.GetEffectiveTextApiVersion(request.ApiVersion, request.IsAzureEndpoint);
+            => EndpointProfileUrlBuilder.GetEffectiveTextApiVersion(
+                request.ProfileId,
+                request.EndpointType,
+                request.ApiVersion,
+                request.IsAzureEndpoint);
 
         private static bool IsApimGateway(AiChatRequestConfig request)
             => request.EndpointType == EndpointApiType.ApiManagementGateway;
