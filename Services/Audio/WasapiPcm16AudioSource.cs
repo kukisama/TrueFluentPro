@@ -35,7 +35,7 @@ namespace TrueFluentPro.Services.Audio
         private bool _silenceOnlyMode;
         private byte[]? _silenceChunkTemplate;
 
-        public WaveFormat OutputWaveFormat { get; } = new WaveFormat(16000, 16, 1);
+        public WaveFormat OutputWaveFormat { get; }
 
         public bool HasLoopbackCapture => _loopbackCapture != null;
 
@@ -48,7 +48,8 @@ namespace TrueFluentPro.Services.Audio
             string? micDeviceId,
             int chunkDurationMs,
             bool enableLoopback,
-            bool enableMic)
+            bool enableMic,
+            int sampleRate = 16000)
         {
             _loopbackDeviceId = string.IsNullOrWhiteSpace(loopbackDeviceId) ? null : loopbackDeviceId;
             _micDeviceId = string.IsNullOrWhiteSpace(micDeviceId) ? null : micDeviceId;
@@ -57,6 +58,7 @@ namespace TrueFluentPro.Services.Audio
             _micCurrentVolume = enableMic ? 1f : 0f;
             _loopbackTargetVolume = _loopbackCurrentVolume;
             _micTargetVolume = _micCurrentVolume;
+            OutputWaveFormat = new WaveFormat(Math.Clamp(sampleRate, 8000, 48000), 16, 1);
         }
 
         public Task StartAsync(CancellationToken cancellationToken = default)

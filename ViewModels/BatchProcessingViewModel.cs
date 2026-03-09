@@ -45,6 +45,7 @@ namespace TrueFluentPro.ViewModels
         private readonly Func<AzureSpeechConfig> _configProvider;
         private readonly Action<string> _statusSetter;
         private readonly IModelRuntimeResolver _modelRuntimeResolver;
+        private readonly ISpeechResourceRuntimeResolver _speechResourceRuntimeResolver;
         private readonly IAiAudioTranscriptionService _aiAudioTranscriptionService;
         private readonly AiInsightService _aiInsightService;
         private readonly FileLibraryViewModel _fileLibrary;
@@ -83,6 +84,7 @@ namespace TrueFluentPro.ViewModels
             Func<AzureSpeechConfig> configProvider,
             Action<string> statusSetter,
             IModelRuntimeResolver modelRuntimeResolver,
+            ISpeechResourceRuntimeResolver speechResourceRuntimeResolver,
             IAiAudioTranscriptionService aiAudioTranscriptionService,
             AiInsightService aiInsightService,
             FileLibraryViewModel fileLibrary,
@@ -94,6 +96,7 @@ namespace TrueFluentPro.ViewModels
             _configProvider = configProvider;
             _statusSetter = statusSetter;
             _modelRuntimeResolver = modelRuntimeResolver;
+            _speechResourceRuntimeResolver = speechResourceRuntimeResolver;
             _aiAudioTranscriptionService = aiAudioTranscriptionService;
             _aiInsightService = aiInsightService;
             _fileLibrary = fileLibrary;
@@ -2914,9 +2917,9 @@ namespace TrueFluentPro.ViewModels
             var config = _configProvider();
             return GetReviewSubtitleSourceMode(config) switch
             {
-                ReviewSubtitleSourceMode.SpeechSubtitle => config.GetActiveSubscription()?.IsValid() == true
+                ReviewSubtitleSourceMode.SpeechSubtitle => TryResolveActiveMicrosoftSpeechResource(config, SpeechCapability.RealtimeSpeechToText, out _, out _)
                                                            && !string.IsNullOrWhiteSpace(config.SourceLanguage),
-                ReviewSubtitleSourceMode.AiTranscriptionSubtitle => TryResolveSpeechRuntime(config, config.RealtimeTranscriptionModelRef, ModelCapability.SpeechToText, out _, out _),
+                ReviewSubtitleSourceMode.AiTranscriptionSubtitle => TryResolveActiveAiSpeechRuntime(config, SpeechCapability.RealtimeSpeechToText, out _, out _),
                 _ => false
             };
         }
@@ -3062,7 +3065,7 @@ namespace TrueFluentPro.ViewModels
             var config = _configProvider();
             if (GetReviewSubtitleSourceMode(config) == ReviewSubtitleSourceMode.AiTranscriptionSubtitle)
             {
-                if (!TryResolveSpeechRuntime(config, config.RealtimeTranscriptionModelRef, ModelCapability.SpeechToText, out var runtime, out var errorMessage)
+                if (!TryResolveActiveAiSpeechRuntime(config, SpeechCapability.RealtimeSpeechToText, out var runtime, out var errorMessage)
                     || runtime == null)
                 {
                     throw new InvalidOperationException(string.IsNullOrWhiteSpace(errorMessage)
@@ -3073,8 +3076,12 @@ namespace TrueFluentPro.ViewModels
                 return TranscribeSpeechToCuesByAiAsync(audioPath, runtime, config.SourceLanguage, token);
             }
 
-            var subscription = config.GetActiveSubscription()
-                ?? throw new InvalidOperationException("语音订阅未配置");
+            if (!TryResolveActiveMicrosoftSpeechResource(config, SpeechCapability.RealtimeSpeechToText, out var subscription, out var subscriptionError)
+                || subscription == null)
+            {
+                throw new InvalidOperationException(subscriptionError);
+            }
+
             return RealtimeSpeechTranscriber.TranscribeSpeechToCuesAsync(
                 audioPath, subscription, config.SourceLanguage, token);
         }
@@ -3098,7 +3105,7 @@ namespace TrueFluentPro.ViewModels
             var config = _configProvider();
             if (subtitleMode == ReviewSubtitleSourceMode.AiTranscriptionSubtitle)
             {
-                if (!TryResolveSpeechRuntime(config, config.BatchTranscriptionModelRef, ModelCapability.SpeechToText, out var aiRuntime, out var aiResolveMessage)
+                if (!TryResolveActiveAiSpeechRuntime(config, SpeechCapability.BatchSpeechToText, out var aiRuntime, out var aiResolveMessage)
                     || aiRuntime == null)
                 {
                     throw new InvalidOperationException(string.IsNullOrWhiteSpace(aiResolveMessage)
@@ -3124,10 +3131,10 @@ namespace TrueFluentPro.ViewModels
                 return true;
             }
 
-            var subscription = config.GetActiveSubscription();
-            if (subscription == null || !subscription.IsValid())
+            if (!TryResolveActiveMicrosoftSpeechResource(config, SpeechCapability.BatchSpeechToText, out var subscription, out var subscriptionError)
+                || subscription == null)
             {
-                throw new InvalidOperationException("语音订阅未配置");
+                throw new InvalidOperationException(subscriptionError);
             }
 
             if (!config.BatchStorageIsValid || string.IsNullOrWhiteSpace(config.BatchStorageConnectionString))
@@ -3373,15 +3380,14 @@ namespace TrueFluentPro.ViewModels
 
         private bool CanGenerateSpeechSubtitleWithAzureSpeech(AzureSpeechConfig config)
         {
-            var subscription = config.GetActiveSubscription();
             return config.BatchStorageIsValid
                    && !string.IsNullOrWhiteSpace(config.BatchStorageConnectionString)
-                   && subscription?.IsValid() == true
+                   && TryResolveActiveMicrosoftSpeechResource(config, SpeechCapability.BatchSpeechToText, out _, out _)
                    && !string.IsNullOrWhiteSpace(config.SourceLanguage);
         }
 
         private bool HasAvailableBatchTranscriptionModel(AzureSpeechConfig config, out string errorMessage)
-            => TryResolveSpeechRuntime(config, config.BatchTranscriptionModelRef, ModelCapability.SpeechToText, out _, out errorMessage);
+            => TryResolveActiveAiSpeechRuntime(config, SpeechCapability.BatchSpeechToText, out _, out errorMessage);
 
         private string BuildSubtitleSourceEnabledStatusText()
         {
@@ -3421,6 +3427,52 @@ namespace TrueFluentPro.ViewModels
             }
 
             return _modelRuntimeResolver.TryResolve(config, reference, capability, out runtime, out errorMessage);
+        }
+
+        private bool TryResolveActiveAiSpeechRuntime(
+            AzureSpeechConfig config,
+            SpeechCapability capability,
+            out ModelRuntimeResolution? runtime,
+            out string errorMessage)
+        {
+            runtime = null;
+            if (!_speechResourceRuntimeResolver.TryResolveActive(config, capability, out var resolution, out errorMessage)
+                || resolution == null)
+            {
+                return false;
+            }
+
+            if (!resolution.IsAiSpeech || resolution.AiRuntime == null)
+            {
+                errorMessage = $"当前语音资源“{resolution.Resource.Name}”不是可用的 AI 语音连接器。";
+                return false;
+            }
+
+            runtime = resolution.AiRuntime;
+            return true;
+        }
+
+        private bool TryResolveActiveMicrosoftSpeechResource(
+            AzureSpeechConfig config,
+            SpeechCapability capability,
+            out AzureSubscription? subscription,
+            out string errorMessage)
+        {
+            subscription = null;
+            if (!_speechResourceRuntimeResolver.TryResolveActive(config, capability, out var resolution, out errorMessage)
+                || resolution == null)
+            {
+                return false;
+            }
+
+            if (!resolution.IsMicrosoftSpeech || resolution.MicrosoftSubscription == null)
+            {
+                errorMessage = $"当前语音资源“{resolution.Resource.Name}”不是可用的 Microsoft Speech 连接器。";
+                return false;
+            }
+
+            subscription = resolution.MicrosoftSubscription;
+            return true;
         }
 
         private static bool IsOfflineTranscriptionLocaleUnsupported(Exception ex)

@@ -221,7 +221,8 @@
                                     <Grid Margin="0,2" RowDefinitions="Auto,Auto" ColumnDefinitions="*">
                                         <TextBlock Grid.Row="0" Text="{Binding RangeText}" FontSize="10" Foreground="{DynamicResource TextSubtleBrush}"/>
                                         <TextBlock Grid.Row="1"
-                                                   Text="{Binding Text}"
+                                                   Text="{Binding DisplayText}"
+                                                   ToolTip.Tip="{Binding ToolTipText}"
                                                    TextWrapping="Wrap"/>
                                     </Grid>
                                 </DataTemplate>

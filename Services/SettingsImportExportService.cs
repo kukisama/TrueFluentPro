@@ -47,6 +47,7 @@ namespace TrueFluentPro.Services
             result.RealtimeTranscriptionModelRef = NormalizeReference(result, result.RealtimeTranscriptionModelRef, ModelCapability.SpeechToText);
             result.BatchTranscriptionModelRef = NormalizeReference(result, result.BatchTranscriptionModelRef, ModelCapability.SpeechToText);
             result.TextToSpeechModelRef = NormalizeReference(result, result.TextToSpeechModelRef, ModelCapability.TextToSpeech);
+            NormalizeSpeechResources(result);
 
             return result;
         }
@@ -64,12 +65,29 @@ namespace TrueFluentPro.Services
                 Speech = new TransferSpeechConfig
                 {
                     ActiveSubscriptionIndex = NormalizeActiveSubscriptionIndex(config.ActiveSubscriptionIndex, config.Subscriptions.Count),
+                    ActiveSpeechResourceId = config.GetEffectiveActiveSpeechResourceId(),
                     Subscriptions = config.Subscriptions.Select(subscription => new TransferSpeechSubscription
                     {
                         Name = subscription.Name,
                         SubscriptionKey = subscription.SubscriptionKey,
                         ServiceRegion = subscription.ServiceRegion,
                         Endpoint = subscription.Endpoint
+                    }).ToList(),
+                    Resources = config.GetEffectiveSpeechResources().Select(resource => new TransferSpeechResource
+                    {
+                        Id = resource.Id,
+                        Name = resource.Name,
+                        Vendor = resource.Vendor,
+                        ConnectorType = resource.ConnectorType,
+                        IsEnabled = resource.IsEnabled,
+                        Capabilities = resource.Capabilities,
+                        SubscriptionName = resource.SubscriptionName,
+                        SubscriptionKey = resource.SubscriptionKey,
+                        ServiceRegion = resource.ServiceRegion,
+                        Endpoint = resource.Endpoint,
+                        RealtimeSpeechToTextModelRef = CloneReference(resource.RealtimeSpeechToTextModelRef),
+                        BatchSpeechToTextModelRef = CloneReference(resource.BatchSpeechToTextModelRef),
+                        TextToSpeechModelRef = CloneReference(resource.TextToSpeechModelRef)
                     }).ToList()
                 },
                 Storage = new TransferStorageConfig
@@ -132,6 +150,25 @@ namespace TrueFluentPro.Services
                 })
                 .ToList();
             result.ActiveSubscriptionIndex = NormalizeActiveSubscriptionIndex(package.Speech?.ActiveSubscriptionIndex ?? 0, result.Subscriptions.Count);
+            result.SpeechResources = (package.Speech?.Resources ?? new List<TransferSpeechResource>())
+                .Select(resource => new SpeechResource
+                {
+                    Id = string.IsNullOrWhiteSpace(resource.Id) ? Guid.NewGuid().ToString() : resource.Id.Trim(),
+                    Name = resource.Name?.Trim() ?? "",
+                    Vendor = resource.Vendor,
+                    ConnectorType = resource.ConnectorType,
+                    IsEnabled = resource.IsEnabled,
+                    Capabilities = resource.Capabilities,
+                    SubscriptionName = resource.SubscriptionName?.Trim() ?? "",
+                    SubscriptionKey = resource.SubscriptionKey?.Trim() ?? "",
+                    ServiceRegion = resource.ServiceRegion?.Trim() ?? "",
+                    Endpoint = resource.Endpoint?.Trim() ?? "",
+                    RealtimeSpeechToTextModelRef = CloneReference(resource.RealtimeSpeechToTextModelRef),
+                    BatchSpeechToTextModelRef = CloneReference(resource.BatchSpeechToTextModelRef),
+                    TextToSpeechModelRef = CloneReference(resource.TextToSpeechModelRef)
+                })
+                .ToList();
+            result.ActiveSpeechResourceId = package.Speech?.ActiveSpeechResourceId?.Trim() ?? "";
 
             if (package.Storage != null)
             {
@@ -170,6 +207,7 @@ namespace TrueFluentPro.Services
             result.RealtimeTranscriptionModelRef = NormalizeReference(result, selections.RealtimeTranscriptionModelRef, ModelCapability.SpeechToText);
             result.BatchTranscriptionModelRef = NormalizeReference(result, selections.BatchTranscriptionModelRef, ModelCapability.SpeechToText);
             result.TextToSpeechModelRef = NormalizeReference(result, selections.TextToSpeechModelRef, ModelCapability.TextToSpeech);
+            NormalizeSpeechResources(result);
 
             return result;
         }
@@ -292,6 +330,24 @@ namespace TrueFluentPro.Services
             }
 
             return null;
+        }
+
+        private static void NormalizeSpeechResources(AzureSpeechConfig config)
+        {
+            if (config.SpeechResources.Count == 0)
+            {
+                config.EnsureSpeechResourcesBackfilledFromLegacy();
+                return;
+            }
+
+            foreach (var resource in config.SpeechResources)
+            {
+                resource.RealtimeSpeechToTextModelRef = NormalizeReference(config, resource.RealtimeSpeechToTextModelRef, ModelCapability.SpeechToText);
+                resource.BatchSpeechToTextModelRef = NormalizeReference(config, resource.BatchSpeechToTextModelRef, ModelCapability.SpeechToText);
+                resource.TextToSpeechModelRef = NormalizeReference(config, resource.TextToSpeechModelRef, ModelCapability.TextToSpeech);
+            }
+
+            config.ActiveSpeechResourceId = config.GetEffectiveActiveSpeechResourceId();
         }
 
         private static bool IsReferenceValid(AzureSpeechConfig config, ModelReference? reference, ModelCapability capability)

@@ -40,7 +40,7 @@ namespace TrueFluentPro.ViewModels
         private string _currentOriginal = "";
         private string _currentTranslated = "";
         private ObservableCollection<TranslationItem> _history;
-        private SpeechTranslationService? _translationService;
+        private IRealtimeTranslationService? _translationService;
         private Window? _mainWindow;
         private ConfigurationService _configService;
         private TextEditorType _editorType = TextEditorType.Advanced;
@@ -49,6 +49,7 @@ namespace TrueFluentPro.ViewModels
         private bool _isMainNavPaneOpen;
 
         private readonly AiInsightService _aiInsightService;
+        private readonly IRealtimeTranslationServiceFactory _realtimeTranslationServiceFactory;
         public AudioDevicesViewModel AudioDevices { get; }
         public ConfigViewModel ConfigVM { get; }
         public FileLibraryViewModel FileLibrary { get; }
@@ -78,10 +79,13 @@ namespace TrueFluentPro.ViewModels
             AzureSubscriptionValidator subscriptionValidator,
             SettingsViewModel settingsViewModel,
             IModelRuntimeResolver modelRuntimeResolver,
+            ISpeechResourceRuntimeResolver speechResourceRuntimeResolver,
+            IRealtimeTranslationServiceFactory realtimeTranslationServiceFactory,
             IBatchPackageStateService batchPackageStateService,
             IAiAudioTranscriptionService aiAudioTranscriptionService)
         {
             _configService = configService;
+            _realtimeTranslationServiceFactory = realtimeTranslationServiceFactory;
             Settings = settingsViewModel;
             Settings.StatusNotificationRequested += message => StatusMessage = message;
             var azureTokenProvider = new AzureTokenProvider("ai");
@@ -99,7 +103,7 @@ namespace TrueFluentPro.ViewModels
                     (StartTranslationCommand as RelayCommand)?.RaiseCanExecuteChanged();
                     (ToggleTranslationCommand as RelayCommand)?.RaiseCanExecuteChanged();
                 },
-                cfg => _translationService?.UpdateConfigAsync(cfg),
+                QueueUpdateTranslationConfig,
                 (eventName, message, isSuccess) => AppLogService.Instance.LogAudit(eventName, message, isSuccess),
                 () => BatchProcessing?.IsReviewSummaryLoading ?? false,
                 () => _mainWindow);
@@ -136,6 +140,7 @@ namespace TrueFluentPro.ViewModels
                 () => _config,
                 msg => StatusMessage = msg,
                 modelRuntimeResolver,
+                speechResourceRuntimeResolver,
                 aiAudioTranscriptionService,
                 _aiInsightService,
                 FileLibrary,
@@ -151,7 +156,7 @@ namespace TrueFluentPro.ViewModels
                 () => _config,
                 msg => StatusMessage = msg,
                 () => IsTranslating,
-                cfg => _translationService?.UpdateConfigAsync(cfg),
+                QueueUpdateTranslationConfig,
                 () => _translationService?.TryApplyLiveAudioRoutingFromCurrentConfig() ?? false,
                 reason => ConfigVM.QueueConfigSave(reason),
                 (eventName, message) => AppLogService.Instance.LogAudit(eventName, message),
@@ -412,6 +417,11 @@ namespace TrueFluentPro.ViewModels
             }
 
             return $"name='{name}', sizeBytes={size}, path='{path}'";
+        }
+
+        private void QueueUpdateTranslationConfig(AzureSpeechConfig config)
+        {
+            _ = UpdateTranslationConfigAsync(config);
         }
     }
 }

@@ -35,6 +35,9 @@ public partial class App : Application
         services.AddSingleton<ISettingsImportExportService, SettingsImportExportService>();
         services.AddSingleton<ISettingsTransferFileService, SettingsTransferFileService>();
         services.AddSingleton<IModelRuntimeResolver, ModelRuntimeResolver>();
+        services.AddSingleton<ISpeechResourceRuntimeResolver, SpeechResourceRuntimeResolver>();
+        services.AddSingleton<IRealtimeConnectionSpecResolver, RealtimeConnectionSpecResolver>();
+        services.AddSingleton<IRealtimeTranslationServiceFactory, RealtimeTranslationServiceFactory>();
         services.AddSingleton<IAiAudioTranscriptionService, AiAudioTranscriptionService>();
         services.AddSingleton<IAboutSectionService, AboutSectionService>();
         services.AddSingleton<IEndpointBatchTestService, EndpointBatchTestService>();

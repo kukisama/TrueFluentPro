@@ -386,7 +386,7 @@ namespace TrueFluentPro.ViewModels
             foreach (var candidate in candidateBases)
             {
                 var speechVtt = Path.Combine(directory, candidate + ".speech.vtt");
-                if (File.Exists(speechVtt))
+                if (HasUsableDerivedSubtitle(audioFile.FullPath, speechVtt))
                 {
                     _subtitleFiles.Add(new MediaFileItem
                     {
@@ -396,7 +396,7 @@ namespace TrueFluentPro.ViewModels
                 }
 
                 var aiVtt = Path.Combine(directory, candidate + ".ai.vtt");
-                if (File.Exists(aiVtt))
+                if (HasUsableDerivedSubtitle(audioFile.FullPath, aiVtt))
                 {
                     _subtitleFiles.Add(new MediaFileItem
                     {
@@ -406,7 +406,7 @@ namespace TrueFluentPro.ViewModels
                 }
 
                 var aiSrt = Path.Combine(directory, candidate + ".ai.srt");
-                if (File.Exists(aiSrt))
+                if (HasUsableDerivedSubtitle(audioFile.FullPath, aiSrt))
                 {
                     _subtitleFiles.Add(new MediaFileItem
                     {
@@ -534,21 +534,23 @@ namespace TrueFluentPro.ViewModels
         {
             return sourceMode switch
             {
-                ReviewSubtitleSourceMode.SpeechSubtitle => GetSpeechSubtitlePath(audioFilePath),
-                ReviewSubtitleSourceMode.AiTranscriptionSubtitle => GetAiSubtitlePath(audioFilePath),
+                ReviewSubtitleSourceMode.SpeechSubtitle => GetUsableDerivedSubtitlePath(audioFilePath, GetSpeechSubtitlePath(audioFilePath)),
+                ReviewSubtitleSourceMode.AiTranscriptionSubtitle => GetUsableDerivedSubtitlePath(
+                    audioFilePath,
+                    GetAiSubtitlePath(audioFilePath),
+                    GetAiSubtitleSrtPath(audioFilePath)),
                 _ => GetPreferredSubtitlePath(audioFilePath)
             };
         }
 
         public static bool HasAiSubtitle(string audioFilePath)
         {
-            return File.Exists(GetAiSubtitlePath(audioFilePath)) || File.Exists(GetAiSubtitleSrtPath(audioFilePath));
+            return GetUsableDerivedSubtitlePath(audioFilePath, GetAiSubtitlePath(audioFilePath), GetAiSubtitleSrtPath(audioFilePath)) != null;
         }
 
         public static bool HasSpeechSubtitle(string audioFilePath)
         {
-            var speechPath = GetSpeechSubtitlePath(audioFilePath);
-            return File.Exists(speechPath);
+            return GetUsableDerivedSubtitlePath(audioFilePath, GetSpeechSubtitlePath(audioFilePath)) != null;
         }
 
         public static string GetSpeechSubtitlePath(string audioFilePath)
@@ -566,6 +568,52 @@ namespace TrueFluentPro.ViewModels
             var directory = Path.GetDirectoryName(audioFilePath) ?? PathManager.Instance.SessionsPath;
             var baseName = Path.GetFileNameWithoutExtension(audioFilePath);
             return Path.Combine(directory, baseName + ".ai.srt");
+        }
+
+        private static string? GetUsableDerivedSubtitlePath(string audioFilePath, params string[] candidatePaths)
+        {
+            foreach (var candidatePath in candidatePaths)
+            {
+                if (HasUsableDerivedSubtitle(audioFilePath, candidatePath))
+                {
+                    return candidatePath;
+                }
+            }
+
+            return null;
+        }
+
+        private static bool HasUsableDerivedSubtitle(string audioFilePath, string subtitlePath)
+        {
+            if (string.IsNullOrWhiteSpace(subtitlePath) || !File.Exists(subtitlePath))
+            {
+                return false;
+            }
+
+            try
+            {
+                var info = new FileInfo(subtitlePath);
+                if (info.Length <= 16)
+                {
+                    return false;
+                }
+
+                if (File.Exists(audioFilePath))
+                {
+                    var audioCreatedUtc = File.GetCreationTimeUtc(audioFilePath);
+                    var subtitleWrittenUtc = File.GetLastWriteTimeUtc(subtitlePath);
+                    if (subtitleWrittenUtc < audioCreatedUtc.AddSeconds(-2))
+                    {
+                        return false;
+                    }
+                }
+            }
+            catch
+            {
+                return false;
+            }
+
+            return true;
         }
 
         // ── Parsing ──

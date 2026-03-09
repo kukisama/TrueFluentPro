@@ -23,6 +23,8 @@ namespace TrueFluentPro.Models
     {
         public List<TransferSpeechSubscription> Subscriptions { get; set; } = new();
         public int ActiveSubscriptionIndex { get; set; }
+        public List<TransferSpeechResource> Resources { get; set; } = new();
+        public string ActiveSpeechResourceId { get; set; } = "";
     }
 
     public class TransferSpeechSubscription
@@ -31,6 +33,23 @@ namespace TrueFluentPro.Models
         public string SubscriptionKey { get; set; } = "";
         public string ServiceRegion { get; set; } = "southeastasia";
         public string Endpoint { get; set; } = "";
+    }
+
+    public class TransferSpeechResource
+    {
+        public string Id { get; set; } = "";
+        public string Name { get; set; } = "";
+        public SpeechVendorType Vendor { get; set; } = SpeechVendorType.Microsoft;
+        public SpeechConnectorType ConnectorType { get; set; } = SpeechConnectorType.MicrosoftSpeech;
+        public bool IsEnabled { get; set; } = true;
+        public SpeechCapability Capabilities { get; set; } = SpeechCapability.None;
+        public string SubscriptionName { get; set; } = "";
+        public string SubscriptionKey { get; set; } = "";
+        public string ServiceRegion { get; set; } = "";
+        public string Endpoint { get; set; } = "";
+        public ModelReference? RealtimeSpeechToTextModelRef { get; set; }
+        public ModelReference? BatchSpeechToTextModelRef { get; set; }
+        public ModelReference? TextToSpeechModelRef { get; set; }
     }
 
     public class TransferStorageConfig

@@ -75,11 +75,7 @@ namespace TrueFluentPro.ViewModels
         {
             if (_translationService != null)
             {
-                _translationService.OnRealtimeTranslationReceived -= OnRealtimeTranslationReceived;
-                _translationService.OnFinalTranslationReceived -= OnFinalTranslationReceived;
-                _translationService.OnStatusChanged -= OnStatusChanged;
-                _translationService.OnReconnectTriggered -= OnReconnectTriggered;
-                _translationService.OnAudioLevelUpdated -= OnAudioLevelUpdated;
+                DetachTranslationService(_translationService);
             }
 
             _floatingSubtitleManager?.Dispose();

@@ -43,6 +43,7 @@ namespace TrueFluentPro.Services
             if (!File.Exists(_configFilePath))
             {
                 var defaultConfig = new AzureSpeechConfig();
+                defaultConfig.EnsureSpeechResourcesBackfilledFromLegacy();
                 PathManager.Instance.SetSessionsPath(defaultConfig.SessionDirectoryOverride);
                 await SaveConfigAsync(defaultConfig);
                 LastLoadReport = new ConfigurationLoadReport
@@ -59,6 +60,7 @@ namespace TrueFluentPro.Services
                 var config = await TryLoadConfigAsync(_configFilePath);
                 if (config != null)
                 {
+                    config.EnsureSpeechResourcesBackfilledFromLegacy();
                     PathManager.Instance.SetSessionsPath(config.SessionDirectoryOverride);
                     return config;
                 }
@@ -76,6 +78,7 @@ namespace TrueFluentPro.Services
                 var backupConfig = await TryLoadConfigAsync(_backupConfigFilePath);
                 if (backupConfig != null)
                 {
+                    backupConfig.EnsureSpeechResourcesBackfilledFromLegacy();
                     System.Diagnostics.Debug.WriteLine($"主配置加载失败，已回退到备份配置: {_backupConfigFilePath}");
                     PathManager.Instance.SetSessionsPath(backupConfig.SessionDirectoryOverride);
                     LastLoadReport = new ConfigurationLoadReport
@@ -94,6 +97,7 @@ namespace TrueFluentPro.Services
             }
 
             var fallbackDefaultConfig = new AzureSpeechConfig();
+            fallbackDefaultConfig.EnsureSpeechResourcesBackfilledFromLegacy();
             PathManager.Instance.SetSessionsPath(fallbackDefaultConfig.SessionDirectoryOverride);
             LastLoadReport = new ConfigurationLoadReport
             {
@@ -117,6 +121,7 @@ namespace TrueFluentPro.Services
         {
             try
             {
+                config.EnsureSpeechResourcesBackfilledFromLegacy();
                 Directory.CreateDirectory(Path.GetDirectoryName(_configFilePath)!);
 
                 var tempFilePath = _configFilePath + ".tmp";

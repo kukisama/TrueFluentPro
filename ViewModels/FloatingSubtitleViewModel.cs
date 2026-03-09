@@ -10,7 +10,9 @@ namespace TrueFluentPro.ViewModels
 {    public class FloatingSubtitleViewModel : INotifyPropertyChanged
     {
         private string _subtitleText = "等待字幕内容...";
+        private string _formattedSubtitleText = "等待字幕内容...";
         private int _backgroundMode = 0;
+        private double _fontScaleBias = 1.0;
         private readonly SubtitleSyncService _syncService;
 
         public FloatingSubtitleViewModel(SubtitleSyncService syncService)
@@ -30,6 +32,19 @@ namespace TrueFluentPro.ViewModels
             }
         }
 
+        public string FormattedSubtitleText
+        {
+            get => _formattedSubtitleText;
+            private set
+            {
+                if (_formattedSubtitleText != value)
+                {
+                    _formattedSubtitleText = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
         public int BackgroundMode
         {
             get => _backgroundMode;
@@ -41,6 +56,20 @@ namespace TrueFluentPro.ViewModels
                     OnPropertyChanged();
                     OnPropertyChanged(nameof(BackgroundBrush));
                     OnPropertyChanged(nameof(TextBrush));
+                }
+            }
+        }
+
+        public double FontScaleBias
+        {
+            get => _fontScaleBias;
+            set
+            {
+                var clamped = Math.Clamp(value, 0.75, 1.35);
+                if (Math.Abs(_fontScaleBias - clamped) > 0.001)
+                {
+                    _fontScaleBias = clamped;
+                    OnPropertyChanged();
                 }
             }
         }
@@ -74,18 +103,32 @@ namespace TrueFluentPro.ViewModels
         public void ToggleTransparency()
         {
             BackgroundMode = (BackgroundMode + 1) % 3;
+        }
+
+        public void IncreaseFontSize()
+        {
+            FontScaleBias += 0.08;
+        }
+
+        public void DecreaseFontSize()
+        {
+            FontScaleBias -= 0.08;
+        }
+
+        public void ResetFontSize()
+        {
+            FontScaleBias = 1.0;
+        }
+
+        public void UpdateFormattedSubtitleText(string text)
+        {
+            FormattedSubtitleText = string.IsNullOrWhiteSpace(text) ? SubtitleText : text;
         }        private void OnSubtitleUpdated(string newSubtitle)
         {
             var processedText = ProcessSubtitleText(newSubtitle);
-            
-            if (!string.IsNullOrEmpty(processedText) && processedText.Length > 40)
-            {
-                SubtitleText = processedText.Substring(processedText.Length - 40);
-            }
-            else
-            {
-                SubtitleText = processedText;
-            }
+
+            SubtitleText = processedText;
+            FormattedSubtitleText = processedText;
         }        private string ProcessSubtitleText(string text)
         {
             if (string.IsNullOrWhiteSpace(text))

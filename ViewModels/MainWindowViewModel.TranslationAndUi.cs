@@ -430,20 +430,30 @@ namespace TrueFluentPro.ViewModels
 
         private async void StartTranslation()
         {
-            if (_translationService == null)
+            if (!EnsureRealtimeTranslationService(out var errorMessage))
             {
-                _translationService = new SpeechTranslationService(
-                    _config,
-                    AppendAudioStreamAuditLog);
-                _translationService.OnRealtimeTranslationReceived += OnRealtimeTranslationReceived;
-                _translationService.OnFinalTranslationReceived += OnFinalTranslationReceived;
-                _translationService.OnStatusChanged += OnStatusChanged;
-                _translationService.OnReconnectTriggered += OnReconnectTriggered;
-                _translationService.OnAudioLevelUpdated += OnAudioLevelUpdated;
-                _translationService.OnDiagnosticsUpdated += OnDiagnosticsUpdated;
+                StatusMessage = errorMessage;
+                IsTranslating = false;
+                ConfigVM.IsConfigurationEnabled = true;
+                ((RelayCommand)StartTranslationCommand).RaiseCanExecuteChanged();
+                ((RelayCommand)ToggleTranslationCommand).RaiseCanExecuteChanged();
+                ((RelayCommand)StopTranslationCommand).RaiseCanExecuteChanged();
+                return;
             }
 
-            var started = await _translationService.StartTranslationAsync();
+            var translationService = _translationService;
+            if (translationService == null)
+            {
+                StatusMessage = "实时翻译服务初始化失败。";
+                IsTranslating = false;
+                ConfigVM.IsConfigurationEnabled = true;
+                ((RelayCommand)StartTranslationCommand).RaiseCanExecuteChanged();
+                ((RelayCommand)ToggleTranslationCommand).RaiseCanExecuteChanged();
+                ((RelayCommand)StopTranslationCommand).RaiseCanExecuteChanged();
+                return;
+            }
+
+            var started = await translationService.StartTranslationAsync();
             if (!started)
             {
                 IsTranslating = false;
@@ -464,6 +474,110 @@ namespace TrueFluentPro.ViewModels
             ((RelayCommand)StopTranslationCommand).RaiseCanExecuteChanged();
         }
 
+        private async Task UpdateTranslationConfigAsync(AzureSpeechConfig config)
+        {
+            _config = config;
+
+            if (_translationService == null)
+            {
+                return;
+            }
+
+            if (!_realtimeTranslationServiceFactory.TryResolveConnectorFamily(config, out var desiredFamily, out _))
+            {
+                await _translationService.UpdateConfigAsync(config);
+                return;
+            }
+
+            if (_translationService.ConnectorFamily == desiredFamily)
+            {
+                await _translationService.UpdateConfigAsync(config);
+                return;
+            }
+
+            var shouldRestart = IsTranslating;
+            try
+            {
+                if (shouldRestart)
+                {
+                    await _translationService.StopTranslationAsync();
+                }
+            }
+            finally
+            {
+                DetachTranslationService(_translationService);
+                _translationService = null;
+            }
+
+            if (!shouldRestart)
+            {
+                return;
+            }
+
+            if (!EnsureRealtimeTranslationService(out var errorMessage))
+            {
+                IsTranslating = false;
+                ConfigVM.IsConfigurationEnabled = true;
+                StatusMessage = errorMessage;
+                return;
+            }
+
+            var started = await _translationService!.StartTranslationAsync();
+            if (!started)
+            {
+                IsTranslating = false;
+                ConfigVM.IsConfigurationEnabled = true;
+            }
+        }
+
+        private bool EnsureRealtimeTranslationService(out string errorMessage)
+        {
+            errorMessage = string.Empty;
+
+            if (_translationService != null &&
+                _realtimeTranslationServiceFactory.TryResolveConnectorFamily(_config, out var desiredFamily, out _) &&
+                _translationService.ConnectorFamily == desiredFamily)
+            {
+                return true;
+            }
+
+            if (_translationService != null)
+            {
+                DetachTranslationService(_translationService);
+                _translationService = null;
+            }
+
+            if (!_realtimeTranslationServiceFactory.TryCreate(_config, AppendAudioStreamAuditLog, out var service, out errorMessage) ||
+                service == null)
+            {
+                return false;
+            }
+
+            _translationService = service;
+            AttachTranslationService(service);
+            return true;
+        }
+
+        private void AttachTranslationService(IRealtimeTranslationService service)
+        {
+            service.OnRealtimeTranslationReceived += OnRealtimeTranslationReceived;
+            service.OnFinalTranslationReceived += OnFinalTranslationReceived;
+            service.OnStatusChanged += OnStatusChanged;
+            service.OnReconnectTriggered += OnReconnectTriggered;
+            service.OnAudioLevelUpdated += OnAudioLevelUpdated;
+            service.OnDiagnosticsUpdated += OnDiagnosticsUpdated;
+        }
+
+        private void DetachTranslationService(IRealtimeTranslationService service)
+        {
+            service.OnRealtimeTranslationReceived -= OnRealtimeTranslationReceived;
+            service.OnFinalTranslationReceived -= OnFinalTranslationReceived;
+            service.OnStatusChanged -= OnStatusChanged;
+            service.OnReconnectTriggered -= OnReconnectTriggered;
+            service.OnAudioLevelUpdated -= OnAudioLevelUpdated;
+            service.OnDiagnosticsUpdated -= OnDiagnosticsUpdated;
+        }
+
         private async void StopTranslation()
         {
             if (_translationService != null)
@@ -477,12 +591,6 @@ namespace TrueFluentPro.ViewModels
             AudioDiagnosticStatus = "诊断: 已停止";
             AudioDevices.SetAudioLevel(0);
             AudioDevices.ResetAudioLevelHistory();
-
-            if (_floatingSubtitleManager?.IsWindowOpen == true)
-            {
-                _floatingSubtitleManager.CloseWindow();
-                StatusMessage = "已停止，浮动字幕窗口已关闭";
-            }
 
             ((RelayCommand)StartTranslationCommand).RaiseCanExecuteChanged();
             ((RelayCommand)StopTranslationCommand).RaiseCanExecuteChanged();
@@ -504,7 +612,7 @@ namespace TrueFluentPro.ViewModels
                 }
                 else if (!CurrentTranslated.Contains(marker, StringComparison.Ordinal))
                 {
-                    CurrentTranslated = $"{CurrentTranslated} {marker}";
+                    CurrentTranslated = TrimRealtimeDisplayText($"{CurrentTranslated} {marker}");
                 }
 
                 if (_floatingSubtitleManager?.IsWindowOpen == true)
@@ -716,14 +824,30 @@ namespace TrueFluentPro.ViewModels
         {
             Dispatcher.UIThread.Post(() =>
             {
-                CurrentOriginal = item.OriginalText ?? "";
-                CurrentTranslated = item.TranslatedText ?? "";
+                CurrentOriginal = TrimRealtimeDisplayText(item.OriginalText);
+                CurrentTranslated = TrimRealtimeDisplayText(item.TranslatedText);
 
                 if (_floatingSubtitleManager?.IsWindowOpen == true && !string.IsNullOrEmpty(CurrentTranslated))
                 {
                     _floatingSubtitleManager.UpdateSubtitle(CurrentTranslated);
                 }
             });
+        }
+
+        private string TrimRealtimeDisplayText(string? text)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return string.Empty;
+            }
+
+            var limit = Math.Clamp(_config.RealtimeMaxLength, 40, 4000);
+            if (text.Length <= limit)
+            {
+                return text;
+            }
+
+            return text[^limit..];
         }
 
         private void OnFinalTranslationReceived(object? sender, TranslationItem item)

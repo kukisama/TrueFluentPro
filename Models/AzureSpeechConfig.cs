@@ -129,6 +129,8 @@ namespace TrueFluentPro.Models
     {
         public List<AzureSubscription> Subscriptions { get; set; } = new();
         public int ActiveSubscriptionIndex { get; set; } = 0;
+        public List<SpeechResource> SpeechResources { get; set; } = new();
+        public string ActiveSpeechResourceId { get; set; } = "";
 
         public ThemeModePreference ThemeMode { get; set; } = ThemeModePreference.System;
         public bool IsMainNavPaneOpen { get; set; } = false;
@@ -263,10 +265,21 @@ namespace TrueFluentPro.Models
 
         public bool IsValid()
         {
-            var activeSubscription = GetActiveSubscription();
-            return activeSubscription?.IsValid() == true &&
-                   !string.IsNullOrEmpty(SourceLanguage) &&
-                   !string.IsNullOrEmpty(TargetLanguage);
+            return CanStartRealtimeTranslation();
+        }
+
+        public bool CanStartRealtimeTranslation()
+            => TryValidateRealtimeTranslationReadiness(out _);
+
+        public bool TryValidateRealtimeTranslationReadiness(out string message)
+        {
+            if (string.IsNullOrWhiteSpace(SourceLanguage) || string.IsNullOrWhiteSpace(TargetLanguage))
+            {
+                message = "源语言或目标语言未配置。";
+                return false;
+            }
+
+            return TryGetActiveRealtimeSpeechResource(out _, out message);
         }
 
         public ReviewSubtitleSourceMode GetEffectiveReviewSubtitleSourceMode()
@@ -279,6 +292,151 @@ namespace TrueFluentPro.Models
             return UseSpeechSubtitleForReview
                 ? ReviewSubtitleSourceMode.SpeechSubtitle
                 : ReviewSubtitleSourceMode.DefaultSubtitle;
+        }
+
+        public List<SpeechResource> GetEffectiveSpeechResources()
+        {
+            if (SpeechResources.Count > 0)
+            {
+                return SpeechResources.Select(resource => resource.Clone()).ToList();
+            }
+
+            var legacyResources = new List<SpeechResource>();
+            for (var i = 0; i < Subscriptions.Count; i++)
+            {
+                legacyResources.Add(SpeechResource.CreateMicrosoftResource(Subscriptions[i], i));
+            }
+
+            var legacyAiResource = SpeechResource.CreateLegacyAiResource(
+                RealtimeTranscriptionModelRef,
+                BatchTranscriptionModelRef,
+                TextToSpeechModelRef);
+            if (legacyAiResource != null)
+            {
+                legacyResources.Add(legacyAiResource);
+            }
+
+            return legacyResources;
+        }
+
+        public SpeechResource? GetActiveSpeechResource()
+        {
+            var resources = GetEffectiveSpeechResources();
+            if (resources.Count == 0)
+            {
+                return null;
+            }
+
+            if (!string.IsNullOrWhiteSpace(ActiveSpeechResourceId))
+            {
+                var exactMatch = resources.FirstOrDefault(resource =>
+                    string.Equals(resource.Id, ActiveSpeechResourceId, StringComparison.OrdinalIgnoreCase));
+                if (exactMatch != null)
+                {
+                    return exactMatch;
+                }
+            }
+
+            if (SpeechResources.Count == 0)
+            {
+                if (ActiveSubscriptionIndex >= 0 && ActiveSubscriptionIndex < Subscriptions.Count)
+                {
+                    return resources.FirstOrDefault(resource =>
+                        string.Equals(resource.Id, SpeechResource.BuildLegacyMicrosoftResourceId(ActiveSubscriptionIndex), StringComparison.OrdinalIgnoreCase));
+                }
+
+                return resources.FirstOrDefault();
+            }
+
+            return resources.FirstOrDefault();
+        }
+
+        public int GetEffectiveActiveSpeechResourceIndex()
+        {
+            var resources = GetEffectiveSpeechResources();
+            if (resources.Count == 0)
+            {
+                return -1;
+            }
+
+            var activeResource = GetActiveSpeechResource();
+            if (activeResource == null)
+            {
+                return -1;
+            }
+
+            return resources.FindIndex(resource =>
+                string.Equals(resource.Id, activeResource.Id, StringComparison.OrdinalIgnoreCase));
+        }
+
+        public bool TryGetActiveRealtimeSpeechResource(out SpeechResource? resource, out string message)
+        {
+            resource = GetActiveSpeechResource();
+            if (resource == null)
+            {
+                message = "未配置语音资源。";
+                return false;
+            }
+
+            if (!resource.IsEnabled)
+            {
+                message = $"当前语音资源“{resource.Name}”已禁用。";
+                return false;
+            }
+
+            if (!resource.HasCapability(SpeechCapability.RealtimeSpeechToText))
+            {
+                message = $"当前语音资源“{resource.Name}”不支持实时语音识别。";
+                return false;
+            }
+
+            message = string.Empty;
+            return true;
+        }
+
+        public bool TryGetActiveMicrosoftSpeechSubscriptionForRealtime(out AzureSubscription? subscription, out string message)
+        {
+            subscription = null;
+            if (!TryGetActiveRealtimeSpeechResource(out var resource, out message))
+            {
+                return false;
+            }
+
+            if (resource!.ConnectorType != SpeechConnectorType.MicrosoftSpeech)
+            {
+                message = $"已选择“{resource.Name}”，但当前实时翻译暂仅支持 Microsoft Speech 连接器。";
+                return false;
+            }
+
+            if (!resource.TryCreateAzureSubscription(out subscription) || subscription == null || !subscription.IsValid())
+            {
+                message = $"已选择“{resource.Name}”，但 Microsoft Speech 连接信息不完整。";
+                return false;
+            }
+
+            message = $"当前语音资源：{resource.GetDisplayName()}";
+            return true;
+        }
+
+        public string GetEffectiveActiveSpeechResourceId()
+            => GetActiveSpeechResource()?.Id ?? "";
+
+        public void EnsureSpeechResourcesBackfilledFromLegacy()
+        {
+            if (SpeechResources.Count > 0)
+            {
+                if (string.IsNullOrWhiteSpace(ActiveSpeechResourceId))
+                {
+                    ActiveSpeechResourceId = SpeechResources.FirstOrDefault(resource => resource.IsEnabled)?.Id
+                                            ?? SpeechResources.FirstOrDefault()?.Id
+                                            ?? "";
+                }
+
+                return;
+            }
+
+            SpeechResources = GetEffectiveSpeechResources();
+            ActiveSpeechResourceId = GetEffectiveActiveSpeechResourceId();
         }
     }
 }

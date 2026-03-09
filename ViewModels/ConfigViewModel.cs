@@ -22,8 +22,8 @@ namespace TrueFluentPro.ViewModels
         private readonly Func<Window?> _mainWindowProvider;
 
         private AzureSpeechConfig _config;
-        private ObservableCollection<string> _subscriptionNames;
-        private int _activeSubscriptionIndex;
+        private ObservableCollection<string> _speechResourceNames;
+        private int _activeSpeechResourceIndex;
         private SubscriptionValidationState _subscriptionValidationState = SubscriptionValidationState.Unknown;
         private string _subscriptionValidationStatusMessage = "";
         private CancellationTokenSource? _subscriptionValidationCts;
@@ -59,7 +59,7 @@ namespace TrueFluentPro.ViewModels
             _logger = logger;
             _isReviewSummaryLoadingProvider = isReviewSummaryLoadingProvider;
             _mainWindowProvider = mainWindowProvider;
-            _subscriptionNames = new ObservableCollection<string>();
+            _speechResourceNames = new ObservableCollection<string>();
 
             _subscriptionLampTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(500), DispatcherPriority.Background, (_, _) =>
             {
@@ -93,29 +93,32 @@ namespace TrueFluentPro.ViewModels
             set => SetProperty(ref _config, value);
         }
 
-        public ObservableCollection<string> SubscriptionNames
+        public ObservableCollection<string> SpeechResourceNames
         {
-            get => _subscriptionNames;
-            set => SetProperty(ref _subscriptionNames, value);
+            get => _speechResourceNames;
+            set => SetProperty(ref _speechResourceNames, value);
         }
 
-        public int ActiveSubscriptionIndex
+        public int ActiveSpeechResourceIndex
         {
-            get => _activeSubscriptionIndex;
+            get => _activeSpeechResourceIndex;
             set
             {
+                var resources = _config.GetEffectiveSpeechResources();
                 if (_suppressIndexPersistence)
                 {
-                    SetProperty(ref _activeSubscriptionIndex, value);
+                    SetProperty(ref _activeSpeechResourceIndex, value);
                     return;
                 }
 
-                if (value >= 0 && value < _config.Subscriptions.Count)
+                if (value >= 0 && value < resources.Count)
                 {
-                    if (SetProperty(ref _activeSubscriptionIndex, value))
+                    if (SetProperty(ref _activeSpeechResourceIndex, value))
                     {
-                        _config.ActiveSubscriptionIndex = value;
-                        OnPropertyChanged(nameof(ActiveSubscriptionStatus));
+                        var selectedResource = resources[value];
+                        _config.ActiveSpeechResourceId = selectedResource.Id;
+                        _config.ActiveSubscriptionIndex = TryResolveLegacyMicrosoftSubscriptionIndex(selectedResource.Id);
+                        OnPropertyChanged(nameof(ActiveSpeechResourceStatus));
                         _translationCommandsRefresh();
                         _translationServiceUpdater?.Invoke(_config);
                         TriggerSubscriptionValidation();
@@ -124,10 +127,11 @@ namespace TrueFluentPro.ViewModels
                 }
                 else if (value == -1)
                 {
-                    if (SetProperty(ref _activeSubscriptionIndex, value))
+                    if (SetProperty(ref _activeSpeechResourceIndex, value))
                     {
+                        _config.ActiveSpeechResourceId = "";
                         _config.ActiveSubscriptionIndex = value;
-                        OnPropertyChanged(nameof(ActiveSubscriptionStatus));
+                        OnPropertyChanged(nameof(ActiveSpeechResourceStatus));
                         _translationCommandsRefresh();
                         TriggerSubscriptionValidation();
                         _ = Task.Run(async () => await _configService.SaveConfigAsync(_config));
@@ -228,14 +232,14 @@ namespace TrueFluentPro.ViewModels
             }
         }
 
-        public string ActiveSubscriptionStatus
+        public string ActiveSpeechResourceStatus
         {
             get
             {
-                var subscription = _config.GetActiveSubscription();
-                if (subscription != null && subscription.IsValid())
+                var resource = _config.GetActiveSpeechResource();
+                if (resource != null)
                 {
-                    return $"{subscription.Name} ({subscription.ServiceRegion})";
+                    return resource.GetDisplayName();
                 }
                 return "未配置";
             }
@@ -298,41 +302,42 @@ namespace TrueFluentPro.ViewModels
         {
             _config = await _configService.LoadConfigAsync();
 
-            var savedIndex = _config.ActiveSubscriptionIndex;
+            var savedIndex = _config.GetEffectiveActiveSpeechResourceIndex();
 
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
                 _suppressIndexPersistence = true;
                 try
                 {
-                    UpdateSubscriptionNames();
+                    UpdateSpeechResourceNames();
                 }
                 finally
                 {
                     _suppressIndexPersistence = false;
                 }
 
-                if (_config.Subscriptions.Count > 0 && savedIndex >= _config.Subscriptions.Count)
+                var resources = _config.GetEffectiveSpeechResources();
+                if (resources.Count > 0 && savedIndex >= resources.Count)
                 {
-                    savedIndex = _config.Subscriptions.Count - 1;
+                    savedIndex = resources.Count - 1;
                 }
-                else if (_config.Subscriptions.Count == 0)
+                else if (resources.Count == 0)
                 {
                     savedIndex = -1;
                 }
 
-                _config.ActiveSubscriptionIndex = savedIndex;
+                ApplyActiveSpeechResourceSelection(savedIndex, resources);
                 _sourceLanguage = _config.SourceLanguage;
                 _targetLanguage = _config.TargetLanguage;
-                _activeSubscriptionIndex = savedIndex;
+                _activeSpeechResourceIndex = savedIndex;
 
                 OnPropertyChanged(nameof(Config));
-                OnPropertyChanged(nameof(SubscriptionNames));
+                OnPropertyChanged(nameof(SpeechResourceNames));
                 OnPropertyChanged(nameof(SourceLanguage));
                 OnPropertyChanged(nameof(TargetLanguage));
                 OnPropertyChanged(nameof(SourceLanguageIndex));
                 OnPropertyChanged(nameof(TargetLanguageIndex));
-                OnPropertyChanged(nameof(ActiveSubscriptionStatus));
+                OnPropertyChanged(nameof(ActiveSpeechResourceStatus));
 
                 ForceUpdateComboBoxSelection();
                 _translationCommandsRefresh();
@@ -345,32 +350,33 @@ namespace TrueFluentPro.ViewModels
         {
             _config = updatedConfig;
 
-            var savedIndex = _config.ActiveSubscriptionIndex;
+            var savedIndex = _config.GetEffectiveActiveSpeechResourceIndex();
 
             _suppressIndexPersistence = true;
             try
             {
-                UpdateSubscriptionNames();
+                UpdateSpeechResourceNames();
             }
             finally
             {
                 _suppressIndexPersistence = false;
             }
 
-            if (_config.Subscriptions.Count > 0 && savedIndex >= _config.Subscriptions.Count)
+            var resources = _config.GetEffectiveSpeechResources();
+            if (resources.Count > 0 && savedIndex >= resources.Count)
             {
-                savedIndex = _config.Subscriptions.Count - 1;
+                savedIndex = resources.Count - 1;
             }
-            else if (_config.Subscriptions.Count == 0)
+            else if (resources.Count == 0)
             {
                 savedIndex = -1;
             }
 
-            _config.ActiveSubscriptionIndex = savedIndex;
-            _activeSubscriptionIndex = savedIndex;
+            ApplyActiveSpeechResourceSelection(savedIndex, resources);
+            _activeSpeechResourceIndex = savedIndex;
 
-            OnPropertyChanged(nameof(SubscriptionNames));
-            OnPropertyChanged(nameof(ActiveSubscriptionStatus));
+            OnPropertyChanged(nameof(SpeechResourceNames));
+            OnPropertyChanged(nameof(ActiveSpeechResourceStatus));
 
             ForceUpdateComboBoxSelection();
             _translationCommandsRefresh();
@@ -392,11 +398,29 @@ namespace TrueFluentPro.ViewModels
 
         public void TriggerSubscriptionValidation()
         {
-            var subscription = _config.GetActiveSubscription();
-            if (subscription == null || !subscription.IsValid())
+            var activeResource = _config.GetActiveSpeechResource();
+            if (!_config.TryGetActiveRealtimeSpeechResource(out _, out var resourceReadinessMessage))
             {
-                SubscriptionValidationState = SubscriptionValidationState.Unknown;
-                SubscriptionValidationStatusMessage = "未配置有效订阅";
+                SubscriptionValidationState = activeResource == null
+                    ? SubscriptionValidationState.Unknown
+                    : SubscriptionValidationState.Invalid;
+                SubscriptionValidationStatusMessage = resourceReadinessMessage;
+                return;
+            }
+
+            if (activeResource?.ConnectorType != SpeechConnectorType.MicrosoftSpeech)
+            {
+                SubscriptionValidationState = SubscriptionValidationState.Valid;
+                SubscriptionValidationStatusMessage = $"✓ 实时语音资源可用：{activeResource!.GetDisplayName()}";
+                return;
+            }
+
+            if (!_config.TryGetActiveMicrosoftSpeechSubscriptionForRealtime(out var subscription, out var readinessMessage))
+            {
+                SubscriptionValidationState = activeResource == null
+                    ? SubscriptionValidationState.Unknown
+                    : SubscriptionValidationState.Invalid;
+                SubscriptionValidationStatusMessage = readinessMessage;
                 return;
             }
 
@@ -405,13 +429,14 @@ namespace TrueFluentPro.ViewModels
             _subscriptionValidationCts?.Dispose();
             _subscriptionValidationCts = new CancellationTokenSource();
             var token = _subscriptionValidationCts.Token;
+            var validatedSubscription = subscription;
 
             SubscriptionValidationState = SubscriptionValidationState.Validating;
-            SubscriptionValidationStatusMessage = $"正在验证订阅：{subscription.Name} ({subscription.ServiceRegion}) ...";
+            SubscriptionValidationStatusMessage = $"正在验证语音资源：{activeResource!.GetDisplayName()} ...";
 
             _ = Task.Run(async () =>
             {
-                var result = await _subscriptionValidator.ValidateAsync(subscription, token).ConfigureAwait(false);
+                var result = await _subscriptionValidator.ValidateAsync(validatedSubscription!, token).ConfigureAwait(false);
 
                 await Dispatcher.UIThread.InvokeAsync(() =>
                 {
@@ -425,20 +450,19 @@ namespace TrueFluentPro.ViewModels
                         : SubscriptionValidationState.Invalid;
 
                     SubscriptionValidationStatusMessage = result.IsValid
-                        ? $"✓ 订阅可用：{subscription.Name} ({subscription.ServiceRegion})"
-                        : $"✗ 订阅不可用：{subscription.Name} ({subscription.ServiceRegion}) - {result.Message}";
+                        ? $"✓ 语音资源可用：{activeResource.GetDisplayName()}"
+                        : $"✗ 语音资源不可用：{activeResource.GetDisplayName()} - {result.Message}";
                 });
             });
         }
 
-        public void UpdateSubscriptionNames()
+        public void UpdateSpeechResourceNames()
         {
-            _subscriptionNames.Clear();
+            _speechResourceNames.Clear();
 
-            foreach (var subscription in _config.Subscriptions)
+            foreach (var resource in _config.GetEffectiveSpeechResources())
             {
-                var displayName = $"{subscription.Name} ({subscription.ServiceRegion})";
-                _subscriptionNames.Add(displayName);
+                _speechResourceNames.Add(resource.GetDisplayName());
             }
         }
 
@@ -464,33 +488,34 @@ namespace TrueFluentPro.ViewModels
         {
             _config = config;
 
-            var savedIndex = _config.ActiveSubscriptionIndex;
+            var savedIndex = _config.GetEffectiveActiveSpeechResourceIndex();
 
             _suppressIndexPersistence = true;
             try
             {
-                UpdateSubscriptionNames();
+                UpdateSpeechResourceNames();
             }
             finally
             {
                 _suppressIndexPersistence = false;
             }
 
-            if (_config.Subscriptions.Count > 0 && savedIndex >= _config.Subscriptions.Count)
+            var resources = _config.GetEffectiveSpeechResources();
+            if (resources.Count > 0 && savedIndex >= resources.Count)
             {
-                savedIndex = _config.Subscriptions.Count - 1;
+                savedIndex = resources.Count - 1;
             }
-            else if (_config.Subscriptions.Count == 0)
+            else if (resources.Count == 0)
             {
                 savedIndex = -1;
             }
 
-            _config.ActiveSubscriptionIndex = savedIndex;
-            _activeSubscriptionIndex = savedIndex;
+            ApplyActiveSpeechResourceSelection(savedIndex, resources);
+            _activeSpeechResourceIndex = savedIndex;
 
             OnPropertyChanged(nameof(Config));
-            OnPropertyChanged(nameof(SubscriptionNames));
-            OnPropertyChanged(nameof(ActiveSubscriptionStatus));
+            OnPropertyChanged(nameof(SpeechResourceNames));
+            OnPropertyChanged(nameof(ActiveSpeechResourceStatus));
 
             ForceUpdateComboBoxSelection();
             _translationCommandsRefresh();
@@ -500,19 +525,45 @@ namespace TrueFluentPro.ViewModels
         public void ForceUpdateComboBoxSelection()
         {
             // Force binding refresh by bouncing the value through OnPropertyChanged
-            var idx = _activeSubscriptionIndex;
+            var idx = _activeSpeechResourceIndex;
             _suppressIndexPersistence = true;
             try
             {
-                _activeSubscriptionIndex = -1;
-                OnPropertyChanged(nameof(ActiveSubscriptionIndex));
-                _activeSubscriptionIndex = idx;
-                OnPropertyChanged(nameof(ActiveSubscriptionIndex));
+                _activeSpeechResourceIndex = -1;
+                OnPropertyChanged(nameof(ActiveSpeechResourceIndex));
+                _activeSpeechResourceIndex = idx;
+                OnPropertyChanged(nameof(ActiveSpeechResourceIndex));
             }
             finally
             {
                 _suppressIndexPersistence = false;
             }
+        }
+
+        private void ApplyActiveSpeechResourceSelection(int index, System.Collections.Generic.IReadOnlyList<SpeechResource> resources)
+        {
+            if (index < 0 || index >= resources.Count)
+            {
+                _config.ActiveSpeechResourceId = "";
+                _config.ActiveSubscriptionIndex = -1;
+                return;
+            }
+
+            var selectedResource = resources[index];
+            _config.ActiveSpeechResourceId = selectedResource.Id;
+            _config.ActiveSubscriptionIndex = TryResolveLegacyMicrosoftSubscriptionIndex(selectedResource.Id);
+        }
+
+        private static int TryResolveLegacyMicrosoftSubscriptionIndex(string? resourceId)
+        {
+            if (string.IsNullOrWhiteSpace(resourceId) ||
+                !resourceId.StartsWith("legacy-microsoft-", StringComparison.OrdinalIgnoreCase))
+            {
+                return -1;
+            }
+
+            var suffix = resourceId["legacy-microsoft-".Length..];
+            return int.TryParse(suffix, out var index) ? index : -1;
         }
 
         public string GetConfigFilePath() => _configService.GetConfigFilePath();

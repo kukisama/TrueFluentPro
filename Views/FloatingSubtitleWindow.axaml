@@ -2,15 +2,16 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:vm="using:TrueFluentPro.ViewModels"
     x:Class="TrueFluentPro.Views.FloatingSubtitleWindow"
-    x:DataType="vm:FloatingSubtitleViewModel" Title="Floating Subtitle" Width="1100"
-    Height="120"
-    MinWidth="400"
-    MinHeight="80"
-    MaxHeight="120"
+    x:DataType="vm:FloatingSubtitleViewModel" Title="Floating Subtitle" Width="1000"
+    Height="96"
+    MinWidth="1000"
+    MaxWidth="1000"
+    MinHeight="96"
+    MaxHeight="96"
     SystemDecorations="None"
     WindowStartupLocation="Manual"
     Topmost="True"
-    CanResize="True"
+    CanResize="False"
     Background="Transparent"
     ExtendClientAreaToDecorationsHint="True"
     ExtendClientAreaChromeHints="NoChrome"
@@ -27,48 +28,44 @@
         CornerRadius="8"
         BorderThickness="2"
         BorderBrush="#40FFFFFF"
-        Margin="5"
-        Cursor="Hand"
-        PointerPressed="OnPointerPressed"
-        PointerMoved="OnPointerMoved"
-        PointerReleased="OnPointerReleased">
+        Margin="4"
+        PointerPressed="OnSurfacePointerPressed">
 
-        <Grid Margin="10,5">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>      <!-- Speaker Icon -->
-            <Border Grid.Column="0"
-                Background="#80000000"
-                CornerRadius="15"
-                Width="30"
-                Height="30"
-                VerticalAlignment="Top"
-                Margin="0,10,10,0">
-                <Path Fill="White"
-                    HorizontalAlignment="Center"
+        <Grid>
+            <Grid Margin="10,0,10,0" ColumnDefinitions="Auto,*">
+                <Border Grid.Column="0"
+                    Background="#80000000"
+                    CornerRadius="12"
+                    Width="24"
+                    Height="24"
                     VerticalAlignment="Center"
-                    Data="M14,3.23V5.29C16.89,6.15 19,8.83 19,12C19,15.17 16.89,17.85 14,18.71V20.77C18.5,19.84 22,16.24 22,12C22,7.76 18.5,4.16 14,3.23M16.5,12C16.5,10.23 15.5,8.71 14,7.97V16C15.5,15.29 16.5,13.76 16.5,12M3,9V15H7L12,20V4L7,9H3Z"
-                    Width="16"
-                    Height="16" />
-            </Border>      <!-- Subtitle Text -->
-            <ScrollViewer Grid.Column="1"
-                HorizontalScrollBarVisibility="Disabled"
-                VerticalScrollBarVisibility="Hidden"
-                Background="Transparent"
-                Height="105">
-                <TextBlock Text="{Binding SubtitleText}"
-                    FontSize="42"
-                    FontWeight="Bold"
-                    Foreground="{Binding TextBrush}"
-                    TextWrapping="Wrap"
-                    LineHeight="50"
-                    LetterSpacing="5"  
-                    HorizontalAlignment="Left"
-                    VerticalAlignment="Bottom" 
-                    TextAlignment="Left"
-                    Margin="10,5" />
-            </ScrollViewer>
+                    Margin="0,0,8,0">
+                    <Path Fill="White"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Data="M14,3.23V5.29C16.89,6.15 19,8.83 19,12C19,15.17 16.89,17.85 14,18.71V20.77C18.5,19.84 22,16.24 22,12C22,7.76 18.5,4.16 14,3.23M16.5,12C16.5,10.23 15.5,8.71 14,7.97V16C15.5,15.29 16.5,13.76 16.5,12M3,9V15H7L12,20V4L7,9H3Z"
+                        Width="16"
+                        Height="16" />
+                </Border>
+
+                <Border Grid.Column="1" Name="SubtitleHost"
+                    Background="Transparent"
+                    Padding="0,2,0,4"
+                    ClipToBounds="True">
+                    <TextBlock Name="SubtitleTextBlock"
+                        Text="{Binding FormattedSubtitleText}"
+                        FontWeight="Bold"
+                        Foreground="{Binding TextBrush}"
+                        TextWrapping="NoWrap"
+                        MaxLines="1"
+                        TextTrimming="None"
+                        ClipToBounds="False"
+                        HorizontalAlignment="Stretch"
+                        VerticalAlignment="Center"
+                        TextAlignment="Center" />
+                </Border>
+            </Grid>
+
         </Grid>
     </Border>
 </Window>

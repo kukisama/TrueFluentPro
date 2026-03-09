@@ -70,21 +70,21 @@
 
     <Grid RowDefinitions="Auto,*,Auto"
           Background="{DynamicResource PageBackgroundBrush}">
-        <!-- 订阅与输入选择区域（紧凑工具栏） -->
+        <!-- 语音资源与输入选择区域（紧凑工具栏） -->
         <Border Grid.Row="0" Classes="toolbar-surface"
                 BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="0,0,0,1"
             Padding="12,10" Margin="0,0,0,10" MinHeight="56">
             <WrapPanel Orientation="Horizontal" ItemHeight="36"
                    VerticalAlignment="Center">
-                <!-- 订阅选择 -->
-            <TextBlock Text="订阅:" VerticalAlignment="Center" Margin="0,0,6,0"/>
+            <!-- 语音资源选择 -->
+            <TextBlock Text="语音资源:" VerticalAlignment="Center" Margin="0,0,6,0"/>
                 <ComboBox Name="SubscriptionComboBox" MinWidth="150" 
-                          ItemsSource="{Binding ConfigVM.SubscriptionNames}" 
-                          SelectedIndex="{Binding ConfigVM.ActiveSubscriptionIndex, Mode=TwoWay}"
+                  ItemsSource="{Binding ConfigVM.SpeechResourceNames}" 
+                  SelectedIndex="{Binding ConfigVM.ActiveSpeechResourceIndex, Mode=TwoWay}"
                           IsEnabled="{Binding ConfigVM.IsConfigurationEnabled}"
                   Margin="0,0,8,0"
-                          AutomationProperties.Name="Azure 订阅选择"
-                          ToolTip.Tip="选择要使用的Azure订阅"/>
+                  AutomationProperties.Name="语音资源选择"
+                  ToolTip.Tip="选择要使用的语音资源"/>
                 <Ellipse Width="12" Height="12" StrokeThickness="2"
                          VerticalAlignment="Center"
                          Fill="{Binding ConfigVM.SubscriptionLampFill}"

@@ -11,7 +11,7 @@ using TrueFluentPro.Services.Audio;
 
 namespace TrueFluentPro.Services
 {
-    public class SpeechTranslationService
+    public class SpeechTranslationService : IRealtimeTranslationService
     {
         private static readonly string[] AutoDetectSourceLanguages =
         {
@@ -74,6 +74,8 @@ namespace TrueFluentPro.Services
         public event EventHandler<string>? OnReconnectTriggered;
         public event EventHandler<double>? OnAudioLevelUpdated;
         public event EventHandler<string>? OnDiagnosticsUpdated;
+        public RealtimeConnectorFamily ConnectorFamily => RealtimeConnectorFamily.MicrosoftSpeechSdk;
+
         public SpeechTranslationService(AzureSpeechConfig config, Action<string>? auditLog = null)
         {
             _config = config;
@@ -123,9 +125,9 @@ namespace TrueFluentPro.Services
                 ResetManagedReconnectState();
                 _currentRunStamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
                 _sessionStartUtc = DateTime.UtcNow;
+                var speechConfig = CreateSpeechConfig();
                 _audioConfig = CreateAudioConfigAndStartSource();
                 InitializeSubtitleWriters();
-                var speechConfig = CreateSpeechConfig();
                 _recognizer = CreateTranslationRecognizer(speechConfig, _audioConfig);
 
                 _recognizer.Recognized += OnRecognized;
@@ -854,17 +856,24 @@ namespace TrueFluentPro.Services
 
         private SpeechTranslationConfig CreateSpeechConfig()
         {
-            var activeSubscription = _config.GetActiveSubscription();
+            if (!_config.TryGetActiveMicrosoftSpeechSubscriptionForRealtime(out var activeSubscription, out var message) ||
+                activeSubscription == null)
+            {
+                throw new InvalidOperationException(message);
+            }
+
             SpeechTranslationConfig speechConfig;
 
-            if (activeSubscription != null && activeSubscription.IsChinaEndpoint)
+            if (activeSubscription.IsChinaEndpoint)
             {
                 var host = new Uri(activeSubscription.GetCognitiveServicesHost());
-                speechConfig = SpeechTranslationConfig.FromHost(host, _config.SubscriptionKey);
+                speechConfig = SpeechTranslationConfig.FromHost(host, activeSubscription.SubscriptionKey);
             }
             else
             {
-                speechConfig = SpeechTranslationConfig.FromSubscription(_config.SubscriptionKey, _config.ServiceRegion);
+                speechConfig = SpeechTranslationConfig.FromSubscription(
+                    activeSubscription.SubscriptionKey,
+                    activeSubscription.GetEffectiveRegion());
             }
             if (!IsAutoDetectSourceLanguage())
             {
