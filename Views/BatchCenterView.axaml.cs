@@ -1,4 +1,7 @@
+using System;
+using System.Linq;
 using System.Windows.Input;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using TrueFluentPro.Models;
@@ -37,6 +40,68 @@ public partial class BatchCenterView : UserControl
 
     private void PackageRow_PointerReleased(object? sender, PointerReleasedEventArgs e)
     {
+        if (e.InitialPressMouseButton != MouseButton.Right
+            || sender is not Control control
+            || control.DataContext is not BatchPackageItem package)
+        {
+            return;
+        }
+
+        var vm = ViewModel?.BatchProcessing;
+        if (vm == null)
+        {
+            return;
+        }
+
+        vm.SelectedPackage = package;
+        ShowFlyout(control, BuildPackageFlyout(package, vm));
+        e.Handled = true;
+    }
+
+    private void SubtaskRow_PointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        if (e.InitialPressMouseButton != MouseButton.Right
+            || sender is not Control control
+            || control.DataContext is not BatchSubtaskItem subtask)
+        {
+            return;
+        }
+
+        var vm = ViewModel?.BatchProcessing;
+        if (vm == null)
+        {
+            return;
+        }
+
+        vm.SelectedPackage = FindPackageForSubtask(vm, subtask);
+        ShowFlyout(control, BuildSubtaskFlyout(subtask, vm));
+        e.Handled = true;
+    }
+
+    private void PackageArea_PointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        if (e.InitialPressMouseButton != MouseButton.Right)
+        {
+            return;
+        }
+
+        var vm = ViewModel?.BatchProcessing;
+        if (vm == null)
+        {
+            return;
+        }
+
+        vm.SelectedPackage = null;
+        e.Handled = true;
+    }
+
+    private void PackageRow_Tapped(object? sender, TappedEventArgs e)
+    {
+        if (ResolveDataContextFromSource<BatchSubtaskItem>(e.Source) != null)
+        {
+            return;
+        }
+
         if (sender is not Control control || control.DataContext is not BatchPackageItem package)
         {
             return;
@@ -48,50 +113,7 @@ public partial class BatchCenterView : UserControl
             return;
         }
 
-        if (e.InitialPressMouseButton == MouseButton.Left)
-        {
-            ExecuteCommand(vm.TogglePackageExpandedCommand, package);
-            e.Handled = true;
-            return;
-        }
-
-        if (e.InitialPressMouseButton != MouseButton.Right)
-        {
-            return;
-        }
-
-        var flyout = BuildPackageFlyout(package, vm);
-        flyout.ShowAt(control, true);
-        e.Handled = true;
-    }
-
-    private void SubtaskRow_PointerReleased(object? sender, PointerReleasedEventArgs e)
-    {
-        if (e.InitialPressMouseButton != MouseButton.Right)
-        {
-            return;
-        }
-
-        if (sender is not Control control || control.DataContext is not BatchSubtaskItem subtask)
-        {
-            return;
-        }
-
-        var vm = ViewModel?.BatchProcessing;
-        if (vm == null)
-        {
-            return;
-        }
-
-        var flyout = new MenuFlyout();
-        var regenerateItem = new MenuItem
-        {
-            Header = "重新生成该任务",
-            IsEnabled = subtask.CanRegenerate
-        };
-        regenerateItem.Click += (_, _) => ExecuteCommand(vm.RegenerateSubtaskCommand, subtask);
-        flyout.Items.Add(regenerateItem);
-        flyout.ShowAt(control, true);
+        ExecuteCommand(vm.TogglePackageExpandedCommand, package);
         e.Handled = true;
     }
 
@@ -149,11 +171,48 @@ public partial class BatchCenterView : UserControl
         return flyout;
     }
 
+    private static MenuFlyout BuildSubtaskFlyout(BatchSubtaskItem subtask, BatchProcessingViewModel vm)
+    {
+        var flyout = new MenuFlyout();
+        var regenerateItem = new MenuItem
+        {
+            Header = "重新生成该任务",
+            IsEnabled = subtask.CanRegenerate
+        };
+        regenerateItem.Click += (_, _) => ExecuteCommand(vm.RegenerateSubtaskCommand, subtask);
+        flyout.Items.Add(regenerateItem);
+        return flyout;
+    }
+
     private static void ExecuteCommand(ICommand? command, object? parameter)
     {
         if (command?.CanExecute(parameter) == true)
         {
             command.Execute(parameter);
         }
+    }
+
+    private static void ShowFlyout(Control target, MenuFlyout flyout)
+    {
+        flyout.ShowAt(target, true);
+    }
+
+    private static BatchPackageItem? FindPackageForSubtask(BatchProcessingViewModel vm, BatchSubtaskItem subtask)
+    {
+        return vm.CurrentBucketPackages.FirstOrDefault(package =>
+            string.Equals(package.FullPath, subtask.AudioPath, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static T? ResolveDataContextFromSource<T>(object? source) where T : class
+    {
+        for (var current = source as StyledElement; current != null; current = current.Parent as StyledElement)
+        {
+            if (current.DataContext is T item)
+            {
+                return item;
+            }
+        }
+
+        return null;
     }
 }

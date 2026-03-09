@@ -38,6 +38,7 @@ namespace TrueFluentPro.Models
         public string BatchStorageConnectionString { get; set; } = "";
         public string BatchAudioContainerName { get; set; } = AzureSpeechConfig.DefaultBatchAudioContainerName;
         public string BatchResultContainerName { get; set; } = AzureSpeechConfig.DefaultBatchResultContainerName;
+        public ReviewSubtitleSourceMode ReviewSubtitleSourceMode { get; set; } = ReviewSubtitleSourceMode.DefaultSubtitle;
     }
 
     public class TransferAiEndpoint
@@ -74,5 +75,8 @@ namespace TrueFluentPro.Models
         public ModelReference? ReviewModelRef { get; set; }
         public ModelReference? ImageModelRef { get; set; }
         public ModelReference? VideoModelRef { get; set; }
+        public ModelReference? RealtimeTranscriptionModelRef { get; set; }
+        public ModelReference? BatchTranscriptionModelRef { get; set; }
+        public ModelReference? TextToSpeechModelRef { get; set; }
     }
 }

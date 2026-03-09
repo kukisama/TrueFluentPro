@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
@@ -14,6 +16,7 @@ public partial class SettingsView : UserControl
     private static readonly IReadOnlyDictionary<string, Func<MainWindowViewModel, object>> LazySectionDataContextResolvers
         = new Dictionary<string, Func<MainWindowViewModel, object>>(StringComparer.Ordinal)
     {
+        ["Section_ModelSelection"] = vm => vm.Settings,
         ["Section_Insight"] = vm => vm.Settings.InsightVM,
         ["Section_Review"] = vm => vm.Settings.ReviewVM,
         ["Section_ImageGen"] = vm => vm.Settings.ImageGenVM,
@@ -264,6 +267,44 @@ public partial class SettingsView : UserControl
 
         section.DataContext = targetDataContext;
         _boundLazySections.Add(section.Name);
+    }
+
+    private void OpenConfigLocationButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel vm)
+        {
+            return;
+        }
+
+        try
+        {
+            var configPath = vm.ConfigVM.GetConfigFilePath();
+            if (string.IsNullOrWhiteSpace(configPath))
+            {
+                vm.Settings.ReportStatus("未找到配置文件路径");
+                return;
+            }
+
+            var directory = Path.GetDirectoryName(configPath);
+            if (string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory))
+            {
+                vm.Settings.ReportStatus("配置目录不存在");
+                return;
+            }
+
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "explorer.exe",
+                Arguments = $"/select,\"{configPath}\"",
+                UseShellExecute = true
+            });
+
+            vm.Settings.ReportStatus("已打开配置文件位置");
+        }
+        catch (Exception ex)
+        {
+            vm.Settings.ReportStatus($"打开配置文件位置失败: {ex.Message}");
+        }
     }
 
     private static bool TryResolveLazySectionDataContext(string sectionName, MainWindowViewModel vm, out object? dataContext)

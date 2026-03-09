@@ -2,7 +2,6 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:TrueFluentPro.ViewModels.Settings"
              xmlns:controls="clr-namespace:TrueFluentPro.Controls"
-             xmlns:views="clr-namespace:TrueFluentPro.Views"
              x:Class="TrueFluentPro.Views.Settings.ReviewSection"
              x:DataType="vm:ReviewSectionVM"
              x:CompileBindings="False">
@@ -13,18 +12,8 @@
             <TextBlock Text="复盘预设" Theme="{StaticResource SubtitleTextBlockStyle}"/>
             <Separator/>
 
-            <StackPanel Spacing="6">
-                <TextBlock Text="复盘模型:" VerticalAlignment="Center"/>
-                <ComboBox MinWidth="250"
-                          ItemsSource="{Binding TextModels}"
-                          SelectedItem="{Binding SelectedReviewModel, Mode=TwoWay}"/>
-            </StackPanel>
-
-            <CheckBox Content="根据音频生成 speech 字幕（更准确，区分讲话人）"
-                      IsChecked="{Binding $parent[views:SettingsView].DataContext.Settings.StorageVM.UseSpeechSubtitleForReview, Mode=TwoWay}"
-                      IsEnabled="{Binding $parent[views:SettingsView].DataContext.Settings.StorageVM.BatchStorageIsValid}"/>
-            <TextBlock FontSize="10" Foreground="Gray"
-                       Text="需先在「录音与存储」中验证批量转写的存储账号"/>
+            <TextBlock FontSize="11" Foreground="Gray" TextWrapping="Wrap"
+                       Text="复盘模型与默认字幕来源入口已集中到“AI 资源与模型”。这里保留复盘模板与预设。"/>
 
             <StackPanel Spacing="4">
                 <TextBlock Text="复盘系统提示词" FontSize="11" Foreground="Gray"/>

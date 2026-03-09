@@ -38,6 +38,18 @@
     "chatCompletionsV1UrlCandidates": [],
     "chatCompletionsRawUrlCandidates": []
   },
+  "audio": {
+    "defaultApiVersion": "2025-04-01-preview",
+    "transcriptionUrlCandidates": [
+      "{baseUrl}/openai/deployments/{deployment}/audio/transcriptions?api-version={apiVersion}"
+    ]
+  },
+  "speech": {
+    "defaultApiVersion": "2025-04-01-preview",
+    "synthesisUrlCandidates": [
+      "{baseUrl}/openai/deployments/{deployment}/audio/speech?api-version={apiVersion}"
+    ]
+  },
   "image": {
     "deploymentGenerateUrlCandidates": [],
     "generateUrlCandidates": [

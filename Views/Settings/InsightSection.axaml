@@ -2,7 +2,6 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:TrueFluentPro.ViewModels.Settings"
              xmlns:controls="clr-namespace:TrueFluentPro.Controls"
-             xmlns:icons="https://github.com/projektanker/icons.avalonia"
              x:Class="TrueFluentPro.Views.Settings.InsightSection"
              x:DataType="vm:InsightSectionVM"
              x:CompileBindings="False">
@@ -13,47 +12,10 @@
             <TextBlock Text="洞察" Theme="{StaticResource SubtitleTextBlockStyle}"/>
             <Separator/>
 
-            <!-- 模型选择 (终结点引用) -->
-            <TextBlock Text="洞察模型选择（终结点引用）" FontWeight="Bold"/>
-            <TextBlock Text="选择具有 [文字] 能力的终结点模型" FontSize="11" Foreground="Gray"/>
-            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="6" ColumnSpacing="8">
-                <TextBlock Grid.Row="0" Grid.Column="0" Text="洞察模型:" VerticalAlignment="Center"/>
-                <ComboBox Grid.Row="0" Grid.Column="1" MinWidth="250"
-                          ItemsSource="{Binding TextModels}"
-                          SelectedItem="{Binding SelectedInsightModel, Mode=TwoWay}"/>
-                <TextBlock Grid.Row="1" Grid.Column="0" Text="快问模型:" VerticalAlignment="Center"/>
-                <ComboBox Grid.Row="1" Grid.Column="1" MinWidth="250"
-                          ItemsSource="{Binding TextModels}"
-                          SelectedItem="{Binding SelectedQuickModel, Mode=TwoWay}"/>
-                <TextBlock Grid.Row="2" Grid.Column="0" Text="总结模型:" VerticalAlignment="Center"/>
-                <ComboBox Grid.Row="2" Grid.Column="1" MinWidth="250"
-                          ItemsSource="{Binding TextModels}"
-                          SelectedItem="{Binding SelectedSummaryModel, Mode=TwoWay}"/>
-            </Grid>
-
-            <Separator Margin="0,8,0,8"/>
-
-            <CheckBox Content="总结模型开启思考" FontSize="11"
-                      IsChecked="{Binding SummaryEnableReasoning, Mode=TwoWay}"/>
-
-            <TextBlock Text="{Binding AiAuthStatus}" FontSize="11" Foreground="Gray" TextWrapping="Wrap"/>
-
-            <StackPanel Orientation="Horizontal" Spacing="8">
-                <Button Width="112"
-                        Command="{Binding TestEndpointCommand}">
-                    <StackPanel Orientation="Horizontal" Spacing="6">
-                        <icons:Icon Value="fa-solid fa-check" FontSize="12"/>
-                        <TextBlock Text="测试连接" VerticalAlignment="Center"/>
-                    </StackPanel>
-                </Button>
-                <TextBlock Text="{Binding AiTestStatus}" FontSize="11" Foreground="Gray" TextWrapping="Wrap"/>
-            </StackPanel>
-            <TextBlock Text="{Binding AiTestRequestInfo}" FontSize="10" Foreground="Gray" TextWrapping="Wrap"/>
-            <StackPanel Spacing="4">
-                <TextBlock Text="思考内容(测试)" FontSize="11" Foreground="Gray"/>
-                <TextBox Text="{Binding AiTestReasoning}" AcceptsReturn="True"
-                         Height="80" TextWrapping="Wrap" IsReadOnly="True"/>
-            </StackPanel>
+            <TextBlock Text="模型选择、总结思考和连通性测试已集中到“AI 资源与模型”。这里保留洞察提示词与快捷按钮配置。"
+                       FontSize="11"
+                       Foreground="Gray"
+                       TextWrapping="Wrap"/>
 
             <Separator Margin="0,8,0,8"/>
 

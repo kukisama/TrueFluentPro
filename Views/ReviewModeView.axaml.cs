@@ -19,7 +19,7 @@ public partial class ReviewModeView : UserControl
 {
     private MainWindowViewModel? ViewModel => DataContext as MainWindowViewModel;
     private ListBox? _audioFileListBox;
-    private Border? _dropZone;
+    private Button? _loadAudioButton;
 
     // 支持的音频文件扩展名
     private static readonly HashSet<string> SupportedAudioExtensions = new(StringComparer.OrdinalIgnoreCase)
@@ -31,14 +31,13 @@ public partial class ReviewModeView : UserControl
         AttachedToVisualTree += (_, _) =>
         {
             _audioFileListBox ??= this.FindControl<ListBox>("AudioFileListBox");
-            _dropZone ??= this.FindControl<Border>("DropZone");
+            _loadAudioButton ??= this.FindControl<Button>("LoadAudioButton");
 
-            // 3.7 注册拖放事件
-            if (_dropZone != null)
+            if (_loadAudioButton != null)
             {
-                _dropZone.AddHandler(DragDrop.DragOverEvent, DropZone_DragOver);
-                _dropZone.AddHandler(DragDrop.DragLeaveEvent, DropZone_DragLeave);
-                _dropZone.AddHandler(DragDrop.DropEvent, DropZone_Drop);
+                _loadAudioButton.AddHandler(DragDrop.DragOverEvent, LoadAudioButton_DragOver);
+                _loadAudioButton.AddHandler(DragDrop.DragLeaveEvent, LoadAudioButton_DragLeave);
+                _loadAudioButton.AddHandler(DragDrop.DropEvent, LoadAudioButton_Drop);
             }
         };
     }
@@ -71,7 +70,7 @@ public partial class ReviewModeView : UserControl
         return result;
     }
 
-    private void DropZone_DragOver(object? sender, DragEventArgs e)
+    private void LoadAudioButton_DragOver(object? sender, DragEventArgs e)
     {
         e.DragEffects = DragDropEffects.None;
 
@@ -86,60 +85,108 @@ public partial class ReviewModeView : UserControl
             }
         }
 
-        // 高亮拖放区
-        if (_dropZone != null && e.DragEffects != DragDropEffects.None)
+        if (_loadAudioButton != null && e.DragEffects != DragDropEffects.None)
         {
-            _dropZone.BorderBrush = new SolidColorBrush(Color.Parse("#FF2563EB"));
-            _dropZone.Background = new SolidColorBrush(Color.Parse("#10256BEB"));
+            _loadAudioButton.BorderBrush = new SolidColorBrush(Color.Parse("#FF2563EB"));
+            _loadAudioButton.Background = new SolidColorBrush(Color.Parse("#10256BEB"));
         }
     }
 
-    private void DropZone_DragLeave(object? sender, DragEventArgs e)
+    private void LoadAudioButton_DragLeave(object? sender, DragEventArgs e)
     {
-        ResetDropZoneAppearance();
+        ResetLoadAudioButtonAppearance();
     }
 
-    private void DropZone_Drop(object? sender, DragEventArgs e)
+    private void LoadAudioButton_Drop(object? sender, DragEventArgs e)
     {
-        ResetDropZoneAppearance();
+        ResetLoadAudioButtonAppearance();
 
         var audioFiles = ExtractAudioPaths(e);
         if (audioFiles.Count > 0)
         {
-            CrashLogger.AddBreadcrumb($"DragDrop: {audioFiles.Count} audio files dropped");
-
-            // 将拖入的文件复制到 Sessions 目录并刷新
-            var sessionsDir = PathManager.Instance.SessionsPath;
-            foreach (var filePath in audioFiles)
-            {
-                try
-                {
-                    Directory.CreateDirectory(sessionsDir);
-                    var destPath = Path.Combine(sessionsDir, Path.GetFileName(filePath));
-                    // overwrite: false — 不覆盖已有同名文件
-                    File.Copy(filePath, destPath, overwrite: false);
-                }
-                catch (IOException)
-                {
-                    // 目标文件已存在，跳过
-                }
-                catch (Exception ex)
-                {
-                    CrashLogger.AddBreadcrumb($"DragDrop copy failed: {ex.Message}");
-                }
-            }
-
-            // 刷新文件库
-            ViewModel?.FileLibrary?.RefreshAudioLibraryCommand?.Execute(null);
+            ImportAudioFiles(audioFiles, "LoadAudioButtonDragDrop");
         }
     }
 
-    private void ResetDropZoneAppearance()
+    private void ResetLoadAudioButtonAppearance()
     {
-        if (_dropZone != null)
+        if (_loadAudioButton != null)
         {
-            _dropZone.ClearValue(Border.BorderBrushProperty);
-            _dropZone.ClearValue(Border.BackgroundProperty);
+            _loadAudioButton.ClearValue(Button.BorderBrushProperty);
+            _loadAudioButton.ClearValue(Button.BackgroundProperty);
+        }
+    }
+
+    private async void LoadAudioButton_Click(object? sender, RoutedEventArgs e)
+    {
+        var provider = TopLevel.GetTopLevel(this)?.StorageProvider;
+        if (provider == null)
+        {
+            return;
+        }
+
+        var files = await provider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "选择音频文件",
+            AllowMultiple = true,
+            FileTypeFilter = new[]
+            {
+                new FilePickerFileType("音频")
+                {
+                    Patterns = new[] { "*.wav", "*.mp3", "*.flac", "*.m4a", "*.ogg", "*.wma", "*.aac" }
+                }
+            }
+        });
+
+        if (files == null || files.Count == 0)
+        {
+            return;
+        }
+
+        var audioPaths = files
+            .Select(file => file.Path?.LocalPath)
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Cast<string>()
+            .Where(path => SupportedAudioExtensions.Contains(Path.GetExtension(path)))
+            .ToList();
+
+        if (audioPaths.Count == 0)
+        {
+            return;
+        }
+
+        ImportAudioFiles(audioPaths, "LoadAudioButtonPicker");
+    }
+
+    private void ImportAudioFiles(IEnumerable<string> audioFiles, string source)
+    {
+        var sessionsDir = PathManager.Instance.SessionsPath;
+        var importedCount = 0;
+
+        CrashLogger.AddBreadcrumb($"{source}: importing audio files");
+
+        foreach (var filePath in audioFiles)
+        {
+            try
+            {
+                Directory.CreateDirectory(sessionsDir);
+                var destPath = Path.Combine(sessionsDir, Path.GetFileName(filePath));
+                File.Copy(filePath, destPath, overwrite: false);
+                importedCount++;
+            }
+            catch (IOException)
+            {
+                // 目标文件已存在，跳过
+            }
+            catch (Exception ex)
+            {
+                CrashLogger.AddBreadcrumb($"{source} copy failed: {ex.Message}");
+            }
+        }
+
+        if (importedCount > 0)
+        {
+            ViewModel?.FileLibrary?.RefreshAudioLibraryCommand?.Execute(null);
         }
     }
 
@@ -170,6 +217,21 @@ public partial class ReviewModeView : UserControl
         CrashLogger.AddBreadcrumb($"AudioFileRightClick: {selectedItem.FullPath}");
 
         var flyout = new MenuFlyout();
+
+        var generateSpeechItem = new MenuItem
+        {
+            Header = ViewModel?.BatchProcessing.GenerateSelectedSubtitleMenuText ?? "生成字幕",
+            IsEnabled = ViewModel?.BatchProcessing.GenerateBatchSpeechSubtitleCommand.CanExecute(null) == true
+        };
+        generateSpeechItem.Click += (_, _) =>
+        {
+            ViewModel?.BatchProcessing.AuditUiEvent("AudioFileGenerateSpeech", $"flyout-click item={selectedItem.FullPath}");
+            if (ViewModel?.BatchProcessing.GenerateBatchSpeechSubtitleCommand.CanExecute(null) == true)
+            {
+                ViewModel.BatchProcessing.GenerateBatchSpeechSubtitleCommand.Execute(null);
+            }
+        };
+        flyout.Items.Add(generateSpeechItem);
 
         var enqueueItem = new MenuItem { Header = "加入批处理中心" };
         enqueueItem.Click += (_, _) =>

@@ -11,6 +11,54 @@
             <TextBlock Text="语音识别" Theme="{StaticResource SubtitleTextBlockStyle}"/>
             <Separator/>
 
+            <TextBlock Text="AI 语音模型（暂放这里，后续会拆出独立分区）" FontWeight="Bold"/>
+            <TextBlock Text="从已配置的 AI 终结点里选择语音转写 / 文字转语音模型。当前批量与单文件 speech 字幕会优先使用这里的转写模型。"
+                       FontSize="11"
+                       Foreground="Gray"
+                       TextWrapping="Wrap"/>
+            <StackPanel Spacing="5">
+                <TextBlock Text="实时语音转写模型（预留给实时场景）"/>
+                <ComboBox ItemsSource="{Binding SpeechToTextModels}"
+                          SelectedItem="{Binding SelectedRealtimeTranscriptionModel, Mode=TwoWay}"
+                          MinWidth="280"
+                          HorizontalAlignment="Left"
+                          IsEnabled="{Binding HasSpeechToTextModels}"/>
+                <TextBlock Text="当前主要先打通配置与单文件入口；实时流式语音场景后续再拆开。"
+                           FontSize="10"
+                           Foreground="Gray"
+                           TextWrapping="Wrap"
+                           IsVisible="{Binding HasSpeechToTextModels}"/>
+                <TextBlock Text="还没有可用的语音转写模型，请先去 AI 终结点里把模型能力标成“语音转文字”。"
+                           FontSize="10"
+                           Foreground="Gray"
+                           TextWrapping="Wrap"
+                           IsVisible="{Binding !HasSpeechToTextModels}"/>
+            </StackPanel>
+            <StackPanel Spacing="5">
+                <TextBlock Text="批量语音转写模型"/>
+                <ComboBox ItemsSource="{Binding SpeechToTextModels}"
+                          SelectedItem="{Binding SelectedBatchTranscriptionModel, Mode=TwoWay}"
+                          MinWidth="280"
+                          HorizontalAlignment="Left"
+                          IsEnabled="{Binding HasSpeechToTextModels}"/>
+                <TextBlock Text="批处理中心与 speech 字幕生成会优先使用这里的模型；未配置时回退到现有 Azure Speech 批量/SDK 转写链路。"
+                           FontSize="10"
+                           Foreground="Gray"
+                           TextWrapping="Wrap"/>
+            </StackPanel>
+            <StackPanel Spacing="5">
+                <TextBlock Text="文字转语音模型（预留）"/>
+                <ComboBox ItemsSource="{Binding TextToSpeechModels}"
+                          SelectedItem="{Binding SelectedTextToSpeechModel, Mode=TwoWay}"
+                          MinWidth="280"
+                          HorizontalAlignment="Left"
+                          IsEnabled="{Binding HasTextToSpeechModels}"/>
+                <TextBlock Text="先把终结点与模型引用配置打通，运行时链路下一步再接。"
+                           FontSize="10"
+                           Foreground="Gray"
+                           TextWrapping="Wrap"/>
+            </StackPanel>
+
             <TextBlock Text="识别策略" FontWeight="Bold"/>
             <CheckBox Content="过滤语气助词"
                       IsChecked="{Binding FilterModalParticles, Mode=TwoWay}"/>

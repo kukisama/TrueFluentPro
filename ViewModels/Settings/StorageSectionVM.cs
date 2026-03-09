@@ -22,7 +22,7 @@ namespace TrueFluentPro.ViewModels.Settings
         private int _batchMaxChars = 24;
         private double _batchMaxDuration = 6;
         private int _batchPauseSplitMs = 500;
-        private bool _useSpeechSubtitleForReview;
+        private ReviewSubtitleSourceMode _reviewSubtitleSourceMode;
 
         public StorageSectionVM()
         {
@@ -43,7 +43,14 @@ namespace TrueFluentPro.ViewModels.Settings
         public int BatchMaxChars { get => _batchMaxChars; set => Set(ref _batchMaxChars, value); }
         public double BatchMaxDuration { get => _batchMaxDuration; set => Set(ref _batchMaxDuration, value); }
         public int BatchPauseSplitMs { get => _batchPauseSplitMs; set => Set(ref _batchPauseSplitMs, value); }
-        public bool UseSpeechSubtitleForReview { get => _useSpeechSubtitleForReview; set => Set(ref _useSpeechSubtitleForReview, value); }
+        public ReviewSubtitleSourceMode ReviewSubtitleSourceMode { get => _reviewSubtitleSourceMode; set => Set(ref _reviewSubtitleSourceMode, value); }
+        public int ReviewSubtitleSourceModeIndex
+        {
+            get => (int)ReviewSubtitleSourceMode;
+            set => ReviewSubtitleSourceMode = Enum.IsDefined(typeof(ReviewSubtitleSourceMode), value)
+                ? (ReviewSubtitleSourceMode)value
+                : ReviewSubtitleSourceMode.DefaultSubtitle;
+        }
 
         public ICommand ValidateBatchStorageCommand { get; }
 
@@ -72,7 +79,7 @@ namespace TrueFluentPro.ViewModels.Settings
             BatchMaxChars = config.BatchSubtitleMaxChars;
             BatchMaxDuration = config.BatchSubtitleMaxDurationSeconds;
             BatchPauseSplitMs = config.BatchSubtitlePauseSplitMs;
-            UseSpeechSubtitleForReview = config.UseSpeechSubtitleForReview;
+            ReviewSubtitleSourceMode = config.GetEffectiveReviewSubtitleSourceMode();
         }
 
         public override void ApplyTo(AzureSpeechConfig config)
@@ -101,7 +108,8 @@ namespace TrueFluentPro.ViewModels.Settings
             config.BatchSubtitleMaxChars = BatchMaxChars;
             config.BatchSubtitleMaxDurationSeconds = BatchMaxDuration;
             config.BatchSubtitlePauseSplitMs = BatchPauseSplitMs;
-            config.UseSpeechSubtitleForReview = UseSpeechSubtitleForReview;
+            config.ReviewSubtitleSourceMode = ReviewSubtitleSourceMode;
+            config.UseSpeechSubtitleForReview = ReviewSubtitleSourceMode == ReviewSubtitleSourceMode.SpeechSubtitle;
         }
 
         private async System.Threading.Tasks.Task ValidateBatchStorageAsync()

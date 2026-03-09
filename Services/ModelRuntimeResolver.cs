@@ -72,6 +72,8 @@ namespace TrueFluentPro.Services
                 ModelCapability.Text => "文本",
                 ModelCapability.Image => "图片",
                 ModelCapability.Video => "视频",
+                ModelCapability.SpeechToText => "语音转写",
+                ModelCapability.TextToSpeech => "文字转语音",
                 _ => capability.ToString()
             };
 

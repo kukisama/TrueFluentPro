@@ -59,6 +59,72 @@ public static class EndpointProfileUrlBuilder
         };
     }
 
+    public static IReadOnlyList<string> BuildConfiguredAudioTranscriptionUrlCandidates(
+        string baseUrl,
+        string? profileId,
+        EndpointApiType endpointType,
+        string? deploymentName,
+        string? apiVersion)
+    {
+        var normalizedBaseUrl = NormalizeBaseUrl(baseUrl);
+        if (string.IsNullOrWhiteSpace(normalizedBaseUrl))
+            return Array.Empty<string>();
+
+        var profile = EndpointProfileRuntimeResolver.Resolve(profileId, endpointType);
+        if (profile is null)
+            return Array.Empty<string>();
+
+        var effectiveApiVersion = GetEffectiveCapabilityApiVersion(
+            profileId,
+            endpointType,
+            apiVersion,
+            profile.Audio.DefaultApiVersion);
+
+        return BuildConfiguredUrls(
+            normalizedBaseUrl,
+            profile.Audio.TranscriptionUrlCandidates,
+            effectiveApiVersion,
+            new Dictionary<string, string?>
+            {
+                ["deployment"] = string.IsNullOrWhiteSpace(deploymentName)
+                    ? "{deployment}"
+                    : deploymentName.Trim()
+            });
+    }
+
+    public static IReadOnlyList<string> BuildConfiguredSpeechSynthesisUrlCandidates(
+        string baseUrl,
+        string? profileId,
+        EndpointApiType endpointType,
+        string? deploymentName,
+        string? apiVersion)
+    {
+        var normalizedBaseUrl = NormalizeBaseUrl(baseUrl);
+        if (string.IsNullOrWhiteSpace(normalizedBaseUrl))
+            return Array.Empty<string>();
+
+        var profile = EndpointProfileRuntimeResolver.Resolve(profileId, endpointType);
+        if (profile is null)
+            return Array.Empty<string>();
+
+        var effectiveApiVersion = GetEffectiveCapabilityApiVersion(
+            profileId,
+            endpointType,
+            apiVersion,
+            profile.Speech.DefaultApiVersion);
+
+        return BuildConfiguredUrls(
+            normalizedBaseUrl,
+            profile.Speech.SynthesisUrlCandidates,
+            effectiveApiVersion,
+            new Dictionary<string, string?>
+            {
+                ["deployment"] = string.IsNullOrWhiteSpace(deploymentName)
+                    ? "{deployment}"
+                    : deploymentName.Trim()
+            });
+    }
+
     public static IReadOnlyList<string> BuildImageGenerateUrlCandidates(
         string baseUrl,
         string? profileId,
@@ -371,6 +437,30 @@ public static class EndpointProfileUrlBuilder
             return effectiveApiVersion;
 
         return isAzureEndpoint ? "2024-02-01" : string.Empty;
+    }
+
+    public static string GetEffectiveCapabilityApiVersion(
+        string? profileId,
+        EndpointApiType endpointType,
+        string? apiVersion,
+        string? capabilityDefaultApiVersion)
+    {
+        var profile = EndpointProfileRuntimeResolver.Resolve(profileId, endpointType);
+        var endpointDefaultVersion = profile?.Defaults.ApiVersion?.Trim() ?? string.Empty;
+        var capabilityDefault = capabilityDefaultApiVersion?.Trim() ?? string.Empty;
+
+        if (string.IsNullOrWhiteSpace(apiVersion))
+            return capabilityDefault;
+
+        var explicitVersion = apiVersion.Trim();
+        if (!string.IsNullOrWhiteSpace(capabilityDefault)
+            && !string.IsNullOrWhiteSpace(endpointDefaultVersion)
+            && string.Equals(explicitVersion, endpointDefaultVersion, StringComparison.OrdinalIgnoreCase))
+        {
+            return capabilityDefault;
+        }
+
+        return explicitVersion;
     }
 
     public static IReadOnlyList<string> BuildTextUrlCandidates(

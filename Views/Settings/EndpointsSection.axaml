@@ -124,7 +124,7 @@
                                         VerticalContentAlignment="Center"
                                         HorizontalContentAlignment="Center"
                                         Click="ShowEndpointInfo_Click"
-                                        ToolTip.Tip="点击查看：文字 / 图片 / 视频三类能力的认证方式、接口路线与拼装后的 URL 示例">
+                                        ToolTip.Tip="点击查看：文字 / 图片 / 视频 / 语音转写 / 文字转语音各能力的认证方式、接口路线与拼装后的 URL 示例">
                                     <icons:Icon Value="fa-solid fa-circle-info" FontSize="15"/>
                                 </Button>
                             </Grid>
@@ -261,6 +261,8 @@
                                                         <ComboBoxItem Content="文字" Tag="Text"/>
                                                         <ComboBoxItem Content="图片" Tag="Image"/>
                                                         <ComboBoxItem Content="视频" Tag="Video"/>
+                                                        <ComboBoxItem Content="语音转文字" Tag="SpeechToText"/>
+                                                        <ComboBoxItem Content="文字转语音" Tag="TextToSpeech"/>
                                                     </ComboBox.Items>
                                                 </ComboBox>
                                             </Grid>

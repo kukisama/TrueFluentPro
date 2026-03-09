@@ -147,7 +147,8 @@ namespace TrueFluentPro.ViewModels
         public int BatchMaxChars { get => StorageVM.BatchMaxChars; set => StorageVM.BatchMaxChars = value; }
         public double BatchMaxDuration { get => StorageVM.BatchMaxDuration; set => StorageVM.BatchMaxDuration = value; }
         public int BatchPauseSplitMs { get => StorageVM.BatchPauseSplitMs; set => StorageVM.BatchPauseSplitMs = value; }
-        public bool UseSpeechSubtitleForReview { get => StorageVM.UseSpeechSubtitleForReview; set => StorageVM.UseSpeechSubtitleForReview = value; }
+        public ReviewSubtitleSourceMode ReviewSubtitleSourceMode { get => StorageVM.ReviewSubtitleSourceMode; set => StorageVM.ReviewSubtitleSourceMode = value; }
+        public int ReviewSubtitleSourceModeIndex { get => StorageVM.ReviewSubtitleSourceModeIndex; set => StorageVM.ReviewSubtitleSourceModeIndex = value; }
         public ICommand ValidateBatchStorageCommand => StorageVM.ValidateBatchStorageCommand;
 
         // — Recognition —
@@ -187,6 +188,7 @@ namespace TrueFluentPro.ViewModels
         public void NotifyPresetButtonsChanged() => InsightVM.NotifyPresetButtonsChanged();
 
         // — Review —
+        public List<ModelOption> ReviewTextModels { get => ReviewVM.TextModels; set => ReviewVM.TextModels = value; }
         public ModelOption? SelectedReviewModel { get => ReviewVM.SelectedReviewModel; set => ReviewVM.SelectedReviewModel = value; }
         public string ReviewSystemPrompt { get => ReviewVM.ReviewSystemPrompt; set => ReviewVM.ReviewSystemPrompt = value; }
         public string ReviewUserContentTemplate { get => ReviewVM.ReviewUserContentTemplate; set => ReviewVM.ReviewUserContentTemplate = value; }
@@ -248,6 +250,10 @@ namespace TrueFluentPro.ViewModels
             StorageVM.LoadFrom(_config);
             RecognitionVM.LoadFrom(_config);
             TextVM.LoadFrom(_config);
+            RecognitionVM.SelectModels(
+                _config,
+                BuildModelOptions(ModelCapability.SpeechToText),
+                BuildModelOptions(ModelCapability.TextToSpeech));
 
             if (_insightVm.IsValueCreated)
             {
@@ -300,6 +306,10 @@ namespace TrueFluentPro.ViewModels
             {
                 _videoGenVm.Value.RefreshModels(BuildModelOptions(ModelCapability.Video));
             }
+
+            RecognitionVM.RefreshModels(
+                BuildModelOptions(ModelCapability.SpeechToText),
+                BuildModelOptions(ModelCapability.TextToSpeech));
         }
 
         private List<ModelOption> BuildModelOptions(ModelCapability required)
@@ -394,6 +404,11 @@ namespace TrueFluentPro.ViewModels
                 if (!string.IsNullOrWhiteSpace(args.PropertyName))
                 {
                     OnPropertyChanged(args.PropertyName);
+
+                    if (section is ReviewSectionVM && args.PropertyName == nameof(ReviewSectionVM.TextModels))
+                    {
+                        OnPropertyChanged(nameof(ReviewTextModels));
+                    }
                 }
             };
         }

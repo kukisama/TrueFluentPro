@@ -25,6 +25,18 @@ public sealed class EndpointProfileTextSettings
     public List<string> ChatCompletionsRawUrlCandidates { get; set; } = new();
 }
 
+public sealed class EndpointProfileAudioSettings
+{
+    public string DefaultApiVersion { get; set; } = "";
+    public List<string> TranscriptionUrlCandidates { get; set; } = new();
+}
+
+public sealed class EndpointProfileSpeechSettings
+{
+    public string DefaultApiVersion { get; set; } = "";
+    public List<string> SynthesisUrlCandidates { get; set; } = new();
+}
+
 public sealed class EndpointProfileImageSettings
 {
     public List<string> GenerateUrlCandidates { get; set; } = new();

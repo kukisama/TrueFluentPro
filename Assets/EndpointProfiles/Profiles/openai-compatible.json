@@ -53,6 +53,18 @@
       "{baseUrl}/chat/completions"
     ]
   },
+  "audio": {
+    "defaultApiVersion": "",
+    "transcriptionUrlCandidates": [
+      "{baseUrl}/v1/audio/transcriptions"
+    ]
+  },
+  "speech": {
+    "defaultApiVersion": "",
+    "synthesisUrlCandidates": [
+      "{baseUrl}/v1/audio/speech"
+    ]
+  },
   "image": {
     "deploymentGenerateUrlCandidates": [],
     "generateUrlCandidates": [

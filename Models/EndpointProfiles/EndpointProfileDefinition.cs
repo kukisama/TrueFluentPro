@@ -22,6 +22,8 @@ public sealed class EndpointProfileDefinition
     public EndpointProfileAuthSettings Auth { get; set; } = new();
     public EndpointProfileModelDiscoverySettings ModelDiscovery { get; set; } = new();
     public EndpointProfileTextSettings Text { get; set; } = new();
+    public EndpointProfileAudioSettings Audio { get; set; } = new();
+    public EndpointProfileSpeechSettings Speech { get; set; } = new();
     public EndpointProfileImageSettings Image { get; set; } = new();
     public EndpointProfileVideoSettings Video { get; set; } = new();
 }

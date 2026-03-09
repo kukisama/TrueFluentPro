@@ -78,7 +78,8 @@ namespace TrueFluentPro.ViewModels
             AzureSubscriptionValidator subscriptionValidator,
             SettingsViewModel settingsViewModel,
             IModelRuntimeResolver modelRuntimeResolver,
-            IBatchPackageStateService batchPackageStateService)
+            IBatchPackageStateService batchPackageStateService,
+            IAiAudioTranscriptionService aiAudioTranscriptionService)
         {
             _configService = configService;
             Settings = settingsViewModel;
@@ -135,6 +136,7 @@ namespace TrueFluentPro.ViewModels
                 () => _config,
                 msg => StatusMessage = msg,
                 modelRuntimeResolver,
+                aiAudioTranscriptionService,
                 _aiInsightService,
                 FileLibrary,
                 Playback,

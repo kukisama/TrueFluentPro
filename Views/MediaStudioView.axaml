@@ -65,27 +65,53 @@
                     Background="{DynamicResource PageBackgroundBrush}">
 
         <!-- ===== 主体区域（左右分栏） ===== -->
-        <Grid Grid.Row="0" ColumnDefinitions="216,12,*" Margin="12,12,12,10">
+        <Grid Grid.Row="0" Margin="12,12,12,10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="216" MinWidth="204"/>
+                <ColumnDefinition Width="12"/>
+                <ColumnDefinition Width="*" MinWidth="680"/>
+            </Grid.ColumnDefinitions>
             <!-- 左侧会话列表 -->
             <Border Grid.Column="0"
                     Classes="nav-surface"
-                    Background="{DynamicResource NavPanelBackgroundBrush}"
-                    BorderBrush="{DynamicResource CardBorderBrush}"
                     BorderThickness="0,0,1,0"
-                    Padding="6,12,6,0">
-                <Grid RowDefinitions="Auto,*">
-                    <StackPanel Grid.Row="0" Spacing="8" Margin="6,0,6,10">
-                        <Button Content="＋ 新建会话"
-                                Command="{Binding NewSessionCommand}"
-                                Padding="10,6"
-                                HorizontalAlignment="Stretch"/>
-                    </StackPanel>
+                    Padding="8,12,8,8">
+                <Grid RowDefinitions="Auto,*" RowSpacing="4">
+                    <Grid Grid.Row="0"
+                          Classes="secondary-nav-header"
+                          RowDefinitions="Auto,*"
+                          Margin="10,0,10,4">
+                        <Grid Grid.Row="0"
+                              Classes="secondary-nav-header-title-row"
+                              ColumnDefinitions="*,Auto">
+                            <TextBlock Grid.Column="0"
+                                       Classes="secondary-nav-title"
+                                       Text="会话"/>
+                        </Grid>
+                        <Grid Grid.Row="1"
+                              Classes="secondary-nav-header-action-row"
+                              ColumnDefinitions="40,122,*"
+                              ColumnSpacing="6">
+                            <Button Grid.Column="0"
+                                    Grid.ColumnSpan="2"
+                                    Classes="secondary-nav-compact"
+                                    Width="168"
+                                    HorizontalAlignment="Left"
+                                    Command="{Binding NewSessionCommand}">
+                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                    <icons:Icon Value="fa-solid fa-plus" FontSize="12"/>
+                                    <TextBlock Text="新建会话"/>
+                                </StackPanel>
+                            </Button>
+                            <Border Grid.Column="2" Background="Transparent"/>
+                        </Grid>
+                    </Grid>
                     <ListBox Grid.Row="1"
                              x:Name="SessionListBox"
                              Classes="sidebar-nav-list"
                              ItemsSource="{Binding Sessions}"
                              SelectedItem="{Binding CurrentSession}"
-                             Margin="0,0,2,0" Padding="0"
+                             Margin="0" Padding="0"
                              Background="Transparent"
                              KeyDown="SessionListBox_KeyDown">
                         <ListBox.ItemTemplate>
@@ -93,15 +119,16 @@
                                 <Grid Classes="sidebar-nav-item-content"
                                       ColumnDefinitions="18,*,Auto"
                                       ColumnSpacing="10"
-                                      Margin="0"
                                       PointerPressed="SessionItem_PointerPressed">
-                                    <icons:Icon Grid.Column="0" Value="fa-regular fa-comments" FontSize="14"/>
-                                    <TextBlock Grid.Column="1" Text="{Binding SessionName}"
-                                               VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                                    <Ellipse Grid.Column="2" Width="8" Height="8"
-                                             Fill="{DynamicResource IndicatorGreenBrush}"
+                                                                        <icons:Icon Grid.Column="0"
+                                                                                                Value="fa-solid fa-message"
+                                                                                                FontSize="14"/>
+                                    <TextBlock Grid.Column="1"
+                                               Classes="sidebar-nav-label"
+                                               Text="{Binding SessionName}"/>
+                                    <Ellipse Grid.Column="2" Classes="sidebar-nav-dot"
                                              IsVisible="{Binding HasBadge}"
-                                             VerticalAlignment="Center" Margin="6,0,2,0"/>
+                                             />
                                 </Grid>
                             </DataTemplate>
                         </ListBox.ItemTemplate>
@@ -109,8 +136,13 @@
                 </Grid>
             </Border>
 
-            <!-- 分隔线 -->
-            <Border Grid.Column="1" Background="Transparent"/>
+            <GridSplitter Grid.Column="1"
+                          Width="12"
+                          Background="Transparent"
+                          HorizontalAlignment="Stretch"
+                          VerticalAlignment="Stretch"
+                          ResizeDirection="Columns"
+                          ShowsPreview="True"/>
 
             <!-- 右侧内容区 -->
             <Grid Grid.Column="2" RowDefinitions="*,Auto"

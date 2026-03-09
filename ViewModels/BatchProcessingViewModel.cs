@@ -45,12 +45,14 @@ namespace TrueFluentPro.ViewModels
         private readonly Func<AzureSpeechConfig> _configProvider;
         private readonly Action<string> _statusSetter;
         private readonly IModelRuntimeResolver _modelRuntimeResolver;
+        private readonly IAiAudioTranscriptionService _aiAudioTranscriptionService;
         private readonly AiInsightService _aiInsightService;
         private readonly FileLibraryViewModel _fileLibrary;
         private readonly PlaybackViewModel _playback;
         private readonly ConfigurationService _configService;
         private readonly IBatchPackageStateService _batchPackageStateService;
         private readonly Action _notifyReviewLampChanged;
+        private bool _isPackageProjectionRefreshPending;
 
         public RelayCommand LoadBatchTasksCommand { get; }
         public RelayCommand ClearBatchTasksCommand { get; }
@@ -81,6 +83,7 @@ namespace TrueFluentPro.ViewModels
             Func<AzureSpeechConfig> configProvider,
             Action<string> statusSetter,
             IModelRuntimeResolver modelRuntimeResolver,
+            IAiAudioTranscriptionService aiAudioTranscriptionService,
             AiInsightService aiInsightService,
             FileLibraryViewModel fileLibrary,
             PlaybackViewModel playback,
@@ -91,6 +94,7 @@ namespace TrueFluentPro.ViewModels
             _configProvider = configProvider;
             _statusSetter = statusSetter;
             _modelRuntimeResolver = modelRuntimeResolver;
+            _aiAudioTranscriptionService = aiAudioTranscriptionService;
             _aiInsightService = aiInsightService;
             _fileLibrary = fileLibrary;
             _playback = playback;
@@ -117,7 +121,11 @@ namespace TrueFluentPro.ViewModels
                 StartBatchCommand.RaiseCanExecuteChanged();
                 OnPropertyChanged(nameof(BatchStartButtonText));
             };
-            _batchQueueItems.CollectionChanged += (_, _) => UpdateBatchQueueStatusText();
+            _batchQueueItems.CollectionChanged += (_, _) =>
+            {
+                UpdateBatchQueueStatusText();
+                RequestPackageProjectionRefresh();
+            };
 
             StopBatchCommand = new RelayCommand(
                 execute: _ => StopBatchProcessing(),
@@ -227,16 +235,16 @@ namespace TrueFluentPro.ViewModels
                     OnPropertyChanged(nameof(IsCurrentBucketRemoved));
                     if (value == null)
                     {
+                        SelectedPackage = null;
                         return;
                     }
 
                     var current = CurrentBucketPackages;
-                    if (SelectedPackage != null && current.Contains(SelectedPackage))
-                    {
-                        return;
-                    }
-
-                    SelectedPackage = current.FirstOrDefault();
+                    var selectedPath = SelectedPackage?.FullPath;
+                    SelectedPackage = string.IsNullOrWhiteSpace(selectedPath)
+                        ? null
+                        : current.FirstOrDefault(package =>
+                            string.Equals(package.FullPath, selectedPath, StringComparison.OrdinalIgnoreCase));
                 }
             }
         }
@@ -284,7 +292,13 @@ namespace TrueFluentPro.ViewModels
         public string BatchStatusMessage
         {
             get => _batchStatusMessage;
-            set => SetProperty(ref _batchStatusMessage, value);
+            set
+            {
+                if (SetProperty(ref _batchStatusMessage, value))
+                {
+                    OnPropertyChanged(nameof(ReviewPageFooterStatusText));
+                }
+            }
         }
 
         public string BatchQueueStatusText
@@ -312,7 +326,13 @@ namespace TrueFluentPro.ViewModels
         public string SpeechSubtitleStatusMessage
         {
             get => _speechSubtitleStatusMessage;
-            private set => SetProperty(ref _speechSubtitleStatusMessage, value);
+            private set
+            {
+                if (SetProperty(ref _speechSubtitleStatusMessage, value))
+                {
+                    OnPropertyChanged(nameof(ReviewPageFooterStatusText));
+                }
+            }
         }
 
         public bool IsSpeechSubtitleOptionEnabled
@@ -320,23 +340,26 @@ namespace TrueFluentPro.ViewModels
             get
             {
                 var config = _configProvider();
-                return config.BatchStorageIsValid
-                    && !string.IsNullOrWhiteSpace(config.BatchStorageConnectionString);
+                return HasAvailableConfiguredSubtitlePath(config);
             }
         }
 
         public bool UseSpeechSubtitleForReview
         {
-            get => _configProvider().UseSpeechSubtitleForReview;
+            get => GetReviewSubtitleSourceMode() == ReviewSubtitleSourceMode.SpeechSubtitle;
             set
             {
                 var config = _configProvider();
-                if (config.UseSpeechSubtitleForReview == value)
+                var nextMode = value
+                    ? ReviewSubtitleSourceMode.SpeechSubtitle
+                    : ReviewSubtitleSourceMode.DefaultSubtitle;
+                if (config.GetEffectiveReviewSubtitleSourceMode() == nextMode)
                 {
                     return;
                 }
 
-                config.UseSpeechSubtitleForReview = value;
+                config.ReviewSubtitleSourceMode = nextMode;
+                config.UseSpeechSubtitleForReview = nextMode == ReviewSubtitleSourceMode.SpeechSubtitle;
                 OnPropertyChanged(nameof(UseSpeechSubtitleForReview));
                 OnPropertyChanged(nameof(BatchStartButtonText));
                 GenerateReviewSummaryCommand.RaiseCanExecuteChanged();
@@ -356,8 +379,38 @@ namespace TrueFluentPro.ViewModels
         }
 
         public string SpeechSubtitleOptionStatusText => IsSpeechSubtitleOptionEnabled
-            ? "存储账号已验证，允许生成 speech 字幕"
-            : "未验证存储账号，已禁用该选项";
+            ? BuildSubtitleSourceEnabledStatusText()
+            : BuildSubtitleSourceUnavailableStatusText();
+
+        public string GenerateSelectedSubtitleMenuText => GetReviewSubtitleSourceMode() switch
+        {
+            ReviewSubtitleSourceMode.SpeechSubtitle => "生成 Speech 字幕",
+            ReviewSubtitleSourceMode.AiTranscriptionSubtitle => "生成 AI 转写字幕",
+            _ => "生成字幕"
+        };
+
+        public string ReviewPageFooterStatusText
+        {
+            get
+            {
+                if (!string.IsNullOrWhiteSpace(ReviewSummaryStatusMessage))
+                {
+                    return ReviewSummaryStatusMessage;
+                }
+
+                if (!string.IsNullOrWhiteSpace(SpeechSubtitleStatusMessage))
+                {
+                    return SpeechSubtitleStatusMessage;
+                }
+
+                if (!string.IsNullOrWhiteSpace(BatchStatusMessage))
+                {
+                    return BatchStatusMessage;
+                }
+
+                return SpeechSubtitleOptionStatusText;
+            }
+        }
 
         public string BatchStartButtonText => GetBatchStartButtonText();
 
@@ -417,6 +470,7 @@ namespace TrueFluentPro.ViewModels
                 OnPropertyChanged(nameof(IsReviewSummaryEmpty));
                 OnPropertyChanged(nameof(ReviewSummaryLampFill));
                 OnPropertyChanged(nameof(ReviewSummaryLampStroke));
+                OnPropertyChanged(nameof(ReviewPageFooterStatusText));
                 _notifyReviewLampChanged();
 
                 if (_selectedReviewSheet != null)
@@ -499,10 +553,7 @@ namespace TrueFluentPro.ViewModels
         public void NormalizeSpeechSubtitleOption()
         {
             var config = _configProvider();
-            if (!IsSpeechSubtitleOptionEnabled && config.UseSpeechSubtitleForReview)
-            {
-                config.UseSpeechSubtitleForReview = false;
-            }
+            config.UseSpeechSubtitleForReview = config.GetEffectiveReviewSubtitleSourceMode() == ReviewSubtitleSourceMode.SpeechSubtitle;
         }
 
         public void RefreshCommandStates()
@@ -510,6 +561,8 @@ namespace TrueFluentPro.ViewModels
             OnPropertyChanged(nameof(IsSpeechSubtitleOptionEnabled));
             OnPropertyChanged(nameof(UseSpeechSubtitleForReview));
             OnPropertyChanged(nameof(SpeechSubtitleOptionStatusText));
+            OnPropertyChanged(nameof(GenerateSelectedSubtitleMenuText));
+            OnPropertyChanged(nameof(ReviewPageFooterStatusText));
             OnPropertyChanged(nameof(BatchStartButtonText));
             GenerateSpeechSubtitleCommand.RaiseCanExecuteChanged();
             GenerateBatchSpeechSubtitleCommand.RaiseCanExecuteChanged();
@@ -545,13 +598,13 @@ namespace TrueFluentPro.ViewModels
         // ── Private helpers ──
 
         private bool ShouldGenerateSpeechSubtitleForReview
-        {
-            get
-            {
-                var config = _configProvider();
-                return IsSpeechSubtitleOptionEnabled && config.UseSpeechSubtitleForReview;
-            }
-        }
+            => GetReviewSubtitleSourceMode() == ReviewSubtitleSourceMode.SpeechSubtitle;
+
+        private bool ShouldGenerateAiSubtitleForReview
+            => GetReviewSubtitleSourceMode() == ReviewSubtitleSourceMode.AiTranscriptionSubtitle;
+
+        private bool ShouldGenerateGeneratedSubtitleForReview
+            => GetReviewSubtitleSourceMode() != ReviewSubtitleSourceMode.DefaultSubtitle;
 
         private bool ShouldWriteBatchLogSuccess => AppLogService.Instance.ShouldLogSuccess;
         private bool ShouldWriteBatchLogFailure => AppLogService.Instance.ShouldLogFailure;
@@ -574,6 +627,7 @@ namespace TrueFluentPro.ViewModels
             OnPropertyChanged(nameof(IsReviewSummaryEmpty));
             OnPropertyChanged(nameof(ReviewSummaryLampFill));
             OnPropertyChanged(nameof(ReviewSummaryLampStroke));
+            OnPropertyChanged(nameof(ReviewPageFooterStatusText));
             _notifyReviewLampChanged();
             GenerateReviewSummaryCommand.RaiseCanExecuteChanged();
             GenerateAllReviewSheetsCommand.RaiseCanExecuteChanged();
@@ -590,8 +644,21 @@ namespace TrueFluentPro.ViewModels
             BatchQueueStatusText = total == 0
                 ? "队列为空"
                 : $"队列 {completed}/{total} 完成，运行 {running}，等待 {pending}，失败 {failed}";
+        }
 
-            RefreshPackageProjections();
+        private void RequestPackageProjectionRefresh()
+        {
+            if (_isPackageProjectionRefreshPending)
+            {
+                return;
+            }
+
+            _isPackageProjectionRefreshPending = true;
+            Dispatcher.UIThread.Post(() =>
+            {
+                _isPackageProjectionRefreshPending = false;
+                RefreshPackageProjections();
+            }, DispatcherPriority.Background);
         }
 
         private void InitializePackageBuckets()
@@ -650,7 +717,6 @@ namespace TrueFluentPro.ViewModels
             var batchSheets = GetBatchReviewSheets();
             var packages = _fileLibrary.AudioFiles
                 .Select(audioFile => BuildPackageItem(audioFile, batchSheets))
-                .OrderBy(package => package.DisplayName, StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
             NormalizeExpandedPackages(packages);
@@ -666,14 +732,10 @@ namespace TrueFluentPro.ViewModels
             RefreshBucketCounts();
 
             var selectedPath = SelectedPackage?.FullPath;
-            SelectedPackage = packages.FirstOrDefault(package =>
-                                   string.Equals(package.FullPath, selectedPath, StringComparison.OrdinalIgnoreCase))
-                               ?? CurrentBucketPackages.FirstOrDefault()
-                               ?? _runningPackages.FirstOrDefault()
-                               ?? _pendingPackages.FirstOrDefault()
-                               ?? _failedPackages.FirstOrDefault()
-                               ?? _completedPackages.FirstOrDefault()
-                               ?? _removedPackages.FirstOrDefault();
+            SelectedPackage = string.IsNullOrWhiteSpace(selectedPath)
+                ? null
+                : CurrentBucketPackages.FirstOrDefault(package =>
+                    string.Equals(package.FullPath, selectedPath, StringComparison.OrdinalIgnoreCase));
 
             _fileLibrary.ApplyAudioProcessingSnapshots(packages.Select(CreateAudioSnapshot).ToList());
         }
@@ -725,7 +787,7 @@ namespace TrueFluentPro.ViewModels
             var failedCount = 0;
             var activeCount = 0;
 
-            var hasSpeechLayer = ShouldGenerateSpeechSubtitleForReview || FileLibraryViewModel.HasSpeechSubtitle(audioFile.FullPath);
+            var hasSpeechLayer = ShouldGenerateGeneratedSubtitleForReview || HasGeneratedSubtitleForSelectedMode(audioFile.FullPath);
 
             if (hasSpeechLayer)
             {
@@ -851,12 +913,13 @@ namespace TrueFluentPro.ViewModels
 
         private BatchSubtaskItem BuildSpeechSubtask(string audioPath, BatchQueueItem? queueItem)
         {
-            var completed = FileLibraryViewModel.HasSpeechSubtitle(audioPath);
+            var completed = HasGeneratedSubtitleForSelectedMode(audioPath);
+            var subtitleTitle = GetGeneratedSubtitleDisplayName();
             if (queueItem != null && queueItem.Status != BatchTaskStatus.Completed)
             {
                 return new BatchSubtaskItem
                 {
-                    Title = "Speech 字幕",
+                    Title = subtitleTitle,
                     AudioPath = audioPath,
                     Tag = "speech",
                     IconValue = "fa-solid fa-closed-captioning",
@@ -871,7 +934,7 @@ namespace TrueFluentPro.ViewModels
 
             return new BatchSubtaskItem
             {
-                Title = "Speech 字幕",
+                Title = subtitleTitle,
                 AudioPath = audioPath,
                 Tag = "speech",
                 IconValue = "fa-solid fa-closed-captioning",
@@ -1087,7 +1150,7 @@ namespace TrueFluentPro.ViewModels
 
             var reviewSheets = GetBatchReviewSheets();
             var enableReview = IsAiConfigured && reviewSheets.Count > 0;
-            var enableSpeech = ShouldGenerateSpeechSubtitleForReview;
+            var enableSpeech = ShouldGenerateGeneratedSubtitleForReview;
             var added = PrepareAndEnqueueSingleItem(batchItem, reviewSheets, enableSpeech, enableReview, false);
 
             BatchStatusMessage = added > 0
@@ -1122,7 +1185,7 @@ namespace TrueFluentPro.ViewModels
 
             var reviewSheets = GetBatchReviewSheets();
             var enableReview = IsAiConfigured && reviewSheets.Count > 0;
-            var enableSpeech = ShouldGenerateSpeechSubtitleForReview;
+            var enableSpeech = ShouldGenerateGeneratedSubtitleForReview;
             var added = PrepareAndEnqueueSingleItem(batchItem, reviewSheets, enableSpeech, enableReview, true);
 
             BatchStatusMessage = added > 0
@@ -1284,7 +1347,7 @@ namespace TrueFluentPro.ViewModels
             {
                 FileName = batchItem.FileName,
                 FullPath = batchItem.FullPath,
-                SheetName = "speech 字幕",
+                SheetName = GetGeneratedSubtitleDisplayName(),
                 SheetTag = "speech",
                 Prompt = "",
                 QueueType = BatchQueueItemType.SpeechSubtitle,
@@ -1293,7 +1356,7 @@ namespace TrueFluentPro.ViewModels
                 StatusMessage = "待处理"
             });
 
-            UpdateBatchItem(batchItem, BatchTaskStatus.Pending, 0, "待生成 speech 字幕");
+            UpdateBatchItem(batchItem, BatchTaskStatus.Pending, 0, $"待生成{GetGeneratedSubtitleDisplayName()}");
         }
 
         private void ForceEnqueueReviewQueueItem(BatchTaskItem batchItem, ReviewSheetPreset sheet)
@@ -1346,19 +1409,15 @@ namespace TrueFluentPro.ViewModels
                     }
                 }
                 var hasAiSummary = totalSheets > 0 && completedSheets >= totalSheets;
-                var requireSpeech = ShouldGenerateSpeechSubtitleForReview;
-                var hasSpeechSubtitle = FileLibraryViewModel.HasSpeechSubtitle(audio.FullPath);
-                var subtitlePath = requireSpeech
-                    ? (hasSpeechSubtitle ? FileLibraryViewModel.GetSpeechSubtitlePath(audio.FullPath) : "")
-                    : FileLibraryViewModel.GetPreferredSubtitlePath(audio.FullPath);
-                var hasSubtitle = requireSpeech
-                    ? hasSpeechSubtitle
-                    : !string.IsNullOrWhiteSpace(subtitlePath);
+                var requireSpeech = ShouldGenerateGeneratedSubtitleForReview;
+                var hasSpeechSubtitle = HasGeneratedSubtitleForSelectedMode(audio.FullPath);
+                var subtitlePath = GetSubtitlePathForReview(audio.FullPath);
+                var hasSubtitle = !string.IsNullOrWhiteSpace(subtitlePath) && File.Exists(subtitlePath);
                 var hasAiSubtitle = FileLibraryViewModel.HasAiSubtitle(audio.FullPath);
                 var pendingSheets = Math.Max(totalSheets - completedSheets, 0);
                 var statusMessage = hasSubtitle
                     ? "待处理"
-                    : (requireSpeech ? "待生成 speech 字幕" : "缺少字幕");
+                    : (requireSpeech ? $"待生成{GetGeneratedSubtitleDisplayName()}" : "缺少字幕");
                 var reviewStatusText = totalSheets == 0
                     ? "复盘:未勾选"
                     : $"复盘 {completedSheets}/{totalSheets}";
@@ -1418,14 +1477,14 @@ namespace TrueFluentPro.ViewModels
 
             var batchSheets = GetBatchReviewSheets();
             var enableReview = IsAiConfigured && batchSheets.Count > 0;
-            var enableSpeech = ShouldGenerateSpeechSubtitleForReview;
+            var enableSpeech = ShouldGenerateGeneratedSubtitleForReview;
 
             if (!enableReview && !enableSpeech)
             {
                 return false;
             }
 
-            var needsSpeech = enableSpeech && BatchTasks.Any(task => !FileLibraryViewModel.HasSpeechSubtitle(task.FullPath));
+            var needsSpeech = enableSpeech && BatchTasks.Any(task => !HasGeneratedSubtitleForSelectedMode(task.FullPath));
             if (needsSpeech && !CanGenerateSpeechSubtitleFromStorage())
             {
                 return false;
@@ -1438,16 +1497,16 @@ namespace TrueFluentPro.ViewModels
         {
             var batchSheets = GetBatchReviewSheets();
             var enableReview = IsAiConfigured && batchSheets.Count > 0;
-            var enableSpeech = ShouldGenerateSpeechSubtitleForReview;
+            var enableSpeech = ShouldGenerateGeneratedSubtitleForReview;
 
             if (enableSpeech && enableReview)
             {
-                return "开始生成字幕+复盘";
+                return $"开始生成{GetGeneratedSubtitleDisplayName()}+复盘";
             }
 
             if (enableSpeech)
             {
-                return "开始生成字幕";
+                return $"开始生成{GetGeneratedSubtitleDisplayName()}";
             }
 
             if (enableReview)
@@ -1460,14 +1519,8 @@ namespace TrueFluentPro.ViewModels
 
         private bool CanGenerateSpeechSubtitleFromStorage()
         {
-            if (!IsSpeechSubtitleOptionEnabled)
-            {
-                return false;
-            }
-
             var config = _configProvider();
-            var subscription = config.GetActiveSubscription();
-            return subscription?.IsValid() == true && !string.IsNullOrWhiteSpace(config.SourceLanguage);
+            return HasAvailableConfiguredSubtitlePath(config);
         }
 
         // ── Batch processing ──
@@ -1483,18 +1536,18 @@ namespace TrueFluentPro.ViewModels
             var config = _configProvider();
             var batchSheets = GetBatchReviewSheets();
             var enableReview = IsAiConfigured && batchSheets.Count > 0;
-            var enableSpeech = ShouldGenerateSpeechSubtitleForReview;
+            var enableSpeech = ShouldGenerateGeneratedSubtitleForReview;
 
             if (!enableReview && !enableSpeech)
             {
-                BatchStatusMessage = "未启用 speech 字幕或复盘生成";
+                BatchStatusMessage = "未启用所选字幕来源或复盘生成";
                 return;
             }
 
-            var needsSpeech = enableSpeech && BatchTasks.Any(task => !FileLibraryViewModel.HasSpeechSubtitle(task.FullPath));
+            var needsSpeech = enableSpeech && BatchTasks.Any(task => !HasGeneratedSubtitleForSelectedMode(task.FullPath));
             if (needsSpeech && !CanGenerateSpeechSubtitleFromStorage())
             {
-                BatchStatusMessage = "speech 字幕需要有效的存储账号与语音订阅";
+                BatchStatusMessage = BuildSubtitleSourceUnavailableStatusText();
                 return;
             }
 
@@ -1618,7 +1671,7 @@ namespace TrueFluentPro.ViewModels
             {
                 FileName = batchItem.FileName,
                 FullPath = batchItem.FullPath,
-                SheetName = "speech 字幕",
+                SheetName = GetGeneratedSubtitleDisplayName(),
                 SheetTag = "speech",
                 Prompt = "",
                 QueueType = BatchQueueItemType.SpeechSubtitle,
@@ -1628,7 +1681,7 @@ namespace TrueFluentPro.ViewModels
             });
             if (ShouldWriteBatchLogSuccess)
             {
-                AppendBatchLog("SpeechEnqueue", batchItem.FileName, "Success", "入队 speech 字幕");
+                AppendBatchLog("SpeechEnqueue", batchItem.FileName, "Success", $"入队{GetGeneratedSubtitleDisplayName()}");
             }
         }
 
@@ -1685,7 +1738,7 @@ namespace TrueFluentPro.ViewModels
             bool enableReview,
             bool forceRegeneration)
         {
-            var speechExists = FileLibraryViewModel.HasSpeechSubtitle(batchItem.FullPath);
+            var speechExists = HasGeneratedSubtitleForSelectedMode(batchItem.FullPath);
             batchItem.HasAiSubtitle = enableSpeech ? speechExists : FileLibraryViewModel.HasAiSubtitle(batchItem.FullPath);
 
             if (enableSpeech && (forceRegeneration || !speechExists))
@@ -1698,7 +1751,7 @@ namespace TrueFluentPro.ViewModels
                 batchItem.ReviewPending = enableReview ? reviewSheets.Count : 0;
                 batchItem.ReviewStatusText = enableReview ? "复盘:等待字幕" : "复盘:未启用";
                 batchItem.HasAiSummary = false;
-                UpdateBatchItem(batchItem, BatchTaskStatus.Pending, 0, "待生成 speech 字幕");
+                UpdateBatchItem(batchItem, BatchTaskStatus.Pending, 0, $"待生成{GetGeneratedSubtitleDisplayName()}");
                 EnqueueSpeechSubtitleForBatch(batchItem);
                 return 1;
             }
@@ -1714,7 +1767,7 @@ namespace TrueFluentPro.ViewModels
                 UpdateBatchItem(batchItem, BatchTaskStatus.Completed, 1, "字幕已存在");
                 if (ShouldWriteBatchLogSuccess)
                 {
-                    AppendBatchLog("SpeechSkip", batchItem.FileName, "Success", "speech 字幕已存在");
+                    AppendBatchLog("SpeechSkip", batchItem.FileName, "Success", $"{GetGeneratedSubtitleDisplayName()}已存在");
                 }
                 return 0;
             }
@@ -2055,6 +2108,7 @@ namespace TrueFluentPro.ViewModels
             {
                 var success = await GenerateBatchSpeechSubtitleForFileAsync(
                     queueItem.FullPath,
+                    GetReviewSubtitleSourceMode(),
                     token,
                     status => UpdateQueueItem(queueItem, BatchTaskStatus.Running, 0.2, status));
 
@@ -2076,7 +2130,7 @@ namespace TrueFluentPro.ViewModels
                 UpdateQueueItem(queueItem, BatchTaskStatus.Completed, 1, "完成");
                 if (ShouldWriteBatchLogSuccess)
                 {
-                    AppendBatchLog("SpeechSuccess", queueItem.FileName, "Success", "speech 字幕完成");
+                    AppendBatchLog("SpeechSuccess", queueItem.FileName, "Success", $"{GetGeneratedSubtitleDisplayName()}完成");
                 }
 
                 lock (cueLock)
@@ -2094,7 +2148,7 @@ namespace TrueFluentPro.ViewModels
                 {
                     if (parentItem != null)
                     {
-                        UpdateBatchItem(parentItem, BatchTaskStatus.Completed, 1, "字幕完成");
+                        UpdateBatchItem(parentItem, BatchTaskStatus.Completed, 1, $"{GetGeneratedSubtitleDisplayName()}完成");
                     }
                     return;
                 }
@@ -2134,7 +2188,7 @@ namespace TrueFluentPro.ViewModels
 
                 if (parentItem != null)
                 {
-                    var statusMessage = added > 0 ? "字幕完成，待复盘" : "字幕完成";
+                    var statusMessage = added > 0 ? $"{GetGeneratedSubtitleDisplayName()}完成，待复盘" : $"{GetGeneratedSubtitleDisplayName()}完成";
                     UpdateBatchItem(parentItem, BatchTaskStatus.Running, parentItem.Progress, statusMessage);
                 }
             }
@@ -2187,9 +2241,7 @@ namespace TrueFluentPro.ViewModels
                 }
             }
 
-            var subtitlePath = ShouldGenerateSpeechSubtitleForReview
-                ? FileLibraryViewModel.GetSpeechSubtitlePath(audioPath)
-                : FileLibraryViewModel.GetPreferredSubtitlePath(audioPath);
+            var subtitlePath = GetSubtitlePathForReview(audioPath);
             if (string.IsNullOrWhiteSpace(subtitlePath) || !File.Exists(subtitlePath))
             {
                 return new List<SubtitleCue>();
@@ -2256,7 +2308,7 @@ namespace TrueFluentPro.ViewModels
                 item.Progress = progress;
                 item.StatusMessage = message;
                 UpdateBatchQueueStatusText();
-                RefreshPackageProjections();
+                RequestPackageProjectionRefresh();
             });
         }
 
@@ -2267,7 +2319,7 @@ namespace TrueFluentPro.ViewModels
                 item.Status = status;
                 item.Progress = progress;
                 item.StatusMessage = message;
-                RefreshPackageProjections();
+                RequestPackageProjectionRefresh();
             });
         }
 
@@ -2333,18 +2385,14 @@ namespace TrueFluentPro.ViewModels
 
         private void EnqueueReviewSheetsForAudio(MediaFileItem audioFile, IEnumerable<ReviewSheetState> sheets)
         {
-            var requireSpeech = ShouldGenerateSpeechSubtitleForReview;
-            var subtitlePath = requireSpeech
-                ? FileLibraryViewModel.GetSpeechSubtitlePath(audioFile.FullPath)
-                : FileLibraryViewModel.GetPreferredSubtitlePath(audioFile.FullPath);
-            var hasSubtitle = requireSpeech
-                ? File.Exists(subtitlePath)
-                : !string.IsNullOrWhiteSpace(subtitlePath) && File.Exists(subtitlePath);
+            var requireSpeech = ShouldGenerateGeneratedSubtitleForReview;
+            var subtitlePath = GetSubtitlePathForReview(audioFile.FullPath);
+            var hasSubtitle = !string.IsNullOrWhiteSpace(subtitlePath) && File.Exists(subtitlePath);
             if (!hasSubtitle)
             {
                 foreach (var sheet in sheets)
                 {
-                    sheet.StatusMessage = requireSpeech ? "缺少 speech 字幕" : "缺少字幕";
+                    sheet.StatusMessage = requireSpeech ? $"缺少{GetGeneratedSubtitleDisplayName()}" : "缺少字幕";
                 }
                 return;
             }
@@ -2390,10 +2438,10 @@ namespace TrueFluentPro.ViewModels
         {
             var hasCues = _fileLibrary.SubtitleCues.Count > 0;
             var selectedAudio = _fileLibrary.SelectedAudioFile;
-            var allowSpeechGeneration = ShouldGenerateSpeechSubtitleForReview
+            var allowSpeechGeneration = ShouldGenerateGeneratedSubtitleForReview
                 && selectedAudio != null
                 && !IsSpeechSubtitleGenerating
-                && (FileLibraryViewModel.HasSpeechSubtitle(selectedAudio.FullPath) || CanGenerateSpeechSubtitleFromStorage());
+                && (HasGeneratedSubtitleForSelectedMode(selectedAudio.FullPath) || CanGenerateSpeechSubtitleFromStorage());
 
             return IsAiConfigured
                    && selectedAudio != null
@@ -2421,7 +2469,7 @@ namespace TrueFluentPro.ViewModels
             if (!await EnsureSpeechSubtitleForReviewAsync(audioFile))
             {
                 sheet.StatusMessage = string.IsNullOrWhiteSpace(SpeechSubtitleStatusMessage)
-                    ? "speech 字幕未就绪，无法生成复盘"
+                    ? $"{GetGeneratedSubtitleDisplayName()}未就绪，无法生成复盘"
                     : SpeechSubtitleStatusMessage;
                 return;
             }
@@ -2434,10 +2482,10 @@ namespace TrueFluentPro.ViewModels
         {
             var hasCues = _fileLibrary.SubtitleCues.Count > 0;
             var selectedAudio = _fileLibrary.SelectedAudioFile;
-            var allowSpeechGeneration = ShouldGenerateSpeechSubtitleForReview
+            var allowSpeechGeneration = ShouldGenerateGeneratedSubtitleForReview
                 && selectedAudio != null
                 && !IsSpeechSubtitleGenerating
-                && (FileLibraryViewModel.HasSpeechSubtitle(selectedAudio.FullPath) || CanGenerateSpeechSubtitleFromStorage());
+                && (HasGeneratedSubtitleForSelectedMode(selectedAudio.FullPath) || CanGenerateSpeechSubtitleFromStorage());
 
             return IsAiConfigured
                    && selectedAudio != null
@@ -2460,7 +2508,7 @@ namespace TrueFluentPro.ViewModels
                 if (SelectedReviewSheet != null)
                 {
                     SelectedReviewSheet.StatusMessage = string.IsNullOrWhiteSpace(SpeechSubtitleStatusMessage)
-                        ? "speech 字幕未就绪，无法生成复盘"
+                        ? $"{GetGeneratedSubtitleDisplayName()}未就绪，无法生成复盘"
                         : SpeechSubtitleStatusMessage;
                 }
                 return;
@@ -2472,12 +2520,13 @@ namespace TrueFluentPro.ViewModels
 
         private async Task<bool> EnsureSpeechSubtitleForReviewAsync(MediaFileItem audioFile)
         {
-            if (!ShouldGenerateSpeechSubtitleForReview)
+            if (!ShouldGenerateGeneratedSubtitleForReview)
             {
                 return true;
             }
 
-            var speechPath = FileLibraryViewModel.GetSpeechSubtitlePath(audioFile.FullPath);
+            var mode = GetReviewSubtitleSourceMode();
+            var speechPath = GetGeneratedSubtitleOutputPath(audioFile.FullPath, mode);
             if (File.Exists(speechPath))
             {
                 _fileLibrary.LoadSubtitleFilesForAudio(audioFile);
@@ -2492,7 +2541,7 @@ namespace TrueFluentPro.ViewModels
 
             if (!CanGenerateSpeechSubtitleFromStorage())
             {
-                SpeechSubtitleStatusMessage = "缺少有效的存储账号或语音订阅，无法生成 speech 字幕";
+                SpeechSubtitleStatusMessage = BuildSubtitleSourceUnavailableStatusText();
                 return false;
             }
 
@@ -2501,12 +2550,13 @@ namespace TrueFluentPro.ViewModels
             var token = _speechSubtitleCts.Token;
 
             IsSpeechSubtitleGenerating = true;
-            SpeechSubtitleStatusMessage = "speech 字幕生成中...";
+            SpeechSubtitleStatusMessage = $"{GetGeneratedSubtitleDisplayName()}生成中...";
 
             try
             {
                 var success = await GenerateBatchSpeechSubtitleForFileAsync(
                     audioFile.FullPath,
+                    mode,
                     token,
                     status => SpeechSubtitleStatusMessage = status);
                 if (!success)
@@ -2515,7 +2565,7 @@ namespace TrueFluentPro.ViewModels
                     return false;
                 }
 
-                SpeechSubtitleStatusMessage = $"speech 字幕已生成: {Path.GetFileName(speechPath)}";
+                SpeechSubtitleStatusMessage = $"{GetGeneratedSubtitleDisplayName()}已生成: {Path.GetFileName(speechPath)}";
                 _fileLibrary.LoadSubtitleFilesForAudio(audioFile);
                 var speechFile = _fileLibrary.SubtitleFiles.FirstOrDefault(item =>
                     string.Equals(item.FullPath, speechPath, StringComparison.OrdinalIgnoreCase));
@@ -2528,12 +2578,12 @@ namespace TrueFluentPro.ViewModels
             }
             catch (OperationCanceledException)
             {
-                SpeechSubtitleStatusMessage = "speech 字幕生成已取消";
+                SpeechSubtitleStatusMessage = $"{GetGeneratedSubtitleDisplayName()}生成已取消";
                 return false;
             }
             catch (Exception ex)
             {
-                SpeechSubtitleStatusMessage = $"speech 字幕生成失败: {ex.Message}";
+                SpeechSubtitleStatusMessage = $"{GetGeneratedSubtitleDisplayName()}生成失败: {ex.Message}";
                 return false;
             }
             finally
@@ -2777,23 +2827,23 @@ namespace TrueFluentPro.ViewModels
             var config = _configProvider();
             var batchSheets = GetBatchReviewSheets();
             var enableReview = IsAiConfigured && batchSheets.Count > 0;
-            var enableSpeech = ShouldGenerateSpeechSubtitleForReview;
+            var enableSpeech = ShouldGenerateGeneratedSubtitleForReview;
 
             if (!enableReview && !enableSpeech)
             {
-                BatchStatusMessage = "未启用 speech 字幕或复盘生成";
+                BatchStatusMessage = "未启用所选字幕来源或复盘生成";
                 return;
             }
 
             if (enableSpeech && !CanGenerateSpeechSubtitleFromStorage())
             {
-                BatchStatusMessage = "speech 字幕需要有效的存储账号与语音订阅";
+                BatchStatusMessage = BuildSubtitleSourceUnavailableStatusText();
                 return;
             }
 
             if (!enableSpeech)
             {
-                var subtitlePath = FileLibraryViewModel.GetPreferredSubtitlePath(target.FullPath);
+                var subtitlePath = GetSubtitlePathForReview(target.FullPath);
                 var hasSubtitle = !string.IsNullOrWhiteSpace(subtitlePath) && File.Exists(subtitlePath);
                 if (!hasSubtitle)
                 {
@@ -2862,15 +2912,20 @@ namespace TrueFluentPro.ViewModels
             }
 
             var config = _configProvider();
-            var subscription = config.GetActiveSubscription();
-            return subscription?.IsValid() == true && !string.IsNullOrWhiteSpace(config.SourceLanguage);
+            return GetReviewSubtitleSourceMode(config) switch
+            {
+                ReviewSubtitleSourceMode.SpeechSubtitle => config.GetActiveSubscription()?.IsValid() == true
+                                                           && !string.IsNullOrWhiteSpace(config.SourceLanguage),
+                ReviewSubtitleSourceMode.AiTranscriptionSubtitle => TryResolveSpeechRuntime(config, config.RealtimeTranscriptionModelRef, ModelCapability.SpeechToText, out _, out _),
+                _ => false
+            };
         }
 
         private async void GenerateSpeechSubtitle()
         {
             if (!CanGenerateSpeechSubtitle())
             {
-                SpeechSubtitleStatusMessage = "订阅或音频不可用";
+                SpeechSubtitleStatusMessage = BuildSubtitleSourceUnavailableStatusText();
                 return;
             }
 
@@ -2885,7 +2940,7 @@ namespace TrueFluentPro.ViewModels
             var token = _speechSubtitleCts.Token;
 
             IsSpeechSubtitleGenerating = true;
-            SpeechSubtitleStatusMessage = "正在转写...";
+            SpeechSubtitleStatusMessage = $"正在生成{GetGeneratedSubtitleDisplayName()}...";
 
             try
             {
@@ -2896,10 +2951,10 @@ namespace TrueFluentPro.ViewModels
                     return;
                 }
 
-                var outputPath = FileLibraryViewModel.GetSpeechSubtitlePath(audioFile.FullPath);
+                var outputPath = GetGeneratedSubtitleOutputPath(audioFile.FullPath, GetReviewSubtitleSourceMode());
                 BlobStorageService.WriteVttFile(outputPath, cues);
 
-                SpeechSubtitleStatusMessage = $"speech 字幕已生成: {Path.GetFileName(outputPath)}";
+                SpeechSubtitleStatusMessage = $"{GetGeneratedSubtitleDisplayName()}已生成: {Path.GetFileName(outputPath)}";
                 _fileLibrary.LoadSubtitleFilesForAudio(audioFile);
             }
             catch (OperationCanceledException)
@@ -2936,7 +2991,7 @@ namespace TrueFluentPro.ViewModels
                 return false;
             }
 
-            if (!IsSpeechSubtitleOptionEnabled)
+            if (!ShouldGenerateGeneratedSubtitleForReview)
             {
                 return false;
             }
@@ -2948,7 +3003,7 @@ namespace TrueFluentPro.ViewModels
         {
             if (!CanGenerateBatchSpeechSubtitle())
             {
-                SpeechSubtitleStatusMessage = "请先验证存储账号与语音订阅";
+                SpeechSubtitleStatusMessage = BuildSubtitleSourceUnavailableStatusText();
                 return;
             }
 
@@ -2967,6 +3022,7 @@ namespace TrueFluentPro.ViewModels
             {
                 var success = await GenerateBatchSpeechSubtitleForFileAsync(
                     audioFile.FullPath,
+                    GetReviewSubtitleSourceMode(),
                     token,
                     status => SpeechSubtitleStatusMessage = status);
 
@@ -2976,8 +3032,8 @@ namespace TrueFluentPro.ViewModels
                     return;
                 }
 
-                var outputPath = FileLibraryViewModel.GetSpeechSubtitlePath(audioFile.FullPath);
-                SpeechSubtitleStatusMessage = $"speech 字幕已生成: {Path.GetFileName(outputPath)}";
+                var outputPath = GetGeneratedSubtitleOutputPath(audioFile.FullPath, GetReviewSubtitleSourceMode());
+                SpeechSubtitleStatusMessage = $"{GetGeneratedSubtitleDisplayName()}已生成: {Path.GetFileName(outputPath)}";
                 _fileLibrary.LoadSubtitleFilesForAudio(audioFile);
             }
             catch (OperationCanceledException)
@@ -3004,6 +3060,19 @@ namespace TrueFluentPro.ViewModels
         private Task<List<SubtitleCue>> TranscribeSpeechToCuesAsync(string audioPath, CancellationToken token)
         {
             var config = _configProvider();
+            if (GetReviewSubtitleSourceMode(config) == ReviewSubtitleSourceMode.AiTranscriptionSubtitle)
+            {
+                if (!TryResolveSpeechRuntime(config, config.RealtimeTranscriptionModelRef, ModelCapability.SpeechToText, out var runtime, out var errorMessage)
+                    || runtime == null)
+                {
+                    throw new InvalidOperationException(string.IsNullOrWhiteSpace(errorMessage)
+                        ? "未配置可用的实时 AI 转写模型"
+                        : errorMessage);
+                }
+
+                return TranscribeSpeechToCuesByAiAsync(audioPath, runtime, config.SourceLanguage, token);
+            }
+
             var subscription = config.GetActiveSubscription()
                 ?? throw new InvalidOperationException("语音订阅未配置");
             return RealtimeSpeechTranscriber.TranscribeSpeechToCuesAsync(
@@ -3012,6 +3081,7 @@ namespace TrueFluentPro.ViewModels
 
         private async Task<bool> GenerateBatchSpeechSubtitleForFileAsync(
             string audioPath,
+            ReviewSubtitleSourceMode subtitleMode,
             CancellationToken token,
             Action<string>? onStatus)
         {
@@ -3026,13 +3096,41 @@ namespace TrueFluentPro.ViewModels
             }
 
             var config = _configProvider();
+            if (subtitleMode == ReviewSubtitleSourceMode.AiTranscriptionSubtitle)
+            {
+                if (!TryResolveSpeechRuntime(config, config.BatchTranscriptionModelRef, ModelCapability.SpeechToText, out var aiRuntime, out var aiResolveMessage)
+                    || aiRuntime == null)
+                {
+                    throw new InvalidOperationException(string.IsNullOrWhiteSpace(aiResolveMessage)
+                        ? "未配置可用的 AI 批量转写模型"
+                        : aiResolveMessage);
+                }
+
+                onStatus?.Invoke("批量转写：调用 AI 语音转写模型...");
+                var transcription = await _aiAudioTranscriptionService.TranscribeAsync(
+                    aiRuntime,
+                    audioPath,
+                    config.SourceLanguage,
+                    GetBatchSubtitleSplitOptions(),
+                    token);
+
+                if (transcription.Cues.Count == 0)
+                {
+                    return false;
+                }
+
+                var outputPath = FileLibraryViewModel.GetAiSubtitlePath(audioPath);
+                BlobStorageService.WriteVttFile(outputPath, transcription.Cues);
+                return true;
+            }
+
             var subscription = config.GetActiveSubscription();
             if (subscription == null || !subscription.IsValid())
             {
                 throw new InvalidOperationException("语音订阅未配置");
             }
 
-            if (!IsSpeechSubtitleOptionEnabled)
+            if (!config.BatchStorageIsValid || string.IsNullOrWhiteSpace(config.BatchStorageConnectionString))
             {
                 throw new InvalidOperationException("存储账号未验证");
             }
@@ -3175,7 +3273,7 @@ namespace TrueFluentPro.ViewModels
                     return false;
                 }
 
-                var outputPath = FileLibraryViewModel.GetSpeechSubtitlePath(audioPath);
+                var outputPath = GetGeneratedSubtitleOutputPath(audioPath, subtitleMode);
                 BlobStorageService.WriteVttFile(outputPath, cues);
 
                 var baseName = Path.GetFileNameWithoutExtension(audioPath);
@@ -3210,6 +3308,119 @@ namespace TrueFluentPro.ViewModels
                 MaxDurationSeconds = Math.Clamp(config.BatchSubtitleMaxDurationSeconds, 1, 15),
                 PauseSplitMs = Math.Clamp(config.BatchSubtitlePauseSplitMs, 100, 2000)
             };
+        }
+
+        private async Task<List<SubtitleCue>> TranscribeSpeechToCuesByAiAsync(
+            string audioPath,
+            ModelRuntimeResolution runtime,
+            string sourceLanguage,
+            CancellationToken token)
+        {
+            var result = await _aiAudioTranscriptionService.TranscribeAsync(
+                runtime,
+                audioPath,
+                sourceLanguage,
+                GetBatchSubtitleSplitOptions(),
+                token);
+            return result.Cues;
+        }
+
+        private ReviewSubtitleSourceMode GetReviewSubtitleSourceMode(AzureSpeechConfig? config = null)
+            => (config ?? _configProvider()).GetEffectiveReviewSubtitleSourceMode();
+
+        private bool HasGeneratedSubtitleForSelectedMode(string audioPath)
+        {
+            return GetReviewSubtitleSourceMode() switch
+            {
+                ReviewSubtitleSourceMode.SpeechSubtitle => FileLibraryViewModel.HasSpeechSubtitle(audioPath),
+                ReviewSubtitleSourceMode.AiTranscriptionSubtitle => FileLibraryViewModel.HasAiSubtitle(audioPath),
+                _ => false
+            };
+        }
+
+        private string GetGeneratedSubtitleDisplayName(AzureSpeechConfig? config = null)
+        {
+            return GetReviewSubtitleSourceMode(config) switch
+            {
+                ReviewSubtitleSourceMode.SpeechSubtitle => "Speech 字幕",
+                ReviewSubtitleSourceMode.AiTranscriptionSubtitle => "AI 转写字幕",
+                _ => "字幕"
+            };
+        }
+
+        private string GetSubtitlePathForReview(string audioPath)
+            => FileLibraryViewModel.GetPreferredSubtitlePath(audioPath, GetReviewSubtitleSourceMode()) ?? string.Empty;
+
+        private static string GetGeneratedSubtitleOutputPath(string audioPath, ReviewSubtitleSourceMode mode)
+        {
+            return mode switch
+            {
+                ReviewSubtitleSourceMode.SpeechSubtitle => FileLibraryViewModel.GetSpeechSubtitlePath(audioPath),
+                ReviewSubtitleSourceMode.AiTranscriptionSubtitle => FileLibraryViewModel.GetAiSubtitlePath(audioPath),
+                _ => FileLibraryViewModel.GetPreferredSubtitlePath(audioPath) ?? audioPath
+            };
+        }
+
+        private bool HasAvailableConfiguredSubtitlePath(AzureSpeechConfig config)
+        {
+            return GetReviewSubtitleSourceMode(config) switch
+            {
+                ReviewSubtitleSourceMode.SpeechSubtitle => CanGenerateSpeechSubtitleWithAzureSpeech(config),
+                ReviewSubtitleSourceMode.AiTranscriptionSubtitle => HasAvailableBatchTranscriptionModel(config, out _),
+                _ => true
+            };
+        }
+
+        private bool CanGenerateSpeechSubtitleWithAzureSpeech(AzureSpeechConfig config)
+        {
+            var subscription = config.GetActiveSubscription();
+            return config.BatchStorageIsValid
+                   && !string.IsNullOrWhiteSpace(config.BatchStorageConnectionString)
+                   && subscription?.IsValid() == true
+                   && !string.IsNullOrWhiteSpace(config.SourceLanguage);
+        }
+
+        private bool HasAvailableBatchTranscriptionModel(AzureSpeechConfig config, out string errorMessage)
+            => TryResolveSpeechRuntime(config, config.BatchTranscriptionModelRef, ModelCapability.SpeechToText, out _, out errorMessage);
+
+        private string BuildSubtitleSourceEnabledStatusText()
+        {
+            var config = _configProvider();
+            return GetReviewSubtitleSourceMode(config) switch
+            {
+                ReviewSubtitleSourceMode.SpeechSubtitle => "当前使用 Speech 字幕模式：Azure Speech 批量链路可用。",
+                ReviewSubtitleSourceMode.AiTranscriptionSubtitle => "当前使用 AI 转写字幕模式：AI 批量转写模型可用。",
+                _ => "当前使用普通字幕模式：直接读取现有 .srt / .vtt。"
+            };
+        }
+
+        private string BuildSubtitleSourceUnavailableStatusText()
+        {
+            var config = _configProvider();
+            return GetReviewSubtitleSourceMode(config) switch
+            {
+                ReviewSubtitleSourceMode.SpeechSubtitle => "当前选中了 Speech 字幕模式，但缺少有效的存储账号或语音订阅。",
+                ReviewSubtitleSourceMode.AiTranscriptionSubtitle => "当前选中了 AI 转写字幕模式，但还没有配置可用的批量语音转写模型。",
+                _ => "当前使用普通字幕模式，无需额外生成字幕。"
+            };
+        }
+
+        private bool TryResolveSpeechRuntime(
+            AzureSpeechConfig config,
+            ModelReference? reference,
+            ModelCapability capability,
+            out ModelRuntimeResolution? runtime,
+            out string errorMessage)
+        {
+            runtime = null;
+            errorMessage = string.Empty;
+
+            if (reference == null)
+            {
+                return false;
+            }
+
+            return _modelRuntimeResolver.TryResolve(config, reference, capability, out runtime, out errorMessage);
         }
 
         private static bool IsOfflineTranscriptionLocaleUnsupported(Exception ex)

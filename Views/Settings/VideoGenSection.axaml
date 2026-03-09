@@ -11,13 +11,8 @@
             <TextBlock Text="视频生成" Theme="{StaticResource SubtitleTextBlockStyle}"/>
             <Separator/>
 
-            <StackPanel Spacing="6">
-                <TextBlock Text="视频模型:" VerticalAlignment="Center"/>
-                <ComboBox MinWidth="250"
-                          ItemsSource="{Binding VideoModels}"
-                          SelectedItem="{Binding SelectedVideoModel, Mode=TwoWay}"/>
-                <TextBlock FontSize="10" Foreground="Gray" Text="仅显示具有 [视频] 能力的终结点模型"/>
-            </StackPanel>
+            <TextBlock FontSize="11" Foreground="Gray" TextWrapping="Wrap"
+                       Text="视频模型已集中到“AI 资源与模型”。这里保留视频生成默认参数与 Media Studio 运行参数。"/>
 
             <Separator Margin="0,8,0,8"/>
             <TextBlock Text="默认参数" FontWeight="Bold"/>

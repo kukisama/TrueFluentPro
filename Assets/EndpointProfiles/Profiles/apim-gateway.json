@@ -56,6 +56,28 @@
             "{baseUrl}/chat/completions"
         ]
     },
+        "audio": {
+            "defaultApiVersion": "2025-04-01-preview",
+            "transcriptionUrlCandidates": [
+                "{baseUrl}/openai/deployments/{deployment}/audio/transcriptions?api-version={apiVersion}",
+                "{baseUrl}/deployments/{deployment}/audio/transcriptions?api-version={apiVersion}",
+                "{baseUrl}/v1/audio/transcriptions?api-version={apiVersion}",
+                "{baseUrl}/audio/transcriptions?api-version={apiVersion}",
+                "{baseUrl}/v1/audio/transcriptions",
+                "{baseUrl}/audio/transcriptions"
+            ]
+        },
+        "speech": {
+            "defaultApiVersion": "2025-04-01-preview",
+            "synthesisUrlCandidates": [
+                "{baseUrl}/openai/deployments/{deployment}/audio/speech?api-version={apiVersion}",
+                "{baseUrl}/deployments/{deployment}/audio/speech?api-version={apiVersion}",
+                "{baseUrl}/v1/audio/speech?api-version={apiVersion}",
+                "{baseUrl}/audio/speech?api-version={apiVersion}",
+                "{baseUrl}/v1/audio/speech",
+                "{baseUrl}/audio/speech"
+            ]
+        },
     "image": {
         "deploymentGenerateUrlCandidates": [
             "{baseUrl}/deployments/{deployment}/images/generations?api-version={apiVersion}",

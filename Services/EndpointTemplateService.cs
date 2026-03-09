@@ -73,10 +73,14 @@ public sealed class EndpointTemplateService : IEndpointTemplateService
             };
 
         var textUrls = BuildTextPreviewUrlList(endpoint);
+        var transcriptionUrls = BuildTranscriptionPreviewUrlList(endpoint);
+        var speechUrls = BuildSpeechPreviewUrlList(endpoint);
         var imageUrls = BuildImagePreviewUrlList(endpoint);
         var videoUrls = BuildVideoPreviewUrlList(endpoint);
 
         var text = textUrls.Count > 0 ? "按资料包声明执行" : "资料包未声明";
+        var transcription = transcriptionUrls.Count > 0 ? "按资料包声明执行" : "资料包未声明";
+        var speech = speechUrls.Count > 0 ? "按资料包声明执行" : "资料包未声明";
         var image = imageUrls.Count > 0 ? "按资料包声明执行" : "资料包未声明";
         var video = videoUrls.Count > 0 ? "按资料包声明执行" : "资料包未声明";
 
@@ -84,7 +88,7 @@ public sealed class EndpointTemplateService : IEndpointTemplateService
             ? "未显式填写"
             : endpoint.ApiVersion.Trim();
 
-        return $"当前模板策略：文本 {text}；图片 {image}；视频 {video}；认证 {auth}；API 版本 {version}。";
+        return $"当前模板策略：文本 {text}；语音转写 {transcription}；文字转语音 {speech}；图片 {image}；视频 {video}；认证 {auth}；API 版本 {version}。";
     }
 
     public EndpointInspectionDetails BuildInspectionDetailsModel(AiEndpoint endpoint)
@@ -108,6 +112,8 @@ public sealed class EndpointTemplateService : IEndpointTemplateService
 
         var sections = new List<EndpointInspectionSection>();
         AppendCapabilitySectionModel(sections, endpoint, ModelCapability.Text, "文字能力", DescribeTextRoute(endpoint), BuildTextPreviewUrlList(endpoint));
+        AppendCapabilitySectionModel(sections, endpoint, ModelCapability.SpeechToText, "语音转写能力", DescribeTranscriptionRoute(endpoint), BuildTranscriptionPreviewUrlList(endpoint));
+        AppendCapabilitySectionModel(sections, endpoint, ModelCapability.TextToSpeech, "文字转语音能力", DescribeSpeechRoute(endpoint), BuildSpeechPreviewUrlList(endpoint));
         AppendCapabilitySectionModel(sections, endpoint, ModelCapability.Image, "图片能力", DescribeImageRoute(endpoint), BuildImagePreviewUrlList(endpoint));
         AppendCapabilitySectionModel(sections, endpoint, ModelCapability.Video, "视频能力", DescribeVideoRoute(endpoint), BuildVideoPreviewUrlList(endpoint));
 
@@ -277,6 +283,22 @@ public sealed class EndpointTemplateService : IEndpointTemplateService
         return string.Join(Environment.NewLine, urls.Select(ExtractImageRouteLabel).Distinct(StringComparer.OrdinalIgnoreCase));
     }
 
+    private static string DescribeTranscriptionRoute(AiEndpoint endpoint)
+    {
+        var urls = BuildTranscriptionPreviewUrlList(endpoint);
+        return urls.Count == 0
+            ? "资料包未声明语音转写路线"
+            : "按资料包声明的音频转写路线执行";
+    }
+
+    private static string DescribeSpeechRoute(AiEndpoint endpoint)
+    {
+        var urls = BuildSpeechPreviewUrlList(endpoint);
+        return urls.Count == 0
+            ? "资料包未声明文字转语音路线"
+            : "按资料包声明的语音合成路线执行";
+    }
+
     private static string DescribeVideoRoute(AiEndpoint endpoint)
     {
         var urls = BuildVideoPreviewUrlList(endpoint);
@@ -329,6 +351,48 @@ public sealed class EndpointTemplateService : IEndpointTemplateService
             endpoint.ApiVersion);
 
         return urls
+            .Select(NormalizePreviewUrlForDisplay)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static IReadOnlyList<string> BuildTranscriptionPreviewUrlList(AiEndpoint endpoint)
+    {
+        var baseUrl = endpoint.BaseUrl?.Trim().TrimEnd('/') ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(baseUrl))
+            return Array.Empty<string>();
+
+        var deployment = endpoint.Models.FirstOrDefault(model => model.Capabilities.HasFlag(ModelCapability.SpeechToText))?.DeploymentName;
+        if (string.IsNullOrWhiteSpace(deployment))
+            deployment = endpoint.Models.FirstOrDefault(model => model.Capabilities.HasFlag(ModelCapability.SpeechToText))?.ModelId;
+
+        return EndpointProfileUrlBuilder.BuildConfiguredAudioTranscriptionUrlCandidates(
+                baseUrl,
+                endpoint.ProfileId,
+                endpoint.EndpointType,
+                deployment,
+                endpoint.ApiVersion)
+            .Select(NormalizePreviewUrlForDisplay)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static IReadOnlyList<string> BuildSpeechPreviewUrlList(AiEndpoint endpoint)
+    {
+        var baseUrl = endpoint.BaseUrl?.Trim().TrimEnd('/') ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(baseUrl))
+            return Array.Empty<string>();
+
+        var deployment = endpoint.Models.FirstOrDefault(model => model.Capabilities.HasFlag(ModelCapability.TextToSpeech))?.DeploymentName;
+        if (string.IsNullOrWhiteSpace(deployment))
+            deployment = endpoint.Models.FirstOrDefault(model => model.Capabilities.HasFlag(ModelCapability.TextToSpeech))?.ModelId;
+
+        return EndpointProfileUrlBuilder.BuildConfiguredSpeechSynthesisUrlCandidates(
+                baseUrl,
+                endpoint.ProfileId,
+                endpoint.EndpointType,
+                deployment,
+                endpoint.ApiVersion)
             .Select(NormalizePreviewUrlForDisplay)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();

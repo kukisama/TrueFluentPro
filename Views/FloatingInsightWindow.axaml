@@ -27,7 +27,7 @@
         Background="{Binding BackgroundBrush}"
         CornerRadius="8"
         BorderThickness="2"
-        BorderBrush="#40FFFFFF"
+        BorderBrush="{Binding BorderBrush}"
         Margin="5">
 
         <Grid RowDefinitions="Auto,*,Auto">
@@ -68,10 +68,14 @@
             <Border Grid.Row="1" Margin="8,0,8,8"
                     Background="{Binding BackgroundBrush}"
                     PointerPressed="OnContentPointerPressed">
-                <LayoutTransformControl Name="MarkdownScaleContainer">
-                    <md:MarkdownScrollViewer Name="InsightMarkdownViewer"
-                                             Markdown="{Binding InsightMarkdown}"/>
-                </LayoutTransformControl>
+                <Border Padding="16,10,16,14"
+                        Background="{Binding ContentBackgroundBrush}"
+                        CornerRadius="6">
+                    <LayoutTransformControl Name="MarkdownScaleContainer">
+                        <md:MarkdownScrollViewer Name="InsightMarkdownViewer"
+                                                 Markdown="{Binding InsightMarkdown}"/>
+                    </LayoutTransformControl>
+                </Border>
             </Border>
 
             <!-- 右下角拖拽调整大小手柄 -->

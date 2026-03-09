@@ -30,6 +30,14 @@ namespace TrueFluentPro.Models
         Dark
     }
 
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public enum ReviewSubtitleSourceMode
+    {
+        DefaultSubtitle,
+        SpeechSubtitle,
+        AiTranscriptionSubtitle
+    }
+
     public class AzureSubscription
     {
         public string Name { get; set; } = "";
@@ -175,6 +183,7 @@ namespace TrueFluentPro.Models
         public bool BatchStorageIsValid { get; set; } = false;
         public string BatchAudioContainerName { get; set; } = DefaultBatchAudioContainerName;
         public string BatchResultContainerName { get; set; } = DefaultBatchResultContainerName;
+        public ReviewSubtitleSourceMode ReviewSubtitleSourceMode { get; set; } = ReviewSubtitleSourceMode.DefaultSubtitle;
         public bool UseSpeechSubtitleForReview { get; set; } = true;
         public BatchLogLevel BatchLogLevel { get; set; } = BatchLogLevel.Off;
         public bool BatchForceRegeneration { get; set; } = false;
@@ -184,6 +193,10 @@ namespace TrueFluentPro.Models
         public int BatchSubtitleMaxChars { get; set; } = 24;
         public double BatchSubtitleMaxDurationSeconds { get; set; } = 6;
         public int BatchSubtitlePauseSplitMs { get; set; } = 500;
+
+        public ModelReference? RealtimeTranscriptionModelRef { get; set; }
+        public ModelReference? BatchTranscriptionModelRef { get; set; }
+        public ModelReference? TextToSpeechModelRef { get; set; }
 
         public AiConfig? AiConfig { get; set; }
 
@@ -254,6 +267,18 @@ namespace TrueFluentPro.Models
             return activeSubscription?.IsValid() == true &&
                    !string.IsNullOrEmpty(SourceLanguage) &&
                    !string.IsNullOrEmpty(TargetLanguage);
+        }
+
+        public ReviewSubtitleSourceMode GetEffectiveReviewSubtitleSourceMode()
+        {
+            if (ReviewSubtitleSourceMode != ReviewSubtitleSourceMode.DefaultSubtitle)
+            {
+                return ReviewSubtitleSourceMode;
+            }
+
+            return UseSpeechSubtitleForReview
+                ? ReviewSubtitleSourceMode.SpeechSubtitle
+                : ReviewSubtitleSourceMode.DefaultSubtitle;
         }
     }
 }

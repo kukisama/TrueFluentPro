@@ -44,6 +44,9 @@ namespace TrueFluentPro.Services
             ai.ReviewModelRef = NormalizeReference(result, ai.ReviewModelRef, ModelCapability.Text);
             media.ImageModelRef = NormalizeReference(result, media.ImageModelRef, ModelCapability.Image);
             media.VideoModelRef = NormalizeReference(result, media.VideoModelRef, ModelCapability.Video);
+            result.RealtimeTranscriptionModelRef = NormalizeReference(result, result.RealtimeTranscriptionModelRef, ModelCapability.SpeechToText);
+            result.BatchTranscriptionModelRef = NormalizeReference(result, result.BatchTranscriptionModelRef, ModelCapability.SpeechToText);
+            result.TextToSpeechModelRef = NormalizeReference(result, result.TextToSpeechModelRef, ModelCapability.TextToSpeech);
 
             return result;
         }
@@ -73,7 +76,8 @@ namespace TrueFluentPro.Services
                 {
                     BatchStorageConnectionString = config.BatchStorageConnectionString,
                     BatchAudioContainerName = config.BatchAudioContainerName,
-                    BatchResultContainerName = config.BatchResultContainerName
+                    BatchResultContainerName = config.BatchResultContainerName,
+                    ReviewSubtitleSourceMode = config.GetEffectiveReviewSubtitleSourceMode()
                 },
                 Endpoints = exportableEndpoints.Select(endpoint => new TransferAiEndpoint
                 {
@@ -105,7 +109,10 @@ namespace TrueFluentPro.Services
                     QuickModelRef = CloneReference(ai.QuickModelRef),
                     ReviewModelRef = CloneReference(ai.ReviewModelRef),
                     ImageModelRef = CloneReference(media.ImageModelRef),
-                    VideoModelRef = CloneReference(media.VideoModelRef)
+                    VideoModelRef = CloneReference(media.VideoModelRef),
+                    RealtimeTranscriptionModelRef = CloneReference(config.RealtimeTranscriptionModelRef),
+                    BatchTranscriptionModelRef = CloneReference(config.BatchTranscriptionModelRef),
+                    TextToSpeechModelRef = CloneReference(config.TextToSpeechModelRef)
                 }
             };
         }
@@ -135,14 +142,16 @@ namespace TrueFluentPro.Services
                 result.BatchResultContainerName = string.IsNullOrWhiteSpace(package.Storage.BatchResultContainerName)
                     ? AzureSpeechConfig.DefaultBatchResultContainerName
                     : package.Storage.BatchResultContainerName.Trim();
+                result.ReviewSubtitleSourceMode = package.Storage.ReviewSubtitleSourceMode;
+                result.UseSpeechSubtitleForReview = result.ReviewSubtitleSourceMode == ReviewSubtitleSourceMode.SpeechSubtitle;
                 var hasImportedStorage = !string.IsNullOrWhiteSpace(result.BatchStorageConnectionString);
                 result.BatchStorageIsValid = hasImportedStorage;
-                result.UseSpeechSubtitleForReview = hasImportedStorage;
             }
             else
             {
                 result.BatchStorageConnectionString = "";
                 result.BatchStorageIsValid = false;
+                result.ReviewSubtitleSourceMode = ReviewSubtitleSourceMode.DefaultSubtitle;
                 result.UseSpeechSubtitleForReview = false;
             }
 
@@ -158,6 +167,9 @@ namespace TrueFluentPro.Services
             ai.ReviewModelRef = NormalizeReference(result, selections.ReviewModelRef, ModelCapability.Text);
             media.ImageModelRef = NormalizeReference(result, selections.ImageModelRef, ModelCapability.Image);
             media.VideoModelRef = NormalizeReference(result, selections.VideoModelRef, ModelCapability.Video);
+            result.RealtimeTranscriptionModelRef = NormalizeReference(result, selections.RealtimeTranscriptionModelRef, ModelCapability.SpeechToText);
+            result.BatchTranscriptionModelRef = NormalizeReference(result, selections.BatchTranscriptionModelRef, ModelCapability.SpeechToText);
+            result.TextToSpeechModelRef = NormalizeReference(result, selections.TextToSpeechModelRef, ModelCapability.TextToSpeech);
 
             return result;
         }

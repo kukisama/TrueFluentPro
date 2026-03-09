@@ -10,16 +10,63 @@
              x:DataType="vm:MainWindowViewModel"
              x:CompileBindings="False">
 
-        <Grid ColumnDefinitions="180,*" RowDefinitions="*,Auto"
-          Background="{DynamicResource PageBackgroundBrush}">
+        <Grid RowDefinitions="*,Auto"
+              Background="{DynamicResource PageBackgroundBrush}">
+        <Grid Grid.Row="0"
+              Margin="12,12,12,10"
+              Background="{DynamicResource PageBackgroundBrush}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="216" MinWidth="204"/>
+                <ColumnDefinition Width="12"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
         <!-- 左侧锚点导航 -->
         <Border Grid.Column="0"
             Classes="nav-surface"
             Background="{DynamicResource NavPanelBackgroundBrush}"
             BorderBrush="{DynamicResource CardBorderBrush}"
-                BorderThickness="0,0,1,0" Padding="6,12,6,0">
-            <Grid RowDefinitions="*,Auto">
-                <ListBox Name="NavListBox" Classes="sidebar-nav-list" SelectionMode="Single"
+                BorderThickness="0,0,1,0" Padding="8,12,8,8">
+            <Grid RowDefinitions="Auto,*" RowSpacing="4">
+                <Grid Grid.Row="0"
+                      Classes="secondary-nav-header"
+                      RowDefinitions="Auto,*"
+                      Margin="10,0,10,4">
+                    <Grid Grid.Row="0"
+                          Classes="secondary-nav-header-title-row"
+                          ColumnDefinitions="*,Auto"
+                          ColumnSpacing="6">
+                        <StackPanel Grid.Column="0" Spacing="2">
+                            <TextBlock Classes="secondary-nav-title"
+                                       Text="配置中心"/>
+                            <TextBlock Classes="secondary-nav-note"
+                                       Text="自动保存已开启"/>
+                        </StackPanel>
+                    </Grid>
+
+                    <Grid Grid.Row="1"
+                          Classes="secondary-nav-header-action-row"
+                          ColumnDefinitions="40,122,*"
+                          ColumnSpacing="6">
+                        <Button Grid.Column="0"
+                                Grid.ColumnSpan="2"
+                                Classes="secondary-nav-compact"
+                                Width="168"
+                                HorizontalAlignment="Left"
+                                Click="OpenConfigLocationButton_Click"
+                                ToolTip.Tip="打开配置文件所在位置"
+                                AutomationProperties.Name="打开配置文件位置">
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <icons:Icon Value="fa-regular fa-folder-open" FontSize="12"/>
+                                <TextBlock Text="打开配置位置"/>
+                            </StackPanel>
+                        </Button>
+                        <Border Grid.Column="2" Background="Transparent"/>
+                    </Grid>
+                </Grid>
+
+                <ListBox Grid.Row="1"
+                         Name="NavListBox" Classes="sidebar-nav-list" SelectionMode="Single"
                          SelectionChanged="OnNavSectionChanged"
                          Background="Transparent" Margin="0,0,2,0">
                     <ListBoxItem Tag="Section_Subscription">
@@ -34,6 +81,12 @@
                             <TextBlock Grid.Column="1" Text="AI 终结点" VerticalAlignment="Center"/>
                         </Grid>
                     </ListBoxItem>
+                        <ListBoxItem Tag="Section_ModelSelection">
+                            <Grid Classes="sidebar-nav-item-content" ColumnDefinitions="18,*" ColumnSpacing="10">
+                                <icons:Icon Grid.Column="0" Value="fa-solid fa-robot" FontSize="14"/>
+                                <TextBlock Grid.Column="1" Text="AI 资源与模型" VerticalAlignment="Center"/>
+                            </Grid>
+                        </ListBoxItem>
                     <ListBoxItem Tag="Section_Storage">
                         <Grid Classes="sidebar-nav-item-content" ColumnDefinitions="18,*" ColumnSpacing="10">
                             <icons:Icon Grid.Column="0" Value="fa-solid fa-hard-drive" FontSize="14"/>
@@ -98,8 +151,16 @@
             </Grid>
         </Border>
 
+        <GridSplitter Grid.Column="1"
+                      Width="12"
+                      Background="Transparent"
+                      HorizontalAlignment="Stretch"
+                      VerticalAlignment="Stretch"
+                      ResizeDirection="Columns"
+                      ShowsPreview="True"/>
+
         <!-- 右侧瀑布流内容 -->
-        <ScrollViewer Grid.Column="1" Name="SettingsScroller"
+        <ScrollViewer Grid.Column="2" Name="SettingsScroller"
                       ScrollChanged="OnSettingsScrollChanged"
                       Background="{DynamicResource PageBackgroundBrush}"
                       HorizontalScrollBarVisibility="Disabled">
@@ -108,6 +169,7 @@
                                               DataContext="{Binding Settings.SubscriptionVM}"/>
                 <settings:EndpointsSection     Name="Section_Endpoints"
                                               DataContext="{Binding Settings.EndpointsVM}"/>
+                <settings:ModelSelectionSection Name="Section_ModelSelection"/>
                 <settings:StorageSection       Name="Section_Storage"
                                                DataContext="{Binding Settings.StorageVM}"/>
                 <settings:InsightSection       Name="Section_Insight"/>
@@ -124,9 +186,11 @@
                 <settings:AboutSection         Name="Section_About"/>
             </StackPanel>
         </ScrollViewer>
+        </Grid>
 
         <!-- 状态栏 -->
         <Border Grid.Row="1" Grid.ColumnSpan="2"
+            Classes="toolbar-surface"
                 BorderBrush="{DynamicResource CardBorderBrush}"
                 Background="{DynamicResource NavPanelBackgroundBrush}"
                 BorderThickness="0,1,0,0" Padding="12,6">

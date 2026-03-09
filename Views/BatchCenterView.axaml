@@ -70,19 +70,16 @@
             <Setter Property="VerticalAlignment" Value="Stretch"/>
             <Setter Property="RenderTransformOrigin" Value="0,0.5"/>
         </Style>
+
     </UserControl.Styles>
 
     <UserControl.Resources>
         <DataTemplate x:Key="BucketTemplate" DataType="models:BatchBucketNavItem">
             <Grid Classes="sidebar-nav-item-content" ColumnDefinitions="18,*,Auto" ColumnSpacing="10">
                 <icons:Icon Grid.Column="0" Value="{Binding IconValue}" FontSize="14"/>
-                <TextBlock Grid.Column="1" Text="{Binding Title}" VerticalAlignment="Center"/>
-                <Border Grid.Column="2"
-                        Background="{DynamicResource SurfaceHoverBrush}"
-                        Padding="8,2"
-                        CornerRadius="10"
-                        VerticalAlignment="Center">
-                    <TextBlock Text="{Binding Count}" FontSize="10" Foreground="{DynamicResource TextSubtleBrush}"/>
+                <TextBlock Grid.Column="1" Classes="sidebar-nav-label" Text="{Binding Title}"/>
+                <Border Grid.Column="2" Classes="sidebar-nav-badge">
+                    <TextBlock Classes="sidebar-nav-badge-text" Text="{Binding Count}"/>
                 </Border>
             </Grid>
         </DataTemplate>
@@ -96,7 +93,8 @@
                     BorderThickness="1"
                     Background="{DynamicResource SubCardBackgroundBrush}"
                     PointerPressed="PackageRow_PointerPressed"
-                    PointerReleased="PackageRow_PointerReleased">
+                    PointerReleased="PackageRow_PointerReleased"
+                    Tapped="PackageRow_Tapped">
 
                 <StackPanel Spacing="4">
                     <Grid ColumnSpacing="8">
@@ -153,6 +151,7 @@
                                             <ColumnDefinition Width="18"/>
                                             <ColumnDefinition Width="*"/>
                                             <ColumnDefinition Width="178" MinWidth="156"/>
+                                            <ColumnDefinition Width="90" MinWidth="72"/>
                                             <ColumnDefinition Width="64" MinWidth="58"/>
                                         </Grid.ColumnDefinitions>
                                         <Grid Grid.Column="0" Width="12" Height="18" VerticalAlignment="Center">
@@ -173,14 +172,17 @@
                                                    FontSize="12"
                                                    TextTrimming="CharacterEllipsis"/>
                                         <TextBlock Grid.Column="3"
-                                                   VerticalAlignment="Center">
-                                            <TextBlock.Inlines>
-                                                <Run Text="{Binding StatusText}"/>
-                                                <Run Text="  "/>
-                                                <Run Text="{Binding Tag}"/>
-                                            </TextBlock.Inlines>
-                                        </TextBlock>
-                                        <Border Grid.Column="4" Classes="batch-inline-progress-track">
+                                                   Text="{Binding StatusText}"
+                                                   VerticalAlignment="Center"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   ToolTip.Tip="{Binding StatusText}"/>
+                                        <TextBlock Grid.Column="4"
+                                                   Text="{Binding Tag}"
+                                                   VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource TextSubtleBrush}"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   ToolTip.Tip="{Binding Tag}"/>
+                                        <Border Grid.Column="5" Classes="batch-inline-progress-track">
                                             <Border Classes="batch-inline-progress-fill">
                                                 <Border.RenderTransform>
                                                     <ScaleTransform ScaleX="{Binding Progress}"/>
@@ -200,46 +202,60 @@
     <Grid Margin="12"
           Background="{DynamicResource PageBackgroundBrush}">
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="240" MinWidth="220"/>
+            <ColumnDefinition Width="216" MinWidth="204"/>
             <ColumnDefinition Width="12"/>
             <ColumnDefinition Width="*" MinWidth="680"/>
         </Grid.ColumnDefinitions>
 
         <Border Grid.Column="0"
                 Classes="nav-surface"
-                Padding="12">
-            <Grid RowDefinitions="Auto,Auto,*" RowSpacing="12">
-                <StackPanel Grid.Row="0" Spacing="4">
-                    <TextBlock Text="批处理中心" FontSize="18" FontWeight="SemiBold"/>
-                    <TextBlock Text="左侧只保留分类，点击分类后，右侧直接展示该分类下的全部文件包。"
-                               FontSize="11"
-                               TextWrapping="Wrap"
-                               Foreground="{DynamicResource TextSubtleBrush}"/>
-                </StackPanel>
-
-                <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="6">
-                    <Button Padding="10,6" Command="{Binding BatchProcessing.LoadBatchTasksCommand}">
-                        <StackPanel Orientation="Horizontal" Spacing="6">
+                BorderThickness="0,0,1,0"
+                Padding="8,12,8,8">
+            <Grid RowDefinitions="Auto,*" RowSpacing="4">
+                <Grid Grid.Row="0"
+                      Classes="secondary-nav-header"
+                      RowDefinitions="Auto,*"
+                      Margin="10,0,10,4">
+                    <Grid Grid.Row="0"
+                          Classes="secondary-nav-header-title-row"
+                          ColumnDefinitions="*,Auto"
+                          ColumnSpacing="6">
+                        <TextBlock Grid.Column="0"
+                                   Classes="secondary-nav-title"
+                                   Text="任务分类"/>
+                    </Grid>
+                    <Grid Grid.Row="1"
+                          Classes="secondary-nav-header-action-row"
+                          ColumnDefinitions="40,122,*"
+                          ColumnSpacing="6">
+                        <Button Grid.Column="0"
+                                                                Classes="secondary-nav-compact"
+                                                                Width="40"
+                                                                Padding="0"
+                                                                HorizontalContentAlignment="Center"
+                                                                Command="{Binding BatchProcessing.LoadBatchTasksCommand}"
+                                                                ToolTip.Tip="刷新分类">
                             <icons:Icon Value="fa-solid fa-arrows-rotate" FontSize="12"/>
-                            <TextBlock Text="刷新"/>
-                        </StackPanel>
-                    </Button>
-                    <Button Padding="10,6" Command="{Binding BatchProcessing.StartBatchCommand}">
-                        <StackPanel Orientation="Horizontal" Spacing="6">
-                            <icons:Icon Value="fa-solid fa-play" FontSize="12"/>
-                            <TextBlock Text="全部开始"/>
-                        </StackPanel>
-                    </Button>
-                </StackPanel>
+                        </Button>
+                        <Button Grid.Column="1"
+                                Classes="secondary-nav-compact"
+                                Width="122"
+                                HorizontalAlignment="Left"
+                                Command="{Binding BatchProcessing.StartBatchCommand}">
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <icons:Icon Value="fa-solid fa-play" FontSize="12"/>
+                                <TextBlock Text="全部开始"/>
+                            </StackPanel>
+                        </Button>
+                        <Border Grid.Column="2" Background="Transparent"/>
+                    </Grid>
+                </Grid>
 
-                <Border Grid.Row="2"
-                        Classes="sub-card"
-                        Padding="8">
-                    <ListBox Classes="sidebar-nav-list"
-                             ItemsSource="{Binding BatchProcessing.PackageBuckets}"
-                             SelectedItem="{Binding BatchProcessing.SelectedPackageBucket, Mode=TwoWay}"
-                             ItemTemplate="{StaticResource BucketTemplate}"/>
-                </Border>
+                <ListBox Grid.Row="1"
+                         Classes="sidebar-nav-list"
+                         ItemsSource="{Binding BatchProcessing.PackageBuckets}"
+                         SelectedItem="{Binding BatchProcessing.SelectedPackageBucket, Mode=TwoWay}"
+                         ItemTemplate="{StaticResource BucketTemplate}"/>
             </Grid>
         </Border>
 
@@ -256,13 +272,6 @@
                 Padding="14">
             <Grid RowDefinitions="Auto,Auto,*" RowSpacing="12">
                 <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10">
-                    <StackPanel Grid.Column="0" Spacing="4">
-                        <TextBlock Text="{Binding BatchProcessing.CurrentBucketTitle, StringFormat={}{0}文件包}" FontSize="18" FontWeight="SemiBold"/>
-                        <TextBlock Text="当前分类中的文件包会集中显示在这里；每个文件包都可以单独展开，展开后子任务仍在同一个框体里。"
-                                   FontSize="11"
-                                   TextWrapping="Wrap"
-                                   Foreground="{DynamicResource TextSubtleBrush}"/>
-                    </StackPanel>
                     <Button Grid.Column="1"
                             Padding="10,6"
                             Command="{Binding BatchProcessing.StartPackageCommand}"
@@ -296,14 +305,16 @@
                     </Grid>
                 </Border>
 
-                <ScrollViewer Grid.Row="2" HorizontalScrollBarVisibility="Disabled">
+                <ScrollViewer Grid.Row="2"
+                          HorizontalScrollBarVisibility="Disabled"
+                          PointerReleased="PackageArea_PointerReleased">
                     <ListBox Classes="batch-package-list"
-                             Background="Transparent"
-                             BorderThickness="0"
-                             Margin="0,0,12,0"
-                             ItemsSource="{Binding BatchProcessing.CurrentBucketPackages}"
-                             SelectedItem="{Binding BatchProcessing.SelectedPackage, Mode=TwoWay}"
-                             ItemTemplate="{StaticResource PackageRowTemplate}"/>
+                         Background="Transparent"
+                         BorderThickness="0"
+                         Margin="0,0,12,0"
+                         ItemsSource="{Binding BatchProcessing.CurrentBucketPackages}"
+                         SelectedItem="{Binding BatchProcessing.SelectedPackage, Mode=TwoWay}"
+                         ItemTemplate="{StaticResource PackageRowTemplate}"/>
                 </ScrollViewer>
             </Grid>
         </Border>

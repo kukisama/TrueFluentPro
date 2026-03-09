@@ -11,13 +11,8 @@
             <TextBlock Text="图片生成" Theme="{StaticResource SubtitleTextBlockStyle}"/>
             <Separator/>
 
-            <StackPanel Spacing="6">
-                <TextBlock Text="图片模型:" VerticalAlignment="Center"/>
-                <ComboBox MinWidth="250"
-                          ItemsSource="{Binding ImageModels}"
-                          SelectedItem="{Binding SelectedImageModel, Mode=TwoWay}"/>
-                <TextBlock FontSize="10" Foreground="Gray" Text="仅显示具有 [图片] 能力的终结点模型"/>
-            </StackPanel>
+            <TextBlock FontSize="11" Foreground="Gray" TextWrapping="Wrap"
+                       Text="图片模型已集中到“AI 资源与模型”。这里保留图片生成默认参数。"/>
 
             <Separator Margin="0,8,0,8"/>
             <TextBlock Text="默认参数" FontWeight="Bold"/>

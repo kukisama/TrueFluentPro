@@ -65,6 +65,7 @@ namespace TrueFluentPro.Views
             double scale = vm.FontSize / 14.0;
             MarkdownScaleContainer.LayoutTransform = new ScaleTransform(scale, scale);
             viewer.SetValue(TemplatedControl.ForegroundProperty, vm.TextBrush);
+            viewer.SetValue(TemplatedControl.BackgroundProperty, Brushes.Transparent);
         }
 
         private void SetInitialPosition()

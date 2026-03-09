@@ -395,6 +395,26 @@ namespace TrueFluentPro.ViewModels
                     });
                 }
 
+                var aiVtt = Path.Combine(directory, candidate + ".ai.vtt");
+                if (File.Exists(aiVtt))
+                {
+                    _subtitleFiles.Add(new MediaFileItem
+                    {
+                        Name = Path.GetFileName(aiVtt),
+                        FullPath = aiVtt
+                    });
+                }
+
+                var aiSrt = Path.Combine(directory, candidate + ".ai.srt");
+                if (File.Exists(aiSrt))
+                {
+                    _subtitleFiles.Add(new MediaFileItem
+                    {
+                        Name = Path.GetFileName(aiSrt),
+                        FullPath = aiSrt
+                    });
+                }
+
                 var srtPath = Path.Combine(directory, candidate + ".srt");
                 if (File.Exists(srtPath))
                 {
@@ -419,15 +439,10 @@ namespace TrueFluentPro.ViewModels
             if (_subtitleFiles.Count > 0)
             {
                 var config = _configProvider();
-                var shouldUseSpeech = config.BatchStorageIsValid
-                    && !string.IsNullOrWhiteSpace(config.BatchStorageConnectionString)
-                    && config.UseSpeechSubtitleForReview;
-                var speechPath = GetSpeechSubtitlePath(audioFile.FullPath);
-                var speechFile = _subtitleFiles.FirstOrDefault(item =>
-                    string.Equals(item.FullPath, speechPath, StringComparison.OrdinalIgnoreCase));
-                SelectedSubtitleFile = shouldUseSpeech && speechFile != null
-                    ? speechFile
-                    : _subtitleFiles[0];
+                var preferredPath = GetPreferredSubtitlePath(audioFile.FullPath, config.GetEffectiveReviewSubtitleSourceMode());
+                var preferredFile = _subtitleFiles.FirstOrDefault(item =>
+                    string.Equals(item.FullPath, preferredPath, StringComparison.OrdinalIgnoreCase));
+                SelectedSubtitleFile = preferredFile ?? _subtitleFiles[0];
             }
         }
 
@@ -508,9 +523,6 @@ namespace TrueFluentPro.ViewModels
 
             var candidates = new[]
             {
-                Path.Combine(directory, baseName + ".speech.vtt"),
-                Path.Combine(directory, baseName + ".ai.srt"),
-                Path.Combine(directory, baseName + ".ai.vtt"),
                 Path.Combine(directory, baseName + ".srt"),
                 Path.Combine(directory, baseName + ".vtt")
             };
@@ -518,14 +530,19 @@ namespace TrueFluentPro.ViewModels
             return candidates.FirstOrDefault(File.Exists);
         }
 
+        public static string? GetPreferredSubtitlePath(string audioFilePath, ReviewSubtitleSourceMode sourceMode)
+        {
+            return sourceMode switch
+            {
+                ReviewSubtitleSourceMode.SpeechSubtitle => GetSpeechSubtitlePath(audioFilePath),
+                ReviewSubtitleSourceMode.AiTranscriptionSubtitle => GetAiSubtitlePath(audioFilePath),
+                _ => GetPreferredSubtitlePath(audioFilePath)
+            };
+        }
+
         public static bool HasAiSubtitle(string audioFilePath)
         {
-            var directory = Path.GetDirectoryName(audioFilePath) ?? PathManager.Instance.SessionsPath;
-            var baseName = Path.GetFileNameWithoutExtension(audioFilePath);
-            var speechVtt = Path.Combine(directory, baseName + ".speech.vtt");
-            var aiSrt = Path.Combine(directory, baseName + ".ai.srt");
-            var aiVtt = Path.Combine(directory, baseName + ".ai.vtt");
-            return File.Exists(speechVtt) || File.Exists(aiSrt) || File.Exists(aiVtt);
+            return File.Exists(GetAiSubtitlePath(audioFilePath)) || File.Exists(GetAiSubtitleSrtPath(audioFilePath));
         }
 
         public static bool HasSpeechSubtitle(string audioFilePath)
@@ -536,6 +553,20 @@ namespace TrueFluentPro.ViewModels
 
         public static string GetSpeechSubtitlePath(string audioFilePath)
             => RealtimeSpeechTranscriber.GetSpeechSubtitlePath(audioFilePath);
+
+        public static string GetAiSubtitlePath(string audioFilePath)
+        {
+            var directory = Path.GetDirectoryName(audioFilePath) ?? PathManager.Instance.SessionsPath;
+            var baseName = Path.GetFileNameWithoutExtension(audioFilePath);
+            return Path.Combine(directory, baseName + ".ai.vtt");
+        }
+
+        public static string GetAiSubtitleSrtPath(string audioFilePath)
+        {
+            var directory = Path.GetDirectoryName(audioFilePath) ?? PathManager.Instance.SessionsPath;
+            var baseName = Path.GetFileNameWithoutExtension(audioFilePath);
+            return Path.Combine(directory, baseName + ".ai.srt");
+        }
 
         // ── Parsing ──
 

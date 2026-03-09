@@ -8,9 +8,11 @@ namespace TrueFluentPro.Models
     [Flags]
     public enum ModelCapability
     {
-        Text  = 1,   // 文字对话：洞察、复盘、快问
-        Image = 2,   // 图片生成
-        Video = 4    // 视频生成
+        Text = 1,              // 文字对话：洞察、复盘、快问
+        Image = 2,             // 图片生成
+        Video = 4,             // 视频生成
+        SpeechToText = 8,      // 语音转文字 / 音频转写
+        TextToSpeech = 16      // 文字转语音 / 语音合成
     }
 
     /// <summary>一个 AI 终结点（Provider 实例）</summary>

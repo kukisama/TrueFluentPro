@@ -575,6 +575,10 @@ namespace TrueFluentPro.ViewModels.Settings
                 return ModelCapability.Video;
             if (normalized.Contains("image") || normalized.Contains("dall"))
                 return ModelCapability.Image;
+            if (normalized.Contains("transcribe") || normalized.Contains("transcription") || normalized.Contains("whisper") || normalized.Contains("speech-to-text") || normalized.Contains("stt"))
+                return ModelCapability.SpeechToText;
+            if (normalized.Contains("-tts") || normalized.Contains("tts") || normalized.Contains("text-to-speech"))
+                return ModelCapability.TextToSpeech;
             return ModelCapability.Text;
         }
 

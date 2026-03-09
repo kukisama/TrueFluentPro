@@ -158,6 +158,8 @@ public partial class EndpointsSection : UserControl
         {
             ModelCapability.Image => 1,
             ModelCapability.Video => 2,
+            ModelCapability.SpeechToText => 3,
+            ModelCapability.TextToSpeech => 4,
             _ => 0,
         };
     }
@@ -172,6 +174,8 @@ public partial class EndpointsSection : UserControl
         {
             "Image" => ModelCapability.Image,
             "Video" => ModelCapability.Video,
+            "SpeechToText" => ModelCapability.SpeechToText,
+            "TextToSpeech" => ModelCapability.TextToSpeech,
             _ => ModelCapability.Text,
         };
         if (DataContext is EndpointsSectionVM vm)
