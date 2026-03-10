@@ -8,6 +8,7 @@ namespace TrueFluentPro.Models
     [Flags]
     public enum ModelCapability
     {
+        None = 0,
         Text = 1,              // 文字对话：洞察、复盘、快问
         Image = 2,             // 图片生成
         Video = 4,             // 视频生成
@@ -179,7 +180,7 @@ namespace TrueFluentPro.Models
         private string _displayName = "";
         private string _deploymentName = "";
         private string _groupName = "";
-        private ModelCapability _capabilities;
+        private ModelCapability _capabilities = ModelCapability.None;
 
         public string ModelId
         {

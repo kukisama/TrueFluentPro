@@ -315,7 +315,7 @@ namespace TrueFluentPro.ViewModels.Settings
         }
 
         public AiModelEntry? AddBlankModelToSelectedEndpoint()
-            => AddModelToSelectedEndpoint("", "", "", "", ModelCapability.Text);
+            => AddModelToSelectedEndpoint("", "", "", "", ModelCapability.None);
 
         public AiModelEntry? AddDiscoveredModelToSelectedEndpoint(string modelId)
         {
@@ -332,7 +332,7 @@ namespace TrueFluentPro.ViewModels.Settings
                 "",
                 "",
                 "",
-                InferCapabilityFromModelId(modelId));
+                ModelCapability.None);
         }
 
         public void RemoveModelFromSelectedEndpoint(AiModelEntry model)
@@ -566,20 +566,6 @@ namespace TrueFluentPro.ViewModels.Settings
 
             EndpointDiscoveryStatus = message;
             OnPropertyChanged(nameof(HasDiscoveredModels));
-        }
-
-        private static ModelCapability InferCapabilityFromModelId(string modelId)
-        {
-            var normalized = modelId?.Trim().ToLowerInvariant() ?? "";
-            if (normalized.Contains("sora") || normalized.Contains("video"))
-                return ModelCapability.Video;
-            if (normalized.Contains("image") || normalized.Contains("dall"))
-                return ModelCapability.Image;
-            if (normalized.Contains("transcribe") || normalized.Contains("transcription") || normalized.Contains("whisper") || normalized.Contains("speech-to-text") || normalized.Contains("stt"))
-                return ModelCapability.SpeechToText;
-            if (normalized.Contains("-tts") || normalized.Contains("tts") || normalized.Contains("text-to-speech"))
-                return ModelCapability.TextToSpeech;
-            return ModelCapability.Text;
         }
 
         private string BuildDefaultEndpointName(EndpointApiType type)

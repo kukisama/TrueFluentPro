@@ -29,6 +29,7 @@ public partial class App : Application
         // --- 基础服务 ---
         services.AddSingleton<ConfigurationService>();
         services.AddSingleton<AzureSubscriptionValidator>();
+        services.AddSingleton<IEndpointPlatformDefaultPolicyService, EndpointPlatformDefaultPolicyService>();
         services.AddSingleton<IEndpointProfileCatalogService, EndpointProfileCatalogService>();
         services.AddSingleton<IAiEndpointModelDiscoveryService, AiEndpointModelDiscoveryService>();
         services.AddSingleton<IEndpointTemplateService, EndpointTemplateService>();
@@ -42,6 +43,7 @@ public partial class App : Application
         services.AddSingleton<IAboutSectionService, AboutSectionService>();
         services.AddSingleton<IEndpointBatchTestService, EndpointBatchTestService>();
         services.AddSingleton<IBatchPackageStateService, BatchPackageStateService>();
+        services.AddSingleton<IAzureTokenProviderStore, AzureTokenProviderStore>();
 
         // --- ViewModel ---
         services.AddSingleton<SettingsViewModel>();

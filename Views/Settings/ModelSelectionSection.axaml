@@ -25,23 +25,28 @@
                 <StackPanel Spacing="10">
                     <StackPanel Spacing="2">
                         <TextBlock Text="复盘字幕来源" FontWeight="Bold"/>
-                        <TextBlock Text="这里明确选择复盘/批处理使用哪一类字幕来源：普通字幕、Azure Speech 字幕，或 AI 转写字幕。系统不再自动回退。"
+                        <TextBlock Text="不再单独选择字幕来源；复盘 / 批处理会直接跟随首页当前选中的语音资源。"
                                    FontSize="11"
                                    Foreground="Gray"
                                    TextWrapping="Wrap"/>
                     </StackPanel>
 
                     <StackPanel Spacing="5">
-                        <TextBlock Text="默认字幕来源"/>
-                        <ComboBox SelectedIndex="{Binding ReviewSubtitleSourceModeIndex, Mode=TwoWay}"
-                                  MinWidth="260">
-                            <ComboBoxItem Content="普通字幕（.srt / .vtt）"
-                                          Tag="DefaultSubtitle"/>
-                            <ComboBoxItem Content="Speech 字幕（Azure Speech）"
-                                          Tag="SpeechSubtitle"/>
-                            <ComboBoxItem Content="AI 转写字幕（模型转写）"
-                                          Tag="AiTranscriptionSubtitle"/>
-                        </ComboBox>
+                        <TextBlock Text="当前来源"/>
+                        <Border BorderBrush="{DynamicResource CardBorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="6"
+                                Padding="10,8">
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="{Binding ReviewSubtitleSourceDisplayText}"
+                                           FontWeight="SemiBold"
+                                           TextWrapping="Wrap"/>
+                                <TextBlock Text="{Binding ReviewSubtitleSourceDescription}"
+                                           FontSize="11"
+                                           Foreground="Gray"
+                                           TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
 
                     <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Left">
@@ -64,7 +69,7 @@
                                Foreground="Gray"
                                TextWrapping="Wrap"/>
 
-                    <TextBlock Text="选择 Speech 模式时，需要先验证存储账号；选择 AI 转写模式时，需要先在“语音识别”里选好批量语音转写模型。"
+                    <TextBlock Text="首页当前资源若是 Microsoft Speech，需要先验证存储账号；若是 AI 语音资源，需要先在“语音识别”里选好批量语音转写模型。"
                                FontSize="10"
                                Foreground="Gray"
                                TextWrapping="Wrap"/>

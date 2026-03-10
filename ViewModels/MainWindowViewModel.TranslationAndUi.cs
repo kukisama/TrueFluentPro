@@ -175,6 +175,29 @@ namespace TrueFluentPro.ViewModels
                 ? "译文将在这里显示..."
                 : "双语将在这里显示...";
 
+        public int LiveSidePanelTabIndex
+        {
+            get => _liveSidePanelTabIndex;
+            set
+            {
+                if (!SetProperty(ref _liveSidePanelTabIndex, value))
+                {
+                    return;
+                }
+
+                if (value == 1 && !_isLiveInsightPanelLoaded)
+                {
+                    _isLiveInsightPanelLoaded = true;
+                    OnPropertyChanged(nameof(IsLiveInsightPanelLoaded));
+                    OnPropertyChanged(nameof(LiveInsightTabContent));
+                }
+            }
+        }
+
+        public bool IsLiveInsightPanelLoaded => _isLiveInsightPanelLoaded;
+
+        public object? LiveInsightTabContent => _isLiveInsightPanelLoaded ? this : null;
+
         public bool IsFloatingSubtitleOpen
         {
             get => _isFloatingSubtitleOpen;

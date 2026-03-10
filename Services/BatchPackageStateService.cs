@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text.Json;
 using TrueFluentPro.Models;
 
 namespace TrueFluentPro.Services
@@ -10,26 +9,15 @@ namespace TrueFluentPro.Services
     public sealed class BatchPackageStateService : IBatchPackageStateService
     {
         private readonly object _gate = new();
-        private readonly string _filePath;
-        private readonly string _backupPath;
-        private readonly JsonSerializerOptions _jsonOptions = new()
-        {
-            WriteIndented = true
-        };
-
         private readonly Dictionary<string, BatchPackageStateEntry> _entries =
             new(StringComparer.OrdinalIgnoreCase);
 
         public BatchPackageStateService()
         {
-            _filePath = PathManager.Instance.GetConfigFile("batch-packages.json");
-            _backupPath = _filePath + ".bak";
-            Load();
         }
 
         public void EnsurePackages(IEnumerable<MediaFileItem> audioFiles)
         {
-            var changed = false;
             lock (_gate)
             {
                 foreach (var audioFile in audioFiles)
@@ -53,13 +41,7 @@ namespace TrueFluentPro.Services
                         IsRemoved = false,
                         UpdatedAtUtc = DateTime.UtcNow
                     };
-                    changed = true;
                 }
-            }
-
-            if (changed)
-            {
-                Save();
             }
         }
 
@@ -123,8 +105,6 @@ namespace TrueFluentPro.Services
                 }
                 entry.UpdatedAtUtc = DateTime.UtcNow;
             }
-
-            Save();
         }
 
         public void SetPaused(string audioPath, bool isPaused)
@@ -148,8 +128,6 @@ namespace TrueFluentPro.Services
                 }
                 entry.UpdatedAtUtc = DateTime.UtcNow;
             }
-
-            Save();
         }
 
         public void SetExpanded(string audioPath, bool isExpanded)
@@ -169,8 +147,6 @@ namespace TrueFluentPro.Services
                 entry.IsExpanded = isExpanded;
                 entry.UpdatedAtUtc = DateTime.UtcNow;
             }
-
-            Save();
         }
 
         private bool TryGetOrCreate(string audioPath, out BatchPackageStateEntry entry)
@@ -197,90 +173,6 @@ namespace TrueFluentPro.Services
                 _entries[audioPath] = entry;
                 return true;
             }
-        }
-
-        private void Load()
-        {
-            var loaded = TryLoadFrom(_filePath) || TryLoadFrom(_backupPath);
-            if (!loaded)
-            {
-                lock (_gate)
-                {
-                    _entries.Clear();
-                }
-            }
-        }
-
-        private bool TryLoadFrom(string path)
-        {
-            try
-            {
-                if (!File.Exists(path))
-                {
-                    return false;
-                }
-
-                var json = File.ReadAllText(path);
-                var index = JsonSerializer.Deserialize<BatchPackageStateIndex>(json, _jsonOptions);
-                if (index?.Packages == null)
-                {
-                    return false;
-                }
-
-                lock (_gate)
-                {
-                    _entries.Clear();
-                    foreach (var package in index.Packages.Where(p => !string.IsNullOrWhiteSpace(p.AudioPath)))
-                    {
-                        _entries[package.AudioPath] = package;
-                    }
-                }
-
-                return true;
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
-        private void Save()
-        {
-            BatchPackageStateIndex snapshot;
-            lock (_gate)
-            {
-                snapshot = new BatchPackageStateIndex
-                {
-                    Version = 1,
-                    Packages = _entries.Values
-                        .OrderBy(entry => entry.DisplayName, StringComparer.OrdinalIgnoreCase)
-                        .ToList()
-                };
-            }
-
-            try
-            {
-                Directory.CreateDirectory(Path.GetDirectoryName(_filePath) ?? PathManager.Instance.AppDataPath);
-                var json = JsonSerializer.Serialize(snapshot, _jsonOptions);
-                var tempPath = _filePath + ".tmp";
-                File.WriteAllText(tempPath, json);
-
-                if (File.Exists(_filePath))
-                {
-                    File.Copy(_filePath, _backupPath, overwrite: true);
-                }
-
-                File.Move(tempPath, _filePath, overwrite: true);
-            }
-            catch
-            {
-            }
-        }
-
-        private sealed class BatchPackageStateIndex
-        {
-            public int Version { get; set; }
-            public List<BatchPackageStateEntry> Packages { get; set; } = new();
         }
 
         private sealed class BatchPackageStateEntry

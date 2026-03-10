@@ -258,6 +258,7 @@
                                                           Loaded="ModelCapabilityCombo_Loaded"
                                                           SelectionChanged="ModelCapability_SelectionChanged">
                                                     <ComboBox.Items>
+                                                        <ComboBoxItem Content="未选择" Tag="None"/>
                                                         <ComboBoxItem Content="文字" Tag="Text"/>
                                                         <ComboBoxItem Content="图片" Tag="Image"/>
                                                         <ComboBoxItem Content="视频" Tag="Video"/>

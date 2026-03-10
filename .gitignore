@@ -10,7 +10,7 @@ Docs/
 packages/
 *.nupkg
 *.snupkg
-
+skill/
 # User-specific files
 *.rsuser
 *.suo

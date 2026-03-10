@@ -1,9 +1,12 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.VisualTree;
+using Microsoft.Extensions.DependencyInjection;
 using System;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 using TrueFluentPro.Models;
 using TrueFluentPro.Services;
@@ -48,6 +51,7 @@ namespace TrueFluentPro.Controls
         public event Action? LoginCompleted;
 
         private string? _lastDeviceCodeUrl;
+        private CancellationTokenSource? _statusRefreshCts;
 
         public AadLoginPanel()
         {
@@ -67,6 +71,25 @@ namespace TrueFluentPro.Controls
                 TenantIdPanel.IsVisible = !hide;
                 ClientIdPanel.IsVisible = !hide;
             }
+
+            if (change.Property == ProfileKeyProperty)
+            {
+                _ = RefreshLoginStatusAsync();
+            }
+        }
+
+        protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+        {
+            base.OnAttachedToVisualTree(e);
+            _ = RefreshLoginStatusAsync();
+        }
+
+        protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+        {
+            _statusRefreshCts?.Cancel();
+            _statusRefreshCts?.Dispose();
+            _statusRefreshCts = null;
+            base.OnDetachedFromVisualTree(e);
         }
 
         public void SetStatus(string text, string colorHex)
@@ -83,7 +106,8 @@ namespace TrueFluentPro.Controls
             DeviceCodePanel.IsVisible = false;
             _lastDeviceCodeUrl = null;
 
-            var provider = new AzureTokenProvider(ProfileKey);
+            var providerStore = App.Services.GetRequiredService<IAzureTokenProviderStore>();
+            var provider = providerStore.GetProvider(ProfileKey);
             var tenantId = TenantIdTextBox.Text?.Trim();
             var clientId = ClientIdTextBox.Text?.Trim();
 
@@ -187,7 +211,8 @@ namespace TrueFluentPro.Controls
 
         private void LogoutButton_Click(object? sender, RoutedEventArgs e)
         {
-            var provider = new AzureTokenProvider(ProfileKey);
+            var providerStore = App.Services.GetRequiredService<IAzureTokenProviderStore>();
+            var provider = providerStore.GetProvider(ProfileKey);
             provider.Logout();
             SetStatus("已注销（认证记录与缓存已清除）", "#6a737d");
             DeviceCodePanel.IsVisible = false;
@@ -218,6 +243,51 @@ namespace TrueFluentPro.Controls
                     });
                 }
                 catch { }
+            }
+        }
+
+        private async Task RefreshLoginStatusAsync()
+        {
+            _statusRefreshCts?.Cancel();
+            _statusRefreshCts?.Dispose();
+            _statusRefreshCts = new CancellationTokenSource();
+            var token = _statusRefreshCts.Token;
+
+            try
+            {
+                var providerStore = App.Services.GetRequiredService<IAzureTokenProviderStore>();
+                var provider = providerStore.GetProvider(ProfileKey);
+                var tenantId = TenantIdTextBox.Text?.Trim();
+                var clientId = ClientIdTextBox.Text?.Trim();
+
+                SetStatus("正在检查登录状态…", "#6a737d");
+
+                var authenticated = await providerStore.GetAuthenticatedProviderAsync(
+                    ProfileKey,
+                    tenantId,
+                    clientId,
+                    token);
+
+                if (token.IsCancellationRequested)
+                {
+                    return;
+                }
+
+                if (authenticated != null)
+                {
+                    SetStatus($"✓ 已登录: {authenticated.Username ?? provider.Username ?? "已认证"}", "#22863a");
+                }
+                else
+                {
+                    SetStatus("未登录", "#6a737d");
+                }
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch
+            {
+                SetStatus("未登录", "#6a737d");
             }
         }
     }

@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Styling;
+using Avalonia.Threading;
 using System;
 using System.Collections.Generic;
 using TrueFluentPro.Models;
@@ -83,9 +84,13 @@ public partial class MainWindow : Window
     protected override void OnOpened(EventArgs e)
     {
         base.OnOpened(e);
-        _viewModel?.NotifyMainWindowShown();
         ApplyMainNavPaneState(_viewModel?.IsMainNavPaneOpen ?? false);
-        ShowPage(_viewModel?.SelectedNavTag ?? MainWindowViewModel.NavTagLive);
+
+        Dispatcher.UIThread.Post(() =>
+        {
+            ShowPage(_viewModel?.SelectedNavTag ?? MainWindowViewModel.NavTagLive);
+            _viewModel?.NotifyMainWindowShown();
+        }, DispatcherPriority.Loaded);
     }
 
     protected override void OnSizeChanged(SizeChangedEventArgs e)
@@ -182,6 +187,11 @@ public partial class MainWindow : Window
         if (_viewModel != null)
         {
             _viewModel.SelectedNavTag = tag;
+        }
+
+        if (tag == MainWindowViewModel.NavTagBatch)
+        {
+            _viewModel?.BatchProcessing.EnsureBatchCenterInitialized();
         }
 
         UpdateShellNavSelection();

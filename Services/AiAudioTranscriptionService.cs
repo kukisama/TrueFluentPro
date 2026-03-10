@@ -15,6 +15,13 @@ namespace TrueFluentPro.Services
 {
     public sealed class AiAudioTranscriptionService : AiMediaServiceBase, IAiAudioTranscriptionService
     {
+        private readonly IAzureTokenProviderStore _azureTokenProviderStore;
+
+        public AiAudioTranscriptionService(IAzureTokenProviderStore azureTokenProviderStore)
+        {
+            _azureTokenProviderStore = azureTokenProviderStore;
+        }
+
         public async Task<AiAudioTranscriptionResult> TranscribeAsync(
             ModelRuntimeResolution runtime,
             string audioPath,
@@ -30,10 +37,7 @@ namespace TrueFluentPro.Services
                 throw new FileNotFoundException("未找到音频文件。", audioPath);
 
             var requestConfig = runtime.CreateRequestConfig();
-            if (requestConfig.AzureAuthMode == AzureAuthMode.AAD)
-            {
-                SetTokenProvider(new AzureTokenProvider(runtime.ProfileKey));
-            }
+            await EnsureAuthReadyAsync(runtime, requestConfig, cancellationToken);
 
             var urlCandidates = EndpointProfileUrlBuilder.BuildConfiguredAudioTranscriptionUrlCandidates(
                 requestConfig.ApiEndpoint,
@@ -85,6 +89,72 @@ namespace TrueFluentPro.Services
             throw new InvalidOperationException($"AI 语音转写失败：{status}，{detail}");
         }
 
+        public async Task<AiAudioTranscriptionProbeResult> ProbeAsync(
+            ModelRuntimeResolution runtime,
+            string audioPath,
+            string? sourceLanguage,
+            CancellationToken cancellationToken)
+        {
+            ArgumentNullException.ThrowIfNull(runtime);
+
+            if (string.IsNullOrWhiteSpace(audioPath))
+                throw new ArgumentException("音频路径为空。", nameof(audioPath));
+            if (!File.Exists(audioPath))
+                throw new FileNotFoundException("未找到音频文件。", audioPath);
+
+            var requestConfig = runtime.CreateRequestConfig();
+            await EnsureAuthReadyAsync(runtime, requestConfig, cancellationToken);
+
+            var urlCandidates = EndpointProfileUrlBuilder.BuildConfiguredAudioTranscriptionUrlCandidates(
+                requestConfig.ApiEndpoint,
+                requestConfig.ProfileId,
+                requestConfig.EndpointType,
+                runtime.EffectiveDeploymentName,
+                requestConfig.ApiVersion);
+
+            if (urlCandidates.Count == 0)
+            {
+                throw new InvalidOperationException("当前终结点资料包未声明语音转写接口路线，请先补齐资料包。");
+            }
+
+            var normalizedLanguage = NormalizeLanguageHint(sourceLanguage);
+            HttpStatusCode? lastStatusCode = null;
+            string lastBody = "";
+
+            foreach (var candidateUrl in urlCandidates)
+            {
+                var outcome = await ProbeOnceAsync(candidateUrl, runtime, requestConfig, audioPath, normalizedLanguage, cancellationToken);
+                if (outcome.Success)
+                {
+                    return outcome.ProbeResult!;
+                }
+
+                lastStatusCode = outcome.StatusCode;
+                lastBody = outcome.ResponseBody;
+
+                if (!outcome.ShouldRetryWithSubscriptionKeyQuery)
+                {
+                    continue;
+                }
+
+                var retryUrl = BuildApimSubscriptionKeyQueryUrl(candidateUrl, requestConfig.ApiKey);
+                var retryOutcome = await ProbeOnceAsync(retryUrl, runtime, requestConfig, audioPath, normalizedLanguage, cancellationToken);
+                if (retryOutcome.Success)
+                {
+                    return retryOutcome.ProbeResult!;
+                }
+
+                lastStatusCode = retryOutcome.StatusCode;
+                lastBody = retryOutcome.ResponseBody;
+            }
+
+            var detail = string.IsNullOrWhiteSpace(lastBody)
+                ? "无响应体"
+                : TrimBody(lastBody);
+            var status = lastStatusCode.HasValue ? $"HTTP {(int)lastStatusCode.Value}" : "请求未发出";
+            throw new InvalidOperationException($"AI 语音转写探活失败：{status}，{detail}");
+        }
+
         private async Task<TranscriptionAttemptOutcome> SendOnceAsync(
             string url,
             ModelRuntimeResolution runtime,
@@ -123,6 +193,38 @@ namespace TrueFluentPro.Services
             };
         }
 
+        private async Task<TranscriptionAttemptOutcome> ProbeOnceAsync(
+            string url,
+            ModelRuntimeResolution runtime,
+            AiConfig requestConfig,
+            string audioPath,
+            string? languageHint,
+            CancellationToken cancellationToken)
+        {
+            using var request = await CreateRequestAsync(url, runtime, requestConfig, audioPath, languageHint, cancellationToken);
+            using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+
+            if (response.IsSuccessStatusCode)
+            {
+                var cueCount = TryCountCues(responseBody);
+                return TranscriptionAttemptOutcome.SuccessProbe(new AiAudioTranscriptionProbeResult
+                {
+                    CueCount = cueCount,
+                    RawJson = responseBody,
+                    FinalUrl = url
+                });
+            }
+
+            return new TranscriptionAttemptOutcome
+            {
+                Success = false,
+                StatusCode = response.StatusCode,
+                ResponseBody = responseBody,
+                ShouldRetryWithSubscriptionKeyQuery = IsMissingApimSubscriptionKeyResponse(requestConfig, response, responseBody)
+            };
+        }
+
         private async Task<HttpRequestMessage> CreateRequestAsync(
             string url,
             ModelRuntimeResolution runtime,
@@ -139,10 +241,18 @@ namespace TrueFluentPro.Services
             var fileContent = new StreamContent(fileStream);
             fileContent.Headers.ContentType = new MediaTypeHeaderValue(BlobStorageService.GetAudioContentType(audioPath));
             form.Add(fileContent, "file", Path.GetFileName(audioPath));
-            form.Add(new StringContent("verbose_json"), "response_format");
+
+            var responseFormat = PrefersJsonProbeResponse(runtime.ModelId, runtime.EffectiveDeploymentName)
+                ? "json"
+                : "verbose_json";
+            form.Add(new StringContent(responseFormat), "response_format");
             form.Add(new StringContent("0"), "temperature");
-            form.Add(new StringContent("segment"), "timestamp_granularities[]");
-            form.Add(new StringContent("word"), "timestamp_granularities[]");
+
+            if (string.Equals(responseFormat, "verbose_json", StringComparison.OrdinalIgnoreCase))
+            {
+                form.Add(new StringContent("segment"), "timestamp_granularities[]");
+                form.Add(new StringContent("word"), "timestamp_granularities[]");
+            }
 
             if (!string.IsNullOrWhiteSpace(languageHint))
             {
@@ -158,12 +268,47 @@ namespace TrueFluentPro.Services
             return request;
         }
 
+        private static bool PrefersJsonProbeResponse(string? modelId, string? deploymentName)
+        {
+            return LooksLikeGpt4oTranscribeFamily(modelId)
+                   || LooksLikeGpt4oTranscribeFamily(deploymentName);
+        }
+
+        private static bool LooksLikeGpt4oTranscribeFamily(string? value)
+            => !string.IsNullOrWhiteSpace(value)
+               && value.IndexOf("gpt-4o", StringComparison.OrdinalIgnoreCase) >= 0
+               && value.IndexOf("transcribe", StringComparison.OrdinalIgnoreCase) >= 0;
+
         private static string? NormalizeLanguageHint(string? sourceLanguage)
         {
             var normalized = RealtimeSpeechTranscriber.GetTranscriptionSourceLanguage(sourceLanguage ?? "auto");
             return string.Equals(normalized, "auto", StringComparison.OrdinalIgnoreCase)
                 ? null
                 : normalized;
+        }
+
+        private async Task EnsureAuthReadyAsync(
+            ModelRuntimeResolution runtime,
+            AiConfig requestConfig,
+            CancellationToken cancellationToken)
+        {
+            if (requestConfig.AzureAuthMode != AzureAuthMode.AAD)
+            {
+                SetTokenProvider(null);
+                return;
+            }
+
+            var provider = await _azureTokenProviderStore.GetAuthenticatedProviderAsync(
+                runtime.ProfileKey,
+                runtime.AzureTenantId,
+                runtime.AzureClientId,
+                cancellationToken);
+            if (provider == null)
+            {
+                throw new InvalidOperationException("AAD 登录已失效，请先在设置中重新登录当前语音转写终结点。");
+            }
+
+            SetTokenProvider(provider);
         }
 
         private static List<SubtitleCue> ParseTranscriptionToCues(string responseJson, BatchSubtitleSplitOptions splitOptions)
@@ -482,10 +627,30 @@ namespace TrueFluentPro.Services
             return normalized.Length <= 280 ? normalized : normalized[..280] + "...";
         }
 
+        private static int TryCountCues(string responseJson)
+        {
+            try
+            {
+                return ParseTranscriptionToCues(responseJson, new BatchSubtitleSplitOptions
+                {
+                    EnableSentenceSplit = true,
+                    SplitOnComma = false,
+                    MaxChars = 24,
+                    MaxDurationSeconds = 6,
+                    PauseSplitMs = 500
+                }).Count;
+            }
+            catch
+            {
+                return 0;
+            }
+        }
+
         private sealed class TranscriptionAttemptOutcome
         {
             public bool Success { get; init; }
             public AiAudioTranscriptionResult? Result { get; init; }
+            public AiAudioTranscriptionProbeResult? ProbeResult { get; init; }
             public HttpStatusCode? StatusCode { get; init; }
             public string ResponseBody { get; init; } = string.Empty;
             public bool ShouldRetryWithSubscriptionKeyQuery { get; init; }
@@ -495,6 +660,13 @@ namespace TrueFluentPro.Services
                 {
                     Success = true,
                     Result = result
+                };
+
+            public static TranscriptionAttemptOutcome SuccessProbe(AiAudioTranscriptionProbeResult result)
+                => new()
+                {
+                    Success = true,
+                    ProbeResult = result
                 };
         }
 

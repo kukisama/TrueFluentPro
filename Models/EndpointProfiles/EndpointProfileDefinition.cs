@@ -5,8 +5,10 @@ namespace TrueFluentPro.Models.EndpointProfiles;
 
 public sealed class EndpointProfileDefinition
 {
+    public int SchemaVersion { get; set; } = 1;
     public string Id { get; set; } = "";
     public string Vendor { get; set; } = "";
+    public string BasePolicyId { get; set; } = "";
 
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public EndpointApiType EndpointType { get; set; } = EndpointApiType.OpenAiCompatible;
@@ -26,4 +28,8 @@ public sealed class EndpointProfileDefinition
     public EndpointProfileSpeechSettings Speech { get; set; } = new();
     public EndpointProfileImageSettings Image { get; set; } = new();
     public EndpointProfileVideoSettings Video { get; set; } = new();
+    public EndpointCapabilityPolicy Capabilities { get; set; } = new();
+    public EndpointProfileOverrideBundle Overrides { get; set; } = new();
+    public EndpointProfileFallbackBundle Fallbacks { get; set; } = new();
+    public EndpointProfileSpecialPolicyBundle SpecialPolicies { get; set; } = new();
 }

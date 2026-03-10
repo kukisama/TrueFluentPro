@@ -6,6 +6,7 @@ namespace TrueFluentPro.Models
     {
         Pending,
         Running,
+        Responding,
         Completed,
         Failed
     }

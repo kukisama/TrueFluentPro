@@ -85,7 +85,7 @@ namespace TrueFluentPro.Models
 
         public bool PauseRequested { get; set; }
 
-        public bool CanCancel => Status is BatchTaskStatus.Pending or BatchTaskStatus.Running;
+        public bool CanCancel => Status is BatchTaskStatus.Pending or BatchTaskStatus.Running or BatchTaskStatus.Responding;
 
         public event PropertyChangedEventHandler? PropertyChanged;
 

@@ -165,25 +165,19 @@
                       Background="{DynamicResource PageBackgroundBrush}"
                       HorizontalScrollBarVisibility="Disabled">
             <StackPanel Name="SectionsPanel" Spacing="16" Margin="24,12,24,24">
-                <settings:SubscriptionSection  Name="Section_Subscription"
-                                              DataContext="{Binding Settings.SubscriptionVM}"/>
-                <settings:EndpointsSection     Name="Section_Endpoints"
-                                              DataContext="{Binding Settings.EndpointsVM}"/>
-                <settings:ModelSelectionSection Name="Section_ModelSelection"/>
-                <settings:StorageSection       Name="Section_Storage"
-                                               DataContext="{Binding Settings.StorageVM}"/>
-                <settings:InsightSection       Name="Section_Insight"/>
-                <settings:ReviewSection        Name="Section_Review"/>
-                <settings:ImageGenSection      Name="Section_ImageGen"/>
-                <settings:VideoGenSection      Name="Section_VideoGen"/>
-                <settings:AudioSection         Name="Section_Audio"
-                                              DataContext="{Binding AudioDevices}"/>
-                <settings:RecognitionSection   Name="Section_Recognition"
-                                               DataContext="{Binding Settings.RecognitionVM}"/>
-                <settings:TextSection          Name="Section_Text"
-                                               DataContext="{Binding Settings.TextVM}"/>
-                <settings:TransferSection      Name="Section_Transfer"/>
-                <settings:AboutSection         Name="Section_About"/>
+                <ContentControl Name="Section_Subscription"/>
+                <ContentControl Name="Section_Endpoints"/>
+                <ContentControl Name="Section_ModelSelection"/>
+                <ContentControl Name="Section_Storage"/>
+                <ContentControl Name="Section_Insight"/>
+                <ContentControl Name="Section_Review"/>
+                <ContentControl Name="Section_ImageGen"/>
+                <ContentControl Name="Section_VideoGen"/>
+                <ContentControl Name="Section_Audio"/>
+                <ContentControl Name="Section_Recognition"/>
+                <ContentControl Name="Section_Text"/>
+                <ContentControl Name="Section_Transfer"/>
+                <ContentControl Name="Section_About"/>
             </StackPanel>
         </ScrollViewer>
         </Grid>

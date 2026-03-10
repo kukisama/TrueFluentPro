@@ -9,7 +9,6 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
-using Azure.Identity;
 using TrueFluentPro.Models;
 using TrueFluentPro.Services.Audio;
 
@@ -24,6 +23,7 @@ namespace TrueFluentPro.Services
         private readonly IModelRuntimeResolver _modelRuntimeResolver;
         private readonly ISpeechResourceRuntimeResolver _speechResourceRuntimeResolver;
         private readonly IRealtimeConnectionSpecResolver _realtimeConnectionSpecResolver;
+        private readonly IAzureTokenProviderStore _azureTokenProviderStore;
         private readonly Action<string>? _auditLog;
 
         private AzureSpeechConfig _config;
@@ -57,12 +57,14 @@ namespace TrueFluentPro.Services
             IModelRuntimeResolver modelRuntimeResolver,
             ISpeechResourceRuntimeResolver speechResourceRuntimeResolver,
             IRealtimeConnectionSpecResolver realtimeConnectionSpecResolver,
+            IAzureTokenProviderStore azureTokenProviderStore,
             Action<string>? auditLog = null)
         {
             _config = config;
             _modelRuntimeResolver = modelRuntimeResolver;
             _speechResourceRuntimeResolver = speechResourceRuntimeResolver;
             _realtimeConnectionSpecResolver = realtimeConnectionSpecResolver;
+            _azureTokenProviderStore = azureTokenProviderStore;
             _auditLog = auditLog;
             InitializeSessionFile();
         }
@@ -360,17 +362,14 @@ namespace TrueFluentPro.Services
                 case RealtimeAuthTransportKind.AuthorizationBearer:
                     if (runtime.AzureAuthMode == AzureAuthMode.AAD)
                     {
-                        _tokenProvider ??= new AzureTokenProvider(runtime.ProfileKey);
-                        if (!_tokenProvider.IsLoggedIn)
+                        _tokenProvider = await _azureTokenProviderStore.GetAuthenticatedProviderAsync(
+                            runtime.ProfileKey,
+                            runtime.AzureTenantId,
+                            runtime.AzureClientId,
+                            cancellationToken).ConfigureAwait(false);
+                        if (_tokenProvider == null)
                         {
-                            var silentOk = await _tokenProvider.TrySilentLoginAsync(
-                                runtime.AzureTenantId,
-                                runtime.AzureClientId,
-                                cancellationToken).ConfigureAwait(false);
-                            if (!silentOk)
-                            {
-                                throw new InvalidOperationException("Azure AAD 认证未登录。请先在设置中完成该终结点的 AAD 登录。");
-                            }
+                            throw new InvalidOperationException("Azure AAD 认证未登录。请先在设置中完成该终结点的 AAD 登录。");
                         }
 
                         var token = await _tokenProvider.GetTokenAsync(cancellationToken).ConfigureAwait(false);
@@ -1002,17 +1001,14 @@ namespace TrueFluentPro.Services
                 return null;
             }
 
-            var tokenProvider = new AzureTokenProvider(runtime.ProfileKey);
-            if (!tokenProvider.IsLoggedIn)
+            var tokenProvider = await _azureTokenProviderStore.GetAuthenticatedProviderAsync(
+                runtime.ProfileKey,
+                runtime.AzureTenantId,
+                runtime.AzureClientId,
+                cancellationToken).ConfigureAwait(false);
+            if (tokenProvider == null)
             {
-                var silentOk = await tokenProvider.TrySilentLoginAsync(
-                    runtime.AzureTenantId,
-                    runtime.AzureClientId,
-                    cancellationToken).ConfigureAwait(false);
-                if (!silentOk)
-                {
-                    throw new InvalidOperationException("文本翻译模型的 Azure AAD 认证未登录。请先在设置中完成该终结点的 AAD 登录。");
-                }
+                throw new InvalidOperationException("文本翻译模型的 Azure AAD 认证未登录。请先在设置中完成该终结点的 AAD 登录。");
             }
 
             return tokenProvider;

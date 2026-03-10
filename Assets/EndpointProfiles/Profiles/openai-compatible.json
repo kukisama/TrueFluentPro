@@ -1,6 +1,8 @@
 {
+  "schemaVersion": 1,
   "id": "builtin.openai.compatible",
   "vendor": "OpenAI Compatible",
+  "basePolicyId": "platform.openai-compatible",
   "endpointType": "OpenAiCompatible",
   "displayName": "OpenAI Compatible",
   "subtitle": "原生 OpenAI 或第三方兼容服务（含普通代理）",
@@ -12,6 +14,88 @@
     "builtin",
     "openai-compatible"
   ],
+  "capabilities": {
+    "mode": "InheritDefault",
+    "allowed": [],
+    "disabled": []
+  },
+  "overrides": {
+    "defaults": {},
+    "auth": {
+      "defaultMode": "ApiKey",
+      "allowedModes": ["ApiKey"],
+      "defaultApiKeyHeaderMode": "Bearer",
+      "allowedApiKeyHeaderModes": ["Bearer", "ApiKeyHeader"]
+    },
+    "capabilities": {
+      "mode": "InheritDefault",
+      "allowed": [],
+      "disabled": []
+    },
+    "routes": {
+      "text": {
+        "primaryProtocol": "ChatCompletionsV1",
+        "primaryUrl": "{baseUrl}/v1/chat/completions",
+        "deploymentPrimaryUrl": ""
+      },
+      "modelDiscovery": {
+        "primaryUrl": "{baseUrl}/models"
+      },
+      "audio": {
+        "primaryUrl": "{baseUrl}/v1/audio/transcriptions",
+        "defaultApiVersion": ""
+      },
+      "speech": {
+        "primaryUrl": "{baseUrl}/v1/audio/speech",
+        "defaultApiVersion": ""
+      },
+      "image": {
+        "generatePrimaryUrl": "{baseUrl}/v1/images/generations",
+        "editPrimaryUrl": "{baseUrl}/v1/images/edits",
+        "deploymentGeneratePrimaryUrl": ""
+      },
+      "video": {
+        "defaultMode": "Videos",
+        "createPrimaryUrl": "{baseUrl}/v1/videos",
+        "jobsCreatePrimaryUrl": "",
+        "pollPrimaryUrl": "{baseUrl}/v1/videos/{videoId}",
+        "jobsPollPrimaryUrl": "",
+        "downloadPrimaryUrl": "{baseUrl}/v1/videos/{videoId}/content",
+        "jobsDownloadPrimaryUrl": "",
+        "downloadVideoContentPrimaryUrl": "{baseUrl}/v1/videos/{videoId}/content/video",
+        "generationDownloadPrimaryUrl": "",
+        "generationDownloadVideoContentPrimaryUrl": ""
+      }
+    },
+    "version": {
+      "endpointApiVersion": "",
+      "textApiVersion": "",
+      "audioApiVersion": "",
+      "speechApiVersion": "",
+      "videoApiVersion": ""
+    }
+  },
+  "fallbacks": {
+    "modelDiscovery": ["{baseUrl}/v1/models"],
+    "text": ["{baseUrl}/v1/responses", "{baseUrl}/chat/completions"],
+    "imageGenerate": [],
+    "imageEdit": [],
+    "audio": [],
+    "speech": [],
+    "videoCreate": [],
+    "videoJobsCreate": [],
+    "videoPoll": [],
+    "videoJobsPoll": [],
+    "videoDownload": [],
+    "videoJobsDownload": [],
+    "videoDownloadVideoContent": [],
+    "videoGenerationDownload": [],
+    "videoGenerationDownloadVideoContent": []
+  },
+  "specialPolicies": {
+    "allowApimSubscriptionKeyQueryRetry": false,
+    "allowPreviewFallback": false
+  },
   "defaults": {
     "providerType": "OpenAiCompatible",
     "authMode": "ApiKey",
@@ -104,9 +188,6 @@
     "downloadVideoContentUrlCandidates": [
       "{baseUrl}/v1/videos/{videoId}/content/video"
     ],
-    "jobsCreateUrlCandidates": [],
-    "jobsPollUrlCandidates": [],
-    "jobsDownloadUrlCandidates": [],
     "generationDownloadUrlCandidates": [],
     "generationDownloadVideoContentUrlCandidates": []
   }

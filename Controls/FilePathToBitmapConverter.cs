@@ -26,7 +26,12 @@ namespace TrueFluentPro.Controls
 
         public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
         {
-            if (value is not string filePath)
+            return value is string filePath ? TryGetBitmap(filePath) : null;
+        }
+
+        public static Bitmap? TryGetBitmap(string? filePath)
+        {
+            if (string.IsNullOrWhiteSpace(filePath))
                 return null;
 
             if (!File.Exists(filePath))
@@ -38,7 +43,6 @@ namespace TrueFluentPro.Controls
 
             lock (_cache)
             {
-                // 尝试命中缓存
                 if (_cache.TryGetValue(filePath, out var weakRef) && weakRef.TryGetTarget(out var cached))
                 {
                     _hitCount++;
@@ -46,7 +50,6 @@ namespace TrueFluentPro.Controls
                     return cached;
                 }
 
-                // 缓存未命中，创建新 Bitmap
                 try
                 {
                     var bmp = new Bitmap(filePath);

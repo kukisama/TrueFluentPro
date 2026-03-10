@@ -44,6 +44,8 @@ namespace TrueFluentPro.ViewModels.Settings
         public double BatchMaxDuration { get => _batchMaxDuration; set => Set(ref _batchMaxDuration, value); }
         public int BatchPauseSplitMs { get => _batchPauseSplitMs; set => Set(ref _batchPauseSplitMs, value); }
         public ReviewSubtitleSourceMode ReviewSubtitleSourceMode { get => _reviewSubtitleSourceMode; set => Set(ref _reviewSubtitleSourceMode, value); }
+        public string ReviewSubtitleSourceDisplayText => BuildReviewSubtitleSourceDisplayText();
+        public string ReviewSubtitleSourceDescription => BuildReviewSubtitleSourceDescription();
         public int ReviewSubtitleSourceModeIndex
         {
             get => (int)ReviewSubtitleSourceMode;
@@ -80,6 +82,8 @@ namespace TrueFluentPro.ViewModels.Settings
             BatchMaxDuration = config.BatchSubtitleMaxDurationSeconds;
             BatchPauseSplitMs = config.BatchSubtitlePauseSplitMs;
             ReviewSubtitleSourceMode = config.GetEffectiveReviewSubtitleSourceMode();
+            OnPropertyChanged(nameof(ReviewSubtitleSourceDisplayText));
+            OnPropertyChanged(nameof(ReviewSubtitleSourceDescription));
         }
 
         public override void ApplyTo(AzureSpeechConfig config)
@@ -108,8 +112,8 @@ namespace TrueFluentPro.ViewModels.Settings
             config.BatchSubtitleMaxChars = BatchMaxChars;
             config.BatchSubtitleMaxDurationSeconds = BatchMaxDuration;
             config.BatchSubtitlePauseSplitMs = BatchPauseSplitMs;
-            config.ReviewSubtitleSourceMode = ReviewSubtitleSourceMode;
-            config.UseSpeechSubtitleForReview = ReviewSubtitleSourceMode == ReviewSubtitleSourceMode.SpeechSubtitle;
+            config.ReviewSubtitleSourceMode = ReviewSubtitleSourceMode.DefaultSubtitle;
+            config.UseSpeechSubtitleForReview = config.GetEffectiveReviewSubtitleSourceMode() == ReviewSubtitleSourceMode.SpeechSubtitle;
         }
 
         private async System.Threading.Tasks.Task ValidateBatchStorageAsync()
@@ -146,6 +150,38 @@ namespace TrueFluentPro.ViewModels.Settings
                 BatchStorageIsValid = false;
                 Config.BatchStorageIsValid = false;
             }
+        }
+
+        private string BuildReviewSubtitleSourceDisplayText()
+        {
+            var resource = Config.GetActiveSpeechResource();
+            if (resource == null)
+            {
+                return "未选择首页语音资源";
+            }
+
+            return Config.GetEffectiveReviewSubtitleSourceMode() switch
+            {
+                ReviewSubtitleSourceMode.SpeechSubtitle => $"跟随首页语音资源：Speech 字幕（{resource.GetDisplayName()}）",
+                ReviewSubtitleSourceMode.AiTranscriptionSubtitle => $"跟随首页语音资源：AI 转写字幕（{resource.GetDisplayName()}）",
+                _ => $"跟随首页语音资源：普通字幕（{resource.GetDisplayName()}）"
+            };
+        }
+
+        private string BuildReviewSubtitleSourceDescription()
+        {
+            var resource = Config.GetActiveSpeechResource();
+            if (resource == null)
+            {
+                return "复盘 / 批处理的字幕来源不再单独配置；会优先跟随首页当前选中的语音资源。当前尚未选择资源，因此不会自动切到 Speech / AI 转写链路。";
+            }
+
+            return Config.GetEffectiveReviewSubtitleSourceMode() switch
+            {
+                ReviewSubtitleSourceMode.SpeechSubtitle => "复盘 / 批处理将直接跟随首页当前的 Microsoft Speech 资源；若要切换为 AI 转写，请回到首页切换语音资源。",
+                ReviewSubtitleSourceMode.AiTranscriptionSubtitle => "复盘 / 批处理将直接跟随首页当前的 AI 语音资源；若要切换为 Azure Speech，请回到首页切换语音资源。",
+                _ => "当前首页语音资源不对应可用的 Speech / AI 转写链路，复盘 / 批处理会继续按现有字幕文件工作。"
+            };
         }
     }
 }

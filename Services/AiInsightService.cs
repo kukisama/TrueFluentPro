@@ -151,39 +151,6 @@ namespace TrueFluentPro.Services
                 {
                     var errorText = await response.Content.ReadAsStringAsync(cancellationToken);
 
-                    if (enableReasoning
-                        && request.EndpointType != EndpointApiType.AzureOpenAi
-                        && (int)response.StatusCode is >= 400 and < 500)
-                    {
-                        var (fallbackResponse, fallbackTrace) = await SendRequestAsync(
-                            request,
-                            systemPrompt,
-                            userContent,
-                            enableReasoning: false,
-                            cancellationToken,
-                            urlCandidatesOverride,
-                            allowNextUrlRetry,
-                            allowApimSubscriptionKeyQueryRetry);
-                        using (fallbackResponse)
-                        {
-                            onTrace?.Invoke(fallbackTrace);
-
-                            if (fallbackResponse.IsSuccessStatusCode)
-                            {
-                                onOutcome?.Invoke(new AiRequestOutcome
-                                {
-                                    UsedReasoning = false,
-                                    UsedFallback = true
-                                });
-                                await StreamResponseAsync(fallbackResponse, onChunk, onReasoningChunk, cancellationToken);
-                                return;
-                            }
-
-                            var fallbackText = await fallbackResponse.Content.ReadAsStringAsync(cancellationToken);
-                            throw new HttpRequestException($"Request failed: {(int)fallbackResponse.StatusCode} {fallbackResponse.ReasonPhrase}. {fallbackText}");
-                        }
-                    }
-
                     throw new HttpRequestException($"Request failed: {(int)response.StatusCode} {response.ReasonPhrase}. {errorText}");
                 }
 
@@ -273,8 +240,14 @@ namespace TrueFluentPro.Services
             using var httpRequest = new HttpRequestMessage(HttpMethod.Post, url);
             httpRequest.Content = new StringContent(payloadJson, Encoding.UTF8, "application/json");
 
-            if (request.AzureAuthMode == AzureAuthMode.AAD && _tokenProvider?.IsLoggedIn == true)
+            if (request.AzureAuthMode == AzureAuthMode.AAD)
             {
+                if (_tokenProvider?.IsLoggedIn != true)
+                {
+                    throw new InvalidOperationException(
+                        "Azure AAD 认证未登录或静默登录已失效。请先在设置中重新登录当前终结点后再重试。");
+                }
+
                 var token = await _tokenProvider.GetTokenAsync(cancellationToken);
                 httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
             }
@@ -291,11 +264,11 @@ namespace TrueFluentPro.Services
 
         private static void ApplyApiKeyAuthHeader(HttpRequestMessage request, AiChatRequestConfig config)
         {
-            var mode = config.ApiKeyHeaderMode;
-            if (mode == ApiKeyHeaderMode.Auto)
-            {
-                mode = config.IsAzureEndpoint ? ApiKeyHeaderMode.ApiKeyHeader : ApiKeyHeaderMode.Bearer;
-            }
+            var mode = EndpointProfileUrlBuilder.GetEffectiveApiKeyHeaderMode(
+                config.ProfileId,
+                config.EndpointType,
+                config.ApiKeyHeaderMode,
+                config.IsAzureEndpoint);
 
             if (mode == ApiKeyHeaderMode.ApiKeyHeader)
             {
@@ -633,13 +606,12 @@ namespace TrueFluentPro.Services
         private static bool ShouldTryNextUrl(AiChatRequestConfig request, HttpResponseMessage response)
             => IsApimGateway(request) && (int)response.StatusCode is 404 or 405;
 
+        // --- 临时禁用 APIM subscription-key query 回退 ---
         private static bool IsMissingApimSubscriptionKeyResponse(AiChatRequestConfig request, HttpResponseMessage response)
-            => IsApimGateway(request) && (int)response.StatusCode == 401;
+            => false; // IsApimGateway(request) && (int)response.StatusCode == 401;
 
         private static bool IsMissingApimSubscriptionKeyResponse(AiChatRequestConfig request, HttpResponseMessage response, string? body)
-            => IsMissingApimSubscriptionKeyResponse(request, response)
-               && !string.IsNullOrWhiteSpace(body)
-               && body.IndexOf("missing subscription key", StringComparison.OrdinalIgnoreCase) >= 0;
+            => false; // 原逻辑依赖上面的方法，一并禁用
 
         private static string BuildApimSubscriptionKeyQueryUrl(string url, string apiKey)
         {

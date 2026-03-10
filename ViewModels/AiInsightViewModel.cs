@@ -15,7 +15,7 @@ namespace TrueFluentPro.ViewModels
 {
     public class AiInsightViewModel : ViewModelBase
     {
-        private readonly AzureTokenProvider _azureTokenProvider;
+        private readonly IAzureTokenProviderStore _azureTokenProviderStore;
         private readonly AiInsightService _aiInsightService;
         private readonly IModelRuntimeResolver _modelRuntimeResolver;
         private readonly Func<AzureSpeechConfig> _configProvider;
@@ -37,7 +37,7 @@ namespace TrueFluentPro.ViewModels
 
         public AiInsightViewModel(
             AiInsightService aiInsightService,
-            AzureTokenProvider azureTokenProvider,
+            IAzureTokenProviderStore azureTokenProviderStore,
             IModelRuntimeResolver modelRuntimeResolver,
             Func<AzureSpeechConfig> configProvider,
             Func<ObservableCollection<TranslationItem>> historyProvider,
@@ -45,7 +45,7 @@ namespace TrueFluentPro.ViewModels
             Func<Task> showConfigAction)
         {
             _aiInsightService = aiInsightService;
-            _azureTokenProvider = azureTokenProvider;
+            _azureTokenProviderStore = azureTokenProviderStore;
             _modelRuntimeResolver = modelRuntimeResolver;
             _configProvider = configProvider;
             _historyProvider = historyProvider;
@@ -184,12 +184,17 @@ namespace TrueFluentPro.ViewModels
 
                 if (endpoint != null)
                 {
-                    var endpointProvider = new AzureTokenProvider(GetEndpointProfileKey(endpoint));
-                    await endpointProvider.TrySilentLoginAsync(runtimeRequest.AzureTenantId, runtimeRequest.AzureClientId);
+                    await _azureTokenProviderStore.GetAuthenticatedProviderAsync(
+                        GetEndpointProfileKey(endpoint),
+                        runtimeRequest.AzureTenantId,
+                        runtimeRequest.AzureClientId);
                 }
                 else
                 {
-                    await _azureTokenProvider.TrySilentLoginAsync(runtimeRequest.AzureTenantId, runtimeRequest.AzureClientId);
+                    await _azureTokenProviderStore.GetAuthenticatedProviderAsync(
+                        "ai",
+                        runtimeRequest.AzureTenantId,
+                        runtimeRequest.AzureClientId);
                 }
             }
             catch
@@ -245,11 +250,10 @@ namespace TrueFluentPro.ViewModels
             AzureTokenProvider? tokenProvider = null;
             if (runtimeRequest.AzureAuthMode == AzureAuthMode.AAD)
             {
-                tokenProvider = endpoint != null
-                    ? new AzureTokenProvider(GetEndpointProfileKey(endpoint))
-                    : _azureTokenProvider;
-
-                await tokenProvider.TrySilentLoginAsync(runtimeRequest.AzureTenantId, runtimeRequest.AzureClientId);
+                tokenProvider = await _azureTokenProviderStore.GetAuthenticatedProviderAsync(
+                    endpoint != null ? GetEndpointProfileKey(endpoint) : "ai",
+                    runtimeRequest.AzureTenantId,
+                    runtimeRequest.AzureClientId);
             }
 
             var runtimeService = new AiInsightService(tokenProvider);

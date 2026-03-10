@@ -20,10 +20,14 @@ namespace TrueFluentPro.Services
         };
 
         private readonly IEndpointProfileCatalogService _profileCatalogService;
+        private readonly IEndpointPlatformDefaultPolicyService _platformDefaultPolicyService;
 
-        public AiEndpointModelDiscoveryService(IEndpointProfileCatalogService profileCatalogService)
+        public AiEndpointModelDiscoveryService(
+            IEndpointProfileCatalogService profileCatalogService,
+            IEndpointPlatformDefaultPolicyService platformDefaultPolicyService)
         {
             _profileCatalogService = profileCatalogService;
+            _platformDefaultPolicyService = platformDefaultPolicyService;
         }
 
         public async Task<AiEndpointModelDiscoveryResult> DiscoverModelsAsync(AiEndpoint endpoint, CancellationToken cancellationToken = default)
@@ -99,9 +103,11 @@ namespace TrueFluentPro.Services
 
         private static void ApplyApiKeyHeader(HttpRequestMessage request, AiEndpoint endpoint)
         {
-            var mode = endpoint.ApiKeyHeaderMode == ApiKeyHeaderMode.Auto
-                ? ApiKeyHeaderMode.Bearer
-                : endpoint.ApiKeyHeaderMode;
+            var mode = EndpointProfileUrlBuilder.GetEffectiveApiKeyHeaderMode(
+                endpoint.ProfileId,
+                endpoint.EndpointType,
+                endpoint.ApiKeyHeaderMode,
+                endpoint.IsAzureEndpoint || endpoint.EndpointType == EndpointApiType.ApiManagementGateway);
 
             if (mode == ApiKeyHeaderMode.ApiKeyHeader)
             {
@@ -115,28 +121,78 @@ namespace TrueFluentPro.Services
         private IReadOnlyList<string> BuildCandidateUrls(AiEndpoint endpoint)
         {
             var profile = ResolveProfile(endpoint);
-            var configuredUrls = EndpointProfileRuntimeResolver.BuildUrls(
-                endpoint.BaseUrl,
-                profile?.ModelDiscovery.UrlCandidates);
-
-            if (configuredUrls.Count > 0)
-                return configuredUrls;
-
-            var normalized = endpoint.BaseUrl.Trim().TrimEnd('/');
             var urls = new List<string>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-            void Add(string url)
+            void AddUrl(string? url)
             {
-                if (!string.IsNullOrWhiteSpace(url) && !urls.Contains(url, StringComparer.OrdinalIgnoreCase))
+                if (!string.IsNullOrWhiteSpace(url) && seen.Add(url))
                 {
                     urls.Add(url);
                 }
             }
 
-            Add($"{normalized}/models");
-            if (!normalized.EndsWith("/v1", StringComparison.OrdinalIgnoreCase))
+            void AddRange(IEnumerable<string> values)
             {
-                Add($"{normalized}/v1/models");
+                foreach (var value in values)
+                {
+                    AddUrl(value);
+                }
+            }
+
+            var overridePrimaryUrls = EndpointProfileRuntimeResolver.BuildUrls(
+                endpoint.BaseUrl,
+                string.IsNullOrWhiteSpace(profile?.Overrides.Routes.ModelDiscovery.PrimaryUrl)
+                    ? Array.Empty<string>()
+                    : new[] { profile!.Overrides.Routes.ModelDiscovery.PrimaryUrl });
+
+            var legacyProfileUrls = EndpointProfileRuntimeResolver.BuildUrls(
+                endpoint.BaseUrl,
+                profile?.ModelDiscovery.UrlCandidates);
+
+            var explicitFallbackUrls = EndpointProfileRuntimeResolver.BuildUrls(
+                endpoint.BaseUrl,
+                profile?.Fallbacks.ModelDiscovery);
+
+            var hasVendorDefinedDiscovery = overridePrimaryUrls.Count > 0
+                                            || legacyProfileUrls.Count > 0
+                                            || explicitFallbackUrls.Count > 0;
+
+            if (hasVendorDefinedDiscovery)
+            {
+                AddRange(overridePrimaryUrls);
+
+                if (overridePrimaryUrls.Count == 0 && legacyProfileUrls.Count > 0)
+                {
+                    AddUrl(legacyProfileUrls[0]);
+                }
+
+                AddRange(explicitFallbackUrls);
+
+                if (legacyProfileUrls.Count > 1)
+                {
+                    foreach (var url in legacyProfileUrls.Skip(1))
+                    {
+                        AddUrl(url);
+                    }
+                }
+
+                return urls;
+            }
+
+            try
+            {
+                var platformPolicy = _platformDefaultPolicyService.GetPolicy(endpoint.EndpointType);
+                var platformUrls = EndpointProfileRuntimeResolver.BuildUrls(
+                    endpoint.BaseUrl,
+                    string.IsNullOrWhiteSpace(platformPolicy.ModelDiscovery.PrimaryUrl)
+                        ? Array.Empty<string>()
+                        : new[] { platformPolicy.ModelDiscovery.PrimaryUrl });
+                AddRange(platformUrls);
+            }
+            catch
+            {
+                // 如果平台默认值尚未定义当前终结点类型，则维持空列表，交由上层提示。
             }
 
             return urls;

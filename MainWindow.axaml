@@ -215,7 +215,25 @@
         </Border>
 
         <Panel Grid.Column="1">
-            <ContentControl Name="PageHost"/>
+            <ContentControl Name="PageHost">
+                <Border Margin="16"
+                        Padding="18,14"
+                        CornerRadius="10"
+                        Background="{DynamicResource CardBackgroundBrush}"
+                        BorderBrush="{DynamicResource CardBorderBrush}"
+                        BorderThickness="1"
+                        HorizontalAlignment="Stretch"
+                        VerticalAlignment="Stretch">
+                    <StackPanel Spacing="8"
+                                VerticalAlignment="Top">
+                        <TextBlock Text="正在打开首页..."
+                                   FontSize="16"
+                                   FontWeight="SemiBold"/>
+                        <TextBlock Text="壳层已加载，首页内容正在继续初始化。"
+                                   Foreground="{DynamicResource TextSubtleBrush}"/>
+                    </StackPanel>
+                </Border>
+            </ContentControl>
             <ui:InfoBar IsOpen="{Binding IsInfoBarOpen, Mode=TwoWay}"
                         Message="{Binding InfoBarMessage}"
                         Severity="{Binding InfoBarSeverity}"

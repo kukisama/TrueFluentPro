@@ -109,15 +109,18 @@ namespace TrueFluentPro.Services
 
         /// <summary>
         /// 判断 APIM 是否返回“缺少订阅键”。
+        /// [临时禁用] 用于测试此回退是否仍有实际价值。
         /// </summary>
         protected static bool IsMissingApimSubscriptionKeyResponse(AiConfig config, HttpResponseMessage response, string? body)
         {
-            if (!SupportsSubscriptionKeyQueryFallback(config))
-                return false;
-
-            return (int)response.StatusCode == 401
-                && !string.IsNullOrWhiteSpace(body)
-                && body.IndexOf("missing subscription key", StringComparison.OrdinalIgnoreCase) >= 0;
+            // --- 临时禁用 APIM subscription-key query 回退 ---
+            return false;
+            // if (!SupportsSubscriptionKeyQueryFallback(config))
+            //     return false;
+            //
+            // return (int)response.StatusCode == 401
+            //     && !string.IsNullOrWhiteSpace(body)
+            //     && body.IndexOf("missing subscription key", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         /// <summary>
@@ -204,19 +207,16 @@ namespace TrueFluentPro.Services
             => EndpointProfileRuntimeResolver.Resolve(config.ProfileId, config.EndpointType);
 
         private static ApiKeyHeaderMode GetEffectiveApiKeyHeaderMode(AiConfig config)
-        {
-            if (config.ApiKeyHeaderMode != ApiKeyHeaderMode.Auto)
-                return config.ApiKeyHeaderMode;
-
-            var profileDefault = ResolveProfile(config)?.Defaults.ApiKeyHeaderMode ?? ApiKeyHeaderMode.Auto;
-            if (profileDefault != ApiKeyHeaderMode.Auto)
-                return profileDefault;
-
-            return ApiKeyHeaderMode.Bearer;
-        }
+            => EndpointProfileUrlBuilder.GetEffectiveApiKeyHeaderMode(
+                config.ProfileId,
+                config.EndpointType,
+                config.ApiKeyHeaderMode,
+                IsAzureEndpoint(config) || IsApimGateway(config));
 
         private static bool SupportsSubscriptionKeyQueryFallback(AiConfig config)
-            => ResolveProfile(config)?.Auth.SupportsSubscriptionKeyQueryFallback == true;
+            => EndpointProfileUrlBuilder.SupportsSubscriptionKeyQueryFallback(
+                config.ProfileId,
+                config.EndpointType);
 
         /// <summary>
         /// 构建 Videos API URL（创建）
@@ -242,27 +242,6 @@ namespace TrueFluentPro.Services
                 config.ApiVersion,
                 apiMode)[0];
 
-        protected static string? BuildVideoCreateUrlWithPreview(AiConfig config, VideoApiMode apiMode)
-        {
-            if (apiMode != VideoApiMode.Videos)
-                return null;
-
-            foreach (var url in EndpointProfileUrlBuilder.BuildVideoCreateUrlCandidates(
-                         config.ApiEndpoint,
-                         config.ProfileId,
-                         config.EndpointType,
-                         config.ApiVersion,
-                         apiMode))
-            {
-                if (url.Contains("api-version=", StringComparison.OrdinalIgnoreCase))
-                    return url;
-            }
-
-            var fallbackUrl = BuildVideoCreateUrl(config, apiMode);
-            return fallbackUrl.Contains("api-version=", StringComparison.OrdinalIgnoreCase)
-                ? fallbackUrl
-                : $"{fallbackUrl}?api-version=preview";
-        }
 
         /// <summary>
         /// 构建 Videos API URL（轮询状态）
@@ -288,28 +267,6 @@ namespace TrueFluentPro.Services
         /// 构建 Videos API URL（轮询状态备用路径，带 preview query）。
         /// 用于 APIM/代理层只导入了带 api-version 的视频操作定义时回退尝试。
         /// </summary>
-        protected static string? BuildVideoPollUrlWithPreview(AiConfig config, string videoId, VideoApiMode apiMode)
-        {
-            if (apiMode != VideoApiMode.Videos)
-                return null;
-
-            foreach (var url in EndpointProfileUrlBuilder.BuildVideoPollUrlCandidates(
-                         config.ApiEndpoint,
-                         config.ProfileId,
-                         config.EndpointType,
-                         config.ApiVersion,
-                         videoId,
-                         apiMode))
-            {
-                if (url.Contains("api-version=", StringComparison.OrdinalIgnoreCase))
-                    return url;
-            }
-
-            var fallbackUrl = BuildVideoPollUrl(config, videoId, apiMode);
-            return fallbackUrl.Contains("api-version=", StringComparison.OrdinalIgnoreCase)
-                ? fallbackUrl
-                : $"{fallbackUrl}?api-version=preview";
-        }
 
         /// <summary>
         /// 构建 Videos API URL（下载内容）
@@ -336,22 +293,6 @@ namespace TrueFluentPro.Services
         /// 
         /// 备注：部分实现可能使用 /content/video。
         /// </summary>
-        protected static string BuildVideoDownloadUrlAlt(AiConfig config, string videoId, VideoApiMode apiMode)
-        {
-            var contentVideoCandidates = EndpointProfileUrlBuilder.BuildVideoDownloadVideoContentUrlCandidates(
-                config.ApiEndpoint,
-                config.ProfileId,
-                config.EndpointType,
-                config.ApiVersion,
-                videoId,
-                apiMode);
-
-            if (contentVideoCandidates.Count > 0)
-                return contentVideoCandidates[0];
-
-            return BuildVideoDownloadUrl(config, videoId, apiMode);
-        }
-
         /// <summary>
         /// 构建 Videos API URL（下载内容备用路径，/content/video）。
         /// 某些 APIM / 代理后端会暴露该形式而不是 /content。
@@ -371,58 +312,9 @@ namespace TrueFluentPro.Services
         /// 构建 Videos API URL（下载内容备用路径，带 preview query）。
         /// 用于 APIM/代理层只导入带 api-version 的视频下载操作定义时回退尝试。
         /// </summary>
-        protected static string? BuildVideoDownloadUrlWithPreview(AiConfig config, string videoId, VideoApiMode apiMode)
-        {
-            if (apiMode != VideoApiMode.Videos)
-                return null;
-
-            foreach (var url in EndpointProfileUrlBuilder.BuildVideoDownloadUrlCandidates(
-                         config.ApiEndpoint,
-                         config.ProfileId,
-                         config.EndpointType,
-                         config.ApiVersion,
-                         videoId,
-                         apiMode))
-            {
-                if (url.Contains("api-version=", StringComparison.OrdinalIgnoreCase))
-                    return url;
-            }
-
-            var fallbackUrl = BuildVideoDownloadUrl(config, videoId, apiMode);
-            return fallbackUrl.Contains("api-version=", StringComparison.OrdinalIgnoreCase)
-                ? fallbackUrl
-                : $"{fallbackUrl}?api-version=preview";
-        }
-
         /// <summary>
         /// 构建 Videos API URL（下载内容备用路径，/content/video + preview query）。
         /// </summary>
-        protected static string? BuildVideoDownloadUrlVideoContentWithPreview(AiConfig config, string videoId, VideoApiMode apiMode)
-        {
-            if (apiMode != VideoApiMode.Videos)
-                return null;
-
-            foreach (var url in EndpointProfileUrlBuilder.BuildVideoDownloadVideoContentUrlCandidates(
-                         config.ApiEndpoint,
-                         config.ProfileId,
-                         config.EndpointType,
-                         config.ApiVersion,
-                         videoId,
-                         apiMode))
-            {
-                if (url.Contains("api-version=", StringComparison.OrdinalIgnoreCase))
-                    return url;
-            }
-
-            var fallbackUrl = BuildVideoDownloadUrlVideoContent(config, videoId, apiMode);
-            if (string.IsNullOrWhiteSpace(fallbackUrl))
-                return null;
-
-            return fallbackUrl.Contains("api-version=", StringComparison.OrdinalIgnoreCase)
-                ? fallbackUrl
-                : $"{fallbackUrl}?api-version=preview";
-        }
-
         /// <summary>
         /// 构建 Videos API URL（下载内容，使用 generationId）。
         /// 

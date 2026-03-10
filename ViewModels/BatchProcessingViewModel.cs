@@ -52,8 +52,10 @@ namespace TrueFluentPro.ViewModels
         private readonly PlaybackViewModel _playback;
         private readonly ConfigurationService _configService;
         private readonly IBatchPackageStateService _batchPackageStateService;
+        private readonly IAzureTokenProviderStore _azureTokenProviderStore;
         private readonly Action _notifyReviewLampChanged;
         private bool _isPackageProjectionRefreshPending;
+        private bool _hasInitializedBatchCenter;
 
         public RelayCommand LoadBatchTasksCommand { get; }
         public RelayCommand ClearBatchTasksCommand { get; }
@@ -91,6 +93,7 @@ namespace TrueFluentPro.ViewModels
             PlaybackViewModel playback,
             ConfigurationService configService,
             IBatchPackageStateService batchPackageStateService,
+            IAzureTokenProviderStore azureTokenProviderStore,
             Action notifyReviewLampChanged)
         {
             _configProvider = configProvider;
@@ -103,6 +106,7 @@ namespace TrueFluentPro.ViewModels
             _playback = playback;
             _configService = configService;
             _batchPackageStateService = batchPackageStateService;
+            _azureTokenProviderStore = azureTokenProviderStore;
             _notifyReviewLampChanged = notifyReviewLampChanged;
 
             InitializePackageBuckets();
@@ -594,8 +598,23 @@ namespace TrueFluentPro.ViewModels
                 sheet.StatusMessage = "";
             }
 
+            if (!_hasInitializedBatchCenter)
+            {
+                return;
+            }
+
             LoadBatchTasksFromLibrary();
-            RefreshPackageProjections();
+        }
+
+        public void EnsureBatchCenterInitialized()
+        {
+            if (_hasInitializedBatchCenter)
+            {
+                return;
+            }
+
+            _hasInitializedBatchCenter = true;
+            LoadBatchTasksFromLibrary();
         }
 
         // ── Private helpers ──
@@ -640,7 +659,7 @@ namespace TrueFluentPro.ViewModels
         {
             var total = _batchQueueItems.Count;
             var completed = _batchQueueItems.Count(item => item.Status == BatchTaskStatus.Completed);
-            var running = _batchQueueItems.Count(item => item.Status == BatchTaskStatus.Running);
+            var running = _batchQueueItems.Count(item => item.Status is BatchTaskStatus.Running or BatchTaskStatus.Responding);
             var failed = _batchQueueItems.Count(item => item.Status == BatchTaskStatus.Failed);
             var pending = Math.Max(total - completed - running - failed, 0);
 
@@ -863,10 +882,13 @@ namespace TrueFluentPro.ViewModels
 
             if (activeCount > 0)
             {
-                package.State = queueItems.Any(item => item.Status == BatchTaskStatus.Running)
+                var hasRespondingItem = queueItems.Any(item => item.Status == BatchTaskStatus.Responding);
+                package.State = queueItems.Any(item => item.Status is BatchTaskStatus.Running or BatchTaskStatus.Responding)
                     ? ProcessingDisplayState.Running
                     : ProcessingDisplayState.Pending;
-                package.StateText = package.State == ProcessingDisplayState.Running ? "处理中" : "待处理";
+                package.StateText = package.State == ProcessingDisplayState.Running
+                    ? (hasRespondingItem ? "AI已响应" : "处理中")
+                    : "待处理";
                 package.SummaryText = package.TotalCount == 0
                     ? (batchTask?.StatusMessage ?? "待处理")
                     : $"完成 {completedCount}/{package.TotalCount} · 运行 {activeCount}";
@@ -905,6 +927,7 @@ namespace TrueFluentPro.ViewModels
                 .Where(predicate)
                 .OrderByDescending(item => item.Status switch
                 {
+                    BatchTaskStatus.Responding => 5,
                     BatchTaskStatus.Running => 4,
                     BatchTaskStatus.Pending => 3,
                     BatchTaskStatus.Failed => 2,
@@ -927,7 +950,7 @@ namespace TrueFluentPro.ViewModels
                     Tag = "speech",
                     IconValue = "fa-solid fa-closed-captioning",
                     IsSpeechSubtask = true,
-                    CanRegenerate = queueItem.Status != BatchTaskStatus.Running,
+                    CanRegenerate = queueItem.Status is not (BatchTaskStatus.Running or BatchTaskStatus.Responding),
                     State = MapQueueStatus(queueItem.Status),
                     StatusText = queueItem.StatusMessage,
                     Progress = queueItem.Progress,
@@ -963,7 +986,7 @@ namespace TrueFluentPro.ViewModels
                     Tag = sheet.FileTag,
                     IconValue = "fa-solid fa-brain",
                     IsSpeechSubtask = false,
-                    CanRegenerate = queueItem.Status != BatchTaskStatus.Running,
+                    CanRegenerate = queueItem.Status is not (BatchTaskStatus.Running or BatchTaskStatus.Responding),
                     State = MapQueueStatus(queueItem.Status),
                     StatusText = queueItem.StatusMessage,
                     Progress = queueItem.Progress,
@@ -991,6 +1014,7 @@ namespace TrueFluentPro.ViewModels
             return status switch
             {
                 BatchTaskStatus.Completed => ProcessingDisplayState.Completed,
+                BatchTaskStatus.Responding => ProcessingDisplayState.Running,
                 BatchTaskStatus.Running => ProcessingDisplayState.Running,
                 BatchTaskStatus.Failed => ProcessingDisplayState.Failed,
                 _ => ProcessingDisplayState.Pending
@@ -1078,7 +1102,7 @@ namespace TrueFluentPro.ViewModels
                          string.Equals(item.FullPath, package.FullPath, StringComparison.OrdinalIgnoreCase)))
             {
                 queueItem.PauseRequested = true;
-                if (queueItem.Status == BatchTaskStatus.Running)
+                if (queueItem.Status is BatchTaskStatus.Running or BatchTaskStatus.Responding)
                 {
                     queueItem.Cts?.Cancel();
                 }
@@ -1663,7 +1687,7 @@ namespace TrueFluentPro.ViewModels
             var existsInQueue = _batchQueueItems.Any(item =>
                 item.QueueType == BatchQueueItemType.SpeechSubtitle
                 && string.Equals(item.FullPath, batchItem.FullPath, StringComparison.OrdinalIgnoreCase)
-                && item.Status is BatchTaskStatus.Pending or BatchTaskStatus.Running);
+                && item.Status is BatchTaskStatus.Pending or BatchTaskStatus.Running or BatchTaskStatus.Responding);
 
             if (existsInQueue)
             {
@@ -1705,7 +1729,7 @@ namespace TrueFluentPro.ViewModels
                     item.QueueType == BatchQueueItemType.ReviewSheet
                     && string.Equals(item.FullPath, parentItem.FullPath, StringComparison.OrdinalIgnoreCase)
                     && string.Equals(item.SheetTag, sheet.FileTag, StringComparison.OrdinalIgnoreCase)
-                    && item.Status is BatchTaskStatus.Pending or BatchTaskStatus.Running);
+                    && item.Status is BatchTaskStatus.Pending or BatchTaskStatus.Running or BatchTaskStatus.Responding);
 
                 if (existsInQueue)
                 {
@@ -1996,10 +2020,25 @@ namespace TrueFluentPro.ViewModels
             AzureTokenProvider? tokenProvider = null;
             if (runtimeRequest.AzureAuthMode == AzureAuthMode.AAD)
             {
-                tokenProvider = endpoint != null
-                    ? new AzureTokenProvider(GetEndpointProfileKey(endpoint))
-                    : new AzureTokenProvider("ai");
-                await tokenProvider.TrySilentLoginAsync(runtimeRequest.AzureTenantId, runtimeRequest.AzureClientId);
+                tokenProvider = await _azureTokenProviderStore.GetAuthenticatedProviderAsync(
+                    endpoint != null ? GetEndpointProfileKey(endpoint) : "ai",
+                    runtimeRequest.AzureTenantId,
+                    runtimeRequest.AzureClientId);
+
+                if (tokenProvider == null)
+                {
+                    var message = "AAD 登录已失效，请先在设置中重新登录当前复盘模型对应终结点。";
+                    UpdateQueueItem(queueItem, BatchTaskStatus.Failed, 0, message);
+                    if (ShouldWriteBatchLogFailure)
+                    {
+                        AppendBatchLog("ReviewFailed", queueItem.FileName, "Failed", message);
+                    }
+                    if (parentItem != null)
+                    {
+                        UpdateBatchReviewProgress(parentItem, BatchTaskStatus.Failed);
+                    }
+                    return;
+                }
             }
             var runtimeInsightService = new AiInsightService(tokenProvider);
 
@@ -2024,12 +2063,23 @@ namespace TrueFluentPro.ViewModels
             {
                 var sb = new System.Text.StringBuilder();
                 AiRequestOutcome? outcome = null;
+                var firstChunkReceived = 0;
                 await runtimeInsightService.StreamChatAsync(
                     runtimeRequest,
                     systemPrompt,
                     userPrompt,
                     chunk =>
                     {
+                        if (!string.IsNullOrWhiteSpace(chunk)
+                            && Interlocked.Exchange(ref firstChunkReceived, 1) == 0)
+                        {
+                            UpdateQueueItem(queueItem, BatchTaskStatus.Responding, 0.35, "AI 已响应");
+                            if (parentItem != null)
+                            {
+                                UpdateBatchItem(parentItem, BatchTaskStatus.Responding, Math.Max(parentItem.Progress, 0.35), "AI 已响应");
+                            }
+                        }
+
                         sb.Append(chunk);
                     },
                     localToken,
@@ -2288,10 +2338,10 @@ namespace TrueFluentPro.ViewModels
                 var finished = item.ReviewPending == 0;
                 var status = finished
                     ? (item.ReviewFailed > 0 ? BatchTaskStatus.Failed : BatchTaskStatus.Completed)
-                    : BatchTaskStatus.Running;
+                    : BatchTaskStatus.Responding;
                 var statusMessage = finished
                     ? (item.ReviewFailed > 0 ? "完成(含失败)" : "完成")
-                    : "生成中";
+                    : "AI 已响应";
 
                 item.HasAiSummary = item.ReviewTotal > 0 && item.ReviewCompleted >= item.ReviewTotal;
                 UpdateBatchItem(item, status, progress, statusMessage);
@@ -2411,7 +2461,7 @@ namespace TrueFluentPro.ViewModels
                 var existsInQueue = _batchQueueItems.Any(item =>
                     string.Equals(item.FullPath, audioFile.FullPath, StringComparison.OrdinalIgnoreCase)
                     && string.Equals(item.SheetTag, sheet.FileTag, StringComparison.OrdinalIgnoreCase)
-                    && item.Status is BatchTaskStatus.Pending or BatchTaskStatus.Running);
+                    && item.Status is BatchTaskStatus.Pending or BatchTaskStatus.Running or BatchTaskStatus.Responding);
 
                 if (existsInQueue)
                 {
@@ -2611,10 +2661,16 @@ namespace TrueFluentPro.ViewModels
             AzureTokenProvider? tokenProvider = null;
             if (runtimeRequest.AzureAuthMode == AzureAuthMode.AAD)
             {
-                tokenProvider = endpoint != null
-                    ? new AzureTokenProvider(GetEndpointProfileKey(endpoint))
-                    : new AzureTokenProvider("ai");
-                await tokenProvider.TrySilentLoginAsync(runtimeRequest.AzureTenantId, runtimeRequest.AzureClientId);
+                tokenProvider = await _azureTokenProviderStore.GetAuthenticatedProviderAsync(
+                    endpoint != null ? GetEndpointProfileKey(endpoint) : "ai",
+                    runtimeRequest.AzureTenantId,
+                    runtimeRequest.AzureClientId);
+
+                if (tokenProvider == null)
+                {
+                    sheet.StatusMessage = "AAD 登录已失效，请先在设置中重新登录当前复盘模型对应终结点。";
+                    return;
+                }
             }
             var runtimeInsightService = new AiInsightService(tokenProvider);
 

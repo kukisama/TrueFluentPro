@@ -1,6 +1,8 @@
 {
+    "schemaVersion": 1,
     "id": "builtin.microsoft.apim-gateway",
     "vendor": "Microsoft",
+    "basePolicyId": "platform.apim-gateway",
     "endpointType": "ApiManagementGateway",
     "displayName": "APIM 网关",
     "subtitle": "通过 Azure API Management 暴露的 OpenAI 兼容入口",
@@ -13,6 +15,114 @@
         "azure",
         "apim"
     ],
+    "capabilities": {
+        "mode": "InheritDefault",
+        "allowed": [],
+        "disabled": []
+    },
+    "overrides": {
+        "defaults": {},
+        "auth": {
+            "defaultMode": "ApiKey",
+            "allowedModes": ["ApiKey"],
+            "defaultApiKeyHeaderMode": "Bearer",
+            "allowedApiKeyHeaderModes": ["ApiKeyHeader", "Bearer"]
+        },
+        "capabilities": {
+            "mode": "InheritDefault",
+            "allowed": [],
+            "disabled": []
+        },
+        "routes": {
+            "text": {
+                "primaryProtocol": "Responses",
+                "primaryUrl": "{baseUrl}/responses?api-version={apiVersion}",
+                "deploymentPrimaryUrl": ""
+            },
+            "modelDiscovery": {
+                "primaryUrl": "{baseUrl}/models"
+            },
+            "audio": {
+                "primaryUrl": "{baseUrl}/openai/deployments/{deployment}/audio/transcriptions?api-version={apiVersion}",
+                "defaultApiVersion": "2025-04-01-preview"
+            },
+            "speech": {
+                "primaryUrl": "{baseUrl}/openai/deployments/{deployment}/audio/speech?api-version={apiVersion}",
+                "defaultApiVersion": "2025-04-01-preview"
+            },
+            "image": {
+                "generatePrimaryUrl": "{baseUrl}/v1/images/generations?api-version={apiVersion}",
+                "editPrimaryUrl": "{baseUrl}/images/edits?api-version={apiVersion}",
+                "deploymentGeneratePrimaryUrl": "{baseUrl}/deployments/{deployment}/images/generations?api-version={apiVersion}"
+            },
+            "video": {
+                "defaultMode": "Videos",
+                "createPrimaryUrl": "{baseUrl}/v1/videos",
+                "jobsCreatePrimaryUrl": "",
+                "pollPrimaryUrl": "{baseUrl}/videos/{videoId}",
+                "jobsPollPrimaryUrl": "",
+                "downloadPrimaryUrl": "{baseUrl}/videos/{videoId}/content",
+                "jobsDownloadPrimaryUrl": "",
+                "downloadVideoContentPrimaryUrl": "{baseUrl}/videos/{videoId}/content/video",
+                "generationDownloadPrimaryUrl": "",
+                "generationDownloadVideoContentPrimaryUrl": ""
+            }
+        },
+        "version": {
+            "endpointApiVersion": "2025-03-01-preview",
+            "textApiVersion": "2025-03-01-preview",
+            "audioApiVersion": "2025-04-01-preview",
+            "speechApiVersion": "2025-04-01-preview",
+            "videoApiVersion": ""
+        }
+    },
+    "fallbacks": {
+        "modelDiscovery": ["{baseUrl}/v1/models"],
+        "text": [
+            "{baseUrl}/responses",
+            "{baseUrl}/v1/chat/completions?api-version={apiVersion}",
+            "{baseUrl}/v1/chat/completions",
+            "{baseUrl}/chat/completions?api-version={apiVersion}",
+            "{baseUrl}/chat/completions"
+        ],
+        "imageGenerate": [
+            "{baseUrl}/images/generations?api-version={apiVersion}",
+            "{baseUrl}/v1/images/generations",
+            "{baseUrl}/images/generations"
+        ],
+        "imageEdit": [
+            "{baseUrl}/v1/images/edits?api-version={apiVersion}",
+            "{baseUrl}/images/edits",
+            "{baseUrl}/v1/images/edits"
+        ],
+        "audio": [
+            "{baseUrl}/deployments/{deployment}/audio/transcriptions?api-version={apiVersion}",
+            "{baseUrl}/v1/audio/transcriptions?api-version={apiVersion}",
+            "{baseUrl}/audio/transcriptions?api-version={apiVersion}",
+            "{baseUrl}/v1/audio/transcriptions",
+            "{baseUrl}/audio/transcriptions"
+        ],
+        "speech": [
+            "{baseUrl}/deployments/{deployment}/audio/speech?api-version={apiVersion}",
+            "{baseUrl}/v1/audio/speech?api-version={apiVersion}",
+            "{baseUrl}/audio/speech?api-version={apiVersion}",
+            "{baseUrl}/v1/audio/speech",
+            "{baseUrl}/audio/speech"
+        ],
+        "videoCreate": [],
+        "videoJobsCreate": [],
+        "videoPoll": ["{baseUrl}/v1/videos/{videoId}"],
+        "videoJobsPoll": [],
+        "videoDownload": ["{baseUrl}/v1/videos/{videoId}/content"],
+        "videoJobsDownload": [],
+        "videoDownloadVideoContent": ["{baseUrl}/v1/videos/{videoId}/content/video"],
+        "videoGenerationDownload": [],
+        "videoGenerationDownloadVideoContent": []
+    },
+    "specialPolicies": {
+        "allowApimSubscriptionKeyQueryRetry": true,
+        "allowPreviewFallback": false
+    },
     "defaults": {
         "providerType": "OpenAiCompatible",
         "authMode": "ApiKey",

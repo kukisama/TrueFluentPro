@@ -12,6 +12,13 @@ namespace TrueFluentPro.Services
         public string FinalUrl { get; init; } = "";
     }
 
+    public sealed class AiAudioTranscriptionProbeResult
+    {
+        public required string RawJson { get; init; }
+        public string FinalUrl { get; init; } = "";
+        public int CueCount { get; init; }
+    }
+
     public interface IAiAudioTranscriptionService
     {
         Task<AiAudioTranscriptionResult> TranscribeAsync(
@@ -19,6 +26,12 @@ namespace TrueFluentPro.Services
             string audioPath,
             string? sourceLanguage,
             BatchSubtitleSplitOptions splitOptions,
+            CancellationToken cancellationToken);
+
+        Task<AiAudioTranscriptionProbeResult> ProbeAsync(
+            ModelRuntimeResolution runtime,
+            string audioPath,
+            string? sourceLanguage,
             CancellationToken cancellationToken);
     }
 }

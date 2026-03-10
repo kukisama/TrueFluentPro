@@ -8,6 +8,7 @@ using Avalonia.Interactivity;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using TrueFluentPro.Models;
+using TrueFluentPro.Services.EndpointProfiles;
 using TrueFluentPro.ViewModels.EndpointTesting;
 using TrueFluentPro.Views;
 using TrueFluentPro.Views.EndpointTesting;
@@ -154,14 +155,7 @@ public partial class EndpointsSection : UserControl
     {
         if (sender is not ComboBox combo) return;
         if (combo.Tag is not AiModelEntry model) return;
-        combo.SelectedIndex = model.Capabilities switch
-        {
-            ModelCapability.Image => 1,
-            ModelCapability.Video => 2,
-            ModelCapability.SpeechToText => 3,
-            ModelCapability.TextToSpeech => 4,
-            _ => 0,
-        };
+        RefreshCapabilityComboState(combo, model, syncModel: true);
     }
 
     private void ModelCapability_SelectionChanged(object? sender, SelectionChangedEventArgs e)
@@ -172,12 +166,23 @@ public partial class EndpointsSection : UserControl
         var tag = selected.Tag?.ToString();
         model.Capabilities = tag switch
         {
+            "None" => ModelCapability.None,
+            "Text" => ModelCapability.Text,
             "Image" => ModelCapability.Image,
             "Video" => ModelCapability.Video,
             "SpeechToText" => ModelCapability.SpeechToText,
             "TextToSpeech" => ModelCapability.TextToSpeech,
-            _ => ModelCapability.Text,
+            _ => ModelCapability.None,
         };
+
+        if (DataContext is EndpointsSectionVM { SelectedEndpoint: { } endpoint }
+            && model.Capabilities != ModelCapability.None
+            && !EndpointCapabilityPolicyResolver.IsCapabilityAllowed(endpoint.ProfileId, endpoint.EndpointType, model.Capabilities))
+        {
+            model.Capabilities = ModelCapability.None;
+            combo.SelectedIndex = 0;
+        }
+
         if (DataContext is EndpointsSectionVM vm)
             vm.NotifyModelChanged();
     }
@@ -343,10 +348,66 @@ public partial class EndpointsSection : UserControl
     private void Settings_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs args)
     {
         if (_boundVm != null && args.PropertyName is nameof(EndpointsSectionVM.SelectedEndpoint)
-            or nameof(EndpointsSectionVM.SelectedEndpointAuthMode))
+            or nameof(EndpointsSectionVM.SelectedEndpointAuthMode)
+            or nameof(EndpointsSectionVM.SelectedEndpointTypeSummary))
         {
             SyncAadLoginPanel(_boundVm);
+            RefreshVisibleCapabilityCombos();
         }
+    }
+
+    private void RefreshVisibleCapabilityCombos()
+    {
+        foreach (var combo in this.GetVisualDescendants().OfType<ComboBox>())
+        {
+            if (combo.Tag is AiModelEntry model)
+            {
+                RefreshCapabilityComboState(combo, model, syncModel: true);
+            }
+        }
+    }
+
+    private void RefreshCapabilityComboState(ComboBox combo, AiModelEntry model, bool syncModel)
+    {
+        if (DataContext is not EndpointsSectionVM { SelectedEndpoint: { } endpoint } vm)
+            return;
+
+        var allowed = EndpointCapabilityPolicyResolver.GetAllowedCapabilities(endpoint.ProfileId, endpoint.EndpointType)
+            .ToHashSet();
+
+        foreach (var item in combo.Items.OfType<ComboBoxItem>())
+        {
+            var tag = item.Tag?.ToString() ?? string.Empty;
+            if (string.Equals(tag, "None", StringComparison.OrdinalIgnoreCase))
+            {
+                item.IsEnabled = true;
+                continue;
+            }
+
+            item.IsEnabled = Enum.TryParse<ModelCapability>(tag, ignoreCase: true, out var capability)
+                             && allowed.Contains(capability);
+        }
+
+        var effectiveCapability = model.Capabilities;
+        if (effectiveCapability != ModelCapability.None && !allowed.Contains(effectiveCapability))
+        {
+            effectiveCapability = ModelCapability.None;
+            if (syncModel)
+            {
+                model.Capabilities = ModelCapability.None;
+                vm.NotifyModelChanged();
+            }
+        }
+
+        combo.SelectedIndex = effectiveCapability switch
+        {
+            ModelCapability.Text => 1,
+            ModelCapability.Image => 2,
+            ModelCapability.Video => 3,
+            ModelCapability.SpeechToText => 4,
+            ModelCapability.TextToSpeech => 5,
+            _ => 0,
+        };
     }
 
     private void EndpointAadLoginPanel_LoginCompleted()

@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.VisualTree;
 using TrueFluentPro.Models;
 using System;
 
@@ -21,6 +22,26 @@ namespace TrueFluentPro.Controls
 
         public ConfigurableTextEditor()
         {
+        }
+
+        protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+        {
+            base.OnAttachedToVisualTree(e);
+            EnsureEditorCreatedIfNeeded();
+        }
+
+        private void EnsureEditorCreatedIfNeeded()
+        {
+            if (_editor != null)
+            {
+                return;
+            }
+
+            if (!IsVisible || this.GetVisualRoot() == null)
+            {
+                return;
+            }
+
             CreateEditor();
         }
 
@@ -44,7 +65,14 @@ namespace TrueFluentPro.Controls
         {
             base.OnPropertyChanged(change);
 
-            if (change.Property == TextProperty)
+            if (change.Property == IsVisibleProperty)
+            {
+                if (change.NewValue is bool isVisible && isVisible)
+                {
+                    EnsureEditorCreatedIfNeeded();
+                }
+            }
+            else if (change.Property == TextProperty)
             {
                 if (_editor != null && _editor.Text != Text)
                 {

@@ -83,7 +83,7 @@ namespace TrueFluentPro.Models
         public string DisplayName { get; set; } = "";
         public string DeploymentName { get; set; } = "";
         public string GroupName { get; set; } = "";
-        public ModelCapability Capabilities { get; set; } = ModelCapability.Text;
+        public ModelCapability Capabilities { get; set; } = ModelCapability.None;
     }
 
     public class TransferModelSelections

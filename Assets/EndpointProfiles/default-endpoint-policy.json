@@ -1,0 +1,209 @@
+{
+  "schemaVersion": 1,
+  "policies": [
+    {
+      "id": "platform.openai-compatible",
+      "endpointType": "OpenAiCompatible",
+      "defaults": {
+        "providerType": "OpenAiCompatible",
+        "authMode": "ApiKey",
+        "apiKeyHeaderMode": "Bearer",
+        "textApiProtocolMode": "ChatCompletionsV1",
+        "imageApiRouteMode": "V1Images",
+        "apiVersion": "",
+        "supportsAad": false,
+        "clearAzureIdentityFields": true
+      },
+      "auth": {
+        "defaultMode": "ApiKey",
+        "allowedModes": [
+          "ApiKey"
+        ],
+        "defaultApiKeyHeaderMode": "Bearer",
+        "allowedApiKeyHeaderModes": [
+          "Bearer"
+        ]
+      },
+      "capabilities": {
+        "mode": "AllowOnly",
+        "allowed": [
+          "Text",
+          "Image",
+          "SpeechToText",
+          "TextToSpeech",
+          "Video"
+        ],
+        "disabled": []
+      },
+      "text": {
+        "primaryProtocol": "ChatCompletionsV1",
+        "primaryUrl": "{baseUrl}/v1/chat/completions",
+        "deploymentPrimaryUrl": ""
+      },
+      "modelDiscovery": {
+        "primaryUrl": "{baseUrl}/v1/models"
+      },
+      "audio": {
+        "primaryUrl": "{baseUrl}/v1/audio/transcriptions",
+        "defaultApiVersion": ""
+      },
+      "speech": {
+        "primaryUrl": "{baseUrl}/v1/audio/speech",
+        "defaultApiVersion": ""
+      },
+      "image": {
+        "generatePrimaryUrl": "{baseUrl}/v1/images/generations",
+        "editPrimaryUrl": "{baseUrl}/v1/images/edits",
+        "deploymentGeneratePrimaryUrl": ""
+      },
+      "video": {
+        "defaultMode": "Videos",
+        "createPrimaryUrl": "{baseUrl}/v1/videos",
+        "jobsCreatePrimaryUrl": "",
+        "pollPrimaryUrl": "{baseUrl}/v1/videos/{videoId}",
+        "jobsPollPrimaryUrl": "",
+        "downloadPrimaryUrl": "{baseUrl}/v1/videos/{videoId}/content",
+        "jobsDownloadPrimaryUrl": "",
+        "downloadVideoContentPrimaryUrl": "{baseUrl}/v1/videos/{videoId}/content/video",
+        "generationDownloadPrimaryUrl": "",
+        "generationDownloadVideoContentPrimaryUrl": ""
+      }
+    },
+    {
+      "id": "platform.azure-openai",
+      "endpointType": "AzureOpenAi",
+      "defaults": {
+        "providerType": "AzureOpenAi",
+        "authMode": "ApiKey",
+        "apiKeyHeaderMode": "ApiKeyHeader",
+        "textApiProtocolMode": "Auto",
+        "imageApiRouteMode": "Auto",
+        "apiVersion": "2024-02-01",
+        "supportsAad": true,
+        "clearAzureIdentityFields": false
+      },
+      "auth": {
+        "defaultMode": "ApiKey",
+        "allowedModes": [
+          "ApiKey"
+        ],
+        "defaultApiKeyHeaderMode": "ApiKeyHeader",
+        "allowedApiKeyHeaderModes": [
+          "ApiKeyHeader"
+        ]
+      },
+      "capabilities": {
+        "mode": "AllowOnly",
+        "allowed": [
+          "Text",
+          "Image",
+          "SpeechToText",
+          "TextToSpeech",
+          "Video"
+        ],
+        "disabled": []
+      },
+      "text": {
+        "primaryProtocol": "Auto",
+        "primaryUrl": "",
+        "deploymentPrimaryUrl": "{baseUrl}/openai/deployments/{deployment}/chat/completions?api-version={apiVersion}"
+      },
+      "modelDiscovery": {
+        "primaryUrl": ""
+      },
+      "audio": {
+        "primaryUrl": "{baseUrl}/openai/deployments/{deployment}/audio/transcriptions?api-version={apiVersion}",
+        "defaultApiVersion": "2025-04-01-preview"
+      },
+      "speech": {
+        "primaryUrl": "{baseUrl}/openai/deployments/{deployment}/audio/speech?api-version={apiVersion}",
+        "defaultApiVersion": "2025-04-01-preview"
+      },
+      "image": {
+        "generatePrimaryUrl": "{baseUrl}/openai/v1/images/generations",
+        "editPrimaryUrl": "{baseUrl}/openai/v1/images/edits",
+        "deploymentGeneratePrimaryUrl": ""
+      },
+      "video": {
+        "defaultMode": "Videos",
+        "createPrimaryUrl": "{baseUrl}/openai/v1/videos",
+        "jobsCreatePrimaryUrl": "{baseUrl}/openai/v1/video/generations/jobs?api-version=preview",
+        "pollPrimaryUrl": "{baseUrl}/openai/v1/videos/{videoId}",
+        "jobsPollPrimaryUrl": "{baseUrl}/openai/v1/video/generations/jobs/{videoId}?api-version=preview",
+        "downloadPrimaryUrl": "{baseUrl}/openai/v1/videos/{videoId}/content",
+        "jobsDownloadPrimaryUrl": "{baseUrl}/openai/v1/video/generations/jobs/{videoId}/content?api-version=preview",
+        "downloadVideoContentPrimaryUrl": "{baseUrl}/openai/v1/videos/{videoId}/content/video",
+        "generationDownloadPrimaryUrl": "{baseUrl}/openai/v1/video/generations/{videoId}/content",
+        "generationDownloadVideoContentPrimaryUrl": "{baseUrl}/openai/v1/video/generations/{videoId}/content/video"
+      }
+    },
+    {
+      "id": "platform.apim-gateway",
+      "endpointType": "ApiManagementGateway",
+      "defaults": {
+        "providerType": "OpenAiCompatible",
+        "authMode": "ApiKey",
+        "apiKeyHeaderMode": "ApiKeyHeader",
+        "textApiProtocolMode": "Responses",
+        "imageApiRouteMode": "V1Images",
+        "apiVersion": "2025-03-01-preview",
+        "supportsAad": false,
+        "clearAzureIdentityFields": true
+      },
+      "auth": {
+        "defaultMode": "ApiKey",
+        "allowedModes": [
+          "ApiKey"
+        ],
+        "defaultApiKeyHeaderMode": "ApiKeyHeader",
+        "allowedApiKeyHeaderModes": [
+          "ApiKeyHeader"
+        ]
+      },
+      "capabilities": {
+        "mode": "AllowOnly",
+        "allowed": [
+          "Text",
+          "Image",
+          "SpeechToText",
+          "TextToSpeech",
+          "Video"
+        ],
+        "disabled": []
+      },
+      "text": {
+        "primaryProtocol": "Responses",
+        "primaryUrl": "{baseUrl}/responses?api-version={apiVersion}",
+        "deploymentPrimaryUrl": ""
+      },
+      "modelDiscovery": {
+        "primaryUrl": "{baseUrl}/models"
+      },
+      "audio": {
+        "primaryUrl": "{baseUrl}/v1/audio/transcriptions?api-version={apiVersion}",
+        "defaultApiVersion": "2025-04-01-preview"
+      },
+      "speech": {
+        "primaryUrl": "{baseUrl}/v1/audio/speech?api-version={apiVersion}",
+        "defaultApiVersion": "2025-04-01-preview"
+      },
+      "image": {
+        "generatePrimaryUrl": "{baseUrl}/v1/images/generations?api-version={apiVersion}",
+        "editPrimaryUrl": "{baseUrl}/v1/images/edits?api-version={apiVersion}",
+        "deploymentGeneratePrimaryUrl": "{baseUrl}/deployments/{deployment}/images/generations?api-version={apiVersion}"
+      },
+      "video": {
+        "defaultMode": "Videos",
+        "createPrimaryUrl": "{baseUrl}/v1/videos",
+        "jobsCreatePrimaryUrl": "",
+        "pollPrimaryUrl": "{baseUrl}/v1/videos/{videoId}",
+        "jobsPollPrimaryUrl": "",
+        "downloadPrimaryUrl": "{baseUrl}/v1/videos/{videoId}/content",
+        "jobsDownloadPrimaryUrl": "",
+        "downloadVideoContentPrimaryUrl": "{baseUrl}/v1/videos/{videoId}/content/video",
+        "generationDownloadPrimaryUrl": "",
+        "generationDownloadVideoContentPrimaryUrl": ""
+      }
+    }
+  ]
+}

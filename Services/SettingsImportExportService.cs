@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text.Json;
 using TrueFluentPro.Helpers;
 using TrueFluentPro.Models;
+using TrueFluentPro.Services.EndpointProfiles;
 
 namespace TrueFluentPro.Services
 {
@@ -360,7 +361,8 @@ namespace TrueFluentPro.Services
             var resolved = config.ResolveModel(reference);
             return resolved.Endpoint != null
                    && resolved.Model != null
-                   && resolved.Model.Capabilities.HasFlag(capability);
+                     && resolved.Model.Capabilities.HasFlag(capability)
+                     && EndpointCapabilityPolicyResolver.IsCapabilityAllowed(resolved.Endpoint.ProfileId, resolved.Endpoint.EndpointType, capability);
         }
 
         private static bool IsImportableEndpoint(AiEndpoint endpoint)

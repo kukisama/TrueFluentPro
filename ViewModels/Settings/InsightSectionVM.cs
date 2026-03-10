@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Input;
+using Microsoft.Extensions.DependencyInjection;
 using TrueFluentPro.Helpers;
 using TrueFluentPro.Models;
 using TrueFluentPro.Services;
@@ -163,8 +164,13 @@ namespace TrueFluentPro.ViewModels.Settings
                     return;
                 }
 
-                var provider = new AzureTokenProvider(GetEndpointProfileKey(endpoint));
-                var loggedIn = await provider.TrySilentLoginAsync(endpoint.AzureTenantId, endpoint.AzureClientId);
+                var providerStore = App.Services.GetRequiredService<IAzureTokenProviderStore>();
+                var profileKey = GetEndpointProfileKey(endpoint);
+                var provider = providerStore.GetProvider(profileKey);
+                var loggedIn = await providerStore.GetAuthenticatedProviderAsync(
+                    profileKey,
+                    endpoint.AzureTenantId,
+                    endpoint.AzureClientId) != null;
                 AiAuthStatus = loggedIn
                     ? $"认证状态：AAD 已登录（{(string.IsNullOrWhiteSpace(provider.Username) ? "已认证" : provider.Username)}）"
                     : "认证状态：AAD 未登录（请先在 AI 终结点中点击\u201C登录\u201D）";
@@ -266,12 +272,13 @@ namespace TrueFluentPro.ViewModels.Settings
 
             if (endpoint.AuthMode == AzureAuthMode.AAD)
             {
-                tokenProvider = new AzureTokenProvider(runtime.ProfileKey);
-                var silentLoggedIn = await tokenProvider.TrySilentLoginAsync(
+                var providerStore = App.Services.GetRequiredService<IAzureTokenProviderStore>();
+                tokenProvider = await providerStore.GetAuthenticatedProviderAsync(
+                    runtime.ProfileKey,
                     runtime.AzureTenantId,
                     runtime.AzureClientId);
 
-                if (!silentLoggedIn)
+                if (tokenProvider == null)
                 {
                     AiAuthStatus = "认证状态：AAD 未登录（请先在 AI 终结点中点击\u201C登录\u201D）";
                     return null;
@@ -324,13 +331,11 @@ namespace TrueFluentPro.ViewModels.Settings
             if (request.AzureAuthMode == AzureAuthMode.AAD)
                 return "AAD Bearer";
 
-            var mode = request.ApiKeyHeaderMode;
-            if (mode == ApiKeyHeaderMode.Auto)
-            {
-                mode = request.IsAzureEndpoint || request.EndpointType == EndpointApiType.ApiManagementGateway
-                    ? ApiKeyHeaderMode.ApiKeyHeader
-                    : ApiKeyHeaderMode.Bearer;
-            }
+            var mode = EndpointProfileUrlBuilder.GetEffectiveApiKeyHeaderMode(
+                request.ProfileId,
+                request.EndpointType,
+                request.ApiKeyHeaderMode,
+                request.IsAzureEndpoint || request.EndpointType == EndpointApiType.ApiManagementGateway);
 
             return mode == ApiKeyHeaderMode.ApiKeyHeader
                 ? "api-key Header"

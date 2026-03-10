@@ -24,10 +24,11 @@ namespace TrueFluentPro.ViewModels
         private readonly MediaGenConfig _genConfig;
         private readonly List<AiEndpoint> _endpoints;
         private readonly IModelRuntimeResolver _modelRuntimeResolver;
+        private readonly IAzureTokenProviderStore _azureTokenProviderStore;
         private readonly AiImageGenService _imageService = new();
         private readonly AiVideoGenService _videoService = new();
-        private AzureTokenProvider _imageTokenProvider = new("media-image");
-        private AzureTokenProvider _videoTokenProvider = new("media-video");
+        private AzureTokenProvider _imageTokenProvider;
+        private AzureTokenProvider _videoTokenProvider;
         private readonly string _studioDirectory;
         private readonly string _indexFilePath;
         private MediaStudioIndex _sessionIndex = new();
@@ -116,12 +117,15 @@ namespace TrueFluentPro.ViewModels
         public ICommand DeleteSessionCommand { get; }
         public ICommand RenameSessionCommand { get; }
 
-        public MediaStudioViewModel(AiConfig aiConfig, MediaGenConfig genConfig, List<AiEndpoint> endpoints, IModelRuntimeResolver modelRuntimeResolver)
+        public MediaStudioViewModel(AiConfig aiConfig, MediaGenConfig genConfig, List<AiEndpoint> endpoints, IModelRuntimeResolver modelRuntimeResolver, IAzureTokenProviderStore azureTokenProviderStore)
         {
             _aiConfig = aiConfig;
             _genConfig = genConfig;
             _endpoints = endpoints;
             _modelRuntimeResolver = modelRuntimeResolver;
+            _azureTokenProviderStore = azureTokenProviderStore;
+            _imageTokenProvider = _azureTokenProviderStore.GetProvider("media-image");
+            _videoTokenProvider = _azureTokenProviderStore.GetProvider("media-video");
 
             _imageService.SetTokenProvider(_imageTokenProvider);
             _videoService.SetTokenProvider(_videoTokenProvider);
@@ -265,18 +269,30 @@ namespace TrueFluentPro.ViewModels
                 && imageRuntime != null
                 && imageRuntime.AzureAuthMode == AzureAuthMode.AAD)
             {
-                _imageTokenProvider = new AzureTokenProvider(imageRuntime.ProfileKey);
-                _imageService.SetTokenProvider(_imageTokenProvider);
-                await _imageTokenProvider.TrySilentLoginAsync(imageRuntime.AzureTenantId, imageRuntime.AzureClientId);
+                var provider = await _azureTokenProviderStore.GetAuthenticatedProviderAsync(
+                    imageRuntime.ProfileKey,
+                    imageRuntime.AzureTenantId,
+                    imageRuntime.AzureClientId);
+                if (provider != null)
+                {
+                    _imageTokenProvider = provider;
+                    _imageService.SetTokenProvider(_imageTokenProvider);
+                }
             }
 
             if (_modelRuntimeResolver.TryResolve(runtimeConfig, _genConfig.VideoModelRef, ModelCapability.Video, out var videoRuntime, out _)
                 && videoRuntime != null
                 && videoRuntime.AzureAuthMode == AzureAuthMode.AAD)
             {
-                _videoTokenProvider = new AzureTokenProvider(videoRuntime.ProfileKey);
-                _videoService.SetTokenProvider(_videoTokenProvider);
-                await _videoTokenProvider.TrySilentLoginAsync(videoRuntime.AzureTenantId, videoRuntime.AzureClientId);
+                var provider = await _azureTokenProviderStore.GetAuthenticatedProviderAsync(
+                    videoRuntime.ProfileKey,
+                    videoRuntime.AzureTenantId,
+                    videoRuntime.AzureClientId);
+                if (provider != null)
+                {
+                    _videoTokenProvider = provider;
+                    _videoService.SetTokenProvider(_videoTokenProvider);
+                }
             }
         }
 
@@ -293,6 +309,7 @@ namespace TrueFluentPro.ViewModels
                 sessionId, defaultName,
                 sessionDir, _aiConfig, _genConfig, _endpoints,
                 _modelRuntimeResolver,
+                _azureTokenProviderStore,
                 _imageService, _videoService,
                 OnSessionTaskCountChanged,
                 s => SaveSessionMeta(s));
@@ -421,8 +438,7 @@ namespace TrueFluentPro.ViewModels
                     continue;
                 }
 
-                session.Messages.Clear();
-                session.TaskHistory.Clear();
+                session.ClearLoadedContent();
                 session.LastNonBottomScrollOffsetY = null;
                 session.LastScrollAnchorRatio = null;
                 session.LastScrollAnchorMessageIndex = null;
@@ -592,6 +608,7 @@ namespace TrueFluentPro.ViewModels
                         _genConfig,
                         _endpoints,
                         _modelRuntimeResolver,
+                        _azureTokenProviderStore,
                         _imageService,
                         _videoService,
                         OnSessionTaskCountChanged,
@@ -747,7 +764,7 @@ namespace TrueFluentPro.ViewModels
                     return;
                 }
 
-                session.Messages.Clear();
+                var loadedMessages = new List<ChatMessageViewModel>();
                 if (sessionData.Messages != null)
                 {
                     foreach (var msg in sessionData.Messages)
@@ -765,9 +782,11 @@ namespace TrueFluentPro.ViewModels
                                 .ToList() ?? new List<string>()
                         };
 
-                        session.Messages.Add(new ChatMessageViewModel(normalizedMessage));
+                        loadedMessages.Add(new ChatMessageViewModel(normalizedMessage));
                     }
                 }
+
+                session.ReplaceAllMessages(loadedMessages);
 
                 session.TaskHistory.Clear();
                 if (sessionData.Tasks != null)
@@ -783,7 +802,7 @@ namespace TrueFluentPro.ViewModels
                 UpdateSessionIndexFromSession(session, saveIndex: true);
                 TouchLoadedSession(session);
                 sw.Stop();
-                Debug.WriteLine($"加载会话 {session.SessionId}: messages={session.Messages.Count}, tasks={session.TaskHistory.Count}, {sw.ElapsedMilliseconds}ms");
+                Debug.WriteLine($"加载会话 {session.SessionId}: visibleMessages={session.Messages.Count}, totalMessages={session.TotalMessageCount}, tasks={session.TaskHistory.Count}, {sw.ElapsedMilliseconds}ms");
             }
             catch (Exception ex)
             {
@@ -821,7 +840,7 @@ namespace TrueFluentPro.ViewModels
                     {
                         Id = session.SessionId,
                         Name = session.SessionName,
-                        Messages = session.Messages.Select(m => new MediaChatMessage
+                        Messages = session.AllMessages.Select(m => new MediaChatMessage
                         {
                             Role = m.Role,
                             Text = m.Text,
@@ -881,7 +900,7 @@ namespace TrueFluentPro.ViewModels
             entry.DirectoryName = Path.GetFileName(session.SessionDirectory) ?? entry.DirectoryName;
             if (session.IsContentLoaded)
             {
-                entry.MessageCount = session.Messages.Count;
+                entry.MessageCount = session.TotalMessageCount;
                 entry.TaskCount = session.TaskHistory.Count;
             }
             entry.UpdatedAt = DateTime.Now;

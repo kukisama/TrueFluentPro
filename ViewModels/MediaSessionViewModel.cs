@@ -22,6 +22,7 @@ namespace TrueFluentPro.ViewModels
         private readonly MediaGenConfig _genConfig;
         private readonly List<AiEndpoint> _endpoints;
         private readonly IModelRuntimeResolver _modelRuntimeResolver;
+        private readonly IAzureTokenProviderStore _azureTokenProviderStore;
         private readonly AiImageGenService _imageService;
         private readonly AiVideoGenService _videoService;
         private readonly Action _onTaskCountChanged;
@@ -29,6 +30,7 @@ namespace TrueFluentPro.ViewModels
         private CancellationTokenSource _cts = new();
         private readonly SemaphoreSlim _videoFrameBackfillLock = new(1, 1);
         private const int MaxReferenceImageCount = 8;
+        private readonly List<ChatMessageViewModel> _allMessages = new();
 
         // ── 会话级参数（仅内存，不回写配置文件）──
         private string _imageSize = "1024x1024";
@@ -103,6 +105,10 @@ namespace TrueFluentPro.ViewModels
 
         // --- 聊天记录 ---
         public ObservableCollection<ChatMessageViewModel> Messages { get; } = new();
+
+        public IReadOnlyList<ChatMessageViewModel> AllMessages => _allMessages;
+
+        public int TotalMessageCount => _allMessages.Count;
 
         // --- 进行中的任务 ---
         public ObservableCollection<MediaGenTask> RunningTasks { get; } = new();
@@ -350,6 +356,7 @@ namespace TrueFluentPro.ViewModels
             MediaGenConfig genConfig,
             List<AiEndpoint> endpoints,
             IModelRuntimeResolver modelRuntimeResolver,
+            IAzureTokenProviderStore azureTokenProviderStore,
             AiImageGenService imageService,
             AiVideoGenService videoService,
             Action onTaskCountChanged,
@@ -362,6 +369,7 @@ namespace TrueFluentPro.ViewModels
             _genConfig = genConfig;
             _endpoints = endpoints;
             _modelRuntimeResolver = modelRuntimeResolver;
+            _azureTokenProviderStore = azureTokenProviderStore;
             _imageService = imageService;
             _videoService = videoService;
             _onTaskCountChanged = onTaskCountChanged;
@@ -432,7 +440,7 @@ namespace TrueFluentPro.ViewModels
             return true;
         }
 
-        private static async System.Threading.Tasks.Task ConfigureScopedServiceAuthAsync(
+        private async System.Threading.Tasks.Task ConfigureScopedServiceAuthAsync(
             AiMediaServiceBase service,
             ModelRuntimeResolution runtime,
             CancellationToken ct)
@@ -442,8 +450,16 @@ namespace TrueFluentPro.ViewModels
             if (runtime.AzureAuthMode != AzureAuthMode.AAD)
                 return;
 
-            var provider = new AzureTokenProvider(runtime.ProfileKey);
-            await provider.TrySilentLoginAsync(runtime.AzureTenantId, runtime.AzureClientId, ct);
+            var provider = await _azureTokenProviderStore.GetAuthenticatedProviderAsync(
+                runtime.ProfileKey,
+                runtime.AzureTenantId,
+                runtime.AzureClientId,
+                ct);
+            if (provider == null)
+            {
+                throw new InvalidOperationException("AAD 登录已失效，请先在设置中重新登录当前媒体模型对应终结点。");
+            }
+
             service.SetTokenProvider(provider);
         }
 
@@ -471,12 +487,81 @@ namespace TrueFluentPro.ViewModels
             if (message.IsLoading)
                 return;
 
-            if (Messages.Contains(message))
+            if (RemoveMessageInternal(message))
             {
-                Messages.Remove(message);
                 _onRequestSave?.Invoke(this);
             }
         }
+
+        public void ReplaceAllMessages(IEnumerable<ChatMessageViewModel>? messages)
+        {
+            var snapshot = messages?.ToList() ?? new List<ChatMessageViewModel>();
+
+            _allMessages.Clear();
+            Messages.Clear();
+
+            _allMessages.AddRange(snapshot);
+
+            for (var i = 0; i < _allMessages.Count; i++)
+            {
+                Messages.Add(_allMessages[i]);
+            }
+
+            UpdateMessageWindowState();
+        }
+
+        public void AppendMessage(ChatMessageViewModel message)
+        {
+            _allMessages.Add(message);
+            Messages.Add(message);
+            UpdateMessageWindowState();
+        }
+
+        public void ClearLoadedContent()
+        {
+            Messages.Clear();
+            _allMessages.Clear();
+            TaskHistory.Clear();
+            UpdateMessageWindowState();
+        }
+
+        private bool RemoveMessageInternal(ChatMessageViewModel message)
+        {
+            var removed = false;
+            var fullIndex = _allMessages.IndexOf(message);
+            if (fullIndex >= 0)
+            {
+                _allMessages.RemoveAt(fullIndex);
+                removed = true;
+            }
+
+            var visibleIndex = Messages.IndexOf(message);
+            if (visibleIndex >= 0)
+            {
+                Messages.RemoveAt(visibleIndex);
+                removed = true;
+            }
+
+            if (Messages.Count == 0 && _allMessages.Count > 0)
+            {
+                ReplaceAllMessages(_allMessages.ToList());
+                return true;
+            }
+
+            if (removed)
+            {
+                UpdateMessageWindowState();
+            }
+
+            return removed;
+        }
+
+        private void UpdateMessageWindowState()
+        {
+            OnPropertyChanged(nameof(AllMessages));
+            OnPropertyChanged(nameof(TotalMessageCount));
+        }
+
 
         /// <summary>
         /// 首次切换到视频模式时，从全局配置重新快照视频参数。
@@ -550,7 +635,7 @@ namespace TrueFluentPro.ViewModels
             PromptText = "";
 
             // 添加用户消息
-            Messages.Add(new ChatMessageViewModel(new MediaChatMessage
+            AppendMessage(new ChatMessageViewModel(new MediaChatMessage
             {
                 Role = "user",
                 Text = prompt,
@@ -588,7 +673,7 @@ namespace TrueFluentPro.ViewModels
                 Timestamp = DateTime.Now
             })
             { IsLoading = true };
-            Messages.Add(loadingMessage);
+            AppendMessage(loadingMessage);
 
             var stopwatch = System.Diagnostics.Stopwatch.StartNew();
             // 启动计时器显示
@@ -752,7 +837,7 @@ namespace TrueFluentPro.ViewModels
                 Timestamp = DateTime.Now
             })
             { IsLoading = true };
-            Messages.Add(loadingMessage);
+            AppendMessage(loadingMessage);
 
             var stopwatch = System.Diagnostics.Stopwatch.StartNew();
             string currentApiStatus = ""; // 记录当前 API 返回的状态
@@ -1010,7 +1095,7 @@ namespace TrueFluentPro.ViewModels
                 Timestamp = DateTime.Now
             })
             { IsLoading = true };
-            Messages.Add(loadingMessage);
+            AppendMessage(loadingMessage);
 
 
             var ct = _cts.Token;
@@ -1498,7 +1583,7 @@ namespace TrueFluentPro.ViewModels
 
             try
             {
-                var candidates = Messages
+                var candidates = _allMessages
                     .Where(IsTargetVideoMessage)
                     .ToList();
 

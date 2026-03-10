@@ -16,20 +16,37 @@ public static class EndpointProfileVideoModeResolver
         VideoApiMode configuredMode)
     {
         var profile = EndpointProfileRuntimeResolver.Resolve(profileId, endpointType)?.Video;
-        if (profile == null)
-            return configuredMode;
+        var supportedModes = profile == null
+            ? new List<VideoApiMode>()
+            : GetSupportedModes(profile);
 
-        var supportedModes = GetSupportedModes(profile);
-        if (supportedModes.Count == 0)
-            return configuredMode;
+        if (supportedModes.Count > 0)
+        {
+            var mappedMode = TryResolveMappedMode(profile!, modelId);
+            if (mappedMode.HasValue && supportedModes.Contains(mappedMode.Value))
+                return mappedMode.Value;
 
-        var mappedMode = TryResolveMappedMode(profile, modelId);
-        if (mappedMode.HasValue && supportedModes.Contains(mappedMode.Value))
-            return mappedMode.Value;
+            return supportedModes.Contains(configuredMode)
+                ? configuredMode
+                : supportedModes[0];
+        }
 
-        return supportedModes.Contains(configuredMode)
-            ? configuredMode
-            : supportedModes[0];
+        try
+        {
+            var policy = App.Services.GetService(typeof(IEndpointPlatformDefaultPolicyService)) as IEndpointPlatformDefaultPolicyService;
+            var platformPolicy = policy?.GetPolicy(endpointType);
+            if (platformPolicy != null
+                && Enum.TryParse<VideoApiMode>(platformPolicy.Video.DefaultMode, ignoreCase: true, out var defaultMode))
+            {
+                return defaultMode;
+            }
+        }
+        catch
+        {
+            // 平台默认值不可用时保持旧行为。
+        }
+
+        return configuredMode;
     }
 
     public static VideoApiMode? TryResolveMappedMode(EndpointProfileVideoSettings profile, string? modelId)

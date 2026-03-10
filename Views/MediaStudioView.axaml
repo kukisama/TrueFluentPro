@@ -221,10 +221,11 @@
                                                                         Tag="{Binding $parent[ItemsControl].DataContext}">
                                                                     <Grid>
                                                                         <!-- 图片预览（点击即可大图/播放） -->
-                                                                        <Image x:Name="PreviewImage"
-                                                                               MaxWidth="200" MaxHeight="200"
-                                                                               Stretch="Uniform"
-                                                                               Source="{Binding Converter={StaticResource FilePathToBitmapConverter}}"/>
+                                                                          <controls:ViewportLazyImage x:Name="PreviewImage"
+                                                                                          MaxWidth="200"
+                                                                                          MaxHeight="200"
+                                                                                          Stretch="Uniform"
+                                                                                          FilePath="{Binding}"/>
 
                                                                         <!-- 首帧专属播放提示 -->
                                                                         <Border HorizontalAlignment="Left"

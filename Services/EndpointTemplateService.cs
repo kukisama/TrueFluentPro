@@ -239,11 +239,17 @@ public sealed class EndpointTemplateService : IEndpointTemplateService
         if (endpoint.AuthMode == AzureAuthMode.AAD)
             return "Authorization: Bearer（Microsoft Entra ID / AAD）";
 
+        var mode = EndpointProfileUrlBuilder.GetEffectiveApiKeyHeaderMode(
+            endpoint.ProfileId,
+            endpoint.EndpointType,
+            endpoint.ApiKeyHeaderMode,
+            endpoint.IsAzureEndpoint || endpoint.EndpointType == EndpointApiType.ApiManagementGateway);
+
         return endpoint.ApiKeyHeaderMode switch
         {
             ApiKeyHeaderMode.ApiKeyHeader => "api-key Header",
             ApiKeyHeaderMode.Bearer => "Authorization: Bearer",
-            _ => endpoint.IsAzureEndpoint || endpoint.EndpointType == EndpointApiType.ApiManagementGateway
+            _ => mode == ApiKeyHeaderMode.ApiKeyHeader
                 ? "api-key Header（自动）"
                 : "Authorization: Bearer（自动）"
         };
@@ -448,7 +454,7 @@ public sealed class EndpointTemplateService : IEndpointTemplateService
 
     private static IReadOnlyList<string> GetCapabilityModels(AiEndpoint endpoint, ModelCapability capability)
         => endpoint.Models
-            .Where(model => model.Capabilities.HasFlag(capability))
+            .Where(model => EndpointCapabilityPolicyResolver.ApplyCapabilityPolicy(endpoint.ProfileId, endpoint.EndpointType, model.Capabilities).HasFlag(capability))
             .Select(model => string.IsNullOrWhiteSpace(model.ModelId) ? "未填写模型 ID" : model.ModelId.Trim())
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();

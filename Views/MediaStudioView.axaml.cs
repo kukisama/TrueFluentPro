@@ -61,7 +61,8 @@ namespace TrueFluentPro.Views
             _initialized = true;
 
             var modelRuntimeResolver = App.Services.GetRequiredService<IModelRuntimeResolver>();
-            _viewModel = new MediaStudioViewModel(aiConfig, genConfig, endpoints, modelRuntimeResolver);
+            var azureTokenProviderStore = App.Services.GetRequiredService<IAzureTokenProviderStore>();
+            _viewModel = new MediaStudioViewModel(aiConfig, genConfig, endpoints, modelRuntimeResolver, azureTokenProviderStore);
             DataContext = _viewModel;
 
             _sessionListBox = this.FindControl<ListBox>("SessionListBox");
@@ -594,7 +595,7 @@ namespace TrueFluentPro.Views
         private static string DescribeSession(MediaSessionViewModel? session)
             => session == null
                 ? "<null>"
-                : $"{session.SessionId}/{session.SessionName}(loaded={session.IsContentLoaded},msg={session.Messages.Count},task={session.TaskHistory.Count},anchorIdx={session.LastScrollAnchorMessageIndex?.ToString() ?? "null"})";
+                : $"{session.SessionId}/{session.SessionName}(loaded={session.IsContentLoaded},visibleMsg={session.Messages.Count},totalMsg={session.TotalMessageCount},task={session.TaskHistory.Count},anchorIdx={session.LastScrollAnchorMessageIndex?.ToString() ?? "null"})";
 
         private static bool IsSwitchAuditEnabled()
         {

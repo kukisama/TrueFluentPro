@@ -19,15 +19,18 @@ namespace TrueFluentPro.Services
         private readonly IModelRuntimeResolver _modelRuntimeResolver;
         private readonly ISpeechResourceRuntimeResolver _speechResourceRuntimeResolver;
         private readonly IRealtimeConnectionSpecResolver _realtimeConnectionSpecResolver;
+        private readonly IAzureTokenProviderStore _azureTokenProviderStore;
 
         public RealtimeTranslationServiceFactory(
             IModelRuntimeResolver modelRuntimeResolver,
             ISpeechResourceRuntimeResolver speechResourceRuntimeResolver,
-            IRealtimeConnectionSpecResolver realtimeConnectionSpecResolver)
+            IRealtimeConnectionSpecResolver realtimeConnectionSpecResolver,
+            IAzureTokenProviderStore azureTokenProviderStore)
         {
             _modelRuntimeResolver = modelRuntimeResolver;
             _speechResourceRuntimeResolver = speechResourceRuntimeResolver;
             _realtimeConnectionSpecResolver = realtimeConnectionSpecResolver;
+            _azureTokenProviderStore = azureTokenProviderStore;
         }
 
         public bool TryResolveConnectorFamily(AzureSpeechConfig config, out RealtimeConnectorFamily connectorFamily, out string errorMessage)
@@ -110,6 +113,7 @@ namespace TrueFluentPro.Services
                 _modelRuntimeResolver,
                 _speechResourceRuntimeResolver,
                 _realtimeConnectionSpecResolver,
+                _azureTokenProviderStore,
                 auditLog);
             return true;
         }

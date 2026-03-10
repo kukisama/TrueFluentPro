@@ -61,6 +61,8 @@ namespace TrueFluentPro.ViewModels
         private FloatingSubtitleManager? _floatingSubtitleManager;
         private FloatingInsightManager? _floatingInsightManager;
         private bool _isFloatingInsightOpen;
+        private int _liveSidePanelTabIndex;
+        private bool _isLiveInsightPanelLoaded;
 
         private int _uiModeIndex;
         private bool _isReviewModeViewCreated;
@@ -76,6 +78,7 @@ namespace TrueFluentPro.ViewModels
 
         public MainWindowViewModel(
             ConfigurationService configService,
+            IAzureTokenProviderStore azureTokenProviderStore,
             AzureSubscriptionValidator subscriptionValidator,
             SettingsViewModel settingsViewModel,
             IModelRuntimeResolver modelRuntimeResolver,
@@ -88,7 +91,7 @@ namespace TrueFluentPro.ViewModels
             _realtimeTranslationServiceFactory = realtimeTranslationServiceFactory;
             Settings = settingsViewModel;
             Settings.StatusNotificationRequested += message => StatusMessage = message;
-            var azureTokenProvider = new AzureTokenProvider("ai");
+            var azureTokenProvider = azureTokenProviderStore.GetProvider("ai");
             _aiInsightService = new AiInsightService(azureTokenProvider);
             _config = new AzureSpeechConfig();
             AppLogService.Initialize(() => _config.BatchLogLevel);
@@ -147,6 +150,7 @@ namespace TrueFluentPro.ViewModels
                 Playback,
                 configService,
                 batchPackageStateService,
+                azureTokenProviderStore,
                 () => ConfigVM.NotifyReviewLampChanged());
 
             FileLibrary.SubtitleCuesLoaded += OnFileLibrarySubtitleCuesLoaded;
@@ -174,7 +178,7 @@ namespace TrueFluentPro.ViewModels
 
             AiInsight = new AiInsightViewModel(
                 _aiInsightService,
-                azureTokenProvider,
+                azureTokenProviderStore,
                 modelRuntimeResolver,
                 () => _config,
                 () => _history,

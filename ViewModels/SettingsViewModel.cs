@@ -149,6 +149,8 @@ namespace TrueFluentPro.ViewModels
         public int BatchPauseSplitMs { get => StorageVM.BatchPauseSplitMs; set => StorageVM.BatchPauseSplitMs = value; }
         public ReviewSubtitleSourceMode ReviewSubtitleSourceMode { get => StorageVM.ReviewSubtitleSourceMode; set => StorageVM.ReviewSubtitleSourceMode = value; }
         public int ReviewSubtitleSourceModeIndex { get => StorageVM.ReviewSubtitleSourceModeIndex; set => StorageVM.ReviewSubtitleSourceModeIndex = value; }
+        public string ReviewSubtitleSourceDisplayText => StorageVM.ReviewSubtitleSourceDisplayText;
+        public string ReviewSubtitleSourceDescription => StorageVM.ReviewSubtitleSourceDescription;
         public ICommand ValidateBatchStorageCommand => StorageVM.ValidateBatchStorageCommand;
 
         // — Recognition —

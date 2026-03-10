@@ -255,24 +255,24 @@ namespace TrueFluentPro.Services
                 videoId,
                 apiMode);
 
-            string? fallbackUrl = null;
-            string? fallbackAltUrl = null;
             if (!string.IsNullOrWhiteSpace(generationId))
             {
-                fallbackUrl = BuildVideoGenerationDownloadUrl(config, generationId);
-                fallbackAltUrl = BuildVideoGenerationDownloadUrlAlt(config, generationId);
-            }
-
-            // 组装候选 URL 列表，顺序与 DownloadVideoAsync 中一致
-            if (IsAzureEndpoint(config) && apiMode == VideoApiMode.SoraJobs)
-            {
-                // generationId 下载优先
-                AddUrl(fallbackUrl);
-                AddUrl(fallbackAltUrl);
-                // jobs 内容作为兜底
-                foreach (var url in primaryUrls)
+                foreach (var url in EndpointProfileUrlBuilder.BuildVideoGenerationDownloadUrlCandidates(
+                             config.ApiEndpoint,
+                             config.ProfileId,
+                             config.EndpointType,
+                             config.ApiVersion,
+                             generationId,
+                             preferVideoContent: true))
                     AddUrl(url);
-                foreach (var url in contentVideoUrls)
+
+                foreach (var url in EndpointProfileUrlBuilder.BuildVideoGenerationDownloadUrlCandidates(
+                             config.ApiEndpoint,
+                             config.ProfileId,
+                             config.EndpointType,
+                             config.ApiVersion,
+                             generationId,
+                             preferVideoContent: false))
                     AddUrl(url);
             }
             else
@@ -281,8 +281,6 @@ namespace TrueFluentPro.Services
                     AddUrl(url);
                 foreach (var url in contentVideoUrls)
                     AddUrl(url);
-                AddUrl(fallbackUrl);
-                AddUrl(fallbackAltUrl);
             }
 
             return urlsToTry;
@@ -368,7 +366,10 @@ namespace TrueFluentPro.Services
                 config.ApiVersion,
                 videoId,
                 apiMode);
-            var url = pollCandidates.Count > 0 ? pollCandidates[0] : BuildVideoPollUrl(config, videoId, apiMode);
+            if (pollCandidates.Count == 0)
+                throw new InvalidOperationException("当前终结点资料包未声明视频轮询路由。请补齐资料包后再试。");
+
+            var url = pollCandidates[0];
             var altUrl = pollCandidates.Count > 1 ? pollCandidates[1] : null;
 
             await AppendRequestPlanLogAsync(
@@ -581,7 +582,10 @@ namespace TrueFluentPro.Services
                     config.EndpointType,
                     config.ApiVersion,
                     VideoApiMode.Videos);
-            var url = createCandidates.Count > 0 ? createCandidates[0] : BuildVideoCreateUrl(config, VideoApiMode.Videos);
+            if (createCandidates.Count == 0)
+                throw new InvalidOperationException("当前终结点资料包未声明 Videos 创建路由。请补齐资料包后再试。");
+
+            var url = createCandidates[0];
             var altUrl = allowFallbacks && createCandidates.Count > 1 ? createCandidates[1] : null;
 
             await AppendRequestPlanLogAsync(
@@ -650,49 +654,6 @@ namespace TrueFluentPro.Services
 
             await AppendCreateDebugLogAsync("(create-multipart)", url, response, json, ct);
 
-            // 如果 multipart 返回 404/415（Azure 某些版本可能不支持 multipart），回退到 JSON
-            if (allowFallbacks && !response.IsSuccessStatusCode && (int)response.StatusCode is 404 or 415)
-            {
-                response.Dispose();
-
-                // 回退：尝试不带 api-version 的 URL
-                if (!string.IsNullOrWhiteSpace(altUrl) && !string.Equals(url, altUrl, StringComparison.OrdinalIgnoreCase))
-                {
-                    using var formContent2 = new MultipartFormDataContent();
-                    formContent2.Add(new StringContent(genConfig.VideoModel), "model");
-                    formContent2.Add(new StringContent(prompt), "prompt");
-                    formContent2.Add(new StringContent($"{genConfig.VideoWidth}x{genConfig.VideoHeight}"), "size");
-                    formContent2.Add(new StringContent(genConfig.VideoSeconds.ToString()), "seconds");
-                    if (hasRefImage)
-                    {
-                        var imageBytes2 = await File.ReadAllBytesAsync(referenceImagePath!, ct);
-                        var ext2 = Path.GetExtension(referenceImagePath!).ToLowerInvariant();
-                        var mimeType2 = ext2 switch { ".jpg" or ".jpeg" => "image/jpeg", ".webp" => "image/webp", _ => "image/png" };
-                        var ic2 = new ByteArrayContent(imageBytes2);
-                        ic2.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(mimeType2);
-                        formContent2.Add(ic2, "input_reference", Path.GetFileName(referenceImagePath!));
-                    }
-
-                    using var req2 = new HttpRequestMessage(HttpMethod.Post, altUrl);
-                    req2.Content = formContent2;
-                    await SetAuthHeadersAsync(req2, config, ct);
-                    await AppendPreparedRequestLogAsync("CreateVideoMultipart-Alt", config, req2, ct);
-                    attemptedUrls.Add(altUrl);
-                    response = await _httpClient.SendAsync(req2, ct);
-                    json = await response.Content.ReadAsStringAsync(ct);
-                    LastCreateRequestUrl = altUrl;
-
-                    await AppendCreateDebugLogAsync("(create-multipart-alt)", altUrl, response, json, ct);
-                }
-
-                // 如果 multipart 还是不行，回退到 JSON（Azure 文档中的 curl 用 JSON）
-                if (allowFallbacks && !response.IsSuccessStatusCode && (int)response.StatusCode is 404 or 415)
-                {
-                    response.Dispose();
-                    return await CreateVideoJsonAsync(config, prompt, genConfig, ct, createUrlCandidatesOverride, allowFallbacks: false, allowApimSubscriptionKeyQueryFallback);
-                }
-            }
-
             if (!response.IsSuccessStatusCode)
             {
                 var sc = (int)response.StatusCode;
@@ -739,7 +700,10 @@ namespace TrueFluentPro.Services
                     config.EndpointType,
                     config.ApiVersion,
                     genConfig.VideoApiMode);
-            var url = createCandidates.Count > 0 ? createCandidates[0] : BuildVideoCreateUrl(config, genConfig.VideoApiMode);
+            if (createCandidates.Count == 0)
+                throw new InvalidOperationException("当前终结点资料包未声明视频创建路由。请补齐资料包后再试。");
+
+            var url = createCandidates[0];
             var altUrl = allowFallbacks && createCandidates.Count > 1 ? createCandidates[1] : null;
 
             await AppendRequestPlanLogAsync(
@@ -828,7 +792,7 @@ namespace TrueFluentPro.Services
                 LastCreateRequestUrl = url;
             }
 
-            // 404 且有备用 URL → 重试
+            // 资料包显式候选 URL → 顺序重试
             if (allowFallbacks
                 && !response.IsSuccessStatusCode
                 && (int)response.StatusCode == 404
@@ -894,52 +858,9 @@ namespace TrueFluentPro.Services
             string? generationId = null,
             VideoApiMode apiMode = VideoApiMode.SoraJobs)
         {
-            // Azure 实测：轮询是 jobs/{taskId}，但下载 content 可能需要使用 generations[].id（gen_...）。
-            // 因此下载采用“多 URL 尝试 + 对 404 做短暂重试”的策略。
-
-            string? resolvedGenId = generationId;
-
-            // 首选下载路径（注意：不同模式含义不同）
-            var primaryUrls = EndpointProfileUrlBuilder.BuildVideoDownloadUrlCandidates(
-                config.ApiEndpoint,
-                config.ProfileId,
-                config.EndpointType,
-                config.ApiVersion,
-                videoId,
-                apiMode);
-            var primaryVideoContentUrls = EndpointProfileUrlBuilder.BuildVideoDownloadVideoContentUrlCandidates(
-                config.ApiEndpoint,
-                config.ProfileId,
-                config.EndpointType,
-                config.ApiVersion,
-                videoId,
-                apiMode);
-
-            // 如果未提供 generationId，先尝试从轮询响应解析出来。
-            // 备注：即使 status 不是终态，部分后端也可能已经返回 generations[].id。
-            if (IsAzureEndpoint(config)
-                && apiMode == VideoApiMode.SoraJobs
-                && string.IsNullOrWhiteSpace(resolvedGenId))
-            {
-                try
-                {
-                    var (st, _, genId, _) = await PollStatusDetailsAsync(config, videoId, ct, apiMode);
-                    if (!string.IsNullOrWhiteSpace(genId))
-                        resolvedGenId = genId;
-                }
-                catch
-                {
-                    // 解析失败不阻断后续下载尝试
-                }
-            }
-
-            string? fallbackUrl = null;
-            string? fallbackAltUrl = null;
-            if (!string.IsNullOrWhiteSpace(resolvedGenId))
-            {
-                fallbackUrl = BuildVideoGenerationDownloadUrl(config, resolvedGenId);
-                fallbackAltUrl = BuildVideoGenerationDownloadUrlAlt(config, resolvedGenId);
-            }
+            var urlsToTry = BuildDownloadCandidateUrls(config, videoId, generationId, apiMode);
+            if (urlsToTry.Count == 0)
+                throw new InvalidOperationException("当前终结点资料包未声明视频下载路由。请补齐资料包后再试。");
 
             async Task<bool> TryDownloadOnceAsync(string url)
             {
@@ -987,41 +908,6 @@ namespace TrueFluentPro.Services
 
             _lastSuccessfulDownloadUrl = null;
 
-            // 组装待尝试 URL 列表：
-            // - Azure + SoraJobs：优先尝试 generations/{genId}/content/video（更可靠）；jobs/{taskId}/content 作为兜底。
-            // - 其他：按 primary → alt → 无 api-version 回退的顺序。
-            var urlsToTry = new System.Collections.Generic.List<string>();
-            var seen = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-            void AddUrl(string? u)
-            {
-                if (string.IsNullOrWhiteSpace(u))
-                    return;
-                if (seen.Add(u))
-                    urlsToTry.Add(u);
-            }
-
-            if (IsAzureEndpoint(config) && apiMode == VideoApiMode.SoraJobs)
-            {
-                // generationId 下载优先
-                AddUrl(fallbackUrl);
-                AddUrl(fallbackAltUrl);
-                // jobs 内容作为兜底（部分环境会一直 404）
-                foreach (var url in primaryUrls)
-                    AddUrl(url);
-                foreach (var url in primaryVideoContentUrls)
-                    AddUrl(url);
-            }
-            else
-            {
-                foreach (var url in primaryUrls)
-                    AddUrl(url);
-                foreach (var url in primaryVideoContentUrls)
-                    AddUrl(url);
-                AddUrl(fallbackUrl);
-                AddUrl(fallbackAltUrl);
-            }
-
             await AppendDownloadCandidatesLogAsync(videoId, config, urlsToTry, ct);
 
             // 对每个 URL 做少量重试（content 可能延迟可用）
@@ -1035,8 +921,7 @@ namespace TrueFluentPro.Services
                 }
             }
 
-            throw new HttpRequestException(
-                "视频下载失败: 404 Resource Not Found（已尝试 jobs/{taskId}/content，并回退尝试 generations/{genId}/content/video 与 generations/{genId}/content）");
+            throw new HttpRequestException("视频下载失败：资料包声明的候选下载地址均未命中可用资源。");
         }
 
         /// <summary>

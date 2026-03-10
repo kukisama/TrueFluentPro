@@ -53,6 +53,7 @@ public sealed class EndpointProfileVideoSettings
     public List<string> PollUrlCandidates { get; set; } = new();
     public List<string> DownloadUrlCandidates { get; set; } = new();
     public List<string> DownloadVideoContentUrlCandidates { get; set; } = new();
+    // 兼容层：SoraJobs 旧字段。运行时将逐步迁移到 overrides.routes.video + fallbacks.videoJobs*。
     public List<string> JobsCreateUrlCandidates { get; set; } = new();
     public List<string> JobsPollUrlCandidates { get; set; } = new();
     public List<string> JobsDownloadUrlCandidates { get; set; } = new();

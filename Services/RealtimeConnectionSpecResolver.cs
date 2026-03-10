@@ -127,9 +127,7 @@ namespace TrueFluentPro.Services
             var builder = new UriBuilder(baseUri);
             if (isPreview)
             {
-                var apiVersion = string.IsNullOrWhiteSpace(runtime.ApiVersion)
-                    ? AzurePreviewRealtimeApiVersion
-                    : runtime.ApiVersion.Trim();
+                var apiVersion = AzurePreviewRealtimeApiVersion;
                 builder.Path = "/openai/realtime";
                 builder.Query = $"api-version={Uri.EscapeDataString(apiVersion)}&deployment={Uri.EscapeDataString(deploymentName)}";
 

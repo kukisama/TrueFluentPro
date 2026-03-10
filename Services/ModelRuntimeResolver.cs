@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using TrueFluentPro.Models;
+using TrueFluentPro.Services.EndpointProfiles;
 
 namespace TrueFluentPro.Services
 {
@@ -53,6 +54,12 @@ namespace TrueFluentPro.Services
             if (!model.Capabilities.HasFlag(capability))
             {
                 errorMessage = $"模型“{GetModelName(model)}”未配置{GetCapabilityName(capability)}能力。";
+                return false;
+            }
+
+            if (!EndpointCapabilityPolicyResolver.IsCapabilityAllowed(endpoint.ProfileId, endpoint.EndpointType, capability))
+            {
+                errorMessage = $"终结点“{GetEndpointName(endpoint)}”的资料包当前未启用{GetCapabilityName(capability)}能力。";
                 return false;
             }
 

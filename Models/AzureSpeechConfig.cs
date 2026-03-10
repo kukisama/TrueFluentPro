@@ -284,14 +284,18 @@ namespace TrueFluentPro.Models
 
         public ReviewSubtitleSourceMode GetEffectiveReviewSubtitleSourceMode()
         {
-            if (ReviewSubtitleSourceMode != ReviewSubtitleSourceMode.DefaultSubtitle)
+            var activeResource = GetActiveSpeechResource();
+            if (activeResource == null || !activeResource.IsEnabled)
             {
-                return ReviewSubtitleSourceMode;
+                return ReviewSubtitleSourceMode.DefaultSubtitle;
             }
 
-            return UseSpeechSubtitleForReview
-                ? ReviewSubtitleSourceMode.SpeechSubtitle
-                : ReviewSubtitleSourceMode.DefaultSubtitle;
+            return activeResource.ConnectorType switch
+            {
+                SpeechConnectorType.MicrosoftSpeech => ReviewSubtitleSourceMode.SpeechSubtitle,
+                SpeechConnectorType.AiSpeech => ReviewSubtitleSourceMode.AiTranscriptionSubtitle,
+                _ => ReviewSubtitleSourceMode.DefaultSubtitle
+            };
         }
 
         public List<SpeechResource> GetEffectiveSpeechResources()
