@@ -315,9 +315,15 @@ namespace TrueFluentPro.ViewModels
                 _ => query.OrderByDescending(i => i.ModifiedAt) // DateDescending default
             };
 
+            var result = query.ToList();
+
             Dispatcher.UIThread.Post(() =>
             {
-                FilteredItems = new ObservableCollection<MediaAssetItem>(query);
+                _filteredItems.Clear();
+                foreach (var item in result)
+                {
+                    _filteredItems.Add(item);
+                }
             });
         }
 
@@ -346,7 +352,7 @@ namespace TrueFluentPro.ViewModels
             try
             {
                 var dir = Path.GetDirectoryName(item.FilePath);
-                if (dir != null)
+                if (!string.IsNullOrEmpty(dir))
                 {
                     Process.Start(new ProcessStartInfo
                     {

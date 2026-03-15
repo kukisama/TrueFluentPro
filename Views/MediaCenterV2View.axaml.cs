@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -32,7 +33,13 @@ namespace TrueFluentPro.Views
             _viewModel = new MediaCenterV2ViewModel();
             DataContext = _viewModel;
 
-            _ = _viewModel.ScanMediaAsync();
+            _ = _viewModel.ScanMediaAsync().ContinueWith(t =>
+            {
+                if (t.Exception != null)
+                {
+                    Debug.WriteLine($"[MediaCenterV2] Initial scan error: {t.Exception}");
+                }
+            }, TaskScheduler.Default);
         }
 
         public void Cleanup()
