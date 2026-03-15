@@ -1,498 +1,766 @@
 <UserControl xmlns="https://github.com/avaloniaui"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:controls="using:TrueFluentPro.Controls"
-        xmlns:icons="https://github.com/projektanker/icons.avalonia"
-        xmlns:vm="using:TrueFluentPro.ViewModels"
-        mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="750"
-        x:Class="TrueFluentPro.Views.MediaCenterV2View"
-        x:DataType="vm:MediaCenterV2ViewModel"
-        x:CompileBindings="False">
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:controls="using:TrueFluentPro.Controls"
+             xmlns:icons="https://github.com/projektanker/icons.avalonia"
+             xmlns:vm="using:TrueFluentPro.ViewModels"
+             mc:Ignorable="d"
+             d:DesignWidth="1460"
+             d:DesignHeight="900"
+             x:Class="TrueFluentPro.Views.MediaCenterV2View"
+             x:DataType="vm:MediaCenterV2ViewModel"
+             x:CompileBindings="False">
 
     <UserControl.Resources>
         <controls:FilePathToBitmapConverter x:Key="FilePathToBitmapConverter"/>
     </UserControl.Resources>
 
     <UserControl.Styles>
-        <!-- 画廊项容器 -->
-        <Style Selector="Border.gallery-item">
-            <Setter Property="Background" Value="{DynamicResource MediaItemBrush}"/>
-            <Setter Property="CornerRadius" Value="8"/>
-            <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="ClipToBounds" Value="True"/>
-        </Style>
-        <Style Selector="Border.gallery-item:pointerover">
-            <Setter Property="BorderBrush" Value="{DynamicResource AccentBlueBrush}"/>
-            <Setter Property="BorderThickness" Value="2"/>
-        </Style>
-
-        <!-- 筛选按钮 -->
-        <Style Selector="RadioButton.filter-chip">
+        <Style Selector="RadioButton.creator-pill">
             <Setter Property="Padding" Value="14,7"/>
-            <Setter Property="CornerRadius" Value="8"/>
-            <Setter Property="FontSize" Value="13"/>
-            <Setter Property="Margin" Value="0,2"/>
-            <Setter Property="HorizontalAlignment" Value="Stretch"/>
-            <Setter Property="HorizontalContentAlignment" Value="Left"/>
-            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="CornerRadius" Value="999"/>
+            <Setter Property="Background" Value="{DynamicResource MediaItemBrush}"/>
             <Setter Property="BorderBrush" Value="Transparent"/>
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+            <Setter Property="FontSize" Value="13"/>
         </Style>
-        <Style Selector="RadioButton.filter-chip:pointerover">
+        <Style Selector="RadioButton.creator-pill:pointerover">
             <Setter Property="Background" Value="{DynamicResource SurfaceHoverBrush}"/>
         </Style>
-        <Style Selector="RadioButton.filter-chip:checked">
+        <Style Selector="RadioButton.creator-pill:checked">
             <Setter Property="Background" Value="{DynamicResource AccentBlueBrush}"/>
             <Setter Property="Foreground" Value="White"/>
         </Style>
-        <Style Selector="RadioButton.filter-chip:checked TextBlock">
+        <Style Selector="RadioButton.creator-pill:checked TextBlock">
             <Setter Property="Foreground" Value="White"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
         </Style>
-        <Style Selector="RadioButton.filter-chip:checked icons|Icon">
+        <Style Selector="RadioButton.creator-pill:checked icons|Icon">
             <Setter Property="Foreground" Value="White"/>
         </Style>
 
-        <!-- 详情区标签 -->
-        <Style Selector="TextBlock.detail-label">
-            <Setter Property="FontSize" Value="12"/>
-            <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
-            <Setter Property="Margin" Value="0,0,0,2"/>
+        <Style Selector="Button.rail-thumb">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
         </Style>
-        <Style Selector="TextBlock.detail-value">
-            <Setter Property="FontSize" Value="13"/>
+        <Style Selector="Button.workspace-tab-btn">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+        </Style>
+
+        <Style Selector="TextBlock.panel-title">
+            <Setter Property="FontSize" Value="17"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
-            <Setter Property="TextWrapping" Value="Wrap"/>
-            <Setter Property="Margin" Value="0,0,0,10"/>
+        </Style>
+        <Style Selector="TextBlock.panel-note">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextSubtleBrush}"/>
+        </Style>
+        <Style Selector="TextBlock.meta-label">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+        </Style>
+        <Style Selector="Border.mode-accent-card">
+            <Setter Property="CornerRadius" Value="14"/>
+            <Setter Property="BorderThickness" Value="1.5"/>
+        </Style>
+        <Style Selector="Border.selection-outline">
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentBlueBrush}"/>
+            <Setter Property="BorderThickness" Value="2"/>
+            <Setter Property="CornerRadius" Value="12"/>
+        </Style>
+        <Style Selector="Border.pending-placeholder">
+            <Setter Property="Background" Value="#F8FBFF"/>
+            <Setter Property="BorderBrush" Value="#D7E6FF"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Style.Animations>
+                <Animation Duration="0:0:1.2" IterationCount="INFINITE">
+                    <KeyFrame Cue="0%">
+                        <Setter Property="Opacity" Value="1.0"/>
+                    </KeyFrame>
+                    <KeyFrame Cue="50%">
+                        <Setter Property="Opacity" Value="0.42"/>
+                    </KeyFrame>
+                    <KeyFrame Cue="100%">
+                        <Setter Property="Opacity" Value="1.0"/>
+                    </KeyFrame>
+                </Animation>
+            </Style.Animations>
         </Style>
     </UserControl.Styles>
 
-    <Grid RowDefinitions="*,Auto"
-          Background="{DynamicResource PageBackgroundBrush}">
+    <Grid Background="{DynamicResource PageBackgroundBrush}"
+          RowDefinitions="*,Auto"
+            ColumnDefinitions="264,12,*,12,140">
 
-        <!-- ===== 主体区域（三栏布局） ===== -->
-        <Grid Grid.Row="0" Margin="12,12,12,10">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="200" MinWidth="160"/>
-                <ColumnDefinition Width="12"/>
-                <ColumnDefinition Width="*" MinWidth="400"/>
-                <ColumnDefinition Width="12"/>
-                <ColumnDefinition Width="320" MinWidth="260"/>
-            </Grid.ColumnDefinitions>
-
-            <!-- ========== 左侧：筛选面板 ========== -->
-            <Border Grid.Column="0"
-                    Classes="nav-surface"
-                    BorderThickness="0,0,1,0"
-                    Padding="8,12,8,8">
-                <Grid RowDefinitions="Auto,Auto,*">
-                    <!-- 标题 -->
-                    <Grid Grid.Row="0"
-                          Classes="secondary-nav-header"
-                          RowDefinitions="Auto,*"
-                          Margin="10,0,10,4">
-                        <Grid Grid.Row="0"
-                              Classes="secondary-nav-header-title-row"
-                              ColumnDefinitions="*,Auto">
-                            <TextBlock Grid.Column="0"
-                                       Classes="secondary-nav-title"
-                                       Text="媒体中心"/>
-                            <Button Grid.Column="1"
-                                    Classes="secondary-nav-ghost"
-                                    Command="{Binding RefreshCommand}"
-                                    ToolTip.Tip="刷新媒体列表">
-                                <icons:Icon Value="fa-solid fa-arrows-rotate" FontSize="13"/>
-                            </Button>
-                        </Grid>
-                        <Grid Grid.Row="1"
-                              Classes="secondary-nav-header-action-row">
-                            <TextBlock VerticalAlignment="Center"
-                                       FontSize="12"
-                                       Foreground="{DynamicResource TextSubtleBrush}"
-                                       Text="{Binding TotalCount, StringFormat=共 {0} 个文件}"/>
-                        </Grid>
+        <Border Grid.RowSpan="2" Grid.Column="0" Classes="app-card" Margin="12,12,0,12" Padding="14,14,8,14" ClipToBounds="True">
+            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Margin="0,0,4,0">
+                <StackPanel Spacing="14">
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                        <StackPanel Grid.Column="0" Spacing="2">
+                            <TextBlock Classes="panel-title" Text="{Binding WorkspaceName}"/>
+                            <TextBlock Classes="panel-note" Text="{Binding WorkspaceSubtitle}" TextWrapping="Wrap"/>
+                        </StackPanel>
+                        <Button Grid.Column="1"
+                                Command="{Binding NewWorkspaceCommand}"
+                                ToolTip.Tip="新建一张空白画布"
+                                Width="36"
+                                Height="36"
+                                CornerRadius="18">
+                            <icons:Icon Value="fa-solid fa-plus" FontSize="14"/>
+                        </Button>
                     </Grid>
 
-                    <!-- 搜索框 -->
-                    <TextBox Grid.Row="1"
-                             Text="{Binding SearchText}"
-                             Watermark="搜索文件名..."
-                             Margin="6,0,6,10"
-                             Padding="8,6"
-                             FontSize="12"/>
-
-                    <!-- 分类筛选 -->
-                    <StackPanel Grid.Row="2" Spacing="2" Margin="4,0">
-                        <TextBlock Text="分类" FontSize="11" FontWeight="SemiBold"
-                                   Foreground="{DynamicResource TextMutedBrush}"
-                                   Margin="10,0,0,6"/>
-
-                        <RadioButton Classes="filter-chip"
-                                     GroupName="CategoryFilter"
-                                     IsChecked="{Binding SelectedCategory, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static vm:MediaFilterCategory.All}}"
-                                     Click="CategoryAll_Click">
-                            <Grid ColumnDefinitions="20,*,Auto" ColumnSpacing="8">
-                                <icons:Icon Grid.Column="0" Value="fa-solid fa-border-all" FontSize="13"/>
-                                <TextBlock Grid.Column="1" Text="全部" VerticalAlignment="Center"/>
-                                <TextBlock Grid.Column="2" Text="{Binding TotalCount}"
-                                           FontSize="11" Foreground="{DynamicResource TextSubtleBrush}"
-                                           VerticalAlignment="Center"/>
+                    <Border Classes="sub-card mode-accent-card"
+                            Padding="12"
+                            Background="{Binding ModeAccentBackground}"
+                            BorderBrush="{Binding ModeAccentBorderBrush}">
+                        <StackPanel Spacing="8">
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                <TextBlock Grid.Column="0" FontSize="13" FontWeight="SemiBold" Text="当前路径"/>
+                                <Border Grid.Column="1"
+                                        Background="#1AFFFFFF"
+                                        CornerRadius="999"
+                                        Padding="8,3">
+                                    <TextBlock FontSize="11" FontWeight="SemiBold" Text="{Binding CurrentModeBadgeText}"/>
+                                </Border>
                             </Grid>
-                        </RadioButton>
+                            <WrapPanel Orientation="Horizontal" Margin="0,2,0,0">
+                                <RadioButton Classes="creator-pill" GroupName="CanvasMode" IsChecked="{Binding IsDrawMode}">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <icons:Icon Value="fa-solid fa-wand-magic-sparkles" FontSize="12"/>
+                                        <TextBlock Text="绘制"/>
+                                    </StackPanel>
+                                </RadioButton>
+                                <RadioButton Classes="creator-pill" GroupName="CanvasMode" IsChecked="{Binding IsEditMode}" Margin="8,0,0,0">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <icons:Icon Value="fa-solid fa-pen-to-square" FontSize="12"/>
+                                        <TextBlock Text="编辑"/>
+                                    </StackPanel>
+                                </RadioButton>
+                            </WrapPanel>
+                            <WrapPanel Orientation="Horizontal" Margin="0,2,0,0">
+                                <RadioButton Classes="creator-pill" GroupName="MediaKind" IsChecked="{Binding IsImageKind}">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <icons:Icon Value="fa-regular fa-image" FontSize="12"/>
+                                        <TextBlock Text="图片"/>
+                                    </StackPanel>
+                                </RadioButton>
+                                <RadioButton Classes="creator-pill" GroupName="MediaKind" IsChecked="{Binding IsVideoKind}" Margin="8,0,0,0">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <icons:Icon Value="fa-solid fa-film" FontSize="12"/>
+                                        <TextBlock Text="视频"/>
+                                    </StackPanel>
+                                </RadioButton>
+                            </WrapPanel>
+                        </StackPanel>
+                    </Border>
 
-                        <RadioButton Classes="filter-chip"
-                                     GroupName="CategoryFilter"
-                                     IsChecked="{Binding SelectedCategory, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static vm:MediaFilterCategory.Images}}"
-                                     Click="CategoryImages_Click">
-                            <Grid ColumnDefinitions="20,*,Auto" ColumnSpacing="8">
-                                <icons:Icon Grid.Column="0" Value="fa-regular fa-image" FontSize="13"/>
-                                <TextBlock Grid.Column="1" Text="图片" VerticalAlignment="Center"/>
-                                <TextBlock Grid.Column="2" Text="{Binding ImageCount}"
-                                           FontSize="11" Foreground="{DynamicResource TextSubtleBrush}"
-                                           VerticalAlignment="Center"/>
+                    <Border Classes="sub-card" Padding="12">
+                        <StackPanel Spacing="10">
+                            <TextBlock FontSize="13" FontWeight="SemiBold" Text="运行参数"/>
+
+                            <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,*" ColumnSpacing="8" RowSpacing="8">
+                                <Border Grid.Row="0" Grid.Column="0" Background="{DynamicResource MediaItemBrush}" CornerRadius="10" Padding="10,8">
+                                    <StackPanel>
+                                        <TextBlock Classes="meta-label" Text="提供商"/>
+                                        <TextBlock FontWeight="SemiBold" Text="{Binding CurrentEndpointDisplayName}" TextWrapping="Wrap"/>
+                                    </StackPanel>
+                                </Border>
+                                <Border Grid.Row="0" Grid.Column="1" Background="{DynamicResource MediaItemBrush}" CornerRadius="10" Padding="10,8">
+                                    <StackPanel>
+                                        <TextBlock Classes="meta-label" Text="模型"/>
+                                        <TextBlock FontWeight="SemiBold" Text="{Binding CurrentModelDisplayName}" TextWrapping="Wrap"/>
+                                    </StackPanel>
+                                </Border>
+                                <Border Grid.Row="1" Grid.ColumnSpan="2" Background="{DynamicResource MediaItemBrush}" CornerRadius="10" Padding="10,8">
+                                    <StackPanel Spacing="3">
+                                        <TextBlock Classes="meta-label" Text="当前动作"/>
+                                        <TextBlock FontWeight="SemiBold" Text="{Binding CurrentCanvasTitle}"/>
+                                        <TextBlock Classes="panel-note" Text="{Binding CurrentCanvasDescription}" TextWrapping="Wrap"/>
+                                    </StackPanel>
+                                </Border>
                             </Grid>
-                        </RadioButton>
 
-                        <RadioButton Classes="filter-chip"
-                                     GroupName="CategoryFilter"
-                                     IsChecked="{Binding SelectedCategory, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static vm:MediaFilterCategory.Videos}}"
-                                     Click="CategoryVideos_Click">
-                            <Grid ColumnDefinitions="20,*,Auto" ColumnSpacing="8">
-                                <icons:Icon Grid.Column="0" Value="fa-solid fa-film" FontSize="13"/>
-                                <TextBlock Grid.Column="1" Text="视频" VerticalAlignment="Center"/>
-                                <TextBlock Grid.Column="2" Text="{Binding VideoCount}"
-                                           FontSize="11" Foreground="{DynamicResource TextSubtleBrush}"
-                                           VerticalAlignment="Center"/>
+                            <StackPanel Spacing="8" IsVisible="{Binding IsImageKind}">
+                                <TextBlock Classes="meta-label" Text="图片参数"/>
+                                <TextBlock Classes="panel-note" Text="模型选择仍统一走设置页；这里保留最常用的创作参数。" TextWrapping="Wrap"/>
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="8">
+                                    <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Text="尺寸"/>
+                                    <ComboBox Grid.Row="0" Grid.Column="1"
+                                              ItemsSource="{Binding WorkspaceSession.ImageSizeOptions}"
+                                              SelectedItem="{Binding WorkspaceSession.ImageSize}"
+                                              Padding="8,5"/>
+                                    <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Text="质量"/>
+                                    <ComboBox Grid.Row="1" Grid.Column="1"
+                                              ItemsSource="{Binding WorkspaceSession.ImageQualityOptions}"
+                                              SelectedItem="{Binding WorkspaceSession.ImageQuality}"
+                                              Padding="8,5"/>
+                                    <TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Text="格式"/>
+                                    <ComboBox Grid.Row="2" Grid.Column="1"
+                                              ItemsSource="{Binding WorkspaceSession.ImageFormatOptions}"
+                                              SelectedItem="{Binding WorkspaceSession.ImageFormat}"
+                                              Padding="8,5"/>
+                                    <TextBlock Grid.Row="3" Grid.Column="0" VerticalAlignment="Center" Text="数量"/>
+                                    <ComboBox Grid.Row="3" Grid.Column="1"
+                                              ItemsSource="{Binding WorkspaceSession.ImageCountOptions}"
+                                              SelectedItem="{Binding WorkspaceSession.ImageCount}"
+                                              Padding="8,5"/>
+                                </Grid>
+                            </StackPanel>
+
+                            <StackPanel Spacing="8" IsVisible="{Binding IsVideoKind}">
+                                <TextBlock Classes="meta-label" Text="视频参数"/>
+                                <TextBlock Classes="panel-note" Text="当前创作者页先围绕“视频生成 / 图生视频”走，参数仍沿用现有视频能力。" TextWrapping="Wrap"/>
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="8">
+                                    <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Text="比例"/>
+                                    <ComboBox Grid.Row="0" Grid.Column="1"
+                                              ItemsSource="{Binding WorkspaceSession.VideoAspectRatioOptions}"
+                                              SelectedItem="{Binding WorkspaceSession.VideoAspectRatio}"
+                                              Padding="8,5"/>
+                                    <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Text="分辨率"/>
+                                    <ComboBox Grid.Row="1" Grid.Column="1"
+                                              ItemsSource="{Binding WorkspaceSession.VideoResolutionOptions}"
+                                              SelectedItem="{Binding WorkspaceSession.VideoResolution}"
+                                              Padding="8,5"/>
+                                    <TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Text="时长"/>
+                                    <ComboBox Grid.Row="2" Grid.Column="1"
+                                              ItemsSource="{Binding WorkspaceSession.VideoDurationOptions}"
+                                              SelectedItem="{Binding WorkspaceSession.VideoSeconds}"
+                                              Padding="8,5"/>
+                                    <TextBlock Grid.Row="3" Grid.Column="0" VerticalAlignment="Center" Text="数量"/>
+                                    <ComboBox Grid.Row="3" Grid.Column="1"
+                                              ItemsSource="{Binding WorkspaceSession.VideoCountOptions}"
+                                              SelectedItem="{Binding WorkspaceSession.VideoVariants}"
+                                              Padding="8,5"/>
+                                </Grid>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Classes="sub-card mode-accent-card"
+                            Padding="12"
+                            IsVisible="{Binding IsReferencePanelVisible}"
+                            Background="{Binding ModeAccentBackground}"
+                            BorderBrush="{Binding ModeAccentBorderBrush}">
+                        <StackPanel Spacing="10">
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                <StackPanel Grid.Column="0" Spacing="2">
+                                    <TextBlock FontSize="13" FontWeight="SemiBold" Text="参考素材"/>
+                                    <TextBlock Classes="panel-note" Text="{Binding ReferenceSummaryText}" TextWrapping="Wrap"/>
+                                </StackPanel>
+                                <Button Grid.Column="1"
+                                        Width="34" Height="34"
+                                        CornerRadius="17"
+                                        Click="AttachReferenceImage_Click"
+                                        IsVisible="{Binding CanAttachReferenceImages}"
+                                        ToolTip.Tip="添加参考图">
+                                    <icons:Icon Value="fa-solid fa-plus" FontSize="12"/>
+                                </Button>
                             </Grid>
-                        </RadioButton>
 
-                        <Separator Margin="6,10"/>
+                            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                                <ItemsControl ItemsSource="{Binding WorkspaceSession.ReferenceImagePaths}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <StackPanel Orientation="Horizontal" Spacing="8"/>
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid Width="56" Height="56">
+                                                <Border CornerRadius="8"
+                                                        Background="{DynamicResource MediaItemBrush}"
+                                                        BorderBrush="{DynamicResource ThumbnailBorderBrush}"
+                                                        BorderThickness="1"
+                                                        Cursor="Hand"
+                                                        PointerPressed="ReferenceImageThumbnail_PointerPressed"
+                                                        ToolTip.Tip="视频模式下点击可裁切到目标尺寸">
+                                                    <controls:ViewportLazyImage FilePath="{Binding .}"
+                                                                                Stretch="UniformToFill"
+                                                                                HorizontalAlignment="Stretch"
+                                                                                VerticalAlignment="Stretch"/>
+                                                </Border>
+                                                <Button Width="18"
+                                                        Height="18"
+                                                        HorizontalAlignment="Right"
+                                                        VerticalAlignment="Top"
+                                                        Margin="0,-4,-4,0"
+                                                        Padding="0"
+                                                        CornerRadius="9"
+                                                        Command="{Binding DataContext.WorkspaceSession.RemoveReferenceImageCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                        CommandParameter="{Binding .}"
+                                                        ToolTip.Tip="删除参考图">
+                                                    <icons:Icon Value="fa-solid fa-xmark" FontSize="10"/>
+                                                </Button>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+        </Border>
 
-                        <TextBlock Text="排序" FontSize="11" FontWeight="SemiBold"
-                                   Foreground="{DynamicResource TextMutedBrush}"
-                                   Margin="10,6,0,6"/>
+        <GridSplitter Grid.RowSpan="2" Grid.Column="1"
+                      Width="12"
+                  Margin="0,12,0,12"
+                      Background="Transparent"
+                      ResizeDirection="Columns"
+                      ShowsPreview="True"/>
 
-                        <ComboBox SelectedIndex="0"
-                                  SelectionChanged="SortComboBox_SelectionChanged"
-                                  HorizontalAlignment="Stretch"
-                                  Margin="6,0"
-                                  Padding="8,5"
-                                  FontSize="12">
-                            <ComboBoxItem Content="最新在前"/>
-                            <ComboBoxItem Content="最早在前"/>
-                            <ComboBoxItem Content="名称 A→Z"/>
-                            <ComboBoxItem Content="名称 Z→A"/>
-                            <ComboBoxItem Content="大小降序"/>
-                            <ComboBoxItem Content="大小升序"/>
-                        </ComboBox>
+        <Border Grid.Row="0" Grid.Column="2" Classes="app-card" Margin="0,12,0,10" Padding="18,16">
+            <Grid RowDefinitions="Auto,14,*,14,Auto">
+                <Grid Grid.Row="0" ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                    <StackPanel Grid.Column="0" Spacing="2">
+                        <TextBlock Classes="panel-title" Text="{Binding CurrentCanvasTitle}"/>
+                        <TextBlock Classes="panel-note" Text="{Binding CurrentCanvasDescription}" TextWrapping="Wrap"/>
                     </StackPanel>
+                    <Button Grid.Column="1"
+                            Padding="12,8"
+                            CornerRadius="8"
+                            Command="{Binding OpenWorkspaceFolderCommand}">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <icons:Icon Value="fa-regular fa-folder-open" FontSize="13"/>
+                            <TextBlock Text="打开画布目录"/>
+                        </StackPanel>
+                    </Button>
                 </Grid>
-            </Border>
 
-            <GridSplitter Grid.Column="1"
-                          Width="12"
-                          Background="Transparent"
-                          HorizontalAlignment="Stretch"
-                          VerticalAlignment="Stretch"
-                          ResizeDirection="Columns"
-                          ShowsPreview="True"/>
+                <Border Grid.Row="2"
+                        Background="{Binding ModeAccentBackground}"
+                        BorderBrush="{Binding ModeAccentBorderBrush}"
+                        BorderThickness="1.5"
+                    CornerRadius="18">
+                    <Grid>
+                        <StackPanel VerticalAlignment="Center"
+                                    HorizontalAlignment="Center"
+                                    Spacing="10"
+                                    IsVisible="{Binding HasNoCanvasPreview}">
+                            <icons:Icon Value="fa-regular fa-images" FontSize="52" Foreground="{DynamicResource TextPlaceholderBrush}"/>
+                            <TextBlock FontSize="18" Foreground="{DynamicResource TextPlaceholderBrush}" Text="{Binding CanvasPlaceholderTitle}"/>
+                            <TextBlock Classes="panel-note"
+                                       Width="320"
+                                       TextAlignment="Center"
+                                       Text="{Binding CanvasPlaceholderDescription}"/>
+                        </StackPanel>
 
-            <!-- ========== 中央：媒体画廊 ========== -->
-            <Border Grid.Column="2" Classes="app-card" Padding="0">
-                <Grid RowDefinitions="*">
-                    <!-- 加载提示 -->
-                    <StackPanel VerticalAlignment="Center"
-                                HorizontalAlignment="Center"
-                                Spacing="8"
-                                IsVisible="{Binding IsLoading}">
-                        <ProgressBar IsIndeterminate="True" Width="200" Height="4"/>
-                        <TextBlock Text="正在扫描媒体文件..."
-                                   FontSize="13"
-                                   Foreground="{DynamicResource TextSubtleBrush}"
-                                   HorizontalAlignment="Center"/>
+                        <controls:ViewportLazyImage FilePath="{Binding CanvasPreviewPath}"
+                                                    Stretch="Uniform"
+                                                    Margin="18"
+                                                    HorizontalAlignment="Center"
+                                                    VerticalAlignment="Center"
+                                                    PointerPressed="PreviewSurface_PointerPressed"
+                                                    IsVisible="{Binding HasCanvasPreview}"/>
+
+                        <Border HorizontalAlignment="Left"
+                                VerticalAlignment="Top"
+                                Margin="18"
+                                Background="#AA000000"
+                                CornerRadius="999"
+                                Padding="8,4"
+                                IsHitTestVisible="False"
+                                IsVisible="{Binding HasCanvasPreview}">
+                            <TextBlock FontSize="11" Foreground="White" Text="{Binding CanvasPreviewMetaText}"/>
+                        </Border>
+
+                        <Border HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                Width="66" Height="66"
+                                CornerRadius="33"
+                                Background="#99000000"
+                                BorderBrush="#E6FFFFFF"
+                                BorderThickness="2"
+                                IsHitTestVisible="False"
+                                IsVisible="{Binding IsCanvasPreviewVideo}">
+                            <TextBlock Text="▶"
+                                       FontSize="32"
+                                       FontWeight="Bold"
+                                       Foreground="White"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"
+                                       Margin="2,0,0,0"/>
+                        </Border>
+
+                        <Button HorizontalAlignment="Left"
+                                VerticalAlignment="Center"
+                                Margin="20,0,0,0"
+                                Width="40" Height="40"
+                                CornerRadius="20"
+                                PointerPressed="PreviewNavButton_PointerPressed"
+                                Command="{Binding SelectPreviousAssetCommand}"
+                                IsEnabled="{Binding CanSelectPreviousAsset}">
+                            <icons:Icon Value="fa-solid fa-chevron-left" FontSize="14"/>
+                        </Button>
+                        <Button HorizontalAlignment="Right"
+                                VerticalAlignment="Center"
+                                Margin="0,0,20,0"
+                                Width="40" Height="40"
+                                CornerRadius="20"
+                                PointerPressed="PreviewNavButton_PointerPressed"
+                                Command="{Binding SelectNextAssetCommand}"
+                                IsEnabled="{Binding CanSelectNextAsset}">
+                            <icons:Icon Value="fa-solid fa-chevron-right" FontSize="14"/>
+                        </Button>
+
+                        <Border HorizontalAlignment="Center"
+                                VerticalAlignment="Bottom"
+                                Margin="0,0,0,14"
+                                Background="#99000000"
+                                CornerRadius="999"
+                                Padding="10,4"
+                                IsHitTestVisible="False"
+                                IsVisible="{Binding HasSelectedAsset}">
+                            <TextBlock FontSize="12" Foreground="White" Text="{Binding SelectedAssetCounterText}"/>
+                        </Border>
+                    </Grid>
+                </Border>
+
+                <StackPanel Grid.Row="4" Spacing="10">
+                    <StackPanel Spacing="2">
+                        <Border HorizontalAlignment="Left"
+                                Background="{Binding ModeAccentBackground}"
+                                BorderBrush="{Binding ModeAccentBorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="999"
+                                Padding="8,3">
+                            <TextBlock FontSize="11" FontWeight="SemiBold" Text="{Binding SelectedGroupWorkflowText}"/>
+                        </Border>
+                        <TextBlock FontSize="15" FontWeight="SemiBold" Text="{Binding SelectedGroupPromptText}" TextWrapping="Wrap"/>
+                        <TextBlock Classes="panel-note" Text="{Binding SelectedGroupMetaText}"/>
                     </StackPanel>
 
-                    <!-- 空状态 -->
-                    <StackPanel VerticalAlignment="Center"
-                                HorizontalAlignment="Center"
-                                Spacing="8"
-                                IsVisible="{Binding !IsLoading}">
-                        <StackPanel.IsVisible>
-                            <MultiBinding Converter="{x:Static BoolConverters.And}">
-                                <Binding Path="!IsLoading"/>
-                                <Binding Path="FilteredItems.Count"
-                                         Converter="{x:Static ObjectConverters.Equal}"
-                                         ConverterParameter="0"/>
-                            </MultiBinding>
-                        </StackPanel.IsVisible>
-                        <icons:Icon Value="fa-regular fa-folder-open"
-                                    FontSize="48"
-                                    Foreground="{DynamicResource TextPlaceholderBrush}"
-                                    HorizontalAlignment="Center"/>
-                        <TextBlock Text="暂无媒体文件"
-                                   FontSize="16"
-                                   Foreground="{DynamicResource TextPlaceholderBrush}"
-                                   HorizontalAlignment="Center"/>
-                        <TextBlock Text="在 Media Studio 中生成图片或视频后，将在此处展示"
-                                   FontSize="12"
-                                   Foreground="{DynamicResource TextSubtleBrush}"
-                                   HorizontalAlignment="Center"/>
-                    </StackPanel>
+                    <TextBlock Classes="panel-note" Text="{Binding SelectedGroupSuggestedNextText}" TextWrapping="Wrap"/>
 
-                    <!-- 画廊网格 -->
-                    <ScrollViewer VerticalScrollBarVisibility="Auto"
-                                  HorizontalScrollBarVisibility="Disabled"
-                                  Padding="12">
-                        <ItemsControl ItemsSource="{Binding FilteredItems}">
+                    <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                        <ItemsControl ItemsSource="{Binding SelectedGroup.Items}">
                             <ItemsControl.ItemsPanel>
                                 <ItemsPanelTemplate>
-                                    <WrapPanel Orientation="Horizontal"/>
+                                    <StackPanel Orientation="Horizontal" Spacing="8"/>
                                 </ItemsPanelTemplate>
                             </ItemsControl.ItemsPanel>
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
-                                    <Border Classes="gallery-item"
-                                            Width="180" Height="200"
-                                            Margin="6"
-                                            BorderThickness="1"
-                                            BorderBrush="{DynamicResource BorderSubtleBrush}"
-                                            PointerPressed="GalleryItem_PointerPressed"
-                                            DoubleTapped="GalleryItem_DoubleTapped">
-                                        <Grid RowDefinitions="*,Auto">
-                                            <!-- 缩略图 -->
-                                            <Panel Grid.Row="0" ClipToBounds="True">
-                                                <controls:ViewportLazyImage
-                                                    MaxWidth="180"
-                                                    MaxHeight="152"
-                                                    Stretch="Uniform"
-                                                    FilePath="{Binding ThumbnailPath}"
-                                                    HorizontalAlignment="Center"
-                                                    VerticalAlignment="Center"/>
-
-                                                <!-- 视频播放标记 -->
-                                                <Border HorizontalAlignment="Center"
-                                                        VerticalAlignment="Center"
-                                                        Width="40" Height="40"
-                                                        CornerRadius="20"
-                                                        Background="#B3000000"
-                                                        BorderBrush="#E6FFFFFF"
-                                                        BorderThickness="2"
-                                                        IsVisible="{Binding IsVideo}">
-                                                    <TextBlock Text="▶"
-                                                               FontSize="18"
-                                                               FontWeight="Bold"
-                                                               Foreground="White"
-                                                               HorizontalAlignment="Center"
-                                                               VerticalAlignment="Center"
-                                                               Margin="2,0,0,0"/>
+                                    <Button Classes="rail-thumb"
+                                            Command="{Binding DataContext.SelectAssetCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                            CommandParameter="{Binding}">
+                                        <Border Width="92"
+                                                Height="72"
+                                                Background="{DynamicResource MediaItemBrush}"
+                                                CornerRadius="10"
+                                                BorderBrush="{DynamicResource BorderSubtleBrush}"
+                                                BorderThickness="1">
+                                            <Grid>
+                                                <Border Classes="pending-placeholder"
+                                                        CornerRadius="10"
+                                                        Margin="0"
+                                                        IsVisible="{Binding IsPending}">
+                                                    <StackPanel VerticalAlignment="Center"
+                                                                HorizontalAlignment="Center"
+                                                                Spacing="4">
+                                                        <icons:Icon Value="fa-solid fa-wand-magic-sparkles" FontSize="15" Foreground="#6C90D8" HorizontalAlignment="Center"/>
+                                                        <TextBlock FontSize="9"
+                                                                   FontWeight="SemiBold"
+                                                                   Foreground="#4A5D80"
+                                                                   Text="{Binding PendingStatusText}"
+                                                                   TextAlignment="Center"/>
+                                                    </StackPanel>
                                                 </Border>
-
-                                                <!-- 类型角标 -->
+                                                <controls:ViewportLazyImage FilePath="{Binding PreviewPath}"
+                                                                            Stretch="UniformToFill"
+                                                                            HorizontalAlignment="Stretch"
+                                                                            VerticalAlignment="Stretch"
+                                                                            IsVisible="{Binding HasPreview}"/>
                                                 <Border HorizontalAlignment="Left"
                                                         VerticalAlignment="Top"
-                                                        Margin="6"
+                                                        Margin="5"
+                                                        Background="#99000000"
                                                         CornerRadius="4"
-                                                        Padding="6,2"
-                                                        Background="#CC000000">
-                                                    <TextBlock Text="{Binding TypeDisplayText}"
-                                                               FontSize="10"
-                                                               Foreground="White"/>
+                                                        Padding="4,1">
+                                                    <TextBlock FontSize="9" Foreground="White" Text="{Binding KindBadgeText}"/>
                                                 </Border>
-                                            </Panel>
-
-                                            <!-- 文件信息 -->
-                                            <Border Grid.Row="1"
-                                                    Padding="8,5"
-                                                    Background="{DynamicResource SubCardBackgroundBrush}">
-                                                <Grid RowDefinitions="Auto,Auto">
-                                                    <TextBlock Grid.Row="0"
-                                                               Text="{Binding FileName}"
-                                                               FontSize="11"
-                                                               TextTrimming="CharacterEllipsis"
-                                                               Foreground="{DynamicResource TextPrimaryBrush}"
-                                                               ToolTip.Tip="{Binding FileName}"/>
-                                                    <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8">
-                                                        <TextBlock Text="{Binding FileSizeText}"
-                                                                   FontSize="10"
-                                                                   Foreground="{DynamicResource TextSubtleBrush}"/>
-                                                        <TextBlock Text="{Binding DateText}"
-                                                                   FontSize="10"
-                                                                   Foreground="{DynamicResource TimestampBrush}"/>
-                                                    </StackPanel>
-                                                </Grid>
-                                            </Border>
-                                        </Grid>
-                                    </Border>
+                                                <Border HorizontalAlignment="Right"
+                                                        VerticalAlignment="Bottom"
+                                                        Margin="5"
+                                                        Background="#B3000000"
+                                                        CornerRadius="4"
+                                                        Padding="4,1">
+                                                    <TextBlock FontSize="9" Foreground="White" Text="{Binding Group.WorkflowBadgeText}"/>
+                                                </Border>
+                                                <Border Classes="selection-outline" IsVisible="{Binding IsSelected}"/>
+                                            </Grid>
+                                        </Border>
+                                    </Button>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
                     </ScrollViewer>
-                </Grid>
-            </Border>
+                </StackPanel>
+            </Grid>
+        </Border>
 
-            <GridSplitter Grid.Column="3"
-                          Width="12"
-                          Background="Transparent"
-                          HorizontalAlignment="Stretch"
-                          VerticalAlignment="Stretch"
-                          ResizeDirection="Columns"
-                          ShowsPreview="True"/>
+        <Border Grid.Row="0" Grid.Column="4" Classes="app-card" Margin="0,12,12,10" Padding="10,10">
+            <Grid RowDefinitions="Auto,10,*,10,Auto">
+                <Button Grid.Row="0"
+                        Width="92" Height="76"
+                        HorizontalAlignment="Center"
+                        CornerRadius="12"
+                        Command="{Binding NewWorkspaceCommand}"
+                        ToolTip.Tip="新建一张空白画布">
+                    <icons:Icon Value="fa-solid fa-plus" FontSize="18"/>
+                </Button>
 
-            <!-- ========== 右侧：详情面板 ========== -->
-            <Border Grid.Column="4"
-                    Classes="nav-surface"
-                    BorderThickness="1,0,0,0"
-                    Padding="0">
-                <Grid>
-                    <!-- 无选中时提示 -->
-                    <StackPanel VerticalAlignment="Center"
-                                HorizontalAlignment="Center"
-                                Spacing="8"
-                                IsVisible="{Binding !HasSelectedItem}">
-                        <icons:Icon Value="fa-regular fa-hand-pointer"
-                                    FontSize="36"
-                                    Foreground="{DynamicResource TextPlaceholderBrush}"
-                                    HorizontalAlignment="Center"/>
-                        <TextBlock Text="选择一个媒体文件"
-                                   FontSize="14"
-                                   Foreground="{DynamicResource TextPlaceholderBrush}"
-                                   HorizontalAlignment="Center"/>
-                        <TextBlock Text="查看详细信息和操作"
-                                   FontSize="12"
-                                   Foreground="{DynamicResource TextSubtleBrush}"
-                                   HorizontalAlignment="Center"/>
-                    </StackPanel>
+                <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <ItemsControl ItemsSource="{Binding WorkspaceTabs}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Button Classes="workspace-tab-btn"
+                                        Command="{Binding DataContext.SelectWorkspaceTabCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                        CommandParameter="{Binding}"
+                                        PointerPressed="WorkspaceTabButton_PointerPressed"
+                                        PointerReleased="WorkspaceTabButton_PointerReleased"
+                                        Margin="0,0,0,8"
+                                        ToolTip.Tip="{Binding SummaryText}">
+                                        <Grid Width="104" Height="104">
+                                            <Border HorizontalAlignment="Center"
+                                                    VerticalAlignment="Center"
+                                                    Width="104"
+                                                    Height="104"
+                                                    Background="{DynamicResource MediaItemBrush}"
+                                                    CornerRadius="14"
+                                                    BorderBrush="{DynamicResource BorderSubtleBrush}"
+                                                    BorderThickness="1">
+                                                <Grid>
+                                                    <controls:ViewportLazyImage FilePath="{Binding PreviewPath}"
+                                                                                Stretch="UniformToFill"
+                                                                                HorizontalAlignment="Stretch"
+                                                                                VerticalAlignment="Stretch"
+                                                                                IsVisible="{Binding HasPreview}"/>
 
-                    <!-- 详情内容 -->
-                    <ScrollViewer VerticalScrollBarVisibility="Auto"
-                                  IsVisible="{Binding HasSelectedItem}">
-                        <StackPanel Spacing="0"
-                                    DataContext="{Binding SelectedItem}">
-                            <!-- 大预览图 -->
-                            <Border Background="{DynamicResource MediaItemBrush}"
-                                    MinHeight="200"
-                                    MaxHeight="320"
-                                    ClipToBounds="True">
-                                <Panel>
-                                    <controls:ViewportLazyImage
-                                        Stretch="Uniform"
-                                        FilePath="{Binding ThumbnailPath}"
-                                        HorizontalAlignment="Center"
-                                        VerticalAlignment="Center"
-                                        Margin="8"/>
+                                                        <Border Background="#122033"
+                                                            IsVisible="{Binding HasNoPreview}"/>
 
-                                    <!-- 视频播放按钮 -->
-                                    <Border HorizontalAlignment="Center"
-                                            VerticalAlignment="Center"
-                                            Width="56" Height="56"
-                                            CornerRadius="28"
-                                            Background="#B3000000"
-                                            BorderBrush="#E6FFFFFF"
-                                            BorderThickness="2"
-                                            IsVisible="{Binding IsVideo}"
-                                            Cursor="Hand">
-                                        <TextBlock Text="▶"
-                                                   FontSize="28"
-                                                   FontWeight="Bold"
-                                                   Foreground="White"
-                                                   HorizontalAlignment="Center"
-                                                   VerticalAlignment="Center"
-                                                   Margin="2,0,0,0"/>
-                                    </Border>
-                                </Panel>
-                            </Border>
+                                                    <StackPanel VerticalAlignment="Center"
+                                                                HorizontalAlignment="Center"
+                                                                Spacing="6"
+                                                            IsVisible="{Binding HasNoPreview}">
+                                                        <Border Width="34" Height="34" CornerRadius="17" Background="#22000000">
+                                                            <Grid>
+                                                                <icons:Icon Value="fa-solid fa-film"
+                                                                            FontSize="14"
+                                                                            Foreground="White"
+                                                                            HorizontalAlignment="Center"
+                                                                            VerticalAlignment="Center"
+                                                                            IsVisible="{Binding IsVideo}"/>
+                                                                <icons:Icon Value="fa-regular fa-image"
+                                                                            FontSize="14"
+                                                                            Foreground="White"
+                                                                            HorizontalAlignment="Center"
+                                                                            VerticalAlignment="Center"
+                                                                            IsVisible="{Binding IsImage}"/>
+                                                            </Grid>
+                                                        </Border>
+                                                        <TextBlock FontSize="10"
+                                                                   FontWeight="SemiBold"
+                                                                   Foreground="White"
+                                                                   Text="{Binding StatusBadgeText}"/>
+                                                    </StackPanel>
 
-                            <!-- 文件详细信息 -->
-                            <StackPanel Margin="16,12" Spacing="0">
-                                <!-- 文件名 -->
-                                <TextBlock Classes="detail-label" Text="文件名"/>
-                                <SelectableTextBlock Classes="detail-value"
-                                         Text="{Binding FileName}"
-                                         ContextFlyout="{x:Null}"/>
+                                                    <Border Classes="pending-placeholder"
+                                                            CornerRadius="14"
+                                                            Background="#44111A2B"
+                                                            IsVisible="{Binding HasRunningTasks}"/>
 
-                                <!-- 类型 -->
-                                <TextBlock Classes="detail-label" Text="类型"/>
-                                <TextBlock Classes="detail-value">
-                                    <TextBlock.Text>
-                                        <MultiBinding StringFormat="{}{0} {1}">
-                                            <Binding Path="TypeIcon"/>
-                                            <Binding Path="TypeDisplayText"/>
-                                        </MultiBinding>
-                                    </TextBlock.Text>
-                                </TextBlock>
+                                                    <Border HorizontalAlignment="Left"
+                                                            VerticalAlignment="Top"
+                                                            Margin="6"
+                                                            Background="{Binding KindBadgeBackground}"
+                                                            CornerRadius="999"
+                                                            Padding="6,2">
+                                                        <TextBlock FontSize="9"
+                                                                   FontWeight="SemiBold"
+                                                                   Foreground="White"
+                                                                   Text="{Binding KindBadgeText}"/>
+                                                    </Border>
 
-                                <!-- 大小 -->
-                                <TextBlock Classes="detail-label" Text="大小"/>
-                                <TextBlock Classes="detail-value"
-                                           Text="{Binding FileSizeText}"/>
+                                                    <Border HorizontalAlignment="Right"
+                                                            VerticalAlignment="Top"
+                                                            Margin="6"
+                                                            Background="#CC0F172A"
+                                                            CornerRadius="999"
+                                                            Padding="6,2">
+                                                        <StackPanel Orientation="Horizontal" Spacing="4">
+                                                            <Ellipse Width="7" Height="7" Fill="{Binding StatusDotBrush}" VerticalAlignment="Center"/>
+                                                            <TextBlock FontSize="9"
+                                                                       FontWeight="SemiBold"
+                                                                       Foreground="White"
+                                                                       Text="{Binding StatusBadgeText}"/>
+                                                        </StackPanel>
+                                                    </Border>
 
-                                <!-- 修改时间 -->
-                                <TextBlock Classes="detail-label" Text="修改时间"/>
-                                <TextBlock Classes="detail-value"
-                                           Text="{Binding DateText}"/>
+                                                    <Border HorizontalAlignment="Center"
+                                                            VerticalAlignment="Center"
+                                                            Width="34"
+                                                            Height="34"
+                                                            CornerRadius="17"
+                                                            Background="#99000000"
+                                                            BorderBrush="#D9FFFFFF"
+                                                            BorderThickness="1.5"
+                                                            IsVisible="{Binding IsVideo}">
+                                                        <TextBlock Text="▶"
+                                                                   FontSize="16"
+                                                                   FontWeight="Bold"
+                                                                   Foreground="White"
+                                                                   HorizontalAlignment="Center"
+                                                                   VerticalAlignment="Center"
+                                                                   Margin="1,0,0,0"/>
+                                                    </Border>
+                                                </Grid>
+                                            </Border>
+                                            <Border Classes="selection-outline" IsVisible="{Binding IsSelected}" CornerRadius="14"/>
+                                        </Grid>
+                                </Button>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
 
-                                <!-- 会话 -->
-                                <TextBlock Classes="detail-label" Text="所属会话"/>
-                                <TextBlock Classes="detail-value"
-                                           Text="{Binding SessionName}"/>
+                <StackPanel Grid.Row="4" Spacing="8">
+                    <Button Padding="8,7"
+                            CornerRadius="8"
+                            Command="{Binding OpenSelectedAssetCommand}">
+                        <icons:Icon Value="fa-solid fa-arrow-up-right-from-square" FontSize="13"/>
+                    </Button>
+                    <Button Padding="8,7"
+                            CornerRadius="8"
+                            Command="{Binding OpenSelectedAssetInExplorerCommand}">
+                        <icons:Icon Value="fa-regular fa-folder-open" FontSize="13"/>
+                    </Button>
+                </StackPanel>
+            </Grid>
+        </Border>
 
-                                <!-- 路径 -->
-                                <TextBlock Classes="detail-label" Text="路径"/>
-                                <SelectableTextBlock Classes="detail-value"
-                                         Text="{Binding FilePath}"
-                                         FontSize="11"
-                                         ContextFlyout="{x:Null}"/>
-
-                                <Separator Margin="0,4,0,12"/>
-
-                                <!-- 操作按钮 -->
-                                <StackPanel Spacing="8">
-                                    <Button HorizontalAlignment="Stretch"
-                                            HorizontalContentAlignment="Center"
-                                            Padding="12,8"
-                                            Background="{DynamicResource AccentBlueBrush}"
-                                            Foreground="White"
-                                            CornerRadius="8"
-                                            Command="{Binding DataContext.OpenFileCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                            CommandParameter="{Binding}">
-                                        <StackPanel Orientation="Horizontal" Spacing="6">
-                                            <icons:Icon Value="fa-solid fa-arrow-up-right-from-square" FontSize="13"/>
-                                            <TextBlock Text="打开文件" FontWeight="SemiBold"/>
-                                        </StackPanel>
-                                    </Button>
-                                    <Button HorizontalAlignment="Stretch"
-                                            HorizontalContentAlignment="Center"
-                                            Padding="12,8"
-                                            CornerRadius="8"
-                                            Command="{Binding DataContext.OpenInExplorerCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                            CommandParameter="{Binding}">
-                                        <StackPanel Orientation="Horizontal" Spacing="6">
-                                            <icons:Icon Value="fa-regular fa-folder-open" FontSize="13"/>
-                                            <TextBlock Text="打开所在文件夹"/>
-                                        </StackPanel>
-                                    </Button>
-                                </StackPanel>
-                            </StackPanel>
+        <Border Grid.Row="1" Grid.Column="2" Grid.ColumnSpan="3" Classes="app-card" Margin="0,0,12,12" Padding="14,12">
+            <Grid RowDefinitions="Auto,Auto,Auto" RowSpacing="8">
+                <Border Grid.Row="0"
+                        Classes="sub-card"
+                        Padding="10"
+                        IsVisible="{Binding WorkspaceSession.HasReferenceImage}">
+                    <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <ItemsControl ItemsSource="{Binding WorkspaceSession.ReferenceImagePaths}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <StackPanel Orientation="Horizontal" Spacing="8"/>
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Width="52" Height="52">
+                                            <Border CornerRadius="8"
+                                                    Background="{DynamicResource MediaItemBrush}"
+                                                    BorderBrush="{DynamicResource ThumbnailBorderBrush}"
+                                                    BorderThickness="1"
+                                                    Cursor="Hand"
+                                                    PointerPressed="ReferenceImageThumbnail_PointerPressed">
+                                                <controls:ViewportLazyImage FilePath="{Binding .}"
+                                                                            Stretch="UniformToFill"
+                                                                            HorizontalAlignment="Stretch"
+                                                                            VerticalAlignment="Stretch"/>
+                                            </Border>
+                                            <Button Width="18"
+                                                    Height="18"
+                                                    HorizontalAlignment="Right"
+                                                    VerticalAlignment="Top"
+                                                    Margin="0,-4,-4,0"
+                                                    Padding="0"
+                                                    CornerRadius="9"
+                                                    Command="{Binding DataContext.WorkspaceSession.RemoveReferenceImageCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    CommandParameter="{Binding .}"
+                                                    ToolTip.Tip="删除参考图">
+                                                <icons:Icon Value="fa-solid fa-xmark" FontSize="10"/>
+                                            </Button>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <Button Width="52"
+                                    Height="52"
+                                    Padding="0"
+                                    CornerRadius="8"
+                                    Click="AttachReferenceImage_Click"
+                                    IsVisible="{Binding CanAttachReferenceImages}">
+                                <icons:Icon Value="fa-solid fa-plus" FontSize="14"/>
+                            </Button>
                         </StackPanel>
                     </ScrollViewer>
-                </Grid>
-            </Border>
-        </Grid>
+                </Border>
 
-        <!-- ===== 底部状态栏 ===== -->
-        <Border Grid.Row="1" Classes="toolbar-surface"
-                Background="{DynamicResource NavPanelBackgroundBrush}"
-                BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="0,1,0,0" Padding="12,6">
-            <Grid ColumnDefinitions="*,Auto">
-                <TextBlock Grid.Column="0" Text="{Binding StatusText}"
-                           FontSize="12" Foreground="{DynamicResource TextSubtleBrush}" VerticalAlignment="Center"/>
-                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="16">
-                    <TextBlock FontSize="12" Foreground="{DynamicResource TextSubtleBrush}" VerticalAlignment="Center"
-                               Text="{Binding ImageCount, StringFormat=图片: {0}}"/>
-                    <TextBlock FontSize="12" Foreground="{DynamicResource TextSubtleBrush}" VerticalAlignment="Center"
-                               Text="{Binding VideoCount, StringFormat=视频: {0}}"/>
+                <Grid Grid.Row="1" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                    <Button Grid.Column="0"
+                            Width="42" Height="42"
+                            CornerRadius="10"
+                            Click="AttachReferenceImage_Click"
+                            IsVisible="{Binding CanAttachReferenceImages}"
+                            ToolTip.Tip="添加参考图（支持 Ctrl+V 粘贴）">
+                        <icons:Icon Value="fa-regular fa-image" FontSize="15"/>
+                    </Button>
+                    <TextBox x:Name="PromptTextBox"
+                             Grid.Column="1"
+                             Text="{Binding DraftPromptText}"
+                             Watermark="{Binding PromptWatermark}"
+                             AcceptsReturn="True"
+                             TextWrapping="Wrap"
+                             MinHeight="60"
+                             MaxHeight="140"
+                             Padding="12,10"/>
+                    <StackPanel Grid.Column="2" Spacing="8" VerticalAlignment="Bottom">
+                        <Button Padding="14,10"
+                                CornerRadius="10"
+                                Command="{Binding SubmitPromptCommand}"
+                                Background="{DynamicResource AccentBlueBrush}"
+                                Foreground="White">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <icons:Icon Value="fa-solid fa-arrow-up" FontSize="12"/>
+                                <TextBlock FontWeight="SemiBold" Text="开始"/>
+                            </StackPanel>
+                        </Button>
+                        <Button Padding="12,8"
+                                CornerRadius="10"
+                                Command="{Binding RefreshWorkspaceCommand}">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <icons:Icon Value="fa-solid fa-arrows-rotate" FontSize="12"/>
+                                <TextBlock Text="刷新结果"/>
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                </Grid>
+
+                <StackPanel Grid.Row="2" Spacing="2">
+                    <TextBlock FontSize="12" Foreground="{DynamicResource TextSubtleBrush}" Text="{Binding WorkspaceStatusSummary}"/>
+                    <TextBlock FontSize="12"
+                               Foreground="{DynamicResource WarningBrush}"
+                               IsVisible="{Binding WorkspaceSession.IsVideoReferenceLimitExceeded}"
+                               Text="{Binding WorkspaceSession.VideoReferenceLimitHint}"/>
+                    <TextBlock FontSize="12"
+                               Foreground="{DynamicResource WarningBrush}"
+                               IsVisible="{Binding WorkspaceSession.IsReferenceImageSizeMismatch}"
+                               Text="{Binding WorkspaceSession.ReferenceImageValidationHint}"/>
+                    <TextBlock FontSize="12"
+                               Foreground="{DynamicResource SuccessTextBrush}"
+                               IsVisible="{Binding WorkspaceSession.IsReferenceImageSizeMatched}"
+                               Text="{Binding WorkspaceSession.ReferenceImageValidationHint}"/>
                 </StackPanel>
             </Grid>
         </Border>

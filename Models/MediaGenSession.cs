@@ -12,6 +12,8 @@ namespace TrueFluentPro.Models
         public string Name { get; set; } = "新会话";
         public DateTime CreatedAt { get; set; } = DateTime.Now;
         public bool IsDeleted { get; set; } = false;
+        public string CanvasMode { get; set; } = "Draw";
+        public string MediaKind { get; set; } = "Image";
         public List<MediaChatMessage> Messages { get; set; } = new();
         public List<MediaGenTask> Tasks { get; set; } = new();
     }

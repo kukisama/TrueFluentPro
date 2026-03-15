@@ -36,6 +36,11 @@ namespace TrueFluentPro.Models
 
         public string Prompt { get; set; } = "";
 
+        /// <summary>
+        /// 创建任务时是否带参考输入，用于区分“创建”还是“修改 / 图生视频”。
+        /// </summary>
+        public bool HasReferenceInput { get; set; }
+
         private int _progress;
         public int Progress
         {

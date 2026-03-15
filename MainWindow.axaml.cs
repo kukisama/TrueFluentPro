@@ -217,7 +217,14 @@ public partial class MainWindow : Window
         if (tag == MainWindowViewModel.NavTagMediaV2 && !_mediaCenterV2Initialized)
         {
             _mediaCenterV2Initialized = true;
-            MediaCenterV2ViewPage?.Initialize();
+            if (_viewModel != null)
+            {
+                var config = _viewModel.ConfigVM.Config;
+                MediaCenterV2ViewPage?.Initialize(
+                    config.AiConfig ?? new AiConfig(),
+                    config.MediaGenConfig,
+                    config.Endpoints);
+            }
         }
     }
 
@@ -288,16 +295,30 @@ public partial class MainWindow : Window
 
     private void OnSettingsConfigSaved(AzureSpeechConfig config)
     {
-        if (!_mediaStudioInitialized)
+        if (!_mediaStudioInitialized && !_mediaCenterV2Initialized)
         {
             return;
         }
 
-        var mediaStudioView = MediaStudioViewPage;
-        mediaStudioView?.UpdateConfiguration(
-            config.AiConfig ?? new AiConfig(),
-            config.MediaGenConfig,
-            config.Endpoints);
+        var aiConfig = config.AiConfig ?? new AiConfig();
+
+        if (_mediaStudioInitialized)
+        {
+            var mediaStudioView = MediaStudioViewPage;
+            mediaStudioView?.UpdateConfiguration(
+                aiConfig,
+                config.MediaGenConfig,
+                config.Endpoints);
+        }
+
+        if (_mediaCenterV2Initialized)
+        {
+            var mediaCenterV2View = MediaCenterV2ViewPage;
+            mediaCenterV2View?.UpdateConfiguration(
+                aiConfig,
+                config.MediaGenConfig,
+                config.Endpoints);
+        }
     }
 
     private void OnThemeModeChanged(ThemeModePreference mode)

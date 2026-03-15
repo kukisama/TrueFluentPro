@@ -629,6 +629,12 @@ namespace TrueFluentPro.ViewModels
 
         public void Generate()
         {
+            if (IsGenerating)
+            {
+                StatusText = "当前会话已有生成中，请先新建一个会话再继续。";
+                return;
+            }
+
             if (string.IsNullOrWhiteSpace(PromptText)) return;
 
             var prompt = PromptText.Trim();
@@ -658,7 +664,8 @@ namespace TrueFluentPro.ViewModels
             {
                 Type = MediaGenType.Image,
                 Status = MediaGenStatus.Running,
-                Prompt = prompt
+                Prompt = prompt,
+                HasReferenceInput = HasReferenceImage
             };
 
             RunningTasks.Add(task);
@@ -822,7 +829,8 @@ namespace TrueFluentPro.ViewModels
             {
                 Type = MediaGenType.Video,
                 Status = MediaGenStatus.Running,
-                Prompt = prompt
+                Prompt = prompt,
+                HasReferenceInput = HasReferenceImage
             };
 
             RunningTasks.Add(task);
