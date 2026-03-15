@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.ComponentModel;
 
 namespace TrueFluentPro.Models
@@ -104,6 +105,8 @@ namespace TrueFluentPro.Models
             get => _forceReviewRegeneration;
             set => SetProperty(ref _forceReviewRegeneration, value, nameof(ForceReviewRegeneration));
         }
+
+        public List<ReviewSheetPreset> ReviewSheetSnapshot { get; set; } = new();
 
         public event PropertyChangedEventHandler? PropertyChanged;
 

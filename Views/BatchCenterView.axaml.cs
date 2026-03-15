@@ -176,9 +176,14 @@ public partial class BatchCenterView : UserControl
         var flyout = new MenuFlyout();
         var regenerateItem = new MenuItem
         {
-            Header = "重新生成该任务",
+            Header = $"重新生成「{subtask.Title}」",
             IsEnabled = subtask.CanRegenerate
         };
+        ToolTip.SetTip(
+            regenerateItem,
+            subtask.IsSpeechSubtask
+                ? $"重新生成当前子任务：{subtask.Title}"
+                : $"重新生成当前复盘：{subtask.Title}");
         regenerateItem.Click += (_, _) => ExecuteCommand(vm.RegenerateSubtaskCommand, subtask);
         flyout.Items.Add(regenerateItem);
         return flyout;

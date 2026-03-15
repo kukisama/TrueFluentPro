@@ -29,7 +29,7 @@ namespace TrueFluentPro.ViewModels.Settings
         public override void LoadFrom(AzureSpeechConfig config)
         {
             var ai = config.AiConfig ?? new AiConfig();
-            ReviewSystemPrompt = ai.ReviewSystemPrompt;
+            ReviewSystemPrompt = AiConfig.GetEffectiveReviewSystemPrompt(ai.ReviewSystemPrompt);
             ReviewUserContentTemplate = ai.ReviewUserContentTemplate;
 
             var reviewSource = ai.ReviewSheets.Count > 0 ? ai.ReviewSheets : new AiConfig().ReviewSheets;
@@ -47,7 +47,7 @@ namespace TrueFluentPro.ViewModels.Settings
         public override void ApplyTo(AzureSpeechConfig config)
         {
             var ai = config.AiConfig ?? new AiConfig();
-            ai.ReviewSystemPrompt = ReviewSystemPrompt?.Trim() ?? "";
+            ai.ReviewSystemPrompt = AiConfig.GetEffectiveReviewSystemPrompt(ReviewSystemPrompt);
             ai.ReviewUserContentTemplate = ReviewUserContentTemplate?.Trim() ?? "";
             ai.ReviewSheets = ReviewSheets
                 .Where(s => !string.IsNullOrWhiteSpace(s.Name))

@@ -16,6 +16,8 @@ namespace TrueFluentPro.Models
         private string _sheetName = "";
         private string _sheetTag = "";
         private string _prompt = "";
+        private string _enqueueSource = "";
+        private string _traceId = "";
         private BatchQueueItemType _queueType = BatchQueueItemType.ReviewSheet;
         private BatchTaskStatus _status = BatchTaskStatus.Pending;
         private double _progress;
@@ -49,6 +51,18 @@ namespace TrueFluentPro.Models
         {
             get => _prompt;
             set => SetProperty(ref _prompt, value, nameof(Prompt));
+        }
+
+        public string EnqueueSource
+        {
+            get => _enqueueSource;
+            set => SetProperty(ref _enqueueSource, value, nameof(EnqueueSource));
+        }
+
+        public string TraceId
+        {
+            get => _traceId;
+            set => SetProperty(ref _traceId, value, nameof(TraceId));
         }
 
         public BatchQueueItemType QueueType

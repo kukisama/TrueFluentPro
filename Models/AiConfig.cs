@@ -58,6 +58,10 @@ namespace TrueFluentPro.Models
 
     public class AiConfig
     {
+        public const string LegacyReviewSystemPrompt = "你是一个会议复盘助手。根据字幕内容生成结构化 Markdown 总结。请输出包含关键结论、行动项和风险点，并在引用内容时标注时间戳，格式为 [HH:MM:SS]。";
+
+        public const string DefaultReviewSystemPrompt = "你是一个会议复盘助手。你会收到完整字幕，以及一个由用户提示明确指定的当前复盘目标（例如总结复盘、情绪复盘、客户顾虑、知识点复盘等）。你的唯一任务是严格围绕当前目标输出结果，不要先写通用会议总结，不要额外补充其它分类，不要输出与当前目标无关的章节。除非用户提示明确要求，否则不要使用表格。请使用 Markdown 输出，并尽量直接给出当前分类下的要点；引用字幕内容时标注时间戳，格式为 [HH:MM:SS]。如果字幕中缺少足够依据，请明确说明“未在字幕中发现充分依据”，不要臆造。";
+
         public string ProfileId { get; set; } = "";
         public EndpointApiType EndpointType { get; set; } = EndpointApiType.OpenAiCompatible;
         public AiProviderType ProviderType { get; set; } = AiProviderType.OpenAiCompatible;
@@ -88,7 +92,7 @@ namespace TrueFluentPro.Models
 
         public string InsightSystemPrompt { get; set; } = "你是一个专业的会议/翻译分析助手。用户会提供实时翻译的历史记录，请根据用户的问题对内容进行分析。请用 Markdown 格式输出分析结果。";
 
-        public string ReviewSystemPrompt { get; set; } = "你是一个会议复盘助手。根据字幕内容生成结构化 Markdown 总结。请输出包含关键结论、行动项和风险点，并在引用内容时标注时间戳，格式为 [HH:MM:SS]。";
+        public string ReviewSystemPrompt { get; set; } = DefaultReviewSystemPrompt;
 
         public string InsightUserContentTemplate { get; set; } = "以下是翻译历史记录：\n\n{history}\n\n---\n\n用户问题：{question}";
 
@@ -138,6 +142,22 @@ namespace TrueFluentPro.Models
                 Prompt = "请提取关键知识点与术语，并给出简要解释或背景说明，标注时间戳 [HH:MM:SS]。"
             }
         };
+
+        public static string GetEffectiveReviewSystemPrompt(string? configuredPrompt)
+        {
+            var normalized = configuredPrompt?.Trim() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(normalized))
+            {
+                return DefaultReviewSystemPrompt;
+            }
+
+            if (string.Equals(normalized, LegacyReviewSystemPrompt, System.StringComparison.Ordinal))
+            {
+                return DefaultReviewSystemPrompt;
+            }
+
+            return normalized;
+        }
 
     }
 }

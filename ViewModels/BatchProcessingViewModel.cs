@@ -638,6 +638,161 @@ namespace TrueFluentPro.ViewModels
         private void AppendBatchDebugLog(string eventName, string message, bool isSuccess = true)
             => AppLogService.Instance.LogAudit(eventName, message, isSuccess);
 
+            private static string CreateDebugTraceId(string prefix)
+                => $"{prefix}-{DateTime.Now:yyyyMMddHHmmssfff}-{Guid.NewGuid().ToString("N")[..8]}";
+
+            private static string FormatLogValue(string? value, int maxLength = 180)
+            {
+                if (string.IsNullOrWhiteSpace(value))
+                {
+                    return "(empty)";
+                }
+
+                var normalized = value
+                    .Replace("\r", "\\r", StringComparison.Ordinal)
+                    .Replace("\n", "\\n", StringComparison.Ordinal);
+
+                return normalized.Length <= maxLength
+                    ? normalized
+                    : normalized[..maxLength] + "...";
+            }
+
+            private static List<ReviewSheetPreset> CloneReviewSheets(IEnumerable<ReviewSheetPreset> reviewSheets)
+            {
+                return reviewSheets.Select(sheet => new ReviewSheetPreset
+                {
+                    Name = sheet.Name,
+                    FileTag = sheet.FileTag,
+                    Prompt = sheet.Prompt,
+                    IncludeInBatch = sheet.IncludeInBatch
+                }).ToList();
+            }
+
+            private void SetReviewSheetSnapshot(BatchTaskItem batchItem, IEnumerable<ReviewSheetPreset> reviewSheets)
+            {
+                batchItem.ReviewSheetSnapshot = CloneReviewSheets(reviewSheets);
+            }
+
+            private List<ReviewSheetPreset> GetReviewSheetsForTask(BatchTaskItem? batchItem)
+            {
+                if (batchItem?.ReviewSheetSnapshot.Count > 0)
+                {
+                    return CloneReviewSheets(batchItem.ReviewSheetSnapshot);
+                }
+
+                if (_batchReviewSheetSnapshot.Count > 0)
+                {
+                    return CloneReviewSheets(_batchReviewSheetSnapshot);
+                }
+
+                return GetBatchReviewSheets();
+            }
+
+            private void ResetBatchReviewSheetSnapshotIfIdle()
+            {
+                var hasActiveItems = _batchQueueItems.Any(item => item.Status is BatchTaskStatus.Pending or BatchTaskStatus.Running or BatchTaskStatus.Responding);
+                if (!IsBatchRunning && !hasActiveItems)
+                {
+                    _batchReviewSheetSnapshot.Clear();
+                }
+            }
+
+            private void LogReviewSubtaskDebug(
+                string stage,
+                string traceId,
+                BatchSubtaskItem subtask,
+                BatchTaskItem? batchItem,
+                ReviewSheetPreset? preset,
+                string? extra = null,
+                bool isSuccess = true)
+            {
+                var fileName = Path.GetFileName(subtask.AudioPath);
+                var snapshotTags = batchItem?.ReviewSheetSnapshot.Count > 0
+                    ? string.Join(",", batchItem.ReviewSheetSnapshot.Select(sheet => sheet.FileTag))
+                    : "(none)";
+                var currentTags = string.Join(",", GetBatchReviewSheets().Select(sheet => sheet.FileTag));
+                var summary = $"trace={traceId} stage={stage} title='{FormatLogValue(subtask.Title, 80)}' tag='{FormatLogValue(subtask.Tag, 80)}' audio='{FormatLogValue(subtask.AudioPath)}' presetTag='{FormatLogValue(preset?.FileTag, 80)}' presetName='{FormatLogValue(preset?.Name, 80)}' promptLen={preset?.Prompt?.Length ?? 0} snapshotTags='{FormatLogValue(snapshotTags)}' currentTags='{FormatLogValue(currentTags)}'";
+                if (!string.IsNullOrWhiteSpace(extra))
+                {
+                    summary += $" extra='{FormatLogValue(extra, 220)}'";
+                }
+
+                if (AppLogService.Instance.ShouldLog(isSuccess))
+                {
+                    AppendBatchLog("ReviewRegenerateDebug", fileName, isSuccess ? "Success" : "Failed", summary);
+                    AppendBatchDebugLog("ReviewRegenerateDebug", summary, isSuccess);
+                }
+
+                if (!AppLogService.IsInitialized || !AppLogService.Instance.ShouldLogSuccess)
+                {
+                    return;
+                }
+
+                var detail = new System.Text.StringBuilder();
+                detail.AppendLine($"traceId: {traceId}");
+                detail.AppendLine($"stage: {stage}");
+                detail.AppendLine($"audioPath: {subtask.AudioPath}");
+                detail.AppendLine($"subtaskTitle: {subtask.Title}");
+                detail.AppendLine($"subtaskTag: {subtask.Tag}");
+                detail.AppendLine($"snapshotTags: {snapshotTags}");
+                detail.AppendLine($"currentTags: {currentTags}");
+                detail.AppendLine($"resolvedPresetName: {preset?.Name ?? ""}");
+                detail.AppendLine($"resolvedPresetTag: {preset?.FileTag ?? ""}");
+                detail.AppendLine("resolvedPrompt:");
+                detail.AppendLine(preset?.Prompt ?? string.Empty);
+                if (!string.IsNullOrWhiteSpace(extra))
+                {
+                    detail.AppendLine();
+                    detail.AppendLine("extra:");
+                    detail.AppendLine(extra);
+                }
+
+                _ = AppLogService.Instance.LogHttpDebugAsync("review", $"RegenerateSubtask-{stage} trace={traceId}", detail.ToString());
+            }
+
+            private void LogReviewRequestDebug(
+                BatchQueueItem queueItem,
+                string systemPrompt,
+                string userTemplate,
+                string userPrompt,
+                string subtitlePath,
+                int cueCount,
+                string outputPath,
+                AiChatRequestConfig runtimeRequest)
+            {
+                if (!AppLogService.IsInitialized || !AppLogService.Instance.ShouldLogSuccess)
+                {
+                    return;
+                }
+
+                var detail = new System.Text.StringBuilder();
+                detail.AppendLine($"traceId: {queueItem.TraceId}");
+                detail.AppendLine($"enqueueSource: {queueItem.EnqueueSource}");
+                detail.AppendLine($"fileName: {queueItem.FileName}");
+                detail.AppendLine($"audioPath: {queueItem.FullPath}");
+                detail.AppendLine($"sheetName: {queueItem.SheetName}");
+                detail.AppendLine($"sheetTag: {queueItem.SheetTag}");
+                detail.AppendLine($"subtitlePath: {subtitlePath}");
+                detail.AppendLine($"cueCount: {cueCount}");
+                detail.AppendLine($"outputPath: {outputPath}");
+                detail.AppendLine($"chatProfile: {AiChatProfile.Summary}");
+                detail.AppendLine($"reasoningEnabled: {runtimeRequest.SummaryEnableReasoning}");
+                detail.AppendLine();
+                detail.AppendLine("queuePrompt:");
+                detail.AppendLine(queueItem.Prompt ?? string.Empty);
+                detail.AppendLine();
+                detail.AppendLine("systemPrompt:");
+                detail.AppendLine(systemPrompt);
+                detail.AppendLine();
+                detail.AppendLine("userTemplate:");
+                detail.AppendLine(userTemplate);
+                detail.AppendLine();
+                detail.AppendLine("userPrompt:");
+                detail.AppendLine(userPrompt);
+
+                _ = AppLogService.Instance.LogHttpDebugAsync("review", $"ReviewRequest trace={queueItem.TraceId} tag={queueItem.SheetTag}", detail.ToString());
+            }
+
         private static string FormatBatchExceptionForLog(Exception ex)
             => AppLogService.FormatException(ex);
 
@@ -1244,24 +1399,52 @@ namespace TrueFluentPro.ViewModels
                 return;
             }
 
+            var traceId = CreateDebugTraceId("review-regen");
+
             if (subtask.IsSpeechSubtask)
             {
+                var reviewSheets = GetReviewSheetsForTask(batchItem);
+                var enableReview = IsAiConfigured && reviewSheets.Count > 0;
+                var forceReviewAfterSpeech = _configProvider().ContextMenuForceRegeneration && enableReview;
+
+                if (forceReviewAfterSpeech)
+                {
+                    RemoveQueueItemsForPackage(batchItem.FullPath, item => item.QueueType == BatchQueueItemType.ReviewSheet);
+                    batchItem.ForceReviewRegeneration = true;
+                    batchItem.ReviewTotal = reviewSheets.Count;
+                    batchItem.ReviewCompleted = 0;
+                    batchItem.ReviewFailed = 0;
+                    batchItem.ReviewPending = reviewSheets.Count;
+                    batchItem.ReviewStatusText = reviewSheets.Count == 0
+                        ? "复盘:未勾选"
+                        : "复盘:等待字幕";
+                    batchItem.HasAiSummary = false;
+                }
+
                 ForceEnqueueSpeechSubtitle(batchItem);
-                BatchStatusMessage = $"已重新生成任务：{subtask.Title}";
+                BatchStatusMessage = forceReviewAfterSpeech
+                    ? $"已重新生成任务：{subtask.Title}，字幕完成后将继续重新生成复盘"
+                    : $"已重新生成任务：{subtask.Title}";
                 RefreshPackageProjections();
                 StartBatchQueueRunner("Speech 任务已加入队列");
                 return;
             }
 
-            var preset = GetBatchReviewSheets().FirstOrDefault(sheet =>
+            LogReviewSubtaskDebug("click", traceId, subtask, batchItem, null);
+
+            var preset = GetReviewSheetsForTask(batchItem).FirstOrDefault(sheet =>
                 string.Equals(sheet.FileTag, subtask.Tag, StringComparison.OrdinalIgnoreCase));
             if (preset == null)
             {
+                LogReviewSubtaskDebug("preset-missing", traceId, subtask, batchItem, null,
+                    "未在任务快照或当前批处理配置中找到对应复盘分类", isSuccess: false);
                 BatchStatusMessage = $"未找到复盘任务配置：{subtask.Tag}";
                 return;
             }
 
-            ForceEnqueueReviewQueueItem(batchItem, preset);
+            LogReviewSubtaskDebug("preset-resolved", traceId, subtask, batchItem, preset);
+
+            ForceEnqueueReviewQueueItem(batchItem, preset, "RegenerateSubtask", traceId);
             BatchStatusMessage = $"已重新生成任务：{subtask.Title}";
             RefreshPackageProjections();
             StartBatchQueueRunner("复盘任务已加入队列");
@@ -1386,7 +1569,11 @@ namespace TrueFluentPro.ViewModels
             UpdateBatchItem(batchItem, BatchTaskStatus.Pending, 0, $"待生成{GetGeneratedSubtitleDisplayName()}");
         }
 
-        private void ForceEnqueueReviewQueueItem(BatchTaskItem batchItem, ReviewSheetPreset sheet)
+        private void ForceEnqueueReviewQueueItem(
+            BatchTaskItem batchItem,
+            ReviewSheetPreset sheet,
+            string enqueueSource = "",
+            string traceId = "")
         {
             RemoveQueueItemsForPackage(batchItem.FullPath, item =>
                 item.QueueType == BatchQueueItemType.ReviewSheet
@@ -1399,6 +1586,8 @@ namespace TrueFluentPro.ViewModels
                 SheetName = sheet.Name,
                 SheetTag = sheet.FileTag,
                 Prompt = sheet.Prompt,
+                EnqueueSource = enqueueSource,
+                TraceId = traceId,
                 QueueType = BatchQueueItemType.ReviewSheet,
                 Status = BatchTaskStatus.Pending,
                 Progress = 0,
@@ -1765,6 +1954,8 @@ namespace TrueFluentPro.ViewModels
             bool enableReview,
             bool forceRegeneration)
         {
+            SetReviewSheetSnapshot(batchItem, reviewSheets);
+
             var speechExists = HasGeneratedSubtitleForSelectedMode(batchItem.FullPath);
             batchItem.HasAiSubtitle = enableSpeech ? speechExists : FileLibraryViewModel.HasAiSubtitle(batchItem.FullPath);
 
@@ -2042,11 +2233,7 @@ namespace TrueFluentPro.ViewModels
             }
             var runtimeInsightService = new AiInsightService(tokenProvider);
 
-            var systemPrompt = config.AiConfig?.ReviewSystemPrompt;
-            if (string.IsNullOrWhiteSpace(systemPrompt))
-            {
-                systemPrompt = new AiConfig().ReviewSystemPrompt;
-            }
+            var systemPrompt = AiConfig.GetEffectiveReviewSystemPrompt(config.AiConfig?.ReviewSystemPrompt);
             var prompt = string.IsNullOrWhiteSpace(queueItem.Prompt)
                 ? "请生成复盘总结。"
                 : queueItem.Prompt.Trim();
@@ -2058,6 +2245,13 @@ namespace TrueFluentPro.ViewModels
             var userPrompt = userTemplate
                 .Replace("{subtitle}", FormatSubtitleForSummary(cues))
                 .Replace("{prompt}", prompt);
+            var summaryPath = GetReviewSheetPath(queueItem.FullPath, queueItem.SheetTag);
+
+            if (string.Equals(queueItem.EnqueueSource, "RegenerateSubtask", StringComparison.OrdinalIgnoreCase))
+            {
+                var subtitlePath = GetSubtitlePathForReview(queueItem.FullPath);
+                LogReviewRequestDebug(queueItem, systemPrompt, userTemplate, userPrompt, subtitlePath, cues.Count, summaryPath, runtimeRequest);
+            }
 
             try
             {
@@ -2088,7 +2282,6 @@ namespace TrueFluentPro.ViewModels
                     onOutcome: o => outcome = o);
 
                 var markdown = TimeLinkHelper.InjectTimeLinks(sb.ToString());
-                var summaryPath = GetReviewSheetPath(queueItem.FullPath, queueItem.SheetTag);
                 File.WriteAllText(summaryPath, markdown);
                 var note = "完成";
                 if (outcome?.UsedFallback == true)
@@ -2196,7 +2389,8 @@ namespace TrueFluentPro.ViewModels
                     parentItem.HasAiSubtitle = true;
                 }
 
-                var enableReview = IsAiConfigured && _batchReviewSheetSnapshot.Count > 0;
+                var reviewSheets = GetReviewSheetsForTask(parentItem);
+                var enableReview = IsAiConfigured && reviewSheets.Count > 0;
                 if (!enableReview)
                 {
                     if (parentItem != null)
@@ -2208,9 +2402,12 @@ namespace TrueFluentPro.ViewModels
 
                 if (parentItem != null)
                 {
-                    var completed = _batchReviewSheetSnapshot.Count(sheet =>
-                        File.Exists(GetReviewSheetPath(parentItem.FullPath, sheet.FileTag)));
-                    parentItem.ReviewTotal = _batchReviewSheetSnapshot.Count;
+                    var forceReviewRegeneration = parentItem.ForceReviewRegeneration;
+                    var completed = forceReviewRegeneration
+                        ? 0
+                        : reviewSheets.Count(sheet =>
+                            File.Exists(GetReviewSheetPath(parentItem.FullPath, sheet.FileTag)));
+                    parentItem.ReviewTotal = reviewSheets.Count;
                     parentItem.ReviewCompleted = completed;
                     parentItem.ReviewFailed = 0;
                     parentItem.ReviewPending = Math.Max(parentItem.ReviewTotal - completed, 0);
@@ -2224,6 +2421,14 @@ namespace TrueFluentPro.ViewModels
                         UpdateBatchItem(parentItem, BatchTaskStatus.Completed, 1, "已存在");
                         return;
                     }
+
+                    if (forceReviewRegeneration)
+                    {
+                        parentItem.HasAiSummary = false;
+                        parentItem.ReviewStatusText = parentItem.ReviewTotal == 0
+                            ? "复盘:未勾选"
+                            : $"复盘 0/{parentItem.ReviewTotal}";
+                    }
                 }
 
                 var added = await Dispatcher.UIThread.InvokeAsync(() =>
@@ -2231,7 +2436,7 @@ namespace TrueFluentPro.ViewModels
                         ? 0
                         : EnqueueReviewQueueItemsForAudioInternal(
                             parentItem,
-                            _batchReviewSheetSnapshot,
+                            reviewSheets,
                             parentItem.ForceReviewRegeneration));
 
                 if (parentItem != null)
@@ -2696,11 +2901,7 @@ namespace TrueFluentPro.ViewModels
             sheet.StatusMessage = "正在生成复盘内容...";
             GenerateAllReviewSheetsCommand.RaiseCanExecuteChanged();
 
-            var systemPrompt = config.AiConfig?.ReviewSystemPrompt;
-            if (string.IsNullOrWhiteSpace(systemPrompt))
-            {
-                systemPrompt = new AiConfig().ReviewSystemPrompt;
-            }
+            var systemPrompt = AiConfig.GetEffectiveReviewSystemPrompt(config.AiConfig?.ReviewSystemPrompt);
             var subtitlesText = FormatSubtitleForSummary(cues);
             var prompt = string.IsNullOrWhiteSpace(sheet.Prompt)
                 ? "请生成复盘总结。"
@@ -2925,13 +3126,8 @@ namespace TrueFluentPro.ViewModels
                 _batchTasks.Add(batchItem);
             }
 
-            var reviewSheets = _batchReviewSheetSnapshot.Count > 0
-                ? _batchReviewSheetSnapshot
-                : batchSheets.ToList();
-            if (_batchReviewSheetSnapshot.Count == 0 && reviewSheets.Count > 0)
-            {
-                _batchReviewSheetSnapshot = reviewSheets.ToList();
-            }
+            var reviewSheets = batchSheets.ToList();
+            SetReviewSheetSnapshot(batchItem, reviewSheets);
 
             EnsureBatchLogFile();
 
