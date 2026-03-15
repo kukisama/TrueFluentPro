@@ -173,6 +173,23 @@
                                        IsVisible="{Binding IsMainNavPaneOpen}"/>
                         </Grid>
                     </Button>
+                    <Button Name="MediaV2NavButton"
+                            Classes="shell-nav-action"
+                            Click="MediaV2NavButton_Click"
+                            ToolTip.Tip="媒体中心v2 (Ctrl+6)"
+                            AutomationProperties.Name="媒体中心v2 (Ctrl+6)">
+                        <Grid ColumnDefinitions="20,*" ColumnSpacing="10">
+                            <icons:Icon Grid.Column="0"
+                                        Value="fa-solid fa-photo-film"
+                                        FontSize="15"
+                                        HorizontalAlignment="Center"
+                                        VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="1"
+                                       Text="媒体中心v2"
+                                       VerticalAlignment="Center"
+                                       IsVisible="{Binding IsMainNavPaneOpen}"/>
+                        </Grid>
+                    </Button>
                 </StackPanel>
 
                 <StackPanel Grid.Row="2" Margin="0,0,0,8">
