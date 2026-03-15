@@ -361,6 +361,7 @@ namespace TrueFluentPro.ViewModels
         public const string NavTagReview = "review";
         public const string NavTagBatch = "batch";
         public const string NavTagMedia = "media";
+        public const string NavTagMediaV2 = "mediav2";
         public const string NavTagSettings = "settings";
 
         private string _selectedNavTag = NavTagLive;

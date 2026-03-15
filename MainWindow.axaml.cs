@@ -21,10 +21,12 @@ public partial class MainWindow : Window
     private double _paneExpansionWidth;
     private MainWindowViewModel? _viewModel;
     private bool _mediaStudioInitialized;
+    private bool _mediaCenterV2Initialized;
     private bool _isApplyingNavPaneState;
     private readonly Dictionary<string, Control> _pageCache = new(StringComparer.Ordinal);
 
     private MediaStudioView? MediaStudioViewPage => GetCachedPage<MediaStudioView>(MainWindowViewModel.NavTagMedia);
+    private MediaCenterV2View? MediaCenterV2ViewPage => GetCachedPage<MediaCenterV2View>(MainWindowViewModel.NavTagMediaV2);
 
     public MainWindow()
     {
@@ -77,6 +79,7 @@ public partial class MainWindow : Window
     protected override void OnClosed(EventArgs e)
     {
         MediaStudioViewPage?.Cleanup();
+        MediaCenterV2ViewPage?.Cleanup();
         _viewModel?.Dispose();
         base.OnClosed(e);
     }
@@ -145,6 +148,10 @@ public partial class MainWindow : Window
                 ShowPage(MainWindowViewModel.NavTagSettings);
                 e.Handled = true;
                 break;
+            case Key.D6 when ctrl:
+                ShowPage(MainWindowViewModel.NavTagMediaV2);
+                e.Handled = true;
+                break;
             case Key.OemComma when ctrl:
                 ShowPage(MainWindowViewModel.NavTagSettings);
                 e.Handled = true;
@@ -206,6 +213,12 @@ public partial class MainWindow : Window
                 config.MediaGenConfig,
                 config.Endpoints);
         }
+
+        if (tag == MainWindowViewModel.NavTagMediaV2 && !_mediaCenterV2Initialized)
+        {
+            _mediaCenterV2Initialized = true;
+            MediaCenterV2ViewPage?.Initialize();
+        }
     }
 
     private static string NormalizeNavTag(string? tag)
@@ -215,6 +228,7 @@ public partial class MainWindow : Window
             MainWindowViewModel.NavTagReview => MainWindowViewModel.NavTagReview,
             MainWindowViewModel.NavTagBatch => MainWindowViewModel.NavTagBatch,
             MainWindowViewModel.NavTagMedia => MainWindowViewModel.NavTagMedia,
+            MainWindowViewModel.NavTagMediaV2 => MainWindowViewModel.NavTagMediaV2,
             MainWindowViewModel.NavTagSettings => MainWindowViewModel.NavTagSettings,
             _ => MainWindowViewModel.NavTagLive
         };
@@ -247,6 +261,7 @@ public partial class MainWindow : Window
             MainWindowViewModel.NavTagReview => CreateBoundPage(new ReviewModeView()),
             MainWindowViewModel.NavTagBatch => CreateBoundPage(new BatchCenterView()),
             MainWindowViewModel.NavTagMedia => new MediaStudioView(),
+            MainWindowViewModel.NavTagMediaV2 => new MediaCenterV2View(),
             MainWindowViewModel.NavTagSettings => CreateBoundPage(new SettingsView()),
             _ => CreateBoundPage(new LiveTranslationView())
         };
@@ -260,7 +275,7 @@ public partial class MainWindow : Window
 
     private void UpdatePageDataContext(Control page)
     {
-        if (page is MediaStudioView)
+        if (page is MediaStudioView || page is MediaCenterV2View)
         {
             return;
         }
@@ -340,6 +355,7 @@ public partial class MainWindow : Window
         ReviewNavButton.Classes.Set("selected", _viewModel?.SelectedNavTag == MainWindowViewModel.NavTagReview);
         BatchNavButton.Classes.Set("selected", _viewModel?.SelectedNavTag == MainWindowViewModel.NavTagBatch);
         MediaNavButton.Classes.Set("selected", _viewModel?.SelectedNavTag == MainWindowViewModel.NavTagMedia);
+        MediaV2NavButton.Classes.Set("selected", _viewModel?.SelectedNavTag == MainWindowViewModel.NavTagMediaV2);
         SettingsNavButton.Classes.Set("selected", _viewModel?.SelectedNavTag == MainWindowViewModel.NavTagSettings);
     }
 
@@ -371,6 +387,11 @@ public partial class MainWindow : Window
     private void MediaNavButton_Click(object? sender, RoutedEventArgs e)
     {
         ShowPage(MainWindowViewModel.NavTagMedia);
+    }
+
+    private void MediaV2NavButton_Click(object? sender, RoutedEventArgs e)
+    {
+        ShowPage(MainWindowViewModel.NavTagMediaV2);
     }
 
     private void SettingsNavButton_Click(object? sender, RoutedEventArgs e)
