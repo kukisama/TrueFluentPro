@@ -1,5 +1,4 @@
 using Avalonia;
-using Avalonia.FFmpegVideoPlayer;
 using Projektanker.Icons.Avalonia;
 using Projektanker.Icons.Avalonia.FontAwesome;
 using System;
@@ -13,7 +12,6 @@ class Program
     public static void Main(string[] args)
     {
         CrashLogger.Init();
-        FFmpegInitializer.Initialize();
         try
         {
             Environment.ExitCode = 0;

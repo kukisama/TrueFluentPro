@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -13,7 +12,6 @@ using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
-using Avalonia.Threading;
 using Microsoft.Extensions.DependencyInjection;
 using TrueFluentPro.Controls;
 using TrueFluentPro.Models;
@@ -29,7 +27,6 @@ namespace TrueFluentPro.Views
     {
         private MediaCenterV2ViewModel? _viewModel;
         private bool _initialized;
-        private bool _isInlineVideoPlaying;
 
         public MediaCenterV2View()
         {
@@ -45,22 +42,6 @@ namespace TrueFluentPro.Views
             var azureTokenProviderStore = App.Services.GetRequiredService<IAzureTokenProviderStore>();
             _viewModel = new MediaCenterV2ViewModel(aiConfig, genConfig, endpoints, modelRuntimeResolver, azureTokenProviderStore);
             DataContext = _viewModel;
-
-            _viewModel.PropertyChanged += ViewModel_PropertyChanged;
-
-            // InitializeAsync 可能在构造器内同步完成（无 AAD 时不 await），导致
-            // SelectedAsset 在 handler 注册前就已设置。同时，首次进入时 FFmpeg 控件
-            // 可能尚未完成布局（尺寸 0），直接 Open/Play 会静默失败。
-            // 延迟到 Loaded 优先级，确保控件完成首次布局后再播放。
-            Dispatcher.UIThread.Post(() =>
-            {
-                if (_viewModel?.SelectedAsset is { IsVideo: true, IsPending: false } existingAsset
-                    && File.Exists(existingAsset.FilePath)
-                    && !_isInlineVideoPlaying)
-                {
-                    StartInlineVideoPlayback(existingAsset.FilePath);
-                }
-            }, DispatcherPriority.Loaded);
 
             AddHandler(
                 InputElement.KeyDownEvent,
@@ -624,7 +605,19 @@ namespace TrueFluentPro.Views
             var selected = _viewModel.SelectedAsset;
             if (selected.IsVideo)
             {
-                StartInlineVideoPlayback(selected.FilePath);
+                // 视频资产：用系统播放器打开
+                try
+                {
+                    Process.Start(new ProcessStartInfo
+                    {
+                        FileName = selected.FilePath,
+                        UseShellExecute = true
+                    });
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"[MediaCenterV2] 打开系统播放器失败: {ex.Message}");
+                }
                 return;
             }
 
@@ -651,57 +644,25 @@ namespace TrueFluentPro.Views
             }
         }
 
-        // ──────────── 内嵌视频播放 ────────────
+        // ──────────── 视频：调用系统播放器 ────────────
 
-        private void StartInlineVideoPlayback(string videoPath)
+        private void PlayVideoButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
         {
-            if (string.IsNullOrWhiteSpace(videoPath) || !File.Exists(videoPath))
-            {
+            var filePath = _viewModel?.SelectedAsset?.FilePath;
+            if (string.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath))
                 return;
-            }
 
-            // 若已在播放，先停止旧的
-            if (_isInlineVideoPlaying)
+            try
             {
-                InlineVideoPlayer.Stop();
-            }
-
-            // 必须先设 IsVisible，否则控件尺寸为 0，FFmpeg 无法初始化渲染面
-            InlineVideoPlayer.IsVisible = true;
-            InlineVideoPlayer.Open(videoPath);
-            InlineVideoPlayer.Play();
-            _isInlineVideoPlaying = true;
-        }
-
-        private void StopInlineVideoPlayback()
-        {
-            if (!_isInlineVideoPlaying)
-            {
-                return;
-            }
-
-            _isInlineVideoPlaying = false;
-            InlineVideoPlayer.Stop();
-            InlineVideoPlayer.IsVisible = false;
-        }
-
-        private void ViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
-        {
-            if (e.PropertyName is "SelectedAsset" or "SelectedGroup" or "SelectedWorkspaceTab")
-            {
-                // 先停止旧的播放
-                if (_isInlineVideoPlaying)
+                Process.Start(new ProcessStartInfo
                 {
-                    StopInlineVideoPlayback();
-                }
-
-                // 若新选中的是视频资产，自动开始播放
-                if (e.PropertyName == "SelectedAsset"
-                    && _viewModel?.SelectedAsset is { IsVideo: true, IsPending: false } asset
-                    && File.Exists(asset.FilePath))
-                {
-                    StartInlineVideoPlayback(asset.FilePath);
-                }
+                    FileName = filePath,
+                    UseShellExecute = true
+                });
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[MediaCenterV2] 打开系统播放器失败: {ex.Message}");
             }
         }
 
