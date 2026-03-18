@@ -224,6 +224,27 @@ namespace TrueFluentPro.ViewModels
 
         private string ResolvePreviewPath()
         {
+            // 视频会话：优先从已完成的视频任务找首帧预览
+            if (_mediaKind == CreatorMediaKind.Video)
+            {
+                var videoTaskResult = Session.TaskHistory
+                    .Where(t => t.Type == MediaGenType.Video && t.Status == MediaGenStatus.Completed)
+                    .OrderByDescending(t => t.CreatedAt)
+                    .Select(t => t.ResultFilePath)
+                    .FirstOrDefault(p => !string.IsNullOrWhiteSpace(p) && File.Exists(p));
+
+                if (!string.IsNullOrWhiteSpace(videoTaskResult))
+                {
+                    var firstFrame = Path.Combine(
+                        Path.GetDirectoryName(videoTaskResult) ?? string.Empty,
+                        Path.GetFileNameWithoutExtension(videoTaskResult) + ".first.png");
+                    if (File.Exists(firstFrame))
+                    {
+                        return firstFrame;
+                    }
+                }
+            }
+
             foreach (var message in Session.Messages.Reverse())
             {
                 foreach (var path in message.MediaPaths.Reverse())

@@ -99,6 +99,9 @@ namespace TrueFluentPro.ViewModels
                 _ => OpenWorkspaceFolder(),
                 _ => WorkspaceSession != null && Directory.Exists(WorkspaceSession.SessionDirectory));
             RefreshWorkspaceCommand = new RelayCommand(_ => RebuildResultCollections(selectLatest: false));
+            EditAssetCommand = new RelayCommand(
+                p => _ = EditAssetAsync(p as MediaCreatorResultAsset),
+                p => p is MediaCreatorResultAsset { IsPending: false });
 
             _ = InitializeAsync();
         }
@@ -123,6 +126,7 @@ namespace TrueFluentPro.ViewModels
                     OnPropertyChanged(nameof(HasCanvasPreview));
                     OnPropertyChanged(nameof(HasNoCanvasPreview));
                     OnPropertyChanged(nameof(IsCanvasPreviewVideo));
+                    OnPropertyChanged(nameof(IsCanvasPreviewImage));
                     OnPropertyChanged(nameof(CanvasPreviewMetaText));
                     OnPropertyChanged(nameof(CanvasPlaceholderTitle));
                     OnPropertyChanged(nameof(CanvasPlaceholderDescription));
@@ -205,6 +209,7 @@ namespace TrueFluentPro.ViewModels
                     OnPropertyChanged(nameof(HasCanvasPreview));
                     OnPropertyChanged(nameof(HasNoCanvasPreview));
                     OnPropertyChanged(nameof(IsCanvasPreviewVideo));
+                    OnPropertyChanged(nameof(IsCanvasPreviewImage));
                     OnPropertyChanged(nameof(CanvasPreviewMetaText));
                     OnPropertyChanged(nameof(CanvasPlaceholderTitle));
                     OnPropertyChanged(nameof(CanvasPlaceholderDescription));
@@ -246,6 +251,7 @@ namespace TrueFluentPro.ViewModels
                     OnPropertyChanged(nameof(HasCanvasPreview));
                     OnPropertyChanged(nameof(HasNoCanvasPreview));
                     OnPropertyChanged(nameof(IsCanvasPreviewVideo));
+                    OnPropertyChanged(nameof(IsCanvasPreviewImage));
                     OnPropertyChanged(nameof(CanvasPreviewMetaText));
                     OnPropertyChanged(nameof(CanvasPlaceholderTitle));
                     OnPropertyChanged(nameof(CanvasPlaceholderDescription));
@@ -260,10 +266,8 @@ namespace TrueFluentPro.ViewModels
             {
                 if (SetProperty(ref _mediaKind, value))
                 {
-                    if (SelectedWorkspaceTab != null && SelectedWorkspaceTab.MediaKind != value)
-                    {
-                        SelectedWorkspaceTab.MediaKind = value;
-                    }
+                    // 注意：切换 MediaKind 只改变视图层面的筛选/参数展示，
+                    // 不写回 SelectedWorkspaceTab.MediaKind，避免改变会话的固有类型
 
                     OnPropertyChanged(nameof(IsImageKind));
                     OnPropertyChanged(nameof(IsVideoKind));
@@ -280,6 +284,7 @@ namespace TrueFluentPro.ViewModels
                     OnPropertyChanged(nameof(HasCanvasPreview));
                     OnPropertyChanged(nameof(HasNoCanvasPreview));
                     OnPropertyChanged(nameof(IsCanvasPreviewVideo));
+                    OnPropertyChanged(nameof(IsCanvasPreviewImage));
                     OnPropertyChanged(nameof(CanvasPreviewMetaText));
                     OnPropertyChanged(nameof(CanvasPlaceholderTitle));
                     OnPropertyChanged(nameof(CanvasPlaceholderDescription));
@@ -418,7 +423,7 @@ namespace TrueFluentPro.ViewModels
         }
 
         public bool IsReferencePanelVisible => WorkspaceSession != null
-            && (CanvasMode == CreatorCanvasMode.Edit || MediaKind == CreatorMediaKind.Video || WorkspaceSession.HasReferenceImage);
+            && (CanvasMode == CreatorCanvasMode.Edit || WorkspaceSession.HasReferenceImage);
 
         public bool CanAttachReferenceImages => WorkspaceSession != null
             && WorkspaceSession.ReferenceImageCount < GetReferenceImageLimit();
@@ -429,6 +434,7 @@ namespace TrueFluentPro.ViewModels
         public bool HasCanvasPreview => !string.IsNullOrWhiteSpace(CanvasPreviewPath);
         public bool HasNoCanvasPreview => !HasCanvasPreview;
         public bool IsCanvasPreviewVideo => CanvasMode != CreatorCanvasMode.Edit && SelectedAsset?.IsVideo == true;
+        public bool IsCanvasPreviewImage => HasCanvasPreview && !IsCanvasPreviewVideo;
         public string CanvasPreviewMetaText => ResolveCanvasPreviewMetaText();
         public string CurrentModeBadgeText => $"{(IsEditMode ? "编辑" : "绘制")} · {(IsVideoKind ? "视频" : "图片")}";
         public string ModeAccentBackground => IsEditMode ? "#1F5B3A17" : "#1F164A8A";
@@ -517,6 +523,7 @@ namespace TrueFluentPro.ViewModels
         public ICommand OpenSelectedAssetInExplorerCommand { get; }
         public ICommand OpenWorkspaceFolderCommand { get; }
         public ICommand RefreshWorkspaceCommand { get; }
+        public ICommand EditAssetCommand { get; }
 
         private async Task InitializeAsync()
         {
@@ -649,6 +656,8 @@ namespace TrueFluentPro.ViewModels
             try
             {
                 var tab = CreateNewWorkspaceCore(copyFromCurrentSession: true, selectNewWorkspace: true);
+                // 新建的 workspace 继承当前 MediaKind 作为固有属性
+                tab.MediaKind = _mediaKind;
                 await CopyReferenceImagesAsync(sourceSession, tab.Session);
 
                 tab.Session.PromptText = prompt;
@@ -766,10 +775,18 @@ namespace TrueFluentPro.ViewModels
                     return default;
                 }
 
+                var parsedKind = ParseMediaKind(data.MediaKind);
+
+                // 如果任务列表中存在视频类型任务，强制标记为视频会话，不依赖目录中的帧图片
+                if (data.Tasks != null && data.Tasks.Any(t => t.Type == MediaGenType.Video))
+                {
+                    parsedKind = CreatorMediaKind.Video;
+                }
+
                 return new WorkspaceSnapshot(
                     data.Name,
                     ParseCanvasMode(data.CanvasMode),
-                    ParseMediaKind(data.MediaKind),
+                    parsedKind,
                     data.IsDeleted);
             }
             catch
@@ -901,6 +918,7 @@ namespace TrueFluentPro.ViewModels
                 OnPropertyChanged(nameof(HasCanvasPreview));
                 OnPropertyChanged(nameof(HasNoCanvasPreview));
                 OnPropertyChanged(nameof(IsCanvasPreviewVideo));
+                    OnPropertyChanged(nameof(IsCanvasPreviewImage));
                 OnPropertyChanged(nameof(CanvasPreviewMetaText));
                 OnPropertyChanged(nameof(CanvasPlaceholderTitle));
                 OnPropertyChanged(nameof(CanvasPlaceholderDescription));
@@ -1006,6 +1024,7 @@ namespace TrueFluentPro.ViewModels
                     OnPropertyChanged(nameof(HasCanvasPreview));
                     OnPropertyChanged(nameof(HasNoCanvasPreview));
                     OnPropertyChanged(nameof(IsCanvasPreviewVideo));
+                    OnPropertyChanged(nameof(IsCanvasPreviewImage));
                     OnPropertyChanged(nameof(CanvasPreviewMetaText));
                     OnPropertyChanged(nameof(CanvasPlaceholderTitle));
                     OnPropertyChanged(nameof(CanvasPlaceholderDescription));
@@ -1143,7 +1162,6 @@ namespace TrueFluentPro.ViewModels
 
             var previousAssetId = SelectedAsset?.AssetId;
             var groups = ExtractResultGroups(WorkspaceSession)
-                .Where(g => MediaKind == CreatorMediaKind.Video ? g.Kind == CreatorAssetKind.Video : g.Kind == CreatorAssetKind.Image)
                 .ToList();
             var assets = groups
                 .Select(g => g.Items.FirstOrDefault())
@@ -1540,6 +1558,79 @@ namespace TrueFluentPro.ViewModels
             }
         }
 
+        /// <summary>
+        /// 将指定资产作为参考图，自动切换到编辑模式开始修改。
+        /// 图片直接引用；视频则使用目录中的尾帧图片。
+        /// </summary>
+        public async Task EditAssetAsync(MediaCreatorResultAsset? asset)
+        {
+            if (asset == null || asset.IsPending || WorkspaceSession == null)
+            {
+                return;
+            }
+
+            string referenceImagePath;
+
+            if (asset.IsVideo)
+            {
+                // 视频：查找尾帧图片
+                var videoPath = asset.FilePath;
+                if (string.IsNullOrWhiteSpace(videoPath) || !File.Exists(videoPath))
+                {
+                    StatusText = "视频文件不存在";
+                    return;
+                }
+
+                var lastFramePath = Path.Combine(
+                    Path.GetDirectoryName(videoPath) ?? string.Empty,
+                    Path.GetFileNameWithoutExtension(videoPath) + ".last.png");
+
+                if (!File.Exists(lastFramePath))
+                {
+                    StatusText = "尾帧图片未找到，正在尝试提取...";
+                    var result = await VideoFrameExtractorService
+                        .TryExtractFirstAndLastFrameAsync(videoPath);
+                    if (string.IsNullOrWhiteSpace(result.LastFramePath) || !File.Exists(result.LastFramePath))
+                    {
+                        StatusText = "无法提取视频尾帧，编辑失败";
+                        return;
+                    }
+
+                    lastFramePath = result.LastFramePath;
+                }
+
+                referenceImagePath = lastFramePath;
+            }
+            else
+            {
+                // 图片：直接引用
+                referenceImagePath = asset.FilePath;
+                if (string.IsNullOrWhiteSpace(referenceImagePath) || !File.Exists(referenceImagePath))
+                {
+                    StatusText = "图片文件不存在";
+                    return;
+                }
+            }
+
+            // 清除旧参考图并设定新参考图
+            WorkspaceSession.ClearReferenceImage(silent: true);
+            await WorkspaceSession.SetReferenceImageFromFileAsync(referenceImagePath);
+
+            // 切换到与资产类型匹配的媒体模式，然后进入编辑
+            if (asset.IsVideo && !IsVideoKind)
+            {
+                MediaKind = CreatorMediaKind.Video;
+            }
+            else if (asset.IsImage && !IsImageKind)
+            {
+                MediaKind = CreatorMediaKind.Image;
+            }
+
+            CanvasMode = CreatorCanvasMode.Edit;
+
+            StatusText = asset.IsVideo ? "已用视频尾帧作为参考图，进入编辑模式" : "已用图片作为参考图，进入编辑模式";
+        }
+
         private async Task TrySilentLoginForMediaAsync()
         {
             var runtimeConfig = BuildRuntimeConfig();
@@ -1597,7 +1688,7 @@ namespace TrueFluentPro.ViewModels
                     Name = session.SessionName,
                     IsDeleted = isDeleted,
                     CanvasMode = (tab?.CanvasMode ?? CanvasMode).ToString(),
-                    MediaKind = (tab?.MediaKind ?? MediaKind).ToString(),
+                    MediaKind = InferSessionMediaKind(session, tab).ToString(),
                     Messages = session.AllMessages.Select(m => new MediaChatMessage
                     {
                         Role = m.Role,
@@ -1638,6 +1729,19 @@ namespace TrueFluentPro.ViewModels
             {
                 Debug.WriteLine($"[MediaCenterV2] Save workspace meta failed: {ex.Message}");
             }
+        }
+
+        /// <summary>
+        /// 根据会话实际内容推断 MediaKind：如果有视频任务则为 Video，否则用 tab 的固有类型。
+        /// </summary>
+        private CreatorMediaKind InferSessionMediaKind(MediaSessionViewModel session, MediaWorkspaceTabViewModel? tab)
+        {
+            if (session.TaskHistory.Any(t => t.Type == MediaGenType.Video))
+            {
+                return CreatorMediaKind.Video;
+            }
+
+            return tab?.MediaKind ?? _mediaKind;
         }
 
         private void LoadWorkspaceMeta(MediaSessionViewModel session)

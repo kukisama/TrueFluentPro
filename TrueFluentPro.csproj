@@ -30,6 +30,7 @@
       <PrivateAssets Condition="'$(Configuration)' != 'Debug'">All</PrivateAssets>
     </PackageReference>
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+    <PackageReference Include="FFmpegVideoPlayer.Avalonia" Version="2.1.7" />
     <PackageReference Include="FluentAvaloniaUI" Version="2.5.0" />
     <PackageReference Include="Markdown.Avalonia" Version="11.0.2" />
     
@@ -65,8 +66,7 @@
   </ItemGroup>
 
   <!-- 构建后自动编译 Updater 并拷贝到输出目录（仅 Windows，macOS/Linux 构建时跳过） -->
-  <Target Name="BuildAndCopyUpdater" AfterTargets="Build"
-          Condition="!$(RuntimeIdentifier.StartsWith('osx')) AND !$(RuntimeIdentifier.StartsWith('linux'))">
+  <Target Name="BuildAndCopyUpdater" AfterTargets="Build" Condition="!$(RuntimeIdentifier.StartsWith('osx')) AND !$(RuntimeIdentifier.StartsWith('linux'))">
     <Exec Command="dotnet build &quot;$(ProjectDir)tools\Updater\Updater.csproj&quot; -c $(Configuration) -v q --nologo" />
     <ItemGroup>
       <UpdaterFiles Include="$(ProjectDir)tools\Updater\bin\$(Configuration)\net10.0\Updater.exe" Condition="Exists('$(ProjectDir)tools\Updater\bin\$(Configuration)\net10.0\Updater.exe')" />

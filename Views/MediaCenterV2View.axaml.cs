@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -12,7 +13,9 @@ using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 using Microsoft.Extensions.DependencyInjection;
+using TrueFluentPro.Controls;
 using TrueFluentPro.Models;
 using TrueFluentPro.Services;
 using TrueFluentPro.ViewModels;
@@ -26,6 +29,7 @@ namespace TrueFluentPro.Views
     {
         private MediaCenterV2ViewModel? _viewModel;
         private bool _initialized;
+        private bool _isInlineVideoPlaying;
 
         public MediaCenterV2View()
         {
@@ -41,6 +45,22 @@ namespace TrueFluentPro.Views
             var azureTokenProviderStore = App.Services.GetRequiredService<IAzureTokenProviderStore>();
             _viewModel = new MediaCenterV2ViewModel(aiConfig, genConfig, endpoints, modelRuntimeResolver, azureTokenProviderStore);
             DataContext = _viewModel;
+
+            _viewModel.PropertyChanged += ViewModel_PropertyChanged;
+
+            // InitializeAsync 可能在构造器内同步完成（无 AAD 时不 await），导致
+            // SelectedAsset 在 handler 注册前就已设置。同时，首次进入时 FFmpeg 控件
+            // 可能尚未完成布局（尺寸 0），直接 Open/Play 会静默失败。
+            // 延迟到 Loaded 优先级，确保控件完成首次布局后再播放。
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (_viewModel?.SelectedAsset is { IsVideo: true, IsPending: false } existingAsset
+                    && File.Exists(existingAsset.FilePath)
+                    && !_isInlineVideoPlaying)
+                {
+                    StartInlineVideoPlayback(existingAsset.FilePath);
+                }
+            }, DispatcherPriority.Loaded);
 
             AddHandler(
                 InputElement.KeyDownEvent,
@@ -393,9 +413,51 @@ namespace TrueFluentPro.Views
             e.Handled = true;
         }
 
+        private void RailThumbButton_PointerReleased(object? sender, PointerReleasedEventArgs e)
+        {
+            if (e.InitialPressMouseButton != MouseButton.Right
+                || _viewModel == null
+                || sender is not Control control
+                || control.DataContext is not MediaCreatorResultAsset asset)
+            {
+                return;
+            }
+
+            if (_viewModel.SelectAssetCommand.CanExecute(asset))
+            {
+                _viewModel.SelectAssetCommand.Execute(asset);
+            }
+
+            var flyout = BuildAssetFlyout(asset);
+            if (flyout.Items.Count > 0)
+            {
+                ShowFlyout(control, flyout);
+            }
+
+            e.Handled = true;
+        }
+
         private MenuFlyout BuildWorkspaceFlyout(MediaWorkspaceTabViewModel tab)
         {
             var flyout = new MenuFlyout();
+
+            // 编辑：取当前 workspace 最新的已完成资产进入编辑流程
+            var latestAsset = _viewModel?.ResultRailItems
+                .FirstOrDefault(a => !a.IsPending && File.Exists(a.FilePath));
+            if (latestAsset != null)
+            {
+                var editItem = new MenuItem { Header = latestAsset.IsVideo ? "用尾帧编辑" : "编辑图片" };
+                editItem.Click += (_, _) =>
+                {
+                    if (_viewModel?.EditAssetCommand.CanExecute(latestAsset) == true)
+                    {
+                        _viewModel.EditAssetCommand.Execute(latestAsset);
+                    }
+                };
+                flyout.Items.Add(editItem);
+                flyout.Items.Add(new Separator());
+            }
+
             var removeItem = new MenuItem { Header = "从列表移除" };
             ToolTip.SetTip(removeItem, "只从右侧列表移除，不删除原始图片、视频和目录文件");
             removeItem.Click += async (_, _) =>
@@ -412,6 +474,60 @@ namespace TrueFluentPro.Views
                 }
             };
             flyout.Items.Add(removeItem);
+            return flyout;
+        }
+
+        private MenuFlyout BuildAssetFlyout(MediaCreatorResultAsset asset)
+        {
+            var flyout = new MenuFlyout();
+
+            if (!asset.IsPending && File.Exists(asset.FilePath))
+            {
+                var editItem = new MenuItem { Header = asset.IsVideo ? "用尾帧编辑" : "编辑此图片" };
+                editItem.Click += (_, _) =>
+                {
+                    if (_viewModel?.EditAssetCommand.CanExecute(asset) == true)
+                    {
+                        _viewModel.EditAssetCommand.Execute(asset);
+                    }
+                };
+                flyout.Items.Add(editItem);
+
+                var openItem = new MenuItem { Header = "打开文件" };
+                openItem.Click += (_, _) =>
+                {
+                    try
+                    {
+                        Process.Start(new ProcessStartInfo
+                        {
+                            FileName = asset.FilePath,
+                            UseShellExecute = true
+                        });
+                    }
+                    catch { }
+                };
+                flyout.Items.Add(openItem);
+
+                var dir = Path.GetDirectoryName(asset.FilePath);
+                if (!string.IsNullOrWhiteSpace(dir))
+                {
+                    var explorerItem = new MenuItem { Header = "在文件夹中显示" };
+                    explorerItem.Click += (_, _) =>
+                    {
+                        try
+                        {
+                            Process.Start(new ProcessStartInfo
+                            {
+                                FileName = dir,
+                                UseShellExecute = true
+                            });
+                        }
+                        catch { }
+                    };
+                    flyout.Items.Add(explorerItem);
+                }
+            }
+
             return flyout;
         }
 
@@ -508,7 +624,7 @@ namespace TrueFluentPro.Views
             var selected = _viewModel.SelectedAsset;
             if (selected.IsVideo)
             {
-                _viewModel.OpenSelectedAsset();
+                StartInlineVideoPlayback(selected.FilePath);
                 return;
             }
 
@@ -532,6 +648,60 @@ namespace TrueFluentPro.Views
             else
             {
                 previewWindow.Show();
+            }
+        }
+
+        // ──────────── 内嵌视频播放 ────────────
+
+        private void StartInlineVideoPlayback(string videoPath)
+        {
+            if (string.IsNullOrWhiteSpace(videoPath) || !File.Exists(videoPath))
+            {
+                return;
+            }
+
+            // 若已在播放，先停止旧的
+            if (_isInlineVideoPlaying)
+            {
+                InlineVideoPlayer.Stop();
+            }
+
+            // 必须先设 IsVisible，否则控件尺寸为 0，FFmpeg 无法初始化渲染面
+            InlineVideoPlayer.IsVisible = true;
+            InlineVideoPlayer.Open(videoPath);
+            InlineVideoPlayer.Play();
+            _isInlineVideoPlaying = true;
+        }
+
+        private void StopInlineVideoPlayback()
+        {
+            if (!_isInlineVideoPlaying)
+            {
+                return;
+            }
+
+            _isInlineVideoPlaying = false;
+            InlineVideoPlayer.Stop();
+            InlineVideoPlayer.IsVisible = false;
+        }
+
+        private void ViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName is "SelectedAsset" or "SelectedGroup" or "SelectedWorkspaceTab")
+            {
+                // 先停止旧的播放
+                if (_isInlineVideoPlaying)
+                {
+                    StopInlineVideoPlayback();
+                }
+
+                // 若新选中的是视频资产，自动开始播放
+                if (e.PropertyName == "SelectedAsset"
+                    && _viewModel?.SelectedAsset is { IsVideo: true, IsPending: false } asset
+                    && File.Exists(asset.FilePath))
+                {
+                    StartInlineVideoPlayback(asset.FilePath);
+                }
             }
         }
 
