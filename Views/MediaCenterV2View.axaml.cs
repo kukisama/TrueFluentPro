@@ -422,7 +422,7 @@ namespace TrueFluentPro.Views
         {
             var flyout = new MenuFlyout();
 
-            // 编辑：取当前 workspace 最新的已完成资产进入编辑流程
+            // 编辑：取当前 workspace 最新的已完成资产，作为新创作的参考图起点
             var latestAsset = _viewModel?.ResultRailItems
                 .FirstOrDefault(a => !a.IsPending && File.Exists(a.FilePath));
             if (latestAsset != null)

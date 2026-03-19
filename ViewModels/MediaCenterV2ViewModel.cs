@@ -290,6 +290,7 @@ namespace TrueFluentPro.ViewModels
                     OnPropertyChanged(nameof(CanvasPlaceholderDescription));
                     ApplyWorkflowToWorkspace();
                     RebuildResultCollections(selectLatest: false);
+                    SyncCanvasModeWithReferenceState();
                 }
             }
         }
@@ -423,7 +424,7 @@ namespace TrueFluentPro.ViewModels
         }
 
         public bool IsReferencePanelVisible => WorkspaceSession != null
-            && (CanvasMode == CreatorCanvasMode.Edit || WorkspaceSession.HasReferenceImage);
+            && WorkspaceSession.HasReferenceImage;
 
         public bool CanAttachReferenceImages => WorkspaceSession != null
             && WorkspaceSession.ReferenceImageCount < GetReferenceImageLimit();
@@ -436,7 +437,7 @@ namespace TrueFluentPro.ViewModels
         public bool IsCanvasPreviewVideo => CanvasMode != CreatorCanvasMode.Edit && SelectedAsset?.IsVideo == true;
         public bool IsCanvasPreviewImage => HasCanvasPreview && !IsCanvasPreviewVideo;
         public string CanvasPreviewMetaText => ResolveCanvasPreviewMetaText();
-        public string CurrentModeBadgeText => $"{(IsEditMode ? "编辑" : "绘制")} · {(IsVideoKind ? "视频" : "图片")}";
+        public string CurrentModeBadgeText => CurrentCanvasTitle;
         public string ModeAccentBackground => IsEditMode ? "#1F5B3A17" : "#1F164A8A";
         public string ModeAccentBorderBrush => IsEditMode ? "#D88A5A" : "#5DA9FF";
         public string CanvasPlaceholderTitle => SelectedAsset?.IsPending == true
@@ -859,6 +860,7 @@ namespace TrueFluentPro.ViewModels
             SelectedWorkspaceTab = tab;
             WorkspaceSession = tab.Session;
             ApplySelectedWorkspaceState(tab);
+            SyncCanvasModeWithReferenceState();
             WorkspaceSession.PropertyChanged += WorkspaceSession_PropertyChanged;
             WorkspaceSession.Messages.CollectionChanged += WorkspaceMessages_CollectionChanged;
             WorkspaceSession.RunningTasks.CollectionChanged += WorkspaceRunningTasks_CollectionChanged;
@@ -1017,6 +1019,7 @@ namespace TrueFluentPro.ViewModels
                 case nameof(MediaSessionViewModel.CanAddMoreReferenceImages):
                 case nameof(MediaSessionViewModel.IsVideoMode):
                 case nameof(MediaSessionViewModel.IsImageMode):
+                    SyncCanvasModeWithReferenceState();
                     OnPropertyChanged(nameof(CanAttachReferenceImages));
                     OnPropertyChanged(nameof(ReferenceSummaryText));
                     OnPropertyChanged(nameof(IsReferencePanelVisible));
@@ -1292,6 +1295,23 @@ namespace TrueFluentPro.ViewModels
             return $"正在{mediaText}{workflowText}";
         }
 
+        private void SyncCanvasModeWithReferenceState()
+        {
+            if (WorkspaceSession == null)
+            {
+                return;
+            }
+
+            var targetMode = WorkspaceSession.HasReferenceImage
+                ? CreatorCanvasMode.Edit
+                : CreatorCanvasMode.Draw;
+
+            if (_canvasMode != targetMode)
+            {
+                CanvasMode = targetMode;
+            }
+        }
+
         private static CreatorPromptInfo FindNearestPromptInfo(IReadOnlyList<ChatMessageViewModel> messages, int assistantIndex)
         {
             for (var i = assistantIndex - 1; i >= 0; i--)
@@ -1559,7 +1579,8 @@ namespace TrueFluentPro.ViewModels
         }
 
         /// <summary>
-        /// 将指定资产作为参考图，自动切换到编辑模式开始修改。
+        /// 将指定资产作为参考图，创建一个新的创作工作区。
+        /// 文案上仍保留“编辑”，但实际走的是“新建 + 参考图”的创作路径。
         /// 图片直接引用；视频则使用目录中的尾帧图片。
         /// </summary>
         public async Task EditAssetAsync(MediaCreatorResultAsset? asset)
@@ -1612,23 +1633,27 @@ namespace TrueFluentPro.ViewModels
                 }
             }
 
-            // 清除旧参考图并设定新参考图
-            WorkspaceSession.ClearReferenceImage(silent: true);
-            await WorkspaceSession.SetReferenceImageFromFileAsync(referenceImagePath);
+            var targetMediaKind = asset.IsVideo ? CreatorMediaKind.Video : CreatorMediaKind.Image;
 
-            // 切换到与资产类型匹配的媒体模式，然后进入编辑
-            if (asset.IsVideo && !IsVideoKind)
+            if (_mediaKind != targetMediaKind)
             {
-                MediaKind = CreatorMediaKind.Video;
-            }
-            else if (asset.IsImage && !IsImageKind)
-            {
-                MediaKind = CreatorMediaKind.Image;
+                MediaKind = targetMediaKind;
             }
 
-            CanvasMode = CreatorCanvasMode.Edit;
+            var sourceSession = WorkspaceSession;
+            var tab = CreateNewWorkspaceCore(copyFromCurrentSession: true, selectNewWorkspace: true);
+            var targetSession = tab.Session;
 
-            StatusText = asset.IsVideo ? "已用视频尾帧作为参考图，进入编辑模式" : "已用图片作为参考图，进入编辑模式";
+            if (!ReferenceEquals(sourceSession, targetSession))
+            {
+                targetSession.ClearReferenceImage(silent: true);
+            }
+
+            await targetSession.SetReferenceImageFromFileAsync(referenceImagePath);
+
+            StatusText = asset.IsVideo
+                ? "已用视频尾帧创建新的图生视频起点"
+                : "已用图片创建新的参考图创作起点";
         }
 
         private async Task TrySilentLoginForMediaAsync()

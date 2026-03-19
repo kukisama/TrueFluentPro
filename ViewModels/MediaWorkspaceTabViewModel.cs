@@ -82,7 +82,13 @@ namespace TrueFluentPro.ViewModels
 
         public string Title => Session.SessionName;
 
-        public string WorkflowText => $"{(CanvasMode == CreatorCanvasMode.Draw ? "绘制" : "编辑")} · {(MediaKind == CreatorMediaKind.Video ? "视频" : "图片")}";
+        public string WorkflowText => (MediaKind, CanvasMode) switch
+        {
+            (CreatorMediaKind.Image, CreatorCanvasMode.Draw) => "生图",
+            (CreatorMediaKind.Image, CreatorCanvasMode.Edit) => "改图",
+            (CreatorMediaKind.Video, CreatorCanvasMode.Draw) => "生视频",
+            _ => "图生视频"
+        };
 
         public bool HasRunningTasks => Session.RunningTaskCount > 0;
         public bool HasPreview => !string.IsNullOrWhiteSpace(PreviewPath);

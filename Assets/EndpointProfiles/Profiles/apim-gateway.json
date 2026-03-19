@@ -51,9 +51,9 @@
                 "defaultApiVersion": "2025-04-01-preview"
             },
             "image": {
-                "generatePrimaryUrl": "{baseUrl}/v1/images/generations?api-version={apiVersion}",
-                "editPrimaryUrl": "{baseUrl}/images/edits?api-version={apiVersion}",
-                "deploymentGeneratePrimaryUrl": "{baseUrl}/deployments/{deployment}/images/generations?api-version={apiVersion}"
+                "generatePrimaryUrl": "{baseUrl}/v1/images/generations",
+                "editPrimaryUrl": "{baseUrl}/v1/images/edits",
+                "deploymentGeneratePrimaryUrl": ""
             },
             "video": {
                 "defaultMode": "Videos",
@@ -189,20 +189,11 @@
             ]
         },
     "image": {
-        "deploymentGenerateUrlCandidates": [
-            "{baseUrl}/deployments/{deployment}/images/generations?api-version={apiVersion}",
-            "{baseUrl}/deployments/{deployment}/images/generations"
-        ],
+        "deploymentGenerateUrlCandidates": [],
         "generateUrlCandidates": [
-            "{baseUrl}/v1/images/generations?api-version={apiVersion}",
-            "{baseUrl}/images/generations?api-version={apiVersion}",
-            "{baseUrl}/v1/images/generations",
-            "{baseUrl}/images/generations"
+            "{baseUrl}/v1/images/generations"
         ],
         "editUrlCandidates": [
-            "{baseUrl}/images/edits?api-version={apiVersion}",
-            "{baseUrl}/v1/images/edits?api-version={apiVersion}",
-            "{baseUrl}/images/edits",
             "{baseUrl}/v1/images/edits"
         ]
     },
