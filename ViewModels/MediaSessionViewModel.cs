@@ -55,6 +55,26 @@ namespace TrueFluentPro.ViewModels
 
         public string SessionDirectory { get; }
 
+        private MediaSessionSourceInfo? _sourceInfo;
+        public MediaSessionSourceInfo? SourceInfo
+        {
+            get => _sourceInfo;
+            private set
+            {
+                if (SetProperty(ref _sourceInfo, value))
+                {
+                    OnPropertyChanged(nameof(HasSourceInfo));
+                    OnPropertyChanged(nameof(SourceSummaryText));
+                }
+            }
+        }
+
+        public bool HasSourceInfo => SourceInfo != null;
+
+        public string SourceSummaryText => BuildSourceSummary(SourceInfo);
+
+        public List<MediaAssetRecord> AssetCatalog { get; } = new();
+
         /// <summary>
         /// 记录该会话上次“非底部”滚动位置；为空表示采用默认到底部行为。
         /// </summary>
@@ -508,6 +528,29 @@ namespace TrueFluentPro.ViewModels
             }
 
             UpdateMessageWindowState();
+        }
+
+        public void SetSourceInfo(MediaSessionSourceInfo? sourceInfo, bool requestSave = true)
+        {
+            SourceInfo = CloneSourceInfo(sourceInfo);
+            if (requestSave)
+            {
+                _onRequestSave?.Invoke(this);
+            }
+        }
+
+        public void ReplaceAssetCatalog(IEnumerable<MediaAssetRecord>? assets)
+        {
+            AssetCatalog.Clear();
+            if (assets != null)
+            {
+                foreach (var asset in assets)
+                {
+                    AssetCatalog.Add(CloneAssetRecord(asset));
+                }
+            }
+
+            OnPropertyChanged(nameof(AssetCatalog));
         }
 
         public void AppendMessage(ChatMessageViewModel message)
@@ -1758,6 +1801,69 @@ namespace TrueFluentPro.ViewModels
                 MediaGenConfig = _genConfig,
                 Endpoints = _endpoints
             };
+
+        private static string BuildSourceSummary(MediaSessionSourceInfo? sourceInfo)
+        {
+            if (sourceInfo == null)
+            {
+                return string.Empty;
+            }
+
+            var sessionName = !string.IsNullOrWhiteSpace(sourceInfo.SourceSessionName)
+                ? sourceInfo.SourceSessionName
+                : sourceInfo.SourceSessionDirectoryName;
+            var assetName = string.IsNullOrWhiteSpace(sourceInfo.SourceAssetFileName)
+                ? "上一个结果"
+                : sourceInfo.SourceAssetFileName;
+
+            return string.Equals(sourceInfo.ReferenceRole, "VideoLastFrame", StringComparison.OrdinalIgnoreCase)
+                ? $"衍生自“{sessionName}”的视频尾帧：{assetName}"
+                : $"衍生自“{sessionName}”的图片：{assetName}";
+        }
+
+        private static MediaSessionSourceInfo? CloneSourceInfo(MediaSessionSourceInfo? sourceInfo)
+        {
+            if (sourceInfo == null)
+            {
+                return null;
+            }
+
+            return new MediaSessionSourceInfo
+            {
+                SourceSessionId = sourceInfo.SourceSessionId,
+                SourceSessionName = sourceInfo.SourceSessionName,
+                SourceSessionDirectoryName = sourceInfo.SourceSessionDirectoryName,
+                SourceAssetId = sourceInfo.SourceAssetId,
+                SourceAssetKind = sourceInfo.SourceAssetKind,
+                SourceAssetFileName = sourceInfo.SourceAssetFileName,
+                SourceAssetPath = sourceInfo.SourceAssetPath,
+                SourcePreviewPath = sourceInfo.SourcePreviewPath,
+                ReferenceRole = sourceInfo.ReferenceRole
+            };
+        }
+
+        private static MediaAssetRecord CloneAssetRecord(MediaAssetRecord asset)
+        {
+            return new MediaAssetRecord
+            {
+                AssetId = asset.AssetId,
+                GroupId = asset.GroupId,
+                Kind = asset.Kind,
+                Workflow = asset.Workflow,
+                FileName = asset.FileName,
+                FilePath = asset.FilePath,
+                PreviewPath = asset.PreviewPath,
+                PromptText = asset.PromptText,
+                CreatedAt = asset.CreatedAt,
+                ModifiedAt = asset.ModifiedAt,
+                DerivedFromSessionId = asset.DerivedFromSessionId,
+                DerivedFromSessionName = asset.DerivedFromSessionName,
+                DerivedFromAssetId = asset.DerivedFromAssetId,
+                DerivedFromAssetFileName = asset.DerivedFromAssetFileName,
+                DerivedFromAssetKind = asset.DerivedFromAssetKind,
+                DerivedFromReferenceRole = asset.DerivedFromReferenceRole
+            };
+        }
 
     }
 

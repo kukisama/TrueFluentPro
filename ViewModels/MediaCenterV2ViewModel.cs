@@ -114,7 +114,9 @@ namespace TrueFluentPro.ViewModels
                 if (SetProperty(ref _workspaceSession, value))
                 {
                     OnPropertyChanged(nameof(HasWorkspace));
+                    OnPropertyChanged(nameof(HasWorkspaceLineage));
                     OnPropertyChanged(nameof(WorkspaceName));
+                    OnPropertyChanged(nameof(WorkspaceLineageText));
                     OnPropertyChanged(nameof(WorkspaceSubtitle));
                     OnPropertyChanged(nameof(WorkspaceStatusSummary));
                     OnPropertyChanged(nameof(CurrentEndpointDisplayName));
@@ -136,6 +138,7 @@ namespace TrueFluentPro.ViewModels
         }
 
         public bool HasWorkspace => WorkspaceSession != null;
+        public bool HasWorkspaceLineage => WorkspaceSession?.HasSourceInfo == true;
         public ObservableCollection<MediaWorkspaceTabViewModel> WorkspaceTabs => _workspaceTabs;
         public ObservableCollection<MediaCreatorResultGroup> ResultGroups => _resultGroups;
         public ObservableCollection<MediaCreatorResultAsset> ResultRailItems => _resultRailItems;
@@ -358,6 +361,8 @@ namespace TrueFluentPro.ViewModels
                 return $"{directoryName} · 结果 {ResultRailItems.Count} 个";
             }
         }
+
+        public string WorkspaceLineageText => WorkspaceSession?.SourceSummaryText ?? string.Empty;
 
         public string CurrentCanvasTitle => (MediaKind, CanvasMode) switch
         {
@@ -650,19 +655,32 @@ namespace TrueFluentPro.ViewModels
 
             var prompt = DraftPromptText.Trim();
             var sourceSession = WorkspaceSession;
+            var sourceTab = SelectedWorkspaceTab;
             _isSubmittingNewWorkspace = true;
             OnPropertyChanged(nameof(CanSubmitPrompt));
             (SubmitPromptCommand as RelayCommand)?.RaiseCanExecuteChanged();
 
             try
             {
+                DraftPromptText = string.Empty;
+
+                if (CanSubmitInCurrentWorkspace(sourceSession, sourceTab))
+                {
+                    sourceTab!.MediaKind = _mediaKind;
+                    sourceSession!.PromptText = prompt;
+                    sourceSession.Generate();
+                    StatusText = sourceSession.HasSourceInfo
+                        ? "已在当前编辑会话提交生成"
+                        : "已在当前会话提交生成";
+                    return;
+                }
+
                 var tab = CreateNewWorkspaceCore(copyFromCurrentSession: true, selectNewWorkspace: true);
                 // 新建的 workspace 继承当前 MediaKind 作为固有属性
                 tab.MediaKind = _mediaKind;
                 await CopyReferenceImagesAsync(sourceSession, tab.Session);
 
                 tab.Session.PromptText = prompt;
-                DraftPromptText = string.Empty;
                 tab.Session.Generate();
                 StatusText = "已新建会话并提交生成";
             }
@@ -673,6 +691,24 @@ namespace TrueFluentPro.ViewModels
                 (SubmitPromptCommand as RelayCommand)?.RaiseCanExecuteChanged();
             }
         }
+
+        private static bool CanSubmitInCurrentWorkspace(MediaSessionViewModel? session, MediaWorkspaceTabViewModel? tab)
+        {
+            if (session == null || tab == null)
+            {
+                return false;
+            }
+
+            if (session.IsGenerating)
+            {
+                return false;
+            }
+
+            return session.TotalMessageCount == 0
+                && session.TaskHistory.Count == 0
+                && session.RunningTaskCount == 0;
+        }
+
         private void RemoveWorkspace(MediaWorkspaceTabViewModel? tab)
         {
             if (tab == null)
@@ -1014,6 +1050,11 @@ namespace TrueFluentPro.ViewModels
                     StatusText = WorkspaceSession?.StatusText ?? "就绪";
                     OnPropertyChanged(nameof(WorkspaceStatusSummary));
                     break;
+                case nameof(MediaSessionViewModel.SourceInfo):
+                    OnPropertyChanged(nameof(HasWorkspaceLineage));
+                    OnPropertyChanged(nameof(WorkspaceLineageText));
+                    OnPropertyChanged(nameof(WorkspaceSubtitle));
+                    break;
                 case nameof(MediaSessionViewModel.ReferenceImageCount):
                 case nameof(MediaSessionViewModel.HasReferenceImage):
                 case nameof(MediaSessionViewModel.CanAddMoreReferenceImages):
@@ -1234,9 +1275,12 @@ namespace TrueFluentPro.ViewModels
                         : CreatorWorkflowKind.Create,
                 };
 
+                ApplySessionLineage(session, group);
+
                 foreach (var asset in assets)
                 {
                     asset.Group = group;
+                    ApplyAssetLineage(session, group, asset);
                     group.Items.Add(asset);
                 }
 
@@ -1260,7 +1304,9 @@ namespace TrueFluentPro.ViewModels
                     PendingStatusText = BuildPendingStatusText(task)
                 };
 
-                pendingGroup.Items.Add(new MediaCreatorResultAsset
+                ApplySessionLineage(session, pendingGroup);
+
+                var pendingAsset = new MediaCreatorResultAsset
                 {
                     AssetId = $"pending_asset_{task.Id}",
                     Group = pendingGroup,
@@ -1271,7 +1317,10 @@ namespace TrueFluentPro.ViewModels
                     IsPending = true,
                     PendingStatusText = pendingGroup.PendingStatusText,
                     PromptText = task.Prompt
-                });
+                };
+
+                ApplyAssetLineage(session, pendingGroup, pendingAsset);
+                pendingGroup.Items.Add(pendingAsset);
 
                 groups.Add(pendingGroup);
             }
@@ -1651,6 +1700,21 @@ namespace TrueFluentPro.ViewModels
 
             await targetSession.SetReferenceImageFromFileAsync(referenceImagePath);
 
+            targetSession.SetSourceInfo(new MediaSessionSourceInfo
+            {
+                SourceSessionId = sourceSession?.SessionId ?? string.Empty,
+                SourceSessionName = sourceSession?.SessionName ?? string.Empty,
+                SourceSessionDirectoryName = sourceSession == null
+                    ? string.Empty
+                    : Path.GetFileName(sourceSession.SessionDirectory),
+                SourceAssetId = asset.AssetId,
+                SourceAssetKind = asset.Kind.ToString(),
+                SourceAssetFileName = asset.FileName,
+                SourceAssetPath = asset.FilePath,
+                SourcePreviewPath = asset.PreviewPath,
+                ReferenceRole = asset.IsVideo ? "VideoLastFrame" : "DirectImage"
+            });
+
             StatusText = asset.IsVideo
                 ? "已用视频尾帧创建新的图生视频起点"
                 : "已用图片创建新的参考图创作起点";
@@ -1714,6 +1778,7 @@ namespace TrueFluentPro.ViewModels
                     IsDeleted = isDeleted,
                     CanvasMode = (tab?.CanvasMode ?? CanvasMode).ToString(),
                     MediaKind = InferSessionMediaKind(session, tab).ToString(),
+                    Source = ConvertSourceInfoForSave(session.SourceInfo, session.SessionDirectory),
                     Messages = session.AllMessages.Select(m => new MediaChatMessage
                     {
                         Role = m.Role,
@@ -1745,9 +1810,11 @@ namespace TrueFluentPro.ViewModels
                             GenerateSeconds = t.GenerateSeconds,
                             DownloadSeconds = t.DownloadSeconds,
                             RemoteDownloadUrl = t.RemoteDownloadUrl
-                        }).ToList()
+                        }).ToList(),
+                    Assets = BuildAssetRecordsForSave(session)
                 };
 
+                session.ReplaceAssetCatalog(data.Assets);
                 File.WriteAllText(metaPath, JsonSerializer.Serialize(data, SaveJsonOptions));
             }
             catch (Exception ex)
@@ -1786,6 +1853,8 @@ namespace TrueFluentPro.ViewModels
                     return;
                 }
 
+                session.SetSourceInfo(ResolveSourceInfoForLoad(data.Source, session.SessionDirectory), requestSave: false);
+
                 var messages = (data.Messages ?? new List<MediaChatMessage>())
                     .Select(m => new ChatMessageViewModel(new MediaChatMessage
                     {
@@ -1813,6 +1882,8 @@ namespace TrueFluentPro.ViewModels
 
                     session.TaskHistory.Add(task);
                 }
+
+                session.ReplaceAssetCatalog(ResolveAssetRecordsForLoad(data.Assets, session.SessionDirectory));
             }
             catch (Exception ex)
             {
@@ -1879,6 +1950,132 @@ namespace TrueFluentPro.ViewModels
             {
                 return value;
             }
+        }
+
+        private List<MediaAssetRecord> BuildAssetRecordsForSave(MediaSessionViewModel session)
+        {
+            var results = new List<MediaAssetRecord>();
+            foreach (var group in ExtractResultGroups(session))
+            {
+                foreach (var asset in group.Items.Where(a => !a.IsPending && !string.IsNullOrWhiteSpace(a.FilePath)))
+                {
+                    results.Add(new MediaAssetRecord
+                    {
+                        AssetId = asset.AssetId,
+                        GroupId = group.GroupId,
+                        Kind = asset.Kind.ToString(),
+                        Workflow = group.Workflow.ToString(),
+                        FileName = asset.FileName,
+                        FilePath = ConvertPathForSave(asset.FilePath, session.SessionDirectory),
+                        PreviewPath = ConvertPathForSave(asset.PreviewPath, session.SessionDirectory),
+                        PromptText = asset.PromptText,
+                        CreatedAt = group.CreatedAt,
+                        ModifiedAt = asset.ModifiedAt,
+                        DerivedFromSessionId = asset.DerivedFromSessionId,
+                        DerivedFromSessionName = asset.DerivedFromSessionName,
+                        DerivedFromAssetId = asset.DerivedFromAssetId,
+                        DerivedFromAssetFileName = asset.DerivedFromAssetFileName,
+                        DerivedFromAssetKind = asset.DerivedFromAssetKind,
+                        DerivedFromReferenceRole = asset.DerivedFromReferenceRole
+                    });
+                }
+            }
+
+            return results;
+        }
+
+        private static MediaSessionSourceInfo? ConvertSourceInfoForSave(MediaSessionSourceInfo? sourceInfo, string sessionDirectory)
+        {
+            if (sourceInfo == null)
+            {
+                return null;
+            }
+
+            return new MediaSessionSourceInfo
+            {
+                SourceSessionId = sourceInfo.SourceSessionId,
+                SourceSessionName = sourceInfo.SourceSessionName,
+                SourceSessionDirectoryName = sourceInfo.SourceSessionDirectoryName,
+                SourceAssetId = sourceInfo.SourceAssetId,
+                SourceAssetKind = sourceInfo.SourceAssetKind,
+                SourceAssetFileName = sourceInfo.SourceAssetFileName,
+                SourceAssetPath = ConvertPathForSave(sourceInfo.SourceAssetPath, sessionDirectory),
+                SourcePreviewPath = ConvertPathForSave(sourceInfo.SourcePreviewPath, sessionDirectory),
+                ReferenceRole = sourceInfo.ReferenceRole
+            };
+        }
+
+        private static MediaSessionSourceInfo? ResolveSourceInfoForLoad(MediaSessionSourceInfo? sourceInfo, string sessionDirectory)
+        {
+            if (sourceInfo == null)
+            {
+                return null;
+            }
+
+            return new MediaSessionSourceInfo
+            {
+                SourceSessionId = sourceInfo.SourceSessionId,
+                SourceSessionName = sourceInfo.SourceSessionName,
+                SourceSessionDirectoryName = sourceInfo.SourceSessionDirectoryName,
+                SourceAssetId = sourceInfo.SourceAssetId,
+                SourceAssetKind = sourceInfo.SourceAssetKind,
+                SourceAssetFileName = sourceInfo.SourceAssetFileName,
+                SourceAssetPath = ResolveStoredPathForLoad(sourceInfo.SourceAssetPath, sessionDirectory),
+                SourcePreviewPath = ResolveStoredPathForLoad(sourceInfo.SourcePreviewPath, sessionDirectory),
+                ReferenceRole = sourceInfo.ReferenceRole
+            };
+        }
+
+        private static List<MediaAssetRecord> ResolveAssetRecordsForLoad(IEnumerable<MediaAssetRecord>? assets, string sessionDirectory)
+        {
+            return (assets ?? Array.Empty<MediaAssetRecord>())
+                .Select(asset => new MediaAssetRecord
+                {
+                    AssetId = asset.AssetId,
+                    GroupId = asset.GroupId,
+                    Kind = asset.Kind,
+                    Workflow = asset.Workflow,
+                    FileName = asset.FileName,
+                    FilePath = ResolveStoredPathForLoad(asset.FilePath, sessionDirectory),
+                    PreviewPath = ResolveStoredPathForLoad(asset.PreviewPath, sessionDirectory),
+                    PromptText = asset.PromptText,
+                    CreatedAt = asset.CreatedAt,
+                    ModifiedAt = asset.ModifiedAt,
+                    DerivedFromSessionId = asset.DerivedFromSessionId,
+                    DerivedFromSessionName = asset.DerivedFromSessionName,
+                    DerivedFromAssetId = asset.DerivedFromAssetId,
+                    DerivedFromAssetFileName = asset.DerivedFromAssetFileName,
+                    DerivedFromAssetKind = asset.DerivedFromAssetKind,
+                    DerivedFromReferenceRole = asset.DerivedFromReferenceRole
+                })
+                .ToList();
+        }
+
+        private static void ApplySessionLineage(MediaSessionViewModel session, MediaCreatorResultGroup group)
+        {
+            if (group.Workflow != CreatorWorkflowKind.Edit || session.SourceInfo == null)
+            {
+                return;
+            }
+
+            group.SourceSessionName = session.SourceInfo.SourceSessionName;
+            group.SourceAssetFileName = session.SourceInfo.SourceAssetFileName;
+            group.SourceReferenceRole = session.SourceInfo.ReferenceRole;
+        }
+
+        private static void ApplyAssetLineage(MediaSessionViewModel session, MediaCreatorResultGroup group, MediaCreatorResultAsset asset)
+        {
+            if (group.Workflow != CreatorWorkflowKind.Edit || session.SourceInfo == null)
+            {
+                return;
+            }
+
+            asset.DerivedFromSessionId = session.SourceInfo.SourceSessionId;
+            asset.DerivedFromSessionName = session.SourceInfo.SourceSessionName;
+            asset.DerivedFromAssetId = session.SourceInfo.SourceAssetId;
+            asset.DerivedFromAssetFileName = session.SourceInfo.SourceAssetFileName;
+            asset.DerivedFromAssetKind = session.SourceInfo.SourceAssetKind;
+            asset.DerivedFromReferenceRole = session.SourceInfo.ReferenceRole;
         }
 
         private static string ResolveStoredPathForLoad(string? storedPath, string sessionDirectory)
@@ -2138,6 +2335,9 @@ namespace TrueFluentPro.ViewModels
         public CreatorWorkflowKind Workflow { get; set; }
         public bool IsPending { get; set; }
         public string PendingStatusText { get; set; } = string.Empty;
+        public string SourceSessionName { get; set; } = string.Empty;
+        public string SourceAssetFileName { get; set; } = string.Empty;
+        public string SourceReferenceRole { get; set; } = string.Empty;
         public ObservableCollection<MediaCreatorResultAsset> Items { get; } = new();
 
         public bool IsSelected
@@ -2156,9 +2356,11 @@ namespace TrueFluentPro.ViewModels
 
         public string WorkflowBadgeText => Workflow == CreatorWorkflowKind.Edit ? "修改" : "创建";
         public string WorkflowDisplayText => IsPending ? PendingStatusText : WorkflowBadgeText;
+        public bool HasLineage => !string.IsNullOrWhiteSpace(SourceSessionName) || !string.IsNullOrWhiteSpace(SourceAssetFileName);
+        public string LineageText => BuildLineageText(SourceSessionName, SourceAssetFileName, SourceReferenceRole);
         public string SecondaryText => IsPending
-            ? $"{PendingStatusText} · {SessionName} · {CreatedAt:yyyy-MM-dd HH:mm}"
-            : $"{WorkflowBadgeText} · {SessionName} · {CreatedAt:yyyy-MM-dd HH:mm}";
+            ? AppendLineage($"{PendingStatusText} · {SessionName} · {CreatedAt:yyyy-MM-dd HH:mm}")
+            : AppendLineage($"{WorkflowBadgeText} · {SessionName} · {CreatedAt:yyyy-MM-dd HH:mm}");
         public string ResultSummaryText => IsPending
             ? "结果仍在写入中，期间你可以继续提交新的创作请求。"
             : Kind == CreatorAssetKind.Video
@@ -2174,6 +2376,25 @@ namespace TrueFluentPro.ViewModels
         {
             var singleLine = text.Replace("\r", " ").Replace("\n", " ").Trim();
             return singleLine.Length > maxLength ? singleLine[..maxLength] + "..." : singleLine;
+        }
+
+        private string AppendLineage(string baseText)
+        {
+            return HasLineage ? $"{baseText} · {LineageText}" : baseText;
+        }
+
+        private static string BuildLineageText(string sessionName, string assetFileName, string referenceRole)
+        {
+            if (string.IsNullOrWhiteSpace(sessionName) && string.IsNullOrWhiteSpace(assetFileName))
+            {
+                return string.Empty;
+            }
+
+            var name = string.IsNullOrWhiteSpace(assetFileName) ? "上一轮结果" : assetFileName;
+            var roleText = string.Equals(referenceRole, "VideoLastFrame", StringComparison.OrdinalIgnoreCase)
+                ? "尾帧"
+                : "图片";
+            return $"来源：{sessionName} · {roleText} {name}";
         }
     }
 
@@ -2193,6 +2414,12 @@ namespace TrueFluentPro.ViewModels
         public bool IsPending { get; set; }
         public string PendingStatusText { get; set; } = string.Empty;
         public string PromptText { get; set; } = string.Empty;
+        public string DerivedFromSessionId { get; set; } = string.Empty;
+        public string DerivedFromSessionName { get; set; } = string.Empty;
+        public string DerivedFromAssetId { get; set; } = string.Empty;
+        public string DerivedFromAssetFileName { get; set; } = string.Empty;
+        public string DerivedFromAssetKind { get; set; } = string.Empty;
+        public string DerivedFromReferenceRole { get; set; } = string.Empty;
 
         public bool IsSelected
         {
@@ -2220,9 +2447,12 @@ namespace TrueFluentPro.ViewModels
             }
         }
 
+        public bool HasLineage => !string.IsNullOrWhiteSpace(DerivedFromSessionName) || !string.IsNullOrWhiteSpace(DerivedFromAssetFileName);
+        public string LineageText => BuildLineageText(DerivedFromSessionName, DerivedFromAssetFileName, DerivedFromReferenceRole);
+
         public string MetaSummaryText => Group == null
-            ? (IsPending ? PendingStatusText : $"{KindText} · {TimestampText}")
-            : (IsPending ? $"{PendingStatusText} · {Group.SecondaryText}" : $"{KindText} · {Group.SecondaryText}");
+            ? AppendLineage(IsPending ? PendingStatusText : $"{KindText} · {TimestampText}")
+            : AppendLineage(IsPending ? $"{PendingStatusText} · {Group.SecondaryText}" : $"{KindText} · {Group.SecondaryText}");
 
         public string PromptSummaryText => Group?.PromptSummaryText
             ?? (string.IsNullOrWhiteSpace(PromptText) ? "未记录提示词" : Compact(PromptText, 220));
@@ -2231,6 +2461,25 @@ namespace TrueFluentPro.ViewModels
         {
             var singleLine = text.Replace("\r", " ").Replace("\n", " ").Trim();
             return singleLine.Length > maxLength ? singleLine[..maxLength] + "..." : singleLine;
+        }
+
+        private string AppendLineage(string baseText)
+        {
+            return HasLineage ? $"{baseText} · {LineageText}" : baseText;
+        }
+
+        private static string BuildLineageText(string sessionName, string assetFileName, string referenceRole)
+        {
+            if (string.IsNullOrWhiteSpace(sessionName) && string.IsNullOrWhiteSpace(assetFileName))
+            {
+                return string.Empty;
+            }
+
+            var name = string.IsNullOrWhiteSpace(assetFileName) ? "上一轮结果" : assetFileName;
+            var roleText = string.Equals(referenceRole, "VideoLastFrame", StringComparison.OrdinalIgnoreCase)
+                ? "尾帧"
+                : "图片";
+            return $"衍生自 {sessionName} · {roleText} {name}";
         }
     }
 }

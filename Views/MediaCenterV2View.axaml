@@ -109,6 +109,11 @@
                         <StackPanel Grid.Column="0" Spacing="2">
                             <TextBlock Classes="panel-title" Text="{Binding WorkspaceName}"/>
                             <TextBlock Classes="panel-note" Text="{Binding WorkspaceSubtitle}" TextWrapping="Wrap"/>
+                            <TextBlock Classes="panel-note"
+                                       Foreground="{DynamicResource AccentBlueBrush}"
+                                       Text="{Binding WorkspaceLineageText}"
+                                       TextWrapping="Wrap"
+                                       IsVisible="{Binding HasWorkspaceLineage}"/>
                         </StackPanel>
                         <Button Grid.Column="1"
                                 Command="{Binding NewWorkspaceCommand}"
@@ -315,6 +320,11 @@
                     <StackPanel Grid.Column="0" Spacing="2">
                         <TextBlock Classes="panel-title" Text="{Binding CurrentCanvasTitle}"/>
                         <TextBlock Classes="panel-note" Text="{Binding CurrentCanvasDescription}" TextWrapping="Wrap"/>
+                        <TextBlock Classes="panel-note"
+                                   Foreground="{DynamicResource AccentBlueBrush}"
+                                   Text="{Binding WorkspaceLineageText}"
+                                   TextWrapping="Wrap"
+                                   IsVisible="{Binding HasWorkspaceLineage}"/>
                     </StackPanel>
                     <Button Grid.Column="1"
                             Padding="12,8"
