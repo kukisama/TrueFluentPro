@@ -12,10 +12,7 @@
             <Separator/>
 
             <TextBlock Text="AI 语音模型（暂放这里，后续会拆出独立分区）" FontWeight="Bold"/>
-            <TextBlock Text="从已配置的 AI 终结点里选择语音转写 / 文字转语音模型。当前批量与单文件 speech 字幕会优先使用这里的转写模型。"
-                       FontSize="11"
-                       Foreground="Gray"
-                       TextWrapping="Wrap"/>
+            <TextBlock Classes="field-note" TextWrapping="Wrap" Text="从已配置的 AI 终结点里选择语音转写 / 文字转语音模型。当前批量与单文件 speech 字幕会优先使用这里的转写模型。"/>
             <StackPanel Spacing="5">
                 <TextBlock Text="实时语音转写模型（预留给实时场景）"/>
                 <ComboBox ItemsSource="{Binding SpeechToTextModels}"
@@ -23,15 +20,9 @@
                           MinWidth="280"
                           HorizontalAlignment="Left"
                           IsEnabled="{Binding HasSpeechToTextModels}"/>
-                <TextBlock Text="当前主要先打通配置与单文件入口；实时流式语音场景后续再拆开。"
-                           FontSize="10"
-                           Foreground="Gray"
-                           TextWrapping="Wrap"
+                <TextBlock Classes="hint-text" Text="当前主要先打通配置与单文件入口；实时流式语音场景后续再拆开。"
                            IsVisible="{Binding HasSpeechToTextModels}"/>
-                <TextBlock Text="还没有可用的语音转写模型，请先去 AI 终结点里把模型能力标成“语音转文字”。"
-                           FontSize="10"
-                           Foreground="Gray"
-                           TextWrapping="Wrap"
+                <TextBlock Classes="hint-text" Text="还没有可用的语音转写模型，请先去 AI 终结点里把模型能力标成 &quot;语音转文字&quot;。"
                            IsVisible="{Binding !HasSpeechToTextModels}"/>
             </StackPanel>
             <StackPanel Spacing="5">
@@ -41,10 +32,7 @@
                           MinWidth="280"
                           HorizontalAlignment="Left"
                           IsEnabled="{Binding HasSpeechToTextModels}"/>
-                <TextBlock Text="批处理中心与 speech 字幕生成会优先使用这里的模型；未配置时回退到现有 Azure Speech 批量/SDK 转写链路。"
-                           FontSize="10"
-                           Foreground="Gray"
-                           TextWrapping="Wrap"/>
+                <TextBlock Classes="hint-text" Text="批处理中心与 speech 字幕生成会优先使用这里的模型；未配置时回退到现有 Azure Speech 批量/SDK 转写链路。"/>
             </StackPanel>
             <StackPanel Spacing="5">
                 <TextBlock Text="文字转语音模型（预留）"/>
@@ -53,10 +41,7 @@
                           MinWidth="280"
                           HorizontalAlignment="Left"
                           IsEnabled="{Binding HasTextToSpeechModels}"/>
-                <TextBlock Text="先把终结点与模型引用配置打通，运行时链路下一步再接。"
-                           FontSize="10"
-                           Foreground="Gray"
-                           TextWrapping="Wrap"/>
+                <TextBlock Classes="hint-text" Text="先把终结点与模型引用配置打通，运行时链路下一步再接。"/>
             </StackPanel>
 
             <TextBlock Text="识别策略" FontWeight="Bold"/>
@@ -79,7 +64,7 @@
                 <NumericUpDown Value="{Binding ChunkDurationMs, Mode=TwoWay}"
                                Minimum="20" Maximum="2000" Width="120" FormatString="F0"
                                HorizontalAlignment="Left"/>
-                <TextBlock FontSize="10" Foreground="Gray" Text="默认 200ms；可改为 500ms（延迟更高）"/>
+                <TextBlock Classes="caption-text" Text="默认 200ms；可改为 500ms（延迟更高）"/>
             </StackPanel>
 
             <Separator Margin="0,8,0,8"/>

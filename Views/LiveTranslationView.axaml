@@ -125,7 +125,8 @@
                 </ComboBox>
 
                 <!-- 开始/停止翻译 -->
-                <Button Content="{Binding TranslationToggleButtonText}"
+                <Button Classes="pressable"
+                    Content="{Binding TranslationToggleButtonText}"
                     Command="{Binding ToggleTranslationCommand}"
                     Background="{Binding TranslationToggleButtonBackground}"
                     Foreground="{Binding TranslationToggleButtonForeground}"

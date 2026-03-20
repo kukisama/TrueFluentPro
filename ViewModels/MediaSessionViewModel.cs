@@ -23,8 +23,8 @@ namespace TrueFluentPro.ViewModels
         private readonly List<AiEndpoint> _endpoints;
         private readonly IModelRuntimeResolver _modelRuntimeResolver;
         private readonly IAzureTokenProviderStore _azureTokenProviderStore;
-        private readonly AiImageGenService _imageService;
-        private readonly AiVideoGenService _videoService;
+        private readonly IAiImageGenService _imageService;
+        private readonly IAiVideoGenService _videoService;
         private readonly Action _onTaskCountChanged;
         private readonly Action<MediaSessionViewModel>? _onRequestSave;
         private CancellationTokenSource _cts = new();
@@ -377,8 +377,8 @@ namespace TrueFluentPro.ViewModels
             List<AiEndpoint> endpoints,
             IModelRuntimeResolver modelRuntimeResolver,
             IAzureTokenProviderStore azureTokenProviderStore,
-            AiImageGenService imageService,
-            AiVideoGenService videoService,
+            IAiImageGenService imageService,
+            IAiVideoGenService videoService,
             Action onTaskCountChanged,
             Action<MediaSessionViewModel>? onRequestSave = null)
         {

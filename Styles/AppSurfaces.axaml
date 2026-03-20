@@ -5,7 +5,7 @@
         <Setter Property="Background" Value="{DynamicResource CardBackgroundBrush}"/>
         <Setter Property="BorderBrush" Value="{DynamicResource CardBorderBrush}"/>
         <Setter Property="BorderThickness" Value="1"/>
-        <Setter Property="CornerRadius" Value="8"/>
+        <Setter Property="CornerRadius" Value="{StaticResource CornerRadiusMd}"/>
         <Setter Property="BoxShadow" Value="0 8 24 0 #120F172A"/>
     </Style>
 
@@ -13,7 +13,7 @@
         <Setter Property="Background" Value="{DynamicResource SubCardBackgroundBrush}"/>
         <Setter Property="BorderBrush" Value="{DynamicResource SubCardBorderBrush}"/>
         <Setter Property="BorderThickness" Value="1"/>
-        <Setter Property="CornerRadius" Value="6"/>
+        <Setter Property="CornerRadius" Value="{StaticResource CornerRadiusSm}"/>
     </Style>
 
     <Style Selector="Border.nav-surface">

@@ -41,10 +41,8 @@
 
             <Separator Margin="0,8,0,8"/>
             <TextBlock Text="批量转写" FontWeight="Bold"/>
-            <TextBlock Text="存储账号、speech 复盘入口已集中到“AI 资源与模型”。此处保留批量转写的诊断与切分策略。"
-                       FontSize="10"
-                       Foreground="Gray"
-                       TextWrapping="Wrap"/>
+            <TextBlock Classes="hint-text"
+                       Text="存储账号、speech 复盘入口已集中到 &quot;AI 资源与模型&quot;。此处保留批量转写的诊断与切分策略。"/>
 
             <StackPanel Spacing="5">
                 <TextBlock Text="诊断日志"/>

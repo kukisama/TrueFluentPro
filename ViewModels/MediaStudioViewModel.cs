@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
@@ -32,8 +32,7 @@ namespace TrueFluentPro.ViewModels
         private readonly string _studioDirectory;
         private readonly string _indexFilePath;
         private MediaStudioIndex _sessionIndex = new();
-        private readonly LinkedList<string> _loadedSessionLru = new();
-        private readonly Dictionary<string, LinkedListNode<string>> _loadedSessionLruNodes = new(StringComparer.OrdinalIgnoreCase);
+
 
         private static readonly JsonSerializerOptions JsonOptions = new()
         {
@@ -55,9 +54,7 @@ namespace TrueFluentPro.ViewModels
                     OnPropertyChanged(nameof(HasCurrentSession));
 
                     foreach (var session in Sessions)
-                    {
                         session.IsActiveSession = ReferenceEquals(session, value);
-                    }
 
                     (DeleteSessionCommand as RelayCommand)?.RaiseCanExecuteChanged();
                     (RenameSessionCommand as RelayCommand)?.RaiseCanExecuteChanged();
@@ -65,25 +62,7 @@ namespace TrueFluentPro.ViewModels
                     if (value != null)
                     {
                         value.ActivateOnFirstSelection();
-                        var switchSw = Stopwatch.StartNew();
-                        var wasLoaded = value.IsContentLoaded;
                         EnsureSessionLoaded(value);
-                        TouchLoadedSession(value);
-                        EnforceLoadedSessionCacheLimit(currentSessionId: value.SessionId);
-                        switchSw.Stop();
-                        Debug.WriteLine($"切换会话 {value.SessionId}: loadedBefore={wasLoaded}, loadedNow={value.IsContentLoaded}, messages={value.Messages.Count}, tasks={value.TaskHistory.Count}, ensureMs={switchSw.ElapsedMilliseconds}");
-
-                        if (!value.HasBackfilledVideoFrames)
-                        {
-                            value.HasBackfilledVideoFrames = true;
-                            _ = value.BackfillVideoFramesForExistingMessagesAsync();
-                        }
-
-                        if (!value.HasResumedInterruptedVideoTasks)
-                        {
-                            value.HasResumedInterruptedVideoTasks = true;
-                            ResumeInterruptedVideoTasksForSession(value);
-                        }
                     }
                 }
             }
@@ -143,14 +122,8 @@ namespace TrueFluentPro.ViewModels
                 _ => { },  // 由 View 处理弹窗逻辑
                 _ => CurrentSession != null);
 
-            // 加载现有会话
-            LoadSessions();
-
-            // 若无会话，自动创建一个
-            if (Sessions.Count == 0)
-            {
-                CreateNewSession();
-            }
+            // 加载现有会话（磁盘 I/O 移到后台线程）
+            _ = LoadSessionsAsync();
 
             _ = TrySilentLoginForMediaAsync();
         }
@@ -243,24 +216,6 @@ namespace TrueFluentPro.ViewModels
             };
         }
 
-        /// <summary>
-        /// 恢复单会话中 Running 状态且有 RemoteVideoId 的视频任务
-        /// </summary>
-        private static void ResumeInterruptedVideoTasksForSession(MediaSessionViewModel session)
-        {
-            var tasksToResume = session.TaskHistory
-                .Where(t => t.Type == MediaGenType.Video
-                    && t.Status == MediaGenStatus.Running
-                    && !string.IsNullOrEmpty(t.RemoteVideoId))
-                .ToList();
-
-            foreach (var task in tasksToResume)
-            {
-                Debug.WriteLine($"恢复视频任务: {task.Id}, VideoId: {task.RemoteVideoId}");
-                session.ResumeVideoTask(task);
-            }
-        }
-
         private async Task TrySilentLoginForMediaAsync()
         {
             var runtimeConfig = BuildRuntimeConfig();
@@ -315,7 +270,6 @@ namespace TrueFluentPro.ViewModels
                 s => SaveSessionMeta(s));
 
             session.IsContentLoaded = true;
-            ResetSessionScrollSnapshot(session);
 
             Sessions.Add(session);
             CurrentSession = session;
@@ -334,7 +288,6 @@ namespace TrueFluentPro.ViewModels
             EnsureSessionLoaded(session);
             session.CancelAll();
 
-            // 标记 session.json 为已删除，下次不再加载（保留目录与历史文件）
             MarkSessionDeleted(session);
             MarkSessionDeletedInIndex(session.SessionId);
 
@@ -342,112 +295,14 @@ namespace TrueFluentPro.ViewModels
             Sessions.Remove(session);
 
             if (Sessions.Count > 0)
-            {
                 CurrentSession = Sessions[Math.Min(idx, Sessions.Count - 1)];
-            }
             else
-            {
                 CurrentSession = null;
-            }
 
             UpdateActiveTaskCount();
-            RemoveFromLoadedSessionLru(session.SessionId);
         }
 
-        private int GetMaxLoadedSessionsInMemory()
-        {
-            var configured = _genConfig.MaxLoadedSessionsInMemory;
-            if (configured <= 0)
-            {
-                return 8;
-            }
 
-            return Math.Clamp(configured, 1, 64);
-        }
-
-        private void TouchLoadedSession(MediaSessionViewModel session)
-        {
-            if (!session.IsContentLoaded)
-            {
-                return;
-            }
-
-            if (_loadedSessionLruNodes.TryGetValue(session.SessionId, out var existingNode))
-            {
-                _loadedSessionLru.Remove(existingNode);
-            }
-
-            var node = _loadedSessionLru.AddLast(session.SessionId);
-            _loadedSessionLruNodes[session.SessionId] = node;
-        }
-
-        private void RemoveFromLoadedSessionLru(string sessionId)
-        {
-            if (!_loadedSessionLruNodes.TryGetValue(sessionId, out var node))
-            {
-                return;
-            }
-
-            _loadedSessionLru.Remove(node);
-            _loadedSessionLruNodes.Remove(sessionId);
-        }
-
-        private void EnforceLoadedSessionCacheLimit(string? currentSessionId)
-        {
-            var maxLoaded = GetMaxLoadedSessionsInMemory();
-            var loadedCount = Sessions.Count(s => s.IsContentLoaded);
-
-            if (loadedCount <= maxLoaded)
-            {
-                return;
-            }
-
-            var guard = _loadedSessionLru.Count + 8;
-            while (loadedCount > maxLoaded && _loadedSessionLru.Count > 0 && guard-- > 0)
-            {
-                var node = _loadedSessionLru.First;
-                if (node == null)
-                {
-                    break;
-                }
-
-                _loadedSessionLru.RemoveFirst();
-                _loadedSessionLruNodes.Remove(node.Value);
-
-                var session = Sessions.FirstOrDefault(s => s.SessionId.Equals(node.Value, StringComparison.OrdinalIgnoreCase));
-                if (session == null)
-                {
-                    continue;
-                }
-
-                if (!session.IsContentLoaded)
-                {
-                    continue;
-                }
-
-                if (!string.IsNullOrWhiteSpace(currentSessionId)
-                    && session.SessionId.Equals(currentSessionId, StringComparison.OrdinalIgnoreCase))
-                {
-                    TouchLoadedSession(session);
-                    continue;
-                }
-
-                if (session.RunningTaskCount > 0)
-                {
-                    TouchLoadedSession(session);
-                    continue;
-                }
-
-                session.ClearLoadedContent();
-                session.LastNonBottomScrollOffsetY = null;
-                session.LastScrollAnchorRatio = null;
-                session.LastScrollAnchorMessageIndex = null;
-                session.LastScrollAnchorViewportOffsetY = null;
-                session.IsContentLoaded = false;
-                loadedCount--;
-                Debug.WriteLine($"会话缓存淘汰: {session.SessionId}");
-            }
-        }
 
         private string AllocateNextDefaultSessionName()
         {
@@ -580,57 +435,64 @@ namespace TrueFluentPro.ViewModels
 
         // --- 持久化 ---
 
-        private void LoadSessions()
+        private async Task LoadSessionsAsync()
         {
-            try
+            // 磁盘 I/O 在后台线程
+            var loadedEntries = await Task.Run(() =>
             {
-                if (!Directory.Exists(_studioDirectory)) return;
-
-                LoadOrRebuildSessionIndex();
-
-                foreach (var entry in _sessionIndex.Sessions.Where(s => !s.IsDeleted))
+                try
                 {
-                    var dir = ResolveSessionDirectory(entry);
-                    var metaPath = Path.Combine(dir, "session.json");
-                    if (!File.Exists(metaPath))
-                    {
-                        // 索引与真实文件不一致：标记删除并略过
-                        entry.IsDeleted = true;
-                        entry.UpdatedAt = DateTime.Now;
-                        continue;
-                    }
+                    if (!Directory.Exists(_studioDirectory)) return Array.Empty<(MediaSessionIndexItem entry, string dir)>();
+                    LoadOrRebuildSessionIndex();
 
+                    var entries = new List<(MediaSessionIndexItem entry, string dir)>();
+                    foreach (var entry in _sessionIndex.Sessions.Where(s => !s.IsDeleted))
+                    {
+                        var dir = ResolveSessionDirectory(entry);
+                        var metaPath = Path.Combine(dir, "session.json");
+                        if (!File.Exists(metaPath))
+                        {
+                            entry.IsDeleted = true;
+                            entry.UpdatedAt = DateTime.Now;
+                            continue;
+                        }
+                        entries.Add((entry, dir));
+                    }
+                    SaveSessionIndex();
+                    return entries.ToArray();
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"加载会话索引失败: {ex.Message}");
+                    return Array.Empty<(MediaSessionIndexItem entry, string dir)>();
+                }
+            }).ConfigureAwait(false);
+
+            // UI 操作回到主线程
+            await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                foreach (var (entry, dir) in loadedEntries)
+                {
                     var session = new MediaSessionViewModel(
-                        entry.Id,
-                        entry.Name,
-                        dir,
-                        _aiConfig,
-                        _genConfig,
-                        _endpoints,
-                        _modelRuntimeResolver,
-                        _azureTokenProviderStore,
-                        _imageService,
-                        _videoService,
+                        entry.Id, entry.Name, dir,
+                        _aiConfig, _genConfig, _endpoints,
+                        _modelRuntimeResolver, _azureTokenProviderStore,
+                        _imageService, _videoService,
                         OnSessionTaskCountChanged,
                         s => SaveSessionMeta(s));
-
                     session.IsContentLoaded = false;
-                    ResetSessionScrollSnapshot(session);
-
                     Sessions.Add(session);
                 }
 
-                SaveSessionIndex();
-
-                if (Sessions.Count > 0)
+                if (Sessions.Count == 0)
+                {
+                    CreateNewSession();
+                }
+                else
                 {
                     CurrentSession = Sessions[0];
                 }
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"加载会话列表失败: {ex.Message}");
-            }
+            });
         }
 
         private void LoadOrRebuildSessionIndex()
@@ -646,6 +508,10 @@ namespace TrueFluentPro.ViewModels
             {
                 var json = File.ReadAllText(_indexFilePath);
                 _sessionIndex = JsonSerializer.Deserialize<MediaStudioIndex>(json) ?? new MediaStudioIndex();
+                // 确保索引始终按最近更新排序（JSON 文件可能保留了旧的追加顺序）
+                _sessionIndex.Sessions = _sessionIndex.Sessions
+                    .OrderByDescending(s => s.UpdatedAt)
+                    .ToList();
             }
             catch (Exception ex)
             {
@@ -739,9 +605,7 @@ namespace TrueFluentPro.ViewModels
                 return;
             }
 
-            // 旧版本可能在文件中出现过滚动相关字段；
-            // 即使存在，也统一忽略，首次加载一律按“无位置快照”处理（默认到底部）。
-            ResetSessionScrollSnapshot(session);
+            // 保留已有的滚动位置快照（LRU 淘汰后重新加载时恢复原位置）
 
             var sw = Stopwatch.StartNew();
 
@@ -800,9 +664,8 @@ namespace TrueFluentPro.ViewModels
 
                 session.IsContentLoaded = true;
                 UpdateSessionIndexFromSession(session, saveIndex: true);
-                TouchLoadedSession(session);
                 sw.Stop();
-                Debug.WriteLine($"加载会话 {session.SessionId}: visibleMessages={session.Messages.Count}, totalMessages={session.TotalMessageCount}, tasks={session.TaskHistory.Count}, {sw.ElapsedMilliseconds}ms");
+                Debug.WriteLine($"加载会话 {session.SessionId}: messages={session.Messages.Count}, tasks={session.TaskHistory.Count}, {sw.ElapsedMilliseconds}ms");
             }
             catch (Exception ex)
             {
@@ -811,15 +674,6 @@ namespace TrueFluentPro.ViewModels
                 sw.Stop();
                 Debug.WriteLine($"加载会话 {session.SessionId}: 失败后标记为已加载，{sw.ElapsedMilliseconds}ms");
             }
-        }
-
-        private static void ResetSessionScrollSnapshot(MediaSessionViewModel session)
-        {
-            session.LastNonBottomScrollOffsetY = null;
-            session.LastScrollAnchorRatio = null;
-            session.LastScrollSavedMaxY = null;
-            session.LastScrollAnchorMessageIndex = null;
-            session.LastScrollAnchorViewportOffsetY = null;
         }
 
         private string ResolveSessionDirectory(MediaSessionIndexItem entry)

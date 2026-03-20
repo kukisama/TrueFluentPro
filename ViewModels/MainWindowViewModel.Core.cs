@@ -82,8 +82,10 @@ namespace TrueFluentPro.ViewModels
             _floatingInsightManager?.Dispose();
 
             Playback?.Dispose();
-
             AiInsight?.Dispose();
+            Settings?.Dispose();
+
+            GC.SuppressFinalize(this);
         }
     }
 }

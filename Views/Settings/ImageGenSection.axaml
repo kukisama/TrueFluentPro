@@ -11,8 +11,8 @@
             <TextBlock Text="图片生成" Theme="{StaticResource SubtitleTextBlockStyle}"/>
             <Separator/>
 
-            <TextBlock FontSize="11" Foreground="Gray" TextWrapping="Wrap"
-                       Text="图片模型已集中到“AI 资源与模型”。这里保留图片生成默认参数。"/>
+            <TextBlock Classes="field-note" TextWrapping="Wrap"
+                       Text="图片模型已集中到 &quot;AI 资源与模型&quot;。这里保留图片生成默认参数。"/>
 
             <Separator Margin="0,8,0,8"/>
             <TextBlock Text="默认参数" FontWeight="Bold"/>

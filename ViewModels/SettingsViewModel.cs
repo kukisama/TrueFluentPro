@@ -18,7 +18,7 @@ namespace TrueFluentPro.ViewModels
     /// 配置中心编排 ViewModel（瘦壳）。
     /// 持有各分区 ViewModel，统一编排加载/保存、自动保存 debounce、模型列表刷新。
     /// </summary>
-    public class SettingsViewModel : ViewModelBase
+    public class SettingsViewModel : ViewModelBase, IDisposable
     {
         private readonly ConfigurationService _configService;
         private readonly ISettingsImportExportService _settingsImportExportService;
@@ -561,6 +561,12 @@ namespace TrueFluentPro.ViewModels
             }
 
             EndpointsVM.SyncEndpointsToConfig();
+        }
+
+        public void Dispose()
+        {
+            _debounceTimer?.Dispose();
+            GC.SuppressFinalize(this);
         }
     }
 }

@@ -12,19 +12,19 @@
             <TextBlock Text="复盘预设" Theme="{StaticResource SubtitleTextBlockStyle}"/>
             <Separator/>
 
-            <TextBlock FontSize="11" Foreground="Gray" TextWrapping="Wrap"
-                       Text="复盘模型与默认字幕来源入口已集中到“AI 资源与模型”。这里保留复盘模板与预设。"/>
+            <TextBlock Classes="field-note" TextWrapping="Wrap"
+                       Text="复盘模型与默认字幕来源入口已集中到 &quot;AI 资源与模型&quot;。这里保留复盘模板与预设。"/>
 
             <StackPanel Spacing="4">
-                <TextBlock Text="复盘系统提示词" FontSize="11" Foreground="Gray"/>
+                <TextBlock Classes="field-note" Text="复盘系统提示词"/>
                 <TextBox Text="{Binding ReviewSystemPrompt, Mode=TwoWay}"
                          AcceptsReturn="True" Height="100" TextWrapping="Wrap"/>
             </StackPanel>
             <StackPanel Spacing="4">
-                <TextBlock Text="复盘用户内容模板" FontSize="11" Foreground="Gray"/>
+                <TextBlock Classes="field-note" Text="复盘用户内容模板"/>
                 <TextBox Text="{Binding ReviewUserContentTemplate, Mode=TwoWay}"
                          AcceptsReturn="True" Height="100" TextWrapping="Wrap"/>
-                <TextBlock FontSize="10" Foreground="Gray" Text="占位符：{subtitle} 字幕内容、{prompt} 复盘提示词"/>
+                <TextBlock Classes="caption-text" Text="占位符：{subtitle} 字幕内容、{prompt} 复盘提示词"/>
             </StackPanel>
 
             <Separator Margin="0,8,0,8"/>

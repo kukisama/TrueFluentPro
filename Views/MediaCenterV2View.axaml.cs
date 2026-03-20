@@ -12,7 +12,6 @@ using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
-using Microsoft.Extensions.DependencyInjection;
 using TrueFluentPro.Controls;
 using TrueFluentPro.Models;
 using TrueFluentPro.Services;
@@ -33,13 +32,13 @@ namespace TrueFluentPro.Views
             InitializeComponent();
         }
 
-        public void Initialize(AiConfig aiConfig, MediaGenConfig genConfig, List<AiEndpoint> endpoints)
+        public void Initialize(
+            AiConfig aiConfig, MediaGenConfig genConfig, List<AiEndpoint> endpoints,
+            IModelRuntimeResolver modelRuntimeResolver, IAzureTokenProviderStore azureTokenProviderStore)
         {
             if (_initialized) return;
             _initialized = true;
 
-            var modelRuntimeResolver = App.Services.GetRequiredService<IModelRuntimeResolver>();
-            var azureTokenProviderStore = App.Services.GetRequiredService<IAzureTokenProviderStore>();
             _viewModel = new MediaCenterV2ViewModel(aiConfig, genConfig, endpoints, modelRuntimeResolver, azureTokenProviderStore);
             DataContext = _viewModel;
 

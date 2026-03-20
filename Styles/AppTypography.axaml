@@ -1,5 +1,32 @@
 <Styles xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- ===== 语义化字体阶梯 ===== -->
+    <Style Selector="TextBlock.caption-text">
+        <Setter Property="FontSize" Value="10"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextSubtleBrush}"/>
+    </Style>
+
+    <Style Selector="TextBlock.body-text">
+        <Setter Property="FontSize" Value="13"/>
+    </Style>
+
+    <Style Selector="TextBlock.body-strong">
+        <Setter Property="FontSize" Value="13"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+
+    <Style Selector="TextBlock.subtitle-text">
+        <Setter Property="FontSize" Value="17"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+
+    <Style Selector="TextBlock.title-text">
+        <Setter Property="FontSize" Value="20"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+
+    <!-- ===== 功能性文本样式 ===== -->
     <Style Selector="TextBlock.section-description">
         <Setter Property="FontSize" Value="12"/>
         <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
@@ -8,5 +35,11 @@
     <Style Selector="TextBlock.field-note">
         <Setter Property="FontSize" Value="11"/>
         <Setter Property="Foreground" Value="{DynamicResource TextSubtleBrush}"/>
+    </Style>
+
+    <Style Selector="TextBlock.hint-text">
+        <Setter Property="FontSize" Value="10"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextSubtleBrush}"/>
+        <Setter Property="TextWrapping" Value="Wrap"/>
     </Style>
 </Styles>

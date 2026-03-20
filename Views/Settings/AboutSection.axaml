@@ -91,7 +91,7 @@
                         <ProgressBar Minimum="0" Maximum="1"
                                      Value="{Binding DownloadProgress}"
                                      Height="4"/>
-                        <TextBlock FontSize="11" Foreground="Gray">
+                        <TextBlock Classes="field-note">
                             <TextBlock.Text>
                                 <MultiBinding StringFormat="下载中... {0:P0}">
                                     <Binding Path="DownloadProgress"/>
@@ -102,7 +102,7 @@
                 </StackPanel>
             </Border>
 
-            <TextBlock Text="{Binding AppVersion}" FontSize="11" Foreground="Gray"/>
+            <TextBlock Classes="field-note" Text="{Binding AppVersion}"/>
         </StackPanel>
     </Border>
 </UserControl>

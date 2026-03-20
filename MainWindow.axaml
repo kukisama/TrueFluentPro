@@ -45,15 +45,17 @@
             <Setter Property="Background" Value="{DynamicResource SurfaceHoverBrush}"/>
         </Style>
         <Style Selector="Button.shell-nav-action.selected">
-            <Setter Property="Background" Value="{DynamicResource AccentBlueBrush}"/>
-            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Background" Value="{DynamicResource ShellNavSelectedBrush}"/>
         </Style>
         <Style Selector="Button.shell-nav-action.selected TextBlock">
-            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Foreground" Value="{DynamicResource AccentBlueBrush}"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
         </Style>
         <Style Selector="Button.shell-nav-action.selected icons|Icon">
-            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Foreground" Value="{DynamicResource AccentBlueBrush}"/>
+        </Style>
+        <Style Selector="Button.shell-nav-action.selected:pointerover">
+            <Setter Property="Background" Value="{DynamicResource SurfaceHoverBrush}"/>
         </Style>
         <Style Selector="Button.shell-nav-action:pressed">
             <Setter Property="Background" Value="{DynamicResource SubCardBackgroundBrush}"/>

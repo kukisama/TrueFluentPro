@@ -29,7 +29,7 @@
                                 <DataTemplate DataType="models:AzureSubscription">
                                     <StackPanel Orientation="Vertical" Margin="5">
                                         <TextBlock Text="{Binding Name}" FontWeight="Bold"/>
-                                        <TextBlock Text="{Binding ServiceRegion}" FontSize="12" Foreground="Gray"/>
+                                        <TextBlock Classes="section-description" Text="{Binding ServiceRegion}"/>
                                     </StackPanel>
                                 </DataTemplate>
                             </ListBox.ItemTemplate>
@@ -72,7 +72,7 @@
                                  MaxWidth="420" Width="420"
                                  HorizontalAlignment="Left"/>
                         <TextBlock Text="{Binding SubscriptionEditorRegionHint}"
-                                   FontSize="10" Foreground="DarkGreen" TextWrapping="Wrap"/>
+                                   FontSize="10" Foreground="{DynamicResource SuccessBrush}" TextWrapping="Wrap"/>
                     </StackPanel>
                     <StackPanel Orientation="Horizontal" Spacing="5" Margin="0,4,0,0" HorizontalAlignment="Left">
                         <Button Width="88" Height="32" Command="{Binding AddSubscriptionCommand}">
@@ -106,10 +106,10 @@
                             </StackPanel>
                         </Button>
                     </StackPanel>
-                    <TextBlock Text="{Binding SubscriptionMessage}" FontSize="11" Foreground="Gray" TextWrapping="Wrap"
+                    <TextBlock Classes="field-note" Text="{Binding SubscriptionMessage}" TextWrapping="Wrap"
                                Margin="0,4,0,0"/>
 
-                    <TextBlock Text="{Binding TestAllResult}" FontSize="11" Foreground="Gray" Margin="0,2,0,0"
+                    <TextBlock Classes="field-note" Text="{Binding TestAllResult}" Margin="0,2,0,0"
                                TextWrapping="Wrap" IsVisible="{Binding ShowTestAllResult}"/>
                 </StackPanel>
             </Grid>

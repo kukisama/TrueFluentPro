@@ -27,22 +27,35 @@ namespace TrueFluentPro.Services
     }
 
     /// <summary>
+    /// 图片路由探测结果
+    /// </summary>
+    public sealed class ImageRouteProbeResult
+    {
+        public required string RouteLabel { get; init; }
+        public required IReadOnlyList<string> AttemptedUrls { get; init; }
+        public bool IsSuccess { get; init; }
+        public string? SuccessfulUrl { get; init; }
+        public int ImageCount { get; init; }
+        public int? StatusCode { get; init; }
+        public string? ReasonPhrase { get; init; }
+        public string? ErrorText { get; init; }
+    }
+
+    /// <summary>
+    /// 图片生成+保存结果（含文件路径和耗时）
+    /// </summary>
+    public class ImageSaveResult
+    {
+        public List<string> FilePaths { get; set; } = new();
+        public double GenerateSeconds { get; set; }
+        public double DownloadSeconds { get; set; }
+    }
+
+    /// <summary>
     /// 图片生成服务（OpenAI Compatible Images API）
     /// </summary>
-    public class AiImageGenService : AiMediaServiceBase
+    public class AiImageGenService : AiMediaServiceBase, IAiImageGenService
     {
-        public sealed class ImageRouteProbeResult
-        {
-            public required string RouteLabel { get; init; }
-            public required IReadOnlyList<string> AttemptedUrls { get; init; }
-            public bool IsSuccess { get; init; }
-            public string? SuccessfulUrl { get; init; }
-            public int ImageCount { get; init; }
-            public int? StatusCode { get; init; }
-            public string? ReasonPhrase { get; init; }
-            public string? ErrorText { get; init; }
-        }
-
         private sealed class ImageAttemptResult
         {
             public required HttpResponseMessage Response { get; init; }
@@ -629,16 +642,6 @@ namespace TrueFluentPro.Services
 
         private static bool ShouldTryNextImageCandidate(HttpResponseMessage response)
             => (int)response.StatusCode is 404 or 405;
-
-    /// <summary>
-    /// 图片生成+保存结果（含文件路径和耗时）
-    /// </summary>
-    public class ImageSaveResult
-    {
-        public List<string> FilePaths { get; set; } = new();
-        public double GenerateSeconds { get; set; }
-        public double DownloadSeconds { get; set; }
-    }
 
         /// <summary>
         /// 生成图片并保存到指定目录，返回文件路径列表及耗时信息

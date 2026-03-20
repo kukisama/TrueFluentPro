@@ -11,8 +11,8 @@
             <TextBlock Text="视频生成" Theme="{StaticResource SubtitleTextBlockStyle}"/>
             <Separator/>
 
-            <TextBlock FontSize="11" Foreground="Gray" TextWrapping="Wrap"
-                       Text="视频模型已集中到“AI 资源与模型”。这里保留视频生成默认参数与 Media Studio 运行参数。"/>
+            <TextBlock Classes="field-note" TextWrapping="Wrap"
+                       Text="视频模型已集中到 &quot;AI 资源与模型&quot;。这里保留视频生成默认参数与 Media Studio 运行参数。"/>
 
             <Separator Margin="0,8,0,8"/>
             <TextBlock Text="默认参数" FontWeight="Bold"/>
@@ -25,10 +25,8 @@
                 </ComboBox>
                 <TextBlock Grid.Row="1" Grid.Column="1"
                            Margin="0,0,0,2"
-                           FontSize="10"
-                           Foreground="Gray"
-                           Text="{Binding SelectedVideoApiModeDescription}"
-                           TextWrapping="Wrap"/>
+                           Classes="hint-text"
+                           Text="{Binding SelectedVideoApiModeDescription}"/>
 
                 <TextBlock Grid.Row="2" Grid.Column="0" Text="比例:" VerticalAlignment="Center"/>
                 <ComboBox Grid.Row="2" Grid.Column="1" MinWidth="120"

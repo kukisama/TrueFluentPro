@@ -4,6 +4,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Styling;
 using Avalonia.Threading;
+using Microsoft.Extensions.DependencyInjection;
 using System;
 using System.Collections.Generic;
 using TrueFluentPro.Models;
@@ -196,35 +197,47 @@ public partial class MainWindow : Window
             _viewModel.SelectedNavTag = tag;
         }
 
+        UpdateShellNavSelection();
+
+        // 延迟到首帧渲染后再执行重初始化，保证页面壳层立即可见
         if (tag == MainWindowViewModel.NavTagBatch)
         {
-            _viewModel?.BatchProcessing.EnsureBatchCenterInitialized();
+            Dispatcher.UIThread.Post(() =>
+                _viewModel?.BatchProcessing.EnsureBatchCenterInitialized(),
+                DispatcherPriority.Background);
         }
-
-        UpdateShellNavSelection();
 
         if (tag == MainWindowViewModel.NavTagMedia && _viewModel != null && !_mediaStudioInitialized)
         {
             _mediaStudioInitialized = true;
-            var config = _viewModel.ConfigVM.Config;
-            var mediaStudioView = MediaStudioViewPage;
-            mediaStudioView?.Initialize(
-                config.AiConfig ?? new AiConfig(),
-                config.MediaGenConfig,
-                config.Endpoints);
+            Dispatcher.UIThread.Post(() =>
+            {
+                var config = _viewModel.ConfigVM.Config;
+                MediaStudioViewPage?.Initialize(
+                    config.AiConfig ?? new AiConfig(),
+                    config.MediaGenConfig,
+                    config.Endpoints,
+                    App.Services.GetRequiredService<IModelRuntimeResolver>(),
+                    App.Services.GetRequiredService<IAzureTokenProviderStore>());
+            }, DispatcherPriority.Background);
         }
 
         if (tag == MainWindowViewModel.NavTagMediaV2 && !_mediaCenterV2Initialized)
         {
             _mediaCenterV2Initialized = true;
-            if (_viewModel != null)
+            Dispatcher.UIThread.Post(() =>
             {
-                var config = _viewModel.ConfigVM.Config;
-                MediaCenterV2ViewPage?.Initialize(
-                    config.AiConfig ?? new AiConfig(),
-                    config.MediaGenConfig,
-                    config.Endpoints);
-            }
+                if (_viewModel != null)
+                {
+                    var config = _viewModel.ConfigVM.Config;
+                    MediaCenterV2ViewPage?.Initialize(
+                        config.AiConfig ?? new AiConfig(),
+                        config.MediaGenConfig,
+                        config.Endpoints,
+                        App.Services.GetRequiredService<IModelRuntimeResolver>(),
+                        App.Services.GetRequiredService<IAzureTokenProviderStore>());
+                }
+            }, DispatcherPriority.Background);
         }
     }
 

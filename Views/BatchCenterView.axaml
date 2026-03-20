@@ -234,13 +234,15 @@
                                                                 Padding="0"
                                                                 HorizontalContentAlignment="Center"
                                                                 Command="{Binding BatchProcessing.LoadBatchTasksCommand}"
+                                                                AutomationProperties.Name="刷新分类"
                                                                 ToolTip.Tip="刷新分类">
                             <icons:Icon Value="fa-solid fa-arrows-rotate" FontSize="12"/>
                         </Button>
                         <Button Grid.Column="1"
-                                Classes="secondary-nav-compact"
+                                Classes="secondary-nav-compact pressable"
                                 Width="122"
                                 HorizontalAlignment="Left"
+                                AutomationProperties.Name="全部开始"
                                 Command="{Binding BatchProcessing.StartBatchCommand}">
                             <StackPanel Orientation="Horizontal" Spacing="4">
                                 <icons:Icon Value="fa-solid fa-play" FontSize="12"/>
@@ -274,6 +276,7 @@
                 <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10">
                     <Button Grid.Column="1"
                             Padding="10,6"
+                            AutomationProperties.Name="开始选中项"
                             Command="{Binding BatchProcessing.StartPackageCommand}"
                             CommandParameter="{Binding BatchProcessing.SelectedPackage}">
                         <StackPanel Orientation="Horizontal" Spacing="6">
@@ -283,6 +286,7 @@
                     </Button>
                     <Button Grid.Column="2"
                             Padding="10,6"
+                            AutomationProperties.Name="刷新队列"
                             Command="{Binding BatchProcessing.RefreshBatchQueueCommand}">
                         <StackPanel Orientation="Horizontal" Spacing="6">
                             <icons:Icon Value="fa-solid fa-arrows-rotate" FontSize="12"/>

@@ -27,7 +27,8 @@ public static class CrashLogger
             return;
         }
 
-        _logDir = TryCreateLogDir(Path.Combine(AppContext.BaseDirectory, "logs"))
+        _logDir = TryRepoDocsLogDir()
+            ?? TryCreateLogDir(Path.Combine(AppContext.BaseDirectory, "logs"))
             ?? TryCreateLogDir(Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "TrueFluentPro",
@@ -288,6 +289,30 @@ public static class CrashLogger
         {
             sb.AppendLine(line);
         }
+    }
+
+    /// <summary>
+    /// 在开发环境下，沿 BaseDirectory 向上查找 .sln，将日志写到仓库 Docs/CrashLogs/。
+    /// 发布环境（无 .sln）返回 null，自动 fallback 到 bin 旁 logs。
+    /// </summary>
+    private static string? TryRepoDocsLogDir()
+    {
+        try
+        {
+            var dir = new DirectoryInfo(AppContext.BaseDirectory);
+            for (var i = 0; i < 6 && dir != null; i++, dir = dir.Parent)
+            {
+                if (dir.GetFiles("*.sln").Length > 0)
+                {
+                    return TryCreateLogDir(Path.Combine(dir.FullName, "Docs", "CrashLogs"));
+                }
+            }
+        }
+        catch
+        {
+            // ignore
+        }
+        return null;
     }
 
     private static string? TryCreateLogDir(string path)

@@ -21,6 +21,7 @@
                     <SolidColorBrush x:Key="SurfaceBrush" Color="#FFF8FAFC"/>
                     <SolidColorBrush x:Key="SurfaceAltBrush" Color="#FFF5F5F5"/>
                     <SolidColorBrush x:Key="SurfaceHoverBrush" Color="#FFF1F5F9"/>
+                    <SolidColorBrush x:Key="ShellNavSelectedBrush" Color="#FFEDF3FC"/>
                     <SolidColorBrush x:Key="SettingsPageBackgroundBrush" Color="#FFF3F5F8"/>
                     <SolidColorBrush x:Key="SettingsNavBackgroundBrush" Color="#FFF6F7F9"/>
                     <SolidColorBrush x:Key="SettingsCardBackgroundBrush" Color="#FFFFFFFF"/>
@@ -58,6 +59,12 @@
                     <SolidColorBrush x:Key="WarningBrush" Color="#FFE65100"/>
                     <SolidColorBrush x:Key="SuccessTextBrush" Color="#FF2E7D32"/>
                     <SolidColorBrush x:Key="ErrorBrush" Color="#FFB00020"/>
+
+                    <!-- 媒体中心占位符 -->
+                    <SolidColorBrush x:Key="PendingPlaceholderBackgroundBrush" Color="#FFF8FBFF"/>
+                    <SolidColorBrush x:Key="PendingPlaceholderBorderBrush" Color="#FFD7E6FF"/>
+                    <SolidColorBrush x:Key="PendingPlaceholderIconBrush" Color="#FF6C90D8"/>
+                    <SolidColorBrush x:Key="PendingPlaceholderTextBrush" Color="#FF4A5D80"/>
                 </ResourceDictionary>
 
                 <!-- ===== Dark 主题 ===== -->
@@ -72,6 +79,7 @@
                     <SolidColorBrush x:Key="SurfaceBrush" Color="#FF1E1E1E"/>
                     <SolidColorBrush x:Key="SurfaceAltBrush" Color="#FF2D2D2D"/>
                     <SolidColorBrush x:Key="SurfaceHoverBrush" Color="#FF333333"/>
+                    <SolidColorBrush x:Key="ShellNavSelectedBrush" Color="#FF1A2744"/>
                     <SolidColorBrush x:Key="SettingsPageBackgroundBrush" Color="#FF151A20"/>
                     <SolidColorBrush x:Key="SettingsNavBackgroundBrush" Color="#FF181E25"/>
                     <SolidColorBrush x:Key="SettingsCardBackgroundBrush" Color="#FF1D242D"/>
@@ -109,8 +117,20 @@
                     <SolidColorBrush x:Key="WarningBrush" Color="#FFFFAB40"/>
                     <SolidColorBrush x:Key="SuccessTextBrush" Color="#FF4CAF50"/>
                     <SolidColorBrush x:Key="ErrorBrush" Color="#FFEF5350"/>
+
+                    <!-- 媒体中心占位符 -->
+                    <SolidColorBrush x:Key="PendingPlaceholderBackgroundBrush" Color="#FF1E2A3A"/>
+                    <SolidColorBrush x:Key="PendingPlaceholderBorderBrush" Color="#FF2E4A6A"/>
+                    <SolidColorBrush x:Key="PendingPlaceholderIconBrush" Color="#FF7AA0D8"/>
+                    <SolidColorBrush x:Key="PendingPlaceholderTextBrush" Color="#FF8AA0C0"/>
                 </ResourceDictionary>
             </ResourceDictionary.ThemeDictionaries>
+
+            <!-- ===== 圆角 Token ===== -->
+            <CornerRadius x:Key="CornerRadiusSm">4</CornerRadius>
+            <CornerRadius x:Key="CornerRadiusMd">8</CornerRadius>
+            <CornerRadius x:Key="CornerRadiusLg">12</CornerRadius>
+            <CornerRadius x:Key="CornerRadiusPill">999</CornerRadius>
         </ResourceDictionary>
     </Application.Resources>
 
@@ -132,26 +152,27 @@
         </Style>
 
         <!-- 3.8 微交互动效 -->
-        <!-- 按钮悬停/按压动画 -->
-        <Style Selector="Button:pointerover">
+        <!-- 按钮悬停/按压动画：仅对有文本内容的较大按钮生效 -->
+        <Style Selector="Button.pressable:pointerover">
             <Setter Property="RenderTransform">
                 <ScaleTransform ScaleX="1.02" ScaleY="1.02"/>
             </Setter>
+        </Style>
+        <Style Selector="Button.pressable:pressed">
+            <Setter Property="RenderTransform">
+                <ScaleTransform ScaleX="0.97" ScaleY="0.97"/>
+            </Setter>
+        </Style>
+        <Style Selector="Button.pressable">
             <Setter Property="Transitions">
                 <Transitions>
                     <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.15"/>
                 </Transitions>
             </Setter>
         </Style>
-        <Style Selector="Button:pressed">
-            <Setter Property="RenderTransform">
-                <ScaleTransform ScaleX="0.97" ScaleY="0.97"/>
-            </Setter>
-        </Style>
         <Style Selector="Button">
             <Setter Property="Transitions">
                 <Transitions>
-                    <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.12"/>
                     <DoubleTransition Property="Opacity" Duration="0:0:0.15"/>
                 </Transitions>
             </Setter>

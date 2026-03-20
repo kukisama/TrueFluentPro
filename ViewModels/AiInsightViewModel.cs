@@ -16,7 +16,7 @@ namespace TrueFluentPro.ViewModels
     public class AiInsightViewModel : ViewModelBase
     {
         private readonly IAzureTokenProviderStore _azureTokenProviderStore;
-        private readonly AiInsightService _aiInsightService;
+        private readonly IAiInsightService _aiInsightService;
         private readonly IModelRuntimeResolver _modelRuntimeResolver;
         private readonly Func<AzureSpeechConfig> _configProvider;
         private readonly Func<ObservableCollection<TranslationItem>> _historyProvider;
@@ -36,7 +36,7 @@ namespace TrueFluentPro.ViewModels
         private int _lastAutoInsightHistoryCount;
 
         public AiInsightViewModel(
-            AiInsightService aiInsightService,
+            IAiInsightService aiInsightService,
             IAzureTokenProviderStore azureTokenProviderStore,
             IModelRuntimeResolver modelRuntimeResolver,
             Func<AzureSpeechConfig> configProvider,

@@ -28,7 +28,7 @@ namespace TrueFluentPro.ViewModels
         Bilingual
     }
 
-    public partial class MainWindowViewModel : ViewModelBase
+    public partial class MainWindowViewModel : ViewModelBase, IDisposable
     {
         private AzureSpeechConfig _config;
         private bool _isTranslating = false;
@@ -48,7 +48,7 @@ namespace TrueFluentPro.ViewModels
         private ThemeModePreference _currentThemeMode = ThemeModePreference.System;
         private bool _isMainNavPaneOpen;
 
-        private readonly AiInsightService _aiInsightService;
+        private readonly IAiInsightService _aiInsightService;
         private readonly IRealtimeTranslationServiceFactory _realtimeTranslationServiceFactory;
         public AudioDevicesViewModel AudioDevices { get; }
         public ConfigViewModel ConfigVM { get; }
@@ -85,14 +85,14 @@ namespace TrueFluentPro.ViewModels
             ISpeechResourceRuntimeResolver speechResourceRuntimeResolver,
             IRealtimeTranslationServiceFactory realtimeTranslationServiceFactory,
             IBatchPackageStateService batchPackageStateService,
-            IAiAudioTranscriptionService aiAudioTranscriptionService)
+            IAiAudioTranscriptionService aiAudioTranscriptionService,
+            IAiInsightService aiInsightService)
         {
             _configService = configService;
             _realtimeTranslationServiceFactory = realtimeTranslationServiceFactory;
             Settings = settingsViewModel;
             Settings.StatusNotificationRequested += message => StatusMessage = message;
-            var azureTokenProvider = azureTokenProviderStore.GetProvider("ai");
-            _aiInsightService = new AiInsightService(azureTokenProvider);
+            _aiInsightService = aiInsightService;
             _config = new AzureSpeechConfig();
             AppLogService.Initialize(() => _config.BatchLogLevel);
             _history = new ObservableCollection<TranslationItem>();

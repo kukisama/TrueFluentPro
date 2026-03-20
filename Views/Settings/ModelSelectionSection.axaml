@@ -12,10 +12,7 @@
             Padding="20">
         <StackPanel Spacing="12">
             <TextBlock Text="模型与资源" Theme="{StaticResource SubtitleTextBlockStyle}"/>
-            <TextBlock Text="集中管理配置中心需要先选择的模型与批量转写资源；后续新增入口也优先继续放在这里。"
-                       FontSize="11"
-                       Foreground="Gray"
-                       TextWrapping="Wrap"/>
+            <TextBlock Classes="field-note" TextWrapping="Wrap" Text="集中管理配置中心需要先选择的模型与批量转写资源；后续新增入口也优先继续放在这里。"/>
             <Separator/>
 
             <Border BorderBrush="{DynamicResource CardBorderBrush}"
@@ -25,10 +22,7 @@
                 <StackPanel Spacing="10">
                     <StackPanel Spacing="2">
                         <TextBlock Text="复盘字幕来源" FontWeight="Bold"/>
-                        <TextBlock Text="不再单独选择字幕来源；复盘 / 批处理会直接跟随首页当前选中的语音资源。"
-                                   FontSize="11"
-                                   Foreground="Gray"
-                                   TextWrapping="Wrap"/>
+                        <TextBlock Classes="field-note" TextWrapping="Wrap" Text="不再单独选择字幕来源；复盘 / 批处理会直接跟随首页当前选中的语音资源。"/>
                     </StackPanel>
 
                     <StackPanel Spacing="5">
@@ -41,10 +35,7 @@
                                 <TextBlock Text="{Binding ReviewSubtitleSourceDisplayText}"
                                            FontWeight="SemiBold"
                                            TextWrapping="Wrap"/>
-                                <TextBlock Text="{Binding ReviewSubtitleSourceDescription}"
-                                           FontSize="11"
-                                           Foreground="Gray"
-                                           TextWrapping="Wrap"/>
+                                <TextBlock Classes="field-note" TextWrapping="Wrap" Text="{Binding ReviewSubtitleSourceDescription}"/>
                             </StackPanel>
                         </Border>
                     </StackPanel>
@@ -64,15 +55,9 @@
                         </Button>
                     </StackPanel>
 
-                    <TextBlock Text="{Binding BatchStorageStatus}"
-                               FontSize="10"
-                               Foreground="Gray"
-                               TextWrapping="Wrap"/>
+                    <TextBlock Classes="hint-text" Text="{Binding BatchStorageStatus}"/>
 
-                    <TextBlock Text="首页当前资源若是 Microsoft Speech，需要先验证存储账号；若是 AI 语音资源，需要先在“语音识别”里选好批量语音转写模型。"
-                               FontSize="10"
-                               Foreground="Gray"
-                               TextWrapping="Wrap"/>
+                    <TextBlock Classes="hint-text" Text="首页当前资源若是 Microsoft Speech，需要先验证存储账号；若是 AI 语音资源，需要先在 &quot;语音识别&quot; 里选好批量语音转写模型。"/>
                 </StackPanel>
             </Border>
 
@@ -83,10 +68,7 @@
                 <StackPanel Spacing="8">
                     <StackPanel Spacing="2">
                         <TextBlock Text="模型选择" FontWeight="Bold"/>
-                        <TextBlock Text="统一管理配置中心使用的默认模型；悬停到名称或下拉框即可查看用途说明。"
-                                   FontSize="11"
-                                   Foreground="Gray"
-                                   TextWrapping="Wrap"/>
+                        <TextBlock Classes="field-note" TextWrapping="Wrap" Text="统一管理配置中心使用的默认模型；悬停到名称或下拉框即可查看用途说明。"/>
                     </StackPanel>
 
                     <Grid ColumnDefinitions="Auto,*"

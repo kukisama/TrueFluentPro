@@ -73,7 +73,7 @@ namespace TrueFluentPro.Services
         public string FinalUrl { get; init; } = "";
     }
 
-    public class AiInsightService
+    public class AiInsightService : IAiInsightService
     {
         private static readonly HttpClient _httpClient = new()
         {

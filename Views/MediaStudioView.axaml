@@ -147,18 +147,12 @@
             <!-- 右侧内容区 -->
             <Grid Grid.Column="2" RowDefinitions="*,Auto"
                             x:Name="SessionViewsHost">
-                            <ItemsControl ItemsSource="{Binding Sessions}"
-                                          IsVisible="{Binding HasCurrentSession}">
-                                <ItemsControl.ItemsPanel>
-                                    <ItemsPanelTemplate>
-                                        <Grid/>
-                                    </ItemsPanelTemplate>
-                                </ItemsControl.ItemsPanel>
-                                <ItemsControl.ItemTemplate>
+                            <ContentControl Content="{Binding CurrentSession}"
+                                            IsVisible="{Binding HasCurrentSession}">
+                                <ContentControl.ContentTemplate>
                                     <DataTemplate>
                                         <Grid RowDefinitions="*,Auto"
-                                              x:Name="SessionContentRoot"
-                                              IsVisible="{Binding IsActiveSession}">
+                                              x:Name="SessionContentRoot">
 
                 <!-- 聊天消息区 -->
                 <Border Grid.Row="0" Classes="app-card" Margin="0,0,0,10">
@@ -167,9 +161,7 @@
                                       VerticalScrollBarVisibility="Auto"
                                       HorizontalScrollBarVisibility="Disabled"
                                       Padding="8"
-                                      ScrollChanged="ChatScrollViewer_ScrollChanged"
-                                      AttachedToVisualTree="SessionScrollViewer_AttachedToVisualTree"
-                                      DetachedFromVisualTree="SessionScrollViewer_DetachedFromVisualTree">
+                                      ScrollChanged="ChatScrollViewer_ScrollChanged">
                             <ItemsControl ItemsSource="{Binding Messages}">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate>
@@ -456,7 +448,7 @@
                             </Grid>
                             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" Margin="8,0,0,0"
                                         VerticalAlignment="Bottom">
-                                <Button Content="生成" Command="{Binding GenerateCommand}"
+                                <Button Classes="pressable" Content="生成" Command="{Binding GenerateCommand}"
                                         Padding="16,8" FontWeight="SemiBold"
                                         Background="{DynamicResource AccentBlueBrush}" Foreground="White"/>
                                 <Button Content="取消" Command="{Binding CancelCommand}"
@@ -483,8 +475,8 @@
                 </Border>
                                         </Grid>
                                     </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
+                                </ContentControl.ContentTemplate>
+                            </ContentControl>
             </Grid>
 
             <!-- 无会话提示 -->

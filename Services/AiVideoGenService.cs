@@ -15,7 +15,7 @@ namespace TrueFluentPro.Services
     /// <summary>
     /// 视频生成服务（Sora 异步轮询模式）
     /// </summary>
-    public class AiVideoGenService : AiMediaServiceBase
+    public class AiVideoGenService : AiMediaServiceBase, IAiVideoGenService
     {
         private string? _lastSuccessfulDownloadUrl;
 

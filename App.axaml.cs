@@ -45,6 +45,15 @@ public partial class App : Application
         services.AddSingleton<IBatchPackageStateService, BatchPackageStateService>();
         services.AddSingleton<IAzureTokenProviderStore, AzureTokenProviderStore>();
 
+        // --- AI 媒体/洞察服务 ---
+        services.AddSingleton<IAiInsightService>(sp =>
+        {
+            var store = sp.GetRequiredService<IAzureTokenProviderStore>();
+            return new AiInsightService(store.GetProvider("ai"));
+        });
+        services.AddSingleton<IAiImageGenService, AiImageGenService>();
+        services.AddSingleton<IAiVideoGenService, AiVideoGenService>();
+
         // --- ViewModel ---
         services.AddSingleton<SettingsViewModel>();
         services.AddSingleton<MainWindowViewModel>();

@@ -14,7 +14,7 @@
             <TextBlock Text="字幕输出" FontWeight="Bold"/>
             <CheckBox Content="生成 SRT 字幕" IsChecked="{Binding ExportSrt, Mode=TwoWay}"/>
             <CheckBox Content="生成 VTT 字幕" IsChecked="{Binding ExportVtt, Mode=TwoWay}"/>
-            <TextBlock FontSize="10" Foreground="Gray" Text="字幕与录音同目录保存，可同时勾选"/>
+            <TextBlock Classes="caption-text" Text="字幕与录音同目录保存，可同时勾选"/>
 
             <Separator Margin="0,8,0,8"/>
             <TextBlock Text="实时翻译字号" FontWeight="Bold"/>

@@ -829,7 +829,7 @@ public sealed class EndpointBatchTestService : IEndpointBatchTestService
         return string.Join(Environment.NewLine, lines);
     }
 
-    private static string BuildImageProbeRequestUrlText(string plannedUrl, AiImageGenService.ImageRouteProbeResult result)
+    private static string BuildImageProbeRequestUrlText(string plannedUrl, ImageRouteProbeResult result)
     {
         var lines = new List<string> { $"POST {(string.IsNullOrWhiteSpace(result.SuccessfulUrl) ? plannedUrl : result.SuccessfulUrl)}" };
         if (result.AttemptedUrls.Count > 1)
@@ -854,7 +854,7 @@ public sealed class EndpointBatchTestService : IEndpointBatchTestService
         return string.Join(Environment.NewLine, lines);
     }
 
-    private static string BuildImageProbeDetails(AiImageGenService.ImageRouteProbeResult result)
+    private static string BuildImageProbeDetails(ImageRouteProbeResult result)
     {
         var builder = new StringBuilder();
         builder.AppendLine($"分支：{result.RouteLabel}");

@@ -12,10 +12,8 @@
             <TextBlock Text="洞察" Theme="{StaticResource SubtitleTextBlockStyle}"/>
             <Separator/>
 
-            <TextBlock Text="模型选择、总结思考和连通性测试已集中到“AI 资源与模型”。这里保留洞察提示词与快捷按钮配置。"
-                       FontSize="11"
-                       Foreground="Gray"
-                       TextWrapping="Wrap"/>
+            <TextBlock Classes="field-note" TextWrapping="Wrap"
+                       Text="模型选择、总结思考和连通性测试已集中到 &quot;AI 资源与模型&quot;。这里保留洞察提示词与快捷按钮配置。"/>
 
             <Separator Margin="0,8,0,8"/>
 
@@ -23,15 +21,15 @@
             <CheckBox Content="自动洞察一次性刷新（缓冲输出）" FontSize="11"
                       IsChecked="{Binding AutoInsightBufferOutput, Mode=TwoWay}"/>
             <StackPanel Spacing="4">
-                <TextBlock Text="洞察系统提示词" FontSize="11" Foreground="Gray"/>
+                <TextBlock Classes="field-note" Text="洞察系统提示词"/>
                 <TextBox Text="{Binding InsightSystemPrompt, Mode=TwoWay}"
                          AcceptsReturn="True" Height="100" TextWrapping="Wrap"/>
             </StackPanel>
             <StackPanel Spacing="4">
-                <TextBlock Text="洞察用户内容模板" FontSize="11" Foreground="Gray"/>
+                <TextBlock Classes="field-note" Text="洞察用户内容模板"/>
                 <TextBox Text="{Binding InsightUserContentTemplate, Mode=TwoWay}"
                          AcceptsReturn="True" Height="100" TextWrapping="Wrap"/>
-                <TextBlock FontSize="10" Foreground="Gray" Text="占位符：{history} 翻译历史、{question} 用户问题"/>
+                <TextBlock Classes="caption-text" Text="占位符：{history} 翻译历史、{question} 用户问题"/>
             </StackPanel>
 
             <Separator Margin="0,8,0,8"/>

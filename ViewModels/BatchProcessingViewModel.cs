@@ -47,7 +47,7 @@ namespace TrueFluentPro.ViewModels
         private readonly IModelRuntimeResolver _modelRuntimeResolver;
         private readonly ISpeechResourceRuntimeResolver _speechResourceRuntimeResolver;
         private readonly IAiAudioTranscriptionService _aiAudioTranscriptionService;
-        private readonly AiInsightService _aiInsightService;
+        private readonly IAiInsightService _aiInsightService;
         private readonly FileLibraryViewModel _fileLibrary;
         private readonly PlaybackViewModel _playback;
         private readonly ConfigurationService _configService;
@@ -88,7 +88,7 @@ namespace TrueFluentPro.ViewModels
             IModelRuntimeResolver modelRuntimeResolver,
             ISpeechResourceRuntimeResolver speechResourceRuntimeResolver,
             IAiAudioTranscriptionService aiAudioTranscriptionService,
-            AiInsightService aiInsightService,
+            IAiInsightService aiInsightService,
             FileLibraryViewModel fileLibrary,
             PlaybackViewModel playback,
             ConfigurationService configService,

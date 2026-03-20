@@ -11,7 +11,7 @@ using TrueFluentPro.Services.Audio;
 
 namespace TrueFluentPro.Services
 {
-    public class SpeechTranslationService : IRealtimeTranslationService
+    public class SpeechTranslationService : IRealtimeTranslationService, IAsyncDisposable
     {
         private static readonly string[] AutoDetectSourceLanguages =
         {
@@ -1370,6 +1370,22 @@ namespace TrueFluentPro.Services
 
                 OnStatusChanged?.Invoke(this, "正在后台转码为 MP3...");
             }
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            if (_isTranslating)
+            {
+                try { await StopTranslationAsync().ConfigureAwait(false); }
+                catch { /* best-effort */ }
+            }
+
+            _restartLock.Dispose();
+            _liveRoutingDebounceCts?.Dispose();
+            _noResponseMonitorCts?.Dispose();
+            _managedReconnectCts?.Dispose();
+
+            GC.SuppressFinalize(this);
         }
     }
 }
