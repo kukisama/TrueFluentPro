@@ -1,15 +1,68 @@
 # 部署 APIM AI API
 
-一键将 Azure OpenAI API 部署到现有的 APIM 服务实例中。  
-**无需本地工具**，ARM 模板在云端自动完成 spec 下载、预处理（3.1→3.0）和全部资源部署。
+一键将 Azure OpenAI API（39 spec ops + 15 custom ops = **54 operations**）部署到现有的 APIM 服务实例中。  
+提供**两种部署风格**，按需选择。
 
-## 一键部署
+---
 
-[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fkukisama%2FTrueFluentPro%2Fmain%2FARMs%2Fazuredeploy.json)
+## 风格 A：静态声明式（推荐）
 
-> 点击按钮后在 Azure Portal 填写参数即可部署。
+使用**预处理好的 spec**，纯 ARM 资源声明，零运行时依赖。
 
-## 工作流程
+[![Deploy to Azure (Static)](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fkukisama%2FTrueFluentPro%2Fmain%2FARMs%2Fazuredeploy-static.json)
+
+### 工作流程
+
+```
+点击按钮 → Azure Portal 填参数 → ARM 直接声明所有资源
+     │
+     ├── Backend         (MI 认证 → AI Services)
+     ├── API             (导入预处理好的 spec, 39 ops)
+     ├── Policy          (set-backend-service)
+     ├── 15 Operations   (自定义操作: Chat/Completions/Audio/Images/Video/Responses)
+     ├── 7 Tags          (服务级标签)
+     └── 15 Tag关联       (operation ↔ tag)
+         ═══════════════
+         总计 54 operations
+```
+
+### 参数
+
+| 参数 | 必填 | 默认值 | 说明 |
+|------|------|--------|------|
+| `apiName` | **是** | — | API 标识名（如 `ai03`） |
+| `serviceName` | 否 | `APIMzpl` | APIM 服务实例名称 |
+| `displayName` | 否 | 同 `apiName` | API 显示名称 |
+| `apiPath` | 否 | `{apiName}/openai` | API URL 路径前缀 |
+| `backendUrl` | 否 | `https://contoso-ai-eastus2...` | AI 后端服务 URL |
+| `_artifactsLocation` | 否 | GitHub raw URL | 预处理 spec 所在目录 |
+
+### 前提条件
+
+1. **APIM 实例已存在**（模板不创建 APIM 本身）
+2. **部署者有 Contributor 角色**（直接操作 APIM 子资源）
+3. **仓库已 push**（APIM 通过 URL 拉取预处理好的 spec）
+
+### 命令行部署
+
+```powershell
+az deployment group create `
+  --resource-group apim `
+  --template-file azuredeploy-static.json `
+  --parameters apiName=ai03
+```
+
+---
+
+## 风格 B：云端脚本式
+
+使用 `deploymentScript` 在云端 ACI 容器中自动下载原始 spec、预处理、REST 部署。
+
+> ⚠️ 需要订阅允许存储账户 Key 认证（`AllowSharedKeyAccess`），否则会因 Policy 拒绝而失败。
+
+[![Deploy to Azure (Script)](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fkukisama%2FTrueFluentPro%2Fmain%2FARMs%2Fazuredeploy.json)
+
+### 工作流程
 
 ```
 点击按钮 → Azure Portal 填参数 → ARM 创建部署
@@ -31,67 +84,52 @@
                     └─────────────────────────────────────┘
 ```
 
-## 参数说明
+### 额外参数
 
-| 参数 | 必填 | 默认值 | 说明 |
-|------|------|--------|------|
-| `apiName` | **是** | — | API 标识名（如 `ai03`） |
-| `serviceName` | 否 | `APIMzpl` | APIM 服务实例名称 |
-| `displayName` | 否 | 同 `apiName` | API 显示名称 |
-| `apiPath` | 否 | `{apiName}/openai` | API URL 路径前缀 |
-| `backendUrl` | 否 | `https://9-mauszqfu-...` | AI 后端服务 URL |
-| `specSourceUrl` | 否 | Azure REST API Specs GitHub | 原始 OpenAPI spec URL（**可以是 3.1，脚本自动降级**） |
-| `_artifactsLocation` | 否 | GitHub raw URL | `deploy.py` 所在目录的 base URL |
-| `location` | 否 | 资源组所在区域 | deploymentScript 容器运行区域 |
+| 参数 | 说明 |
+|------|------|
+| `specSourceUrl` | 原始 OpenAPI spec URL（可以是 3.1，脚本自动降级） |
+| `location` | deploymentScript 容器运行区域 |
 
-## 前提条件
-
-1. **APIM 实例已存在**（模板不创建 APIM 本身）
-2. **部署者需要 Owner 或 User Access Administrator 角色**（模板会自动创建托管身份 + 角色分配）
-3. **GitHub 仓库已 push**（deploy.py 通过 `supportingScriptUris` 从 `_artifactsLocation` 下载）
-
-## 模板创建的资源
+### 额外创建的资源
 
 | 资源类型 | 说明 |
 |----------|------|
-| `UserAssignedIdentity` | `apim-deploy-identity`，共享给所有 API 部署 |
-| `RoleAssignment` | Contributor 角色（在资源组范围） |
+| `UserAssignedIdentity` | `apim-deploy-identity` |
+| `RoleAssignment` | Contributor 角色（资源组范围） |
 | `deploymentScript` | AzureCLI 容器，运行 `deploy.py` |
 
-由 `deploy.py` 通过 REST API 创建的 APIM 子资源：
-- `backends/{apiName}-ai-endpoint`
-- `apis/{apiName}` (39 ops from spec)
-- `apis/{apiName}/policies/policy`
-- 15 custom operations + 7 service-level tags + 15 tag associations
+---
 
-## 命令行部署（可选）
+## 两种风格对比
 
-```powershell
-az deployment group create `
-  --resource-group apim `
-  --template-file azuredeploy.json `
-  --parameters apiName=ai03
-```
+| | 风格 A（静态） | 风格 B（脚本） |
+|--|----------------|----------------|
+| **模板** | `azuredeploy-static.json` | `azuredeploy.json` |
+| **Spec 来源** | 预处理好的 JSON（仓库中） | 运行时从 Azure REST API Specs 下载 |
+| **运行时依赖** | 无 | ACI 容器 + 存储账户 |
+| **部署速度** | 快（秒级） | 慢（需等 ACI 启动 + 脚本执行） |
+| **存储 Key 要求** | 无 | 需要 `AllowSharedKeyAccess` |
+| **额外资源** | 无 | MI + RoleAssignment + deploymentScript |
+| **幂等性** | PUT upsert | PUT upsert |
+| **适用场景** | 生产环境、严格 Policy 订阅 | 需要自动追踪最新 spec 版本 |
 
-```bash
-# 或指定自定义 spec URL
-az deployment group create \
-  --resource-group apim \
-  --template-file azuredeploy.json \
-  --parameters apiName=ai03 \
-               specSourceUrl="https://raw.githubusercontent.com/Azure/azure-rest-api-specs/main/..."
-```
+---
 
 ## 幂等性
 
-- 所有 REST 调用均使用 PUT（upsert）语义
-- 托管身份和角色分配跨 API 部署共享，不会重复创建
+- 所有操作均使用 PUT（upsert）语义
 - 重复部署同一 `apiName` → 更新而非报错
 
 ## 文件说明
 
 | 文件 | 说明 |
 |------|------|
-| `azuredeploy.json` | ARM 模板（入口） |
-| `deploy.py` | Python 部署脚本（在云端 ACI 容器中运行） |
+| `azuredeploy-static.json` | **风格 A** — 纯声明式 ARM 模板 |
+| `openai-spec-processed.json` | 预处理好的 OpenAPI 3.0.3 spec（39 ops） |
+| `preprocess_spec.py` | 生成预处理 spec 的脚本（本地运行一次） |
+| `azuredeploy.json` | **风格 B** — deploymentScript ARM 模板 |
+| `deploy.py` | 云端部署脚本（由风格 B 的 ACI 容器运行） |
 | `README.md` | 本文件 |
+
+> 仓库地址：https://github.com/kukisama/TrueFluentPro/tree/main/ARMs

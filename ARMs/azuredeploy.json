@@ -26,7 +26,7 @@
     },
     "backendUrl": {
       "type": "string",
-      "defaultValue": "https://9-mauszqfu-eastus2.services.ai.azure.com/openai",
+      "defaultValue": "https://contoso-ai-eastus2.services.ai.azure.com/openai",
       "metadata": { "description": "AI 后端服务 URL" }
     },
     "specSourceUrl": {

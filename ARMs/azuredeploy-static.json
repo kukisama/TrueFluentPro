@@ -1,0 +1,331 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "description": "纯 ARM 声明式部署 — 使用预处理好的 spec 直接部署 APIM AI API。无需 deploymentScript / 存储账户 / ACI 容器。所有资源声明来自权威预处理源。"
+  },
+  "parameters": {
+    "apiName": {
+      "type": "string",
+      "metadata": { "description": "API 标识名（如 ai03）" }
+    },
+    "serviceName": {
+      "type": "string",
+      "defaultValue": "APIMzpl",
+      "metadata": { "description": "已有的 APIM 服务实例名称" }
+    },
+    "displayName": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": { "description": "API 显示名称（留空则与 apiName 相同）" }
+    },
+    "apiPath": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": { "description": "API URL 路径前缀（留空则为 {apiName}/openai）" }
+    },
+    "backendUrl": {
+      "type": "string",
+      "defaultValue": "https://contoso-ai-eastus2.services.ai.azure.com/openai",
+      "metadata": { "description": "AI 后端服务 URL" }
+    },
+    "_artifactsLocation": {
+      "type": "string",
+      "defaultValue": "https://raw.githubusercontent.com/kukisama/TrueFluentPro/main/ARMs/",
+      "metadata": { "description": "预处理好的 spec 文件 (openai-spec-processed.json) 所在目录的 base URL" }
+    }
+  },
+  "variables": {
+    "apiDisplayName": "[if(empty(parameters('displayName')), parameters('apiName'), parameters('displayName'))]",
+    "apiPathValue": "[if(empty(parameters('apiPath')), concat(parameters('apiName'), '/openai'), parameters('apiPath'))]",
+    "backendId": "[concat(parameters('apiName'), '-ai-endpoint')]",
+    "specUrl": "[uri(parameters('_artifactsLocation'), 'openai-spec-processed.json')]",
+    "uniqueTags": [
+      "Completions", "Embeddings", "Chat", "Audio", "Images", "Responses", "Video"
+    ],
+    "customOps": [
+      {
+        "name": "Completions_Create",
+        "tag": "Completions",
+        "displayName": "Creates a completion for the provided prompt, parameters and chosen model.",
+        "method": "POST",
+        "urlTemplate": "/deployments/{deployment-id}/completions?api-version={api-version}",
+        "templateParameters": [
+          { "name": "deployment-id", "type": "string", "required": true },
+          { "name": "api-version", "type": "string", "required": true }
+        ],
+        "description": "Creates a completion for the provided prompt, parameters and chosen model."
+      },
+      {
+        "name": "Embeddings_Create",
+        "tag": "Embeddings",
+        "displayName": "Get a vector representation of a given input.",
+        "method": "POST",
+        "urlTemplate": "/deployments/{deployment-id}/embeddings?api-version={api-version}",
+        "templateParameters": [
+          { "name": "deployment-id", "type": "string", "required": true },
+          { "name": "api-version", "type": "string", "required": true }
+        ],
+        "description": "Get a vector representation of a given input that can be easily consumed by machine learning models and algorithms."
+      },
+      {
+        "name": "ChatCompletions_Create",
+        "tag": "Chat",
+        "displayName": "Creates a completion for the chat message",
+        "method": "POST",
+        "urlTemplate": "/deployments/{deployment-id}/chat/completions?api-version={api-version}",
+        "templateParameters": [
+          { "name": "deployment-id", "type": "string", "required": true },
+          { "name": "api-version", "type": "string", "required": true }
+        ],
+        "description": "Creates a completion for the chat message."
+      },
+      {
+        "name": "Transcriptions_Create",
+        "tag": "Audio",
+        "displayName": "Transcribes audio into the input language.",
+        "method": "POST",
+        "urlTemplate": "/deployments/{deployment-id}/audio/transcriptions?api-version={api-version}",
+        "templateParameters": [
+          { "name": "deployment-id", "type": "string", "required": true },
+          { "name": "api-version", "type": "string", "required": true }
+        ],
+        "description": "Transcribes audio into the input language."
+      },
+      {
+        "name": "Translations_Create",
+        "tag": "Audio",
+        "displayName": "Transcribes and translates input audio into English text.",
+        "method": "POST",
+        "urlTemplate": "/deployments/{deployment-id}/audio/translations?api-version={api-version}",
+        "templateParameters": [
+          { "name": "deployment-id", "type": "string", "required": true },
+          { "name": "api-version", "type": "string", "required": true }
+        ],
+        "description": "Transcribes and translates input audio into English text."
+      },
+      {
+        "name": "Speech_Create",
+        "tag": "Audio",
+        "displayName": "Generates audio from the input text.",
+        "method": "POST",
+        "urlTemplate": "/deployments/{deployment-id}/audio/speech?api-version={api-version}",
+        "templateParameters": [
+          { "name": "deployment-id", "type": "string", "required": true },
+          { "name": "api-version", "type": "string", "required": true }
+        ],
+        "description": "Generates audio from the input text."
+      },
+      {
+        "name": "ImageGenerations_Create",
+        "tag": "Images",
+        "displayName": "Generates a batch of images from a text caption on a given DALLE model deployment",
+        "method": "POST",
+        "urlTemplate": "/deployments/{deployment-id}/images/generations?api-version={api-version}",
+        "templateParameters": [
+          { "name": "deployment-id", "type": "string", "required": true },
+          { "name": "api-version", "type": "string", "required": true }
+        ],
+        "description": "Generates a batch of images from a text caption on a given DALLE model deployment."
+      },
+      {
+        "name": "Create_Response",
+        "tag": "Responses",
+        "displayName": "Creates a model response.",
+        "method": "POST",
+        "urlTemplate": "/responses?api-version={api-version}",
+        "templateParameters": [
+          { "name": "api-version", "type": "string", "required": true }
+        ],
+        "description": "Creates a model response."
+      },
+      {
+        "name": "Get_Response",
+        "tag": "Responses",
+        "displayName": "Retrieves a model response with the given ID.",
+        "method": "GET",
+        "urlTemplate": "/responses/{response_id}?api-version={api-version}",
+        "templateParameters": [
+          { "name": "response_id", "type": "string", "required": true },
+          { "name": "api-version", "type": "string", "required": true }
+        ],
+        "description": "Retrieves a model response with the given ID."
+      },
+      {
+        "name": "Get_Input_Items",
+        "tag": "Responses",
+        "displayName": "Returns a list of input items for a given response.",
+        "method": "GET",
+        "urlTemplate": "/responses/{response_id}/input_items?api-version={api-version}",
+        "templateParameters": [
+          { "name": "response_id", "type": "string", "required": true },
+          { "name": "api-version", "type": "string", "required": true }
+        ],
+        "description": "Returns a list of input items for a given response."
+      },
+      {
+        "name": "ImageEdit_Create",
+        "tag": "Images",
+        "displayName": "Create Image Edit",
+        "method": "POST",
+        "urlTemplate": "/v1/images/edits",
+        "templateParameters": [],
+        "description": "Edit images via OpenAI-compatible endpoint"
+      },
+      {
+        "name": "ImageGeneration_v1_Create",
+        "tag": "Images",
+        "displayName": "Create Image Generation (v1)",
+        "method": "POST",
+        "urlTemplate": "/v1/images/generations",
+        "templateParameters": [],
+        "description": "Generate images via OpenAI-compatible endpoint"
+      },
+      {
+        "name": "Video_Create",
+        "tag": "Video",
+        "displayName": "Create Video",
+        "method": "POST",
+        "urlTemplate": "/v1/videos",
+        "templateParameters": [],
+        "description": "Submit a video generation task"
+      },
+      {
+        "name": "Video_GetStatus",
+        "tag": "Video",
+        "displayName": "Get Video Status",
+        "method": "GET",
+        "urlTemplate": "/v1/videos/{videoId}",
+        "templateParameters": [
+          { "name": "videoId", "type": "string", "required": true, "description": "The video task ID" }
+        ],
+        "description": "Query the status of a video generation task"
+      },
+      {
+        "name": "Video_GetContent",
+        "tag": "Video",
+        "displayName": "Get Video Content",
+        "method": "GET",
+        "urlTemplate": "/v1/videos/{videoId}/content",
+        "templateParameters": [
+          { "name": "videoId", "type": "string", "required": true, "description": "The video task ID" }
+        ],
+        "description": "Get the generated video content"
+      }
+    ]
+  },
+  "resources": [
+    {
+      "comments": "Backend — MI 认证到 AI Services",
+      "type": "Microsoft.ApiManagement/service/backends",
+      "apiVersion": "2023-09-01-preview",
+      "name": "[concat(parameters('serviceName'), '/', variables('backendId'))]",
+      "properties": {
+        "url": "[parameters('backendUrl')]",
+        "protocol": "http",
+        "credentials": {
+          "managedIdentity": {
+            "resource": "https://cognitiveservices.azure.com/"
+          }
+        }
+      }
+    },
+    {
+      "comments": "API — 导入预处理好的 OpenAPI 3.0.3 spec (39 ops)",
+      "type": "Microsoft.ApiManagement/service/apis",
+      "apiVersion": "2023-09-01-preview",
+      "name": "[concat(parameters('serviceName'), '/', parameters('apiName'))]",
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service/backends', parameters('serviceName'), variables('backendId'))]"
+      ],
+      "properties": {
+        "format": "openapi+json-link",
+        "value": "[variables('specUrl')]",
+        "path": "[variables('apiPathValue')]",
+        "displayName": "[variables('apiDisplayName')]",
+        "protocols": [ "https" ],
+        "subscriptionRequired": true,
+        "apiType": "http"
+      }
+    },
+    {
+      "comments": "Policy — 路由到 backend",
+      "type": "Microsoft.ApiManagement/service/apis/policies",
+      "apiVersion": "2023-09-01-preview",
+      "name": "[concat(parameters('serviceName'), '/', parameters('apiName'), '/policy')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service/apis', parameters('serviceName'), parameters('apiName'))]"
+      ],
+      "properties": {
+        "format": "xml",
+        "value": "[concat('<policies><inbound><base /><set-backend-service id=\"apim-generated-policy\" backend-id=\"', variables('backendId'), '\" /></inbound><backend><base /></backend><outbound><base /></outbound><on-error><base /></on-error></policies>')]"
+      }
+    },
+    {
+      "comments": "Service-level tags (7 种)",
+      "type": "Microsoft.ApiManagement/service/tags",
+      "apiVersion": "2023-09-01-preview",
+      "name": "[concat(parameters('serviceName'), '/', variables('uniqueTags')[copyIndex('tagLoop')])]",
+      "copy": {
+        "name": "tagLoop",
+        "count": "[length(variables('uniqueTags'))]"
+      },
+      "properties": {
+        "displayName": "[variables('uniqueTags')[copyIndex('tagLoop')]]"
+      }
+    },
+    {
+      "comments": "15 个自定义 operations",
+      "type": "Microsoft.ApiManagement/service/apis/operations",
+      "apiVersion": "2023-09-01-preview",
+      "name": "[concat(parameters('serviceName'), '/', parameters('apiName'), '/', variables('customOps')[copyIndex('opLoop')].name)]",
+      "copy": {
+        "name": "opLoop",
+        "count": "[length(variables('customOps'))]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service/apis', parameters('serviceName'), parameters('apiName'))]"
+      ],
+      "properties": {
+        "displayName": "[variables('customOps')[copyIndex('opLoop')].displayName]",
+        "method": "[variables('customOps')[copyIndex('opLoop')].method]",
+        "urlTemplate": "[variables('customOps')[copyIndex('opLoop')].urlTemplate]",
+        "templateParameters": "[variables('customOps')[copyIndex('opLoop')].templateParameters]",
+        "description": "[variables('customOps')[copyIndex('opLoop')].description]"
+      }
+    },
+    {
+      "comments": "Tag → Operation 关联 (每个 custom op 一个 tag)",
+      "type": "Microsoft.ApiManagement/service/apis/operations/tags",
+      "apiVersion": "2023-09-01-preview",
+      "name": "[concat(parameters('serviceName'), '/', parameters('apiName'), '/', variables('customOps')[copyIndex('tagAssocLoop')].name, '/', variables('customOps')[copyIndex('tagAssocLoop')].tag)]",
+      "copy": {
+        "name": "tagAssocLoop",
+        "count": "[length(variables('customOps'))]"
+      },
+      "dependsOn": [
+        "opLoop",
+        "tagLoop"
+      ],
+      "properties": {}
+    }
+  ],
+  "outputs": {
+    "apiId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.ApiManagement/service/apis', parameters('serviceName'), parameters('apiName'))]"
+    },
+    "specOps": {
+      "type": "int",
+      "value": 39
+    },
+    "customOps": {
+      "type": "int",
+      "value": "[length(variables('customOps'))]"
+    },
+    "totalOps": {
+      "type": "int",
+      "value": "[add(39, length(variables('customOps')))]"
+    }
+  }
+}
