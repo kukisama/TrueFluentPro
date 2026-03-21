@@ -9,7 +9,7 @@
 
 使用**预处理好的 spec**，纯 ARM 资源声明，零运行时依赖。
 
-[![Deploy to Azure (Static)](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fkukisama%2FTrueFluentPro%2Fmain%2FARMs%2Fazuredeploy-static.json)
+[![Deploy to Azure (Static)](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fkukisama%2FTrueFluentPro%2Fmain%2FARMs%2Fazuredeploy-static.json/createUIDefinitionUri/https%3A%2F%2Fraw.githubusercontent.com%2Fkukisama%2FTrueFluentPro%2Fmain%2FARMs%2FcreateUiDefinition-static.json)
 
 ### 工作流程
 
@@ -60,7 +60,7 @@ az deployment group create `
 
 > ⚠️ 需要订阅允许存储账户 Key 认证（`AllowSharedKeyAccess`），否则会因 Policy 拒绝而失败。
 
-[![Deploy to Azure (Script)](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fkukisama%2FTrueFluentPro%2Fmain%2FARMs%2Fazuredeploy.json)
+[![Deploy to Azure (Script)](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fkukisama%2FTrueFluentPro%2Fmain%2FARMs%2Fazuredeploy.json/createUIDefinitionUri/https%3A%2F%2Fraw.githubusercontent.com%2Fkukisama%2FTrueFluentPro%2Fmain%2FARMs%2FcreateUiDefinition.json)
 
 ### 工作流程
 

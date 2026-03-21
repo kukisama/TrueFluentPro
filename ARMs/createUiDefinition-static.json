@@ -1,0 +1,119 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/0.1.2-preview/CreateUIDefinition.MultiVm.json#",
+  "handler": "Microsoft.Azure.CreateUIDef",
+  "version": "0.1.2-preview",
+  "parameters": {
+    "basics": [
+      {
+        "name": "apiName",
+        "type": "Microsoft.Common.TextBox",
+        "label": "API 标识名",
+        "placeholder": "ai03",
+        "toolTip": "将作为 APIM 中 API 资源名称和 backend 名称的前缀，如 ai03",
+        "constraints": {
+          "required": true,
+          "regex": "^[a-zA-Z][a-zA-Z0-9-]{1,59}$",
+          "validationMessage": "只能包含字母、数字和连字符，以字母开头，2-60 个字符"
+        }
+      }
+    ],
+    "steps": [
+      {
+        "name": "apimConfig",
+        "label": "APIM 配置",
+        "elements": [
+          {
+            "name": "apimSelector",
+            "type": "Microsoft.Solutions.ResourceSelector",
+            "label": "选择 APIM 实例",
+            "toolTip": "从当前订阅中选择一个已有的 API Management 服务实例",
+            "resourceType": "Microsoft.ApiManagement/service",
+            "options": {
+              "filter": {
+                "subscription": "onBasics",
+                "location": "all"
+              }
+            }
+          },
+          {
+            "name": "displayName",
+            "type": "Microsoft.Common.TextBox",
+            "label": "API 显示名称",
+            "defaultValue": "",
+            "toolTip": "留空则与 API 标识名相同",
+            "constraints": {
+              "required": false
+            }
+          },
+          {
+            "name": "apiPath",
+            "type": "Microsoft.Common.TextBox",
+            "label": "API URL 路径前缀",
+            "defaultValue": "",
+            "toolTip": "留空则为 {apiName}/openai",
+            "constraints": {
+              "required": false
+            }
+          },
+          {
+            "name": "backendMode",
+            "type": "Microsoft.Common.OptionsGroup",
+            "label": "后端 URL 来源",
+            "defaultValue": "从已有资源选择",
+            "toolTip": "选择 AI Services 资源自动获取 endpoint，或手动输入 URL",
+            "constraints": {
+              "allowedValues": [
+                { "label": "从已有资源选择", "value": "select" },
+                { "label": "手动输入", "value": "manual" }
+              ],
+              "required": true
+            }
+          },
+          {
+            "name": "aiServicesSelector",
+            "type": "Microsoft.Solutions.ResourceSelector",
+            "label": "选择 AI Services 资源",
+            "toolTip": "选择 Azure AI Services / Foundry 资源，自动获取 endpoint URL",
+            "resourceType": "Microsoft.CognitiveServices/accounts",
+            "options": {
+              "filter": {
+                "subscription": "onBasics",
+                "location": "all"
+              }
+            },
+            "visible": "[equals(steps('apimConfig').backendMode, 'select')]"
+          },
+          {
+            "name": "aiServicesDetails",
+            "type": "Microsoft.Solutions.ArmApiControl",
+            "request": {
+              "method": "GET",
+              "path": "[concat(steps('apimConfig').aiServicesSelector.id, '?api-version=2024-10-01')]"
+            }
+          },
+          {
+            "name": "backendUrlManual",
+            "type": "Microsoft.Common.TextBox",
+            "label": "AI 后端服务 URL",
+            "defaultValue": "",
+            "placeholder": "https://xxx.services.ai.azure.com/openai",
+            "toolTip": "手动输入 Azure AI Services / OpenAI 后端地址",
+            "constraints": {
+              "required": true,
+              "regex": "^https://.+",
+              "validationMessage": "必须是有效的 HTTPS URL"
+            },
+            "visible": "[equals(steps('apimConfig').backendMode, 'manual')]"
+          }
+        ]
+      }
+    ],
+    "outputs": {
+      "apiName": "[basics('apiName')]",
+      "serviceName": "[last(split(steps('apimConfig').apimSelector.id, '/'))]",
+      "displayName": "[steps('apimConfig').displayName]",
+      "apiPath": "[steps('apimConfig').apiPath]",
+      "backendUrl": "[if(equals(steps('apimConfig').backendMode, 'select'), concat(steps('apimConfig').aiServicesDetails.properties.endpoint, 'openai'), steps('apimConfig').backendUrlManual)]"
+    }
+  }
+}
