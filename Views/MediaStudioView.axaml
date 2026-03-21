@@ -20,15 +20,15 @@
             <Setter Property="Background" Value="{DynamicResource UserMessageBrush}"/>
             <Setter Property="CornerRadius" Value="10,10,2,10"/>
             <Setter Property="Padding" Value="12,8"/>
-            <Setter Property="Margin" Value="120,4,8,4"/>
+            <Setter Property="Margin" Value="60,4,8,4"/>
             <Setter Property="HorizontalAlignment" Value="Right"/>
         </Style>
         <!-- AI 消息气泡 -->
         <Style Selector="Border.ai-msg">
             <Setter Property="Background" Value="{DynamicResource AiMessageBrush}"/>
             <Setter Property="CornerRadius" Value="10,10,10,2"/>
-            <Setter Property="Padding" Value="12,8"/>
-            <Setter Property="Margin" Value="8,4,120,4"/>
+            <Setter Property="Padding" Value="14,10"/>
+            <Setter Property="Margin" Value="8,4,60,4"/>
             <Setter Property="HorizontalAlignment" Value="Left"/>
         </Style>
         <!-- 参数区域标签 -->
@@ -203,7 +203,6 @@
                                                 <StackPanel Spacing="4">
                                                     <SelectableTextBlock Text="{Binding Text}"
                                                              TextWrapping="Wrap"
-                                                             MaxWidth="500"
                                                              ContextFlyout="{x:Null}"/>
                                                     <TextBlock Text="{Binding TimestampText}" FontSize="10"
                                                                Foreground="{DynamicResource TimestampBrush}" HorizontalAlignment="Right"/>
@@ -231,17 +230,14 @@
                                                         </Button>
                                                         <Border IsVisible="{Binding IsReasoningExpanded}"
                                                                 Background="{DynamicResource CodeBlockBackgroundBrush}"
-                                                                CornerRadius="6" Padding="10,8" Margin="0,2,0,4"
-                                                                MaxWidth="500">
+                                                                CornerRadius="6" Padding="10,8" Margin="0,2,0,4">
                                                             <controls:ChatMarkdownBlock Markdown="{Binding ReasoningText}"
-                                                                     MaxContentWidth="476"
                                                                      IsReasoning="True"/>
                                                         </Border>
                                                     </StackPanel>
 
                                                     <!-- 文本内容：Markdown 渲染（支持流式 + 代码块复制） -->
-                                                    <controls:ChatMarkdownBlock Markdown="{Binding Text}"
-                                                             MaxContentWidth="500"/>
+                                                    <controls:ChatMarkdownBlock Markdown="{Binding Text}"/>
 
                                                     <ProgressBar IsIndeterminate="True" Height="4"
                                                                  IsVisible="{Binding IsLoading}"/>

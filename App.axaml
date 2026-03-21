@@ -29,7 +29,9 @@
                     <SolidColorBrush x:Key="SettingsCardInnerBackgroundBrush" Color="#FFF8FAFC"/>
                     <SolidColorBrush x:Key="UserMessageBrush" Color="#FFE3F2FD"/>
                     <SolidColorBrush x:Key="AiMessageBrush" Color="#FFF5F5F5"/>
-                    <SolidColorBrush x:Key="CodeBlockBackgroundBrush" Color="#FFE8E8E8"/>
+                    <SolidColorBrush x:Key="CodeBlockBackgroundBrush" Color="#FFF0F0F0"/>
+                    <SolidColorBrush x:Key="CodeInlineForegroundBrush" Color="#FFD63384"/>
+                    <SolidColorBrush x:Key="TableBorderBrush" Color="#FFE2E8F0"/>
                     <SolidColorBrush x:Key="MediaItemBrush" Color="#FFEEEEEE"/>
                     <SolidColorBrush x:Key="SidebarBrush" Color="#FFFAFAFA"/>
 
@@ -89,6 +91,8 @@
                     <SolidColorBrush x:Key="UserMessageBrush" Color="#FF1E3A5F"/>
                     <SolidColorBrush x:Key="AiMessageBrush" Color="#FF2D2D2D"/>
                     <SolidColorBrush x:Key="CodeBlockBackgroundBrush" Color="#FF1E1E1E"/>
+                    <SolidColorBrush x:Key="CodeInlineForegroundBrush" Color="#FFE06C9A"/>
+                    <SolidColorBrush x:Key="TableBorderBrush" Color="#FF3E3E3E"/>
                     <SolidColorBrush x:Key="MediaItemBrush" Color="#FF363636"/>
                     <SolidColorBrush x:Key="SidebarBrush" Color="#FF252525"/>
 
