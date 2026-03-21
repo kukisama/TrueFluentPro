@@ -83,10 +83,19 @@
             "label": "选择 Foundry 资源",
             "toolTip": "仅显示 AIServices (Foundry) 类型的资源",
             "constraints": {
-              "allowedValues": "[map(filter(steps('apimConfig').listCogAccounts.value, (item) => equals(item.kind, 'AIServices')), (item) => parse(concat('{\"label\":\"', item.name, ' (', item.location, ')\",\"description\":\"', item.properties.endpoint, '\",\"value\":\"', item.properties.endpoint, 'openai\"}')))]",
+              "allowedValues": "[map(filter(steps('apimConfig').listCogAccounts.value, (item) => equals(item.kind, 'AIServices')), (item) => parse(concat('{\"label\":\"', item.name, ' (', item.location, ')\",\"description\":\"', item.properties.endpoint, 'openai\",\"value\":\"', item.properties.endpoint, 'openai\"}')))]",
               "required": true
             },
             "visible": "[equals(steps('apimConfig').backendMode, 'select')]"
+          },
+          {
+            "name": "selectedUrlPreview",
+            "type": "Microsoft.Common.InfoBox",
+            "options": {
+              "text": "[concat('后端 URL: ', steps('apimConfig').foundryDropdown)]",
+              "style": "Info"
+            },
+            "visible": "[and(equals(steps('apimConfig').backendMode, 'select'), not(empty(steps('apimConfig').foundryDropdown)))]"
           },
           {
             "name": "backendUrlManual",
