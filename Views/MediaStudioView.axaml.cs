@@ -31,6 +31,9 @@ namespace TrueFluentPro.Views
         private const double QuickNavVisibilityThreshold = 200;
 
         private string? _capturedSelection;
+        private SelectableTextBlock? _capturedStb;
+        private int _capturedSelStart;
+        private int _capturedSelEnd;
         private bool _initialized;
 
         public MediaStudioView()
@@ -76,6 +79,12 @@ namespace TrueFluentPro.Views
             this.AddHandler(
                 InputElement.PointerPressedEvent,
                 CaptureSelectionBeforeRightClick,
+                Avalonia.Interactivity.RoutingStrategies.Tunnel);
+
+            // 隧道阶段拦截右键释放，在 STB 处理 PointerReleased 之前显示菜单并恢复选区
+            this.AddHandler(
+                InputElement.PointerReleasedEvent,
+                HandleRightClickContextMenu,
                 Avalonia.Interactivity.RoutingStrategies.Tunnel);
         }
 
@@ -175,6 +184,14 @@ namespace TrueFluentPro.Views
         {
             ScrollToBottom();
             e.Handled = true;
+        }
+
+        private void ToggleReasoning_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        {
+            if (sender is Avalonia.Controls.Button btn && btn.DataContext is ChatMessageViewModel msg)
+            {
+                msg.IsReasoningExpanded = !msg.IsReasoningExpanded;
+            }
         }
 
         private async void PromptTextBox_KeyDown(object? sender, KeyEventArgs e)
@@ -756,6 +773,9 @@ namespace TrueFluentPro.Views
         {
             if (!e.GetCurrentPoint(this).Properties.IsRightButtonPressed) return;
             _capturedSelection = null;
+            _capturedStb = null;
+            _capturedSelStart = 0;
+            _capturedSelEnd = 0;
 
             // 从命中点向上查找 SelectableTextBlock，在它处理 PointerPressed 之前保存选区
             var hit = this.InputHitTest(e.GetPosition(this)) as Visual;
@@ -764,26 +784,58 @@ namespace TrueFluentPro.Views
                 if (v is SelectableTextBlock stb)
                 {
                     _capturedSelection = stb.SelectedText;
+                    _capturedStb = stb;
+                    _capturedSelStart = stb.SelectionStart;
+                    _capturedSelEnd = stb.SelectionEnd;
+                    // 阻止 PointerPressed 传播到 STB，避免其重置选区
+                    e.Handled = true;
                     return;
                 }
             }
         }
 
-        private void ChatMessageBorder_PointerReleased(object? sender, PointerReleasedEventArgs e)
+        /// <summary>
+        /// 隧道阶段拦截右键释放：当右键命中 STB 时，在 STB 处理 PointerReleased 之前
+        /// 显示右键菜单并恢复选区高亮。
+        /// 若右键未命中 STB（如点击时间戳），不拦截，让 XAML PointerReleased 正常触发。
+        /// </summary>
+        private void HandleRightClickContextMenu(object? sender, PointerReleasedEventArgs e)
         {
             if (e.InitialPressMouseButton != MouseButton.Right) return;
-            if (sender is not Border border) return;
-            if (border.DataContext is not ChatMessageViewModel msg) return;
-            if (_viewModel?.CurrentSession == null) return;
+            if (_capturedStb == null) return;
 
-            // 查找 Border 内的 SelectableTextBlock
-            var stb = border.GetVisualDescendants()
-                .OfType<SelectableTextBlock>()
-                .FirstOrDefault();
+            // 从命中的 STB 向上查找 chat-message Border
+            Border? msgBorder = null;
+            ChatMessageViewModel? msg = null;
+            for (var v = _capturedStb as Visual; v != null; v = v.GetVisualParent() as Visual)
+            {
+                if (v is Border b && b.DataContext is ChatMessageViewModel vm)
+                {
+                    msgBorder = b;
+                    msg = vm;
+                    break;
+                }
+            }
 
-            // 使用隧道阶段捕获的选区（右键点击后 SelectableTextBlock 会清除选区）
+            if (msgBorder == null || msg == null || _viewModel?.CurrentSession == null)
+            {
+                _capturedStb = null;
+                _capturedSelection = null;
+                return;
+            }
+
+            e.Handled = true;
+            ShowChatContextMenu(msgBorder, msg);
+        }
+
+        private void ShowChatContextMenu(Border border, ChatMessageViewModel msg)
+        {
             var captured = _capturedSelection;
+            var stb = _capturedStb;
+            var selStart = _capturedSelStart;
+            var selEnd = _capturedSelEnd;
             _capturedSelection = null;
+            _capturedStb = null;
 
             var flyout = new MenuFlyout();
 
@@ -797,17 +849,60 @@ namespace TrueFluentPro.Views
             };
             flyout.Items.Add(copyItem);
 
-            // 全选
+            // 全选（针对当前右键点击的 SelectableTextBlock）
             if (stb != null)
             {
                 var selectAllItem = new MenuItem { Header = "全选" };
+                var targetStb = stb;
                 selectAllItem.Click += (_, _) =>
                 {
-                    stb.SelectionStart = 0;
-                    stb.SelectionEnd = stb.Text?.Length ?? 0;
+                    targetStb.SelectionStart = 0;
+                    targetStb.SelectionEnd = targetStb.Text?.Length ?? 0;
                 };
                 flyout.Items.Add(selectAllItem);
             }
+
+            flyout.Items.Add(new Separator());
+
+            var deleteItem = new MenuItem { Header = "删除此条记录", Tag = msg };
+            deleteItem.Click += DeleteChatMessage_Click;
+            flyout.Items.Add(deleteItem);
+
+            flyout.ShowAt(border, true);
+
+            // 恢复选区高亮（flyout 打开后 STB 失焦不影响 Avalonia 绘制选区，
+            // 但需重新设置 start/end 以抵消任何清除行为）
+            if (stb != null && selStart != selEnd)
+            {
+                var restoreStb = stb;
+                var rs = selStart;
+                var re = selEnd;
+                Dispatcher.UIThread.Post(() =>
+                {
+                    restoreStb.SelectionStart = rs;
+                    restoreStb.SelectionEnd = re;
+                }, DispatcherPriority.Render);
+            }
+        }
+
+        private void ChatMessageBorder_PointerReleased(object? sender, PointerReleasedEventArgs e)
+        {
+            // 此方法现在只处理右键未命中 STB 的情况（如时间戳、空白区域）
+            // STB 右键已由 HandleRightClickContextMenu 隧道处理器接管
+            if (e.InitialPressMouseButton != MouseButton.Right) return;
+            if (sender is not Border border) return;
+            if (border.DataContext is not ChatMessageViewModel msg) return;
+            if (_viewModel?.CurrentSession == null) return;
+
+            var flyout = new MenuFlyout();
+
+            var copyItem = new MenuItem { Header = "复制全文" };
+            copyItem.Click += async (_, _) =>
+            {
+                if (!string.IsNullOrEmpty(msg.Text))
+                    await TopLevel.GetTopLevel(this)!.Clipboard!.SetTextAsync(msg.Text);
+            };
+            flyout.Items.Add(copyItem);
 
             flyout.Items.Add(new Separator());
 

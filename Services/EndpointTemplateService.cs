@@ -261,10 +261,20 @@ public sealed class EndpointTemplateService : IEndpointTemplateService
         if (urls.Count == 0)
             return "资料包未声明文字请求路线";
 
-        if (endpoint.IsAzureEndpoint)
-            return "资料包声明的 Azure deployments 文字路线";
+        var protocol = GetEffectiveTextProtocol(endpoint);
 
-        return GetEffectiveTextProtocol(endpoint) switch
+        if (endpoint.IsAzureEndpoint)
+        {
+            return protocol switch
+            {
+                TextApiProtocolMode.Responses => "/responses（Azure）",
+                TextApiProtocolMode.ChatCompletionsRaw => "/chat/completions（Azure）",
+                TextApiProtocolMode.ChatCompletionsV1 => "/v1/chat/completions（Azure）",
+                _ => "Azure model-based 文字路线"
+            };
+        }
+
+        return protocol switch
         {
             TextApiProtocolMode.Responses => "/responses（资料包）",
             TextApiProtocolMode.ChatCompletionsRaw => "/chat/completions（资料包）",

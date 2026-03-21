@@ -1,0 +1,120 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "description": "一键部署 APIM AI API。使用 deploymentScript 在云端自动完成 spec 预处理 (3.1→3.0) + backend + API import + policy + 15 custom ops + tags。"
+  },
+  "parameters": {
+    "apiName": {
+      "type": "string",
+      "metadata": { "description": "API 标识名（如 ai03）" }
+    },
+    "serviceName": {
+      "type": "string",
+      "defaultValue": "APIMzpl",
+      "metadata": { "description": "APIM 服务实例名称" }
+    },
+    "displayName": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": { "description": "API 显示名称（留空则与 apiName 相同）" }
+    },
+    "apiPath": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": { "description": "API URL 路径前缀（留空则为 {apiName}/openai）" }
+    },
+    "backendUrl": {
+      "type": "string",
+      "defaultValue": "https://9-mauszqfu-eastus2.services.ai.azure.com/openai",
+      "metadata": { "description": "AI 后端服务 URL" }
+    },
+    "specSourceUrl": {
+      "type": "string",
+      "defaultValue": "https://raw.githubusercontent.com/Azure/azure-rest-api-specs/main/specification/cognitiveservices/data-plane/AzureOpenAI/inference/preview/2025-03-01-preview/inference.json",
+      "metadata": { "description": "原始 OpenAPI spec URL（3.1 也可以，脚本会自动降级处理）" }
+    },
+    "_artifactsLocation": {
+      "type": "string",
+      "defaultValue": "https://raw.githubusercontent.com/<OWNER>/<REPO>/main/aiazManagement/ARM/",
+      "metadata": { "description": "deploy.py 所在目录的 base URL（GitHub raw 或 Blob）" }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": { "description": "deploymentScript 容器运行区域" }
+    }
+  },
+  "variables": {
+    "identityName": "apim-deploy-identity",
+    "roleAssignmentGuid": "[guid(resourceGroup().id, 'apim-deploy-identity', 'contributor')]",
+    "contributorRoleId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')]",
+    "scriptName": "[concat('deploy-', parameters('apiName'))]"
+  },
+  "resources": [
+    {
+      "comments": "托管身份 — deploymentScript 用它调 APIM REST API",
+      "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
+      "apiVersion": "2023-01-31",
+      "name": "[variables('identityName')]",
+      "location": "[parameters('location')]"
+    },
+    {
+      "comments": "授予 Contributor 角色，使脚本能操作 APIM",
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "name": "[variables('roleAssignmentGuid')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('identityName'))]"
+      ],
+      "properties": {
+        "roleDefinitionId": "[variables('contributorRoleId')]",
+        "principalId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('identityName'))).principalId]",
+        "principalType": "ServicePrincipal"
+      }
+    },
+    {
+      "comments": "云端部署脚本 — 下载 spec、预处理、REST 部署全部 APIM 资源",
+      "type": "Microsoft.Resources/deploymentScripts",
+      "apiVersion": "2023-08-01",
+      "name": "[variables('scriptName')]",
+      "location": "[parameters('location')]",
+      "kind": "AzureCLI",
+      "identity": {
+        "type": "UserAssigned",
+        "userAssignedIdentities": {
+          "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('identityName'))]": {}
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Authorization/roleAssignments', variables('roleAssignmentGuid'))]"
+      ],
+      "properties": {
+        "azCliVersion": "2.60.0",
+        "timeout": "PT30M",
+        "retentionInterval": "PT1H",
+        "cleanupPreference": "OnSuccess",
+        "environmentVariables": [
+          { "name": "SPEC_URL",     "value": "[parameters('specSourceUrl')]" },
+          { "name": "SUB_ID",       "value": "[subscription().subscriptionId]" },
+          { "name": "RG_NAME",      "value": "[resourceGroup().name]" },
+          { "name": "SVC_NAME",     "value": "[parameters('serviceName')]" },
+          { "name": "API_NAME",     "value": "[parameters('apiName')]" },
+          { "name": "DISPLAY_NAME", "value": "[if(empty(parameters('displayName')), parameters('apiName'), parameters('displayName'))]" },
+          { "name": "API_PATH",     "value": "[if(empty(parameters('apiPath')), concat(parameters('apiName'), '/openai'), parameters('apiPath'))]" },
+          { "name": "BACKEND_URL",  "value": "[parameters('backendUrl')]" }
+        ],
+        "scriptContent": "echo 'Waiting 30s for RBAC propagation...' && sleep 30 && python3 deploy.py",
+        "supportingScriptUris": [
+          "[uri(parameters('_artifactsLocation'), 'deploy.py')]"
+        ]
+      }
+    }
+  ],
+  "outputs": {
+    "deploymentResult": {
+      "type": "object",
+      "value": "[reference(variables('scriptName')).outputs]"
+    }
+  }
+}

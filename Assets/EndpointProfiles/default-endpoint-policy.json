@@ -76,7 +76,7 @@
         "providerType": "AzureOpenAi",
         "authMode": "ApiKey",
         "apiKeyHeaderMode": "ApiKeyHeader",
-        "textApiProtocolMode": "Auto",
+        "textApiProtocolMode": "Responses",
         "imageApiRouteMode": "Auto",
         "apiVersion": "2024-02-01",
         "supportsAad": true,
@@ -104,9 +104,9 @@
         "disabled": []
       },
       "text": {
-        "primaryProtocol": "Auto",
-        "primaryUrl": "",
-        "deploymentPrimaryUrl": "{baseUrl}/openai/deployments/{deployment}/chat/completions?api-version={apiVersion}"
+        "primaryProtocol": "Responses",
+        "primaryUrl": "{baseUrl}/openai/v1/responses",
+        "deploymentPrimaryUrl": "{baseUrl}/openai/v1/responses"
       },
       "modelDiscovery": {
         "primaryUrl": ""

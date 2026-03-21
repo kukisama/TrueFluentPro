@@ -7,7 +7,7 @@
   "displayName": "Azure OpenAI",
   "subtitle": "官方 Azure OpenAI / Azure AI Foundry OpenAI 资源",
   "glyph": "☁",
-  "summary": "默认使用 Azure deployments 路线，API Key 走 api-key Header；如需 Microsoft Entra ID，可在详情里切换。",
+  "summary": "默认使用 Azure model-based 路线 (/openai/v1/)，API Key 走 api-key Header；如需 Microsoft Entra ID，可在详情里切换。",
   "defaultNamePrefix": "Azure OpenAI",
   "iconAssetPath": "Assets/EndpointProfiles/Icons/azure-openai.svg",
   "tags": ["builtin", "azure", "aoai"],
@@ -31,9 +31,9 @@
     },
     "routes": {
       "text": {
-        "primaryProtocol": "Auto",
-        "primaryUrl": "",
-        "deploymentPrimaryUrl": "{baseUrl}/openai/deployments/{deployment}/chat/completions?api-version={apiVersion}"
+        "primaryProtocol": "Responses",
+        "primaryUrl": "{baseUrl}/openai/v1/responses",
+        "deploymentPrimaryUrl": "{baseUrl}/openai/v1/responses"
       },
       "modelDiscovery": {
         "primaryUrl": ""
@@ -74,7 +74,7 @@
   },
   "fallbacks": {
     "modelDiscovery": [],
-    "text": [],
+    "text": ["{baseUrl}/openai/v1/chat/completions", "{baseUrl}/openai/deployments/{deployment}/chat/completions?api-version={apiVersion}"],
     "imageGenerate": [],
     "imageEdit": [],
     "audio": [],
@@ -97,7 +97,7 @@
     "providerType": "AzureOpenAi",
     "authMode": "ApiKey",
     "apiKeyHeaderMode": "ApiKeyHeader",
-    "textApiProtocolMode": "Auto",
+    "textApiProtocolMode": "Responses",
     "imageApiRouteMode": "Auto",
     "apiVersion": "2024-02-01",
     "supportsAad": true,

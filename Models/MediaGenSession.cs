@@ -69,6 +69,12 @@ namespace TrueFluentPro.Models
         public List<string> MediaPaths { get; set; } = new();
         public DateTime Timestamp { get; set; } = DateTime.Now;
 
+        /// <summary>消息内容类型：text / image / video</summary>
+        public string ContentType { get; set; } = "";
+
+        /// <summary>推理/思考过程文本</summary>
+        public string ReasoningText { get; set; } = "";
+
         /// <summary>服务端生成耗时（秒）</summary>
         public double? GenerateSeconds { get; set; }
         /// <summary>下载传输耗时（秒）</summary>

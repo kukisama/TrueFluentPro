@@ -340,9 +340,6 @@ public static class EndpointProfileUrlBuilder
         TextApiProtocolMode configuredMode,
         bool isAzureEndpoint)
     {
-        if (isAzureEndpoint)
-            return TextApiProtocolMode.Auto;
-
         if (configuredMode != TextApiProtocolMode.Auto)
             return configuredMode;
 

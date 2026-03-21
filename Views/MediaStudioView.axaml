@@ -4,6 +4,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:controls="using:TrueFluentPro.Controls"
         xmlns:icons="https://github.com/projektanker/icons.avalonia"
+
         mc:Ignorable="d" d:DesignWidth="1000" d:DesignHeight="700"
         x:Class="TrueFluentPro.Views.MediaStudioView"
         x:CompileBindings="False">
@@ -58,6 +59,31 @@
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderBrush" Value="Transparent"/>
             <Setter Property="BorderThickness" Value="0"/>
+        </Style>
+        <!-- 消息操作按钮：默认半透明，hover 气泡时显示，hover 按钮时高亮 -->
+        <Style Selector="StackPanel.msg-actions">
+            <Setter Property="Opacity" Value="0"/>
+        </Style>
+        <Style Selector="Border.ai-msg:pointerover StackPanel.msg-actions">
+            <Setter Property="Opacity" Value="1"/>
+        </Style>
+        <Style Selector="StackPanel.msg-actions > Button">
+            <Setter Property="Background" Value="{DynamicResource SubtleFillColorTertiaryBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource ControlStrokeColorDefaultBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="6"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Padding" Value="8,4"/>
+            <Setter Property="FontSize" Value="12"/>
+        </Style>
+        <Style Selector="StackPanel.msg-actions > Button:pointerover">
+            <Setter Property="Background" Value="{DynamicResource SystemAccentColorLight2}"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource SystemAccentColorLight2}"/>
+        </Style>
+        <Style Selector="StackPanel.msg-actions > Button:pressed">
+            <Setter Property="Background" Value="{DynamicResource SystemAccentColorLight3}"/>
+            <Setter Property="Foreground" Value="White"/>
         </Style>
     </UserControl.Styles>
 
@@ -188,13 +214,44 @@
                                             <Border Classes="ai-msg" IsVisible="{Binding IsAssistant}"
                                                     PointerReleased="ChatMessageBorder_PointerReleased">
                                                 <StackPanel Spacing="6">
-                                                    <SelectableTextBlock Text="{Binding Text}"
-                                                             TextWrapping="Wrap"
-                                                             MaxWidth="500"
-                                                             ContextFlyout="{x:Null}"/>
+                                                    <!-- 推理/思考折叠区（仅有推理数据时显示） -->
+                                                    <StackPanel Spacing="4"
+                                                                IsVisible="{Binding HasReasoning}">
+                                                        <!-- 有思考内容时的展开/收缩按钮 -->
+                                                        <Button Classes="pressable" Padding="6,3" FontSize="11"
+                                                                Click="ToggleReasoning_Click"
+                                                                HorizontalAlignment="Left">
+                                                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                                                <TextBlock Text="💭 思考过程" VerticalAlignment="Center"/>
+                                                                <TextBlock Text="▾" FontSize="10" VerticalAlignment="Center"
+                                                                           IsVisible="{Binding !IsReasoningExpanded}"/>
+                                                                <TextBlock Text="▴" FontSize="10" VerticalAlignment="Center"
+                                                                           IsVisible="{Binding IsReasoningExpanded}"/>
+                                                            </StackPanel>
+                                                        </Button>
+                                                        <Border IsVisible="{Binding IsReasoningExpanded}"
+                                                                Background="{DynamicResource CodeBlockBackgroundBrush}"
+                                                                CornerRadius="6" Padding="10,8" Margin="0,2,0,4"
+                                                                MaxWidth="500">
+                                                            <controls:ChatMarkdownBlock Markdown="{Binding ReasoningText}"
+                                                                     MaxContentWidth="476"
+                                                                     IsReasoning="True"/>
+                                                        </Border>
+                                                    </StackPanel>
+
+                                                    <!-- 文本内容：Markdown 渲染（支持流式 + 代码块复制） -->
+                                                    <controls:ChatMarkdownBlock Markdown="{Binding Text}"
+                                                             MaxContentWidth="500"/>
 
                                                     <ProgressBar IsIndeterminate="True" Height="4"
                                                                  IsVisible="{Binding IsLoading}"/>
+
+                                                    <!-- 推理诊断状态（流式完成后显示） -->
+                                                    <TextBlock Text="{Binding ReasoningStatusText}"
+                                                               IsVisible="{Binding HasReasoningStatus}"
+                                                               FontSize="10.5" Opacity="0.6"
+                                                               TextWrapping="Wrap"
+                                                               Margin="0,2,0,0"/>
 
                                                     <!-- 媒体文件列表 -->
                                                     <ItemsControl ItemsSource="{Binding MediaPaths}"
@@ -257,6 +314,21 @@
                                                         </ItemsControl.ItemTemplate>
                                                     </ItemsControl>
 
+                                                    <!-- 消息操作按钮 -->
+                                                    <StackPanel Classes="msg-actions" Orientation="Horizontal" Spacing="6"
+                                                                IsVisible="{Binding !IsLoading}">
+                                                        <Button Content="📋 复制"
+                                                                Command="{Binding $parent[ItemsControl].DataContext.CopyMessageCommand}"
+                                                                CommandParameter="{Binding}"/>
+                                                        <Button Content="🔄 重新生成"
+                                                                IsVisible="{Binding IsTextContent}"
+                                                                Command="{Binding $parent[ItemsControl].DataContext.RegenerateMessageCommand}"
+                                                                CommandParameter="{Binding}"/>
+                                                        <Button Content="🗑 删除"
+                                                                Command="{Binding $parent[ItemsControl].DataContext.DeleteMessageCommand}"
+                                                                CommandParameter="{Binding}"/>
+                                                    </StackPanel>
+
                                                     <TextBlock Text="{Binding TimestampText}" FontSize="10"
                                                                Foreground="{DynamicResource TimestampBrush}"/>
                                                 </StackPanel>
@@ -291,19 +363,28 @@
                     <Grid RowDefinitions="Auto,Auto,Auto">
                         <!-- 参数行 -->
                         <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="10" Margin="0,0,0,6">
-                            <!-- 模式切换 -->
+                            <!-- 模式切换（三选一） -->
                             <StackPanel Orientation="Horizontal" Spacing="4">
-                                <RadioButton Content="🖼️ 图片"
-                                             IsChecked="{Binding IsImageMode}"
-                                             GroupName="MediaType"
-                                             Padding="6,3"/>
-                                <RadioButton Content="🎬 视频"
-                                             IsChecked="{Binding IsVideoMode}"
-                                             GroupName="MediaType"
-                                             Padding="6,3"/>
+                                <ToggleButton Content="💬 文字"
+                                              IsChecked="{Binding IsTextMode}"
+                                              Padding="6,3"/>
+                                <ToggleButton Content="🖼️ 图片"
+                                              IsChecked="{Binding IsImageMode}"
+                                              Padding="6,3"/>
+                                <ToggleButton Content="🎬 视频"
+                                              IsChecked="{Binding IsVideoMode}"
+                                              Padding="6,3"/>
                             </StackPanel>
 
                             <Border Width="1" Background="{DynamicResource BorderMediumBrush}" Margin="4,0"/>
+
+                            <!-- 思考开关（仅文本模式） -->
+                            <ToggleButton IsChecked="{Binding EnableReasoning}"
+                                          IsVisible="{Binding IsTextMode}"
+                                          Padding="5,3"
+                                          ToolTip.Tip="启用模型推理/思考过程">
+                                <icons:Icon Value="fa-regular fa-circle-question" FontSize="14"/>
+                            </ToggleButton>
 
                             <!-- 图片参数 -->
                             <StackPanel Orientation="Horizontal" Spacing="6"
@@ -396,7 +477,7 @@
                                                                     Foreground="White"
                                                                     BorderThickness="0"
                                                                     CornerRadius="7"
-                                                                    Command="{Binding DataContext.RemoveReferenceImageCommand, ElementName=SessionContentRoot}"
+                                                                    Command="{Binding $parent[ItemsControl].DataContext.RemoveReferenceImageCommand}"
                                                                     CommandParameter="{Binding .}"
                                                                     ToolTip.Tip="移除此参考图"/>
                                                         </Grid>
@@ -438,7 +519,7 @@
                                     <TextBox x:Name="PromptTextBox"
                                              Grid.Column="1"
                                              Text="{Binding PromptText}"
-                                             Watermark="请输入提示词... (Ctrl+Enter 发送，Ctrl+V 可粘贴参考图，最多8张)"
+                                             Watermark="请输入内容... (Ctrl+Enter 发送)"
                                              AcceptsReturn="True"
                                              TextWrapping="Wrap"
                                              MaxHeight="80"
@@ -448,7 +529,17 @@
                             </Grid>
                             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" Margin="8,0,0,0"
                                         VerticalAlignment="Bottom">
+                                <!-- 文本模式：发送/停止 -->
+                                <Button Classes="pressable" Content="发送" Command="{Binding GenerateCommand}"
+                                        IsVisible="{Binding IsTextMode}"
+                                        Padding="16,8" FontWeight="SemiBold"
+                                        Background="{DynamicResource AccentBlueBrush}" Foreground="White"/>
+                                <Button Content="停止" Command="{Binding StopChatCommand}"
+                                        IsVisible="{Binding IsChatStreaming}"
+                                        Padding="10,8"/>
+                                <!-- 媒体模式：生成/取消 -->
                                 <Button Classes="pressable" Content="生成" Command="{Binding GenerateCommand}"
+                                        IsVisible="{Binding !IsTextMode}"
                                         Padding="16,8" FontWeight="SemiBold"
                                         Background="{DynamicResource AccentBlueBrush}" Foreground="White"/>
                                 <Button Content="取消" Command="{Binding CancelCommand}"

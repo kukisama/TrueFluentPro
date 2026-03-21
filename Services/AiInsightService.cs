@@ -157,9 +157,7 @@ namespace TrueFluentPro.Services
                 onOutcome?.Invoke(new AiRequestOutcome
                 {
                     UsedReasoning = enableReasoning
-                                    && profile == AiChatProfile.Summary
-                                    && request.SummaryEnableReasoning
-                                    && request.EndpointType != EndpointApiType.AzureOpenAi,
+                                    && profile == AiChatProfile.Summary,
                     UsedFallback = false
                 });
 
@@ -289,11 +287,71 @@ namespace TrueFluentPro.Services
             var protocol = GetEffectiveTextApiProtocol(request);
             if (protocol == TextApiProtocolMode.Responses)
             {
-                await ReadResponsesApiResponseAsync(response, onChunk, onReasoningChunk, cancellationToken);
+                await StreamResponsesApiAsync(response, onChunk, onReasoningChunk, cancellationToken);
                 return;
             }
 
             await StreamResponseAsync(response, onChunk, onReasoningChunk, cancellationToken);
+        }
+
+        /// <summary>
+        /// Responses API 流式 SSE 解析：逐行读取 data: 事件，提取 output_text.delta 和 reasoning_summary_text.delta。
+        /// </summary>
+        private static async Task StreamResponsesApiAsync(
+            HttpResponseMessage response,
+            Action<string> onChunk,
+            Action<string>? onReasoningChunk,
+            CancellationToken cancellationToken)
+        {
+            using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+            using var reader = new StreamReader(stream);
+
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                var line = await reader.ReadLineAsync(cancellationToken);
+                if (line == null) break;
+                if (!line.StartsWith("data: ")) continue;
+
+                var data = line.Substring(6);
+                if (data == "[DONE]") break;
+
+                try
+                {
+                    using var doc = JsonDocument.Parse(data);
+                    var root = doc.RootElement;
+
+                    var eventType = root.TryGetProperty("type", out var typeElem)
+                        ? typeElem.GetString() ?? ""
+                        : "";
+
+                    // 正文文本增量
+                    if (eventType == "response.output_text.delta")
+                    {
+                        if (root.TryGetProperty("delta", out var deltaElem)
+                            && deltaElem.ValueKind == JsonValueKind.String)
+                        {
+                            var text = deltaElem.GetString();
+                            if (!string.IsNullOrEmpty(text))
+                                onChunk(text);
+                        }
+                    }
+                    // 推理摘要增量
+                    else if (eventType == "response.reasoning_summary_text.delta" && onReasoningChunk != null)
+                    {
+                        if (root.TryGetProperty("delta", out var deltaElem)
+                            && deltaElem.ValueKind == JsonValueKind.String)
+                        {
+                            var text = deltaElem.GetString();
+                            if (!string.IsNullOrEmpty(text))
+                                onReasoningChunk(text);
+                        }
+                    }
+                }
+                catch (JsonException)
+                {
+                    // skip unparseable lines
+                }
+            }
         }
 
         private static async Task ReadResponsesApiResponseAsync(
@@ -558,10 +616,10 @@ namespace TrueFluentPro.Services
                 {
                     ["model"] = request.ModelName,
                     ["input"] = input,
-                    ["stream"] = false
+                    ["stream"] = true
                 };
 
-                if (enableReasoning && request.SummaryEnableReasoning)
+                if (enableReasoning)
                 {
                     responsesBody["reasoning"] = new { effort = "medium", summary = "auto" };
                 }
@@ -571,7 +629,17 @@ namespace TrueFluentPro.Services
 
             if (request.IsAzureEndpoint)
             {
-                return new { messages, stream = true };
+                var azureBody = new Dictionary<string, object>
+                {
+                    ["model"] = request.ModelName,
+                    ["messages"] = messages,
+                    ["stream"] = true
+                };
+                if (enableReasoning)
+                {
+                    azureBody["reasoning_effort"] = "medium";
+                }
+                return azureBody;
             }
 
             var body = new Dictionary<string, object>
@@ -581,9 +649,9 @@ namespace TrueFluentPro.Services
                 ["stream"] = true
             };
 
-            if (enableReasoning && request.SummaryEnableReasoning)
+            if (enableReasoning)
             {
-                body["reasoning"] = new { effort = "medium" };
+                body["reasoning_effort"] = "medium";
             }
 
             return body;
@@ -604,7 +672,7 @@ namespace TrueFluentPro.Services
                 request.IsAzureEndpoint);
 
         private static bool ShouldTryNextUrl(AiChatRequestConfig request, HttpResponseMessage response)
-            => IsApimGateway(request) && (int)response.StatusCode is 404 or 405;
+            => (IsApimGateway(request) || request.IsAzureEndpoint) && (int)response.StatusCode is 404 or 405;
 
         // --- 临时禁用 APIM subscription-key query 回退 ---
         private static bool IsMissingApimSubscriptionKeyResponse(AiChatRequestConfig request, HttpResponseMessage response)

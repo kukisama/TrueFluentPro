@@ -29,6 +29,7 @@
                     <SolidColorBrush x:Key="SettingsCardInnerBackgroundBrush" Color="#FFF8FAFC"/>
                     <SolidColorBrush x:Key="UserMessageBrush" Color="#FFE3F2FD"/>
                     <SolidColorBrush x:Key="AiMessageBrush" Color="#FFF5F5F5"/>
+                    <SolidColorBrush x:Key="CodeBlockBackgroundBrush" Color="#FFE8E8E8"/>
                     <SolidColorBrush x:Key="MediaItemBrush" Color="#FFEEEEEE"/>
                     <SolidColorBrush x:Key="SidebarBrush" Color="#FFFAFAFA"/>
 
@@ -87,6 +88,7 @@
                     <SolidColorBrush x:Key="SettingsCardInnerBackgroundBrush" Color="#FF222B35"/>
                     <SolidColorBrush x:Key="UserMessageBrush" Color="#FF1E3A5F"/>
                     <SolidColorBrush x:Key="AiMessageBrush" Color="#FF2D2D2D"/>
+                    <SolidColorBrush x:Key="CodeBlockBackgroundBrush" Color="#FF1E1E1E"/>
                     <SolidColorBrush x:Key="MediaItemBrush" Color="#FF363636"/>
                     <SolidColorBrush x:Key="SidebarBrush" Color="#FF252525"/>
 

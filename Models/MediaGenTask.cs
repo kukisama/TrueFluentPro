@@ -6,6 +6,7 @@ namespace TrueFluentPro.Models
 {
     public enum MediaGenType
     {
+        Text,
         Image,
         Video
     }

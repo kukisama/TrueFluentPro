@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
+using System.Text;
 using System.Threading;
 using System.Windows.Input;
 using Avalonia.Threading;
@@ -211,7 +212,7 @@ namespace TrueFluentPro.ViewModels
             }
         }
 
-        private MediaGenType _selectedType = MediaGenType.Image;
+        private MediaGenType _selectedType = MediaGenType.Text;
         public MediaGenType SelectedType
         {
             get => _selectedType;
@@ -224,6 +225,7 @@ namespace TrueFluentPro.ViewModels
 
                     OnPropertyChanged(nameof(IsImageMode));
                     OnPropertyChanged(nameof(IsVideoMode));
+                    OnPropertyChanged(nameof(IsTextMode));
                     OnPropertyChanged(nameof(IsVideoReferenceLimitExceeded));
                     OnPropertyChanged(nameof(VideoReferenceLimitHint));
                     OnPropertyChanged(nameof(IsReferenceImageSizeMismatch));
@@ -237,13 +239,19 @@ namespace TrueFluentPro.ViewModels
         public bool IsImageMode
         {
             get => SelectedType == MediaGenType.Image;
-            set { if (value) SelectedType = MediaGenType.Image; }
+            set { if (value) SelectedType = MediaGenType.Image; else OnPropertyChanged(); }
         }
 
         public bool IsVideoMode
         {
             get => SelectedType == MediaGenType.Video;
-            set { if (value) SelectedType = MediaGenType.Video; }
+            set { if (value) SelectedType = MediaGenType.Video; else OnPropertyChanged(); }
+        }
+
+        public bool IsTextMode
+        {
+            get => SelectedType == MediaGenType.Text;
+            set { if (value) SelectedType = MediaGenType.Text; else OnPropertyChanged(); }
         }
 
         public MediaGenConfig GenConfig => _genConfig;
@@ -320,12 +328,43 @@ namespace TrueFluentPro.ViewModels
             }
         }
 
+        // --- 文本聊天流式状态 ---
+        private CancellationTokenSource? _chatCts;
+        private readonly Stopwatch _chatFlushThrottle = new();
+        private const int ChatFlushIntervalMs = 80;
+
+        private bool _isChatStreaming;
+        public bool IsChatStreaming
+        {
+            get => _isChatStreaming;
+            set
+            {
+                if (SetProperty(ref _isChatStreaming, value))
+                {
+                    ((RelayCommand)GenerateCommand).RaiseCanExecuteChanged();
+                    ((RelayCommand)StopChatCommand).RaiseCanExecuteChanged();
+                    ((RelayCommand)RegenerateMessageCommand).RaiseCanExecuteChanged();
+                    ((RelayCommand)DeleteMessageCommand).RaiseCanExecuteChanged();
+                }
+            }
+        }
+
+        private bool _enableReasoning;
+        public bool EnableReasoning
+        {
+            get => _enableReasoning;
+            set => SetProperty(ref _enableReasoning, value);
+        }
+
         // --- 命令 ---
         public ICommand GenerateCommand { get; }
         public ICommand CancelCommand { get; }
         public ICommand OpenFileCommand { get; }
         public ICommand DeleteMessageCommand { get; }
         public ICommand RemoveReferenceImageCommand { get; }
+        public ICommand CopyMessageCommand { get; }
+        public ICommand RegenerateMessageCommand { get; }
+        public ICommand StopChatCommand { get; }
 
         // --- 参数选项 ---
         public List<string> ImageSizeOptions { get; } = new()
@@ -417,6 +456,17 @@ namespace TrueFluentPro.ViewModels
                 p => RemoveReferenceImage(p as string),
                 _ => HasReferenceImage);
 
+            CopyMessageCommand = new RelayCommand(
+                param => CopyMessage(param as ChatMessageViewModel));
+
+            RegenerateMessageCommand = new RelayCommand(
+                param => RegenerateMessageAsync(param as ChatMessageViewModel),
+                param => param is ChatMessageViewModel m && m.IsAssistant && !m.IsLoading && !IsChatStreaming);
+
+            StopChatCommand = new RelayCommand(
+                _ => StopChatStreaming(),
+                _ => IsChatStreaming);
+
             // 根据当前 API 模式初始化视频参数选项
             RefreshVideoParameterOptions();
 
@@ -448,7 +498,13 @@ namespace TrueFluentPro.ViewModels
 
         private bool CanGenerateNow()
         {
-            if (IsGenerating || string.IsNullOrWhiteSpace(PromptText))
+            if (string.IsNullOrWhiteSpace(PromptText))
+                return false;
+
+            if (IsTextMode)
+                return !IsChatStreaming;
+
+            if (IsGenerating)
                 return false;
 
             if (IsVideoMode && ReferenceImagePaths.Count > 1)
@@ -672,22 +728,29 @@ namespace TrueFluentPro.ViewModels
 
         public void Generate()
         {
+            if (string.IsNullOrWhiteSpace(PromptText)) return;
+
+            var prompt = PromptText.Trim();
+            PromptText = "";
+
+            if (SelectedType == MediaGenType.Text)
+            {
+                SendTextChatAsync(prompt);
+                return;
+            }
+
             if (IsGenerating)
             {
                 StatusText = "当前会话已有生成中，请先新建一个会话再继续。";
                 return;
             }
 
-            if (string.IsNullOrWhiteSpace(PromptText)) return;
-
-            var prompt = PromptText.Trim();
-            PromptText = "";
-
             // 添加用户消息
             AppendMessage(new ChatMessageViewModel(new MediaChatMessage
             {
                 Role = "user",
                 Text = prompt,
+                ContentType = SelectedType == MediaGenType.Image ? "image" : "video",
                 Timestamp = DateTime.Now
             }));
 
@@ -1778,6 +1841,262 @@ namespace TrueFluentPro.ViewModels
             }
         }
 
+        // ── 文本聊天 ───────────────────────────────────────
+
+        private async void SendTextChatAsync(string prompt)
+        {
+            if (IsChatStreaming) return;
+
+            // 添加用户消息
+            AppendMessage(new ChatMessageViewModel(new MediaChatMessage
+            {
+                Role = "user",
+                Text = prompt,
+                ContentType = "text",
+                Timestamp = DateTime.Now
+            }));
+
+            // 构建运行时配置
+            if (!TryBuildChatRuntimeConfig(out var runtimeRequest, out var endpoint, out var errorText))
+            {
+                AppendMessage(new ChatMessageViewModel(new MediaChatMessage
+                {
+                    Role = "assistant",
+                    Text = errorText,
+                    ContentType = "text",
+                    Timestamp = DateTime.Now
+                }));
+                _onRequestSave?.Invoke(this);
+                return;
+            }
+
+            // AAD 令牌
+            AzureTokenProvider? tokenProvider = null;
+            if (runtimeRequest.AzureAuthMode == AzureAuthMode.AAD)
+            {
+                tokenProvider = await _azureTokenProviderStore.GetAuthenticatedProviderAsync(
+                    endpoint != null ? $"endpoint_{endpoint.Id}" : "ai",
+                    runtimeRequest.AzureTenantId,
+                    runtimeRequest.AzureClientId);
+            }
+
+            // 推理诊断
+            var reasoningRequested = _enableReasoning;
+
+            // AI 占位消息
+            var aiMessage = new ChatMessageViewModel(new MediaChatMessage
+            {
+                Role = "assistant",
+                Text = "",
+                ContentType = "text",
+                Timestamp = DateTime.Now
+            }) { IsLoading = true, IsStreamingDone = false };
+            AppendMessage(aiMessage);
+
+            _chatCts?.Cancel();
+            _chatCts = new CancellationTokenSource();
+            var ct = _chatCts.Token;
+            IsChatStreaming = true;
+
+            var runtimeService = new AiInsightService(tokenProvider);
+            var sb = new StringBuilder();
+            var reasoningSb = new StringBuilder();
+            _chatFlushThrottle.Restart();
+
+            // 构建多轮上下文
+            var contextContent = BuildMultiTurnContent(prompt);
+
+            try
+            {
+                await runtimeService.StreamChatAsync(
+                    runtimeRequest,
+                    "你是一个有帮助的AI助手。请用中文回答用户的问题。",
+                    contextContent,
+                    chunk =>
+                    {
+                        sb.Append(chunk);
+                        ThrottledFlushChat(aiMessage, sb, reasoningSb);
+                    },
+                    ct,
+                    AiChatProfile.Summary,
+                    enableReasoning: _enableReasoning,
+                    onReasoningChunk: reasoningChunk =>
+                    {
+                        reasoningSb.Append(reasoningChunk);
+                        ThrottledFlushChat(aiMessage, sb, reasoningSb);
+                    });
+
+                // 最终刷新
+                Dispatcher.UIThread.Post(() =>
+                {
+                    aiMessage.Text = sb.ToString();
+                    aiMessage.ReasoningText = reasoningSb.ToString();
+                    aiMessage.IsLoading = false;
+                    aiMessage.IsStreamingDone = true;
+                    aiMessage.ReasoningStatusText = BuildReasoningStatusText(
+                        reasoningRequested, reasoningSb.Length > 0);
+                    // 流式完成后自动收起思考区，让用户聚焦答案
+                    if (aiMessage.HasReasoning)
+                        aiMessage.IsReasoningExpanded = false;
+                });
+            }
+            catch (OperationCanceledException)
+            {
+                Dispatcher.UIThread.Post(() =>
+                {
+                    aiMessage.Text = sb.ToString();
+                    aiMessage.ReasoningText = reasoningSb.ToString();
+                    aiMessage.IsLoading = false;
+                    aiMessage.IsStreamingDone = true;
+                });
+            }
+            catch (Exception ex)
+            {
+                Dispatcher.UIThread.Post(() =>
+                {
+                    aiMessage.Text = sb.Length > 0
+                        ? sb + $"\n\n---\n**错误**: {ex.Message}"
+                        : $"**错误**: {ex.Message}";
+                    aiMessage.ReasoningText = reasoningSb.ToString();
+                    aiMessage.IsLoading = false;
+                    aiMessage.IsStreamingDone = true;
+                });
+            }
+            finally
+            {
+                IsChatStreaming = false;
+                _chatFlushThrottle.Stop();
+                _onRequestSave?.Invoke(this);
+            }
+        }
+
+        private void ThrottledFlushChat(ChatMessageViewModel aiMessage, StringBuilder sb, StringBuilder reasoningSb)
+        {
+            if (_chatFlushThrottle.ElapsedMilliseconds < ChatFlushIntervalMs)
+                return;
+            _chatFlushThrottle.Restart();
+            var text = sb.ToString();
+            var reasoning = reasoningSb.ToString();
+            var hasNewReasoning = reasoning.Length > 0;
+            Dispatcher.UIThread.Post(() =>
+            {
+                aiMessage.Text = text;
+                aiMessage.ReasoningText = reasoning;
+                // 首次收到推理内容时自动展开
+                if (hasNewReasoning && !aiMessage.IsReasoningExpanded)
+                    aiMessage.IsReasoningExpanded = true;
+            });
+        }
+
+        private static string BuildReasoningStatusText(bool requested, bool hasContent)
+        {
+            if (!requested)
+                return "💡 思考：关闭（点击底部 ❓ 开启）";
+            if (hasContent)
+                return "✅ 思考：已收到推理内容";
+            return "⚠️ 思考：已请求但服务端未返回推理内容（模型可能不支持 reasoning）";
+        }
+
+        private string BuildMultiTurnContent(string currentPrompt)
+        {
+            var textMessages = _allMessages
+                .Where(m => m.IsTextContent && !string.IsNullOrWhiteSpace(m.Text))
+                .TakeLast(20)
+                .ToList();
+
+            // 排除刚刚加入的用户消息（已在 textMessages 里）和占位 AI 消息
+            if (textMessages.Count <= 1)
+                return currentPrompt;
+
+            var sb = new StringBuilder();
+            // 不包含最后一条（那是刚发的 user prompt）
+            foreach (var msg in textMessages.Take(textMessages.Count - 1))
+            {
+                var label = msg.IsUser ? "用户" : "AI";
+                sb.AppendLine($"[{label}]: {msg.Text}");
+                sb.AppendLine();
+            }
+            sb.AppendLine($"[用户]: {currentPrompt}");
+            return sb.ToString();
+        }
+
+        private bool TryBuildChatRuntimeConfig(
+            out AiChatRequestConfig runtimeRequest,
+            out AiEndpoint? endpoint,
+            out string errorMessage)
+        {
+            runtimeRequest = new AiChatRequestConfig();
+            endpoint = null;
+            errorMessage = "";
+
+            var reference = _aiConfig.ReviewModelRef
+                         ?? _aiConfig.SummaryModelRef
+                         ?? _aiConfig.QuickModelRef
+                         ?? _aiConfig.InsightModelRef;
+
+            if (_modelRuntimeResolver.TryResolve(BuildRuntimeConfig(), reference, ModelCapability.Text, out var runtime, out var resolveError)
+                && runtime != null)
+            {
+                endpoint = runtime.Endpoint;
+                runtimeRequest = runtime.CreateChatRequest(_aiConfig.SummaryEnableReasoning);
+                return true;
+            }
+
+            errorMessage = string.IsNullOrWhiteSpace(resolveError)
+                ? "未配置文本模型，请在设置中选择复盘/洞察模型。"
+                : resolveError;
+            return false;
+        }
+
+        private void CopyMessage(ChatMessageViewModel? message)
+        {
+            if (message == null || string.IsNullOrEmpty(message.Text)) return;
+            Dispatcher.UIThread.Post(async () =>
+            {
+                try
+                {
+                    var clipboard = Avalonia.Application.Current?.ApplicationLifetime is
+                        Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop
+                        ? desktop.MainWindow?.Clipboard
+                        : null;
+                    if (clipboard != null)
+                        await clipboard.SetTextAsync(message.Text);
+                }
+                catch { /* ignore */ }
+            });
+        }
+
+        private void RegenerateMessageAsync(ChatMessageViewModel? message)
+        {
+            if (message == null || !message.IsAssistant || IsChatStreaming) return;
+
+            // 找到该 AI 消息前面最近的用户消息
+            var idx = _allMessages.IndexOf(message);
+            if (idx < 0) return;
+
+            string? userPrompt = null;
+            for (int i = idx - 1; i >= 0; i--)
+            {
+                if (_allMessages[i].IsUser && _allMessages[i].IsTextContent)
+                {
+                    userPrompt = _allMessages[i].Text;
+                    break;
+                }
+            }
+            if (string.IsNullOrWhiteSpace(userPrompt)) return;
+
+            // 移除该 AI 消息
+            RemoveMessageInternal(message);
+
+            // 重新发送
+            SendTextChatAsync(userPrompt);
+        }
+
+        private void StopChatStreaming()
+        {
+            _chatCts?.Cancel();
+        }
+
         private bool TryResolveImageRuntime(out ModelRuntimeResolution? runtime, out string errorMessage)
         {
             return _modelRuntimeResolver.TryResolve(BuildRuntimeConfig(), _genConfig.ImageModelRef, ModelCapability.Image, out runtime, out errorMessage);
@@ -1892,14 +2211,59 @@ namespace TrueFluentPro.ViewModels
             set => SetProperty(ref _isLoading, value);
         }
 
+        /// <summary>推理/思考过程文本</summary>
+        private string _reasoningText = "";
+        public string ReasoningText
+        {
+            get => _reasoningText;
+            set
+            {
+                if (SetProperty(ref _reasoningText, value))
+                    OnPropertyChanged(nameof(HasReasoning));
+            }
+        }
+
+        private bool _isReasoningExpanded;
+        public bool IsReasoningExpanded
+        {
+            get => _isReasoningExpanded;
+            set => SetProperty(ref _isReasoningExpanded, value);
+        }
+
+        /// <summary>消息内容类型：text / image / video</summary>
+        public string ContentType { get; }
+
         /// <summary>服务端生成耗时（秒）</summary>
         public double? GenerateSeconds { get; set; }
         /// <summary>下载传输耗时（秒）</summary>
         public double? DownloadSeconds { get; set; }
 
+        private bool _isStreamingDone = true;
+        /// <summary>流式输出完成标记：完成后切换到 Markdown 渲染</summary>
+        public bool IsStreamingDone
+        {
+            get => _isStreamingDone;
+            set => SetProperty(ref _isStreamingDone, value);
+        }
+
         public bool IsUser => Role == "user";
         public bool IsAssistant => Role != "user";
         public bool HasMedia => MediaPaths.Count > 0;
+        public bool HasReasoning => !string.IsNullOrEmpty(_reasoningText);
+        public bool IsTextContent => ContentType == "text";
+
+        private string _reasoningStatusText = "";
+        /// <summary>推理诊断状态文本，仅完成后显示</summary>
+        public string ReasoningStatusText
+        {
+            get => _reasoningStatusText;
+            set
+            {
+                if (SetProperty(ref _reasoningStatusText, value))
+                    OnPropertyChanged(nameof(HasReasoningStatus));
+            }
+        }
+        public bool HasReasoningStatus => !string.IsNullOrEmpty(_reasoningStatusText);
 
         public string TimestampText => Timestamp.ToString("yyyy-MM-dd HH:mm:ss");
 
@@ -1907,6 +2271,8 @@ namespace TrueFluentPro.ViewModels
         {
             Role = message.Role;
             _text = message.Text;
+            _reasoningText = message.ReasoningText ?? "";
+            ContentType = InferContentType(message);
             MediaPaths = new ObservableCollection<string>(message.MediaPaths);
             Timestamp = message.Timestamp;
             GenerateSeconds = message.GenerateSeconds;
@@ -1916,6 +2282,13 @@ namespace TrueFluentPro.ViewModels
             {
                 OnPropertyChanged(nameof(HasMedia));
             };
+        }
+
+        private static string InferContentType(MediaChatMessage msg)
+        {
+            if (!string.IsNullOrEmpty(msg.ContentType))
+                return msg.ContentType;
+            return msg.MediaPaths.Count > 0 ? "image" : "text";
         }
     }
 }

@@ -637,6 +637,8 @@ namespace TrueFluentPro.ViewModels
                         {
                             Role = msg.Role,
                             Text = msg.Text,
+                            ContentType = msg.ContentType,
+                            ReasoningText = msg.ReasoningText,
                             Timestamp = msg.Timestamp,
                             GenerateSeconds = msg.GenerateSeconds,
                             DownloadSeconds = msg.DownloadSeconds,
@@ -698,6 +700,8 @@ namespace TrueFluentPro.ViewModels
                         {
                             Role = m.Role,
                             Text = m.Text,
+                            ContentType = m.ContentType,
+                            ReasoningText = m.ReasoningText,
                             MediaPaths = m.MediaPaths
                                 .Select(p => ConvertPathForSave(p, session.SessionDirectory))
                                 .Where(p => !string.IsNullOrWhiteSpace(p))

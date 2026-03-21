@@ -55,7 +55,7 @@ public sealed class EndpointBatchTestService : IEndpointBatchTestService
         var stopwatch = Stopwatch.StartNew();
         var immediateItems = new List<EndpointBatchTestItem>();
         var progressItems = new List<EndpointBatchTestProgressItem>();
-        var pendingTasks = new List<Task<EndpointBatchTestItem>>();
+        var pendingTasks = new List<Task<EndpointBatchTestItem[]>>();
         using var gate = new SemaphoreSlim(MaxConcurrency);
         var order = 0;
 
@@ -131,21 +131,15 @@ public sealed class EndpointBatchTestService : IEndpointBatchTestService
                         continue;
                     }
 
-                    foreach (var plan in plans)
+                    var planInfos = plans.Select(plan =>
                     {
-                        var currentOrder = order++;
-                        var pendingItem = CreatePendingProgressItem(currentOrder, endpoint, model, plan);
-                        progressItems.Add(pendingItem);
-                        pendingTasks.Add(RunWithGateAsync(gate, async () =>
-                        {
-                            ReplaceProgressItem(progressItems, CreateRunningProgressItem(pendingItem));
-                            ReportProgress(progress, startedAt, endpoint, progressItems, false);
-                            var result = await TestCapabilityAsync(currentOrder, endpoint, model, plan, config, cancellationToken);
-                            ReplaceProgressItem(progressItems, ToProgressItem(result));
-                            ReportProgress(progress, startedAt, endpoint, progressItems, false);
-                            return result;
-                        }, cancellationToken));
-                    }
+                        var o = order++;
+                        var pi = CreatePendingProgressItem(o, endpoint, model, plan);
+                        progressItems.Add(pi);
+                        return (Plan: plan, Order: o, Pending: pi);
+                    }).ToList();
+
+                    pendingTasks.Add(RunPrimaryThenFallbackAsync(gate, endpoint, model, planInfos, config, progressItems, progress, startedAt, cancellationToken));
                 }
             }
 
@@ -155,7 +149,8 @@ public sealed class EndpointBatchTestService : IEndpointBatchTestService
             }
         }
 
-        var completedItems = pendingTasks.Count == 0 ? Array.Empty<EndpointBatchTestItem>() : await Task.WhenAll(pendingTasks);
+        var completedGroups = pendingTasks.Count == 0 ? Array.Empty<EndpointBatchTestItem[]>() : await Task.WhenAll(pendingTasks);
+        var completedItems = completedGroups.SelectMany(g => g);
         stopwatch.Stop();
 
         var report = new EndpointBatchTestReport
@@ -243,6 +238,65 @@ public sealed class EndpointBatchTestService : IEndpointBatchTestService
         finally { gate.Release(); }
     }
 
+    private async Task<EndpointBatchTestItem[]> RunPrimaryThenFallbackAsync(
+        SemaphoreSlim gate,
+        AiEndpoint endpoint,
+        AiModelEntry model,
+        List<(CapabilityTestPlan Plan, int Order, EndpointBatchTestProgressItem Pending)> planInfos,
+        AzureSpeechConfig config,
+        List<EndpointBatchTestProgressItem> progressItems,
+        IProgress<EndpointBatchTestProgressSnapshot>? progress,
+        DateTimeOffset startedAt,
+        CancellationToken cancellationToken)
+    {
+        var primary = planInfos[0];
+
+        var primaryResult = await RunWithGateAsync(gate, async () =>
+        {
+            ReplaceProgressItem(progressItems, CreateRunningProgressItem(primary.Pending));
+            ReportProgress(progress, startedAt, endpoint, progressItems, false);
+            var result = await TestCapabilityAsync(primary.Order, endpoint, model, primary.Plan, config, cancellationToken);
+            ReplaceProgressItem(progressItems, ToProgressItem(result));
+            ReportProgress(progress, startedAt, endpoint, progressItems, false);
+            return result;
+        }, cancellationToken);
+
+        var results = new List<EndpointBatchTestItem> { primaryResult };
+
+        if (planInfos.Count == 1)
+            return results.ToArray();
+
+        if (primaryResult.Status == EndpointBatchTestStatus.Success)
+        {
+            foreach (var fb in planInfos.Skip(1))
+            {
+                var skipped = CreateSkippedItem(fb.Order, endpoint.Id, GetEndpointName(endpoint), endpoint.EndpointTypeDisplayName,
+                    fb.Plan.CapabilityDisplayName, model.ModelId,
+                    "主地址测试通过，回退地址已跳过。",
+                    $"因主地址（{primary.Plan.Url}）测试成功，本回退分支未执行实际测试。");
+                results.Add(skipped);
+                ReplaceProgressItem(progressItems, ToProgressItem(skipped));
+            }
+            ReportProgress(progress, startedAt, endpoint, progressItems, false);
+        }
+        else
+        {
+            var fallbackTasks = planInfos.Skip(1).Select(fb => RunWithGateAsync(gate, async () =>
+            {
+                ReplaceProgressItem(progressItems, CreateRunningProgressItem(fb.Pending));
+                ReportProgress(progress, startedAt, endpoint, progressItems, false);
+                var result = await TestCapabilityAsync(fb.Order, endpoint, model, fb.Plan, config, cancellationToken);
+                ReplaceProgressItem(progressItems, ToProgressItem(result));
+                ReportProgress(progress, startedAt, endpoint, progressItems, false);
+                return result;
+            }, cancellationToken)).ToArray();
+
+            results.AddRange(await Task.WhenAll(fallbackTasks));
+        }
+
+        return results.ToArray();
+    }
+
     private async Task<EndpointBatchTestItem> TestCapabilityAsync(int order, AiEndpoint endpoint, AiModelEntry model, CapabilityTestPlan plan, AzureSpeechConfig config, CancellationToken cancellationToken)
     {
         var stopwatch = Stopwatch.StartNew();
@@ -292,17 +346,19 @@ public sealed class EndpointBatchTestService : IEndpointBatchTestService
         var service = new AiInsightService(tokenProvider);
         var request = runtime.CreateChatRequest(summaryEnableReasoning: false);
         var responseBuilder = new StringBuilder();
+        var reasoningBuilder = new StringBuilder();
         AiRequestTrace? requestTrace = null;
 
         await service.StreamChatAsync(
             request,
             "你是连通性测试助手，请用简短中文直接回复。",
-            "你好",
+            "计算 2+3 的结果",
             chunk => { if (responseBuilder.Length < 160) responseBuilder.Append(chunk); },
             timeoutCts.Token,
             AiChatProfile.Quick,
-            enableReasoning: false,
+            enableReasoning: true,
             onTrace: trace => requestTrace = trace,
+            onReasoningChunk: chunk => { if (reasoningBuilder.Length < 200) reasoningBuilder.Append(chunk); },
             urlCandidatesOverride: new[] { plan.Url },
             allowNextUrlRetry: false,
             allowApimSubscriptionKeyQueryRetry: false);
@@ -310,13 +366,17 @@ public sealed class EndpointBatchTestService : IEndpointBatchTestService
         stopwatch.Stop();
         var requestUrlText = BuildTextRequestUrlText(plan.Url, requestTrace);
         var responseText = responseBuilder.ToString().Trim();
+        var reasoningText = reasoningBuilder.ToString().Trim();
+        var reasoningStatus = reasoningText.Length > 0
+            ? "✅ 推理可用"
+            : "⚠️ 推理未返回（模型可能不支持 reasoning）";
 
         if (string.IsNullOrWhiteSpace(responseText))
         {
-            return CreateFailedItem(order, runtime.EndpointId, endpointName, endpointTypeName, plan.CapabilityDisplayName, runtime.ModelId, requestUrlText, plan.RequestSummary, stopwatch.Elapsed, "文字测试返回为空。", "请求已成功发出，但没有收到有效文本响应；请检查模型是否支持当前资料包声明的文本接口。\n\n原始返回片段为空。");
+            return CreateFailedItem(order, runtime.EndpointId, endpointName, endpointTypeName, plan.CapabilityDisplayName, runtime.ModelId, requestUrlText, plan.RequestSummary, stopwatch.Elapsed, "文字测试返回为空。", $"请求已成功发出，但没有收到有效文本响应；请检查模型是否支持当前资料包声明的文本接口。\n\n原始返回片段为空。\n\n{reasoningStatus}");
         }
 
-        return CreateSuccessItem(order, runtime.EndpointId, endpointName, endpointTypeName, plan.CapabilityDisplayName, runtime.ModelId, requestUrlText, plan.RequestSummary, stopwatch.Elapsed, "文字测试通过。", $"返回片段：{responseText}");
+        return CreateSuccessItem(order, runtime.EndpointId, endpointName, endpointTypeName, plan.CapabilityDisplayName, runtime.ModelId, requestUrlText, plan.RequestSummary, stopwatch.Elapsed, $"文字测试通过。{reasoningStatus}", $"返回片段：{responseText}{(reasoningText.Length > 0 ? $"\n\n推理片段：{reasoningText}" : "")}");
     }
 
     private async Task<EndpointBatchTestItem> TestImageAsync(int order, ModelRuntimeResolution runtime, CapabilityTestPlan plan, string endpointName, string endpointTypeName, MediaGenConfig sourceConfig, Stopwatch stopwatch, CancellationToken cancellationToken)
