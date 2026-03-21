@@ -36,7 +36,7 @@
     },
     "_artifactsLocation": {
       "type": "string",
-      "defaultValue": "https://raw.githubusercontent.com/<OWNER>/<REPO>/main/aiazManagement/ARM/",
+      "defaultValue": "https://raw.githubusercontent.com/kukisama/TrueFluentPro/main/aiazManagement/ARM/",
       "metadata": { "description": "deploy.py 所在目录的 base URL（GitHub raw 或 Blob）" }
     },
     "location": {

@@ -5,9 +5,9 @@
 
 ## 一键部署
 
-[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2F%3Ckukisama%3E%2F%3CTrueFluentPro%3E%2Fmain%2FaiazManagement%2FARM%2Fazuredeploy.json)
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fkukisama%2FTrueFluentPro%2Fmain%2FaiazManagement%2FARM%2Fazuredeploy.json)
 
-> **使用前**：将上方链接中的 `<OWNER>/<REPO>` 替换为实际的 GitHub 仓库路径，push 后按钮即可用。
+> 点击按钮后在 Azure Portal 填写参数即可部署。
 
 ## 工作流程
 
