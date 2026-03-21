@@ -333,6 +333,9 @@ namespace TrueFluentPro.ViewModels
         private readonly Stopwatch _chatFlushThrottle = new();
         private const int ChatFlushIntervalMs = 80;
 
+        /// <summary>字符级平滑流式动画器 — 参考 Cherry Studio 的 useSmoothStream</summary>
+        private Controls.Markdown.SmoothStreamingAnimator? _streamAnimator;
+
         private bool _isChatStreaming;
         public bool IsChatStreaming
         {
@@ -1903,6 +1906,13 @@ namespace TrueFluentPro.ViewModels
             var reasoningSb = new StringBuilder();
             _chatFlushThrottle.Restart();
 
+            // 字符级平滑流式动画器：AI token 进入队列，按帧节奏追加到 UI
+            _streamAnimator?.Dispose();
+            _streamAnimator = new Controls.Markdown.SmoothStreamingAnimator(displayedText =>
+            {
+                aiMessage.Text = displayedText;
+            });
+
             // 构建多轮上下文
             var contextContent = BuildMultiTurnContent(prompt);
 
@@ -1915,7 +1925,10 @@ namespace TrueFluentPro.ViewModels
                     chunk =>
                     {
                         sb.Append(chunk);
-                        ThrottledFlushChat(aiMessage, sb, reasoningSb);
+                        // 主文本通过动画器实现字符级平滑追加
+                        _streamAnimator?.AppendToken(chunk);
+                        // Reasoning 仍用节流刷新
+                        ThrottledFlushReasoning(aiMessage, reasoningSb);
                     },
                     ct,
                     AiChatProfile.Summary,
@@ -1923,10 +1936,11 @@ namespace TrueFluentPro.ViewModels
                     onReasoningChunk: reasoningChunk =>
                     {
                         reasoningSb.Append(reasoningChunk);
-                        ThrottledFlushChat(aiMessage, sb, reasoningSb);
+                        ThrottledFlushReasoning(aiMessage, reasoningSb);
                     });
 
-                // 最终刷新
+                // 最终刷新：停止动画器，直接设置完整文本
+                _streamAnimator?.EndStream();
                 Dispatcher.UIThread.Post(() =>
                 {
                     aiMessage.Text = sb.ToString();
@@ -1942,6 +1956,7 @@ namespace TrueFluentPro.ViewModels
             }
             catch (OperationCanceledException)
             {
+                _streamAnimator?.EndStream();
                 Dispatcher.UIThread.Post(() =>
                 {
                     aiMessage.Text = sb.ToString();
@@ -1952,6 +1967,7 @@ namespace TrueFluentPro.ViewModels
             }
             catch (Exception ex)
             {
+                _streamAnimator?.EndStream();
                 Dispatcher.UIThread.Post(() =>
                 {
                     aiMessage.Text = sb.Length > 0
@@ -1966,21 +1982,22 @@ namespace TrueFluentPro.ViewModels
             {
                 IsChatStreaming = false;
                 _chatFlushThrottle.Stop();
+                _streamAnimator?.Dispose();
+                _streamAnimator = null;
                 _onRequestSave?.Invoke(this);
             }
         }
 
-        private void ThrottledFlushChat(ChatMessageViewModel aiMessage, StringBuilder sb, StringBuilder reasoningSb)
+        /// <summary>Reasoning 文本的节流刷新（主文本由 SmoothStreamingAnimator 处理）</summary>
+        private void ThrottledFlushReasoning(ChatMessageViewModel aiMessage, StringBuilder reasoningSb)
         {
             if (_chatFlushThrottle.ElapsedMilliseconds < ChatFlushIntervalMs)
                 return;
             _chatFlushThrottle.Restart();
-            var text = sb.ToString();
             var reasoning = reasoningSb.ToString();
             var hasNewReasoning = reasoning.Length > 0;
             Dispatcher.UIThread.Post(() =>
             {
-                aiMessage.Text = text;
                 aiMessage.ReasoningText = reasoning;
                 // 首次收到推理内容时自动展开
                 if (hasNewReasoning && !aiMessage.IsReasoningExpanded)

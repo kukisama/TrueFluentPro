@@ -777,8 +777,20 @@ namespace TrueFluentPro.Views
             _capturedSelStart = 0;
             _capturedSelEnd = 0;
 
-            // 从命中点向上查找 SelectableTextBlock，在它处理 PointerPressed 之前保存选区
+            // 优先检查 MarkdownRenderer 的跨块选择
             var hit = this.InputHitTest(e.GetPosition(this)) as Visual;
+            for (var v = hit; v != null; v = v.GetVisualParent() as Visual)
+            {
+                if (v is TrueFluentPro.Controls.Markdown.MarkdownRenderer renderer && renderer.HasCrossBlockSelection)
+                {
+                    _capturedSelection = renderer.GetSelectedText();
+                    // 阻止传播，保护跨块选区
+                    e.Handled = true;
+                    return;
+                }
+            }
+
+            // 回退：从命中点向上查找 SelectableTextBlock，在它处理 PointerPressed 之前保存选区
             for (var v = hit; v != null; v = v.GetVisualParent() as Visual)
             {
                 if (v is SelectableTextBlock stb)
