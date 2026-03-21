@@ -90,9 +90,10 @@
           },
           {
             "name": "selectedUrlPreview",
-            "type": "Microsoft.Common.TextBlock",
+            "type": "Microsoft.Common.InfoBox",
             "options": {
-              "text": "[concat('将使用后端 URL：**', coalesce(steps('apimConfig').foundryDropdown, '（请先选择资源）'), '**')]"
+              "text": "[concat('将使用后端 URL：', coalesce(steps('apimConfig').foundryDropdown, '（请先选择资源）'))]",
+              "style": "Info"
             },
             "visible": "[equals(steps('apimConfig').backendMode, 'select')]"
           },
