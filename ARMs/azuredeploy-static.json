@@ -26,8 +26,8 @@
     },
     "backendUrl": {
       "type": "string",
-      "defaultValue": "https://contoso-ai-eastus2.services.ai.azure.com/openai",
-      "metadata": { "description": "AI 后端服务 URL" }
+      "defaultValue": "",
+      "metadata": { "description": "AI 后端服务 URL（Foundry: https://xxx.services.ai.azure.com/openai 或旧版: https://xxx.cognitiveservices.azure.com/openai）" }
     },
     "_artifactsLocation": {
       "type": "string",

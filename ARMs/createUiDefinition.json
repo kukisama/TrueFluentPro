@@ -73,7 +73,7 @@
             "name": "aiServicesSelector",
             "type": "Microsoft.Solutions.ResourceSelector",
             "label": "选择 AI Services 资源",
-            "toolTip": "选择 Azure AI Services / Foundry 资源，自动获取 endpoint URL",
+            "toolTip": "请选择类型为 AIServices 的资源（终结点格式: xxx.services.ai.azure.com）。旧版 CognitiveServices 或 OpenAI 类型的资源终结点格式不同，可能不兼容",
             "resourceType": "Microsoft.CognitiveServices/accounts",
             "options": {
               "filter": {
@@ -92,12 +92,21 @@
             }
           },
           {
+            "name": "endpointPreview",
+            "type": "Microsoft.Common.InfoBox",
+            "options": {
+              "text": "[concat('资源类型: ', steps('apimConfig').aiServicesDetails.kind, '\n终结点: ', steps('apimConfig').aiServicesDetails.properties.endpoint, 'openai', if(equals(steps('apimConfig').aiServicesDetails.kind, 'AIServices'), '', '\n⚠️ 当前资源不是 AIServices 类型，终结点格式可能不兼容'))]",
+              "style": "[if(equals(steps('apimConfig').aiServicesDetails.kind, 'AIServices'), 'Info', 'Warning')]"
+            },
+            "visible": "[equals(steps('apimConfig').backendMode, 'select')]"
+          },
+          {
             "name": "backendUrlManual",
             "type": "Microsoft.Common.TextBox",
             "label": "AI 后端服务 URL",
             "defaultValue": "",
-            "placeholder": "https://xxx.services.ai.azure.com/openai",
-            "toolTip": "手动输入 Azure AI Services / OpenAI 后端地址",
+            "placeholder": "https://xxx.services.ai.azure.com/openai 或 https://xxx.cognitiveservices.azure.com/openai",
+            "toolTip": "Foundry 终结点格式: xxx.services.ai.azure.com/openai；旧版 Cognitive Services 格式: xxx.cognitiveservices.azure.com/openai",
             "constraints": {
               "required": true,
               "regex": "^https://.+",
