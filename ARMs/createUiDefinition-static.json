@@ -90,12 +90,11 @@
           },
           {
             "name": "selectedUrlPreview",
-            "type": "Microsoft.Common.InfoBox",
+            "type": "Microsoft.Common.TextBlock",
             "options": {
-              "text": "[concat('后端 URL: ', steps('apimConfig').foundryDropdown)]",
-              "style": "Info"
+              "text": "[concat('将使用后端 URL：**', coalesce(steps('apimConfig').foundryDropdown, '（请先选择资源）'), '**')]"
             },
-            "visible": "[and(equals(steps('apimConfig').backendMode, 'select'), not(empty(steps('apimConfig').foundryDropdown)))]"
+            "visible": "[equals(steps('apimConfig').backendMode, 'select')]"
           },
           {
             "name": "backendUrlManual",
