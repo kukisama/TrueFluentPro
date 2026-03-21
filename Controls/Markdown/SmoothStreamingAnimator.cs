@@ -42,6 +42,9 @@ public sealed class SmoothStreamingAnimator : IDisposable
     /// <summary>加速后每帧追加的最大字符数</summary>
     private const int MaxChunkSize = 30;
 
+    /// <summary>流结束时加速倍率</summary>
+    private const int EndStreamAccelerationFactor = 2;
+
     /// <summary>
     /// 创建平滑流式动画器。
     /// </summary>
@@ -152,7 +155,7 @@ public sealed class SmoothStreamingAnimator : IDisposable
             if (_streamEnded)
             {
                 // 流已结束，加速刷完剩余内容
-                chunkSize = Math.Min(pendingLen, MaxChunkSize * 2);
+                chunkSize = Math.Min(pendingLen, MaxChunkSize * EndStreamAccelerationFactor);
             }
             else if (pendingLen > AccelerateThreshold)
             {

@@ -30,6 +30,9 @@ public sealed class SelectionManager
     /// <summary>当前选区内所有参与选择的 STB（按视觉位置排序）</summary>
     private readonly List<SelectableTextBlock> _selectedBlocks = new();
 
+    /// <summary>拖拽跨越此纵向像素数后才进入跨块选择模式</summary>
+    private const double CrossBlockDragThreshold = 10;
+
     public SelectionManager(Panel container)
     {
         _container = container;
@@ -110,7 +113,7 @@ public sealed class SelectionManager
 
         // 如果拖拽距离很小，还在单个 STB 内操作，不干预
         var delta = currentPoint - _dragStartPoint;
-        if (Math.Abs(delta.Y) < 10)
+        if (Math.Abs(delta.Y) < CrossBlockDragThreshold)
             return;
 
         // 进入跨块选择模式：拦截事件防止单个 STB 的默认选择
@@ -309,9 +312,15 @@ public sealed class SelectionManager
             return Math.Clamp(hitResult.TextPosition, 0, text.Length);
         }
 
-        // 降级：按比例估算
-        double ratio = Math.Clamp(localPoint.Y / Math.Max(stb.Bounds.Height, 1), 0, 1);
-        return (int)(ratio * text.Length);
+        // 降级：组合 X+Y 坐标按比例估算
+        double yRatio = Math.Clamp(localPoint.Y / Math.Max(stb.Bounds.Height, 1), 0, 1);
+        double xRatio = Math.Clamp(localPoint.X / Math.Max(stb.Bounds.Width, 1), 0, 1);
+        // 对单行文本主要用 X 比例；多行文本综合 Y 和 X
+        double lineCount = Math.Max(stb.Bounds.Height / 24.0, 1); // 近似行高 24px
+        double combinedRatio = lineCount > 1.5
+            ? yRatio * (1.0 - 1.0 / lineCount) + xRatio / lineCount
+            : xRatio;
+        return (int)(Math.Clamp(combinedRatio, 0, 1) * text.Length);
     }
 
     private readonly record struct StbInfo(SelectableTextBlock Stb, double Top);
