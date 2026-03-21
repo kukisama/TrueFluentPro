@@ -70,33 +70,21 @@
             }
           },
           {
-            "name": "aiServicesSelector",
-            "type": "Microsoft.Solutions.ResourceSelector",
-            "label": "选择 AI Services 资源",
-            "toolTip": "请选择类型为 AIServices 的资源（终结点格式: xxx.services.ai.azure.com）。旧版 CognitiveServices 或 OpenAI 类型的资源终结点格式不同，可能不兼容",
-            "resourceType": "Microsoft.CognitiveServices/accounts",
-            "options": {
-              "filter": {
-                "subscription": "onBasics",
-                "location": "all"
-              }
-            },
-            "visible": "[equals(steps('apimConfig').backendMode, 'select')]"
-          },
-          {
-            "name": "aiServicesDetails",
+            "name": "listCogAccounts",
             "type": "Microsoft.Solutions.ArmApiControl",
             "request": {
               "method": "GET",
-              "path": "[concat(steps('apimConfig').aiServicesSelector.id, '?api-version=2024-10-01')]"
+              "path": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.CognitiveServices/accounts?api-version=2024-10-01')]"
             }
           },
           {
-            "name": "endpointPreview",
-            "type": "Microsoft.Common.InfoBox",
-            "options": {
-              "text": "[concat('资源类型: ', steps('apimConfig').aiServicesDetails.kind, '\n终结点: ', steps('apimConfig').aiServicesDetails.properties.endpoint, 'openai', if(equals(steps('apimConfig').aiServicesDetails.kind, 'AIServices'), '', '\n⚠️ 当前资源不是 AIServices 类型，终结点格式可能不兼容'))]",
-              "style": "[if(equals(steps('apimConfig').aiServicesDetails.kind, 'AIServices'), 'Info', 'Warning')]"
+            "name": "foundryDropdown",
+            "type": "Microsoft.Common.DropDown",
+            "label": "选择 Foundry 资源",
+            "toolTip": "仅显示 AIServices (Foundry) 类型的资源",
+            "constraints": {
+              "allowedValues": "[map(filter(steps('apimConfig').listCogAccounts.value, (item) => equals(item.kind, 'AIServices')), (item) => parse(concat('{\"label\":\"', item.name, ' (', item.location, ')\",\"description\":\"', item.properties.endpoint, '\",\"value\":\"', item.properties.endpoint, 'openai\"}')))]",
+              "required": true
             },
             "visible": "[equals(steps('apimConfig').backendMode, 'select')]"
           },
@@ -154,7 +142,7 @@
       "serviceName": "[last(split(steps('apimConfig').apimSelector.id, '/'))]",
       "displayName": "[steps('apimConfig').displayName]",
       "apiPath": "[steps('apimConfig').apiPath]",
-      "backendUrl": "[if(equals(steps('apimConfig').backendMode, 'select'), concat(steps('apimConfig').aiServicesDetails.properties.endpoint, 'openai'), steps('apimConfig').backendUrlManual)]",
+      "backendUrl": "[if(equals(steps('apimConfig').backendMode, 'select'), steps('apimConfig').foundryDropdown, steps('apimConfig').backendUrlManual)]",
       "specSourceUrl": "[steps('advanced').specSourceUrl]"
     }
   }
