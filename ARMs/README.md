@@ -5,7 +5,7 @@
 
 ## 一键部署
 
-[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fkukisama%2FTrueFluentPro%2Fmain%2FaiazManagement%2FARM%2Fazuredeploy.json)
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fkukisama%2FTrueFluentPro%2Fmain%2FARMs%2Fazuredeploy.json)
 
 > 点击按钮后在 Azure Portal 填写参数即可部署。
 
