@@ -2355,9 +2355,9 @@ namespace TrueFluentPro.ViewModels
                     await System.IO.File.WriteAllTextAsync(filePath, content, System.Text.Encoding.UTF8);
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                // 静默处理导出失败
+                System.Diagnostics.Debug.WriteLine($"[ExportConversation] 导出失败: {ex.Message}");
             }
         }
 
@@ -2540,7 +2540,7 @@ namespace TrueFluentPro.ViewModels
         public string TimestampText => Timestamp.ToString("yyyy-MM-dd HH:mm:ss");
 
         // ── IDialogMessage 显式实现 ─────────────────────
-        IReadOnlyList<string> Controls.Markdown.IDialogMessage.MediaPaths => MediaPaths.ToList();
+        IReadOnlyList<string> Controls.Markdown.IDialogMessage.MediaPaths => new List<string>(MediaPaths);
 
         public ChatMessageViewModel(MediaChatMessage message)
         {

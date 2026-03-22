@@ -129,13 +129,16 @@ public static class DialogExporter
             sb.AppendLine($"      \"role\": \"{EscapeJson(msg.Role)}\",");
             sb.AppendLine($"      \"text\": \"{EscapeJson(msg.Text)}\",");
             sb.AppendLine($"      \"timestamp\": \"{msg.Timestamp:O}\",");
-            sb.AppendLine($"      \"contentType\": \"{EscapeJson(msg.ContentType)}\"");
+
+            var hasTokenFields = msg.PromptTokens.HasValue || msg.CompletionTokens.HasValue;
+            sb.Append($"      \"contentType\": \"{EscapeJson(msg.ContentType)}\"");
 
             if (msg.PromptTokens.HasValue)
-                sb.AppendLine($"      ,\"promptTokens\": {msg.PromptTokens.Value}");
+                sb.Append($",\n      \"promptTokens\": {msg.PromptTokens.Value}");
             if (msg.CompletionTokens.HasValue)
-                sb.AppendLine($"      ,\"completionTokens\": {msg.CompletionTokens.Value}");
+                sb.Append($",\n      \"completionTokens\": {msg.CompletionTokens.Value}");
 
+            sb.AppendLine();
             sb.Append("    }");
         }
 
