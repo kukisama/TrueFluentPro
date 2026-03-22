@@ -196,6 +196,14 @@ namespace TrueFluentPro.Views
 
         private async void PromptTextBox_KeyDown(object? sender, KeyEventArgs e)
         {
+            // Ctrl+F：打开/关闭对话搜索
+            if (e.Key == Key.F && e.KeyModifiers.HasFlag(KeyModifiers.Control))
+            {
+                _viewModel?.CurrentSession?.ToggleSearch();
+                e.Handled = true;
+                return;
+            }
+
             if (e.Key == Key.V && e.KeyModifiers.HasFlag(KeyModifiers.Control))
             {
                 if (await TryAttachReferenceImageFromClipboardAsync())
@@ -925,5 +933,89 @@ namespace TrueFluentPro.Views
             flyout.ShowAt(border, true);
             e.Handled = true;
         }
+
+        // ── 搜索相关事件 ─────────────────────────────────
+
+        private void ToggleSearch_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        {
+            _viewModel?.CurrentSession?.ToggleSearch();
+        }
+
+        private void SearchNext_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        {
+            _viewModel?.CurrentSession?.SearchNext();
+        }
+
+        private void SearchPrevious_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        {
+            _viewModel?.CurrentSession?.SearchPrevious();
+        }
+
+        private void CloseSearch_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        {
+            if (_viewModel?.CurrentSession != null)
+                _viewModel.CurrentSession.IsSearchVisible = false;
+        }
+
+        // ── 快捷短语事件 ─────────────────────────────────
+
+        private void QuickPhrase_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        {
+            if (sender is Button btn && btn.Tag is string phraseContent && _viewModel?.CurrentSession != null)
+            {
+                _viewModel.CurrentSession.PromptText += phraseContent;
+            }
+        }
+
+        // ── 拖拽上传事件 ─────────────────────────────────
+
+        private void ChatArea_DragOver(object? sender, DragEventArgs e)
+        {
+            e.DragEffects = DragDropEffects.Copy;
+        }
+
+#pragma warning disable CS0618 // DragEventArgs.Data / DataFormats are deprecated but DataTransfer API not yet stable
+        private async void ChatArea_Drop(object? sender, DragEventArgs e)
+        {
+            var session = _viewModel?.CurrentSession;
+            if (session == null) return;
+
+            if (e.Data.Contains(DataFormats.Files))
+            {
+                var files = e.Data.GetFiles();
+                if (files != null)
+                {
+                    foreach (var item in files)
+                    {
+                        var path = item.Path?.LocalPath;
+                        if (string.IsNullOrEmpty(path)) continue;
+
+                        var ext = Path.GetExtension(path).ToLowerInvariant();
+                        if (ext is ".png" or ".jpg" or ".jpeg" or ".bmp" or ".webp")
+                        {
+                            await session.SetReferenceImageFromFileAsync(path);
+                        }
+                        else if (ext is ".txt" or ".md" or ".json" or ".csv" or ".log")
+                        {
+                            try
+                            {
+                                var content = await File.ReadAllTextAsync(path);
+                                if (content.Length > 10000)
+                                    content = content[..10000] + "\n...(已截断)";
+                                session.PromptText += $"\n--- {Path.GetFileName(path)} ---\n{content}\n";
+                            }
+                            catch { /* 静默 */ }
+                        }
+                    }
+                }
+            }
+            else if (e.Data.Contains(DataFormats.Text))
+            {
+                var text = e.Data.GetText();
+                if (!string.IsNullOrEmpty(text))
+                    session.PromptText += text;
+            }
+        }
+#pragma warning restore CS0618
     }
 }

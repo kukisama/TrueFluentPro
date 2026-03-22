@@ -369,6 +369,48 @@ namespace TrueFluentPro.ViewModels
         public ICommand RegenerateMessageCommand { get; }
         public ICommand StopChatCommand { get; }
 
+        // --- 对话功能增强命令 ---
+        public ICommand EditMessageCommand { get; }
+        public ICommand ForkFromMessageCommand { get; }
+        public ICommand ExportConversationCommand { get; }
+
+        // --- 对话搜索 ---
+        private readonly Controls.Markdown.DialogSearchEngine _searchEngine = new();
+
+        private string _searchQuery = "";
+        public string SearchQuery
+        {
+            get => _searchQuery;
+            set
+            {
+                if (SetProperty(ref _searchQuery, value))
+                    ExecuteSearch();
+            }
+        }
+
+        private bool _isSearchVisible;
+        public bool IsSearchVisible
+        {
+            get => _isSearchVisible;
+            set => SetProperty(ref _isSearchVisible, value);
+        }
+
+        private string _searchStatus = "";
+        public string SearchStatus
+        {
+            get => _searchStatus;
+            set => SetProperty(ref _searchStatus, value);
+        }
+
+        // --- 快捷短语 ---
+        public ObservableCollection<Models.QuickPhrase> QuickPhrases { get; } = new(new[]
+        {
+            new Models.QuickPhrase { Title = "翻译", Content = "请帮我翻译以下内容为中文：\n" },
+            new Models.QuickPhrase { Title = "总结", Content = "请帮我总结以下内容的要点：\n" },
+            new Models.QuickPhrase { Title = "代码审查", Content = "请帮我审查以下代码，指出问题和改进建议：\n" },
+            new Models.QuickPhrase { Title = "解释", Content = "请用通俗易懂的语言解释以下概念：\n" },
+        });
+
         // --- 参数选项 ---
         public List<string> ImageSizeOptions { get; } = new()
         {
@@ -469,6 +511,19 @@ namespace TrueFluentPro.ViewModels
             StopChatCommand = new RelayCommand(
                 _ => StopChatStreaming(),
                 _ => IsChatStreaming);
+
+            // --- 对话功能增强命令 ---
+            EditMessageCommand = new RelayCommand(
+                param => EditMessage(param as ChatMessageViewModel),
+                param => param is ChatMessageViewModel m && m.IsUser && !m.IsLoading && !IsChatStreaming);
+
+            ForkFromMessageCommand = new RelayCommand(
+                param => ForkFromMessage(param as ChatMessageViewModel),
+                param => param is ChatMessageViewModel m && !m.IsLoading);
+
+            ExportConversationCommand = new RelayCommand(
+                _ => ExportConversation(),
+                _ => _allMessages.Count > 0);
 
             // 根据当前 API 模式初始化视频参数选项
             RefreshVideoParameterOptions();
@@ -2201,12 +2256,163 @@ namespace TrueFluentPro.ViewModels
             };
         }
 
+        // ── 消息编辑 ────────────────────────────────────────
+
+        /// <summary>
+        /// 编辑用户消息：将消息内容加载到输入框，截断后续消息，允许用户修改后重发。
+        /// </summary>
+        private void EditMessage(ChatMessageViewModel? message)
+        {
+            if (message == null || !message.IsUser || IsChatStreaming) return;
+
+            // 将消息文本设置到 PromptText 供用户编辑
+            PromptText = message.Text;
+
+            // 找到该消息在列表中的位置，删除该消息及其后续所有消息
+            var idx = _allMessages.IndexOf(message);
+            if (idx < 0) return;
+
+            var toRemove = _allMessages.Skip(idx).ToList();
+            foreach (var m in toRemove)
+                RemoveMessageInternal(m);
+
+            _onRequestSave?.Invoke(this);
+        }
+
+        // ── 对话分支（Fork）─────────────────────────────────
+
+        /// <summary>
+        /// 事件：请求从当前消息创建对话分支。
+        /// 宿主应用订阅此事件以创建新 Session。
+        /// </summary>
+        public event Action<MediaSessionViewModel, ChatMessageViewModel>? ForkRequested;
+
+        /// <summary>
+        /// 从指定消息处创建对话分支。
+        /// 触发 ForkRequested 事件，由宿主应用实际创建新 Session。
+        /// </summary>
+        private void ForkFromMessage(ChatMessageViewModel? message)
+        {
+            if (message == null) return;
+            ForkRequested?.Invoke(this, message);
+        }
+
+        /// <summary>
+        /// 获取从开头到指定消息（含）的所有消息，用于分支。
+        /// </summary>
+        public IReadOnlyList<ChatMessageViewModel> GetMessagesUpTo(ChatMessageViewModel message)
+        {
+            var idx = _allMessages.IndexOf(message);
+            if (idx < 0) return Array.Empty<ChatMessageViewModel>();
+            return _allMessages.Take(idx + 1).ToList();
+        }
+
+        // ── 对话导出 ────────────────────────────────────────
+
+        /// <summary>
+        /// 导出当前对话为 Markdown 文件。
+        /// </summary>
+        private async void ExportConversation()
+        {
+            if (_allMessages.Count == 0) return;
+
+            try
+            {
+                var messages = _allMessages.Cast<Controls.Markdown.IDialogMessage>().ToList();
+                var markdown = Controls.Markdown.DialogExporter.ExportToMarkdown(messages, SessionName);
+
+                // 使用保存文件对话框
+                var desktop = Avalonia.Application.Current?.ApplicationLifetime
+                    as Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime;
+                var mainWindow = desktop?.MainWindow;
+                if (mainWindow == null) return;
+
+                var storage = mainWindow.StorageProvider;
+                var file = await storage.SaveFilePickerAsync(new Avalonia.Platform.Storage.FilePickerSaveOptions
+                {
+                    Title = "导出对话",
+                    SuggestedFileName = $"{SessionName}_{DateTime.Now:yyyyMMdd_HHmmss}.md",
+                    DefaultExtension = "md",
+                    FileTypeChoices = new[]
+                    {
+                        new Avalonia.Platform.Storage.FilePickerFileType("Markdown") { Patterns = new[] { "*.md" } },
+                        new Avalonia.Platform.Storage.FilePickerFileType("纯文本") { Patterns = new[] { "*.txt" } },
+                        new Avalonia.Platform.Storage.FilePickerFileType("JSON") { Patterns = new[] { "*.json" } },
+                    }
+                });
+
+                if (file != null)
+                {
+                    var filePath = file.Path.LocalPath;
+                    string content;
+                    if (filePath.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+                        content = Controls.Markdown.DialogExporter.ExportToJson(messages, SessionName);
+                    else if (filePath.EndsWith(".txt", StringComparison.OrdinalIgnoreCase))
+                        content = Controls.Markdown.DialogExporter.ExportToPlainText(messages, SessionName);
+                    else
+                        content = markdown;
+
+                    await System.IO.File.WriteAllTextAsync(filePath, content, System.Text.Encoding.UTF8);
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[ExportConversation] 导出失败: {ex.Message}");
+            }
+        }
+
+        // ── 对话搜索 ────────────────────────────────────────
+
+        /// <summary>切换搜索栏可见性</summary>
+        public void ToggleSearch()
+        {
+            IsSearchVisible = !IsSearchVisible;
+            if (!IsSearchVisible)
+            {
+                SearchQuery = "";
+                _searchEngine.Clear();
+                SearchStatus = "";
+            }
+        }
+
+        private void ExecuteSearch()
+        {
+            if (string.IsNullOrWhiteSpace(_searchQuery))
+            {
+                _searchEngine.Clear();
+                SearchStatus = "";
+                return;
+            }
+
+            _searchEngine.SetMessages(_allMessages.Cast<Controls.Markdown.IDialogMessage>().ToList());
+            var count = _searchEngine.Search(_searchQuery);
+            SearchStatus = count > 0
+                ? $"{_searchEngine.CurrentIndex + 1}/{count}"
+                : "无匹配";
+        }
+
+        /// <summary>跳转到下一个搜索匹配</summary>
+        public void SearchNext()
+        {
+            var match = _searchEngine.NavigateNext();
+            if (match != null)
+                SearchStatus = $"{_searchEngine.CurrentIndex + 1}/{_searchEngine.MatchCount}";
+        }
+
+        /// <summary>跳转到上一个搜索匹配</summary>
+        public void SearchPrevious()
+        {
+            var match = _searchEngine.NavigatePrevious();
+            if (match != null)
+                SearchStatus = $"{_searchEngine.CurrentIndex + 1}/{_searchEngine.MatchCount}";
+        }
+
     }
 
     /// <summary>
     /// 聊天消息 ViewModel
     /// </summary>
-    public class ChatMessageViewModel : ViewModelBase
+    public class ChatMessageViewModel : ViewModelBase, Controls.Markdown.IDialogMessage
     {
         public string Role { get; }
 
@@ -2263,6 +2469,55 @@ namespace TrueFluentPro.ViewModels
             set => SetProperty(ref _isStreamingDone, value);
         }
 
+        // ── Token 用量 ──────────────────────────────────
+        private int? _promptTokens;
+        /// <summary>Token 用量：输入 Token 数</summary>
+        public int? PromptTokens
+        {
+            get => _promptTokens;
+            set
+            {
+                if (SetProperty(ref _promptTokens, value))
+                    OnPropertyChanged(nameof(HasTokenUsage));
+            }
+        }
+
+        private int? _completionTokens;
+        /// <summary>Token 用量：输出 Token 数</summary>
+        public int? CompletionTokens
+        {
+            get => _completionTokens;
+            set
+            {
+                if (SetProperty(ref _completionTokens, value))
+                    OnPropertyChanged(nameof(HasTokenUsage));
+            }
+        }
+
+        /// <summary>是否有 Token 用量数据</summary>
+        public bool HasTokenUsage => _promptTokens.HasValue || _completionTokens.HasValue;
+
+        /// <summary>Token 用量显示文本</summary>
+        public string TokenUsageText
+        {
+            get
+            {
+                if (!HasTokenUsage) return "";
+                var prompt = _promptTokens?.ToString() ?? "?";
+                var completion = _completionTokens?.ToString() ?? "?";
+                return $"⚡ 输入 {prompt} / 输出 {completion} tokens";
+            }
+        }
+
+        // ── 编辑状态 ────────────────────────────────────
+        private bool _isEditing;
+        /// <summary>消息是否处于编辑模式</summary>
+        public bool IsEditing
+        {
+            get => _isEditing;
+            set => SetProperty(ref _isEditing, value);
+        }
+
         public bool IsUser => Role == "user";
         public bool IsAssistant => Role != "user";
         public bool HasMedia => MediaPaths.Count > 0;
@@ -2284,6 +2539,9 @@ namespace TrueFluentPro.ViewModels
 
         public string TimestampText => Timestamp.ToString("yyyy-MM-dd HH:mm:ss");
 
+        // ── IDialogMessage 显式实现 ─────────────────────
+        IReadOnlyList<string> Controls.Markdown.IDialogMessage.MediaPaths => new List<string>(MediaPaths);
+
         public ChatMessageViewModel(MediaChatMessage message)
         {
             Role = message.Role;
@@ -2294,6 +2552,8 @@ namespace TrueFluentPro.ViewModels
             Timestamp = message.Timestamp;
             GenerateSeconds = message.GenerateSeconds;
             DownloadSeconds = message.DownloadSeconds;
+            _promptTokens = message.PromptTokens;
+            _completionTokens = message.CompletionTokens;
 
             MediaPaths.CollectionChanged += (_, _) =>
             {

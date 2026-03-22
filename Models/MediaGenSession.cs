@@ -79,5 +79,21 @@ namespace TrueFluentPro.Models
         public double? GenerateSeconds { get; set; }
         /// <summary>下载传输耗时（秒）</summary>
         public double? DownloadSeconds { get; set; }
+
+        /// <summary>Token 用量：输入 Token 数</summary>
+        public int? PromptTokens { get; set; }
+        /// <summary>Token 用量：输出 Token 数</summary>
+        public int? CompletionTokens { get; set; }
+    }
+
+    /// <summary>
+    /// 快捷短语
+    /// </summary>
+    public class QuickPhrase
+    {
+        public string Id { get; set; } = Guid.NewGuid().ToString("N")[..8];
+        public string Title { get; set; } = "";
+        public string Content { get; set; } = "";
+        public int SortOrder { get; set; } = 0;
     }
 }
