@@ -65,6 +65,8 @@ namespace TrueFluentPro.Services
     {
         public bool UsedReasoning { get; set; }
         public bool UsedFallback { get; set; }
+        public int? PromptTokens { get; set; }
+        public int? CompletionTokens { get; set; }
     }
 
     public sealed class AiRequestTrace
@@ -161,7 +163,19 @@ namespace TrueFluentPro.Services
                     UsedFallback = false
                 });
 
-                await ConsumeResponseAsync(request, response, onChunk, onReasoningChunk, cancellationToken);
+                var usage = await ConsumeResponseAsync(request, response, onChunk, onReasoningChunk, cancellationToken);
+
+                // 回填 Token 用量到 outcome
+                if (usage.HasValue)
+                {
+                    onOutcome?.Invoke(new AiRequestOutcome
+                    {
+                        UsedReasoning = enableReasoning && profile == AiChatProfile.Summary,
+                        UsedFallback = false,
+                        PromptTokens = usage.Value.PromptTokens,
+                        CompletionTokens = usage.Value.CompletionTokens
+                    });
+                }
             }
         }
 
@@ -277,7 +291,7 @@ namespace TrueFluentPro.Services
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", config.ApiKey);
         }
 
-        private static async Task ConsumeResponseAsync(
+        private static async Task<(int PromptTokens, int CompletionTokens)?> ConsumeResponseAsync(
             AiChatRequestConfig request,
             HttpResponseMessage response,
             Action<string> onChunk,
@@ -287,22 +301,24 @@ namespace TrueFluentPro.Services
             var protocol = GetEffectiveTextApiProtocol(request);
             if (protocol == TextApiProtocolMode.Responses)
             {
-                await StreamResponsesApiAsync(response, onChunk, onReasoningChunk, cancellationToken);
-                return;
+                return await StreamResponsesApiAsync(response, onChunk, onReasoningChunk, cancellationToken);
             }
 
-            await StreamResponseAsync(response, onChunk, onReasoningChunk, cancellationToken);
+            return await StreamResponseAsync(response, onChunk, onReasoningChunk, cancellationToken);
         }
 
         /// <summary>
         /// Responses API 流式 SSE 解析：逐行读取 data: 事件，提取 output_text.delta 和 reasoning_summary_text.delta。
         /// </summary>
-        private static async Task StreamResponsesApiAsync(
+        private static async Task<(int PromptTokens, int CompletionTokens)?> StreamResponsesApiAsync(
             HttpResponseMessage response,
             Action<string> onChunk,
             Action<string>? onReasoningChunk,
             CancellationToken cancellationToken)
         {
+            int? promptTokens = null;
+            int? completionTokens = null;
+
             using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
             using var reader = new StreamReader(stream);
 
@@ -346,12 +362,29 @@ namespace TrueFluentPro.Services
                                 onReasoningChunk(text);
                         }
                     }
+                    // response.completed 事件包含完整 usage
+                    else if (eventType == "response.completed")
+                    {
+                        if (root.TryGetProperty("response", out var respElem)
+                            && respElem.TryGetProperty("usage", out var usageElem)
+                            && usageElem.ValueKind == JsonValueKind.Object)
+                        {
+                            if (usageElem.TryGetProperty("input_tokens", out var it))
+                                promptTokens = it.GetInt32();
+                            if (usageElem.TryGetProperty("output_tokens", out var ot))
+                                completionTokens = ot.GetInt32();
+                        }
+                    }
                 }
                 catch (JsonException)
                 {
                     // skip unparseable lines
                 }
             }
+
+            return promptTokens.HasValue || completionTokens.HasValue
+                ? (promptTokens ?? 0, completionTokens ?? 0)
+                : null;
         }
 
         private static async Task ReadResponsesApiResponseAsync(
@@ -478,12 +511,15 @@ namespace TrueFluentPro.Services
             }
         }
 
-        private static async Task StreamResponseAsync(
+        private static async Task<(int PromptTokens, int CompletionTokens)?> StreamResponseAsync(
             HttpResponseMessage response,
             Action<string> onChunk,
             Action<string>? onReasoningChunk,
             CancellationToken cancellationToken)
         {
+            int? promptTokens = null;
+            int? completionTokens = null;
+
             using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
             using var reader = new StreamReader(stream);
 
@@ -500,6 +536,15 @@ namespace TrueFluentPro.Services
                 {
                     using var doc = JsonDocument.Parse(data);
                     var root = doc.RootElement;
+
+                    // 提取 usage（通常在最后一个 chunk 中）
+                    if (root.TryGetProperty("usage", out var usageElem) && usageElem.ValueKind == JsonValueKind.Object)
+                    {
+                        if (usageElem.TryGetProperty("prompt_tokens", out var pt))
+                            promptTokens = pt.GetInt32();
+                        if (usageElem.TryGetProperty("completion_tokens", out var ct2))
+                            completionTokens = ct2.GetInt32();
+                    }
 
                     if (!root.TryGetProperty("choices", out var choices)
                         || choices.GetArrayLength() == 0)
@@ -528,6 +573,10 @@ namespace TrueFluentPro.Services
                     // skip unparseable lines
                 }
             }
+
+            return promptTokens.HasValue || completionTokens.HasValue
+                ? (promptTokens ?? 0, completionTokens ?? 0)
+                : null;
         }
 
         private static bool TryReadReasoning(JsonElement delta, out string text)
@@ -633,7 +682,8 @@ namespace TrueFluentPro.Services
                 {
                     ["model"] = request.ModelName,
                     ["messages"] = messages,
-                    ["stream"] = true
+                    ["stream"] = true,
+                    ["stream_options"] = new { include_usage = true }
                 };
                 if (enableReasoning)
                 {
@@ -646,7 +696,8 @@ namespace TrueFluentPro.Services
             {
                 ["model"] = request.ModelName,
                 ["messages"] = messages,
-                ["stream"] = true
+                ["stream"] = true,
+                ["stream_options"] = new { include_usage = true }
             };
 
             if (enableReasoning)

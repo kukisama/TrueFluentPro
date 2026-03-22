@@ -14,6 +14,7 @@ using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using Markdig;
 using TrueFluentPro.Models;
 using TrueFluentPro.Services;
 using TrueFluentPro.ViewModels;
@@ -34,6 +35,7 @@ namespace TrueFluentPro.Views
         private SelectableTextBlock? _capturedStb;
         private int _capturedSelStart;
         private int _capturedSelEnd;
+        private TrueFluentPro.Controls.Markdown.MarkdownRenderer? _capturedRenderer;
         private bool _initialized;
 
         public MediaStudioView()
@@ -196,6 +198,16 @@ namespace TrueFluentPro.Views
 
         private async void PromptTextBox_KeyDown(object? sender, KeyEventArgs e)
         {
+            // Ctrl+C：优先处理跨块选择复制
+            if (e.Key == Key.C && e.KeyModifiers.HasFlag(KeyModifiers.Control))
+            {
+                if (TryCopyCrossBlockSelection())
+                {
+                    e.Handled = true;
+                    return;
+                }
+            }
+
             // Ctrl+F：打开/关闭对话搜索
             if (e.Key == Key.F && e.KeyModifiers.HasFlag(KeyModifiers.Control))
             {
@@ -221,6 +233,43 @@ namespace TrueFluentPro.Views
                     e.Handled = true;
                 }
             }
+        }
+
+        /// <summary>
+        /// 如果当前有管理选择，复制（纯文本 + HTML）到剪贴板并返回 true。
+        /// </summary>
+        private bool TryCopyCrossBlockSelection()
+        {
+            // 在整个 View 中遍历查找有管理选择的 MarkdownRenderer
+            foreach (var renderer in this.GetVisualDescendants().OfType<TrueFluentPro.Controls.Markdown.MarkdownRenderer>())
+            {
+                if (renderer.HasCrossBlockSelection)
+                {
+                    var text = renderer.GetSelectedText();
+                    if (!string.IsNullOrEmpty(text))
+                    {
+                        _ = CopyTextWithHtmlAsync(text);
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// 同时将纯文本和 HTML 格式放入剪贴板（粘贴到富文本编辑器时保留格式）。
+        /// </summary>
+        private async Task CopyTextWithHtmlAsync(string plainText)
+        {
+            var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+            if (clipboard == null) return;
+
+            var html = Markdig.Markdown.ToHtml(plainText);
+            var data = new DataTransfer();
+            data.Add(DataTransferItem.CreateText(plainText));
+            data.Add(DataTransferItem.Create(
+                DataFormat.CreateStringPlatformFormat("text/html"), html));
+            await clipboard.SetDataAsync(data);
         }
 
         private async void AttachReferenceImage_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
@@ -782,23 +831,39 @@ namespace TrueFluentPro.Views
             if (!e.GetCurrentPoint(this).Properties.IsRightButtonPressed) return;
             _capturedSelection = null;
             _capturedStb = null;
+            _capturedRenderer = null;
             _capturedSelStart = 0;
             _capturedSelEnd = 0;
 
-            // 优先检查 MarkdownRenderer 的跨块选择
             var hit = this.InputHitTest(e.GetPosition(this)) as Visual;
+
+            // 优先：从命中点向上查找有管理选择的 MarkdownRenderer
             for (var v = hit; v != null; v = v.GetVisualParent() as Visual)
             {
                 if (v is TrueFluentPro.Controls.Markdown.MarkdownRenderer renderer && renderer.HasCrossBlockSelection)
                 {
                     _capturedSelection = renderer.GetSelectedText();
-                    // 阻止传播，保护跨块选区
+                    _capturedRenderer = renderer;
                     e.Handled = true;
                     return;
                 }
             }
 
-            // 回退：从命中点向上查找 SelectableTextBlock，在它处理 PointerPressed 之前保存选区
+            // Fallback：walk-up 未找到（右键可能在选区外但同一消息内），
+            // 搜索所有 renderer——静态跟踪保证最多只有一个有选区
+            foreach (var renderer in this.GetVisualDescendants()
+                         .OfType<TrueFluentPro.Controls.Markdown.MarkdownRenderer>())
+            {
+                if (renderer.HasCrossBlockSelection)
+                {
+                    _capturedSelection = renderer.GetSelectedText();
+                    _capturedRenderer = renderer;
+                    e.Handled = true;
+                    return;
+                }
+            }
+
+            // 回退：从命中点向上查找 SelectableTextBlock（单块选择 / 用户消息）
             for (var v = hit; v != null; v = v.GetVisualParent() as Visual)
             {
                 if (v is SelectableTextBlock stb)
@@ -807,7 +872,6 @@ namespace TrueFluentPro.Views
                     _capturedStb = stb;
                     _capturedSelStart = stb.SelectionStart;
                     _capturedSelEnd = stb.SelectionEnd;
-                    // 阻止 PointerPressed 传播到 STB，避免其重置选区
                     e.Handled = true;
                     return;
                 }
@@ -822,22 +886,38 @@ namespace TrueFluentPro.Views
         private void HandleRightClickContextMenu(object? sender, PointerReleasedEventArgs e)
         {
             if (e.InitialPressMouseButton != MouseButton.Right) return;
+
+            // 优先处理管理选择模式（通过 renderer 定位 Border/msg）
+            if (_capturedRenderer != null)
+            {
+                Border? msgBorder = null;
+                ChatMessageViewModel? msg = null;
+                for (var v = _capturedRenderer as Visual; v != null; v = v.GetVisualParent() as Visual)
+                {
+                    if (v is Border b && b.DataContext is ChatMessageViewModel vm)
+                    { msgBorder = b; msg = vm; break; }
+                }
+                _capturedRenderer = null;
+                if (msgBorder != null && msg != null && _viewModel?.CurrentSession != null)
+                {
+                    e.Handled = true;
+                    ShowChatContextMenu(msgBorder, msg);
+                }
+                return;
+            }
+
             if (_capturedStb == null) return;
 
             // 从命中的 STB 向上查找 chat-message Border
-            Border? msgBorder = null;
-            ChatMessageViewModel? msg = null;
+            Border? border = null;
+            ChatMessageViewModel? chatMsg = null;
             for (var v = _capturedStb as Visual; v != null; v = v.GetVisualParent() as Visual)
             {
                 if (v is Border b && b.DataContext is ChatMessageViewModel vm)
-                {
-                    msgBorder = b;
-                    msg = vm;
-                    break;
-                }
+                { border = b; chatMsg = vm; break; }
             }
 
-            if (msgBorder == null || msg == null || _viewModel?.CurrentSession == null)
+            if (border == null || chatMsg == null || _viewModel?.CurrentSession == null)
             {
                 _capturedStb = null;
                 _capturedSelection = null;
@@ -845,7 +925,7 @@ namespace TrueFluentPro.Views
             }
 
             e.Handled = true;
-            ShowChatContextMenu(msgBorder, msg);
+            ShowChatContextMenu(border, chatMsg);
         }
 
         private void ShowChatContextMenu(Border border, ChatMessageViewModel msg)
@@ -859,15 +939,23 @@ namespace TrueFluentPro.Views
 
             var flyout = new MenuFlyout();
 
-            // 复制 — 有选中文本时复制选中，否则复制全文
-            var copyItem = new MenuItem { Header = "复制" };
-            copyItem.Click += async (_, _) =>
+            // 有选区时：复制选中（带格式）
+            if (!string.IsNullOrEmpty(captured))
             {
-                var text = !string.IsNullOrEmpty(captured) ? captured : msg.Text;
-                if (!string.IsNullOrEmpty(text))
-                    await TopLevel.GetTopLevel(this)!.Clipboard!.SetTextAsync(text);
+                var selText = captured;
+                var copySelItem = new MenuItem { Header = "复制选中" };
+                copySelItem.Click += async (_, _) => await CopyTextWithHtmlAsync(selText);
+                flyout.Items.Add(copySelItem);
+            }
+
+            // 复制全文（始终显示）
+            var copyAllItem = new MenuItem { Header = "复制全文" };
+            copyAllItem.Click += async (_, _) =>
+            {
+                if (!string.IsNullOrEmpty(msg.Text))
+                    await CopyTextWithHtmlAsync(msg.Text);
             };
-            flyout.Items.Add(copyItem);
+            flyout.Items.Add(copyAllItem);
 
             // 全选（针对当前右键点击的 SelectableTextBlock）
             if (stb != null)
@@ -920,7 +1008,7 @@ namespace TrueFluentPro.Views
             copyItem.Click += async (_, _) =>
             {
                 if (!string.IsNullOrEmpty(msg.Text))
-                    await TopLevel.GetTopLevel(this)!.Clipboard!.SetTextAsync(msg.Text);
+                    await CopyTextWithHtmlAsync(msg.Text);
             };
             flyout.Items.Add(copyItem);
 

@@ -17,11 +17,11 @@ public sealed class MarkdownTheme
 
     // ── 正常模式排版参数 ─────────────────────────────────
     public double BodyFontSize { get; init; } = 14;
-    public double BodyLineHeight { get; init; } = 24;
+    public double BodyLineHeight { get; init; } = 26;
     public double LetterSpacing { get; init; } = 0.2;
     public double CodeFontSize { get; init; } = 13;
     public double CodeLineHeight { get; init; } = 20;
-    public double BlockSpacing { get; init; } = 6;
+    public double BlockSpacing { get; init; } = 12;
 
     // ── Reasoning 模式排版参数 ───────────────────────────
     public double ReasoningFontSize { get; init; } = 12.5;

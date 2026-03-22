@@ -1,19 +1,33 @@
 # IconTool 使用说明
 
-> PNG/ICO 透明度检测与透明化命令行工具
+> PNG/ICO 图像处理与图标管理命令行工具
 
 ---
 
 ## 一、项目概述
 
-IconTool 是一个独立的命令行工具，提供四大核心功能：
+IconTool 是一个独立的命令行工具，提供 **15 大核心功能**：
 
-1. **自动模式**（无参数）— 扫描当前目录图片，自动检测→透明化→裁剪到 512×512→生成 ICO，一键完成
-2. **check** — 检测 PNG 或 ICO 文件是否真的包含透明通道，并给出详细分析报告
-3. **transparent** — 将图片中的指定背景色去除，输出为带透明通道的 PNG
-4. **crop** — 将图片居中裁剪缩放到指定正方形尺寸（默认 512×512）
+| # | 命令 | 功能 |
+|---|------|------|
+| 1 | **auto**（无参数） | 扫描当前目录图片，自动检测→透明化→裁剪→生成 ICO |
+| 2 | **check** | 检测 PNG/ICO 文件是否包含透明通道，输出详细分析报告 |
+| 3 | **transparent** | 将图片中的指定背景色去除，输出带透明通道的 PNG |
+| 4 | **crop** | 将图片居中裁剪缩放到指定正方形尺寸 |
+| 5 | **extract** | 从 EXE/DLL 文件中提取所有嵌入的图标资源 |
+| 6 | **seticon** | 将 ICO 图标设为目录的自定义图标（desktop.ini + Shell 通知） |
+| 7 | **info** | 查看图片/ICO 文件详细元数据信息 |
+| 8 | **convert** | ICO↔PNG↔BMP 格式互转 |
+| 9 | **resize** | 批量生成多尺寸图片 |
+| 10 | **pad** | 为图片添加透明边距（按像素或百分比） |
+| 11 | **round** | 为图片添加圆角效果 |
+| 12 | **shadow** | 为图片生成投影效果 |
+| 13 | **overlay** | 在底图上叠加角标/水印 |
+| 14 | **compose** | 将多张 PNG 合成为多尺寸 ICO 文件 |
+| 15 | **favicon** | 一键生成 Web Favicon 全套文件（ICO + PNG + webmanifest + HTML） |
+| 16 | **sheet** | 将多张图片合并为 Sprite Sheet（精灵图 + JSON + CSS） |
 
-技术栈：.NET 10 + SixLabors.ImageSharp，支持发布为 Windows 单文件可执行程序（无需安装 .NET 运行时）。
+技术栈：.NET 10 + SixLabors.ImageSharp + SixLabors.ImageSharp.Drawing，支持发布为 Windows 单文件可执行程序（无需安装 .NET 运行时）。
 
 > **注意**：主项目 `TrueFluentPro.csproj` 中的 `GenerateAppIconIco` Target（原 IconGen 自动构建）已禁用。图标生成改为通过 IconTool 手动执行。如需恢复自动构建，移除 csproj 中 Target 的 `Condition="false"`。
 
@@ -465,6 +479,557 @@ IconTool crop app_transparent.png -s 512 -o app_final.png
 ```
 
 > **提示**：自动模式会在透明化后自动执行居中裁剪到 512×512，无需手动调用 `crop` 命令。`crop` 命令适合需要自定义尺寸或单独对某张图片裁剪的场景。
+
+---
+
+### 命令四：`extract` — 从 EXE/DLL 提取图标
+
+#### 用法
+
+```
+IconTool extract <exe/dll路径> [选项]
+```
+
+从 Windows PE 可执行文件（.exe、.dll）中提取所有嵌入的图标资源，输出为标准 ICO 文件。每个图标组（RT_GROUP_ICON）生成一个独立的 ICO 文件，包含该组内所有尺寸。
+
+#### 选项
+
+| 选项 | 简写 | 默认值 | 说明 |
+|------|------|--------|------|
+| `--output <目录>` | `-o` | 当前目录 | 输出 ICO 文件的目录 |
+
+#### 示例
+
+```powershell
+# 提取 explorer.exe 中所有图标到当前目录
+IconTool extract "C:\Windows\explorer.exe"
+
+# 提取到指定目录
+IconTool extract "C:\Windows\explorer.exe" -o icons/
+
+# 从 DLL 中提取
+IconTool extract "C:\Windows\System32\shell32.dll" -o shell-icons/
+```
+
+#### 输出内容说明
+
+```
+── 从 PE 文件提取图标 ──
+  输入: C:\Windows\explorer.exe
+  输出目录: C:\icons
+
+  [图标 1] 8 张 (256/64/48/40/32/24/20/16) → explorer_icon1.ico (57.3 KB)
+  [图标 101] 9 张 (32/24/16/32/24/16/32/24/16) → explorer_icon101.ico (14.5 KB)
+  ...
+
+✓ 共提取 23 个图标文件。
+```
+
+每个图标文件名格式为 `{原文件名}_icon{资源ID}.ico`，包含该组所有尺寸的多分辨率图标。
+
+#### 实现原理
+
+- 纯字节解析 PE 文件的资源段（`.rsrc`），不依赖任何 Win32 API
+- 读取 `RT_GROUP_ICON`（图标组描述）和 `RT_ICON`（单个图像数据）
+- 将两者重组为标准 ICO 文件格式
+- 支持 PE32 和 PE32+（64 位）可执行文件
+
+---
+
+### 命令五：`seticon` — 设置目录自定义图标
+
+#### 用法
+
+```
+IconTool seticon <ico路径> <目录路径>
+```
+
+将指定的 ICO 文件设为目录的自定义图标，通过 `desktop.ini` 机制实现。
+
+#### 示例
+
+```powershell
+# 将图标设为指定目录的图标
+IconTool seticon app.ico "D:\Projects\MyApp"
+
+# 设为当前目录图标
+IconTool seticon logo.ico .
+
+# 结合 extract 使用：先从 EXE 提取图标，再设为目录图标
+IconTool extract app.exe -o .
+IconTool seticon app_icon1.ico "D:\Projects\MyApp"
+```
+
+#### 执行流程
+
+1. 将 ICO 文件复制到目标目录（如果不在同一位置）
+2. 设置 ICO 文件属性为 Hidden + System
+3. 创建/更新 `desktop.ini`，写入 `[.ShellClassInfo] IconResource=xxx.ico,0`
+4. 设置 `desktop.ini` 属性为 Hidden + System
+5. 设置目标目录属性为 ReadOnly（Windows Shell 要求此属性才会读取 desktop.ini）
+6. 调用 `SHChangeNotify(SHCNE_UPDATEDIR)` + `SHChangeNotify(SHCNE_ASSOCCHANGED)` 通知资源管理器立即刷新
+
+#### 输出内容说明
+
+```
+── 设置目录图标 ──
+  图标: C:\icons\app.ico
+  目录: D:\Projects\MyApp
+
+  复制图标: app.ico → D:\Projects\MyApp
+  写入: desktop.ini
+  设置目录属性: ReadOnly
+  已通知资源管理器刷新图标缓存
+
+✓ 目录图标设置完成。
+
+提示: 如果图标未立即显示，可尝试：
+  1. 按 F5 刷新资源管理器
+  2. 关闭并重新打开资源管理器窗口
+```
+
+#### 注意事项
+
+- `desktop.ini` 和 ICO 文件会被设为隐藏+系统属性，在默认资源管理器设置下不可见
+- 目录的 ReadOnly 属性**不影响目录内文件的读写**，仅用于告诉 Shell 读取 desktop.ini
+- 通过 `SHChangeNotify` P/Invoke 通知 Shell 刷新，大多数情况下图标会立即更新
+- 如果极少数情况下图标仍未更新，按 F5 或重新打开资源管理器窗口即可
+
+---
+
+### 命令六：`info` — 图片元数据查看
+
+#### 用法
+
+```
+IconTool info <文件路径>
+```
+
+显示图片或 ICO 文件的详细元数据信息，包括尺寸、色深、文件大小等。对于 ICO 文件，会列出内部每一张嵌入图像的信息。
+
+#### 示例
+
+```powershell
+# 查看 PNG 文件信息
+IconTool info logo.png
+
+# 查看 ICO 文件信息（显示所有嵌入图像）
+IconTool info app.ico
+```
+
+#### 输出示例
+
+**PNG 文件：**
+```
+── 图片信息 ──
+  文件: logo.png
+  格式: PNG
+  尺寸: 256x256
+  文件大小: 14.5 KB
+```
+
+**ICO 文件：**
+```
+── 图片信息 ──
+  文件: app.ico
+  格式: ICO
+  文件大小: 57.3 KB
+  包含 8 张嵌入图像:
+    [1] 256x256, 32bpp, 数据大小=38912 字节
+    [2] 64x64, 32bpp, 数据大小=8432 字节
+    ...
+```
+
+---
+
+### 命令七：`convert` — 格式转换
+
+#### 用法
+
+```
+IconTool convert <文件路径> [选项]
+```
+
+在 ICO、PNG、BMP 格式之间互相转换。从 ICO 转换时，自动提取最大尺寸的图像。
+
+#### 选项
+
+| 选项 | 简写 | 默认值 | 说明 |
+|------|------|--------|------|
+| `--output <路径>` | `-o` | 自动根据目标格式命名 | 输出文件路径 |
+| `--format <格式>` | `-f` | 根据输出扩展名推断 | 目标格式：`png`、`bmp`、`ico` |
+
+#### 示例
+
+```powershell
+# ICO 转 PNG（提取最大尺寸图像）
+IconTool convert app.ico -o app.png
+
+# PNG 转 BMP
+IconTool convert logo.png -f bmp
+
+# PNG 转 ICO（单尺寸）
+IconTool convert logo.png -o logo.ico
+```
+
+---
+
+### 命令八：`resize` — 批量生成多尺寸
+
+#### 用法
+
+```
+IconTool resize <文件路径> [选项]
+```
+
+从一张源图批量生成多个尺寸的图片，使用 Lanczos3 高质量重采样。
+
+#### 选项
+
+| 选项 | 简写 | 默认值 | 说明 |
+|------|------|--------|------|
+| `--sizes <尺寸列表>` | `-s` | `16,32,48,64,128,256` | 逗号分隔的目标尺寸 |
+| `--output <目录>` | `-o` | 源文件所在目录下的 `resized` 子目录 | 输出目录 |
+
+#### 示例
+
+```powershell
+# 使用默认尺寸生成 6 个文件
+IconTool resize logo.png
+
+# 指定自定义尺寸
+IconTool resize logo.png -s "16,32,64,128,256,512"
+
+# 输出到指定目录
+IconTool resize logo.png -s "32,64,128" -o icons/
+```
+
+#### 输出说明
+
+```
+── 批量生成多尺寸 ──
+  输入: logo.png (256x256)
+  目标: 16,32,64,128,256
+
+  [1] 16x16 → resized/logo_16x16.png (603 B)
+  [2] 32x32 → resized/logo_32x32.png (1.7 KB)
+  ...
+
+✓ 共生成 5 个文件。
+```
+
+---
+
+### 命令九：`pad` — 添加透明边距
+
+#### 用法
+
+```
+IconTool pad <文件路径> [选项]
+```
+
+为图片四周添加透明边距，扩展画布尺寸。可按像素或百分比指定边距。
+
+#### 选项
+
+| 选项 | 简写 | 默认值 | 说明 |
+|------|------|--------|------|
+| `--pixels <值>` | `-p` | — | 边距像素值 |
+| `--percent <值>` | — | `10` | 边距占原图短边的百分比（与 `-p` 二选一） |
+| `--output <路径>` | `-o` | `原文件名_padded.png` | 输出文件路径 |
+
+#### 示例
+
+```powershell
+# 按默认百分比（10%）加边距
+IconTool pad logo.png
+
+# 按像素加边距
+IconTool pad logo.png -p 20
+
+# 按百分比加边距
+IconTool pad logo.png --percent 15 -o padded.png
+```
+
+#### 输出说明
+
+```
+── 加边距 ──
+  输入: logo.png (256x256)
+  边距: 51px
+  输出尺寸: 358x358
+  输出: padded.png (15.9 KB)
+✓ 完成。
+```
+
+---
+
+### 命令十：`round` — 添加圆角
+
+#### 用法
+
+```
+IconTool round <文件路径> [选项]
+```
+
+为图片添加圆角效果，通过像素级 Alpha 遮罩实现平滑圆角。
+
+#### 选项
+
+| 选项 | 简写 | 默认值 | 说明 |
+|------|------|--------|------|
+| `--radius <值>` | `-r` | 短边的 20% | 圆角半径（像素） |
+| `--output <路径>` | `-o` | `原文件名_rounded.png` | 输出文件路径 |
+
+#### 示例
+
+```powershell
+# 使用默认圆角半径
+IconTool round logo.png
+
+# 指定圆角半径
+IconTool round logo.png -r 50
+
+# 指定输出路径
+IconTool round logo.png -r 30 -o rounded.png
+```
+
+#### 输出说明
+
+```
+── 圆角处理 ──
+  输入: logo.png (256x256)
+  圆角半径: 50px
+  输出: rounded.png (14.9 KB)
+✓ 完成。
+```
+
+---
+
+### 命令十一：`shadow` — 生成投影
+
+#### 用法
+
+```
+IconTool shadow <文件路径> [选项]
+```
+
+为图片添加阴影效果。工具会自动扩展画布以容纳阴影区域，使用高斯模糊生成柔和投影。
+
+#### 选项
+
+| 选项 | 简写 | 默认值 | 说明 |
+|------|------|--------|------|
+| `--blur <值>` | `-b` | `10` | 模糊半径（像素，1-100） |
+| `--offset <x,y>` | — | `4,4` | 阴影偏移量（像素） |
+| `--color <RRGGBBAA>` | `-c` | `00000080` | 阴影颜色（十六进制 RGBA） |
+| `--output <路径>` | `-o` | `原文件名_shadow.png` | 输出文件路径 |
+
+#### 示例
+
+```powershell
+# 默认阴影效果
+IconTool shadow logo.png
+
+# 自定义模糊半径和偏移
+IconTool shadow logo.png -b 15 --offset 6,6
+
+# 自定义阴影颜色（半透明红色）
+IconTool shadow logo.png -c "FF000060" -b 20 -o red_shadow.png
+```
+
+#### 输出说明
+
+```
+── 添加阴影 ──
+  输入: logo.png (256x256)
+  模糊半径: 15, 偏移: (6,6)
+  画布扩展: 328x328
+  输出: shadow.png (20.1 KB)
+✓ 完成。
+```
+
+---
+
+### 命令十二：`overlay` — 叠加角标/水印
+
+#### 用法
+
+```
+IconTool overlay <底图> <叠加图> [选项]
+```
+
+在底图上叠加一张小图（角标、水印等）。叠加图会按比例缩放，放置到指定位置。
+
+#### 选项
+
+| 选项 | 简写 | 默认值 | 说明 |
+|------|------|--------|------|
+| `--position <位置>` | `-p` | `br` | 位置：`tl`（左上）、`tr`（右上）、`bl`（左下）、`br`（右下）、`c`/`center`（居中） |
+| `--scale <值>` | `-s` | `30` | 叠加图占底图宽度的百分比（5-100） |
+| `--margin <值>` | `-m` | `2` | 边距占底图宽度的百分比（0-50） |
+| `--output <路径>` | `-o` | `原文件名_overlay.png` | 输出文件路径 |
+
+#### 示例
+
+```powershell
+# 右下角叠加角标（默认位置）
+IconTool overlay base.png badge.png
+
+# 左上角叠加，缩放 20%
+IconTool overlay base.png badge.png -p tl -s 20
+
+# 居中叠加水印
+IconTool overlay base.png watermark.png -p center -s 50 -o result.png
+```
+
+#### 输出说明
+
+```
+── 叠加角标 ──
+  底图: base.png (256x256)
+  叠加: badge.png → 76x76
+  位置: br, 偏移: (175,175)
+  输出: result.png (18.1 KB)
+✓ 完成。
+```
+
+---
+
+### 命令十三：`compose` — 多图合成 ICO
+
+#### 用法
+
+```
+IconTool compose <文件1> <文件2> ... [选项]
+```
+
+将多张 PNG/BMP 图片合并为一个多尺寸 ICO 文件。每张输入图片作为 ICO 中的一个独立尺寸。
+
+#### 选项
+
+| 选项 | 简写 | 默认值 | 说明 |
+|------|------|--------|------|
+| `--output <路径>` | `-o` | `composed.ico` | 输出 ICO 文件路径 |
+
+#### 示例
+
+```powershell
+# 将多个尺寸合成为一个 ICO
+IconTool compose icon_16.png icon_32.png icon_64.png icon_256.png -o app.ico
+
+# 结合 resize 使用：先生成多尺寸，再合成 ICO
+IconTool resize logo.png -s "16,32,48,256" -o sizes/
+IconTool compose sizes/logo_16x16.png sizes/logo_32x32.png sizes/logo_48x48.png sizes/logo_256x256.png -o app.ico
+```
+
+#### 输出说明
+
+```
+── 多图拼合成 ICO ──
+  输入: 4 个文件
+  [1] icon_16.png → 16x16
+  [2] icon_32.png → 32x32
+  [3] icon_64.png → 64x64
+  [4] icon_256.png → 256x256
+
+  输出: app.ico (19.1 KB, 4 张)
+✓ 完成。
+```
+
+---
+
+### 命令十四：`favicon` — Web Favicon 全套生成
+
+#### 用法
+
+```
+IconTool favicon <文件路径> [选项]
+```
+
+从一张源图一键生成 Web 网站所需的全套 Favicon 文件，包括 ICO、多尺寸 PNG、Apple Touch Icon、Android Chrome 图标、site.webmanifest 和 HTML `<link>` 标签片段。
+
+#### 选项
+
+| 选项 | 简写 | 默认值 | 说明 |
+|------|------|--------|------|
+| `--output <目录>` | `-o` | 源文件所在目录下的 `favicon` 子目录 | 输出目录 |
+
+#### 示例
+
+```powershell
+# 一键生成全套 Favicon
+IconTool favicon logo.png
+
+# 输出到指定目录
+IconTool favicon logo.png -o public/
+```
+
+#### 生成文件列表
+
+| 文件 | 说明 |
+|------|------|
+| `favicon.ico` | 16/32/48 三尺寸合一 ICO |
+| `favicon-16x16.png` ~ `favicon-256x256.png` | 标准尺寸 PNG (16/32/48/64/96/128/256) |
+| `apple-touch-icon.png` | 180×180 Apple Touch Icon |
+| `android-chrome-192x192.png` | Android Chrome 192px |
+| `android-chrome-512x512.png` | Android Chrome 512px |
+| `site.webmanifest` | PWA 清单文件 |
+| `_head.html` | 可直接复制到 `<head>` 中的 `<link>` 标签片段 |
+
+---
+
+### 命令十五：`sheet` — Sprite Sheet 合并
+
+#### 用法
+
+```
+IconTool sheet [选项] <文件1> <文件2> ... 
+IconTool sheet [选项] <目录>
+```
+
+将多张图片合并为一张 Sprite Sheet（精灵图），同时生成 JSON 坐标映射和 CSS 样式文件。支持传入目录自动展开其中的图片文件。
+
+#### 选项
+
+| 选项 | 简写 | 默认值 | 说明 |
+|------|------|--------|------|
+| `--output <路径>` | `-o` | `spritesheet.png` | 输出精灵图路径 |
+| `--json <路径>` | — | 与输出同名 `.json` | JSON 坐标文件路径 |
+| `--size <值>` | `-s` | 自动（最大图像的边长） | 单元格尺寸（像素） |
+
+#### 示例
+
+```powershell
+# 合并目录中所有图片
+IconTool sheet icons/ -o spritesheet.png
+
+# 指定文件列表
+IconTool sheet icon1.png icon2.png icon3.png -o sprites.png
+
+# 指定单元格尺寸
+IconTool sheet icons/ -s 64 -o sprites.png
+```
+
+#### 输出说明
+
+```
+── Sprite Sheet 合并 ──
+  输入: 5 个文件
+  单元格: 256x256
+  网格: 3x2 (768x512)
+  [1] icon_128x128 (128x128) → (0,0)
+  [2] icon_16x16 (16x16) → (1,0)
+  ...
+
+  输出: spritesheet.png (32.3 KB)
+  坐标: spritesheet.json
+  CSS: spritesheet.css
+
+✓ 共合并 5 个图标。
+```
+
+生成的 JSON 包含每个精灵的名称和位置坐标，CSS 包含 `background-position` 样式类，可直接在 Web 项目中使用。
 
 ---
 

@@ -708,7 +708,9 @@ namespace TrueFluentPro.ViewModels
                                 .ToList(),
                             Timestamp = m.Timestamp,
                             GenerateSeconds = m.GenerateSeconds,
-                            DownloadSeconds = m.DownloadSeconds
+                            DownloadSeconds = m.DownloadSeconds,
+                            PromptTokens = m.PromptTokens,
+                            CompletionTokens = m.CompletionTokens
                         }).ToList(),
                         Tasks = session.TaskHistory.Select(t => new MediaGenTask
                         {

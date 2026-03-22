@@ -4,70 +4,95 @@ using System.Linq;
 using System.Text;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Documents;
 using Avalonia.Input;
+using Avalonia.Threading;
 using Avalonia.VisualTree;
 
 namespace TrueFluentPro.Controls.Markdown;
 
 /// <summary>
-/// 跨控件文本选择协调器。
-/// 解决 Avalonia SelectableTextBlock 只能逐块选择的问题：
-/// 在 StackPanel 层拦截 PointerPressed/PointerMoved/PointerReleased，
-/// 自行计算哪些子 STB 在拖选范围内，调用各 STB 的 SelectionStart/SelectionEnd
-/// 实现视觉上的"跨块选择"，复制时拼接所有选中文本。
+/// 文本选择管理器：统一处理单 STB 内多行选择和跨 STB 选择。
+/// 在 MarkdownRenderer（StackPanel）层通过隧道事件拦截指针操作，
+/// 使用 TextLayout.HitTestPoint 精确定位字符，并支持拖选时自动滚动。
 ///
-/// 灵感来源：Cherry Studio (React) 的浏览器原生 Selection API 可跨 DOM 节点选择，
-/// 此组件在 Avalonia 桌面端实现类似效果。
+/// 设计思路：
+/// - 同行内水平拖选（delta.Y &lt; 阈值）→ 不干预，交给 STB 原生处理
+/// - 超出阈值后进入管理模式 → 夺取 pointer capture，统一计算所有选区
+/// - PointerPressed 时缓存 STB 列表和坐标，避免 PointerMoved 中反复遍历 visual tree
+/// - 先设新选区再清旧选区，消除"先清后设"引起的闪烁
+/// - 支持拖到 ScrollViewer 边缘时自动滚动
 /// </summary>
 public sealed class SelectionManager
 {
-    private readonly Panel _container;
-    private bool _isDragging;
-    private Point _dragStartPoint;
-    private SelectableTextBlock? _startStb;
-    private int _startCharIndex;
+    // 全局只允许一个 SelectionManager 持有选区；开始新选区时自动清除其他 renderer 的残留选区
+    private static SelectionManager? s_activeManager;
 
-    /// <summary>当前选区内所有参与选择的 STB（按视觉位置排序）</summary>
+    private readonly Panel _container;
+
+    // ── 拖拽状态 ──
+    private bool _isDragging;
+    private bool _managedMode;
+    private Point _dragStartPoint;
+    private int _startCharIndex;
+    private int _startStbIndex = -1;
+
+    // PointerPressed 时缓存（拖拽期间不重新收集）
+    private List<StbInfo>? _cachedStbs;
+
+    // 当前管理选区的 STB 集合
     private readonly List<SelectableTextBlock> _selectedBlocks = new();
 
-    /// <summary>拖拽跨越此纵向像素数后才进入跨块选择模式</summary>
-    private const double CrossBlockDragThreshold = 10;
+    // ── 自动滚动 ──
+    private ScrollViewer? _scrollViewer;
+    private DispatcherTimer? _autoScrollTimer;
+    private double _autoScrollSpeed;
+    private Point _lastContainerPoint;
+
+    private const double DragThreshold = 4;
+    private const double AutoScrollEdge = 40;
+    private const double AutoScrollBaseSpeed = 5;
+    private const double AutoScrollMaxSpeed = 30;
 
     public SelectionManager(Panel container)
     {
         _container = container;
-
-        // 使用隧道事件（AddHandler tunnel: true），在子控件处理之前拦截
-        _container.AddHandler(InputElement.PointerPressedEvent, OnPointerPressed, Avalonia.Interactivity.RoutingStrategies.Tunnel);
-        _container.AddHandler(InputElement.PointerMovedEvent, OnPointerMoved, Avalonia.Interactivity.RoutingStrategies.Tunnel);
-        _container.AddHandler(InputElement.PointerReleasedEvent, OnPointerReleased, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+        _container.AddHandler(InputElement.PointerPressedEvent, OnPointerPressed,
+            Avalonia.Interactivity.RoutingStrategies.Tunnel);
+        _container.AddHandler(InputElement.PointerMovedEvent, OnPointerMoved,
+            Avalonia.Interactivity.RoutingStrategies.Tunnel);
+        _container.AddHandler(InputElement.PointerReleasedEvent, OnPointerReleased,
+            Avalonia.Interactivity.RoutingStrategies.Tunnel);
     }
 
-    /// <summary>获取当前跨块选中的完整文本（含换行分隔）</summary>
+    // ── 公开 API ─────────────────────────────────────────
+
+    /// <summary>获取管理选区内的完整文本</summary>
     public string GetSelectedText()
     {
-        if (_selectedBlocks.Count == 0)
-            return string.Empty;
-
+        if (_selectedBlocks.Count == 0) return string.Empty;
         var sb = new StringBuilder();
         foreach (var stb in _selectedBlocks)
         {
-            var selected = stb.SelectedText;
-            if (!string.IsNullOrEmpty(selected))
+            if (stb.SelectionStart == stb.SelectionEnd) continue;
+            var sel = GetSelectedSubstring(stb);
+            if (!string.IsNullOrEmpty(sel))
             {
-                if (sb.Length > 0)
-                    sb.AppendLine();
-                sb.Append(selected);
+                if (sb.Length > 0) sb.AppendLine();
+                sb.Append(sel);
             }
         }
         return sb.ToString();
     }
 
-    /// <summary>是否有跨块选择</summary>
-    public bool HasCrossBlockSelection => _selectedBlocks.Count > 1 &&
-        _selectedBlocks.Any(s => !string.IsNullOrEmpty(s.SelectedText));
+    /// <summary>是否有 SelectionManager 管理的选区</summary>
+    public bool HasManagedSelection =>
+        _selectedBlocks.Count > 0 && _selectedBlocks.Any(s => s.SelectionStart != s.SelectionEnd);
 
-    /// <summary>清除所有块的选择</summary>
+    /// <summary>向后兼容别名</summary>
+    public bool HasCrossBlockSelection => HasManagedSelection;
+
+    /// <summary>清除所有管理选区</summary>
     public void ClearSelection()
     {
         foreach (var stb in _selectedBlocks)
@@ -78,9 +103,10 @@ public sealed class SelectionManager
         _selectedBlocks.Clear();
     }
 
-    /// <summary>分离事件处理器（用于销毁时清理）</summary>
+    /// <summary>分离事件</summary>
     public void Detach()
     {
+        StopAutoScroll();
         _container.RemoveHandler(InputElement.PointerPressedEvent, OnPointerPressed);
         _container.RemoveHandler(InputElement.PointerMovedEvent, OnPointerMoved);
         _container.RemoveHandler(InputElement.PointerReleasedEvent, OnPointerReleased);
@@ -90,141 +116,189 @@ public sealed class SelectionManager
 
     private void OnPointerPressed(object? sender, PointerPressedEventArgs e)
     {
-        if (!e.GetCurrentPoint(_container).Properties.IsLeftButtonPressed)
-            return;
+        if (!e.GetCurrentPoint(_container).Properties.IsLeftButtonPressed) return;
+
+        // 新选区开始：清除其他 renderer 的残留选区
+        if (s_activeManager != null && s_activeManager != this)
+            s_activeManager.ClearSelection();
+        s_activeManager = this;
 
         _dragStartPoint = e.GetPosition(_container);
         _isDragging = true;
-
-        // 清除之前的跨块选区
+        _managedMode = false;
         ClearSelection();
 
-        // 定位起始 STB 和字符位置
-        _startStb = HitTestSelectableTextBlock(e.GetPosition(_container));
-        _startCharIndex = _startStb != null ? GetCharIndexAtPoint(_startStb, e.GetPosition(_startStb)) : 0;
+        // 一次性缓存所有 STB 及其容器内坐标（拖拽期间有效）
+        _cachedStbs = CollectSelectableTextBlocks();
+        _startStbIndex = FindStbIndexAtPoint(_cachedStbs, _dragStartPoint);
+        _startCharIndex = _startStbIndex >= 0
+            ? HitTestCharIndex(_cachedStbs[_startStbIndex], _dragStartPoint)
+            : 0;
+
+        _scrollViewer ??= FindAncestorScrollViewer();
     }
 
     private void OnPointerMoved(object? sender, PointerEventArgs e)
     {
-        if (!_isDragging || _startStb == null)
-            return;
+        if (!_isDragging || _cachedStbs == null || _startStbIndex < 0) return;
 
-        var currentPoint = e.GetPosition(_container);
+        var pt = e.GetPosition(_container);
 
-        // 如果拖拽距离很小，还在单个 STB 内操作，不干预
-        var delta = currentPoint - _dragStartPoint;
-        if (Math.Abs(delta.Y) < CrossBlockDragThreshold)
-            return;
+        if (!_managedMode)
+        {
+            if (Math.Abs(pt.Y - _dragStartPoint.Y) < DragThreshold) return;
+            _managedMode = true;
+            e.Pointer.Capture(_container);
+        }
 
-        // 进入跨块选择模式：拦截事件防止单个 STB 的默认选择
         e.Handled = true;
-
-        var endStb = HitTestSelectableTextBlock(currentPoint);
-        if (endStb == null)
-            return;
-
-        UpdateCrossBlockSelection(_startStb, _startCharIndex, endStb, e.GetPosition(endStb));
+        _lastContainerPoint = pt;
+        UpdateSelectionTo(pt);
+        UpdateAutoScroll(e);
     }
 
     private void OnPointerReleased(object? sender, PointerReleasedEventArgs e)
     {
-        if (_isDragging && _selectedBlocks.Count > 1)
+        StopAutoScroll();
+        if (_managedMode)
         {
-            // 跨块选择完成，不阻止事件（让上下文菜单正常工作）
+            e.Pointer.Capture(null);
+            _managedMode = false;
         }
         _isDragging = false;
+        _cachedStbs = null;
     }
 
-    // ── 核心：更新跨块选区 ───────────────────────────────
+    // ── 选区计算（核心）─────────────────────────────────
 
-    private void UpdateCrossBlockSelection(
-        SelectableTextBlock startStb, int startCharIdx,
-        SelectableTextBlock endStb, Point endLocalPoint)
+    private void UpdateSelectionTo(Point containerPoint)
     {
-        // 收集容器内所有 SelectableTextBlock 的视觉位置
-        var allStbs = CollectSelectableTextBlocks();
-        if (allStbs.Count == 0)
-            return;
+        var stbs = _cachedStbs!;
+        int endIdx = FindStbIndexAtPoint(stbs, containerPoint);
+        if (endIdx < 0) return;
 
-        // 找到 start 和 end 对应的索引
-        int startIdx = allStbs.FindIndex(s => ReferenceEquals(s.Stb, startStb));
-        int endIdx = allStbs.FindIndex(s => ReferenceEquals(s.Stb, endStb));
-        if (startIdx < 0 || endIdx < 0)
-            return;
+        int lo = Math.Min(_startStbIndex, endIdx);
+        int hi = Math.Max(_startStbIndex, endIdx);
+        bool reversed = _startStbIndex > endIdx;
 
-        // 确保 start <= end
-        bool reversed = startIdx > endIdx;
-        int lo = Math.Min(startIdx, endIdx);
-        int hi = Math.Max(startIdx, endIdx);
+        int endCharIdx = HitTestCharIndex(stbs[endIdx], containerPoint);
 
-        // 先清除之前的选区
-        foreach (var stb in _selectedBlocks)
-        {
-            stb.SelectionStart = 0;
-            stb.SelectionEnd = 0;
-        }
-        _selectedBlocks.Clear();
+        // ① 先计算并应用新选区（避免闪烁）
+        var newSet = new HashSet<SelectableTextBlock>();
 
-        // 对范围内每个 STB 设置选区
         for (int i = lo; i <= hi; i++)
         {
-            var stb = allStbs[i].Stb;
-            var textLen = stb.Text?.Length ?? 0;
-            if (textLen == 0)
-                continue;
+            var info = stbs[i];
+            int tLen = info.TextLength;
+            if (tLen == 0) continue;
 
-            _selectedBlocks.Add(stb);
+            newSet.Add(info.Stb);
 
-            if (i == lo && i == hi)
+            int ss, se;
+            if (lo == hi)
             {
-                // 起止在同一个 STB
-                int endCharIdx = GetCharIndexAtPoint(stb, endLocalPoint);
-                int a = Math.Min(startCharIdx, endCharIdx);
-                int b = Math.Max(startCharIdx, endCharIdx);
-                stb.SelectionStart = Math.Clamp(a, 0, textLen);
-                stb.SelectionEnd = Math.Clamp(b, 0, textLen);
+                int a = Math.Min(_startCharIndex, endCharIdx);
+                int b = Math.Max(_startCharIndex, endCharIdx);
+                ss = Math.Clamp(a, 0, tLen);
+                se = Math.Clamp(b, 0, tLen);
             }
-            else if (i == (reversed ? hi : lo))
+            else if (i == _startStbIndex)
             {
-                // 起始 STB：从 startCharIdx 选到末尾（或从开头选到 startCharIdx）
-                if (reversed)
-                {
-                    stb.SelectionStart = 0;
-                    stb.SelectionEnd = Math.Clamp(startCharIdx, 0, textLen);
-                }
-                else
-                {
-                    stb.SelectionStart = Math.Clamp(startCharIdx, 0, textLen);
-                    stb.SelectionEnd = textLen;
-                }
+                ss = reversed ? 0 : Math.Clamp(_startCharIndex, 0, tLen);
+                se = reversed ? Math.Clamp(_startCharIndex, 0, tLen) : tLen;
             }
-            else if (i == (reversed ? lo : hi))
+            else if (i == endIdx)
             {
-                // 结束 STB：从开头选到当前鼠标位置（或从当前位置选到末尾）
-                int endCharIdx = GetCharIndexAtPoint(stb, endLocalPoint);
-                if (reversed)
-                {
-                    stb.SelectionStart = Math.Clamp(endCharIdx, 0, textLen);
-                    stb.SelectionEnd = textLen;
-                }
-                else
-                {
-                    stb.SelectionStart = 0;
-                    stb.SelectionEnd = Math.Clamp(endCharIdx, 0, textLen);
-                }
+                ss = reversed ? Math.Clamp(endCharIdx, 0, tLen) : 0;
+                se = reversed ? tLen : Math.Clamp(endCharIdx, 0, tLen);
             }
             else
             {
-                // 中间的 STB：全选
-                stb.SelectionStart = 0;
-                stb.SelectionEnd = textLen;
+                ss = 0; se = tLen;
+            }
+
+            info.Stb.SelectionStart = ss;
+            info.Stb.SelectionEnd = se;
+        }
+
+        // ② 再清除不再参与的旧 STB（新选区已渲染，不会闪烁）
+        for (int i = _selectedBlocks.Count - 1; i >= 0; i--)
+        {
+            if (!newSet.Contains(_selectedBlocks[i]))
+            {
+                _selectedBlocks[i].SelectionStart = 0;
+                _selectedBlocks[i].SelectionEnd = 0;
             }
         }
+
+        _selectedBlocks.Clear();
+        _selectedBlocks.AddRange(newSet);
+    }
+
+    // ── 自动滚动 ─────────────────────────────────────────
+
+    private void UpdateAutoScroll(PointerEventArgs e)
+    {
+        if (_scrollViewer == null) return;
+
+        var ptInScroller = e.GetPosition(_scrollViewer);
+        double h = _scrollViewer.Viewport.Height;
+
+        if (ptInScroller.Y < AutoScrollEdge)
+        {
+            double t = Math.Clamp((AutoScrollEdge - ptInScroller.Y) / AutoScrollEdge, 0, 1);
+            _autoScrollSpeed = -(AutoScrollBaseSpeed + (AutoScrollMaxSpeed - AutoScrollBaseSpeed) * t);
+            EnsureAutoScrollRunning();
+        }
+        else if (ptInScroller.Y > h - AutoScrollEdge)
+        {
+            double t = Math.Clamp((ptInScroller.Y - h + AutoScrollEdge) / AutoScrollEdge, 0, 1);
+            _autoScrollSpeed = AutoScrollBaseSpeed + (AutoScrollMaxSpeed - AutoScrollBaseSpeed) * t;
+            EnsureAutoScrollRunning();
+        }
+        else
+        {
+            StopAutoScroll();
+        }
+    }
+
+    private void EnsureAutoScrollRunning()
+    {
+        if (_autoScrollTimer != null) return;
+        _autoScrollTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(16) };
+        _autoScrollTimer.Tick += AutoScrollTick;
+        _autoScrollTimer.Start();
+    }
+
+    private void StopAutoScroll()
+    {
+        if (_autoScrollTimer == null) return;
+        _autoScrollTimer.Stop();
+        _autoScrollTimer.Tick -= AutoScrollTick;
+        _autoScrollTimer = null;
+        _autoScrollSpeed = 0;
+    }
+
+    private void AutoScrollTick(object? sender, EventArgs e)
+    {
+        if (_scrollViewer == null || !_managedMode) { StopAutoScroll(); return; }
+
+        double oldY = _scrollViewer.Offset.Y;
+        double maxY = Math.Max(0, _scrollViewer.Extent.Height - _scrollViewer.Viewport.Height);
+        double newY = Math.Clamp(oldY + _autoScrollSpeed, 0, maxY);
+        if (Math.Abs(newY - oldY) < 0.5) return;
+
+        _scrollViewer.Offset = new Vector(_scrollViewer.Offset.X, newY);
+
+        // 滚动后 pointer 在屏幕上不动，但相对容器的 Y 发生了偏移
+        double delta = newY - oldY;
+        _lastContainerPoint = new Point(_lastContainerPoint.X, _lastContainerPoint.Y + delta);
+        UpdateSelectionTo(_lastContainerPoint);
     }
 
     // ── 辅助方法 ─────────────────────────────────────────
 
-    /// <summary>从容器中收集所有 SelectableTextBlock，按视觉纵坐标排序</summary>
+    /// <summary>收集容器内所有 STB，缓存坐标和文本长度，按 Y 排序</summary>
     private List<StbInfo> CollectSelectableTextBlocks()
     {
         var result = new List<StbInfo>();
@@ -243,12 +317,10 @@ public sealed class SelectionManager
                 {
                     var pos = stb.TranslatePoint(new Point(0, 0), _container);
                     if (pos.HasValue)
-                        result.Add(new StbInfo(stb, pos.Value.Y));
+                        result.Add(new StbInfo(stb, pos.Value.Y, pos.Value.X,
+                            stb.Bounds.Height, GetEffectiveTextLength(stb)));
                 }
-                catch
-                {
-                    // TranslatePoint 可能在布局未完成时失败
-                }
+                catch { /* 布局未完成时可能失败 */ }
             }
             else if (child is Visual v)
             {
@@ -257,71 +329,117 @@ public sealed class SelectionManager
         }
     }
 
-    /// <summary>对容器坐标做 HitTest，找到最近的 SelectableTextBlock</summary>
-    private SelectableTextBlock? HitTestSelectableTextBlock(Point containerPoint)
+    /// <summary>在已排序的 STB 列表中找到包含给定 Y 坐标的索引，间隙中取最近的</summary>
+    private static int FindStbIndexAtPoint(List<StbInfo> stbs, Point containerPoint)
     {
-        var allStbs = CollectSelectableTextBlocks();
-        if (allStbs.Count == 0)
-            return null;
+        if (stbs.Count == 0) return -1;
 
-        // 找到纵坐标最近的 STB
-        SelectableTextBlock? best = null;
+        int bestIdx = 0;
         double bestDist = double.MaxValue;
 
-        foreach (var info in allStbs)
+        for (int i = 0; i < stbs.Count; i++)
         {
-            var stbBounds = info.Stb.Bounds;
-            var globalPos = info.Stb.TranslatePoint(new Point(0, 0), _container);
-            if (!globalPos.HasValue)
-                continue;
+            double top = stbs[i].Top;
+            double bottom = top + stbs[i].Height;
 
-            double stbTop = globalPos.Value.Y;
-            double stbBottom = stbTop + stbBounds.Height;
+            // 精确命中
+            if (containerPoint.Y >= top && containerPoint.Y <= bottom)
+                return i;
 
-            // 如果点在 STB 的纵向范围内
-            if (containerPoint.Y >= stbTop && containerPoint.Y <= stbBottom)
-            {
-                best = info.Stb;
-                break;
-            }
+            // 计算到最近边界的距离
+            double dist = containerPoint.Y < top
+                ? top - containerPoint.Y
+                : containerPoint.Y - bottom;
 
-            // 否则找最近的
-            double dist = Math.Min(Math.Abs(containerPoint.Y - stbTop), Math.Abs(containerPoint.Y - stbBottom));
             if (dist < bestDist)
             {
                 bestDist = dist;
-                best = info.Stb;
+                bestIdx = i;
             }
         }
 
-        return best;
+        return bestIdx;
     }
 
-    /// <summary>估算在 STB 内指定本地坐标对应的字符索引（近似）</summary>
-    private static int GetCharIndexAtPoint(SelectableTextBlock stb, Point localPoint)
+    /// <summary>将容器坐标转换为 STB 本地坐标后用 TextLayout.HitTestPoint 定位字符</summary>
+    private static int HitTestCharIndex(StbInfo info, Point containerPoint)
     {
-        var text = stb.Text;
-        if (string.IsNullOrEmpty(text))
+        var localPoint = new Point(containerPoint.X - info.Left, containerPoint.Y - info.Top);
+
+        var layout = info.Stb.TextLayout;
+        if (layout == null || layout.TextLines.Count == 0)
             return 0;
 
-        // 使用 TextLayout 的 HitTest 能力进行精确字符定位
-        var textLayout = stb.TextLayout;
-        if (textLayout != null)
-        {
-            var hitResult = textLayout.HitTestPoint(localPoint);
-            return Math.Clamp(hitResult.TextPosition, 0, text.Length);
-        }
-
-        // 降级：组合 X+Y 坐标按比例估算
-        double yRatio = Math.Clamp(localPoint.Y / Math.Max(stb.Bounds.Height, 1), 0, 1);
-        double xRatio = Math.Clamp(localPoint.X / Math.Max(stb.Bounds.Width, 1), 0, 1);
-        // 对单行文本主要用 X 比例；多行文本综合 Y 和 X
-        double lineCount = Math.Max(stb.Bounds.Height / 24.0, 1); // 近似行高 24px
-        double combinedRatio = lineCount > 1.5
-            ? yRatio * (1.0 - 1.0 / lineCount) + xRatio / lineCount
-            : xRatio;
-        return (int)(Math.Clamp(combinedRatio, 0, 1) * text.Length);
+        var hit = layout.HitTestPoint(localPoint);
+        return Math.Clamp(hit.TextPosition, 0, info.TextLength);
     }
 
-    private readonly record struct StbInfo(SelectableTextBlock Stb, double Top);
+    /// <summary>获取 STB 有效文本长度（兼容 Text 属性和 Inlines 两种设置方式）</summary>
+    private static int GetEffectiveTextLength(SelectableTextBlock stb)
+    {
+        if (!string.IsNullOrEmpty(stb.Text))
+            return stb.Text.Length;
+
+        var lines = stb.TextLayout?.TextLines;
+        if (lines is { Count: > 0 })
+        {
+            var last = lines[lines.Count - 1];
+            return last.FirstTextSourceIndex + last.Length;
+        }
+        return 0;
+    }
+
+    /// <summary>
+    /// 从 STB 中提取选中区间的文本（兼容 Text / Inlines 两种模式）。
+    /// 当 MarkdownRenderer 通过 Inlines 设置内容时，stb.Text 为 null，
+    /// stb.SelectedText 也可能返回 null，因此需要自行从 Inlines 还原全文再截取。
+    /// </summary>
+    private static string GetSelectedSubstring(SelectableTextBlock stb)
+    {
+        int ss = stb.SelectionStart, se = stb.SelectionEnd;
+        if (ss == se) return string.Empty;
+
+        // Path 1：Text 模式（直接截取）
+        if (stb.Text is { Length: > 0 } text)
+        {
+            int a = Math.Clamp(Math.Min(ss, se), 0, text.Length);
+            int b = Math.Clamp(Math.Max(ss, se), 0, text.Length);
+            return text.Substring(a, b - a);
+        }
+
+        // Path 2：Inlines 模式（递归提取文本）
+        if (stb.Inlines is { Count: > 0 } inlines)
+        {
+            var sb = new StringBuilder();
+            foreach (var inline in inlines)
+                AppendInlineText(sb, inline);
+
+            var full = sb.ToString();
+            int a = Math.Clamp(Math.Min(ss, se), 0, full.Length);
+            int b = Math.Clamp(Math.Max(ss, se), 0, full.Length);
+            return full.Substring(a, b - a);
+        }
+
+        return string.Empty;
+    }
+
+    private static void AppendInlineText(StringBuilder sb, Inline inline)
+    {
+        if (inline is Run run)
+            sb.Append(run.Text);
+        else if (inline is Span span && span.Inlines is { Count: > 0 } children)
+            foreach (var child in children)
+                AppendInlineText(sb, child);
+    }
+
+    /// <summary>向上遍历 visual tree 找到最近的 ScrollViewer</summary>
+    private ScrollViewer? FindAncestorScrollViewer()
+    {
+        for (var v = _container.GetVisualParent(); v != null; v = v.GetVisualParent())
+            if (v is ScrollViewer sv) return sv;
+        return null;
+    }
+
+    private readonly record struct StbInfo(
+        SelectableTextBlock Stb, double Top, double Left, double Height, int TextLength);
 }

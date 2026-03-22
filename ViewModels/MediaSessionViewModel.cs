@@ -359,6 +359,14 @@ namespace TrueFluentPro.ViewModels
             set => SetProperty(ref _enableReasoning, value);
         }
 
+        private bool _enableWebSearch;
+        /// <summary>是否启用 Web 搜索增强</summary>
+        public bool EnableWebSearch
+        {
+            get => _enableWebSearch;
+            set => SetProperty(ref _enableWebSearch, value);
+        }
+
         // --- 命令 ---
         public ICommand GenerateCommand { get; }
         public ICommand CancelCommand { get; }
@@ -371,6 +379,9 @@ namespace TrueFluentPro.ViewModels
 
         // --- 对话功能增强命令 ---
         public ICommand EditMessageCommand { get; }
+        public ICommand SaveEditCommand { get; }
+        public ICommand CancelEditCommand { get; }
+        public ICommand SendEditCommand { get; }
         public ICommand ForkFromMessageCommand { get; }
         public ICommand ExportConversationCommand { get; }
 
@@ -516,6 +527,16 @@ namespace TrueFluentPro.ViewModels
             EditMessageCommand = new RelayCommand(
                 param => EditMessage(param as ChatMessageViewModel),
                 param => param is ChatMessageViewModel m && m.IsUser && !m.IsLoading && !IsChatStreaming);
+
+            SaveEditCommand = new RelayCommand(
+                param => SaveEdit(param as ChatMessageViewModel));
+
+            CancelEditCommand = new RelayCommand(
+                param => CancelEdit(param as ChatMessageViewModel));
+
+            SendEditCommand = new RelayCommand(
+                param => SendEdit(param as ChatMessageViewModel),
+                _ => !IsChatStreaming);
 
             ForkFromMessageCommand = new RelayCommand(
                 param => ForkFromMessage(param as ChatMessageViewModel),
@@ -1956,6 +1977,19 @@ namespace TrueFluentPro.ViewModels
             var ct = _chatCts.Token;
             IsChatStreaming = true;
 
+            // Web 搜索增强
+            string searchContext = "";
+            if (_enableWebSearch)
+            {
+                try
+                {
+                    var searchService = new WebSearchService();
+                    var searchResults = await searchService.SearchAsync(prompt, 5, ct);
+                    searchContext = WebSearchService.FormatAsContext(searchResults, prompt);
+                }
+                catch { /* 搜索失败不阻塞聊天 */ }
+            }
+
             var runtimeService = new AiInsightService(tokenProvider);
             var sb = new StringBuilder();
             var reasoningSb = new StringBuilder();
@@ -1970,6 +2004,8 @@ namespace TrueFluentPro.ViewModels
 
             // 构建多轮上下文
             var contextContent = BuildMultiTurnContent(prompt);
+            if (!string.IsNullOrEmpty(searchContext))
+                contextContent = searchContext + "\n\n---\n\n" + contextContent;
 
             try
             {
@@ -1988,6 +2024,17 @@ namespace TrueFluentPro.ViewModels
                     ct,
                     AiChatProfile.Summary,
                     enableReasoning: _enableReasoning,
+                    onOutcome: outcome =>
+                    {
+                        if (outcome.PromptTokens.HasValue || outcome.CompletionTokens.HasValue)
+                        {
+                            Dispatcher.UIThread.Post(() =>
+                            {
+                                aiMessage.PromptTokens = outcome.PromptTokens;
+                                aiMessage.CompletionTokens = outcome.CompletionTokens;
+                            });
+                        }
+                    },
                     onReasoningChunk: reasoningChunk =>
                     {
                         reasoningSb.Append(reasoningChunk);
@@ -2259,24 +2306,186 @@ namespace TrueFluentPro.ViewModels
         // ── 消息编辑 ────────────────────────────────────────
 
         /// <summary>
-        /// 编辑用户消息：将消息内容加载到输入框，截断后续消息，允许用户修改后重发。
+        /// 编辑用户消息：进入原地编辑模式，显示 TextBox 和操作按钮。
         /// </summary>
         private void EditMessage(ChatMessageViewModel? message)
         {
             if (message == null || !message.IsUser || IsChatStreaming) return;
 
-            // 将消息文本设置到 PromptText 供用户编辑
-            PromptText = message.Text;
+            message.EditText = message.Text;
+            message.IsEditing = true;
+        }
 
-            // 找到该消息在列表中的位置，删除该消息及其后续所有消息
+        /// <summary>保存编辑：仅更新文本，不重发。</summary>
+        private void SaveEdit(ChatMessageViewModel? message)
+        {
+            if (message == null) return;
+            message.Text = message.EditText;
+            message.IsEditing = false;
+            _onRequestSave?.Invoke(this);
+        }
+
+        /// <summary>取消编辑：恢复原文。</summary>
+        private void CancelEdit(ChatMessageViewModel? message)
+        {
+            if (message == null) return;
+            message.IsEditing = false;
+        }
+
+        /// <summary>发送编辑：更新文本，删除后续消息，并重新生成。</summary>
+        private void SendEdit(ChatMessageViewModel? message)
+        {
+            if (message == null || IsChatStreaming) return;
+
+            message.Text = message.EditText;
+            message.IsEditing = false;
+
+            // 删除该消息之后的所有消息
             var idx = _allMessages.IndexOf(message);
             if (idx < 0) return;
 
-            var toRemove = _allMessages.Skip(idx).ToList();
+            var toRemove = _allMessages.Skip(idx + 1).ToList();
             foreach (var m in toRemove)
                 RemoveMessageInternal(m);
 
             _onRequestSave?.Invoke(this);
+
+            // 以编辑后的消息文本重新发送（不重复添加用户消息）
+            ResendTextChatAsync(message.Text);
+        }
+
+        /// <summary>基于已存在的用户消息重新发起文本聊天（不重新添加用户消息）。</summary>
+        private async void ResendTextChatAsync(string prompt)
+        {
+            if (IsChatStreaming) return;
+
+            if (!TryBuildChatRuntimeConfig(out var runtimeRequest, out var endpoint, out var errorText))
+            {
+                AppendMessage(new ChatMessageViewModel(new MediaChatMessage
+                {
+                    Role = "assistant",
+                    Text = errorText,
+                    ContentType = "text",
+                    Timestamp = DateTime.Now
+                }));
+                _onRequestSave?.Invoke(this);
+                return;
+            }
+
+            AzureTokenProvider? tokenProvider = null;
+            if (runtimeRequest.AzureAuthMode == AzureAuthMode.AAD)
+            {
+                tokenProvider = await _azureTokenProviderStore.GetAuthenticatedProviderAsync(
+                    endpoint != null ? $"endpoint_{endpoint.Id}" : "ai",
+                    runtimeRequest.AzureTenantId,
+                    runtimeRequest.AzureClientId);
+            }
+
+            var reasoningRequested = _enableReasoning;
+            var aiMessage = new ChatMessageViewModel(new MediaChatMessage
+            {
+                Role = "assistant",
+                Text = "",
+                ContentType = "text",
+                Timestamp = DateTime.Now
+            }) { IsLoading = true, IsStreamingDone = false };
+            AppendMessage(aiMessage);
+
+            _chatCts?.Cancel();
+            _chatCts = new CancellationTokenSource();
+            var ct = _chatCts.Token;
+            IsChatStreaming = true;
+
+            var runtimeService = new AiInsightService(tokenProvider);
+            var sb = new StringBuilder();
+            var reasoningSb = new StringBuilder();
+            _chatFlushThrottle.Restart();
+
+            _streamAnimator?.Dispose();
+            _streamAnimator = new Controls.Markdown.SmoothStreamingAnimator(displayedText =>
+            {
+                aiMessage.Text = displayedText;
+            });
+
+            var contextContent = BuildMultiTurnContent(prompt);
+
+            try
+            {
+                await runtimeService.StreamChatAsync(
+                    runtimeRequest,
+                    "你是一个有帮助的AI助手。请用中文回答用户的问题。",
+                    contextContent,
+                    chunk =>
+                    {
+                        sb.Append(chunk);
+                        _streamAnimator?.AppendToken(chunk);
+                        ThrottledFlushReasoning(aiMessage, reasoningSb);
+                    },
+                    ct,
+                    AiChatProfile.Summary,
+                    enableReasoning: _enableReasoning,
+                    onOutcome: outcome =>
+                    {
+                        if (outcome.PromptTokens.HasValue || outcome.CompletionTokens.HasValue)
+                        {
+                            Dispatcher.UIThread.Post(() =>
+                            {
+                                aiMessage.PromptTokens = outcome.PromptTokens;
+                                aiMessage.CompletionTokens = outcome.CompletionTokens;
+                            });
+                        }
+                    },
+                    onReasoningChunk: reasoningChunk =>
+                    {
+                        reasoningSb.Append(reasoningChunk);
+                        ThrottledFlushReasoning(aiMessage, reasoningSb);
+                    });
+
+                _streamAnimator?.EndStream();
+                Dispatcher.UIThread.Post(() =>
+                {
+                    aiMessage.Text = sb.ToString();
+                    aiMessage.ReasoningText = reasoningSb.ToString();
+                    aiMessage.IsLoading = false;
+                    aiMessage.IsStreamingDone = true;
+                    aiMessage.ReasoningStatusText = BuildReasoningStatusText(
+                        reasoningRequested, reasoningSb.Length > 0);
+                    if (aiMessage.HasReasoning)
+                        aiMessage.IsReasoningExpanded = false;
+                });
+            }
+            catch (OperationCanceledException)
+            {
+                _streamAnimator?.EndStream();
+                Dispatcher.UIThread.Post(() =>
+                {
+                    aiMessage.Text = sb.ToString();
+                    aiMessage.ReasoningText = reasoningSb.ToString();
+                    aiMessage.IsLoading = false;
+                    aiMessage.IsStreamingDone = true;
+                });
+            }
+            catch (Exception ex)
+            {
+                _streamAnimator?.EndStream();
+                Dispatcher.UIThread.Post(() =>
+                {
+                    aiMessage.Text = sb.Length > 0
+                        ? sb + $"\n\n---\n**错误**: {ex.Message}"
+                        : $"**错误**: {ex.Message}";
+                    aiMessage.ReasoningText = reasoningSb.ToString();
+                    aiMessage.IsLoading = false;
+                    aiMessage.IsStreamingDone = true;
+                });
+            }
+            finally
+            {
+                IsChatStreaming = false;
+                _chatFlushThrottle.Stop();
+                _streamAnimator?.Dispose();
+                _streamAnimator = null;
+                _onRequestSave?.Invoke(this);
+            }
         }
 
         // ── 对话分支（Fork）─────────────────────────────────
@@ -2478,7 +2687,10 @@ namespace TrueFluentPro.ViewModels
             set
             {
                 if (SetProperty(ref _promptTokens, value))
+                {
                     OnPropertyChanged(nameof(HasTokenUsage));
+                    OnPropertyChanged(nameof(TokenUsageText));
+                }
             }
         }
 
@@ -2490,7 +2702,10 @@ namespace TrueFluentPro.ViewModels
             set
             {
                 if (SetProperty(ref _completionTokens, value))
+                {
                     OnPropertyChanged(nameof(HasTokenUsage));
+                    OnPropertyChanged(nameof(TokenUsageText));
+                }
             }
         }
 
@@ -2515,7 +2730,22 @@ namespace TrueFluentPro.ViewModels
         public bool IsEditing
         {
             get => _isEditing;
-            set => SetProperty(ref _isEditing, value);
+            set
+            {
+                if (SetProperty(ref _isEditing, value))
+                    OnPropertyChanged(nameof(IsNotEditing));
+            }
+        }
+
+        /// <summary>反向绑定：非编辑模式</summary>
+        public bool IsNotEditing => !_isEditing;
+
+        private string _editText = "";
+        /// <summary>编辑中的临时文本</summary>
+        public string EditText
+        {
+            get => _editText;
+            set => SetProperty(ref _editText, value);
         }
 
         public bool IsUser => Role == "user";

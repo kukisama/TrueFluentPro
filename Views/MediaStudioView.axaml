@@ -19,16 +19,16 @@
         <Style Selector="Border.user-msg">
             <Setter Property="Background" Value="{DynamicResource UserMessageBrush}"/>
             <Setter Property="CornerRadius" Value="10,10,2,10"/>
-            <Setter Property="Padding" Value="12,8"/>
-            <Setter Property="Margin" Value="60,4,8,4"/>
+            <Setter Property="Padding" Value="14,10"/>
+            <Setter Property="Margin" Value="60,8,8,8"/>
             <Setter Property="HorizontalAlignment" Value="Right"/>
         </Style>
         <!-- AI 消息气泡 -->
         <Style Selector="Border.ai-msg">
             <Setter Property="Background" Value="{DynamicResource AiMessageBrush}"/>
             <Setter Property="CornerRadius" Value="10,10,10,2"/>
-            <Setter Property="Padding" Value="14,10"/>
-            <Setter Property="Margin" Value="8,4,60,4"/>
+            <Setter Property="Padding" Value="16,12"/>
+            <Setter Property="Margin" Value="8,8,60,8"/>
             <Setter Property="HorizontalAlignment" Value="Left"/>
         </Style>
         <!-- 参数区域标签 -->
@@ -225,18 +225,54 @@
                                             <Border Classes="user-msg" IsVisible="{Binding IsUser}"
                                                     PointerReleased="ChatMessageBorder_PointerReleased">
                                                 <StackPanel Spacing="4">
+                                                    <!-- 正常显示模式 -->
                                                     <SelectableTextBlock Text="{Binding Text}"
                                                              TextWrapping="Wrap"
-                                                             ContextFlyout="{x:Null}"/>
-                                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                                             ContextFlyout="{x:Null}"
+                                                             IsVisible="{Binding IsNotEditing}"/>
+                                                    <!-- 原地编辑模式 -->
+                                                    <StackPanel Spacing="6" IsVisible="{Binding IsEditing}">
+                                                        <TextBox Text="{Binding EditText, Mode=TwoWay}"
+                                                                 AcceptsReturn="True"
+                                                                 TextWrapping="Wrap"
+                                                                 MinHeight="38"
+                                                                 MaxHeight="160"
+                                                                 Padding="8,6"/>
+                                                        <StackPanel Orientation="Horizontal" Spacing="6"
+                                                                    HorizontalAlignment="Right">
+                                                            <Button ToolTip.Tip="取消编辑" Padding="6,3" FontSize="11"
+                                                                    Command="{Binding $parent[ItemsControl].DataContext.CancelEditCommand}"
+                                                                    CommandParameter="{Binding}">
+                                                                <icons:Icon Value="fa-solid fa-xmark" FontSize="12"/>
+                                                            </Button>
+                                                            <Button ToolTip.Tip="仅保存修改" Padding="6,3" FontSize="11"
+                                                                    Command="{Binding $parent[ItemsControl].DataContext.SaveEditCommand}"
+                                                                    CommandParameter="{Binding}">
+                                                                <icons:Icon Value="fa-regular fa-floppy-disk" FontSize="12"/>
+                                                            </Button>
+                                                            <Button ToolTip.Tip="保存并重新生成回复" Padding="8,3" FontSize="11"
+                                                                    Background="{DynamicResource AccentBlueBrush}" Foreground="White"
+                                                                    Command="{Binding $parent[ItemsControl].DataContext.SendEditCommand}"
+                                                                    CommandParameter="{Binding}">
+                                                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                                                    <icons:Icon Value="fa-solid fa-paper-plane" FontSize="12"/>
+                                                                    <TextBlock Text="发送" VerticalAlignment="Center"/>
+                                                                </StackPanel>
+                                                            </Button>
+                                                        </StackPanel>
+                                                    </StackPanel>
+                                                    <StackPanel Orientation="Horizontal" Spacing="8"
+                                                                IsVisible="{Binding IsNotEditing}">
                                                         <TextBlock Text="{Binding TimestampText}" FontSize="10"
                                                                    Foreground="{DynamicResource TimestampBrush}"
                                                                    VerticalAlignment="Center"/>
                                                         <!-- 编辑按钮 -->
-                                                        <Button Content="✏ 编辑" FontSize="10" Padding="4,2"
+                                                        <Button ToolTip.Tip="编辑" FontSize="10" Padding="4,2"
                                                                 Opacity="0.6" Cursor="Hand"
                                                                 Command="{Binding $parent[ItemsControl].DataContext.EditMessageCommand}"
-                                                                CommandParameter="{Binding}"/>
+                                                                CommandParameter="{Binding}">
+                                                            <icons:Icon Value="fa-regular fa-pen-to-square" FontSize="11"/>
+                                                        </Button>
                                                     </StackPanel>
                                                 </StackPanel>
                                             </Border>
@@ -251,9 +287,11 @@
                                                         <!-- 有思考内容时的展开/收缩按钮 -->
                                                         <Button Classes="pressable" Padding="6,3" FontSize="11"
                                                                 Click="ToggleReasoning_Click"
-                                                                HorizontalAlignment="Left">
+                                                                HorizontalAlignment="Left"
+                                                                ToolTip.Tip="展开/折叠思考过程">
                                                             <StackPanel Orientation="Horizontal" Spacing="4">
-                                                                <TextBlock Text="💭 思考过程" VerticalAlignment="Center"/>
+                                                                <icons:Icon Value="fa-solid fa-brain" FontSize="12" VerticalAlignment="Center"/>
+                                                                <TextBlock Text="思考过程" VerticalAlignment="Center"/>
                                                                 <TextBlock Text="▾" FontSize="10" VerticalAlignment="Center"
                                                                            IsVisible="{Binding !IsReasoningExpanded}"/>
                                                                 <TextBlock Text="▴" FontSize="10" VerticalAlignment="Center"
@@ -345,19 +383,27 @@
                                                     <!-- 消息操作按钮 -->
                                                     <StackPanel Classes="msg-actions" Orientation="Horizontal" Spacing="6"
                                                                 IsVisible="{Binding !IsLoading}">
-                                                        <Button Content="📋 复制"
+                                                        <Button ToolTip.Tip="复制"
                                                                 Command="{Binding $parent[ItemsControl].DataContext.CopyMessageCommand}"
-                                                                CommandParameter="{Binding}"/>
-                                                        <Button Content="🔄 重新生成"
+                                                                CommandParameter="{Binding}">
+                                                            <icons:Icon Value="fa-regular fa-copy" FontSize="13"/>
+                                                        </Button>
+                                                        <Button ToolTip.Tip="重新生成"
                                                                 IsVisible="{Binding IsTextContent}"
                                                                 Command="{Binding $parent[ItemsControl].DataContext.RegenerateMessageCommand}"
-                                                                CommandParameter="{Binding}"/>
-                                                        <Button Content="🌿 分支"
+                                                                CommandParameter="{Binding}">
+                                                            <icons:Icon Value="fa-solid fa-rotate" FontSize="13"/>
+                                                        </Button>
+                                                        <Button ToolTip.Tip="从此处创建对话分支"
                                                                 Command="{Binding $parent[ItemsControl].DataContext.ForkFromMessageCommand}"
-                                                                CommandParameter="{Binding}"/>
-                                                        <Button Content="🗑 删除"
+                                                                CommandParameter="{Binding}">
+                                                            <icons:Icon Value="fa-solid fa-code-branch" FontSize="13"/>
+                                                        </Button>
+                                                        <Button ToolTip.Tip="删除"
                                                                 Command="{Binding $parent[ItemsControl].DataContext.DeleteMessageCommand}"
-                                                                CommandParameter="{Binding}"/>
+                                                                CommandParameter="{Binding}">
+                                                            <icons:Icon Value="fa-regular fa-trash-can" FontSize="13"/>
+                                                        </Button>
                                                     </StackPanel>
 
                                                     <!-- Token 用量显示 -->
@@ -381,20 +427,28 @@
                                                     Margin="0,0,12,12"
                                                     Spacing="6"
                                                     IsHitTestVisible="True">
-                                            <Button Content="🔍 搜索" Padding="10,4" FontSize="11"
-                                                    Click="ToggleSearch_Click" ToolTip.Tip="Ctrl+F"/>
-                                            <Button Content="📤 导出" Padding="10,4" FontSize="11"
-                                                    Command="{Binding ExportConversationCommand}"/>
+                                            <Button ToolTip.Tip="搜索 (Ctrl+F)" Padding="10,4" FontSize="11"
+                                                    Click="ToggleSearch_Click">
+                                                <icons:Icon Value="fa-solid fa-magnifying-glass" FontSize="13"/>
+                                            </Button>
+                                            <Button ToolTip.Tip="导出对话" Padding="10,4" FontSize="11"
+                                                    Command="{Binding ExportConversationCommand}">
+                                                <icons:Icon Value="fa-solid fa-arrow-up-from-bracket" FontSize="13"/>
+                                            </Button>
                                             <Button x:Name="ScrollToTopButton"
-                                                    Content="⇧ 顶部"
+                                                    ToolTip.Tip="回到顶部"
                                                     IsVisible="False"
                                                     Padding="10,4"
-                                                    Click="ScrollToTop_Click"/>
+                                                    Click="ScrollToTop_Click">
+                                                <icons:Icon Value="fa-solid fa-arrow-up" FontSize="13"/>
+                                            </Button>
                                             <Button x:Name="ScrollToBottomButton"
-                                                    Content="⇩ 底部"
+                                                    ToolTip.Tip="回到底部"
                                                     IsVisible="False"
                                                     Padding="10,4"
-                                                    Click="ScrollToBottom_Click"/>
+                                                    Click="ScrollToBottom_Click">
+                                                <icons:Icon Value="fa-solid fa-arrow-down" FontSize="13"/>
+                                            </Button>
                                         </StackPanel>
                                     </Grid>
                                     </Grid>
@@ -445,6 +499,14 @@
                                           Padding="5,3"
                                           ToolTip.Tip="启用模型推理/思考过程">
                                 <icons:Icon Value="fa-regular fa-circle-question" FontSize="14"/>
+                            </ToggleButton>
+
+                            <!-- Web 搜索开关（仅文本模式） -->
+                            <ToggleButton IsChecked="{Binding EnableWebSearch}"
+                                          IsVisible="{Binding IsTextMode}"
+                                          Padding="5,3"
+                                          ToolTip.Tip="启用 Web 搜索增强（发送前自动搜索相关信息）">
+                                <icons:Icon Value="fa-solid fa-globe" FontSize="14"/>
                             </ToggleButton>
 
                             <!-- 图片参数 -->

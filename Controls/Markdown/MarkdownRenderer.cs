@@ -257,7 +257,7 @@ public class MarkdownRenderer : StackPanel
         }
 
         var stb = CreateBaseTextBlock();
-        stb.Margin = new Thickness(0, 2, 0, 2);
+        stb.Margin = new Thickness(0, 4, 0, 6);
         if (para.Inline != null)
             RenderInlines(stb.Inlines!, para.Inline);
         return stb;
@@ -447,11 +447,13 @@ public class MarkdownRenderer : StackPanel
         {
             Child = stack,
             CornerRadius = new CornerRadius(8),
-            Padding = new Thickness(12, 8),
-            Margin = new Thickness(0, 4, 0, 4),
+            Padding = new Thickness(14, 10),
+            Margin = new Thickness(0, 8, 0, 8),
             MaxWidth = MaxContentWidth,
         };
         border[!Border.BackgroundProperty] = new DynamicResourceExtension(MarkdownTheme.CodeBlockBackgroundKey);
+        border[!Border.BorderBrushProperty] = new DynamicResourceExtension(MarkdownTheme.BorderSubtleKey);
+        border.BorderThickness = new Thickness(1);
 
         return border;
     }
@@ -991,11 +993,13 @@ public class MarkdownRenderer : StackPanel
         {
             Child = stack,
             CornerRadius = new CornerRadius(8),
-            Padding = new Thickness(12, 8),
-            Margin = new Thickness(0, 4, 0, 4),
+            Padding = new Thickness(14, 10),
+            Margin = new Thickness(0, 8, 0, 8),
             MaxWidth = MaxContentWidth,
         };
         border[!Border.BackgroundProperty] = new DynamicResourceExtension(MarkdownTheme.CodeBlockBackgroundKey);
+        border[!Border.BorderBrushProperty] = new DynamicResourceExtension(MarkdownTheme.BorderSubtleKey);
+        border.BorderThickness = new Thickness(1);
 
         return border;
     }
