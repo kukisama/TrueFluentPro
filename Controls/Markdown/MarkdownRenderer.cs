@@ -106,14 +106,15 @@ public class MarkdownRenderer : StackPanel
         .Build();
 
     /// <summary>
-    /// 预处理：将 [N]（N=1~99）转义为 \[N\]，防止 Markdig 把相邻的 [2][3] 解析为引用链接。
-    /// 转义后变成 LiteralInline，由 RenderLiteralWithCitations() 正则统一处理。
+    /// 预处理：将 [N]（N=1~99）转换为 [N](cite://N)，变成标准 Markdown 链接。
+    /// 与 TimeLinkHelper 同思路——Markdig 正常解析为带 URL 的 LinkInline，
+    /// 渲染时检查 cite:// 协议即可。彻底绕过方括号的引用链接/脚注歧义。
     /// </summary>
-    private static readonly System.Text.RegularExpressions.Regex s_citationEscape =
-        new(@"(?<!\\)\[(\d{1,2})\]", System.Text.RegularExpressions.RegexOptions.Compiled);
+    private static readonly System.Text.RegularExpressions.Regex s_citationInject =
+        new(@"\[(\d{1,2})\](?!\()", System.Text.RegularExpressions.RegexOptions.Compiled);
 
-    private static string EscapeCitationBrackets(string md)
-        => s_citationEscape.Replace(md, @"\[$1\]");
+    private static string InjectCitationLinks(string md)
+        => s_citationInject.Replace(md, m => $"[{m.Groups[1].Value}](cite://{m.Groups[1].Value})");
 
     // ── 主题 ─────────────────────────────────────────────
 
@@ -196,7 +197,7 @@ public class MarkdownRenderer : StackPanel
             return;
         }
 
-        md = EscapeCitationBrackets(md);
+        md = InjectCitationLinks(md);
         var doc = Markdig.Markdown.Parse(md, s_pipeline);
 
         var newSources = new List<string>(doc.Count);
@@ -692,7 +693,7 @@ public class MarkdownRenderer : StackPanel
                     break;
 
                 case LiteralInline literal:
-                    RenderLiteralWithCitations(target, literal.Content.ToString());
+                    target.Add(new Run(literal.Content.ToString()));
                     break;
 
                 case EmphasisInline emphasis:
@@ -747,10 +748,17 @@ public class MarkdownRenderer : StackPanel
                     break;
                 }
 
+                case LinkInline link when link.Url?.StartsWith("cite://") == true:
+                {
+                    // cite:// 协议 → 渲染为圆形引用角标按钮
+                    if (int.TryParse(link.Url!.AsSpan("cite://".Length), out var citNum))
+                        RenderCitationBadge(target, citNum);
+                    break;
+                }
+
                 case LinkInline link:
                 {
                     var linkUrl = link.Url;
-                    // 提取纯文本（链接内可能有嵌套格式，这里取纯文本即可）
                     var linkText = link.FirstChild is LiteralInline lit
                         ? lit.Content.ToString()
                         : (linkUrl ?? "");
@@ -839,25 +847,39 @@ public class MarkdownRenderer : StackPanel
     /// </summary>
     private Button CreateCitationButton(int citNum)
     {
+        // 与来源面板（CitationPanel.axaml）完全一致的圆形角标
+        var numText = new TextBlock
+        {
+            Text = citNum.ToString(),
+            FontSize = 10,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = Avalonia.Media.Brushes.White,
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+        };
+        var circle = new Border
+        {
+            Child = numText,
+            CornerRadius = new CornerRadius(9),
+            MinWidth = 18,
+            Height = 18,
+            Padding = new Thickness(4, 0),
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+        };
+        circle[!Border.BackgroundProperty] =
+            new DynamicResourceExtension("AccentTextFillColorPrimaryBrush");
+
+        // 透明 Button 只为获取 Click 路由事件（不被 SelectableTextBlock 拦截）
         var btn = new Button
         {
-            Content = citNum.ToString(),
-            FontSize = 9,
-            FontWeight = FontWeight.SemiBold,
-            MinWidth = 16,
-            Height = 16,
-            Padding = new Thickness(4, 0),
+            Content = circle,
+            Padding = new Thickness(0),
             Margin = new Thickness(1, 0),
-            CornerRadius = new CornerRadius(8),
+            BorderThickness = new Thickness(0),
+            Background = Avalonia.Media.Brushes.Transparent,
             VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
-            VerticalContentAlignment = Avalonia.Layout.VerticalAlignment.Center,
-            HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Center,
             Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand),
         };
-        btn[!Button.BackgroundProperty] =
-            new DynamicResourceExtension("AccentFillColorDefaultBrush");
-        btn[!Button.ForegroundProperty] =
-            new DynamicResourceExtension("TextOnAccentFillColorPrimaryBrush");
 
         btn.Click += (_, _) =>
         {
@@ -877,40 +899,7 @@ public class MarkdownRenderer : StackPanel
         target.Add(new InlineUIContainer { Child = CreateCitationButton(citNum) });
     }
 
-    /// <summary>匹配文本中的 [N] 引用标记（1-99）— 处理 Markdig 未解析为 LinkInline 的情况</summary>
-    private static readonly System.Text.RegularExpressions.Regex s_citationRegex =
-        new(@"\[(\d{1,2})\]", System.Text.RegularExpressions.RegexOptions.Compiled);
 
-    /// <summary>
-    /// 渲染文本，将 [N] 引用标记替换为可点击的彩色角标。
-    /// 所有角标统一渲染为按钮样式，点击时动态查找 CitationUrls（解决绑定时序问题）。
-    /// </summary>
-    private void RenderLiteralWithCitations(InlineCollection target, string text)
-    {
-        var matches = s_citationRegex.Matches(text);
-        if (matches.Count == 0)
-        {
-            target.Add(new Run(text));
-            return;
-        }
-
-        int lastEnd = 0;
-        foreach (System.Text.RegularExpressions.Match m in matches)
-        {
-            // 前缀文本
-            if (m.Index > lastEnd)
-                target.Add(new Run(text[lastEnd..m.Index]));
-
-            int citNum = int.Parse(m.Groups[1].Value);
-            target.Add(new InlineUIContainer { Child = CreateCitationButton(citNum) });
-
-            lastEnd = m.Index + m.Length;
-        }
-
-        // 尾部文本
-        if (lastEnd < text.Length)
-            target.Add(new Run(text[lastEnd..]));
-    }
 
     // ── LaTeX 块级公式 ───────────────────────────────────
 
