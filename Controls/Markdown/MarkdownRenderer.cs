@@ -1,6 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
+using System.Net.Http;
+using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Documents;
@@ -9,12 +12,15 @@ using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Markup.Xaml.MarkupExtensions;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
 using Markdig;
+using Markdig.Extensions.Mathematics;
 using Markdig.Extensions.Tables;
 using Markdig.Extensions.TaskLists;
 using Markdig.Syntax;
 using Markdig.Syntax.Inlines;
 using MdInline = Markdig.Syntax.Inlines.Inline;
+using IOPath = System.IO.Path;
 
 namespace TrueFluentPro.Controls.Markdown;
 
@@ -44,6 +50,9 @@ public class MarkdownRenderer : StackPanel
     public static readonly StyledProperty<bool> EnableCrossBlockSelectionProperty =
         AvaloniaProperty.Register<MarkdownRenderer, bool>(nameof(EnableCrossBlockSelection), true);
 
+    public static readonly StyledProperty<bool> ShowCodeLineNumbersProperty =
+        AvaloniaProperty.Register<MarkdownRenderer, bool>(nameof(ShowCodeLineNumbers), false);
+
     public string? Markdown
     {
         get => GetValue(MarkdownProperty);
@@ -69,6 +78,13 @@ public class MarkdownRenderer : StackPanel
         set => SetValue(EnableCrossBlockSelectionProperty, value);
     }
 
+    /// <summary>是否在代码块中显示行号</summary>
+    public bool ShowCodeLineNumbers
+    {
+        get => GetValue(ShowCodeLineNumbersProperty);
+        set => SetValue(ShowCodeLineNumbersProperty, value);
+    }
+
     // ── 解析管线 ─────────────────────────────────────────
 
     private static readonly MarkdownPipeline s_pipeline = new MarkdownPipelineBuilder()
@@ -76,6 +92,7 @@ public class MarkdownRenderer : StackPanel
         .UseEmphasisExtras()
         .UseTaskLists()
         .UseAutoLinks()
+        .UseMathematics()
         .Build();
 
     // ── 主题 ─────────────────────────────────────────────
@@ -197,7 +214,8 @@ public class MarkdownRenderer : StackPanel
     {
         HeadingBlock h => RenderHeading(h),
         ParagraphBlock p => RenderParagraph(p),
-        FencedCodeBlock fc => RenderCodeBlock(fc.Lines.ToString().TrimEnd(), fc.Info?.Trim()),
+        MathBlock mb => RenderMathBlock(mb),
+        FencedCodeBlock fc => RenderFencedCodeBlock(fc),
         CodeBlock cb => RenderCodeBlock(cb.Lines.ToString().TrimEnd(), null),
         ListBlock l => RenderList(l, 0),
         ThematicBreakBlock => RenderHorizontalRule(),
@@ -232,11 +250,71 @@ public class MarkdownRenderer : StackPanel
 
     private Control RenderParagraph(ParagraphBlock para)
     {
+        // 检查段落是否包含图片（Markdown 图片语法 ![alt](url)）
+        if (para.Inline != null && ContainsImage(para.Inline))
+        {
+            return RenderParagraphWithImages(para);
+        }
+
         var stb = CreateBaseTextBlock();
         stb.Margin = new Thickness(0, 2, 0, 2);
         if (para.Inline != null)
             RenderInlines(stb.Inlines!, para.Inline);
         return stb;
+    }
+
+    /// <summary>检查内联序列中是否包含图片</summary>
+    private static bool ContainsImage(MdInline? inline)
+    {
+        while (inline != null)
+        {
+            if (inline is LinkInline { IsImage: true })
+                return true;
+            inline = inline.NextSibling;
+        }
+        return false;
+    }
+
+    /// <summary>渲染包含图片的段落：图片独立显示，文本照常渲染</summary>
+    private Control RenderParagraphWithImages(ParagraphBlock para)
+    {
+        var container = new StackPanel { Spacing = 4, Margin = new Thickness(0, 2, 0, 2) };
+
+        var currentInline = para.Inline?.FirstChild;
+        var textStb = CreateBaseTextBlock();
+        bool hasText = false;
+
+        while (currentInline != null)
+        {
+            if (currentInline is LinkInline imgLink && imgLink.IsImage)
+            {
+                // 先把积累的文本添加到容器
+                if (hasText)
+                {
+                    container.Children.Add(textStb);
+                    textStb = CreateBaseTextBlock();
+                    hasText = false;
+                }
+                // 添加图片控件
+                container.Children.Add(RenderMarkdownImage(imgLink));
+            }
+            else
+            {
+                // 渲染到当前文本块
+                RenderInlines(textStb.Inlines!, currentInline);
+                hasText = true;
+                // 跳过 NextSibling 因为 RenderInlines 只处理单个 inline
+                currentInline = currentInline.NextSibling;
+                continue;
+            }
+            currentInline = currentInline.NextSibling;
+        }
+
+        // 剩余文本
+        if (hasText)
+            container.Children.Add(textStb);
+
+        return container.Children.Count == 1 ? container.Children[0] : container;
     }
 
     // ── 标题 ─────────────────────────────────────────────
@@ -271,26 +349,50 @@ public class MarkdownRenderer : StackPanel
         return stb;
     }
 
-    // ── 代码块（语法高亮） ───────────────────────────────
+    // ── Fenced 代码块分发 ───────────────────────────────
+
+    private Control RenderFencedCodeBlock(FencedCodeBlock fc)
+    {
+        var code = fc.Lines.ToString().TrimEnd();
+        var language = fc.Info?.Trim();
+        var normalizedLang = (language ?? "").ToLowerInvariant().Trim();
+
+        // Mermaid 特殊处理：显示源码 + "在浏览器中查看"按钮
+        if (normalizedLang == "mermaid")
+            return RenderMermaidBlock(code);
+
+        return RenderCodeBlock(code, language);
+    }
+
+    // ── 代码块（语法高亮 + 行号） ────────────────────────
 
     private Control RenderCodeBlock(string code, string? language)
     {
-        var codeStb = new SelectableTextBlock
-        {
-            TextWrapping = TextWrapping.Wrap,
-            FontFamily = MarkdownTheme.MonoFont,
-            FontSize = _theme.CodeFontSize,
-            LineHeight = _theme.CodeLineHeight,
-            ContextFlyout = null,
-            LetterSpacing = 0,
-        };
-
-        // 语法高亮 or 纯文本
         var normalizedLang = (language ?? "").ToLowerInvariant().Trim();
-        if (CodeHighlighter.CanHighlight(normalizedLang))
-            CodeHighlighter.Highlight(codeStb.Inlines!, code, normalizedLang);
+
+        // 代码内容区：根据是否启用行号决定布局
+        Control codeContent;
+        if (ShowCodeLineNumbers)
+        {
+            codeContent = BuildCodeWithLineNumbers(code, normalizedLang);
+        }
         else
-            codeStb.Text = code;
+        {
+            var codeStb = new SelectableTextBlock
+            {
+                TextWrapping = TextWrapping.Wrap,
+                FontFamily = MarkdownTheme.MonoFont,
+                FontSize = _theme.CodeFontSize,
+                LineHeight = _theme.CodeLineHeight,
+                ContextFlyout = null,
+                LetterSpacing = 0,
+            };
+            if (CodeHighlighter.CanHighlight(normalizedLang))
+                CodeHighlighter.Highlight(codeStb.Inlines!, code, normalizedLang);
+            else
+                codeStb.Text = code;
+            codeContent = codeStb;
+        }
 
         // 语言标签
         var langLabel = new TextBlock
@@ -339,7 +441,7 @@ public class MarkdownRenderer : StackPanel
         var stack = new StackPanel { Spacing = 0 };
         stack.Children.Add(headerGrid);
         stack.Children.Add(separator);
-        stack.Children.Add(codeStb);
+        stack.Children.Add(codeContent);
 
         var border = new Border
         {
@@ -607,6 +709,23 @@ public class MarkdownRenderer : StackPanel
                     break;
                 }
 
+                case LinkInline link when link.IsImage:
+                {
+                    // Markdown 图片嵌入：![alt](url)
+                    // 图片不能放在 InlineCollection 中，添加占位文本
+                    // 实际图片在段落级渲染中处理
+                    var altText = link.FirstChild is LiteralInline lit
+                        ? lit.Content.ToString()
+                        : (link.Url ?? "🖼");
+                    var imgSpan = new Span
+                    {
+                        Foreground = MarkdownTheme.LinkForeground,
+                    };
+                    imgSpan.Inlines.Add(new Run($"🖼 {altText}"));
+                    target.Add(imgSpan);
+                    break;
+                }
+
                 case LinkInline link:
                 {
                     var span = new Span
@@ -642,12 +761,385 @@ public class MarkdownRenderer : StackPanel
                     target.Add(new Run(html.Tag));
                     break;
 
+                case MathInline math:
+                {
+                    // 行内 LaTeX 公式：$...$
+                    var mathSpan = new Span
+                    {
+                        FontFamily = MarkdownTheme.MonoFont,
+                        FontStyle = FontStyle.Italic,
+                    };
+                    mathSpan.Inlines.Add(new Run("\u2009"));
+                    mathSpan.Inlines.Add(new Run(math.Content.ToString()));
+                    mathSpan.Inlines.Add(new Run("\u2009"));
+                    mathSpan[!Span.ForegroundProperty] = new DynamicResourceExtension(MarkdownTheme.CodeInlineForegroundKey);
+                    target.Add(mathSpan);
+                    break;
+                }
+
                 case ContainerInline container:
                     RenderInlines(target, container.FirstChild);
                     break;
             }
 
             inline = inline.NextSibling;
+        }
+    }
+
+    // ── LaTeX 块级公式 ───────────────────────────────────
+
+    /// <summary>渲染块级 LaTeX 数学公式 $$...$$</summary>
+    private Control RenderMathBlock(MathBlock mathBlock)
+    {
+        var formula = mathBlock.Lines.ToString().Trim();
+
+        var stb = new SelectableTextBlock
+        {
+            Text = formula,
+            FontFamily = MarkdownTheme.MonoFont,
+            FontSize = _theme.BodyFontSize + 1,
+            FontStyle = FontStyle.Italic,
+            LineHeight = _theme.BodyLineHeight + 2,
+            TextAlignment = TextAlignment.Center,
+            TextWrapping = TextWrapping.Wrap,
+            MaxWidth = MaxContentWidth,
+            Padding = new Thickness(16, 10),
+            ContextFlyout = null,
+        };
+
+        var mathLabel = new TextBlock
+        {
+            Text = "LaTeX",
+            FontFamily = MarkdownTheme.MonoFont,
+            FontSize = 10,
+            Opacity = 0.45,
+            Margin = new Thickness(12, 4, 0, 0),
+        };
+
+        var stack = new StackPanel { Spacing = 0 };
+        stack.Children.Add(mathLabel);
+        stack.Children.Add(stb);
+
+        var border = new Border
+        {
+            Child = stack,
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(4, 2),
+            Margin = new Thickness(0, 4, 0, 4),
+            MaxWidth = MaxContentWidth,
+            BorderThickness = new Thickness(1),
+        };
+        border[!Border.BackgroundProperty] = new DynamicResourceExtension(MarkdownTheme.CodeBlockBackgroundKey);
+        border[!Border.BorderBrushProperty] = new DynamicResourceExtension(MarkdownTheme.BorderSubtleKey);
+
+        return border;
+    }
+
+    // ── 代码行号 ─────────────────────────────────────────
+
+    /// <summary>构建带行号的代码区域（Grid：左列行号 + 右列代码）</summary>
+    private Control BuildCodeWithLineNumbers(string code, string normalizedLang)
+    {
+        var lines = code.Split('\n');
+        var lineCount = lines.Length;
+        var gutterWidth = lineCount >= 100 ? 42 : (lineCount >= 10 ? 32 : 24);
+
+        var grid = new Grid
+        {
+            ColumnDefinitions = ColumnDefinitions.Parse($"{gutterWidth},*"),
+        };
+
+        // 左侧行号列
+        var lineNumStb = new SelectableTextBlock
+        {
+            FontFamily = MarkdownTheme.MonoFont,
+            FontSize = _theme.CodeFontSize,
+            LineHeight = _theme.CodeLineHeight,
+            TextAlignment = TextAlignment.Right,
+            Opacity = 0.35,
+            Padding = new Thickness(0, 0, 8, 0),
+            ContextFlyout = null,
+        };
+        for (int i = 1; i <= lineCount; i++)
+        {
+            if (i > 1)
+                lineNumStb.Inlines!.Add(new LineBreak());
+            lineNumStb.Inlines!.Add(new Run(i.ToString()));
+        }
+
+        // 右侧代码列
+        var codeStb = new SelectableTextBlock
+        {
+            TextWrapping = TextWrapping.Wrap,
+            FontFamily = MarkdownTheme.MonoFont,
+            FontSize = _theme.CodeFontSize,
+            LineHeight = _theme.CodeLineHeight,
+            ContextFlyout = null,
+            LetterSpacing = 0,
+        };
+        if (CodeHighlighter.CanHighlight(normalizedLang))
+            CodeHighlighter.Highlight(codeStb.Inlines!, code, normalizedLang);
+        else
+            codeStb.Text = code;
+
+        // 行号与代码之间加分隔线
+        var gutterSep = new Rectangle
+        {
+            Width = 1,
+            VerticalAlignment = VerticalAlignment.Stretch,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Opacity = 0.12,
+        };
+        gutterSep[!Shape.FillProperty] = new DynamicResourceExtension(MarkdownTheme.TextPrimaryKey);
+
+        var gutterPanel = new Panel();
+        gutterPanel.Children.Add(lineNumStb);
+        gutterPanel.Children.Add(gutterSep);
+
+        Grid.SetColumn(gutterPanel, 0);
+        Grid.SetColumn(codeStb, 1);
+        grid.Children.Add(gutterPanel);
+        grid.Children.Add(codeStb);
+
+        return grid;
+    }
+
+    // ── Mermaid 图表 ─────────────────────────────────────
+
+    /// <summary>渲染 Mermaid 代码块：显示源码 + "在浏览器中查看"按钮</summary>
+    private Control RenderMermaidBlock(string mermaidCode)
+    {
+        var codeStb = new SelectableTextBlock
+        {
+            Text = mermaidCode,
+            TextWrapping = TextWrapping.Wrap,
+            FontFamily = MarkdownTheme.MonoFont,
+            FontSize = _theme.CodeFontSize,
+            LineHeight = _theme.CodeLineHeight,
+            ContextFlyout = null,
+            Opacity = 0.8,
+        };
+
+        // Header：Mermaid 标签 + 复制按钮 + 浏览器预览按钮
+        var langLabel = new TextBlock
+        {
+            Text = "mermaid",
+            FontFamily = MarkdownTheme.MonoFont,
+            FontSize = 11,
+            Opacity = 0.55,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+
+        var copyBtn = new Button
+        {
+            Content = "复制",
+            Padding = new Thickness(8, 3),
+            FontSize = 11,
+            Cursor = new Cursor(StandardCursorType.Hand),
+            VerticalAlignment = VerticalAlignment.Center,
+            Tag = mermaidCode,
+            Opacity = 0.7,
+        };
+        copyBtn.Click += CopyCodeBlock_Click;
+
+        var previewBtn = new Button
+        {
+            Content = "📊 在浏览器中查看",
+            Padding = new Thickness(8, 3),
+            FontSize = 11,
+            Cursor = new Cursor(StandardCursorType.Hand),
+            VerticalAlignment = VerticalAlignment.Center,
+            Tag = mermaidCode,
+            Opacity = 0.85,
+        };
+        previewBtn.Click += OpenMermaidInBrowser_Click;
+
+        var buttonPanel = new StackPanel
+        {
+            Orientation = Avalonia.Layout.Orientation.Horizontal,
+            Spacing = 6,
+            HorizontalAlignment = HorizontalAlignment.Right,
+        };
+        buttonPanel.Children.Add(copyBtn);
+        buttonPanel.Children.Add(previewBtn);
+
+        var headerGrid = new Grid
+        {
+            ColumnDefinitions = ColumnDefinitions.Parse("*,Auto"),
+            Margin = new Thickness(0, 0, 0, 6),
+        };
+        Grid.SetColumn(langLabel, 0);
+        Grid.SetColumn(buttonPanel, 1);
+        headerGrid.Children.Add(langLabel);
+        headerGrid.Children.Add(buttonPanel);
+
+        var separator = new Rectangle
+        {
+            Height = 1,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            Opacity = 0.1,
+            Margin = new Thickness(-12, 0, -12, 4),
+        };
+        separator[!Shape.FillProperty] = new DynamicResourceExtension(MarkdownTheme.TextPrimaryKey);
+
+        var stack = new StackPanel { Spacing = 0 };
+        stack.Children.Add(headerGrid);
+        stack.Children.Add(separator);
+        stack.Children.Add(codeStb);
+
+        var border = new Border
+        {
+            Child = stack,
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(12, 8),
+            Margin = new Thickness(0, 4, 0, 4),
+            MaxWidth = MaxContentWidth,
+        };
+        border[!Border.BackgroundProperty] = new DynamicResourceExtension(MarkdownTheme.CodeBlockBackgroundKey);
+
+        return border;
+    }
+
+    /// <summary>将 Mermaid 代码生成临时 HTML 并在浏览器中打开</summary>
+    private static void OpenMermaidInBrowser_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is not Button btn) return;
+        var code = btn.Tag as string;
+        if (string.IsNullOrEmpty(code)) return;
+
+        try
+        {
+            var encodedCode = System.Net.WebUtility.HtmlEncode(code);
+            var html = "<!DOCTYPE html>\n<html><head>\n" +
+                "<meta charset=\"utf-8\">\n" +
+                "<title>Mermaid Diagram</title>\n" +
+                "<script src=\"https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js\"></script>\n" +
+                "<style>body { display:flex; justify-content:center; padding:40px; background:#1e1e1e; color:#d4d4d4; }</style>\n" +
+                "</head><body>\n" +
+                "<div class=\"mermaid\">\n" + encodedCode + "\n</div>\n" +
+                "<script>mermaid.initialize({ startOnLoad:true, theme:'dark' });</script>\n" +
+                "</body></html>";
+
+            var tempPath = IOPath.Combine(IOPath.GetTempPath(), $"mermaid_{Guid.NewGuid():N}.html");
+            System.IO.File.WriteAllText(tempPath, html);
+            Process.Start(new ProcessStartInfo(tempPath) { UseShellExecute = true });
+        }
+        catch
+        {
+            // 静默忽略浏览器打开失败
+        }
+    }
+
+    // ── Markdown 图片嵌入 ────────────────────────────────
+
+    /// <summary>渲染 Markdown 图片 ![alt](url) 为实际图片控件</summary>
+    private Control RenderMarkdownImage(LinkInline imgLink)
+    {
+        var url = imgLink.Url;
+        var altText = imgLink.FirstChild is LiteralInline lit
+            ? lit.Content.ToString()
+            : "";
+
+        var container = new StackPanel { Spacing = 4, Margin = new Thickness(0, 4, 0, 4) };
+
+        // 图片控件（异步加载）
+        var image = new Image
+        {
+            MaxWidth = Math.Min(MaxContentWidth, 600),
+            MaxHeight = 400,
+            Stretch = Stretch.Uniform,
+            HorizontalAlignment = HorizontalAlignment.Left,
+        };
+
+        // 加载指示器
+        var loadingText = new TextBlock
+        {
+            Text = "🖼 加载中...",
+            FontSize = 12,
+            Opacity = 0.5,
+        };
+        container.Children.Add(loadingText);
+
+        // 异步加载图片
+        if (!string.IsNullOrEmpty(url))
+        {
+            _ = LoadImageAsync(image, loadingText, container, url);
+        }
+        else
+        {
+            loadingText.Text = "⚠ 无效的图片链接";
+        }
+
+        // alt 文本
+        if (!string.IsNullOrEmpty(altText))
+        {
+            var altBlock = new TextBlock
+            {
+                Text = altText,
+                FontSize = 11,
+                Opacity = 0.5,
+                FontStyle = FontStyle.Italic,
+                TextWrapping = TextWrapping.Wrap,
+                MaxWidth = MaxContentWidth,
+            };
+            container.Children.Add(altBlock);
+        }
+
+        return container;
+    }
+
+    /// <summary>异步加载图片（支持 HTTP URL 和本地路径）</summary>
+    private static async Task LoadImageAsync(Image imageControl, TextBlock loadingText, StackPanel container, string url)
+    {
+        try
+        {
+            Bitmap? bitmap = null;
+
+            if (url.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+                url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            {
+                using var client = new HttpClient();
+                client.Timeout = TimeSpan.FromSeconds(15);
+                var data = await client.GetByteArrayAsync(url);
+                using var ms = new System.IO.MemoryStream(data);
+                bitmap = new Bitmap(ms);
+            }
+            else if (System.IO.File.Exists(url))
+            {
+                bitmap = new Bitmap(url);
+            }
+
+            if (bitmap != null)
+            {
+                await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    imageControl.Source = bitmap;
+                    // 替换加载指示器为实际图片
+                    var idx = container.Children.IndexOf(loadingText);
+                    if (idx >= 0)
+                    {
+                        container.Children[idx] = imageControl;
+                    }
+                    else
+                    {
+                        container.Children.Insert(0, imageControl);
+                    }
+                });
+            }
+            else
+            {
+                await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    loadingText.Text = "⚠ 图片加载失败";
+                });
+            }
+        }
+        catch
+        {
+            await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                loadingText.Text = "⚠ 图片加载失败";
+            });
         }
     }
 }
