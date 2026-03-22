@@ -182,7 +182,31 @@
 
                 <!-- 聊天消息区 -->
                 <Border Grid.Row="0" Classes="app-card" Margin="0,0,0,10">
-                    <Grid>
+                    <Grid RowDefinitions="Auto,*">
+                        <!-- 搜索栏（Ctrl+F 显示） -->
+                        <Border Grid.Row="0" Padding="8,6" IsVisible="{Binding IsSearchVisible}"
+                                Background="{DynamicResource CodeBlockBackgroundBrush}"
+                                CornerRadius="6" Margin="8,4,8,4">
+                            <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto">
+                                <TextBlock Grid.Column="0" Text="🔍" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                <TextBox Grid.Column="1" x:Name="SearchTextBox"
+                                         Text="{Binding SearchQuery, Mode=TwoWay}"
+                                         Watermark="搜索对话内容..."
+                                         FontSize="12" Padding="6,4" Height="28"/>
+                                <TextBlock Grid.Column="2" Text="{Binding SearchStatus}"
+                                           FontSize="11" Opacity="0.6"
+                                           VerticalAlignment="Center" Margin="6,0"/>
+                                <Button Grid.Column="3" Content="▲" Padding="4,2" FontSize="10"
+                                        Click="SearchPrevious_Click" ToolTip.Tip="上一个"/>
+                                <Button Grid.Column="4" Content="▼" Padding="4,2" FontSize="10"
+                                        Click="SearchNext_Click" ToolTip.Tip="下一个"/>
+                                <Button Grid.Column="5" Content="✕" Padding="4,2" FontSize="10"
+                                        Click="CloseSearch_Click" Margin="4,0,0,0"/>
+                            </Grid>
+                        </Border>
+
+                        <Grid Grid.Row="1"
+                              DragDrop.AllowDrop="True">
                         <ScrollViewer x:Name="SessionScrollViewer"
                                       VerticalScrollBarVisibility="Auto"
                                       HorizontalScrollBarVisibility="Disabled"
@@ -204,8 +228,16 @@
                                                     <SelectableTextBlock Text="{Binding Text}"
                                                              TextWrapping="Wrap"
                                                              ContextFlyout="{x:Null}"/>
-                                                    <TextBlock Text="{Binding TimestampText}" FontSize="10"
-                                                               Foreground="{DynamicResource TimestampBrush}" HorizontalAlignment="Right"/>
+                                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                                        <TextBlock Text="{Binding TimestampText}" FontSize="10"
+                                                                   Foreground="{DynamicResource TimestampBrush}"
+                                                                   VerticalAlignment="Center"/>
+                                                        <!-- 编辑按钮 -->
+                                                        <Button Content="✏ 编辑" FontSize="10" Padding="4,2"
+                                                                Opacity="0.6" Cursor="Hand"
+                                                                Command="{Binding $parent[ItemsControl].DataContext.EditMessageCommand}"
+                                                                CommandParameter="{Binding}"/>
+                                                    </StackPanel>
                                                 </StackPanel>
                                             </Border>
 
@@ -320,10 +352,19 @@
                                                                 IsVisible="{Binding IsTextContent}"
                                                                 Command="{Binding $parent[ItemsControl].DataContext.RegenerateMessageCommand}"
                                                                 CommandParameter="{Binding}"/>
+                                                        <Button Content="🌿 分支"
+                                                                Command="{Binding $parent[ItemsControl].DataContext.ForkFromMessageCommand}"
+                                                                CommandParameter="{Binding}"/>
                                                         <Button Content="🗑 删除"
                                                                 Command="{Binding $parent[ItemsControl].DataContext.DeleteMessageCommand}"
                                                                 CommandParameter="{Binding}"/>
                                                     </StackPanel>
+
+                                                    <!-- Token 用量显示 -->
+                                                    <TextBlock Text="{Binding TokenUsageText}"
+                                                               IsVisible="{Binding HasTokenUsage}"
+                                                               FontSize="10" Opacity="0.5"
+                                                               Margin="0,1,0,0"/>
 
                                                     <TextBlock Text="{Binding TimestampText}" FontSize="10"
                                                                Foreground="{DynamicResource TimestampBrush}"/>
@@ -340,6 +381,10 @@
                                                     Margin="0,0,12,12"
                                                     Spacing="6"
                                                     IsHitTestVisible="True">
+                                            <Button Content="🔍 搜索" Padding="10,4" FontSize="11"
+                                                    Click="ToggleSearch_Click" ToolTip.Tip="Ctrl+F"/>
+                                            <Button Content="📤 导出" Padding="10,4" FontSize="11"
+                                                    Command="{Binding ExportConversationCommand}"/>
                                             <Button x:Name="ScrollToTopButton"
                                                     Content="⇧ 顶部"
                                                     IsVisible="False"
@@ -352,13 +397,33 @@
                                                     Click="ScrollToBottom_Click"/>
                                         </StackPanel>
                                     </Grid>
+                                    </Grid>
                                 </Border>
 
                 <!-- ===== 底部输入区 ===== -->
                 <Border Grid.Row="1" Classes="app-card" Padding="12,10">
-                    <Grid RowDefinitions="Auto,Auto,Auto">
+                    <Grid RowDefinitions="Auto,Auto,Auto,Auto">
+                        <!-- 快捷短语行（文本模式下可见） -->
+                        <ItemsControl Grid.Row="0" ItemsSource="{Binding QuickPhrases}"
+                                      IsVisible="{Binding IsTextMode}"
+                                      Margin="0,0,0,4">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel Orientation="Horizontal"/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Button Content="{Binding Title}" Padding="8,3" FontSize="11"
+                                            Margin="0,0,4,2" Opacity="0.8" Cursor="Hand"
+                                            Tag="{Binding Content}"
+                                            Click="QuickPhrase_Click"/>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
                         <!-- 参数行 -->
-                        <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="10" Margin="0,0,0,6">
+                        <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="10" Margin="0,0,0,6">
                             <!-- 模式切换（三选一） -->
                             <StackPanel Orientation="Horizontal" Spacing="4">
                                 <ToggleButton Content="💬 文字"
@@ -426,7 +491,7 @@
                         </StackPanel>
 
                         <!-- 输入行 -->
-                        <Grid Grid.Row="1" ColumnDefinitions="*,Auto">
+                        <Grid Grid.Row="2" ColumnDefinitions="*,Auto">
                             <Grid Grid.Column="0" RowDefinitions="Auto,Auto">
                                 <Border Grid.Row="0" Classes="sub-card"
                                         BorderBrush="{DynamicResource InputBorderBrush}"
@@ -544,7 +609,7 @@
                             </StackPanel>
                         </Grid>
 
-                        <StackPanel Grid.Row="2" Margin="42,4,0,0" Spacing="2">
+                        <StackPanel Grid.Row="3" Margin="42,4,0,0" Spacing="2">
                             <TextBlock FontSize="12"
                                        Foreground="{DynamicResource WarningBrush}"
                                        IsVisible="{Binding IsVideoReferenceLimitExceeded}"
