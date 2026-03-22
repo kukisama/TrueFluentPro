@@ -53,6 +53,9 @@ public class MarkdownRenderer : StackPanel
     public static readonly StyledProperty<bool> ShowCodeLineNumbersProperty =
         AvaloniaProperty.Register<MarkdownRenderer, bool>(nameof(ShowCodeLineNumbers), false);
 
+    public static readonly StyledProperty<IReadOnlyDictionary<int, string>?> CitationUrlsProperty =
+        AvaloniaProperty.Register<MarkdownRenderer, IReadOnlyDictionary<int, string>?>(nameof(CitationUrls));
+
     public string? Markdown
     {
         get => GetValue(MarkdownProperty);
@@ -85,6 +88,13 @@ public class MarkdownRenderer : StackPanel
         set => SetValue(ShowCodeLineNumbersProperty, value);
     }
 
+    /// <summary>引用编号 → URL 映射，用于 [N] 角标点击跳转</summary>
+    public IReadOnlyDictionary<int, string>? CitationUrls
+    {
+        get => GetValue(CitationUrlsProperty);
+        set => SetValue(CitationUrlsProperty, value);
+    }
+
     // ── 解析管线 ─────────────────────────────────────────
 
     private static readonly MarkdownPipeline s_pipeline = new MarkdownPipelineBuilder()
@@ -94,6 +104,16 @@ public class MarkdownRenderer : StackPanel
         .UseAutoLinks()
         .UseMathematics()
         .Build();
+
+    /// <summary>
+    /// 预处理：将 [N]（N=1~99）转义为 \[N\]，防止 Markdig 把相邻的 [2][3] 解析为引用链接。
+    /// 转义后变成 LiteralInline，由 RenderLiteralWithCitations() 正则统一处理。
+    /// </summary>
+    private static readonly System.Text.RegularExpressions.Regex s_citationEscape =
+        new(@"(?<!\\)\[(\d{1,2})\]", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    private static string EscapeCitationBrackets(string md)
+        => s_citationEscape.Replace(md, @"\[$1\]");
 
     // ── 主题 ─────────────────────────────────────────────
 
@@ -176,6 +196,7 @@ public class MarkdownRenderer : StackPanel
             return;
         }
 
+        md = EscapeCitationBrackets(md);
         var doc = Markdig.Markdown.Parse(md, s_pipeline);
 
         var newSources = new List<string>(doc.Count);
@@ -671,7 +692,7 @@ public class MarkdownRenderer : StackPanel
                     break;
 
                 case LiteralInline literal:
-                    target.Add(new Run(literal.Content.ToString()));
+                    RenderLiteralWithCitations(target, literal.Content.ToString());
                     break;
 
                 case EmphasisInline emphasis:
@@ -714,8 +735,6 @@ public class MarkdownRenderer : StackPanel
                 case LinkInline link when link.IsImage:
                 {
                     // Markdown 图片嵌入：![alt](url)
-                    // 图片不能放在 InlineCollection 中，添加占位文本
-                    // 实际图片在段落级渲染中处理
                     var altText = link.FirstChild is LiteralInline lit
                         ? lit.Content.ToString()
                         : (link.Url ?? "🖼");
@@ -730,26 +749,49 @@ public class MarkdownRenderer : StackPanel
 
                 case LinkInline link:
                 {
-                    var span = new Span
+                    var linkUrl = link.Url;
+                    // 提取纯文本（链接内可能有嵌套格式，这里取纯文本即可）
+                    var linkText = link.FirstChild is LiteralInline lit
+                        ? lit.Content.ToString()
+                        : (linkUrl ?? "");
+
+                    var tb = new TextBlock
                     {
+                        Text = linkText,
                         Foreground = MarkdownTheme.LinkForeground,
                         TextDecorations = TextDecorations.Underline,
+                        Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand),
                     };
-                    if (link.FirstChild != null)
-                        RenderInlines(span.Inlines, link.FirstChild);
-                    else
-                        span.Inlines.Add(new Run(link.Url ?? ""));
-                    target.Add(span);
+                    if (!string.IsNullOrEmpty(linkUrl))
+                    {
+                        tb.PointerPressed += (_, _) =>
+                        {
+                            try { Process.Start(new ProcessStartInfo(linkUrl) { UseShellExecute = true }); }
+                            catch { }
+                        };
+                    }
+                    target.Add(new InlineUIContainer { Child = tb });
                     break;
                 }
 
                 case AutolinkInline autolink:
-                    target.Add(new Span
+                {
+                    var autoUrl = autolink.Url;
+                    var autoTb = new TextBlock
                     {
+                        Text = autoUrl,
                         Foreground = MarkdownTheme.LinkForeground,
-                        Inlines = { new Run(autolink.Url) },
-                    });
+                        TextDecorations = TextDecorations.Underline,
+                        Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand),
+                    };
+                    autoTb.PointerPressed += (_, _) =>
+                    {
+                        try { Process.Start(new ProcessStartInfo(autoUrl) { UseShellExecute = true }); }
+                        catch { }
+                    };
+                    target.Add(new InlineUIContainer { Child = autoTb });
                     break;
+                }
 
                 case LineBreakInline:
                     target.Add(new LineBreak());
@@ -786,6 +828,88 @@ public class MarkdownRenderer : StackPanel
 
             inline = inline.NextSibling;
         }
+    }
+
+    // ── 引用角标渲染 ─────────────────────────────────
+
+    /// <summary>
+    /// 创建圆形可点击引用角标 Button（与来源面板风格一致）。
+    /// 用 Button.Click（路由事件）代替 Border.PointerPressed，
+    /// 避免被 SelectableTextBlock 拦截。
+    /// </summary>
+    private Button CreateCitationButton(int citNum)
+    {
+        var btn = new Button
+        {
+            Content = citNum.ToString(),
+            FontSize = 9,
+            FontWeight = FontWeight.SemiBold,
+            MinWidth = 16,
+            Height = 16,
+            Padding = new Thickness(4, 0),
+            Margin = new Thickness(1, 0),
+            CornerRadius = new CornerRadius(8),
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            VerticalContentAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+            Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand),
+        };
+        btn[!Button.BackgroundProperty] =
+            new DynamicResourceExtension("AccentFillColorDefaultBrush");
+        btn[!Button.ForegroundProperty] =
+            new DynamicResourceExtension("TextOnAccentFillColorPrimaryBrush");
+
+        btn.Click += (_, _) =>
+        {
+            var urls = CitationUrls;
+            if (urls != null && urls.TryGetValue(citNum, out var url) && !string.IsNullOrEmpty(url))
+            {
+                try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); }
+                catch { }
+            }
+        };
+        return btn;
+    }
+
+    /// <summary>渲染可点击的引用角标</summary>
+    private void RenderCitationBadge(InlineCollection target, int citNum)
+    {
+        target.Add(new InlineUIContainer { Child = CreateCitationButton(citNum) });
+    }
+
+    /// <summary>匹配文本中的 [N] 引用标记（1-99）— 处理 Markdig 未解析为 LinkInline 的情况</summary>
+    private static readonly System.Text.RegularExpressions.Regex s_citationRegex =
+        new(@"\[(\d{1,2})\]", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    /// <summary>
+    /// 渲染文本，将 [N] 引用标记替换为可点击的彩色角标。
+    /// 所有角标统一渲染为按钮样式，点击时动态查找 CitationUrls（解决绑定时序问题）。
+    /// </summary>
+    private void RenderLiteralWithCitations(InlineCollection target, string text)
+    {
+        var matches = s_citationRegex.Matches(text);
+        if (matches.Count == 0)
+        {
+            target.Add(new Run(text));
+            return;
+        }
+
+        int lastEnd = 0;
+        foreach (System.Text.RegularExpressions.Match m in matches)
+        {
+            // 前缀文本
+            if (m.Index > lastEnd)
+                target.Add(new Run(text[lastEnd..m.Index]));
+
+            int citNum = int.Parse(m.Groups[1].Value);
+            target.Add(new InlineUIContainer { Child = CreateCitationButton(citNum) });
+
+            lastEnd = m.Index + m.Length;
+        }
+
+        // 尾部文本
+        if (lastEnd < text.Length)
+            target.Add(new Run(text[lastEnd..]));
     }
 
     // ── LaTeX 块级公式 ───────────────────────────────────

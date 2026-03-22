@@ -27,6 +27,16 @@ namespace TrueFluentPro.ViewModels
         private readonly IAzureTokenProviderStore _azureTokenProviderStore;
         private readonly AiImageGenService _imageService = new();
         private readonly AiVideoGenService _videoService = new();
+
+        // 网页搜索配置
+        private string _webSearchProviderId = "bing";
+        private int _webSearchMaxResults = 5;
+        private bool _webSearchEnableIntentAnalysis = true;
+        private bool _webSearchEnableResultCompression;
+        private string _webSearchMcpEndpoint = "";
+        private string _webSearchMcpToolName = "web_search";
+        private string _webSearchMcpApiKey = "";
+
         private AzureTokenProvider _imageTokenProvider;
         private AzureTokenProvider _videoTokenProvider;
         private readonly string _studioDirectory;
@@ -128,13 +138,30 @@ namespace TrueFluentPro.ViewModels
             _ = TrySilentLoginForMediaAsync();
         }
 
-        public void UpdateConfiguration(AiConfig aiConfig, MediaGenConfig genConfig, List<AiEndpoint> endpoints)
+        public void UpdateConfiguration(AiConfig aiConfig, MediaGenConfig genConfig, List<AiEndpoint> endpoints,
+            string? webSearchProviderId = null, int? webSearchMaxResults = null,
+            bool? webSearchEnableIntentAnalysis = null, bool? webSearchEnableResultCompression = null,
+            string? webSearchMcpEndpoint = null, string? webSearchMcpToolName = null, string? webSearchMcpApiKey = null)
         {
             CopyAiConfig(aiConfig, _aiConfig);
             CopyMediaGenConfig(genConfig, _genConfig);
 
             _endpoints.Clear();
             _endpoints.AddRange(endpoints ?? new List<AiEndpoint>());
+
+            if (webSearchProviderId is not null) _webSearchProviderId = webSearchProviderId;
+            if (webSearchMaxResults is not null) _webSearchMaxResults = webSearchMaxResults.Value;
+            if (webSearchEnableIntentAnalysis is not null) _webSearchEnableIntentAnalysis = webSearchEnableIntentAnalysis.Value;
+            if (webSearchEnableResultCompression is not null) _webSearchEnableResultCompression = webSearchEnableResultCompression.Value;
+            if (webSearchMcpEndpoint is not null) _webSearchMcpEndpoint = webSearchMcpEndpoint;
+            if (webSearchMcpToolName is not null) _webSearchMcpToolName = webSearchMcpToolName;
+            if (webSearchMcpApiKey is not null) _webSearchMcpApiKey = webSearchMcpApiKey;
+
+            // 同步网页搜索配置到所有会话
+            foreach (var session in Sessions)
+                session.UpdateWebSearchConfig(_webSearchProviderId, _webSearchMaxResults,
+                    _webSearchEnableIntentAnalysis, _webSearchEnableResultCompression,
+                    _webSearchMcpEndpoint, _webSearchMcpToolName, _webSearchMcpApiKey);
 
             _ = TrySilentLoginForMediaAsync();
         }
@@ -269,12 +296,64 @@ namespace TrueFluentPro.ViewModels
                 OnSessionTaskCountChanged,
                 s => SaveSessionMeta(s));
 
+            session.UpdateWebSearchConfig(_webSearchProviderId, _webSearchMaxResults,
+                _webSearchEnableIntentAnalysis, _webSearchEnableResultCompression,
+                _webSearchMcpEndpoint, _webSearchMcpToolName, _webSearchMcpApiKey);
             session.IsContentLoaded = true;
+            session.ForkRequested += HandleForkRequested;
 
             Sessions.Add(session);
             CurrentSession = session;
             UpdateActiveTaskCount();
             SaveSessionMeta(session);
+        }
+
+        private void HandleForkRequested(MediaSessionViewModel sourceSession, ChatMessageViewModel forkPoint)
+        {
+            var messagesToCopy = sourceSession.GetMessagesUpTo(forkPoint);
+            if (messagesToCopy.Count == 0) return;
+
+            var sessionId = Guid.NewGuid().ToString("N")[..8];
+            var sessionDir = Path.Combine(_studioDirectory, $"session_{sessionId}");
+            Directory.CreateDirectory(sessionDir);
+            var defaultName = $"{sourceSession.SessionName} (分支)";
+
+            var newSession = new MediaSessionViewModel(
+                sessionId, defaultName,
+                sessionDir, _aiConfig, _genConfig, _endpoints,
+                _modelRuntimeResolver,
+                _azureTokenProviderStore,
+                _imageService, _videoService,
+                OnSessionTaskCountChanged,
+                s => SaveSessionMeta(s));
+
+            newSession.UpdateWebSearchConfig(_webSearchProviderId, _webSearchMaxResults,
+                _webSearchEnableIntentAnalysis, _webSearchEnableResultCompression,
+                _webSearchMcpEndpoint, _webSearchMcpToolName, _webSearchMcpApiKey);
+            newSession.IsContentLoaded = true;
+            newSession.ForkRequested += HandleForkRequested;
+
+            // 将源消息复制到新会话
+            var clonedMessages = messagesToCopy.Select(m => new ChatMessageViewModel(new MediaChatMessage
+            {
+                Role = m.Role,
+                Text = m.Text,
+                ContentType = m.ContentType,
+                ReasoningText = m.ReasoningText,
+                MediaPaths = m.MediaPaths.ToList(),
+                Timestamp = m.Timestamp,
+                GenerateSeconds = m.GenerateSeconds,
+                DownloadSeconds = m.DownloadSeconds,
+                PromptTokens = m.PromptTokens,
+                CompletionTokens = m.CompletionTokens
+            })).ToList();
+
+            newSession.ReplaceAllMessages(clonedMessages);
+
+            Sessions.Add(newSession);
+            CurrentSession = newSession;
+            UpdateActiveTaskCount();
+            SaveSessionMeta(newSession);
         }
 
         public void DeleteCurrentSession(MediaSessionViewModel? targetSession = null)
@@ -287,6 +366,7 @@ namespace TrueFluentPro.ViewModels
 
             EnsureSessionLoaded(session);
             session.CancelAll();
+            session.ForkRequested -= HandleForkRequested;
 
             MarkSessionDeleted(session);
             MarkSessionDeletedInIndex(session.SessionId);
@@ -480,7 +560,11 @@ namespace TrueFluentPro.ViewModels
                         _imageService, _videoService,
                         OnSessionTaskCountChanged,
                         s => SaveSessionMeta(s));
+                    session.UpdateWebSearchConfig(_webSearchProviderId, _webSearchMaxResults,
+                        _webSearchEnableIntentAnalysis, _webSearchEnableResultCompression,
+                        _webSearchMcpEndpoint, _webSearchMcpToolName, _webSearchMcpApiKey);
                     session.IsContentLoaded = false;
+                    session.ForkRequested += HandleForkRequested;
                     Sessions.Add(session);
                 }
 
@@ -642,6 +726,10 @@ namespace TrueFluentPro.ViewModels
                             Timestamp = msg.Timestamp,
                             GenerateSeconds = msg.GenerateSeconds,
                             DownloadSeconds = msg.DownloadSeconds,
+                            PromptTokens = msg.PromptTokens,
+                            CompletionTokens = msg.CompletionTokens,
+                            Citations = msg.Citations,
+                            SearchSummary = msg.SearchSummary,
                             MediaPaths = msg.MediaPaths?
                                 .Select(p => ResolveStoredPathForLoad(p, session.SessionDirectory))
                                 .Where(p => !string.IsNullOrWhiteSpace(p))
@@ -710,7 +798,16 @@ namespace TrueFluentPro.ViewModels
                             GenerateSeconds = m.GenerateSeconds,
                             DownloadSeconds = m.DownloadSeconds,
                             PromptTokens = m.PromptTokens,
-                            CompletionTokens = m.CompletionTokens
+                            CompletionTokens = m.CompletionTokens,
+                            Citations = m.Citations?.Select(c => new MediaChatCitation
+                            {
+                                Number = c.Number,
+                                Title = c.Title,
+                                Url = c.Url,
+                                Snippet = c.Snippet,
+                                Hostname = c.Hostname
+                            }).ToList(),
+                            SearchSummary = m.SearchSummary
                         }).ToList(),
                         Tasks = session.TaskHistory.Select(t => new MediaGenTask
                         {

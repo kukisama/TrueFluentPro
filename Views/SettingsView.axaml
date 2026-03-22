@@ -99,6 +99,12 @@
                             <TextBlock Grid.Column="1" Text="洞察" VerticalAlignment="Center"/>
                         </Grid>
                     </ListBoxItem>
+                    <ListBoxItem Tag="Section_WebSearch">
+                        <Grid Classes="sidebar-nav-item-content" ColumnDefinitions="18,*" ColumnSpacing="10">
+                            <icons:Icon Grid.Column="0" Value="fa-solid fa-magnifying-glass" FontSize="14"/>
+                            <TextBlock Grid.Column="1" Text="网页搜索" VerticalAlignment="Center"/>
+                        </Grid>
+                    </ListBoxItem>
                     <ListBoxItem Tag="Section_Review">
                         <Grid Classes="sidebar-nav-item-content" ColumnDefinitions="18,*" ColumnSpacing="10">
                             <icons:Icon Grid.Column="0" Value="fa-solid fa-clipboard-list" FontSize="14"/>
@@ -170,6 +176,7 @@
                 <ContentControl Name="Section_ModelSelection"/>
                 <ContentControl Name="Section_Storage"/>
                 <ContentControl Name="Section_Insight"/>
+                <ContentControl Name="Section_WebSearch"/>
                 <ContentControl Name="Section_Review"/>
                 <ContentControl Name="Section_ImageGen"/>
                 <ContentControl Name="Section_VideoGen"/>

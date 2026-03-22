@@ -321,7 +321,14 @@ public partial class MainWindow : Window
             mediaStudioView?.UpdateConfiguration(
                 aiConfig,
                 config.MediaGenConfig,
-                config.Endpoints);
+                config.Endpoints,
+                config.WebSearchProviderId,
+                config.WebSearchMaxResults,
+                config.WebSearchEnableIntentAnalysis,
+                config.WebSearchEnableResultCompression,
+                config.WebSearchMcpEndpoint,
+                config.WebSearchMcpToolName,
+                config.WebSearchMcpApiKey);
         }
 
         if (_mediaCenterV2Initialized)

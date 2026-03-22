@@ -7,6 +7,7 @@ using System.Linq;
 using System.Net.Http;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Input;
 using Avalonia.Threading;
 using TrueFluentPro.Models;
@@ -28,6 +29,15 @@ namespace TrueFluentPro.ViewModels
         private readonly IAiVideoGenService _videoService;
         private readonly Action _onTaskCountChanged;
         private readonly Action<MediaSessionViewModel>? _onRequestSave;
+
+        // 网页搜索配置（可由外部更新）
+        private string _webSearchProviderId = "bing";
+        private int _webSearchMaxResults = 5;
+        private string _webSearchMcpEndpoint = "";
+        private string _webSearchMcpToolName = "web_search";
+        private string _webSearchMcpApiKey = "";
+        /// <summary>搜索进度回调目标消息（搜索期间指向 aiMessage，结束后 null）</summary>
+        private ChatMessageViewModel? _searchProgressMessage;
         private CancellationTokenSource _cts = new();
         private readonly SemaphoreSlim _videoFrameBackfillLock = new(1, 1);
         private const int MaxReferenceImageCount = 8;
@@ -365,6 +375,18 @@ namespace TrueFluentPro.ViewModels
         {
             get => _enableWebSearch;
             set => SetProperty(ref _enableWebSearch, value);
+        }
+
+        /// <summary>从全局配置同步网页搜索引擎设置</summary>
+        public void UpdateWebSearchConfig(string providerId, int maxResults,
+            bool enableIntentAnalysis = true, bool enableResultCompression = false,
+            string mcpEndpoint = "", string mcpToolName = "web_search", string mcpApiKey = "")
+        {
+            _webSearchProviderId = providerId;
+            _webSearchMaxResults = maxResults;
+            _webSearchMcpEndpoint = mcpEndpoint;
+            _webSearchMcpToolName = mcpToolName;
+            _webSearchMcpApiKey = mcpApiKey;
         }
 
         // --- 命令 ---
@@ -1920,6 +1942,105 @@ namespace TrueFluentPro.ViewModels
             }
         }
 
+        // ── Web 搜索辅助（Cherry Studio 风格） ──────────────
+
+        private sealed record WebSearchContext(
+            string FormattedContext,
+            IReadOnlyList<Services.WebSearch.WebSearchResult> RawResults,
+            string SearchQuery,
+            string ProviderId);
+
+        /// <summary>
+        /// Cherry 风格搜索：LLM 意图分析 → 多查询并行搜索 → JSON 引用格式化。
+        /// 失败时不抛异常，返回空结果。
+        /// </summary>
+        private async Task<WebSearchContext> ExecuteWebSearchAsync(
+            string prompt,
+            AiChatRequestConfig runtimeRequest,
+            AzureTokenProvider? tokenProvider,
+            CancellationToken ct)
+        {
+            var empty = new WebSearchContext("", [], "", "");
+            if (!_enableWebSearch) return empty;
+
+            try
+            {
+                var factory = new Services.WebSearch.WebSearchProviderFactory();
+                var provider = factory.Create(_webSearchProviderId,
+                    _webSearchMcpEndpoint, _webSearchMcpToolName, _webSearchMcpApiKey);
+
+                // 搜索进度回调 — 分阶段更新 AI 消息文本
+                var searchProgress = new Services.WebSearch.SearchAgentService.SearchProgress
+                {
+                    OnIntentAnalyzed = queries =>
+                    {
+                        var q = string.Join("、", queries);
+                        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                            _searchProgressMessage!.Text = $"🔍 正在搜索「{q}」...");
+                    },
+                    OnSearchCompleted = count =>
+                    {
+                        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                            _searchProgressMessage!.Text = $"📄 找到 {count} 条结果，正在读取网页内容...");
+                    },
+                    OnFetchingContent = () =>
+                    {
+                        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                            _searchProgressMessage!.Text = "📖 正在提取网页正文...");
+                    }
+                };
+
+                // Cherry 风格：取最近一条 assistant 回复作为对话上下文
+                string? lastAssistantReply = null;
+                for (int i = _allMessages.Count - 1; i >= 0; i--)
+                {
+                    if (_allMessages[i].Role == "assistant" &&
+                        !string.IsNullOrEmpty(_allMessages[i].Text))
+                    {
+                        lastAssistantReply = _allMessages[i].Text;
+                        break;
+                    }
+                }
+
+                var agent = new Services.WebSearch.SearchAgentService();
+                var agentResult = await agent.RunAsync(
+                    prompt, lastAssistantReply, provider,
+                    runtimeRequest, tokenProvider, ct,
+                    maxResults: _webSearchMaxResults,
+                    progress: searchProgress);
+
+                if (!agentResult.NeedsSearch) return empty;
+                if (agentResult.Results.Count == 0) return empty;
+
+                var displayQuery = string.Join("」「", agentResult.AllQueries);
+                var formatted = Services.WebSearch.SearchAgentService
+                    .FormatContext(agentResult, prompt);
+
+                return new WebSearchContext(
+                    formatted, agentResult.Results, displayQuery, _webSearchProviderId);
+            }
+            catch
+            {
+                return empty;
+            }
+        }
+
+        /// <summary>挂载搜索结果引用和搜索过程摘要到 AI 消息</summary>
+        private static void AttachSearchResults(ChatMessageViewModel aiMessage, WebSearchContext webSearch)
+        {
+            if (webSearch.RawResults.Count == 0) return;
+
+            var citations = new List<Services.WebSearch.SearchCitation>();
+            for (int i = 0; i < webSearch.RawResults.Count; i++)
+                citations.Add(Services.WebSearch.SearchCitation.FromResult(webSearch.RawResults[i], i + 1));
+            aiMessage.Citations = citations;
+
+            // Cherry 风格搜索摘要
+            var queries = webSearch.SearchQuery.Split("」「");
+            var summary = $"🔍 搜索「{webSearch.SearchQuery}」→ 返回 {webSearch.RawResults.Count} 条结果";
+            aiMessage.SearchSummary = summary;
+        }
+
         // ── 文本聊天 ───────────────────────────────────────
 
         private async void SendTextChatAsync(string prompt)
@@ -1977,17 +2098,17 @@ namespace TrueFluentPro.ViewModels
             var ct = _chatCts.Token;
             IsChatStreaming = true;
 
-            // Web 搜索增强
-            string searchContext = "";
+            // Web 搜索增强（Cherry 风格：分阶段显示搜索进度）
             if (_enableWebSearch)
+                aiMessage.Text = "🔍 正在分析搜索意图...";
+            _searchProgressMessage = aiMessage;
+            var webSearch = await ExecuteWebSearchAsync(prompt, runtimeRequest, tokenProvider, ct);
+            _searchProgressMessage = null;
+            if (_enableWebSearch && webSearch.RawResults.Count > 0)
             {
-                try
-                {
-                    var searchService = new WebSearchService();
-                    var searchResults = await searchService.SearchAsync(prompt, 5, ct);
-                    searchContext = WebSearchService.FormatAsContext(searchResults, prompt);
-                }
-                catch { /* 搜索失败不阻塞聊天 */ }
+                aiMessage.Text = $"✅ 找到 {webSearch.RawResults.Count} 条结果，生成中...";
+                // 提前挂载引用，用户可在流式过程中查看来源
+                AttachSearchResults(aiMessage, webSearch);
             }
 
             var runtimeService = new AiInsightService(tokenProvider);
@@ -2004,8 +2125,8 @@ namespace TrueFluentPro.ViewModels
 
             // 构建多轮上下文
             var contextContent = BuildMultiTurnContent(prompt);
-            if (!string.IsNullOrEmpty(searchContext))
-                contextContent = searchContext + "\n\n---\n\n" + contextContent;
+            if (!string.IsNullOrEmpty(webSearch.FormattedContext))
+                contextContent = webSearch.FormattedContext + "\n\n---\n\n" + contextContent;
 
             try
             {
@@ -2054,6 +2175,9 @@ namespace TrueFluentPro.ViewModels
                     // 流式完成后自动收起思考区，让用户聚焦答案
                     if (aiMessage.HasReasoning)
                         aiMessage.IsReasoningExpanded = false;
+
+                    // P1: 挂载搜索引用来源 + 搜索摘要
+                    AttachSearchResults(aiMessage, webSearch);
                 });
             }
             catch (OperationCanceledException)
@@ -2407,7 +2531,21 @@ namespace TrueFluentPro.ViewModels
                 aiMessage.Text = displayedText;
             });
 
+            // Web 搜索增强（Cherry 风格：分阶段显示搜索进度）
+            if (_enableWebSearch)
+                aiMessage.Text = "🔍 正在分析搜索意图...";
+            _searchProgressMessage = aiMessage;
+            var webSearch = await ExecuteWebSearchAsync(prompt, runtimeRequest, tokenProvider, ct);
+            _searchProgressMessage = null;
+            if (_enableWebSearch && webSearch.RawResults.Count > 0)
+            {
+                aiMessage.Text = $"✅ 找到 {webSearch.RawResults.Count} 条结果，生成中...";
+                AttachSearchResults(aiMessage, webSearch);
+            }
+
             var contextContent = BuildMultiTurnContent(prompt);
+            if (!string.IsNullOrEmpty(webSearch.FormattedContext))
+                contextContent = webSearch.FormattedContext + "\n\n---\n\n" + contextContent;
 
             try
             {
@@ -2452,6 +2590,9 @@ namespace TrueFluentPro.ViewModels
                         reasoningRequested, reasoningSb.Length > 0);
                     if (aiMessage.HasReasoning)
                         aiMessage.IsReasoningExpanded = false;
+
+                    // 挂载搜索引用来源 + 搜索摘要
+                    AttachSearchResults(aiMessage, webSearch);
                 });
             }
             catch (OperationCanceledException)
@@ -2767,6 +2908,33 @@ namespace TrueFluentPro.ViewModels
         }
         public bool HasReasoningStatus => !string.IsNullOrEmpty(_reasoningStatusText);
 
+        // ── 搜索引用来源 ────────────────────────────────
+        private IReadOnlyList<Services.WebSearch.SearchCitation> _citations = [];
+        public IReadOnlyList<Services.WebSearch.SearchCitation> Citations
+        {
+            get => _citations;
+            set
+            {
+                if (SetProperty(ref _citations, value))
+                    OnPropertyChanged(nameof(HasCitations));
+            }
+        }
+        public bool HasCitations => _citations.Count > 0;
+        public string CitationsSummary => _citations.Count > 0 ? $"🌐 {_citations.Count} 个来源" : "";
+
+        /// <summary>搜索过程摘要（关键词 + 引擎 + 结果数），显示在引用面板上方</summary>
+        private string _searchSummary = "";
+        public string SearchSummary
+        {
+            get => _searchSummary;
+            set
+            {
+                if (SetProperty(ref _searchSummary, value))
+                    OnPropertyChanged(nameof(HasSearchSummary));
+            }
+        }
+        public bool HasSearchSummary => !string.IsNullOrEmpty(_searchSummary);
+
         public string TimestampText => Timestamp.ToString("yyyy-MM-dd HH:mm:ss");
 
         // ── IDialogMessage 显式实现 ─────────────────────
@@ -2784,6 +2952,20 @@ namespace TrueFluentPro.ViewModels
             DownloadSeconds = message.DownloadSeconds;
             _promptTokens = message.PromptTokens;
             _completionTokens = message.CompletionTokens;
+            _searchSummary = message.SearchSummary ?? "";
+
+            // 恢复搜索引用来源
+            if (message.Citations is { Count: > 0 })
+            {
+                _citations = message.Citations.Select(c => new Services.WebSearch.SearchCitation
+                {
+                    Number = c.Number,
+                    Title = c.Title,
+                    Url = c.Url,
+                    Snippet = c.Snippet,
+                    Hostname = c.Hostname
+                }).ToList();
+            }
 
             MediaPaths.CollectionChanged += (_, _) =>
             {

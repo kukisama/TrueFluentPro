@@ -30,20 +30,11 @@ public sealed class SmoothStreamingAnimator : IDisposable
 
     // ── 动画参数 ─────────────────────────────────────────
 
-    /// <summary>定时器间隔（约 16ms ≈ 60fps）</summary>
-    private static readonly TimeSpan TickInterval = TimeSpan.FromMilliseconds(16);
+    /// <summary>定时器间隔：200ms（5fps），平衡流畅度与渲染压力</summary>
+    private static readonly TimeSpan TickInterval = TimeSpan.FromMilliseconds(200);
 
-    /// <summary>每帧基础追加字符数</summary>
-    private const int BaseChunkSize = 3;
-
-    /// <summary>积压加速阈值：超过此字符数时加速追加</summary>
-    private const int AccelerateThreshold = 50;
-
-    /// <summary>加速后每帧追加的最大字符数</summary>
-    private const int MaxChunkSize = 30;
-
-    /// <summary>流结束时加速倍率</summary>
-    private const int EndStreamAccelerationFactor = 2;
+    /// <summary>每 tick 最大刷出字符数，防止大段代码块一次性渲染导致 UI 卡死</summary>
+    private const int MaxCharsPerTick = 500;
 
     /// <summary>
     /// 创建平滑流式动画器。
@@ -142,42 +133,22 @@ public sealed class SmoothStreamingAnimator : IDisposable
             {
                 if (_streamEnded)
                 {
-                    // 所有字符已渲染完毕，停止定时器
                     StopTimer();
                 }
                 return;
             }
 
-            // 动态 chunk 大小：积压多时加速
-            int pendingLen = _pendingBuffer.Length;
-            int chunkSize;
+            // 每 tick 最多刷出 MaxCharsPerTick 字符，保持 5fps 节奏不因大代码块卡死
+            // 流结束后直接全部刷出
+            int take = _streamEnded
+                ? _pendingBuffer.Length
+                : Math.Min(_pendingBuffer.Length, MaxCharsPerTick);
 
-            if (_streamEnded)
-            {
-                // 流已结束，加速刷完剩余内容
-                chunkSize = Math.Min(pendingLen, MaxChunkSize * EndStreamAccelerationFactor);
-            }
-            else if (pendingLen > AccelerateThreshold)
-            {
-                // 积压较多，按比例加速
-                double factor = Math.Min((double)pendingLen / AccelerateThreshold, (double)MaxChunkSize / BaseChunkSize);
-                chunkSize = Math.Min((int)(BaseChunkSize * factor), MaxChunkSize);
-            }
-            else
-            {
-                chunkSize = BaseChunkSize;
-            }
-
-            chunkSize = Math.Min(chunkSize, pendingLen);
-
-            // 取出 chunkSize 个字符
-            var chunk = _pendingBuffer[..chunkSize];
-            _pendingBuffer = _pendingBuffer[chunkSize..];
-            _displayedText += chunk;
+            _displayedText += _pendingBuffer[..take];
+            _pendingBuffer = _pendingBuffer[take..];
             newDisplayed = _displayedText;
         }
 
-        // 回调在 UI 线程（DispatcherTimer 保证）
         _onTextUpdated(newDisplayed);
     }
 }

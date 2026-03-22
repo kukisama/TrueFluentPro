@@ -1,0 +1,82 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ws="using:TrueFluentPro.Services.WebSearch"
+             xmlns:ctrl="using:TrueFluentPro.Controls"
+             x:Class="TrueFluentPro.Controls.CitationPanel"
+             x:CompileBindings="False">
+    <!-- Cherry 风格：可折叠的搜索引用来源面板（带 favicon） -->
+    <Border Name="RootBorder"
+            Background="{DynamicResource CodeBlockBackgroundBrush}"
+            CornerRadius="6" Padding="0" Margin="0,4,0,0">
+        <StackPanel Spacing="0">
+            <!-- 折叠/展开按钮：叠加 favicon 预览 + "N 个来源" -->
+            <Button Name="ToggleButton"
+                    HorizontalAlignment="Left"
+                    Padding="10,8"
+                    Cursor="Hand"
+                    Click="OnToggleClick">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <!-- 叠加 favicon 预览（最多3个） -->
+                    <Panel Name="FaviconPreviewPanel"
+                           Height="16" VerticalAlignment="Center"/>
+                    <TextBlock Text="🌐" FontSize="12" VerticalAlignment="Center"/>
+                    <TextBlock Name="SummaryText" FontSize="11.5"
+                               VerticalAlignment="Center"
+                               Foreground="{DynamicResource TextSubtleBrush}"/>
+                    <TextBlock Name="ArrowText" Text="▾" FontSize="10"
+                               VerticalAlignment="Center"
+                               Foreground="{DynamicResource TextSubtleBrush}"/>
+                </StackPanel>
+            </Button>
+
+            <!-- 展开后的引用列表 -->
+            <ItemsControl Name="CitationList"
+                          IsVisible="False"
+                          Margin="8,0,8,8">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="ws:SearchCitation">
+                        <Border Margin="0,4,0,0"
+                                Padding="8,6"
+                                CornerRadius="4"
+                                Background="{DynamicResource NavPanelBackgroundBrush}"
+                                Tag="{Binding Url}"
+                                Cursor="Hand"
+                                PointerPressed="OnCitationPointerPressed">
+                            <Grid ColumnDefinitions="Auto,*,Auto">
+                                <!-- Favicon -->
+                                <ctrl:FaviconImage Hostname="{Binding Hostname}"
+                                                   VerticalAlignment="Center"
+                                                   Margin="0,0,8,0"/>
+                                <!-- 标题 + 域名 -->
+                                <StackPanel Grid.Column="1" Spacing="1"
+                                            VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding Title}"
+                                               FontSize="11.5"
+                                               TextTrimming="CharacterEllipsis"
+                                               MaxLines="1"
+                                               Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}"/>
+                                    <TextBlock Text="{Binding Hostname}"
+                                               FontSize="10" Opacity="0.5"/>
+                                </StackPanel>
+                                <!-- 引用编号角标 -->
+                                <Border Grid.Column="2"
+                                        Background="{DynamicResource AccentTextFillColorPrimaryBrush}"
+                                        CornerRadius="8"
+                                        MinWidth="18" Height="18"
+                                        Padding="4,0"
+                                        VerticalAlignment="Center"
+                                        Margin="6,0,0,0">
+                                    <TextBlock Text="{Binding Number}"
+                                               FontSize="10" FontWeight="SemiBold"
+                                               Foreground="White"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center"/>
+                                </Border>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </StackPanel>
+    </Border>
+</UserControl>

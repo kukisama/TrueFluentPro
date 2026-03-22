@@ -84,6 +84,22 @@ namespace TrueFluentPro.Models
         public int? PromptTokens { get; set; }
         /// <summary>Token 用量：输出 Token 数</summary>
         public int? CompletionTokens { get; set; }
+
+        /// <summary>搜索引用来源（JSON 序列化）</summary>
+        public List<MediaChatCitation>? Citations { get; set; }
+
+        /// <summary>搜索过程摘要</summary>
+        public string SearchSummary { get; set; } = "";
+    }
+
+    /// <summary>搜索引用来源（持久化用）</summary>
+    public class MediaChatCitation
+    {
+        public int Number { get; set; }
+        public string Title { get; set; } = "";
+        public string Url { get; set; } = "";
+        public string Snippet { get; set; } = "";
+        public string Hostname { get; set; } = "";
     }
 
     /// <summary>

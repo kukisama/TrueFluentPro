@@ -90,9 +90,15 @@ namespace TrueFluentPro.Views
                 Avalonia.Interactivity.RoutingStrategies.Tunnel);
         }
 
-        public void UpdateConfiguration(AiConfig aiConfig, MediaGenConfig genConfig, List<AiEndpoint> endpoints)
+        public void UpdateConfiguration(AiConfig aiConfig, MediaGenConfig genConfig, List<AiEndpoint> endpoints,
+            string? webSearchProviderId = null, int? webSearchMaxResults = null,
+            bool? webSearchEnableIntentAnalysis = null, bool? webSearchEnableResultCompression = null,
+            string? webSearchMcpEndpoint = null, string? webSearchMcpToolName = null, string? webSearchMcpApiKey = null)
         {
-            _viewModel?.UpdateConfiguration(aiConfig, genConfig, endpoints);
+            _viewModel?.UpdateConfiguration(aiConfig, genConfig, endpoints,
+                webSearchProviderId, webSearchMaxResults,
+                webSearchEnableIntentAnalysis, webSearchEnableResultCompression,
+                webSearchMcpEndpoint, webSearchMcpToolName, webSearchMcpApiKey);
         }
 
         public void Cleanup()
@@ -148,6 +154,16 @@ namespace TrueFluentPro.Views
             if (sender is not ScrollViewer viewer) return;
 
             _chatScrollViewer = viewer;
+
+            // 内容高度增长（流式输出、展开 Reasoning/Citation 等）时，
+            // 若用户此前在底部附近，自动跟随滚到底部
+            if (e.ExtentDelta.Y > 0 && _isUserNearBottom)
+            {
+                // 直接同步滚到底部，避免 Post 延迟导致状态不一致
+                viewer.ScrollToEnd();
+                return;  // ScrollToEnd 会触发新的 ScrollChanged，在那里更新 _isUserNearBottom
+            }
+
             _isUserNearBottom = IsNearBottom(viewer);
             UpdateQuickNavButtonsVisibility();
         }

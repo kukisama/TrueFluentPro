@@ -1,0 +1,69 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:TrueFluentPro.ViewModels.Settings"
+             x:Class="TrueFluentPro.Views.Settings.WebSearchSection"
+             x:DataType="vm:WebSearchSectionVM"
+             x:CompileBindings="False">
+    <Border Classes="app-card"
+            BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+            BorderThickness="1" CornerRadius="8" Padding="20">
+        <StackPanel Spacing="12">
+            <TextBlock Text="网页搜索" Theme="{StaticResource SubtitleTextBlockStyle}"/>
+            <Separator/>
+
+            <TextBlock Text="搜索引擎" FontWeight="Bold"/>
+            <ComboBox ItemsSource="{Binding ProviderOptions}"
+                      SelectedItem="{Binding SelectedProvider, Mode=TwoWay}"
+                      MinWidth="200"/>
+            <TextBlock Classes="caption-text"
+                       Text="选择用于 AI 聊天时联网搜索的引擎。Bing 和百度无需 API Key，MCP 可接入任意搜索服务。"/>
+
+            <Separator Margin="0,8,0,8"/>
+
+            <TextBlock Text="最大结果数" FontWeight="Bold"/>
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <NumericUpDown Value="{Binding MaxResults, Mode=TwoWay}"
+                               Minimum="1" Maximum="10" Increment="1"
+                               MinWidth="100" FormatString="0"/>
+                <TextBlock VerticalAlignment="Center" Classes="caption-text" Text="条"/>
+            </StackPanel>
+            <TextBlock Classes="caption-text"
+                       Text="每次搜索返回的最大结果数量，更多结果会消耗更多 Token。"/>
+
+            <Separator Margin="0,8,0,8"/>
+            <TextBlock Text="智能编排" FontWeight="Bold"/>
+
+            <CheckBox Content="启用搜索意图分析"
+                      IsChecked="{Binding EnableIntentAnalysis, Mode=TwoWay}"/>
+            <TextBlock Classes="caption-text" Margin="28,0,0,0"
+                       Text="发送前由 AI 自动判断是否需要搜索并提取关键词，避免无意义搜索。"/>
+
+            <CheckBox Content="启用结果压缩"
+                      IsChecked="{Binding EnableResultCompression, Mode=TwoWay}"/>
+            <TextBlock Classes="caption-text" Margin="28,0,0,0"
+                       Text="搜索后再用 AI 精炼结果，去除冗余内容。会额外消耗一次 AI 调用。"/>
+
+            <!-- MCP 配置（仅当选择 MCP 引擎时显示） -->
+            <Separator Margin="0,8,0,8" IsVisible="{Binding IsMcpProvider}"/>
+            <StackPanel Spacing="10" IsVisible="{Binding IsMcpProvider}">
+                <TextBlock Text="MCP 搜索配置" FontWeight="Bold"/>
+
+                <TextBlock Text="MCP Endpoint"/>
+                <TextBox Text="{Binding McpEndpoint, Mode=TwoWay}"
+                         Watermark="https://mcp.exa.ai/mcp"/>
+
+                <TextBlock Text="Tool Name"/>
+                <TextBox Text="{Binding McpToolName, Mode=TwoWay}"
+                         Watermark="web_search"/>
+
+                <TextBlock Text="API Key（可选）"/>
+                <TextBox Text="{Binding McpApiKey, Mode=TwoWay}"
+                         PasswordChar="•"
+                         Watermark="留空表示不需要"/>
+
+                <TextBlock Classes="caption-text"
+                           Text="配置 MCP 搜索服务端点。兼容 Exa MCP、Tavily MCP、Searxng MCP 等遵循 JSON-RPC 2.0 协议的搜索工具。"/>
+            </StackPanel>
+        </StackPanel>
+    </Border>
+</UserControl>

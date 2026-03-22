@@ -28,6 +28,7 @@ namespace TrueFluentPro.ViewModels
         private readonly Lazy<VideoGenSectionVM> _videoGenVm;
         private readonly Lazy<TransferSectionVM> _transferVm;
         private readonly Lazy<AboutSectionVM> _aboutVm;
+        private readonly Lazy<WebSearchSectionVM> _webSearchVm;
 
         private AzureSpeechConfig _config = new();
         private Timer? _debounceTimer;
@@ -51,6 +52,7 @@ namespace TrueFluentPro.ViewModels
         public VideoGenSectionVM VideoGenVM => _videoGenVm.Value;
         public TransferSectionVM TransferVM => _transferVm.Value;
         public AboutSectionVM AboutVM => _aboutVm.Value;
+        public WebSearchSectionVM WebSearchVM => _webSearchVm.Value;
 
         public SettingsViewModel(
             ConfigurationService configService,
@@ -77,6 +79,7 @@ namespace TrueFluentPro.ViewModels
             _imageGenVm = CreateLazySection(() => new ImageGenSectionVM(), ConfigureImageGenSection);
             _videoGenVm = CreateLazySection(() => new VideoGenSectionVM(), ConfigureVideoGenSection);
             _aboutVm = CreateLazySection(() => new AboutSectionVM(aboutSectionService, ReportStatus), ConfigureAboutSection);
+            _webSearchVm = CreateLazySection(() => new WebSearchSectionVM(), ConfigureWebSearchSection);
             _transferVm = new Lazy<TransferSectionVM>(() => new TransferSectionVM(
                 settingsTransferFileService,
                 CreateExportPackage,
@@ -282,6 +285,11 @@ namespace TrueFluentPro.ViewModels
                 ConfigureAboutSection(_aboutVm.Value);
             }
 
+            if (_webSearchVm.IsValueCreated)
+            {
+                ConfigureWebSearchSection(_webSearchVm.Value);
+            }
+
             _ = RefreshAiAuthStatusAsync();
         }
 
@@ -395,6 +403,11 @@ namespace TrueFluentPro.ViewModels
         }
 
         private void ConfigureAboutSection(AboutSectionVM section)
+        {
+            section.LoadFrom(_config);
+        }
+
+        private void ConfigureWebSearchSection(WebSearchSectionVM section)
         {
             section.LoadFrom(_config);
         }
@@ -558,6 +571,11 @@ namespace TrueFluentPro.ViewModels
             if (_aboutVm.IsValueCreated)
             {
                 _aboutVm.Value.ApplyTo(_config);
+            }
+
+            if (_webSearchVm.IsValueCreated)
+            {
+                _webSearchVm.Value.ApplyTo(_config);
             }
 
             EndpointsVM.SyncEndpointsToConfig();

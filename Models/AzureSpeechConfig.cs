@@ -206,6 +206,17 @@ namespace TrueFluentPro.Models
 
         public MediaGenConfig MediaGenConfig { get; set; } = new();
 
+        // ═══ 网页搜索 ═══
+        public string WebSearchProviderId { get; set; } = "bing";
+        public int WebSearchMaxResults { get; set; } = 5;
+        public bool WebSearchEnableIntentAnalysis { get; set; } = true;
+        public bool WebSearchEnableResultCompression { get; set; } = false;
+
+        // MCP 搜索配置
+        public string WebSearchMcpEndpoint { get; set; } = "";
+        public string WebSearchMcpToolName { get; set; } = "web_search";
+        public string WebSearchMcpApiKey { get; set; } = "";
+
         /// <summary>统一 AI 终结点注册表</summary>
         public List<AiEndpoint> Endpoints { get; set; } = new();
 

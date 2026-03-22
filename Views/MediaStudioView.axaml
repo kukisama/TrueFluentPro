@@ -12,6 +12,7 @@
     <UserControl.Resources>
         <controls:FilePathToBitmapConverter x:Key="FilePathToBitmapConverter"/>
         <controls:FirstFrameBadgeVisibilityConverter x:Key="FirstFrameBadgeVisibilityConverter"/>
+        <controls:CitationsToUrlDictionaryConverter x:Key="CitationsToUrlDictionaryConverter"/>
     </UserControl.Resources>
 
     <UserControl.Styles>
@@ -215,7 +216,7 @@
                             <ItemsControl ItemsSource="{Binding Messages}">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate>
-                                        <VirtualizingStackPanel/>
+                                        <StackPanel/>
                                     </ItemsPanelTemplate>
                                 </ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>
@@ -307,7 +308,19 @@
                                                     </StackPanel>
 
                                                     <!-- 文本内容：Markdown 渲染（支持流式 + 代码块复制） -->
-                                                    <controls:ChatMarkdownBlock Markdown="{Binding Text}"/>
+                                                    <controls:ChatMarkdownBlock Markdown="{Binding Text}"
+                                                        CitationUrls="{Binding Citations, Converter={StaticResource CitationsToUrlDictionaryConverter}}"/>
+
+                                                    <!-- 搜索过程摘要 -->
+                                                    <TextBlock Text="{Binding SearchSummary}"
+                                                               IsVisible="{Binding HasSearchSummary}"
+                                                               FontSize="10.5" Opacity="0.6"
+                                                               TextWrapping="Wrap"
+                                                               Margin="0,4,0,0"/>
+
+                                                    <!-- 搜索引用来源面板 -->
+                                                    <controls:CitationPanel Citations="{Binding Citations}"
+                                                                            IsVisible="{Binding HasCitations}"/>
 
                                                     <ProgressBar IsIndeterminate="True" Height="4"
                                                                  IsVisible="{Binding IsLoading}"/>
