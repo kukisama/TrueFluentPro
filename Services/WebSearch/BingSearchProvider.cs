@@ -37,38 +37,35 @@ public sealed class BingSearchProvider : IWebSearchProvider
     public async Task<IReadOnlyList<WebSearchResult>> SearchAsync(
         string query, int maxResults = 5, CancellationToken ct = default)
     {
-        // Cherry applyLanguageFilter: 给 Bing 查询追加 lang:zh
-        var queryWithLang = $"{query} lang:zh";
-        var encoded = Uri.EscapeDataString(queryWithLang);
+        var encoded = Uri.EscapeDataString(query);
 
-        // Cherry: this.provider.url.replace('%s', encodeURIComponent(queryWithLanguage))
-        // 国际版 www.bing.com，中国版 cn.bing.com（不加 ensearch=1）
+        // 国际版用 ensearch=1 确保返回国际结果（中国网络也能用）
         var url = _international
-            ? $"https://www.bing.com/search?q={encoded}"
+            ? $"https://www.bing.com/search?q={encoded}&ensearch=1"
             : $"https://cn.bing.com/search?q={encoded}";
 
-        // Cherry 用 Electron BrowserWindow（隐藏 Chromium 窗口）渲染搜索页。
-        // 我们等效方案：优先 Edge headless --dump-dom，拿到 JS 渲染后的完整 HTML。
-        // 失败时退化到 HttpClient（可能拿不到完整结果但聊胜于无）。
-        var html = await GetSearchPageHtmlAsync(url, ct);
-        return ParseResults(html, maxResults);
-    }
+        // 策略：先 Edge headless 解析，若 0 条结果则 fallback HttpClient 重新解析。
+        // Edge --dump-dom 在 JS 未完成时可能输出空容器，仅检查容器存在不够可靠。
 
-    /// <summary>
-    /// 获取搜索页 HTML：优先 Edge headless（对齐 Cherry BrowserWindow），
-    /// 不可用或超时时退化到 HttpClient。
-    /// </summary>
-    private async Task<string> GetSearchPageHtmlAsync(string url, CancellationToken ct)
-    {
-        // 优先用 Edge headless（等效 Cherry 的 Electron BrowserWindow）
+        // 1) Edge headless
         if (EdgeHeadlessBrowser.IsAvailable)
         {
             var rendered = await EdgeHeadlessBrowser.GetRenderedHtmlAsync(url, ct);
             if (!string.IsNullOrEmpty(rendered))
-                return rendered;
+            {
+                var edgeResults = ParseResults(rendered, maxResults);
+                if (edgeResults.Count > 0) return edgeResults;
+            }
         }
 
-        // Fallback: HttpClient
+        // 2) Fallback: HttpClient
+        var html = await GetSearchPageHtmlAsync(url, ct);
+        return ParseResults(html, maxResults);
+    }
+
+    /// <summary>HttpClient 获取搜索页 HTML</summary>
+    private async Task<string> GetSearchPageHtmlAsync(string url, CancellationToken ct)
+    {
         using var req = new HttpRequestMessage(HttpMethod.Get, url);
         req.Headers.Add("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.5");
         using var resp = await _httpClient.SendAsync(req, ct);

@@ -36,8 +36,7 @@ namespace TrueFluentPro.ViewModels
         private string _webSearchMcpEndpoint = "";
         private string _webSearchMcpToolName = "web_search";
         private string _webSearchMcpApiKey = "";
-        /// <summary>搜索进度回调目标消息（搜索期间指向 aiMessage，结束后 null）</summary>
-        private ChatMessageViewModel? _searchProgressMessage;
+
         private CancellationTokenSource _cts = new();
         private readonly SemaphoreSlim _videoFrameBackfillLock = new(1, 1);
         private const int MaxReferenceImageCount = 8;
@@ -1958,7 +1957,8 @@ namespace TrueFluentPro.ViewModels
             string prompt,
             AiChatRequestConfig runtimeRequest,
             AzureTokenProvider? tokenProvider,
-            CancellationToken ct)
+            CancellationToken ct,
+            ChatMessageViewModel? progressTarget = null)
         {
             var empty = new WebSearchContext("", [], "", "");
             if (!_enableWebSearch) return empty;
@@ -1976,17 +1976,26 @@ namespace TrueFluentPro.ViewModels
                     {
                         var q = string.Join("、", queries);
                         Avalonia.Threading.Dispatcher.UIThread.Post(() =>
-                            _searchProgressMessage!.Text = $"🔍 正在搜索「{q}」...");
+                        {
+                            if (progressTarget != null)
+                                progressTarget.Text = $"🔍 正在搜索「{q}」...";
+                        });
                     },
                     OnSearchCompleted = count =>
                     {
                         Avalonia.Threading.Dispatcher.UIThread.Post(() =>
-                            _searchProgressMessage!.Text = $"📄 找到 {count} 条结果，正在读取网页内容...");
+                        {
+                            if (progressTarget != null)
+                                progressTarget.Text = $"📄 找到 {count} 条结果，正在读取网页内容...";
+                        });
                     },
                     OnFetchingContent = () =>
                     {
                         Avalonia.Threading.Dispatcher.UIThread.Post(() =>
-                            _searchProgressMessage!.Text = "📖 正在提取网页正文...");
+                        {
+                            if (progressTarget != null)
+                                progressTarget.Text = "📖 正在提取网页正文...";
+                        });
                     }
                 };
 
@@ -2101,9 +2110,7 @@ namespace TrueFluentPro.ViewModels
             // Web 搜索增强（Cherry 风格：分阶段显示搜索进度）
             if (_enableWebSearch)
                 aiMessage.Text = "🔍 正在分析搜索意图...";
-            _searchProgressMessage = aiMessage;
-            var webSearch = await ExecuteWebSearchAsync(prompt, runtimeRequest, tokenProvider, ct);
-            _searchProgressMessage = null;
+            var webSearch = await ExecuteWebSearchAsync(prompt, runtimeRequest, tokenProvider, ct, aiMessage);
             if (_enableWebSearch && webSearch.RawResults.Count > 0)
             {
                 aiMessage.Text = $"✅ 找到 {webSearch.RawResults.Count} 条结果，生成中...";
@@ -2534,9 +2541,7 @@ namespace TrueFluentPro.ViewModels
             // Web 搜索增强（Cherry 风格：分阶段显示搜索进度）
             if (_enableWebSearch)
                 aiMessage.Text = "🔍 正在分析搜索意图...";
-            _searchProgressMessage = aiMessage;
-            var webSearch = await ExecuteWebSearchAsync(prompt, runtimeRequest, tokenProvider, ct);
-            _searchProgressMessage = null;
+            var webSearch = await ExecuteWebSearchAsync(prompt, runtimeRequest, tokenProvider, ct, aiMessage);
             if (_enableWebSearch && webSearch.RawResults.Count > 0)
             {
                 aiMessage.Text = $"✅ 找到 {webSearch.RawResults.Count} 条结果，生成中...";

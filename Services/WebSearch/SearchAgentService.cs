@@ -176,10 +176,8 @@ public sealed class SearchAgentService
         progress?.OnIntentAnalyzed?.Invoke(intent.Questions);
 
         // ── 第 2 步：多查询并行搜索 ──
-        // Cherry searchWithTime: 给查询注入当前日期，帮助搜索引擎返回时效性更强的结果
-        var datePrefix = $"today is {DateTime.Now:yyyy-MM-dd} ";
         var tasks = intent.Questions.Select(q =>
-            provider.SearchAsync(datePrefix + q, maxResults, ct));
+            provider.SearchAsync(q, maxResults, ct));
         var batches = await Task.WhenAll(tasks);
 
         // ── 第 3 步：去重 ──

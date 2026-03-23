@@ -1783,13 +1783,25 @@ namespace TrueFluentPro.ViewModels
                     {
                         Role = m.Role,
                         Text = m.Text,
+                        ReasoningText = m.ReasoningText,
                         MediaPaths = m.MediaPaths
                             .Select(p => ConvertPathForSave(p, session.SessionDirectory))
                             .Where(p => !string.IsNullOrWhiteSpace(p))
                             .ToList(),
                         Timestamp = m.Timestamp,
                         GenerateSeconds = m.GenerateSeconds,
-                        DownloadSeconds = m.DownloadSeconds
+                        DownloadSeconds = m.DownloadSeconds,
+                        SearchSummary = m.SearchSummary,
+                        Citations = m.Citations.Count > 0
+                            ? m.Citations.Select(c => new Models.MediaChatCitation
+                            {
+                                Number = c.Number,
+                                Title = c.Title,
+                                Url = c.Url,
+                                Snippet = c.Snippet,
+                                Hostname = c.Hostname
+                            }).ToList()
+                            : null
                     }).ToList(),
                     Tasks = session.TaskHistory
                         .Where(t => ShouldPersistTask(t))
@@ -1860,9 +1872,12 @@ namespace TrueFluentPro.ViewModels
                     {
                         Role = m.Role,
                         Text = m.Text,
+                        ReasoningText = m.ReasoningText,
                         Timestamp = m.Timestamp,
                         GenerateSeconds = m.GenerateSeconds,
                         DownloadSeconds = m.DownloadSeconds,
+                        SearchSummary = m.SearchSummary,
+                        Citations = m.Citations,
                         MediaPaths = m.MediaPaths
                             .Select(p => ResolveStoredPathForLoad(p, session.SessionDirectory))
                             .Where(p => !string.IsNullOrWhiteSpace(p))
