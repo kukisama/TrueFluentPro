@@ -12,7 +12,7 @@
             <Separator/>
 
             <TextBlock Classes="field-note" TextWrapping="Wrap"
-                       Text="视频模型已集中到 &quot;AI 资源与模型&quot;。这里保留视频生成默认参数与 Media Studio 运行参数。"/>
+                       Text="视频模型已集中到 &quot;AI 资源与模型&quot;。这里保留视频生成默认参数与创作工坊运行参数。"/>
 
             <Separator Margin="0,8,0,8"/>
             <TextBlock Text="默认参数" FontWeight="Bold"/>
@@ -67,7 +67,7 @@
             </Grid>
 
             <Separator Margin="0,8,0,8"/>
-            <TextBlock Text="Media Studio 运行参数" FontWeight="Bold"/>
+            <TextBlock Text="创作工坊运行参数" FontWeight="Bold"/>
             <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto" RowSpacing="6" ColumnSpacing="8">
                 <TextBlock Grid.Row="0" Grid.Column="0" Text="内存会话上限:" VerticalAlignment="Center"/>
                 <NumericUpDown Grid.Row="0" Grid.Column="1"

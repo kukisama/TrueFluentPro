@@ -1012,7 +1012,7 @@ namespace TrueFluentPro.ViewModels
                 package.State = ProcessingDisplayState.Removed;
                 package.StateText = "已删除";
                 package.SummaryText = package.TotalCount == 0
-                    ? "已从批处理中心移除"
+                    ? "已从批量字幕移除"
                     : $"已移除 · 完成 {completedCount}/{package.TotalCount}";
                 return package;
             }

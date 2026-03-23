@@ -39,10 +39,9 @@ public sealed class BingSearchProvider : IWebSearchProvider
     {
         var encoded = Uri.EscapeDataString(query);
 
-        // 国际版用 ensearch=1 确保返回国际结果（中国网络也能用）
-        var url = _international
-            ? $"https://www.bing.com/search?q={encoded}&ensearch=1"
-            : $"https://cn.bing.com/search?q={encoded}";
+        // 统一走 www.bing.com + ensearch=1 确保返回国际版结果
+        // cn.bing.com 在中国网络下搜索相关性不足，强制走国际版
+        var url = $"https://www.bing.com/search?q={encoded}&ensearch=1";
 
         // 策略：先 Edge headless 解析，若 0 条结果则 fallback HttpClient 重新解析。
         // Edge --dump-dom 在 JS 未完成时可能输出空容器，仅检查容器存在不够可靠。

@@ -16,7 +16,7 @@
                       SelectedItem="{Binding SelectedProvider, Mode=TwoWay}"
                       MinWidth="200"/>
             <TextBlock Classes="caption-text"
-                       Text="选择用于 AI 聊天时联网搜索的引擎。Bing 和百度无需 API Key，MCP 可接入任意搜索服务。"/>
+                       Text="选择用于 AI 聊天时联网搜索的引擎。Bing、Google、百度和 DuckDuckGo 无需 API Key；Google 需自行保证网络可达，MCP 可接入任意搜索服务。"/>
 
             <Separator Margin="0,8,0,8"/>
 

@@ -26,8 +26,12 @@ public class WebSearchSectionVM : SettingsSectionBase
         get => _providerId;
         set
         {
-            if (Set(ref _providerId, value))
+            var normalized = WebSearchProviderFactory.NormalizeProviderId(value);
+            if (Set(ref _providerId, normalized))
+            {
                 OnPropertyChanged(nameof(IsMcpProvider));
+                OnPropertyChanged(nameof(SelectedProvider));
+            }
         }
     }
 
@@ -68,7 +72,7 @@ public class WebSearchSectionVM : SettingsSectionBase
 
     public override void LoadFrom(AzureSpeechConfig config)
     {
-        ProviderId = config.WebSearchProviderId;
+        ProviderId = WebSearchProviderFactory.NormalizeProviderId(config.WebSearchProviderId);
         MaxResults = config.WebSearchMaxResults;
         EnableIntentAnalysis = config.WebSearchEnableIntentAnalysis;
         EnableResultCompression = config.WebSearchEnableResultCompression;
@@ -79,7 +83,7 @@ public class WebSearchSectionVM : SettingsSectionBase
 
     public override void ApplyTo(AzureSpeechConfig config)
     {
-        config.WebSearchProviderId = ProviderId;
+        config.WebSearchProviderId = WebSearchProviderFactory.NormalizeProviderId(ProviderId);
         config.WebSearchMaxResults = MaxResults;
         config.WebSearchEnableIntentAnalysis = EnableIntentAnalysis;
         config.WebSearchEnableResultCompression = EnableResultCompression;

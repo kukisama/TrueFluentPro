@@ -22,11 +22,27 @@ public sealed class WebSearchProviderFactory
     /// <summary>获取共享 HttpClient（供 WebPageFetcher 等复用）</summary>
     public static HttpClient GetSharedHttpClient() => SharedHttpClient;
 
+    /// <summary>兼容历史配置并兜底未知 providerId。</summary>
+    public static string NormalizeProviderId(string? providerId)
+    {
+        return providerId?.Trim().ToLowerInvariant() switch
+        {
+            "bing" => "bing",
+            "bing-cn" => "bing",
+            "google" => "google",
+            "bing-news" => "bing-news",
+            "baidu" => "baidu",
+            "duckduckgo" => "duckduckgo",
+            "mcp" => "mcp",
+            _ => "bing"
+        };
+    }
+
     /// <summary>所有已知的提供商 ID → 显示名映射</summary>
     public static IReadOnlyList<(string Id, string DisplayName)> AvailableProviders { get; } =
     [
         ("bing", "Bing 国际版"),
-        ("bing-cn", "Bing 中国版"),
+        ("google", "Google"),
         ("bing-news", "Bing 新闻"),
         ("baidu", "百度"),
         ("duckduckgo", "DuckDuckGo"),
@@ -37,10 +53,10 @@ public sealed class WebSearchProviderFactory
     public IWebSearchProvider Create(string providerId,
         string mcpEndpoint = "", string mcpToolName = "web_search", string? mcpApiKey = null)
     {
-        return providerId switch
+        return NormalizeProviderId(providerId) switch
         {
             "bing" => new BingSearchProvider(SharedHttpClient, international: true),
-            "bing-cn" => new BingSearchProvider(SharedHttpClient, international: false),
+            "google" => new GoogleSearchProvider(SharedHttpClient),
             "bing-news" => new BingNewsSearchProvider(SharedHttpClient),
             "baidu" => new BaiduSearchProvider(SharedHttpClient),
             "duckduckgo" => new DuckDuckGoSearchProvider(SharedHttpClient),

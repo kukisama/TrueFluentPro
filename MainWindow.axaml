@@ -127,8 +127,8 @@
                     <Button Name="ReviewNavButton"
                             Classes="shell-nav-action"
                             Click="ReviewNavButton_Click"
-                            ToolTip.Tip="复盘处理 (Ctrl+2)"
-                            AutomationProperties.Name="复盘处理 (Ctrl+2)">
+                            ToolTip.Tip="复盘洞察 (Ctrl+2)"
+                            AutomationProperties.Name="复盘洞察 (Ctrl+2)">
                         <Grid ColumnDefinitions="20,*" ColumnSpacing="10">
                             <icons:Icon Grid.Column="0"
                                         Value="fa-solid fa-bars-progress"
@@ -136,7 +136,7 @@
                                         HorizontalAlignment="Center"
                                         VerticalAlignment="Center"/>
                             <TextBlock Grid.Column="1"
-                                       Text="复盘处理"
+                                       Text="复盘洞察"
                                        VerticalAlignment="Center"
                                        IsVisible="{Binding IsMainNavPaneOpen}"/>
                         </Grid>
@@ -144,8 +144,8 @@
                     <Button Name="BatchNavButton"
                             Classes="shell-nav-action"
                             Click="BatchNavButton_Click"
-                            ToolTip.Tip="批处理中心 (Ctrl+3)"
-                            AutomationProperties.Name="批处理中心 (Ctrl+3)">
+                            ToolTip.Tip="批量字幕 (Ctrl+3)"
+                            AutomationProperties.Name="批量字幕 (Ctrl+3)">
                         <Grid ColumnDefinitions="20,*" ColumnSpacing="10">
                             <icons:Icon Grid.Column="0"
                                         Value="fa-solid fa-layer-group"
@@ -153,7 +153,7 @@
                                         HorizontalAlignment="Center"
                                         VerticalAlignment="Center"/>
                             <TextBlock Grid.Column="1"
-                                       Text="批处理中心"
+                                       Text="批量字幕"
                                        VerticalAlignment="Center"
                                        IsVisible="{Binding IsMainNavPaneOpen}"/>
                         </Grid>
@@ -161,8 +161,8 @@
                     <Button Name="MediaNavButton"
                             Classes="shell-nav-action"
                             Click="MediaNavButton_Click"
-                            ToolTip.Tip="Media Studio (Ctrl+4)"
-                            AutomationProperties.Name="Media Studio (Ctrl+4)">
+                            ToolTip.Tip="创作工坊 (Ctrl+4)"
+                            AutomationProperties.Name="创作工坊 (Ctrl+4)">
                         <Grid ColumnDefinitions="20,*" ColumnSpacing="10">
                             <icons:Icon Grid.Column="0"
                                         Value="fa-regular fa-images"
@@ -170,7 +170,7 @@
                                         HorizontalAlignment="Center"
                                         VerticalAlignment="Center"/>
                             <TextBlock Grid.Column="1"
-                                       Text="Media Studio"
+                                       Text="创作工坊"
                                        VerticalAlignment="Center"
                                        IsVisible="{Binding IsMainNavPaneOpen}"/>
                         </Grid>
@@ -178,8 +178,8 @@
                     <Button Name="MediaV2NavButton"
                             Classes="shell-nav-action"
                             Click="MediaV2NavButton_Click"
-                            ToolTip.Tip="媒体中心v2 (Ctrl+6)"
-                            AutomationProperties.Name="媒体中心v2 (Ctrl+6)">
+                            ToolTip.Tip="媒体中心 (Ctrl+6)"
+                            AutomationProperties.Name="媒体中心 (Ctrl+6)">
                         <Grid ColumnDefinitions="20,*" ColumnSpacing="10">
                             <icons:Icon Grid.Column="0"
                                         Value="fa-solid fa-photo-film"
@@ -187,7 +187,7 @@
                                         HorizontalAlignment="Center"
                                         VerticalAlignment="Center"/>
                             <TextBlock Grid.Column="1"
-                                       Text="媒体中心v2"
+                                       Text="媒体中心"
                                        VerticalAlignment="Center"
                                        IsVisible="{Binding IsMainNavPaneOpen}"/>
                         </Grid>

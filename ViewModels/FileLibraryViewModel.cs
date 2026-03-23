@@ -310,7 +310,7 @@ namespace TrueFluentPro.ViewModels
                     AudioPath = audioFile.FullPath,
                     State = ProcessingDisplayState.Removed,
                     BadgeText = "已删除",
-                    DetailText = "已从批处理中心移除"
+                    DetailText = "已从批量字幕移除"
                 };
             }
 

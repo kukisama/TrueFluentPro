@@ -32,7 +32,7 @@
                           MinWidth="280"
                           HorizontalAlignment="Left"
                           IsEnabled="{Binding HasSpeechToTextModels}"/>
-                <TextBlock Classes="hint-text" Text="批处理中心与 speech 字幕生成会优先使用这里的模型；未配置时回退到现有 Azure Speech 批量/SDK 转写链路。"/>
+                <TextBlock Classes="hint-text" Text="批量字幕与 speech 字幕生成会优先使用这里的模型；未配置时回退到现有 Azure Speech 批量/SDK 转写链路。"/>
             </StackPanel>
             <StackPanel Spacing="5">
                 <TextBlock Text="文字转语音模型（预留）"/>

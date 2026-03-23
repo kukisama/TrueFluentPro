@@ -708,7 +708,7 @@
 
             <!-- 无会话提示 -->
             <TextBlock Grid.Column="2"
-                       Text="请新建会话开始使用 Media Studio"
+                       Text="请新建会话开始使用创作工坊"
                        HorizontalAlignment="Center" VerticalAlignment="Center"
                        FontSize="16" Foreground="{DynamicResource TextPlaceholderBrush}"
                        IsVisible="{Binding !HasCurrentSession}"/>

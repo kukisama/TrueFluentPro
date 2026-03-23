@@ -233,7 +233,7 @@ public partial class ReviewModeView : UserControl
         };
         flyout.Items.Add(generateSpeechItem);
 
-        var enqueueItem = new MenuItem { Header = "加入批处理中心" };
+        var enqueueItem = new MenuItem { Header = "加入批量字幕" };
         enqueueItem.Click += (_, _) =>
         {
             ViewModel?.BatchProcessing.AuditUiEvent("AudioFileEnqueue", $"flyout-click item={selectedItem.FullPath}");
