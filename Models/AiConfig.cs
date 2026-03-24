@@ -103,6 +103,8 @@ namespace TrueFluentPro.Models
         public ModelReference? SummaryModelRef { get; set; }
         public ModelReference? QuickModelRef { get; set; }
         public ModelReference? ReviewModelRef { get; set; }
+        public ModelReference? ConversationModelRef { get; set; }
+        public ModelReference? IntentModelRef { get; set; }
 
         public bool AutoInsightBufferOutput { get; set; } = true;
 

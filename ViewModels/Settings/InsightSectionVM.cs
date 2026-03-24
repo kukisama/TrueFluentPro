@@ -26,6 +26,8 @@ namespace TrueFluentPro.ViewModels.Settings
         private ModelOption? _selectedInsightModel;
         private ModelOption? _selectedSummaryModel;
         private ModelOption? _selectedQuickModel;
+        private ModelOption? _selectedConversationModel;
+        private ModelOption? _selectedIntentModel;
 
         private List<ModelOption> _textModels = new();
 
@@ -54,6 +56,10 @@ namespace TrueFluentPro.ViewModels.Settings
             set => Set(ref _selectedSummaryModel, value, then: () => _ = RefreshAiAuthStatusAsync()); }
         public ModelOption? SelectedQuickModel { get => _selectedQuickModel;
             set => Set(ref _selectedQuickModel, value, then: () => _ = RefreshAiAuthStatusAsync()); }
+        public ModelOption? SelectedConversationModel { get => _selectedConversationModel;
+            set => Set(ref _selectedConversationModel, value); }
+        public ModelOption? SelectedIntentModel { get => _selectedIntentModel;
+            set => Set(ref _selectedIntentModel, value); }
 
         public string AiTestStatus { get => _aiTestStatus; set => SetProperty(ref _aiTestStatus, value); }
         public string AiTestReasoning { get => _aiTestReasoning; set => SetProperty(ref _aiTestReasoning, value); }
@@ -98,6 +104,8 @@ namespace TrueFluentPro.ViewModels.Settings
             ai.InsightModelRef = SelectedInsightModel?.Reference;
             ai.SummaryModelRef = SelectedSummaryModel?.Reference;
             ai.QuickModelRef = SelectedQuickModel?.Reference;
+            ai.ConversationModelRef = SelectedConversationModel?.Reference;
+            ai.IntentModelRef = SelectedIntentModel?.Reference;
             config.AiConfig = ai;
         }
 
@@ -107,6 +115,8 @@ namespace TrueFluentPro.ViewModels.Settings
             SelectModelOption(ai.InsightModelRef, textModels, v => _selectedInsightModel = v, nameof(SelectedInsightModel));
             SelectModelOption(ai.SummaryModelRef, textModels, v => _selectedSummaryModel = v, nameof(SelectedSummaryModel));
             SelectModelOption(ai.QuickModelRef, textModels, v => _selectedQuickModel = v, nameof(SelectedQuickModel));
+            SelectModelOption(ai.ConversationModelRef, textModels, v => _selectedConversationModel = v, nameof(SelectedConversationModel));
+            SelectModelOption(ai.IntentModelRef, textModels, v => _selectedIntentModel = v, nameof(SelectedIntentModel));
         }
 
         public void RefreshModels(List<ModelOption> textModels)
@@ -114,11 +124,15 @@ namespace TrueFluentPro.ViewModels.Settings
             var insightRef = SelectedInsightModel?.Reference;
             var summaryRef = SelectedSummaryModel?.Reference;
             var quickRef = SelectedQuickModel?.Reference;
+            var conversationRef = SelectedConversationModel?.Reference;
+            var intentRef = SelectedIntentModel?.Reference;
 
             TextModels = textModels;
             SelectModelOption(insightRef, textModels, v => _selectedInsightModel = v, nameof(SelectedInsightModel));
             SelectModelOption(summaryRef, textModels, v => _selectedSummaryModel = v, nameof(SelectedSummaryModel));
             SelectModelOption(quickRef, textModels, v => _selectedQuickModel = v, nameof(SelectedQuickModel));
+            SelectModelOption(conversationRef, textModels, v => _selectedConversationModel = v, nameof(SelectedConversationModel));
+            SelectModelOption(intentRef, textModels, v => _selectedIntentModel = v, nameof(SelectedIntentModel));
         }
 
         private void SelectModelOption(ModelReference? reference, List<ModelOption> options, Action<ModelOption?> setter, string propertyName)

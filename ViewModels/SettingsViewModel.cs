@@ -181,6 +181,8 @@ namespace TrueFluentPro.ViewModels
         public ModelOption? SelectedInsightModel { get => InsightVM.SelectedInsightModel; set => InsightVM.SelectedInsightModel = value; }
         public ModelOption? SelectedSummaryModel { get => InsightVM.SelectedSummaryModel; set => InsightVM.SelectedSummaryModel = value; }
         public ModelOption? SelectedQuickModel { get => InsightVM.SelectedQuickModel; set => InsightVM.SelectedQuickModel = value; }
+        public ModelOption? SelectedConversationModel { get => InsightVM.SelectedConversationModel; set => InsightVM.SelectedConversationModel = value; }
+        public ModelOption? SelectedIntentModel { get => InsightVM.SelectedIntentModel; set => InsightVM.SelectedIntentModel = value; }
         public bool SummaryEnableReasoning { get => InsightVM.SummaryEnableReasoning; set => InsightVM.SummaryEnableReasoning = value; }
         public bool StudioDefaultEnableReasoning { get => InsightVM.StudioDefaultEnableReasoning; set => InsightVM.StudioDefaultEnableReasoning = value; }
         public string InsightSystemPrompt { get => InsightVM.InsightSystemPrompt; set => InsightVM.InsightSystemPrompt = value; }

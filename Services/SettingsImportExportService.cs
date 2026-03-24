@@ -43,6 +43,8 @@ namespace TrueFluentPro.Services
             ai.SummaryModelRef = NormalizeReference(result, ai.SummaryModelRef, ModelCapability.Text);
             ai.QuickModelRef = NormalizeReference(result, ai.QuickModelRef, ModelCapability.Text);
             ai.ReviewModelRef = NormalizeReference(result, ai.ReviewModelRef, ModelCapability.Text);
+            ai.ConversationModelRef = NormalizeReference(result, ai.ConversationModelRef, ModelCapability.Text);
+            ai.IntentModelRef = NormalizeReference(result, ai.IntentModelRef, ModelCapability.Text);
             media.ImageModelRef = NormalizeReference(result, media.ImageModelRef, ModelCapability.Image);
             media.VideoModelRef = NormalizeReference(result, media.VideoModelRef, ModelCapability.Video);
             result.RealtimeTranscriptionModelRef = NormalizeReference(result, result.RealtimeTranscriptionModelRef, ModelCapability.SpeechToText);
@@ -127,6 +129,8 @@ namespace TrueFluentPro.Services
                     SummaryModelRef = CloneReference(ai.SummaryModelRef),
                     QuickModelRef = CloneReference(ai.QuickModelRef),
                     ReviewModelRef = CloneReference(ai.ReviewModelRef),
+                    ConversationModelRef = CloneReference(ai.ConversationModelRef),
+                    IntentModelRef = CloneReference(ai.IntentModelRef),
                     ImageModelRef = CloneReference(media.ImageModelRef),
                     VideoModelRef = CloneReference(media.VideoModelRef),
                     RealtimeTranscriptionModelRef = CloneReference(config.RealtimeTranscriptionModelRef),
@@ -203,6 +207,8 @@ namespace TrueFluentPro.Services
             ai.SummaryModelRef = NormalizeReference(result, selections.SummaryModelRef, ModelCapability.Text);
             ai.QuickModelRef = NormalizeReference(result, selections.QuickModelRef, ModelCapability.Text);
             ai.ReviewModelRef = NormalizeReference(result, selections.ReviewModelRef, ModelCapability.Text);
+            ai.ConversationModelRef = NormalizeReference(result, selections.ConversationModelRef, ModelCapability.Text);
+            ai.IntentModelRef = NormalizeReference(result, selections.IntentModelRef, ModelCapability.Text);
             media.ImageModelRef = NormalizeReference(result, selections.ImageModelRef, ModelCapability.Image);
             media.VideoModelRef = NormalizeReference(result, selections.VideoModelRef, ModelCapability.Video);
             result.RealtimeTranscriptionModelRef = NormalizeReference(result, selections.RealtimeTranscriptionModelRef, ModelCapability.SpeechToText);

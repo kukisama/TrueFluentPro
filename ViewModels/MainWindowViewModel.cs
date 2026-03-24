@@ -186,8 +186,8 @@ namespace TrueFluentPro.ViewModels
                 ShowConfig);
 
             RegisterPostShowInitializationAction(
-                "AiSilentLogin",
-                async () => await AiInsight.TrySilentLoginForAiAsync());
+                "AadTokenWarmup",
+                async () => await WarmUpReferencedAadTokensOnStartupAsync(azureTokenProviderStore));
 
             CrashLogger.SetContextProvider(BuildCrashContextSnapshot);
             CrashLogger.AddBreadcrumb("MainWindowViewModel initialized");
@@ -350,6 +350,122 @@ namespace TrueFluentPro.ViewModels
             ((RelayCommand)StartTranslationCommand).RaiseCanExecuteChanged();
             ((RelayCommand)ToggleTranslationCommand).RaiseCanExecuteChanged();
         }
+
+        private async Task WarmUpReferencedAadTokensOnStartupAsync(IAzureTokenProviderStore azureTokenProviderStore)
+        {
+            await Task.Delay(3000);
+
+            var endpoints = GetReferencedAadEndpointsForStartup(_config);
+            if (endpoints.Count == 0)
+            {
+                return;
+            }
+
+            var warmupTasks = endpoints
+                .Select(endpoint => WarmUpAadEndpointAsync(endpoint, azureTokenProviderStore))
+                .ToArray();
+
+            var results = await Task.WhenAll(warmupTasks);
+            var failedEndpoints = results
+                .Where(result => !result.Success)
+                .Select(result => result.Endpoint)
+                .ToList();
+
+            if (failedEndpoints.Count == 0)
+            {
+                AppLogService.Instance.LogAudit(
+                    "StartupAadWarmupSucceeded",
+                    $"count={results.Length}",
+                    isSuccess: true);
+                return;
+            }
+
+            var failedNames = failedEndpoints
+                .Select(GetEndpointDisplayName)
+                .Take(3)
+                .ToList();
+
+            var failedSummary = string.Join("、", failedNames);
+            if (failedEndpoints.Count > failedNames.Count)
+            {
+                failedSummary += $" 等 {failedEndpoints.Count} 个终结点";
+            }
+
+            AppLogService.Instance.LogAudit(
+                "StartupAadWarmupFailed",
+                $"count={failedEndpoints.Count}; endpoints='{string.Join("|", failedEndpoints.Select(GetEndpointDisplayName))}'",
+                isSuccess: false);
+
+            await Dispatcher.UIThread.InvokeAsync(() =>
+                ShowInfoBar($"启动时 AAD 令牌静默预热失败：{failedSummary}。请在设置中重新登录对应终结点后再试。"));
+        }
+
+        private static IReadOnlyList<AiEndpoint> GetReferencedAadEndpointsForStartup(AzureSpeechConfig config)
+        {
+            if (config.Endpoints.Count == 0)
+            {
+                return Array.Empty<AiEndpoint>();
+            }
+
+            var endpointIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            static void AddReferenceId(HashSet<string> ids, ModelReference? reference)
+            {
+                if (!string.IsNullOrWhiteSpace(reference?.EndpointId))
+                {
+                    ids.Add(reference.EndpointId);
+                }
+            }
+
+            var aiConfig = config.AiConfig;
+            if (aiConfig != null)
+            {
+                AddReferenceId(endpointIds, aiConfig.InsightModelRef);
+                AddReferenceId(endpointIds, aiConfig.SummaryModelRef);
+                AddReferenceId(endpointIds, aiConfig.QuickModelRef);
+                AddReferenceId(endpointIds, aiConfig.ReviewModelRef);
+                AddReferenceId(endpointIds, aiConfig.ConversationModelRef);
+                AddReferenceId(endpointIds, aiConfig.IntentModelRef);
+            }
+
+            var mediaGenConfig = config.MediaGenConfig;
+            if (mediaGenConfig != null)
+            {
+                AddReferenceId(endpointIds, mediaGenConfig.ImageModelRef);
+                AddReferenceId(endpointIds, mediaGenConfig.VideoModelRef);
+            }
+
+            foreach (var resource in config.GetEffectiveSpeechResources().Where(resource => resource.IsEnabled))
+            {
+                foreach (var endpointId in resource.GetReferencedEndpointIds())
+                {
+                    endpointIds.Add(endpointId);
+                }
+            }
+
+            return config.Endpoints
+                .Where(endpoint => endpoint.IsEnabled
+                    && endpoint.AuthMode == AzureAuthMode.AAD
+                    && endpointIds.Contains(endpoint.Id))
+                .ToList();
+        }
+
+        private static async Task<(AiEndpoint Endpoint, bool Success)> WarmUpAadEndpointAsync(
+            AiEndpoint endpoint,
+            IAzureTokenProviderStore azureTokenProviderStore)
+        {
+            var provider = await azureTokenProviderStore.GetAuthenticatedProviderAsync(
+                GetEndpointProfileKey(endpoint),
+                endpoint.AzureTenantId,
+                endpoint.AzureClientId);
+
+            return (endpoint, provider != null);
+        }
+
+        private static string GetEndpointProfileKey(AiEndpoint endpoint) => $"endpoint_{endpoint.Id}";
+
+        private static string GetEndpointDisplayName(AiEndpoint endpoint)
+            => string.IsNullOrWhiteSpace(endpoint.Name) ? endpoint.Id : endpoint.Name;
 
         private void OnFileLibrarySubtitleCuesLoaded()
         {

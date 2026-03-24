@@ -2049,7 +2049,8 @@ namespace TrueFluentPro.ViewModels
                     runtimeRequest, tokenProvider, ct,
                     enableIntentAnalysis: shouldUseIntentAnalysis,
                     maxResults: _webSearchMaxResults,
-                    progress: searchProgress);
+                    progress: searchProgress,
+                    intentAiConfig: TryBuildIntentRuntimeConfig());
 
                 if (!agentResult.NeedsSearch) return empty;
                 if (agentResult.Results.Count == 0) return empty;
@@ -2316,7 +2317,8 @@ namespace TrueFluentPro.ViewModels
             endpoint = null;
             errorMessage = "";
 
-            var reference = _aiConfig.ReviewModelRef
+            var reference = _aiConfig.ConversationModelRef
+                         ?? _aiConfig.ReviewModelRef
                          ?? _aiConfig.SummaryModelRef
                          ?? _aiConfig.QuickModelRef
                          ?? _aiConfig.InsightModelRef;
@@ -2333,6 +2335,23 @@ namespace TrueFluentPro.ViewModels
                 ? "未配置文本模型，请在设置中选择复盘/洞察模型。"
                 : resolveError;
             return false;
+        }
+
+        /// <summary>为意图识别构建独立的运行时配置；优先 IntentModelRef，回退 ConversationModelRef。</summary>
+        private AiChatRequestConfig? TryBuildIntentRuntimeConfig()
+        {
+            var reference = _aiConfig.IntentModelRef
+                         ?? _aiConfig.ConversationModelRef;
+
+            if (reference == null) return null;
+
+            if (_modelRuntimeResolver.TryResolve(BuildRuntimeConfig(), reference, ModelCapability.Text, out var runtime, out _)
+                && runtime != null)
+            {
+                return runtime.CreateChatRequest(false);
+            }
+
+            return null;
         }
 
         private void CopyMessage(ChatMessageViewModel? message)

@@ -2219,6 +2219,8 @@ namespace TrueFluentPro.ViewModels
             target.SummaryModelRef = CloneReference(source.SummaryModelRef);
             target.QuickModelRef = CloneReference(source.QuickModelRef);
             target.ReviewModelRef = CloneReference(source.ReviewModelRef);
+            target.ConversationModelRef = CloneReference(source.ConversationModelRef);
+            target.IntentModelRef = CloneReference(source.IntentModelRef);
             target.AutoInsightBufferOutput = source.AutoInsightBufferOutput;
             target.PresetButtons = source.PresetButtons?.Select(button => new InsightPresetButton
             {

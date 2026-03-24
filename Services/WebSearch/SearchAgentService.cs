@@ -165,11 +165,12 @@ public sealed class SearchAgentService
         CancellationToken ct,
         bool enableIntentAnalysis = true,
         int maxResults = DefaultResultsPerQuery,
-        SearchProgress? progress = null)
+        SearchProgress? progress = null,
+        AiChatRequestConfig? intentAiConfig = null)
     {
         // ── 第 1 步：意图分析（Cherry 风格 prompt）/ 直搜回退 ──
         var intent = enableIntentAnalysis
-            ? await AnalyzeIntentAsync(userMessage, lastAssistantReply, aiConfig, tokenProvider, ct)
+            ? await AnalyzeIntentAsync(userMessage, lastAssistantReply, intentAiConfig ?? aiConfig, tokenProvider, ct)
             : BuildDirectSearchIntent(userMessage);
 
         if (!intent.NeedsSearch || intent.Questions.Count == 0)

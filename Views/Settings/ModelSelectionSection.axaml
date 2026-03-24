@@ -21,30 +21,16 @@
                     Padding="14">
                 <StackPanel Spacing="10">
                     <StackPanel Spacing="2">
-                        <TextBlock Text="复盘字幕来源" FontWeight="Bold"/>
-                        <TextBlock Classes="field-note" TextWrapping="Wrap" Text="不再单独选择字幕来源；复盘 / 批处理会直接跟随首页当前选中的语音资源。"/>
-                    </StackPanel>
-
-                    <StackPanel Spacing="5">
-                        <TextBlock Text="当前来源"/>
-                        <Border BorderBrush="{DynamicResource CardBorderBrush}"
-                                BorderThickness="1"
-                                CornerRadius="6"
-                                Padding="10,8">
-                            <StackPanel Spacing="4">
-                                <TextBlock Text="{Binding ReviewSubtitleSourceDisplayText}"
-                                           FontWeight="SemiBold"
-                                           TextWrapping="Wrap"/>
-                                <TextBlock Classes="field-note" TextWrapping="Wrap" Text="{Binding ReviewSubtitleSourceDescription}"/>
-                            </StackPanel>
-                        </Border>
+                        <TextBlock Text="批量转写存储" FontWeight="Bold"/>
+                        <TextBlock Classes="field-note" TextWrapping="Wrap" Text="复盘 / 批处理需要 Azure 存储账号来中转音频文件。"/>
                     </StackPanel>
 
                     <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Left">
                         <TextBox Width="340"
                                  MaxWidth="340"
                                  Text="{Binding BatchStorageConnectionString, Mode=TwoWay}"
-                                 Watermark="DefaultEndpointsProtocol=https;AccountName=...;AccountKey=..."/>
+                                 Watermark="DefaultEndpointsProtocol=https;AccountName=...;AccountKey=..."
+                                 ToolTip.Tip="首页资源若为 Microsoft Speech，需先验证此存储账号；若为 AI 语音资源，需先在「语音识别」页选好批量语音转写模型。"/>
                         <Button Width="82"
                                 VerticalAlignment="Center"
                                 Command="{Binding ValidateBatchStorageCommand}">
@@ -56,8 +42,6 @@
                     </StackPanel>
 
                     <TextBlock Classes="hint-text" Text="{Binding BatchStorageStatus}"/>
-
-                    <TextBlock Classes="hint-text" Text="首页当前资源若是 Microsoft Speech，需要先验证存储账号；若是 AI 语音资源，需要先在 &quot;语音识别&quot; 里选好批量语音转写模型。"/>
                 </StackPanel>
             </Border>
 
@@ -72,7 +56,7 @@
                     </StackPanel>
 
                     <Grid ColumnDefinitions="Auto,*"
-                          RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto"
+                          RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
                           RowSpacing="8"
                           ColumnSpacing="8">
                         <TextBlock Grid.Row="0"
@@ -119,29 +103,53 @@
 
                         <TextBlock Grid.Row="4"
                                    Grid.Column="0"
+                                   Text="会话模型:"
+                                   VerticalAlignment="Center"
+                                   ToolTip.Tip="创作工坊文本会话默认使用的模型；未选择时回退到复盘模型。"/>
+                        <ComboBox Grid.Row="4"
+                                  Grid.Column="1"
+                                  MinWidth="260"
+                                  ItemsSource="{Binding TextModels}"
+                                  SelectedItem="{Binding SelectedConversationModel, Mode=TwoWay}"
+                                  ToolTip.Tip="创作工坊文本会话默认使用的模型；未选择时回退到复盘模型。"/>
+
+                        <TextBlock Grid.Row="5"
+                                   Grid.Column="0"
+                                   Text="意图识别模型:"
+                                   VerticalAlignment="Center"
+                                   ToolTip.Tip="会话中的意图识别默认使用的模型；为追求速度可选轻量模型。"/>
+                        <ComboBox Grid.Row="5"
+                                  Grid.Column="1"
+                                  MinWidth="260"
+                                  ItemsSource="{Binding TextModels}"
+                                  SelectedItem="{Binding SelectedIntentModel, Mode=TwoWay}"
+                                  ToolTip.Tip="会话中的意图识别默认使用的模型；为追求速度可选轻量模型。"/>
+
+                        <TextBlock Grid.Row="6"
+                                   Grid.Column="0"
                                    Text="图片模型:"
                                    VerticalAlignment="Center"
                                    ToolTip.Tip="图片生成默认使用的模型；仅显示具有 [图片] 能力的终结点模型。"/>
-                        <ComboBox Grid.Row="4"
+                        <ComboBox Grid.Row="6"
                                   Grid.Column="1"
                                   MinWidth="260"
                                   ItemsSource="{Binding ImageModels}"
                                   SelectedItem="{Binding SelectedImageModel, Mode=TwoWay}"
                                   ToolTip.Tip="图片生成默认使用的模型；仅显示具有 [图片] 能力的终结点模型。"/>
 
-                        <TextBlock Grid.Row="5"
+                        <TextBlock Grid.Row="7"
                                    Grid.Column="0"
                                    Text="视频模型:"
                                    VerticalAlignment="Center"
                                    ToolTip.Tip="视频生成默认使用的模型；仅显示具有 [视频] 能力的终结点模型。"/>
-                        <ComboBox Grid.Row="5"
+                        <ComboBox Grid.Row="7"
                                   Grid.Column="1"
                                   MinWidth="260"
                                   ItemsSource="{Binding VideoModels}"
                                   SelectedItem="{Binding SelectedVideoModel, Mode=TwoWay}"
                                   ToolTip.Tip="视频生成默认使用的模型；仅显示具有 [视频] 能力的终结点模型。"/>
 
-                        <CheckBox Grid.Row="6"
+                        <CheckBox Grid.Row="8"
                                   Grid.Column="0"
                                   Margin="0,4,0,0"
                                   Content="创作工坊默认启用思考"
@@ -149,7 +157,7 @@
                                   IsChecked="{Binding StudioDefaultEnableReasoning, Mode=TwoWay}"
                                   ToolTip.Tip="控制创作工坊新建文本会话时，底部思考按钮默认是否开启。"/>
 
-                        <CheckBox Grid.Row="6"
+                        <CheckBox Grid.Row="8"
                                   Grid.Column="1"
                                   Margin="0,4,0,0"
                                   Content="复盘 / 总结启用思考"
