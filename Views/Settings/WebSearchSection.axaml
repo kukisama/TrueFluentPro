@@ -16,7 +16,21 @@
                       SelectedItem="{Binding SelectedProvider, Mode=TwoWay}"
                       MinWidth="200"/>
             <TextBlock Classes="caption-text"
-                       Text="选择用于 AI 聊天时联网搜索的引擎。Bing、Google、百度和 DuckDuckGo 无需 API Key；Google 需自行保证网络可达，MCP 可接入任意搜索服务。"/>
+                       Text="选择用于 AI 聊天时联网搜索的引擎。Bing 国际版、Bing 中国、Google、百度和 DuckDuckGo 无需 API Key；Google 需自行保证网络可达，MCP 可接入任意搜索服务。"/>
+
+            <CheckBox Content="创作工坊默认启用联网搜索"
+                      IsChecked="{Binding StudioDefaultEnableWebSearch, Mode=TwoWay}"/>
+            <TextBlock Classes="caption-text" Margin="28,0,0,0"
+                       Text="控制创作工坊新建文本会话时，底部搜索按钮默认是否开启。"/>
+
+            <Separator Margin="0,8,0,8"/>
+
+            <TextBlock Text="搜索触发模式" FontWeight="Bold"/>
+            <ComboBox ItemsSource="{Binding TriggerModeOptions}"
+                      SelectedItem="{Binding SelectedTriggerMode, Mode=TwoWay}"
+                      MinWidth="200"/>
+            <TextBlock Classes="caption-text"
+                       Text="自动判断：沿用 Cherry 风格提示词，由 AI 先判断要不要搜索；始终搜索：跳过 not_needed 判断，只要你打开联网搜索就直接搜索。"/>
 
             <Separator Margin="0,8,0,8"/>
 
@@ -34,9 +48,10 @@
             <TextBlock Text="智能编排" FontWeight="Bold"/>
 
             <CheckBox Content="启用搜索意图分析"
+                      IsEnabled="{Binding IsAutoTriggerMode}"
                       IsChecked="{Binding EnableIntentAnalysis, Mode=TwoWay}"/>
             <TextBlock Classes="caption-text" Margin="28,0,0,0"
-                       Text="发送前由 AI 自动判断是否需要搜索并提取关键词，避免无意义搜索。"/>
+                       Text="仅在“自动判断”模式下生效：发送前由 AI 自动判断是否需要搜索并提取关键词；关闭后会直接用原始问题搜索，可减少一次 AI 调用。"/>
 
             <CheckBox Content="启用结果压缩"
                       IsChecked="{Binding EnableResultCompression, Mode=TwoWay}"/>

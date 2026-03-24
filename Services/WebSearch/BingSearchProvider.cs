@@ -21,6 +21,7 @@ public sealed class BingSearchProvider : IWebSearchProvider
 {
     private readonly HttpClient _httpClient;
     private readonly bool _international;
+    private const string ChinaSearchQuerySuffix = "&qs=HS&sc=10-0&FORM=CHRDEF&sp=1&lq=0";
 
     public string Id { get; }
     public string DisplayName { get; }
@@ -38,10 +39,9 @@ public sealed class BingSearchProvider : IWebSearchProvider
         string query, int maxResults = 5, CancellationToken ct = default)
     {
         var encoded = Uri.EscapeDataString(query);
-
-        // 统一走 www.bing.com + ensearch=1 确保返回国际版结果
-        // cn.bing.com 在中国网络下搜索相关性不足，强制走国际版
-        var url = $"https://www.bing.com/search?q={encoded}&ensearch=1";
+        var url = _international
+            ? $"https://www.bing.com/search?q={encoded}&ensearch=1"
+            : $"https://cn.bing.com/search?q={encoded}{ChinaSearchQuerySuffix}";
 
         // 策略：先 Edge headless 解析，若 0 条结果则 fallback HttpClient 重新解析。
         // Edge --dump-dom 在 JS 未完成时可能输出空容器，仅检查容器存在不够可靠。

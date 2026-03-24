@@ -38,6 +38,13 @@ namespace TrueFluentPro.Models
         AiTranscriptionSubtitle
     }
 
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public enum WebSearchTriggerMode
+    {
+        Auto,
+        Always
+    }
+
     public class AzureSubscription
     {
         public string Name { get; set; } = "";
@@ -208,6 +215,7 @@ namespace TrueFluentPro.Models
 
         // ═══ 网页搜索 ═══
         public string WebSearchProviderId { get; set; } = "bing";
+        public WebSearchTriggerMode WebSearchTriggerMode { get; set; } = WebSearchTriggerMode.Auto;
         public int WebSearchMaxResults { get; set; } = 5;
         public bool WebSearchEnableIntentAnalysis { get; set; } = true;
         public bool WebSearchEnableResultCompression { get; set; } = false;

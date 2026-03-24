@@ -165,27 +165,13 @@
                       ResizeDirection="Columns"
                       ShowsPreview="True"/>
 
-        <!-- 右侧瀑布流内容 -->
-        <ScrollViewer Grid.Column="2" Name="SettingsScroller"
-                      ScrollChanged="OnSettingsScrollChanged"
+        <!-- 右侧详情内容 -->
+        <ScrollViewer Grid.Column="2"
+                      Name="SettingsScroller"
                       Background="{DynamicResource PageBackgroundBrush}"
                       HorizontalScrollBarVisibility="Disabled">
-            <StackPanel Name="SectionsPanel" Spacing="16" Margin="24,12,24,24">
-                <ContentControl Name="Section_Subscription"/>
-                <ContentControl Name="Section_Endpoints"/>
-                <ContentControl Name="Section_ModelSelection"/>
-                <ContentControl Name="Section_Storage"/>
-                <ContentControl Name="Section_Insight"/>
-                <ContentControl Name="Section_WebSearch"/>
-                <ContentControl Name="Section_Review"/>
-                <ContentControl Name="Section_ImageGen"/>
-                <ContentControl Name="Section_VideoGen"/>
-                <ContentControl Name="Section_Audio"/>
-                <ContentControl Name="Section_Recognition"/>
-                <ContentControl Name="Section_Text"/>
-                <ContentControl Name="Section_Transfer"/>
-                <ContentControl Name="Section_About"/>
-            </StackPanel>
+            <ContentControl Name="SelectedSectionHost"
+                            Margin="24,12,24,24"/>
         </ScrollViewer>
         </Grid>
 

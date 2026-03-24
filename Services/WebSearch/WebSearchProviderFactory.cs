@@ -28,7 +28,7 @@ public sealed class WebSearchProviderFactory
         return providerId?.Trim().ToLowerInvariant() switch
         {
             "bing" => "bing",
-            "bing-cn" => "bing",
+            "bing-cn" => "bing-cn",
             "google" => "google",
             "bing-news" => "bing-news",
             "baidu" => "baidu",
@@ -42,6 +42,7 @@ public sealed class WebSearchProviderFactory
     public static IReadOnlyList<(string Id, string DisplayName)> AvailableProviders { get; } =
     [
         ("bing", "Bing 国际版"),
+        ("bing-cn", "Bing 中国"),
         ("google", "Google"),
         ("bing-news", "Bing 新闻"),
         ("baidu", "百度"),
@@ -56,6 +57,7 @@ public sealed class WebSearchProviderFactory
         return NormalizeProviderId(providerId) switch
         {
             "bing" => new BingSearchProvider(SharedHttpClient, international: true),
+            "bing-cn" => new BingSearchProvider(SharedHttpClient, international: false),
             "google" => new GoogleSearchProvider(SharedHttpClient),
             "bing-news" => new BingNewsSearchProvider(SharedHttpClient),
             "baidu" => new BaiduSearchProvider(SharedHttpClient),

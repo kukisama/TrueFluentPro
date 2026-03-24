@@ -86,6 +86,44 @@
             <Setter Property="Background" Value="{DynamicResource SystemAccentColorLight3}"/>
             <Setter Property="Foreground" Value="White"/>
         </Style>
+        <Style Selector="Button.msg-footer-btn">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="4,2"/>
+            <Setter Property="CornerRadius" Value="6"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextSubtleBrush}"/>
+        </Style>
+        <Style Selector="Button.msg-footer-btn:pointerover">
+            <Setter Property="Background" Value="{DynamicResource SubtleFillColorSecondaryBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource AccentTextFillColorPrimaryBrush}"/>
+        </Style>
+        <Style Selector="Button.web-search-btn">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource ControlStrokeColorDefaultBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="6"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextSubtleBrush}"/>
+            <Setter Property="Width" Value="28"/>
+            <Setter Property="Height" Value="28"/>
+        </Style>
+        <Style Selector="Button.web-search-btn:pointerover">
+            <Setter Property="Background" Value="{DynamicResource SurfaceHoverBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource AccentTextFillColorPrimaryBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentBlueBrush}"/>
+        </Style>
+        <Style Selector="Button.web-search-btn.web-search-active">
+            <Setter Property="Background" Value="{DynamicResource ShellNavSelectedBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentBlueBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Foreground" Value="{DynamicResource AccentBlueBrush}"/>
+        </Style>
+        <Style Selector="Button.web-search-btn.web-search-active:pointerover">
+            <Setter Property="Background" Value="{DynamicResource SurfaceHoverBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentBlueBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource AccentBlueBrush}"/>
+        </Style>
     </UserControl.Styles>
 
         <Grid RowDefinitions="*,Auto"
@@ -318,19 +356,8 @@
                                                                TextWrapping="Wrap"
                                                                Margin="0,4,0,0"/>
 
-                                                    <!-- 搜索引用来源面板 -->
-                                                    <controls:CitationPanel Citations="{Binding Citations}"
-                                                                            IsVisible="{Binding HasCitations}"/>
-
                                                     <ProgressBar IsIndeterminate="True" Height="4"
                                                                  IsVisible="{Binding IsLoading}"/>
-
-                                                    <!-- 推理诊断状态（流式完成后显示） -->
-                                                    <TextBlock Text="{Binding ReasoningStatusText}"
-                                                               IsVisible="{Binding HasReasoningStatus}"
-                                                               FontSize="10.5" Opacity="0.6"
-                                                               TextWrapping="Wrap"
-                                                               Margin="0,2,0,0"/>
 
                                                     <!-- 媒体文件列表 -->
                                                     <ItemsControl ItemsSource="{Binding MediaPaths}"
@@ -393,40 +420,99 @@
                                                         </ItemsControl.ItemTemplate>
                                                     </ItemsControl>
 
-                                                    <!-- 消息操作按钮 -->
-                                                    <StackPanel Classes="msg-actions" Orientation="Horizontal" Spacing="6"
+                                                    <!-- 底部整合信息栏 -->
+                                                    <StackPanel Orientation="Horizontal"
+                                                                Spacing="8"
+                                                                Margin="0,2,0,0"
                                                                 IsVisible="{Binding !IsLoading}">
-                                                        <Button ToolTip.Tip="复制"
+                                                        <Button Classes="msg-footer-btn"
+                                                                ToolTip.Tip="复制"
                                                                 Command="{Binding $parent[ItemsControl].DataContext.CopyMessageCommand}"
                                                                 CommandParameter="{Binding}">
-                                                            <icons:Icon Value="fa-regular fa-copy" FontSize="13"/>
+                                                            <icons:Icon Value="fa-regular fa-copy" FontSize="12"/>
                                                         </Button>
-                                                        <Button ToolTip.Tip="重新生成"
+                                                        <Button Classes="msg-footer-btn"
+                                                                ToolTip.Tip="重新生成"
                                                                 IsVisible="{Binding IsTextContent}"
                                                                 Command="{Binding $parent[ItemsControl].DataContext.RegenerateMessageCommand}"
                                                                 CommandParameter="{Binding}">
-                                                            <icons:Icon Value="fa-solid fa-rotate" FontSize="13"/>
+                                                            <icons:Icon Value="fa-solid fa-rotate" FontSize="12"/>
                                                         </Button>
-                                                        <Button ToolTip.Tip="从此处创建对话分支"
+                                                        <Button Classes="msg-footer-btn"
+                                                                ToolTip.Tip="从此处创建对话分支"
                                                                 Command="{Binding $parent[ItemsControl].DataContext.ForkFromMessageCommand}"
                                                                 CommandParameter="{Binding}">
-                                                            <icons:Icon Value="fa-solid fa-code-branch" FontSize="13"/>
+                                                            <icons:Icon Value="fa-solid fa-code-branch" FontSize="12"/>
                                                         </Button>
-                                                        <Button ToolTip.Tip="删除"
+                                                        <Button Classes="msg-footer-btn"
+                                                                ToolTip.Tip="删除"
                                                                 Command="{Binding $parent[ItemsControl].DataContext.DeleteMessageCommand}"
                                                                 CommandParameter="{Binding}">
-                                                            <icons:Icon Value="fa-regular fa-trash-can" FontSize="13"/>
+                                                            <icons:Icon Value="fa-regular fa-trash-can" FontSize="12"/>
+                                                        </Button>
+
+                                                        <StackPanel Orientation="Horizontal"
+                                                                    Spacing="4"
+                                                                    VerticalAlignment="Center"
+                                                                    IsVisible="{Binding HasTokenUsage}">
+                                                            <icons:Icon Value="fa-solid fa-bolt"
+                                                                        FontSize="11"
+                                                                        Foreground="{DynamicResource TextSubtleBrush}"
+                                                                        VerticalAlignment="Center"/>
+                                                            <TextBlock Text="{Binding TokenUsageCompactText}"
+                                                                       FontSize="10.5"
+                                                                       Foreground="{DynamicResource TextSubtleBrush}"
+                                                                       VerticalAlignment="Center"
+                                                                       ToolTip.Tip="{Binding TokenUsageText}"/>
+                                                        </StackPanel>
+
+                                                        <StackPanel Orientation="Horizontal"
+                                                                    Spacing="4"
+                                                                    VerticalAlignment="Center">
+                                                            <icons:Icon Value="fa-regular fa-clock"
+                                                                        FontSize="11"
+                                                                        Foreground="{DynamicResource TimestampBrush}"
+                                                                        VerticalAlignment="Center"/>
+                                                            <TextBlock Text="{Binding TimeText}"
+                                                                       FontSize="10.5"
+                                                                       Foreground="{DynamicResource TimestampBrush}"
+                                                                       VerticalAlignment="Center"
+                                                                       ToolTip.Tip="{Binding TimestampText}"/>
+                                                        </StackPanel>
+
+                                                        <Button Classes="msg-footer-btn"
+                                                                IsVisible="{Binding HasReasoningIndicator}"
+                                                                ToolTip.Tip="{Binding ReasoningIndicatorToolTip}">
+                                                            <icons:Icon Value="fa-solid fa-brain" FontSize="12"/>
+                                                        </Button>
+
+                                                        <Button Classes="msg-footer-btn"
+                                                                IsVisible="{Binding HasCitations}"
+                                                                ToolTip.Tip="{Binding SourceTooltipText}"
+                                                                Click="SourceButton_Click">
+                                                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                                                <ItemsControl ItemsSource="{Binding CitationPreviewHosts}">
+                                                                    <ItemsControl.ItemsPanel>
+                                                                        <ItemsPanelTemplate>
+                                                                            <StackPanel Orientation="Horizontal" Spacing="2"/>
+                                                                        </ItemsPanelTemplate>
+                                                                    </ItemsControl.ItemsPanel>
+                                                                    <ItemsControl.ItemTemplate>
+                                                                        <DataTemplate>
+                                                                            <controls:FaviconImage Hostname="{Binding .}"
+                                                                                                   Width="14"
+                                                                                                   Height="14"
+                                                                                                   VerticalAlignment="Center"/>
+                                                                        </DataTemplate>
+                                                                    </ItemsControl.ItemTemplate>
+                                                                </ItemsControl>
+                                                                <TextBlock Text="源"
+                                                                           FontSize="10.5"
+                                                                           Foreground="{DynamicResource TextSubtleBrush}"
+                                                                           VerticalAlignment="Center"/>
+                                                            </StackPanel>
                                                         </Button>
                                                     </StackPanel>
-
-                                                    <!-- Token 用量显示 -->
-                                                    <TextBlock Text="{Binding TokenUsageText}"
-                                                               IsVisible="{Binding HasTokenUsage}"
-                                                               FontSize="10" Opacity="0.5"
-                                                               Margin="0,1,0,0"/>
-
-                                                    <TextBlock Text="{Binding TimestampText}" FontSize="10"
-                                                               Foreground="{DynamicResource TimestampBrush}"/>
                                                 </StackPanel>
                                             </Border>
                                         </Panel>
@@ -470,38 +556,25 @@
                 <!-- ===== 底部输入区 ===== -->
                 <Border Grid.Row="1" Classes="app-card" Padding="12,10">
                     <Grid RowDefinitions="Auto,Auto,Auto,Auto">
-                        <!-- 快捷短语行（文本模式下可见） -->
-                        <ItemsControl Grid.Row="0" ItemsSource="{Binding QuickPhrases}"
-                                      IsVisible="{Binding IsTextMode}"
-                                      Margin="0,0,0,4">
-                            <ItemsControl.ItemsPanel>
-                                <ItemsPanelTemplate>
-                                    <WrapPanel Orientation="Horizontal"/>
-                                </ItemsPanelTemplate>
-                            </ItemsControl.ItemsPanel>
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Button Content="{Binding Title}" Padding="8,3" FontSize="11"
-                                            Margin="0,0,4,2" Opacity="0.8" Cursor="Hand"
-                                            Tag="{Binding Content}"
-                                            Click="QuickPhrase_Click"/>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-
                         <!-- 参数行 -->
                         <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="10" Margin="0,0,0,6">
                             <!-- 模式切换（三选一） -->
                             <StackPanel Orientation="Horizontal" Spacing="4">
-                                <ToggleButton Content="💬 文字"
-                                              IsChecked="{Binding IsTextMode}"
-                                              Padding="6,3"/>
-                                <ToggleButton Content="🖼️ 图片"
-                                              IsChecked="{Binding IsImageMode}"
-                                              Padding="6,3"/>
-                                <ToggleButton Content="🎬 视频"
-                                              IsChecked="{Binding IsVideoMode}"
-                                              Padding="6,3"/>
+                                <ToggleButton IsChecked="{Binding IsTextMode}"
+                                              Padding="8,4"
+                                              ToolTip.Tip="文字">
+                                    <icons:Icon Value="fa-regular fa-message" FontSize="14"/>
+                                </ToggleButton>
+                                <ToggleButton IsChecked="{Binding IsImageMode}"
+                                              Padding="8,4"
+                                              ToolTip.Tip="图片">
+                                    <icons:Icon Value="fa-regular fa-image" FontSize="14"/>
+                                </ToggleButton>
+                                <ToggleButton IsChecked="{Binding IsVideoMode}"
+                                              Padding="8,4"
+                                              ToolTip.Tip="视频">
+                                    <icons:Icon Value="fa-solid fa-video" FontSize="14"/>
+                                </ToggleButton>
                             </StackPanel>
 
                             <Border Width="1" Background="{DynamicResource BorderMediumBrush}" Margin="4,0"/>
@@ -514,13 +587,31 @@
                                 <icons:Icon Value="fa-regular fa-circle-question" FontSize="14"/>
                             </ToggleButton>
 
-                            <!-- Web 搜索开关（仅文本模式） -->
-                            <ToggleButton IsChecked="{Binding EnableWebSearch}"
-                                          IsVisible="{Binding IsTextMode}"
-                                          Padding="5,3"
-                                          ToolTip.Tip="启用 Web 搜索增强（发送前自动搜索相关信息）">
-                                <icons:Icon Value="fa-solid fa-globe" FontSize="14"/>
-                            </ToggleButton>
+                                <!-- Web 搜索入口（仅文本模式） -->
+                                <Button Classes="web-search-btn"
+                                    Classes.web-search-active="{Binding EnableWebSearch}"
+                                    IsVisible="{Binding IsTextMode}"
+                                    Padding="0"
+                                    Click="WebSearchSelector_Click"
+                                    ToolTip.Tip="{Binding WebSearchButtonToolTip}">
+                                    <Grid Width="22" Height="22">
+                                        <icons:Icon Value="fa-solid fa-globe"
+                                                    FontSize="14"
+                                                    HorizontalAlignment="Center"
+                                                    VerticalAlignment="Center"
+                                                    Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
+                                        <Border Width="8"
+                                                Height="8"
+                                                CornerRadius="4"
+                                            Background="{DynamicResource IndicatorGreenBrush}"
+                                            BorderBrush="{DynamicResource CardBackgroundBrush}"
+                                                BorderThickness="1"
+                                                HorizontalAlignment="Right"
+                                                VerticalAlignment="Top"
+                                                Margin="0,-1,-1,0"
+                                                IsVisible="{Binding EnableWebSearch}"/>
+                                    </Grid>
+                                </Button>
 
                             <!-- 图片参数 -->
                             <StackPanel Orientation="Horizontal" Spacing="6"

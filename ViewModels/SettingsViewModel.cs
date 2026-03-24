@@ -182,6 +182,7 @@ namespace TrueFluentPro.ViewModels
         public ModelOption? SelectedSummaryModel { get => InsightVM.SelectedSummaryModel; set => InsightVM.SelectedSummaryModel = value; }
         public ModelOption? SelectedQuickModel { get => InsightVM.SelectedQuickModel; set => InsightVM.SelectedQuickModel = value; }
         public bool SummaryEnableReasoning { get => InsightVM.SummaryEnableReasoning; set => InsightVM.SummaryEnableReasoning = value; }
+        public bool StudioDefaultEnableReasoning { get => InsightVM.StudioDefaultEnableReasoning; set => InsightVM.StudioDefaultEnableReasoning = value; }
         public string InsightSystemPrompt { get => InsightVM.InsightSystemPrompt; set => InsightVM.InsightSystemPrompt = value; }
         public string InsightUserContentTemplate { get => InsightVM.InsightUserContentTemplate; set => InsightVM.InsightUserContentTemplate = value; }
         public bool AutoInsightBufferOutput { get => InsightVM.AutoInsightBufferOutput; set => InsightVM.AutoInsightBufferOutput = value; }
@@ -232,6 +233,9 @@ namespace TrueFluentPro.ViewModels
 
         // — About —
         public bool IsAutoUpdateEnabled { get => AboutVM.IsAutoUpdateEnabled; set => AboutVM.IsAutoUpdateEnabled = value; }
+
+        // — WebSearch default for Studio —
+        public bool StudioDefaultEnableWebSearch { get => WebSearchVM.StudioDefaultEnableWebSearch; set => WebSearchVM.StudioDefaultEnableWebSearch = value; }
 
         // — Auto-save status —
         public string AutoSaveStatus { get => _autoSaveStatus; set => SetProperty(ref _autoSaveStatus, value); }

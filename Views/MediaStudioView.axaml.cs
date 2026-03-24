@@ -10,13 +10,17 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Input.Platform;
+using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Markdig;
+using Microsoft.Extensions.DependencyInjection;
+using FaIcon = Projektanker.Icons.Avalonia.Icon;
 using TrueFluentPro.Models;
 using TrueFluentPro.Services;
+using TrueFluentPro.Services.WebSearch;
 using TrueFluentPro.ViewModels;
 
 namespace TrueFluentPro.Views
@@ -45,12 +49,22 @@ namespace TrueFluentPro.Views
 
         public void Initialize(
             AiConfig aiConfig, MediaGenConfig genConfig, List<AiEndpoint> endpoints,
-            IModelRuntimeResolver modelRuntimeResolver, IAzureTokenProviderStore azureTokenProviderStore)
+            IModelRuntimeResolver modelRuntimeResolver, IAzureTokenProviderStore azureTokenProviderStore,
+            ConfigurationService configurationService, Func<AzureSpeechConfig> configProvider,
+            Action<AzureSpeechConfig>? onGlobalConfigUpdated = null)
         {
             if (_initialized) return;
             _initialized = true;
 
-            _viewModel = new MediaStudioViewModel(aiConfig, genConfig, endpoints, modelRuntimeResolver, azureTokenProviderStore);
+            _viewModel = new MediaStudioViewModel(
+                aiConfig,
+                genConfig,
+                endpoints,
+                modelRuntimeResolver,
+                azureTokenProviderStore,
+                configurationService,
+                configProvider,
+                onGlobalConfigUpdated);
             DataContext = _viewModel;
 
             _sessionListBox = this.FindControl<ListBox>("SessionListBox");
@@ -91,12 +105,12 @@ namespace TrueFluentPro.Views
         }
 
         public void UpdateConfiguration(AiConfig aiConfig, MediaGenConfig genConfig, List<AiEndpoint> endpoints,
-            string? webSearchProviderId = null, int? webSearchMaxResults = null,
+            string? webSearchProviderId = null, WebSearchTriggerMode? webSearchTriggerMode = null, int? webSearchMaxResults = null,
             bool? webSearchEnableIntentAnalysis = null, bool? webSearchEnableResultCompression = null,
             string? webSearchMcpEndpoint = null, string? webSearchMcpToolName = null, string? webSearchMcpApiKey = null)
         {
             _viewModel?.UpdateConfiguration(aiConfig, genConfig, endpoints,
-                webSearchProviderId, webSearchMaxResults,
+                webSearchProviderId, webSearchTriggerMode, webSearchMaxResults,
                 webSearchEnableIntentAnalysis, webSearchEnableResultCompression,
                 webSearchMcpEndpoint, webSearchMcpToolName, webSearchMcpApiKey);
         }
@@ -1053,6 +1067,143 @@ namespace TrueFluentPro.Views
         private void SearchPrevious_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
         {
             _viewModel?.CurrentSession?.SearchPrevious();
+        }
+
+        private async void WebSearchSelector_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        {
+            if (sender is not Button button || _viewModel == null)
+                return;
+
+            var flyout = new MenuFlyout();
+            var menuForeground = ResolveThemeBrush("TextPrimaryBrush", Brushes.Black);
+
+            if (_viewModel.CurrentSession?.EnableWebSearch == true)
+            {
+                var disableItem = new MenuItem
+                {
+                    Header = "关闭联网搜索",
+                    Foreground = menuForeground,
+                    Icon = new FaIcon
+                    {
+                        Value = "fa-solid fa-link-slash",
+                        FontSize = 13,
+                        Foreground = ResolveThemeBrush("TextMutedBrush", Brushes.Gray)
+                    }
+                };
+                disableItem.Click += async (_, _) =>
+                {
+                    await _viewModel.DisableWebSearchAsync();
+                };
+                flyout.Items.Add(disableItem);
+                flyout.Items.Add(new Separator());
+            }
+
+            foreach (var (providerId, displayName) in WebSearchProviderFactory.AvailableProviders)
+            {
+                var isCurrent = string.Equals(providerId, _viewModel.CurrentWebSearchProviderId, StringComparison.OrdinalIgnoreCase);
+                var item = new MenuItem
+                {
+                    Header = isCurrent ? $"✓ {displayName}" : displayName,
+                    Foreground = menuForeground,
+                    FontWeight = isCurrent ? Avalonia.Media.FontWeight.SemiBold : Avalonia.Media.FontWeight.Normal,
+                    Icon = CreateSearchProviderIcon(providerId, isCurrent)
+                };
+
+                item.Click += async (_, _) =>
+                {
+                    await _viewModel.SelectWebSearchProviderAsync(providerId, enableForCurrentSession: true);
+                };
+
+                flyout.Items.Add(item);
+            }
+
+            flyout.ShowAt(button, true);
+            e.Handled = true;
+        }
+
+        private FaIcon CreateSearchProviderIcon(string providerId, bool isCurrent)
+        {
+            var value = providerId.ToLowerInvariant() switch
+            {
+                "bing" => "fa-brands fa-microsoft",
+                "bing-cn" => "fa-solid fa-earth-asia",
+                "google" => "fa-brands fa-google",
+                "bing-news" => "fa-regular fa-newspaper",
+                "baidu" => "fa-solid fa-paw",
+                "duckduckgo" => "fa-solid fa-feather-pointed",
+                "mcp" => "fa-solid fa-plug",
+                _ => "fa-solid fa-globe"
+            };
+
+            var brush = isCurrent
+                ? ResolveThemeBrush("AccentBlueBrush", Brushes.DodgerBlue)
+                : ResolveThemeBrush("TextMutedBrush", Brushes.Gray);
+
+            return new FaIcon
+            {
+                Value = value,
+                FontSize = 13,
+                Foreground = brush
+            };
+        }
+
+        private IBrush ResolveThemeBrush(string resourceKey, IBrush fallback)
+        {
+            if (TryGetResource(resourceKey, ActualThemeVariant, out var resource) && resource is IBrush brush)
+            {
+                return brush;
+            }
+
+            return fallback;
+        }
+
+        private void SourceButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        {
+            if (sender is not Button button || button.DataContext is not ChatMessageViewModel msg || msg.Citations.Count == 0)
+                return;
+
+            var flyout = new MenuFlyout();
+            flyout.Items.Add(new MenuItem
+            {
+                Header = $"共 {msg.Citations.Count} 个来源",
+                IsEnabled = false
+            });
+            flyout.Items.Add(new Separator());
+
+            foreach (var citation in msg.Citations)
+            {
+                var url = citation.Url;
+                var item = new MenuItem
+                {
+                    Header = string.IsNullOrWhiteSpace(citation.Hostname)
+                        ? $"[{citation.Number}] {citation.Title}"
+                        : $"[{citation.Number}] {citation.Title} · {citation.Hostname}"
+                };
+
+                item.Click += (_, _) =>
+                {
+                    if (string.IsNullOrWhiteSpace(url))
+                        return;
+
+                    try
+                    {
+                        Process.Start(new ProcessStartInfo
+                        {
+                            FileName = url,
+                            UseShellExecute = true
+                        });
+                    }
+                    catch
+                    {
+                        // ignore open failure
+                    }
+                };
+
+                flyout.Items.Add(item);
+            }
+
+            flyout.ShowAt(button, true);
+            e.Handled = true;
         }
 
         private void CloseSearch_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)

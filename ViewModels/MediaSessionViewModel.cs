@@ -12,6 +12,7 @@ using System.Windows.Input;
 using Avalonia.Threading;
 using TrueFluentPro.Models;
 using TrueFluentPro.Services;
+using TrueFluentPro.Services.WebSearch;
 
 namespace TrueFluentPro.ViewModels
 {
@@ -32,6 +33,7 @@ namespace TrueFluentPro.ViewModels
 
         // 网页搜索配置（可由外部更新）
         private string _webSearchProviderId = "bing";
+        private WebSearchTriggerMode _webSearchTriggerMode = WebSearchTriggerMode.Auto;
         private int _webSearchMaxResults = 5;
         private string _webSearchMcpEndpoint = "";
         private string _webSearchMcpToolName = "web_search";
@@ -369,23 +371,49 @@ namespace TrueFluentPro.ViewModels
         }
 
         private bool _enableWebSearch;
+        private bool _webSearchEnableIntentAnalysis = true;
+        private bool _webSearchEnableResultCompression;
         /// <summary>是否启用 Web 搜索增强</summary>
         public bool EnableWebSearch
         {
             get => _enableWebSearch;
-            set => SetProperty(ref _enableWebSearch, value);
+            set
+            {
+                if (SetProperty(ref _enableWebSearch, value))
+                {
+                    OnPropertyChanged(nameof(WebSearchButtonToolTip));
+                }
+            }
         }
 
+        public string WebSearchProviderDisplayName => WebSearchProviderFactory.AvailableProviders
+            .FirstOrDefault(p => string.Equals(p.Id, _webSearchProviderId, StringComparison.OrdinalIgnoreCase)).DisplayName
+            ?? "Bing 国际版";
+
+        public string WebSearchTriggerModeDisplayName => _webSearchTriggerMode == WebSearchTriggerMode.Always
+            ? "始终搜索"
+            : "自动判断";
+
+        public string WebSearchButtonToolTip => EnableWebSearch
+            ? $"联网搜索已开启（当前：{WebSearchProviderDisplayName}，模式：{WebSearchTriggerModeDisplayName}，点击切换）"
+            : $"联网搜索已关闭（当前引擎：{WebSearchProviderDisplayName}，模式：{WebSearchTriggerModeDisplayName}，点击选择并开启）";
+
         /// <summary>从全局配置同步网页搜索引擎设置</summary>
-        public void UpdateWebSearchConfig(string providerId, int maxResults,
+        public void UpdateWebSearchConfig(string providerId, WebSearchTriggerMode triggerMode, int maxResults,
             bool enableIntentAnalysis = true, bool enableResultCompression = false,
             string mcpEndpoint = "", string mcpToolName = "web_search", string mcpApiKey = "")
         {
             _webSearchProviderId = providerId;
+            _webSearchTriggerMode = triggerMode;
             _webSearchMaxResults = maxResults;
+            _webSearchEnableIntentAnalysis = enableIntentAnalysis;
+            _webSearchEnableResultCompression = enableResultCompression;
             _webSearchMcpEndpoint = mcpEndpoint;
             _webSearchMcpToolName = mcpToolName;
             _webSearchMcpApiKey = mcpApiKey;
+            OnPropertyChanged(nameof(WebSearchProviderDisplayName));
+            OnPropertyChanged(nameof(WebSearchTriggerModeDisplayName));
+            OnPropertyChanged(nameof(WebSearchButtonToolTip));
         }
 
         // --- 命令 ---
@@ -510,6 +538,8 @@ namespace TrueFluentPro.ViewModels
             _videoService = videoService;
             _onTaskCountChanged = onTaskCountChanged;
             _onRequestSave = onRequestSave;
+            _enableReasoning = _genConfig.DefaultEnableStudioReasoning;
+            _enableWebSearch = _genConfig.DefaultEnableStudioWebSearch;
 
             // 会话参数延迟注入：在会话首次被选中 / 首次切到视频模式时，
             // 从全局 genConfig 快照最新值，避免使用创建时的过期配置。
@@ -2012,9 +2042,12 @@ namespace TrueFluentPro.ViewModels
                 }
 
                 var agent = new Services.WebSearch.SearchAgentService();
+                var shouldUseIntentAnalysis = _webSearchTriggerMode == WebSearchTriggerMode.Auto
+                    && _webSearchEnableIntentAnalysis;
                 var agentResult = await agent.RunAsync(
                     prompt, lastAssistantReply, provider,
                     runtimeRequest, tokenProvider, ct,
+                    enableIntentAnalysis: shouldUseIntentAnalysis,
                     maxResults: _webSearchMaxResults,
                     progress: searchProgress);
 
@@ -2109,7 +2142,11 @@ namespace TrueFluentPro.ViewModels
 
             // Web 搜索增强（Cherry 风格：分阶段显示搜索进度）
             if (_enableWebSearch)
-                aiMessage.Text = "🔍 正在分析搜索意图...";
+                aiMessage.Text = _webSearchTriggerMode == WebSearchTriggerMode.Always
+                    ? "🔍 已设为始终搜索，正在检索网页..."
+                    : _webSearchEnableIntentAnalysis
+                    ? "🔍 正在分析搜索意图..."
+                    : "🔍 正在搜索网页...";
             var webSearch = await ExecuteWebSearchAsync(prompt, runtimeRequest, tokenProvider, ct, aiMessage);
             if (_enableWebSearch && webSearch.RawResults.Count > 0)
             {
@@ -2540,7 +2577,11 @@ namespace TrueFluentPro.ViewModels
 
             // Web 搜索增强（Cherry 风格：分阶段显示搜索进度）
             if (_enableWebSearch)
-                aiMessage.Text = "🔍 正在分析搜索意图...";
+                aiMessage.Text = _webSearchTriggerMode == WebSearchTriggerMode.Always
+                    ? "🔍 已设为始终搜索，正在检索网页..."
+                    : _webSearchEnableIntentAnalysis
+                    ? "🔍 正在分析搜索意图..."
+                    : "🔍 正在搜索网页...";
             var webSearch = await ExecuteWebSearchAsync(prompt, runtimeRequest, tokenProvider, ct, aiMessage);
             if (_enableWebSearch && webSearch.RawResults.Count > 0)
             {
@@ -2835,6 +2876,7 @@ namespace TrueFluentPro.ViewModels
                 if (SetProperty(ref _promptTokens, value))
                 {
                     OnPropertyChanged(nameof(HasTokenUsage));
+                    OnPropertyChanged(nameof(TokenUsageCompactText));
                     OnPropertyChanged(nameof(TokenUsageText));
                 }
             }
@@ -2850,6 +2892,7 @@ namespace TrueFluentPro.ViewModels
                 if (SetProperty(ref _completionTokens, value))
                 {
                     OnPropertyChanged(nameof(HasTokenUsage));
+                    OnPropertyChanged(nameof(TokenUsageCompactText));
                     OnPropertyChanged(nameof(TokenUsageText));
                 }
             }
@@ -2857,6 +2900,17 @@ namespace TrueFluentPro.ViewModels
 
         /// <summary>是否有 Token 用量数据</summary>
         public bool HasTokenUsage => _promptTokens.HasValue || _completionTokens.HasValue;
+
+        public string TokenUsageCompactText
+        {
+            get
+            {
+                if (!HasTokenUsage) return "";
+                var prompt = _promptTokens?.ToString() ?? "?";
+                var completion = _completionTokens?.ToString() ?? "?";
+                return $"{prompt}/{completion}";
+            }
+        }
 
         /// <summary>Token 用量显示文本</summary>
         public string TokenUsageText
@@ -2912,6 +2966,10 @@ namespace TrueFluentPro.ViewModels
             }
         }
         public bool HasReasoningStatus => !string.IsNullOrEmpty(_reasoningStatusText);
+        public bool HasReasoningIndicator => IsTextContent;
+        public string ReasoningIndicatorToolTip => !string.IsNullOrWhiteSpace(_reasoningStatusText)
+            ? _reasoningStatusText
+            : (HasReasoning ? "💡 思考：已收到推理内容" : "💡 思考：未记录状态");
 
         // ── 搜索引用来源 ────────────────────────────────
         private IReadOnlyList<Services.WebSearch.SearchCitation> _citations = [];
@@ -2921,11 +2979,24 @@ namespace TrueFluentPro.ViewModels
             set
             {
                 if (SetProperty(ref _citations, value))
+                {
                     OnPropertyChanged(nameof(HasCitations));
+                    OnPropertyChanged(nameof(CitationPreviewHosts));
+                    OnPropertyChanged(nameof(SourceTooltipText));
+                }
             }
         }
         public bool HasCitations => _citations.Count > 0;
         public string CitationsSummary => _citations.Count > 0 ? $"🌐 {_citations.Count} 个来源" : "";
+        public IReadOnlyList<string> CitationPreviewHosts => _citations
+            .Select(c => c.Hostname)
+            .Where(h => !string.IsNullOrWhiteSpace(h))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(3)
+            .ToList();
+        public string SourceTooltipText => _citations.Count == 0
+            ? "未附带来源"
+            : string.Join(Environment.NewLine, _citations.Select(c => $"[{c.Number}] {c.Title} ({c.Hostname})"));
 
         /// <summary>搜索过程摘要（关键词 + 引擎 + 结果数），显示在引用面板上方</summary>
         private string _searchSummary = "";
@@ -2941,6 +3012,7 @@ namespace TrueFluentPro.ViewModels
         public bool HasSearchSummary => !string.IsNullOrEmpty(_searchSummary);
 
         public string TimestampText => Timestamp.ToString("yyyy-MM-dd HH:mm:ss");
+        public string TimeText => Timestamp.ToString("HH:mm:ss");
 
         // ── IDialogMessage 显式实现 ─────────────────────
         IReadOnlyList<string> Controls.Markdown.IDialogMessage.MediaPaths => new List<string>(MediaPaths);

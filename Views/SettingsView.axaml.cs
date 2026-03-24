@@ -14,9 +14,6 @@ namespace TrueFluentPro.Views;
 
 public partial class SettingsView : UserControl
 {
-    private const double SectionTopPadding = 12;
-    private const double InitialViewportLoadPadding = 12;
-    private const double NearBottomLoadThreshold = 24;
     private static readonly IReadOnlyDictionary<string, Func<Control>> SectionFactories
         = new Dictionary<string, Func<Control>>(StringComparer.Ordinal)
     {
@@ -53,29 +50,10 @@ public partial class SettingsView : UserControl
         ["Section_Transfer"] = vm => vm.Settings.TransferVM,
         ["Section_About"] = vm => vm.Settings.AboutVM
     };
-    private static readonly IReadOnlyList<string> SectionLoadOrder =
-    [
-        "Section_Subscription",
-        "Section_Endpoints",
-        "Section_ModelSelection",
-        "Section_Storage",
-        "Section_Insight",
-        "Section_WebSearch",
-        "Section_Review",
-        "Section_ImageGen",
-        "Section_VideoGen",
-        "Section_Audio",
-        "Section_Recognition",
-        "Section_Text",
-        "Section_Transfer",
-        "Section_About"
-    ];
 
-    private ContentControl[]? _sectionHosts;
-    private bool _isUpdatingSelectionFromScroll;
-    private string? _pendingNavSectionName;
-    private bool _hasInitializedVisibleSections;
     private readonly Dictionary<string, Control> _createdSections = new(StringComparer.Ordinal);
+    private bool _isUpdatingSelection;
+    private string? _currentSectionName;
 
     public SettingsView()
     {
@@ -110,28 +88,19 @@ public partial class SettingsView : UserControl
     {
         base.OnLoaded(e);
 
-        _sectionHosts = SectionsPanel.Children
-            .OfType<ContentControl>()
-            .Where(c => c.Name?.StartsWith("Section_") == true)
-            .ToArray();
-
         // 默认选中第一项
         if (NavListBox.SelectedIndex < 0 && NavListBox.ItemCount > 0)
-            NavListBox.SelectedIndex = 0;
-
-        if (_hasInitializedVisibleSections)
         {
-            return;
+            NavListBox.SelectedIndex = 0;
         }
 
-        _hasInitializedVisibleSections = true;
-        Dispatcher.UIThread.Post(EnsureInitialViewportSectionsLoaded, DispatcherPriority.Loaded);
+        Dispatcher.UIThread.Post(ShowSelectedSection, DispatcherPriority.Loaded);
     }
 
-    /// <summary>点击左侧导航 → 滚动到对应分区</summary>
+    /// <summary>点击左侧导航 → 显示对应分区</summary>
     private void OnNavSectionChanged(object? sender, SelectionChangedEventArgs e)
     {
-        if (_isUpdatingSelectionFromScroll) return;
+        if (_isUpdatingSelection) return;
         if (e.AddedItems.Count == 0) return;
 
         ResetTransientSectionStates();
@@ -140,84 +109,7 @@ public partial class SettingsView : UserControl
 
         if (string.IsNullOrEmpty(tag)) return;
 
-        _pendingNavSectionName = tag;
-        EnsureNavSelection(tag);
-        EnsureSectionsCreatedThrough(tag);
-        UpdateLayout();
-        Dispatcher.UIThread.Post(() => ScrollToSection(tag), DispatcherPriority.Loaded);
-    }
-
-    /// <summary>右侧滚动 → 更新左侧导航高亮</summary>
-    private void OnSettingsScrollChanged(object? sender, ScrollChangedEventArgs e)
-    {
-        EnsureAdditionalSectionsNearViewport();
-
-        if (TryHandlePendingNavigation())
-        {
-            return;
-        }
-
-        SyncNavSelectionToActiveSection();
-    }
-
-    private Control? GetActiveSectionForViewport()
-    {
-        if (_sectionHosts == null || _sectionHosts.Length == 0)
-        {
-            return null;
-        }
-
-        var loadedHosts = _sectionHosts.Where(host => host.Content != null).ToArray();
-        if (loadedHosts.Length == 0)
-        {
-            return null;
-        }
-
-        var viewportHeight = SettingsScroller.Bounds.Height;
-        if (viewportHeight <= 0)
-        {
-            return loadedHosts[0];
-        }
-
-        var remainingScroll = SettingsScroller.Extent.Height - viewportHeight - SettingsScroller.Offset.Y;
-        var isNearBottom = remainingScroll <= 24;
-        var anchorY = SectionTopPadding;
-
-        Control? firstVisibleSection = null;
-        Control? lastVisibleSection = null;
-
-        foreach (var section in loadedHosts)
-        {
-            var transform = section.TransformToVisual(SettingsScroller);
-            if (transform == null)
-            {
-                continue;
-            }
-
-            var top = transform.Value.Transform(new Point(0, 0)).Y;
-            var bottom = top + section.Bounds.Height;
-            var isVisible = bottom > 0 && top < viewportHeight;
-
-            if (!isVisible)
-            {
-                continue;
-            }
-
-            firstVisibleSection ??= section;
-            lastVisibleSection = section;
-
-            if (top <= anchorY && bottom > anchorY)
-            {
-                return section;
-            }
-        }
-
-        if (isNearBottom && lastVisibleSection != null)
-        {
-            return lastVisibleSection;
-        }
-
-        return firstVisibleSection ?? loadedHosts.LastOrDefault();
+        ShowSection(tag);
     }
 
     private void ResetTransientSectionStates()
@@ -226,159 +118,50 @@ public partial class SettingsView : UserControl
         GetCreatedSection<EndpointsSection>("Section_Endpoints")?.ResetTransientUiState();
     }
 
-    private void EnsureAdditionalSectionsNearViewport()
+    private void ShowSelectedSection()
     {
-        if (_sectionHosts == null || _sectionHosts.Length == 0)
+        if (NavListBox.SelectedItem is not null)
         {
-            return;
-        }
-
-        var viewportHeight = SettingsScroller.Bounds.Height;
-        if (viewportHeight <= 0)
-        {
-            return;
-        }
-
-        var remainingScroll = SettingsScroller.Extent.Height - viewportHeight - SettingsScroller.Offset.Y;
-        while (remainingScroll <= NearBottomLoadThreshold && TryCreateNextSection())
-        {
-            UpdateLayout();
-            remainingScroll = SettingsScroller.Extent.Height - viewportHeight - SettingsScroller.Offset.Y;
-        }
-    }
-
-    private void EnsureInitialViewportSectionsLoaded()
-    {
-        if (_sectionHosts == null || _sectionHosts.Length == 0)
-        {
-            return;
-        }
-
-        if (_createdSections.Count == 0)
-        {
-            var firstHostName = _sectionHosts[0].Name;
-            if (!string.IsNullOrWhiteSpace(firstHostName))
+            var tag = GetSelectedSectionTag();
+            if (!string.IsNullOrWhiteSpace(tag))
             {
-                EnsureSectionCreated(firstHostName);
-                UpdateLayout();
-            }
-        }
-
-        var viewportHeight = SettingsScroller.Bounds.Height;
-        if (viewportHeight <= 0)
-        {
-            Dispatcher.UIThread.Post(EnsureInitialViewportSectionsLoaded, DispatcherPriority.Loaded);
-            return;
-        }
-
-        var guard = 0;
-        while (ShouldLoadMoreInitialSections(viewportHeight) && guard++ < SectionLoadOrder.Count && TryCreateNextSection())
-        {
-            UpdateLayout();
-        }
-    }
-
-    private bool ShouldLoadMoreInitialSections(double viewportHeight)
-    {
-        if (_sectionHosts == null || _sectionHosts.Length == 0)
-        {
-            return false;
-        }
-
-        var loadedHosts = _sectionHosts.Where(host => host.Content != null).ToList();
-        if (loadedHosts.Count == 0)
-        {
-            return true;
-        }
-
-        var lastLoadedHost = loadedHosts[^1];
-        var transform = lastLoadedHost.TransformToVisual(SettingsScroller);
-        if (transform == null)
-        {
-            return true;
-        }
-
-        var bottom = transform.Value.Transform(new Point(0, 0)).Y + lastLoadedHost.Bounds.Height;
-        return bottom < viewportHeight + InitialViewportLoadPadding;
-    }
-
-    private bool TryCreateNextSection()
-    {
-        if (_sectionHosts == null)
-        {
-            return false;
-        }
-
-        var nextHost = _sectionHosts.FirstOrDefault(host => host.Content == null);
-        if (nextHost == null || string.IsNullOrWhiteSpace(nextHost.Name))
-        {
-            return false;
-        }
-
-        return EnsureSectionCreated(nextHost.Name);
-    }
-
-    private void EnsureSectionsCreatedThrough(string sectionName)
-    {
-        foreach (var currentName in SectionLoadOrder)
-        {
-            EnsureSectionCreated(currentName);
-            if (string.Equals(currentName, sectionName, StringComparison.Ordinal))
-            {
-                break;
+                ShowSection(tag);
             }
         }
     }
 
-    private bool EnsureSectionCreated(string sectionName)
+    private void ShowSection(string sectionName)
     {
-        if (_createdSections.ContainsKey(sectionName))
+        if (string.IsNullOrWhiteSpace(sectionName) || DataContext is not MainWindowViewModel vm)
         {
-            return false;
-        }
-
-        if (DataContext is not MainWindowViewModel vm)
-        {
-            return false;
-        }
-
-        var host = GetSectionHost(sectionName);
-        if (host == null || !SectionFactories.TryGetValue(sectionName, out var factory))
-        {
-            return false;
-        }
-
-        var section = factory();
-        if (TryResolveSectionDataContext(sectionName, vm, out var targetDataContext))
-        {
-            section.DataContext = targetDataContext;
-        }
-
-        host.Content = section;
-        _createdSections[sectionName] = section;
-        return true;
-    }
-
-    private void ScrollToSection(string sectionName)
-    {
-        var target = GetSectionHost(sectionName);
-        if (target == null || target.Content == null)
-        {
-            _pendingNavSectionName = null;
             return;
         }
 
         EnsureNavSelection(sectionName);
-        target.UpdateLayout();
-        UpdateLayout();
 
-        if (!TryGetSectionOffsetY(target, out var actualOffset))
+        if (!_createdSections.TryGetValue(sectionName, out var section))
         {
-            _pendingNavSectionName = null;
-            return;
+            if (!SectionFactories.TryGetValue(sectionName, out var factory))
+            {
+                return;
+            }
+
+            section = factory();
+            if (TryResolveSectionDataContext(sectionName, vm, out var targetDataContext))
+            {
+                section.DataContext = targetDataContext;
+            }
+
+            _createdSections[sectionName] = section;
         }
 
-        SettingsScroller.Offset = new Avalonia.Vector(SettingsScroller.Offset.X, actualOffset);
+        if (SelectedSectionHost.Content != section)
+        {
+            SelectedSectionHost.Content = section;
+        }
+
+        _currentSectionName = sectionName;
+        SettingsScroller.Offset = new Vector(SettingsScroller.Offset.X, 0);
     }
 
     private string? GetSectionTagFromSelection(SelectionChangedEventArgs e)
@@ -398,70 +181,6 @@ public partial class SettingsView : UserControl
             : null;
     }
 
-    private bool TryHandlePendingNavigation()
-    {
-        if (string.IsNullOrWhiteSpace(_pendingNavSectionName))
-        {
-            return false;
-        }
-
-        EnsureNavSelection(_pendingNavSectionName);
-
-        if (IsSectionActiveForViewport(_pendingNavSectionName))
-        {
-            _pendingNavSectionName = null;
-        }
-
-        return true;
-    }
-
-    private void SyncNavSelectionToActiveSection()
-    {
-        var activeSection = GetActiveSectionForViewport();
-        if (activeSection == null || string.IsNullOrWhiteSpace(activeSection.Name))
-        {
-            return;
-        }
-
-        var targetIndex = GetNavIndexBySectionName(activeSection.Name);
-        if (targetIndex < 0 || NavListBox.SelectedIndex == targetIndex)
-        {
-            return;
-        }
-
-        ResetTransientSectionStates();
-        _isUpdatingSelectionFromScroll = true;
-        NavListBox.SelectedIndex = targetIndex;
-        _isUpdatingSelectionFromScroll = false;
-    }
-
-    private bool TryGetSectionOffsetY(Control target, out double actualOffset)
-    {
-        actualOffset = 0;
-        var transform = target.TransformToVisual(SettingsScroller);
-        if (transform == null)
-        {
-            return false;
-        }
-
-        var pos = transform.Value.Transform(new Point(0, 0));
-        var requestedOffset = SettingsScroller.Offset.Y + pos.Y - SectionTopPadding;
-        var maxOffset = Math.Max(0, SettingsScroller.Extent.Height - SettingsScroller.Bounds.Height);
-        actualOffset = Math.Clamp(requestedOffset, 0, maxOffset);
-        return true;
-    }
-
-    private bool IsSectionActiveForViewport(string? sectionName)
-    {
-        if (string.IsNullOrWhiteSpace(sectionName))
-        {
-            return false;
-        }
-
-        var activeSection = GetActiveSectionForViewport();
-        return string.Equals(activeSection?.Name, sectionName, StringComparison.Ordinal);
-    }
-
     private void EnsureNavSelection(string? sectionName)
     {
         if (string.IsNullOrWhiteSpace(sectionName))
@@ -475,9 +194,9 @@ public partial class SettingsView : UserControl
             return;
         }
 
-        _isUpdatingSelectionFromScroll = true;
+        _isUpdatingSelection = true;
         NavListBox.SelectedIndex = targetIndex;
-        _isUpdatingSelectionFromScroll = false;
+        _isUpdatingSelection = false;
     }
 
     private int GetNavIndexBySectionName(string sectionName)
@@ -532,9 +251,16 @@ public partial class SettingsView : UserControl
         }
     }
 
-    private ContentControl? GetSectionHost(string sectionName)
+    private string? GetSelectedSectionTag()
     {
-        return _sectionHosts?.FirstOrDefault(host => string.Equals(host.Name, sectionName, StringComparison.Ordinal));
+        if (NavListBox.SelectedItem is ListBoxItem listBoxItem)
+        {
+            return listBoxItem.Tag as string;
+        }
+
+        return NavListBox.SelectedItem is { } item && NavListBox.ContainerFromItem(item) is ListBoxItem container
+            ? container.Tag as string
+            : _currentSectionName;
     }
 
     private T? GetCreatedSection<T>(string sectionName) where T : Control

@@ -163,12 +163,14 @@ public sealed class SearchAgentService
         AiChatRequestConfig aiConfig,
         AzureTokenProvider? tokenProvider,
         CancellationToken ct,
+        bool enableIntentAnalysis = true,
         int maxResults = DefaultResultsPerQuery,
         SearchProgress? progress = null)
     {
-        // ── 第 1 步：意图分析（Cherry 风格 prompt） ──
-        var intent = await AnalyzeIntentAsync(
-            userMessage, lastAssistantReply, aiConfig, tokenProvider, ct);
+        // ── 第 1 步：意图分析（Cherry 风格 prompt）/ 直搜回退 ──
+        var intent = enableIntentAnalysis
+            ? await AnalyzeIntentAsync(userMessage, lastAssistantReply, aiConfig, tokenProvider, ct)
+            : BuildDirectSearchIntent(userMessage);
 
         if (!intent.NeedsSearch || intent.Questions.Count == 0)
             return new AgentResult { NeedsSearch = false };
@@ -230,6 +232,15 @@ public sealed class SearchAgentService
         IReadOnlyList<string> Questions,
         IReadOnlyList<string> Links,
         bool IsSummarize);
+
+    private static IntentResult BuildDirectSearchIntent(string userMessage)
+    {
+        var query = userMessage?.Trim() ?? "";
+        if (string.IsNullOrWhiteSpace(query))
+            return new IntentResult(false, [], [], false);
+
+        return new IntentResult(true, [query], [], false);
+    }
 
     private async Task<IntentResult> AnalyzeIntentAsync(
         string userMessage,

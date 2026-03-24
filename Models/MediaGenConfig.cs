@@ -29,6 +29,10 @@ namespace TrueFluentPro.Models
         public int VideoVariants { get; set; } = 1;
         public int VideoPollIntervalMs { get; set; } = 3000;
 
+        // --- 创作工坊文本会话默认值 ---
+        public bool DefaultEnableStudioReasoning { get; set; } = false;
+        public bool DefaultEnableStudioWebSearch { get; set; } = false;
+
         // --- 性能与缓存 ---
         public int MaxLoadedSessionsInMemory { get; set; } = 8;
 

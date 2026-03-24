@@ -10,6 +10,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using Avalonia.Threading;
+using TrueFluentPro.Services.WebSearch;
 using TrueFluentPro.Models;
 using TrueFluentPro.Services;
 
@@ -25,11 +26,15 @@ namespace TrueFluentPro.ViewModels
         private readonly List<AiEndpoint> _endpoints;
         private readonly IModelRuntimeResolver _modelRuntimeResolver;
         private readonly IAzureTokenProviderStore _azureTokenProviderStore;
+        private readonly ConfigurationService _configurationService;
+        private readonly Func<AzureSpeechConfig> _configProvider;
+        private readonly Action<AzureSpeechConfig>? _onGlobalConfigUpdated;
         private readonly AiImageGenService _imageService = new();
         private readonly AiVideoGenService _videoService = new();
 
         // 网页搜索配置
         private string _webSearchProviderId = "bing";
+        private WebSearchTriggerMode _webSearchTriggerMode = WebSearchTriggerMode.Auto;
         private int _webSearchMaxResults = 5;
         private bool _webSearchEnableIntentAnalysis = true;
         private bool _webSearchEnableResultCompression;
@@ -101,18 +106,35 @@ namespace TrueFluentPro.ViewModels
             set => SetProperty(ref _statusText, value);
         }
 
+        public string CurrentWebSearchProviderId => _webSearchProviderId;
+
+        public string CurrentWebSearchProviderDisplayName => WebSearchProviderFactory.AvailableProviders
+            .FirstOrDefault(p => string.Equals(p.Id, _webSearchProviderId, StringComparison.OrdinalIgnoreCase)).DisplayName
+            ?? "Bing 国际版";
+
         // --- 命令 ---
         public ICommand NewSessionCommand { get; }
         public ICommand DeleteSessionCommand { get; }
         public ICommand RenameSessionCommand { get; }
 
-        public MediaStudioViewModel(AiConfig aiConfig, MediaGenConfig genConfig, List<AiEndpoint> endpoints, IModelRuntimeResolver modelRuntimeResolver, IAzureTokenProviderStore azureTokenProviderStore)
+        public MediaStudioViewModel(
+            AiConfig aiConfig,
+            MediaGenConfig genConfig,
+            List<AiEndpoint> endpoints,
+            IModelRuntimeResolver modelRuntimeResolver,
+            IAzureTokenProviderStore azureTokenProviderStore,
+            ConfigurationService configurationService,
+            Func<AzureSpeechConfig> configProvider,
+            Action<AzureSpeechConfig>? onGlobalConfigUpdated = null)
         {
             _aiConfig = aiConfig;
             _genConfig = genConfig;
             _endpoints = endpoints;
             _modelRuntimeResolver = modelRuntimeResolver;
             _azureTokenProviderStore = azureTokenProviderStore;
+            _configurationService = configurationService;
+            _configProvider = configProvider;
+            _onGlobalConfigUpdated = onGlobalConfigUpdated;
             _imageTokenProvider = _azureTokenProviderStore.GetProvider("media-image");
             _videoTokenProvider = _azureTokenProviderStore.GetProvider("media-video");
 
@@ -139,7 +161,7 @@ namespace TrueFluentPro.ViewModels
         }
 
         public void UpdateConfiguration(AiConfig aiConfig, MediaGenConfig genConfig, List<AiEndpoint> endpoints,
-            string? webSearchProviderId = null, int? webSearchMaxResults = null,
+            string? webSearchProviderId = null, WebSearchTriggerMode? webSearchTriggerMode = null, int? webSearchMaxResults = null,
             bool? webSearchEnableIntentAnalysis = null, bool? webSearchEnableResultCompression = null,
             string? webSearchMcpEndpoint = null, string? webSearchMcpToolName = null, string? webSearchMcpApiKey = null)
         {
@@ -150,6 +172,7 @@ namespace TrueFluentPro.ViewModels
             _endpoints.AddRange(endpoints ?? new List<AiEndpoint>());
 
             if (webSearchProviderId is not null) _webSearchProviderId = webSearchProviderId;
+            if (webSearchTriggerMode is not null) _webSearchTriggerMode = webSearchTriggerMode.Value;
             if (webSearchMaxResults is not null) _webSearchMaxResults = webSearchMaxResults.Value;
             if (webSearchEnableIntentAnalysis is not null) _webSearchEnableIntentAnalysis = webSearchEnableIntentAnalysis.Value;
             if (webSearchEnableResultCompression is not null) _webSearchEnableResultCompression = webSearchEnableResultCompression.Value;
@@ -159,11 +182,59 @@ namespace TrueFluentPro.ViewModels
 
             // 同步网页搜索配置到所有会话
             foreach (var session in Sessions)
-                session.UpdateWebSearchConfig(_webSearchProviderId, _webSearchMaxResults,
+                session.UpdateWebSearchConfig(_webSearchProviderId, _webSearchTriggerMode, _webSearchMaxResults,
                     _webSearchEnableIntentAnalysis, _webSearchEnableResultCompression,
                     _webSearchMcpEndpoint, _webSearchMcpToolName, _webSearchMcpApiKey);
 
+            OnPropertyChanged(nameof(CurrentWebSearchProviderId));
+            OnPropertyChanged(nameof(CurrentWebSearchProviderDisplayName));
+
             _ = TrySilentLoginForMediaAsync();
+        }
+
+        public async Task SelectWebSearchProviderAsync(string providerId, bool enableForCurrentSession = true)
+        {
+            var normalized = WebSearchProviderFactory.NormalizeProviderId(providerId);
+            _webSearchProviderId = normalized;
+
+            foreach (var session in Sessions)
+            {
+                session.UpdateWebSearchConfig(_webSearchProviderId, _webSearchTriggerMode, _webSearchMaxResults,
+                    _webSearchEnableIntentAnalysis, _webSearchEnableResultCompression,
+                    _webSearchMcpEndpoint, _webSearchMcpToolName, _webSearchMcpApiKey);
+            }
+
+            if (enableForCurrentSession && CurrentSession != null)
+            {
+                CurrentSession.EnableWebSearch = true;
+            }
+
+            _genConfig.DefaultEnableStudioWebSearch = enableForCurrentSession;
+
+            var config = _configProvider();
+            config.WebSearchProviderId = normalized;
+            config.MediaGenConfig.DefaultEnableStudioWebSearch = enableForCurrentSession;
+            await _configurationService.SaveConfigAsync(config);
+            _onGlobalConfigUpdated?.Invoke(config);
+
+            OnPropertyChanged(nameof(CurrentWebSearchProviderId));
+            OnPropertyChanged(nameof(CurrentWebSearchProviderDisplayName));
+            StatusText = $"已切换联网搜索引擎：{CurrentWebSearchProviderDisplayName}";
+        }
+
+        public async Task DisableWebSearchAsync()
+        {
+            if (CurrentSession != null)
+            {
+                CurrentSession.EnableWebSearch = false;
+            }
+
+            _genConfig.DefaultEnableStudioWebSearch = false;
+            var config = _configProvider();
+            config.MediaGenConfig.DefaultEnableStudioWebSearch = false;
+            await _configurationService.SaveConfigAsync(config);
+            _onGlobalConfigUpdated?.Invoke(config);
+            StatusText = "已关闭当前会话联网搜索";
         }
 
         private static void CopyAiConfig(AiConfig source, AiConfig target)
@@ -227,6 +298,8 @@ namespace TrueFluentPro.ViewModels
             target.VideoSeconds = source.VideoSeconds;
             target.VideoVariants = source.VideoVariants;
             target.VideoPollIntervalMs = source.VideoPollIntervalMs;
+            target.DefaultEnableStudioReasoning = source.DefaultEnableStudioReasoning;
+            target.DefaultEnableStudioWebSearch = source.DefaultEnableStudioWebSearch;
             target.MaxLoadedSessionsInMemory = source.MaxLoadedSessionsInMemory;
             target.OutputDirectory = source.OutputDirectory;
         }
@@ -296,7 +369,7 @@ namespace TrueFluentPro.ViewModels
                 OnSessionTaskCountChanged,
                 s => SaveSessionMeta(s));
 
-            session.UpdateWebSearchConfig(_webSearchProviderId, _webSearchMaxResults,
+            session.UpdateWebSearchConfig(_webSearchProviderId, _webSearchTriggerMode, _webSearchMaxResults,
                 _webSearchEnableIntentAnalysis, _webSearchEnableResultCompression,
                 _webSearchMcpEndpoint, _webSearchMcpToolName, _webSearchMcpApiKey);
             session.IsContentLoaded = true;
@@ -327,9 +400,11 @@ namespace TrueFluentPro.ViewModels
                 OnSessionTaskCountChanged,
                 s => SaveSessionMeta(s));
 
-            newSession.UpdateWebSearchConfig(_webSearchProviderId, _webSearchMaxResults,
+            newSession.UpdateWebSearchConfig(_webSearchProviderId, _webSearchTriggerMode, _webSearchMaxResults,
                 _webSearchEnableIntentAnalysis, _webSearchEnableResultCompression,
                 _webSearchMcpEndpoint, _webSearchMcpToolName, _webSearchMcpApiKey);
+            newSession.EnableReasoning = sourceSession.EnableReasoning;
+            newSession.EnableWebSearch = sourceSession.EnableWebSearch;
             newSession.IsContentLoaded = true;
             newSession.ForkRequested += HandleForkRequested;
 
@@ -560,7 +635,7 @@ namespace TrueFluentPro.ViewModels
                         _imageService, _videoService,
                         OnSessionTaskCountChanged,
                         s => SaveSessionMeta(s));
-                    session.UpdateWebSearchConfig(_webSearchProviderId, _webSearchMaxResults,
+                    session.UpdateWebSearchConfig(_webSearchProviderId, _webSearchTriggerMode, _webSearchMaxResults,
                         _webSearchEnableIntentAnalysis, _webSearchEnableResultCompression,
                         _webSearchMcpEndpoint, _webSearchMcpToolName, _webSearchMcpApiKey);
                     session.IsContentLoaded = false;

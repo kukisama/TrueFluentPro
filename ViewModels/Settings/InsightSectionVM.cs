@@ -20,6 +20,7 @@ namespace TrueFluentPro.ViewModels.Settings
         private string _insightUserContentTemplate = "";
         private bool _autoInsightBufferOutput = true;
         private bool _summaryEnableReasoning;
+        private bool _studioDefaultEnableReasoning;
         private ObservableCollection<InsightPresetButton> _presetButtons = new();
 
         private ModelOption? _selectedInsightModel;
@@ -43,6 +44,7 @@ namespace TrueFluentPro.ViewModels.Settings
         public string InsightUserContentTemplate { get => _insightUserContentTemplate; set => Set(ref _insightUserContentTemplate, value); }
         public bool AutoInsightBufferOutput { get => _autoInsightBufferOutput; set => Set(ref _autoInsightBufferOutput, value); }
         public bool SummaryEnableReasoning { get => _summaryEnableReasoning; set => Set(ref _summaryEnableReasoning, value); }
+        public bool StudioDefaultEnableReasoning { get => _studioDefaultEnableReasoning; set => Set(ref _studioDefaultEnableReasoning, value); }
         public ObservableCollection<InsightPresetButton> PresetButtons { get => _presetButtons; set => SetProperty(ref _presetButtons, value); }
 
         public List<ModelOption> TextModels { get => _textModels; set => SetProperty(ref _textModels, value); }
@@ -74,6 +76,7 @@ namespace TrueFluentPro.ViewModels.Settings
             Config = config;
             var ai = config.AiConfig ?? new AiConfig();
             SummaryEnableReasoning = ai.SummaryEnableReasoning;
+            StudioDefaultEnableReasoning = config.MediaGenConfig.DefaultEnableStudioReasoning;
             InsightSystemPrompt = ai.InsightSystemPrompt;
             InsightUserContentTemplate = ai.InsightUserContentTemplate;
             AutoInsightBufferOutput = ai.AutoInsightBufferOutput;
@@ -89,6 +92,8 @@ namespace TrueFluentPro.ViewModels.Settings
             ai.InsightUserContentTemplate = InsightUserContentTemplate?.Trim() ?? "";
             ai.AutoInsightBufferOutput = AutoInsightBufferOutput;
             ai.PresetButtons = PresetButtons.Where(b => !string.IsNullOrWhiteSpace(b.Name)).ToList();
+
+            config.MediaGenConfig.DefaultEnableStudioReasoning = StudioDefaultEnableReasoning;
 
             ai.InsightModelRef = SelectedInsightModel?.Reference;
             ai.SummaryModelRef = SelectedSummaryModel?.Reference;

@@ -11,9 +11,11 @@ namespace TrueFluentPro.ViewModels.Settings;
 public class WebSearchSectionVM : SettingsSectionBase
 {
     private string _providerId = "bing";
+    private WebSearchTriggerMode _triggerMode = WebSearchTriggerMode.Auto;
     private int _maxResults = 5;
     private bool _enableIntentAnalysis = true;
     private bool _enableResultCompression;
+    private bool _studioDefaultEnableWebSearch;
 
     // MCP 配置
     private string _mcpEndpoint = "";
@@ -38,11 +40,30 @@ public class WebSearchSectionVM : SettingsSectionBase
     /// <summary>最大搜索结果数</summary>
     public int MaxResults { get => _maxResults; set => Set(ref _maxResults, value); }
 
+    /// <summary>搜索触发模式：自动判断 / 始终搜索</summary>
+    public WebSearchTriggerMode TriggerMode
+    {
+        get => _triggerMode;
+        set
+        {
+            if (Set(ref _triggerMode, value))
+            {
+                OnPropertyChanged(nameof(IsAutoTriggerMode));
+                OnPropertyChanged(nameof(SelectedTriggerMode));
+            }
+        }
+    }
+
+    public bool IsAutoTriggerMode => _triggerMode == WebSearchTriggerMode.Auto;
+
     /// <summary>是否启用 AI 意图分析</summary>
     public bool EnableIntentAnalysis { get => _enableIntentAnalysis; set => Set(ref _enableIntentAnalysis, value); }
 
     /// <summary>是否启用结果压缩</summary>
     public bool EnableResultCompression { get => _enableResultCompression; set => Set(ref _enableResultCompression, value); }
+
+    /// <summary>创作工坊文本会话默认是否启用联网搜索</summary>
+    public bool StudioDefaultEnableWebSearch { get => _studioDefaultEnableWebSearch; set => Set(ref _studioDefaultEnableWebSearch, value); }
 
     // MCP 配置
     public string McpEndpoint { get => _mcpEndpoint; set => Set(ref _mcpEndpoint, value); }
@@ -51,6 +72,12 @@ public class WebSearchSectionVM : SettingsSectionBase
 
     /// <summary>是否选择了 MCP 提供商（控制 MCP 配置区是否显示）</summary>
     public bool IsMcpProvider => _providerId == "mcp";
+
+    public IReadOnlyList<TriggerModeOption> TriggerModeOptions { get; } =
+    [
+        new(WebSearchTriggerMode.Auto, "自动判断"),
+        new(WebSearchTriggerMode.Always, "始终搜索")
+    ];
 
     /// <summary>可选的搜索引擎列表（供 UI ComboBox 绑定）</summary>
     public IReadOnlyList<ProviderOption> ProviderOptions { get; } =
@@ -70,12 +97,25 @@ public class WebSearchSectionVM : SettingsSectionBase
         }
     }
 
+    public TriggerModeOption? SelectedTriggerMode
+    {
+        get => TriggerModeOptions.FirstOrDefault(p => p.Mode == _triggerMode)
+               ?? TriggerModeOptions.FirstOrDefault();
+        set
+        {
+            if (value is not null && value.Mode != _triggerMode)
+                TriggerMode = value.Mode;
+        }
+    }
+
     public override void LoadFrom(AzureSpeechConfig config)
     {
         ProviderId = WebSearchProviderFactory.NormalizeProviderId(config.WebSearchProviderId);
+        TriggerMode = config.WebSearchTriggerMode;
         MaxResults = config.WebSearchMaxResults;
         EnableIntentAnalysis = config.WebSearchEnableIntentAnalysis;
         EnableResultCompression = config.WebSearchEnableResultCompression;
+        StudioDefaultEnableWebSearch = config.MediaGenConfig.DefaultEnableStudioWebSearch;
         McpEndpoint = config.WebSearchMcpEndpoint;
         McpToolName = config.WebSearchMcpToolName;
         McpApiKey = config.WebSearchMcpApiKey;
@@ -84,9 +124,11 @@ public class WebSearchSectionVM : SettingsSectionBase
     public override void ApplyTo(AzureSpeechConfig config)
     {
         config.WebSearchProviderId = WebSearchProviderFactory.NormalizeProviderId(ProviderId);
+        config.WebSearchTriggerMode = TriggerMode;
         config.WebSearchMaxResults = MaxResults;
         config.WebSearchEnableIntentAnalysis = EnableIntentAnalysis;
         config.WebSearchEnableResultCompression = EnableResultCompression;
+        config.MediaGenConfig.DefaultEnableStudioWebSearch = StudioDefaultEnableWebSearch;
         config.WebSearchMcpEndpoint = McpEndpoint;
         config.WebSearchMcpToolName = McpToolName;
         config.WebSearchMcpApiKey = McpApiKey;
@@ -94,6 +136,11 @@ public class WebSearchSectionVM : SettingsSectionBase
 
     /// <summary>搜索引擎选项（ComboBox 项）</summary>
     public sealed record ProviderOption(string Id, string DisplayName)
+    {
+        public override string ToString() => DisplayName;
+    }
+
+    public sealed record TriggerModeOption(WebSearchTriggerMode Mode, string DisplayName)
     {
         public override string ToString() => DisplayName;
     }

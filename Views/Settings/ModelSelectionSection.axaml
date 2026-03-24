@@ -142,6 +142,14 @@
                                   ToolTip.Tip="视频生成默认使用的模型；仅显示具有 [视频] 能力的终结点模型。"/>
 
                         <CheckBox Grid.Row="6"
+                                  Grid.Column="0"
+                                  Margin="0,4,0,0"
+                                  Content="创作工坊默认启用思考"
+                                  FontSize="11"
+                                  IsChecked="{Binding StudioDefaultEnableReasoning, Mode=TwoWay}"
+                                  ToolTip.Tip="控制创作工坊新建文本会话时，底部思考按钮默认是否开启。"/>
+
+                        <CheckBox Grid.Row="6"
                                   Grid.Column="1"
                                   Margin="0,4,0,0"
                                   Content="复盘 / 总结启用思考"
