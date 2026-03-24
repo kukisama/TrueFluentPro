@@ -1980,11 +1980,46 @@ namespace TrueFluentPro.ViewModels
             string ProviderId);
 
         /// <summary>
+        /// 为搜索意图分析构建对话快照。
+        /// 在插入本轮 AI 占位消息前调用，避免把“正在分析搜索意图/正在提取网页正文”等状态文案混入上下文。
+        /// 仅保留最近几条已完成的文本消息，兼顾多轮承接与提示词长度。
+        /// </summary>
+        private string BuildSearchIntentHistorySnapshot(bool excludeTrailingUserMessage = true)
+        {
+            var completedMessages = _allMessages
+                .Where(m => m.IsTextContent && !string.IsNullOrWhiteSpace(m.Text) && !m.IsLoading)
+                .ToList();
+
+            if (excludeTrailingUserMessage && completedMessages.Count > 0 && completedMessages[^1].IsUser)
+            {
+                completedMessages.RemoveAt(completedMessages.Count - 1);
+            }
+
+            if (completedMessages.Count == 0)
+            {
+                return string.Empty;
+            }
+
+            var recentMessages = completedMessages.TakeLast(6);
+            var sb = new StringBuilder();
+            foreach (var message in recentMessages)
+            {
+                var role = message.IsUser ? "user" : "assistant";
+                sb.Append(role)
+                    .Append(": ")
+                    .AppendLine(message.Text.Trim());
+            }
+
+            return sb.ToString().TrimEnd();
+        }
+
+        /// <summary>
         /// Cherry 风格搜索：LLM 意图分析 → 多查询并行搜索 → JSON 引用格式化。
         /// 失败时不抛异常，返回空结果。
         /// </summary>
         private async Task<WebSearchContext> ExecuteWebSearchAsync(
             string prompt,
+            string chatHistory,
             AiChatRequestConfig runtimeRequest,
             AzureTokenProvider? tokenProvider,
             CancellationToken ct,
@@ -2029,23 +2064,11 @@ namespace TrueFluentPro.ViewModels
                     }
                 };
 
-                // Cherry 风格：取最近一条 assistant 回复作为对话上下文
-                string? lastAssistantReply = null;
-                for (int i = _allMessages.Count - 1; i >= 0; i--)
-                {
-                    if (_allMessages[i].Role == "assistant" &&
-                        !string.IsNullOrEmpty(_allMessages[i].Text))
-                    {
-                        lastAssistantReply = _allMessages[i].Text;
-                        break;
-                    }
-                }
-
                 var agent = new Services.WebSearch.SearchAgentService();
                 var shouldUseIntentAnalysis = _webSearchTriggerMode == WebSearchTriggerMode.Auto
                     && _webSearchEnableIntentAnalysis;
                 var agentResult = await agent.RunAsync(
-                    prompt, lastAssistantReply, provider,
+                    prompt, chatHistory, provider,
                     runtimeRequest, tokenProvider, ct,
                     enableIntentAnalysis: shouldUseIntentAnalysis,
                     maxResults: _webSearchMaxResults,
@@ -2126,6 +2149,9 @@ namespace TrueFluentPro.ViewModels
             // 推理诊断
             var reasoningRequested = _enableReasoning;
 
+            // 在插入 AI 占位消息前冻结意图分析上下文，避免把加载态文案误识别成上一轮回答。
+            var searchIntentHistory = BuildSearchIntentHistorySnapshot();
+
             // AI 占位消息
             var aiMessage = new ChatMessageViewModel(new MediaChatMessage
             {
@@ -2148,7 +2174,7 @@ namespace TrueFluentPro.ViewModels
                     : _webSearchEnableIntentAnalysis
                     ? "🔍 正在分析搜索意图..."
                     : "🔍 正在搜索网页...";
-            var webSearch = await ExecuteWebSearchAsync(prompt, runtimeRequest, tokenProvider, ct, aiMessage);
+            var webSearch = await ExecuteWebSearchAsync(prompt, searchIntentHistory, runtimeRequest, tokenProvider, ct, aiMessage);
             if (_enableWebSearch && webSearch.RawResults.Count > 0)
             {
                 aiMessage.Text = $"✅ 找到 {webSearch.RawResults.Count} 条结果，生成中...";
@@ -2569,6 +2595,7 @@ namespace TrueFluentPro.ViewModels
             }
 
             var reasoningRequested = _enableReasoning;
+            var searchIntentHistory = BuildSearchIntentHistorySnapshot();
             var aiMessage = new ChatMessageViewModel(new MediaChatMessage
             {
                 Role = "assistant",
@@ -2601,7 +2628,7 @@ namespace TrueFluentPro.ViewModels
                     : _webSearchEnableIntentAnalysis
                     ? "🔍 正在分析搜索意图..."
                     : "🔍 正在搜索网页...";
-            var webSearch = await ExecuteWebSearchAsync(prompt, runtimeRequest, tokenProvider, ct, aiMessage);
+            var webSearch = await ExecuteWebSearchAsync(prompt, searchIntentHistory, runtimeRequest, tokenProvider, ct, aiMessage);
             if (_enableWebSearch && webSearch.RawResults.Count > 0)
             {
                 aiMessage.Text = $"✅ 找到 {webSearch.RawResults.Count} 条结果，生成中...";

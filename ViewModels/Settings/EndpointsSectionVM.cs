@@ -18,23 +18,28 @@ namespace TrueFluentPro.ViewModels.Settings
         private readonly IAiEndpointModelDiscoveryService _modelDiscoveryService;
         private readonly IEndpointTemplateService _endpointTemplateService;
         private readonly IEndpointBatchTestService _endpointBatchTestService;
+        private readonly AzureSubscriptionValidator _speechValidator;
         private ObservableCollection<AiEndpoint> _endpoints = new();
         private ObservableCollection<string> _discoveredModelIds = new();
         private AiEndpoint? _selectedEndpoint;
         private string _endpointDiscoveryStatus = "";
         private bool _isDiscoveringModels;
+        private string _speechTestResult = "";
 
         public EndpointsSectionVM(
             IAiEndpointModelDiscoveryService modelDiscoveryService,
             IEndpointTemplateService endpointTemplateService,
-            IEndpointBatchTestService endpointBatchTestService)
+            IEndpointBatchTestService endpointBatchTestService,
+            AzureSubscriptionValidator speechValidator)
         {
             _modelDiscoveryService = modelDiscoveryService;
             _endpointTemplateService = endpointTemplateService;
             _endpointBatchTestService = endpointBatchTestService;
+            _speechValidator = speechValidator;
             AddEndpointCommand = new RelayCommand(_ => AddEndpoint());
             RemoveEndpointCommand = new RelayCommand(_ => RemoveEndpoint(), _ => SelectedEndpoint != null);
             DiscoverModelsCommand = new RelayCommand(async _ => await DiscoverModelsAsync(), _ => SelectedEndpoint != null && !IsDiscoveringModels);
+            TestSpeechCommand = new RelayCommand(async _ => await TestSpeechEndpointAsync(), _ => SelectedEndpoint?.IsSpeechEndpoint == true);
         }
 
         public ObservableCollection<AiEndpoint> Endpoints { get => _endpoints; set => SetProperty(ref _endpoints, value); }
@@ -50,6 +55,7 @@ namespace TrueFluentPro.ViewModels.Settings
                 {
                     ((RelayCommand)RemoveEndpointCommand).RaiseCanExecuteChanged();
                     ((RelayCommand)DiscoverModelsCommand).RaiseCanExecuteChanged();
+                    ((RelayCommand)TestSpeechCommand).RaiseCanExecuteChanged();
                     OnPropertyChanged(nameof(SelectedEndpointModels));
                     OnPropertyChanged(nameof(SelectedEndpointAuthMode));
                     OnPropertyChanged(nameof(SelectedEndpointApiKeyHeaderMode));
@@ -63,6 +69,8 @@ namespace TrueFluentPro.ViewModels.Settings
                     OnPropertyChanged(nameof(HasSelectedEndpoint));
                     OnPropertyChanged(nameof(ShowEmptyState));
                     OnPropertyChanged(nameof(IsSelectedEndpointAzure));
+                    OnPropertyChanged(nameof(IsSelectedEndpointSpeech));
+                    SpeechTestResult = "";
                     ClearDiscoveredModels();
                 }
             }
@@ -76,6 +84,8 @@ namespace TrueFluentPro.ViewModels.Settings
         public bool ShowEmptyState => !HasSelectedEndpoint;
         public bool HasDiscoveredModels => DiscoveredModelIds.Count > 0;
         public bool IsSelectedEndpointAzure => SelectedEndpoint?.IsAzureEndpoint == true;
+        public bool IsSelectedEndpointSpeech => SelectedEndpoint?.IsSpeechEndpoint == true;
+        public string SpeechTestResult { get => _speechTestResult; set => SetProperty(ref _speechTestResult, value); }
         public bool CanSelectedEndpointUseAad => SelectedEndpoint != null
             && _endpointTemplateService.GetTemplate(SelectedEndpoint).SupportsAad;
         public string SelectedEndpointTypeSummary => SelectedEndpoint == null
@@ -197,6 +207,7 @@ namespace TrueFluentPro.ViewModels.Settings
         public ICommand AddEndpointCommand { get; }
         public ICommand RemoveEndpointCommand { get; }
         public ICommand DiscoverModelsCommand { get; }
+        public ICommand TestSpeechCommand { get; }
         public event Action<string>? StatusRequested;
 
         /// <summary>内部访问配置，由宿主注入</summary>
@@ -459,9 +470,50 @@ namespace TrueFluentPro.ViewModels.Settings
             }
         }
 
+        private async Task TestSpeechEndpointAsync()
+        {
+            if (SelectedEndpoint is not { IsSpeechEndpoint: true } ep)
+                return;
+
+            var key = ep.SpeechSubscriptionKey?.Trim() ?? "";
+            var endpoint = ep.SpeechEndpoint?.Trim() ?? "";
+            var region = AzureSubscription.ParseRegionFromEndpoint(endpoint);
+
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                SpeechTestResult = "✗ 请输入订阅密钥";
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(region))
+            {
+                SpeechTestResult = "✗ 无法从终结点解析区域";
+                return;
+            }
+
+            SpeechTestResult = "测试中...";
+
+            var sub = new AzureSubscription
+            {
+                Name = ep.Name,
+                SubscriptionKey = key,
+                ServiceRegion = region,
+                Endpoint = endpoint
+            };
+
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            var (isValid, message) = await _speechValidator.ValidateAsync(sub, CancellationToken.None);
+            sw.Stop();
+
+            SpeechTestResult = isValid
+                ? $"✓ {message} — {sw.ElapsedMilliseconds}ms"
+                : $"✗ {message}";
+        }
+
         internal void SyncEndpointsToConfig()
         {
             Config.Endpoints = Endpoints.ToList();
+            Config.SyncSpeechResourcesFromEndpoints();
         }
 
         private void SubscribeEndpoints(IEnumerable<AiEndpoint> endpoints)
@@ -534,6 +586,7 @@ namespace TrueFluentPro.ViewModels.Settings
                 or nameof(AiEndpoint.ApiVersion))
             {
                 OnPropertyChanged(nameof(IsSelectedEndpointAzure));
+                OnPropertyChanged(nameof(IsSelectedEndpointSpeech));
                 OnPropertyChanged(nameof(CanSelectedEndpointUseAad));
                 OnPropertyChanged(nameof(SelectedEndpointAuthMode));
                 OnPropertyChanged(nameof(IsSelectedEndpointAad));

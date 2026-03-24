@@ -44,6 +44,7 @@ namespace TrueFluentPro.Services
             {
                 var defaultConfig = new AzureSpeechConfig();
                 defaultConfig.EnsureSpeechResourcesBackfilledFromLegacy();
+                defaultConfig.EnsureSpeechSubscriptionsMigratedToEndpoints();
                 PathManager.Instance.SetSessionsPath(defaultConfig.SessionDirectoryOverride);
                 await SaveConfigAsync(defaultConfig);
                 LastLoadReport = new ConfigurationLoadReport
@@ -61,6 +62,7 @@ namespace TrueFluentPro.Services
                 if (config != null)
                 {
                     config.EnsureSpeechResourcesBackfilledFromLegacy();
+                    config.EnsureSpeechSubscriptionsMigratedToEndpoints();
                     PathManager.Instance.SetSessionsPath(config.SessionDirectoryOverride);
                     return config;
                 }
@@ -79,6 +81,7 @@ namespace TrueFluentPro.Services
                 if (backupConfig != null)
                 {
                     backupConfig.EnsureSpeechResourcesBackfilledFromLegacy();
+                    backupConfig.EnsureSpeechSubscriptionsMigratedToEndpoints();
                     System.Diagnostics.Debug.WriteLine($"主配置加载失败，已回退到备份配置: {_backupConfigFilePath}");
                     PathManager.Instance.SetSessionsPath(backupConfig.SessionDirectoryOverride);
                     LastLoadReport = new ConfigurationLoadReport
@@ -98,6 +101,7 @@ namespace TrueFluentPro.Services
 
             var fallbackDefaultConfig = new AzureSpeechConfig();
             fallbackDefaultConfig.EnsureSpeechResourcesBackfilledFromLegacy();
+            fallbackDefaultConfig.EnsureSpeechSubscriptionsMigratedToEndpoints();
             PathManager.Instance.SetSessionsPath(fallbackDefaultConfig.SessionDirectoryOverride);
             LastLoadReport = new ConfigurationLoadReport
             {
@@ -122,6 +126,7 @@ namespace TrueFluentPro.Services
             try
             {
                 config.EnsureSpeechResourcesBackfilledFromLegacy();
+                config.EnsureSpeechSubscriptionsMigratedToEndpoints();
                 Directory.CreateDirectory(Path.GetDirectoryName(_configFilePath)!);
 
                 var tempFilePath = _configFilePath + ".tmp";

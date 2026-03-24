@@ -69,12 +69,6 @@
                          Name="NavListBox" Classes="sidebar-nav-list" SelectionMode="Single"
                          SelectionChanged="OnNavSectionChanged"
                          Background="Transparent" Margin="0,0,2,0">
-                    <ListBoxItem Tag="Section_Subscription">
-                        <Grid Classes="sidebar-nav-item-content" ColumnDefinitions="18,*" ColumnSpacing="10">
-                            <icons:Icon Grid.Column="0" Value="fa-solid fa-microphone-lines" FontSize="14"/>
-                            <TextBlock Grid.Column="1" Text="Azure Speech" VerticalAlignment="Center"/>
-                        </Grid>
-                    </ListBoxItem>
                     <ListBoxItem Tag="Section_Endpoints">
                         <Grid Classes="sidebar-nav-item-content" ColumnDefinitions="18,*" ColumnSpacing="10">
                             <icons:Icon Grid.Column="0" Value="fa-solid fa-plug" FontSize="14"/>

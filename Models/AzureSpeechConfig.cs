@@ -228,6 +228,9 @@ namespace TrueFluentPro.Models
         /// <summary>统一 AI 终结点注册表</summary>
         public List<AiEndpoint> Endpoints { get; set; } = new();
 
+        /// <summary>标记旧 Subscriptions 是否已迁移到 Endpoints（AzureSpeech 类型）</summary>
+        public bool SpeechSubscriptionsMigratedToEndpoints { get; set; }
+
         [JsonIgnore]
         public string SessionDirectory => string.IsNullOrWhiteSpace(SessionDirectoryOverride)
             ? PathManager.Instance.SessionsPath
@@ -319,6 +322,42 @@ namespace TrueFluentPro.Models
 
         public List<SpeechResource> GetEffectiveSpeechResources()
         {
+            // 新体系：迁移完成后直接从 Endpoints 构建，不再依赖 SpeechResources 中间层
+            if (SpeechSubscriptionsMigratedToEndpoints)
+            {
+                var result = new List<SpeechResource>();
+                foreach (var ep in Endpoints.Where(ep => ep.EndpointType == EndpointApiType.AzureSpeech))
+                {
+                    var region = !string.IsNullOrWhiteSpace(ep.SpeechRegion)
+                        ? ep.SpeechRegion
+                        : AzureSubscription.ParseRegionFromEndpoint(ep.SpeechEndpoint ?? "") ?? "";
+
+                    result.Add(new SpeechResource
+                    {
+                        Id = ep.Id,
+                        Name = ep.Name,
+                        Vendor = SpeechVendorType.Microsoft,
+                        ConnectorType = SpeechConnectorType.MicrosoftSpeech,
+                        IsEnabled = ep.IsEnabled,
+                        Capabilities = ep.SpeechCapabilities != SpeechCapability.None
+                            ? ep.SpeechCapabilities
+                            : SpeechCapability.RealtimeSpeechToText | SpeechCapability.BatchSpeechToText,
+                        SubscriptionName = ep.Name,
+                        SubscriptionKey = ep.SpeechSubscriptionKey ?? "",
+                        ServiceRegion = region,
+                        Endpoint = ep.SpeechEndpoint ?? "",
+                    });
+                }
+
+                // 保留非 Microsoft 资源（如 AiSpeech）
+                result.AddRange(SpeechResources
+                    .Where(r => r.ConnectorType != SpeechConnectorType.MicrosoftSpeech)
+                    .Select(r => r.Clone()));
+
+                return result;
+            }
+
+            // 旧体系回退（未迁移的配置）
             if (SpeechResources.Count > 0)
             {
                 return SpeechResources.Select(resource => resource.Clone()).ToList();
@@ -460,6 +499,134 @@ namespace TrueFluentPro.Models
 
             SpeechResources = GetEffectiveSpeechResources();
             ActiveSpeechResourceId = GetEffectiveActiveSpeechResourceId();
+        }
+
+        /// <summary>
+        /// 将 Endpoints 中的 AzureSpeech 类型同步回 SpeechResources，
+        /// 保证依赖旧 SpeechResource 的业务（SpeechTranslationService 等）继续工作。
+        /// </summary>
+        public void SyncSpeechResourcesFromEndpoints()
+        {
+            if (!SpeechSubscriptionsMigratedToEndpoints)
+                return;
+
+            var speechEndpoints = Endpoints
+                .Where(ep => ep.EndpointType == EndpointApiType.AzureSpeech)
+                .ToList();
+
+            if (speechEndpoints.Count == 0 && SpeechResources.All(r => r.ConnectorType == SpeechConnectorType.MicrosoftSpeech))
+            {
+                SpeechResources.Clear();
+                return;
+            }
+
+            // 重建 MicrosoftSpeech 类型的 SpeechResources
+            var rebuilt = new List<SpeechResource>();
+            foreach (var ep in speechEndpoints)
+            {
+                var region = !string.IsNullOrWhiteSpace(ep.SpeechRegion)
+                    ? ep.SpeechRegion
+                    : AzureSubscription.ParseRegionFromEndpoint(ep.SpeechEndpoint ?? "") ?? "";
+
+                rebuilt.Add(new SpeechResource
+                {
+                    Id = ep.Id,
+                    Name = ep.Name,
+                    Vendor = SpeechVendorType.Microsoft,
+                    ConnectorType = SpeechConnectorType.MicrosoftSpeech,
+                    IsEnabled = ep.IsEnabled,
+                    Capabilities = ep.SpeechCapabilities != SpeechCapability.None
+                        ? ep.SpeechCapabilities
+                        : SpeechCapability.RealtimeSpeechToText | SpeechCapability.BatchSpeechToText,
+                    SubscriptionName = ep.Name,
+                    SubscriptionKey = ep.SpeechSubscriptionKey ?? "",
+                    ServiceRegion = region,
+                    Endpoint = ep.SpeechEndpoint ?? "",
+                });
+            }
+
+            // 保留非 MicrosoftSpeech 类型的资源（如 AiSpeech）
+            var nonMicrosoftResources = SpeechResources
+                .Where(r => r.ConnectorType != SpeechConnectorType.MicrosoftSpeech)
+                .ToList();
+            rebuilt.AddRange(nonMicrosoftResources);
+
+            SpeechResources = rebuilt;
+
+            // 同步 Subscriptions 以兼容旧逻辑
+            Subscriptions = speechEndpoints.Select(ep =>
+            {
+                var region = !string.IsNullOrWhiteSpace(ep.SpeechRegion)
+                    ? ep.SpeechRegion
+                    : AzureSubscription.ParseRegionFromEndpoint(ep.SpeechEndpoint) ?? "";
+                return new AzureSubscription
+                {
+                    Name = ep.Name,
+                    SubscriptionKey = ep.SpeechSubscriptionKey ?? "",
+                    ServiceRegion = region,
+                    Endpoint = ep.SpeechEndpoint ?? ""
+                };
+            }).ToList();
+        }
+
+        /// <summary>
+        /// 将旧的 Subscriptions / SpeechResources 一次性迁移到 Endpoints（AzureSpeech 类型）。
+        /// 迁移完成后设置标记，后续启动不再重复执行。
+        /// </summary>
+        public void EnsureSpeechSubscriptionsMigratedToEndpoints()
+        {
+            if (SpeechSubscriptionsMigratedToEndpoints)
+                return;
+
+            // 先保证 SpeechResources 已从旧 Subscriptions 回填
+            EnsureSpeechResourcesBackfilledFromLegacy();
+
+            if (SpeechResources.Count == 0 && Subscriptions.Count == 0)
+            {
+                SpeechSubscriptionsMigratedToEndpoints = true;
+                return;
+            }
+
+            // 已经有 AzureSpeech 类型终结点时跳过（避免重复）
+            if (Endpoints.Any(ep => ep.EndpointType == EndpointApiType.AzureSpeech))
+            {
+                SpeechSubscriptionsMigratedToEndpoints = true;
+                return;
+            }
+
+            string? activeEndpointId = null;
+
+            foreach (var resource in SpeechResources.Where(r => r.ConnectorType == SpeechConnectorType.MicrosoftSpeech))
+            {
+                var region = !string.IsNullOrWhiteSpace(resource.ServiceRegion)
+                    ? resource.ServiceRegion
+                    : AzureSubscription.ParseRegionFromEndpoint(resource.Endpoint ?? "") ?? "";
+
+                var ep = new AiEndpoint
+                {
+                    Id = Guid.NewGuid().ToString(),
+                    Name = string.IsNullOrWhiteSpace(resource.Name) ? $"Azure Speech ({region})" : resource.Name,
+                    IsEnabled = resource.IsEnabled,
+                    EndpointType = EndpointApiType.AzureSpeech,
+                    ProfileId = "builtin.microsoft.azure-speech",
+                    SpeechSubscriptionKey = resource.SubscriptionKey ?? "",
+                    SpeechRegion = region,
+                    SpeechEndpoint = resource.Endpoint ?? "",
+                    SpeechCapabilities = resource.Capabilities != SpeechCapability.None
+                        ? resource.Capabilities
+                        : SpeechCapability.RealtimeSpeechToText | SpeechCapability.BatchSpeechToText,
+                };
+
+                Endpoints.Add(ep);
+
+                if (string.Equals(resource.Id, ActiveSpeechResourceId, StringComparison.OrdinalIgnoreCase))
+                    activeEndpointId = ep.Id;
+            }
+
+            if (activeEndpointId != null)
+                ActiveSpeechResourceId = activeEndpointId;
+
+            SpeechSubscriptionsMigratedToEndpoints = true;
         }
     }
 }

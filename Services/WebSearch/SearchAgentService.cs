@@ -158,7 +158,7 @@ public sealed class SearchAgentService
 
     public async Task<AgentResult> RunAsync(
         string userMessage,
-        string? lastAssistantReply,
+        string? chatHistory,
         IWebSearchProvider provider,
         AiChatRequestConfig aiConfig,
         AzureTokenProvider? tokenProvider,
@@ -170,7 +170,7 @@ public sealed class SearchAgentService
     {
         // ── 第 1 步：意图分析（Cherry 风格 prompt）/ 直搜回退 ──
         var intent = enableIntentAnalysis
-            ? await AnalyzeIntentAsync(userMessage, lastAssistantReply, intentAiConfig ?? aiConfig, tokenProvider, ct)
+            ? await AnalyzeIntentAsync(userMessage, chatHistory, intentAiConfig ?? aiConfig, tokenProvider, ct)
             : BuildDirectSearchIntent(userMessage);
 
         if (!intent.NeedsSearch || intent.Questions.Count == 0)
@@ -245,20 +245,18 @@ public sealed class SearchAgentService
 
     private async Task<IntentResult> AnalyzeIntentAsync(
         string userMessage,
-        string? lastAssistantReply,
+        string? chatHistory,
         AiChatRequestConfig config,
         AzureTokenProvider? tokenProvider,
         CancellationToken ct)
     {
         try
         {
-            // Cherry 风格：只传最近一轮对话上下文
-            var chatHistory = string.IsNullOrEmpty(lastAssistantReply)
-                ? ""
-                : $"assistant: {lastAssistantReply}";
+            // 由外层在插入占位消息前提前快照，避免把“正在分析/搜索中”之类状态文案误当成上一轮回答。
+            var normalizedChatHistory = chatHistory ?? "";
 
             var formattedPrompt = IntentPrompt
-                .Replace("{chat_history}", chatHistory)
+                .Replace("{chat_history}", normalizedChatHistory)
                 .Replace("{question}", userMessage);
 
             var service = new AiInsightService(tokenProvider);

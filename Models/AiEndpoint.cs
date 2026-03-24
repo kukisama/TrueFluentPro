@@ -36,6 +36,12 @@ namespace TrueFluentPro.Models
         private string _azureClientId = "";
         private List<AiModelEntry> _models = new();
 
+        // --- Azure Speech 专属字段 ---
+        private string _speechSubscriptionKey = "";
+        private string _speechRegion = "";
+        private string _speechEndpoint = "";
+        private SpeechCapability _speechCapabilities = SpeechCapability.RealtimeSpeechToText | SpeechCapability.BatchSpeechToText;
+
         public string Id { get => _id; set => SetProperty(ref _id, value); }
     public string ProfileId { get => _profileId; set => SetProperty(ref _profileId, value); }
         public string Name { get => _name; set => SetProperty(ref _name, value); }
@@ -121,6 +127,38 @@ namespace TrueFluentPro.Models
         public string AzureTenantId { get => _azureTenantId; set => SetProperty(ref _azureTenantId, value); }
         public string AzureClientId { get => _azureClientId; set => SetProperty(ref _azureClientId, value); }
 
+        // --- Azure Speech 专属属性 ---
+        public string SpeechSubscriptionKey { get => _speechSubscriptionKey; set => SetProperty(ref _speechSubscriptionKey, value); }
+        public string SpeechRegion { get => _speechRegion; set => SetProperty(ref _speechRegion, value); }
+        public string SpeechEndpoint
+        {
+            get => _speechEndpoint;
+            set
+            {
+                if (SetProperty(ref _speechEndpoint, value))
+                    OnPropertyChanged(nameof(SpeechRegionHint));
+            }
+        }
+        public SpeechCapability SpeechCapabilities { get => _speechCapabilities; set => SetProperty(ref _speechCapabilities, value); }
+
+        public bool IsSpeechEndpoint => EndpointType == EndpointApiType.AzureSpeech;
+
+        public string SpeechRegionHint
+        {
+            get
+            {
+                var ep = SpeechEndpoint?.Trim() ?? "";
+                if (string.IsNullOrWhiteSpace(ep)) return "";
+                var region = AzureSubscription.ParseRegionFromEndpoint(ep);
+                if (!string.IsNullOrWhiteSpace(region))
+                {
+                    var type = ep.Contains(".azure.cn", StringComparison.OrdinalIgnoreCase) ? "中国区" : "国际版";
+                    return $"✓ 已识别区域: {region} ({type})";
+                }
+                return "✗ 无法识别区域，请检查终结点格式";
+            }
+        }
+
         /// <summary>
         /// 是否为 Azure OpenAI 终结点。
         /// 仅由终结点类型决定，不再基于域名或 ProviderType 猜测。
@@ -131,6 +169,7 @@ namespace TrueFluentPro.Models
         {
             EndpointApiType.AzureOpenAi => "Azure OpenAI",
             EndpointApiType.ApiManagementGateway => "APIM 网关",
+            EndpointApiType.AzureSpeech => "Azure Speech",
             _ => "OpenAI Compatible"
         };
 
@@ -138,6 +177,7 @@ namespace TrueFluentPro.Models
         {
             EndpointApiType.AzureOpenAi => "☰",
             EndpointApiType.ApiManagementGateway => "⇆",
+            EndpointApiType.AzureSpeech => "🎤",
             _ => "✦"
         };
 
@@ -145,6 +185,7 @@ namespace TrueFluentPro.Models
         {
             EndpointApiType.AzureOpenAi => "AZ",
             EndpointApiType.ApiManagementGateway => "AP",
+            EndpointApiType.AzureSpeech => "SP",
             _ => "OA"
         };
 
@@ -152,6 +193,7 @@ namespace TrueFluentPro.Models
         {
             EndpointApiType.AzureOpenAi => "#0078D4",
             EndpointApiType.ApiManagementGateway => "#6D28D9",
+            EndpointApiType.AzureSpeech => "#F9A825",
             _ => "#10A37F"
         };
 
@@ -159,6 +201,7 @@ namespace TrueFluentPro.Models
         {
             EndpointApiType.AzureOpenAi => "官方 Azure OpenAI / Foundry",
             EndpointApiType.ApiManagementGateway => "Azure API Management 网关",
+            EndpointApiType.AzureSpeech => "Azure 认知服务语音资源",
             _ => "标准 OpenAI / 兼容服务"
         };
 
@@ -166,6 +209,7 @@ namespace TrueFluentPro.Models
         {
             EndpointApiType.AzureOpenAi => "/Assets/EndpointProfiles/Icons/azure-openai.svg",
             EndpointApiType.ApiManagementGateway => "/Assets/EndpointProfiles/Icons/apim-gateway.svg",
+            EndpointApiType.AzureSpeech => "/Assets/EndpointProfiles/Icons/azure-speech.svg",
             _ => "/Assets/EndpointProfiles/Icons/openai-compatible.svg"
         };
 

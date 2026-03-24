@@ -17,7 +17,6 @@ public partial class SettingsView : UserControl
     private static readonly IReadOnlyDictionary<string, Func<Control>> SectionFactories
         = new Dictionary<string, Func<Control>>(StringComparer.Ordinal)
     {
-        ["Section_Subscription"] = () => new SubscriptionSection(),
         ["Section_Endpoints"] = () => new EndpointsSection(),
         ["Section_ModelSelection"] = () => new ModelSelectionSection(),
         ["Section_Storage"] = () => new StorageSection(),
@@ -35,7 +34,6 @@ public partial class SettingsView : UserControl
     private static readonly IReadOnlyDictionary<string, Func<MainWindowViewModel, object>> SectionDataContextResolvers
         = new Dictionary<string, Func<MainWindowViewModel, object>>(StringComparer.Ordinal)
     {
-        ["Section_Subscription"] = vm => vm.Settings.SubscriptionVM,
         ["Section_Endpoints"] = vm => vm.Settings.EndpointsVM,
         ["Section_ModelSelection"] = vm => vm.Settings,
         ["Section_Storage"] = vm => vm.Settings.StorageVM,

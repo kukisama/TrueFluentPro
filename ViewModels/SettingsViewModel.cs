@@ -69,7 +69,7 @@ namespace TrueFluentPro.ViewModels
             _settingsImportExportService = settingsImportExportService;
 
             SubscriptionVM = new SubscriptionSectionVM(subscriptionValidator);
-            EndpointsVM = new EndpointsSectionVM(modelDiscoveryService, endpointTemplateService, endpointBatchTestService);
+            EndpointsVM = new EndpointsSectionVM(modelDiscoveryService, endpointTemplateService, endpointBatchTestService, subscriptionValidator);
             StorageVM = new StorageSectionVM();
             RecognitionVM = new RecognitionSectionVM();
             TextVM = new TextSectionVM();
@@ -96,27 +96,10 @@ namespace TrueFluentPro.ViewModels
 
             EndpointsVM.EndpointsChanged += RefreshModelOptions;
             EndpointsVM.EndpointsChanged += () => _ = RefreshAiAuthStatusAsync();
-            SubscriptionVM.StatusRequested += ReportStatus;
             EndpointsVM.StatusRequested += ReportStatus;
         }
 
         // ═══ 向后兼容的公共属性（转发到分区 ViewModel） ═══
-
-        // — Subscription —
-        public ObservableCollection<AzureSubscription> Subscriptions { get => SubscriptionVM.Subscriptions; set => SubscriptionVM.Subscriptions = value; }
-        public AzureSubscription? SelectedSubscription { get => SubscriptionVM.SelectedSubscription; set => SubscriptionVM.SelectedSubscription = value; }
-        public string SubscriptionEditorName { get => SubscriptionVM.SubscriptionEditorName; set => SubscriptionVM.SubscriptionEditorName = value; }
-        public string SubscriptionEditorKey { get => SubscriptionVM.SubscriptionEditorKey; set => SubscriptionVM.SubscriptionEditorKey = value; }
-        public string SubscriptionEditorEndpoint { get => SubscriptionVM.SubscriptionEditorEndpoint; set => SubscriptionVM.SubscriptionEditorEndpoint = value; }
-        public string SubscriptionEditorRegionHint { get => SubscriptionVM.SubscriptionEditorRegionHint; set => SubscriptionVM.SubscriptionEditorRegionHint = value; }
-        public string SubscriptionMessage { get => SubscriptionVM.SubscriptionMessage; set => SubscriptionVM.SubscriptionMessage = value; }
-        public string TestAllResult { get => SubscriptionVM.TestAllResult; set => SubscriptionVM.TestAllResult = value; }
-        public bool ShowTestAllResult { get => SubscriptionVM.ShowTestAllResult; set => SubscriptionVM.ShowTestAllResult = value; }
-        public ICommand AddSubscriptionCommand => SubscriptionVM.AddSubscriptionCommand;
-        public ICommand UpdateSubscriptionCommand => SubscriptionVM.UpdateSubscriptionCommand;
-        public ICommand DeleteSubscriptionCommand => SubscriptionVM.DeleteSubscriptionCommand;
-        public ICommand TestSubscriptionCommand => SubscriptionVM.TestSubscriptionCommand;
-        public ICommand TestAllSubscriptionsCommand => SubscriptionVM.TestAllSubscriptionsCommand;
 
         // — Endpoints —
         public ObservableCollection<AiEndpoint> Endpoints { get => EndpointsVM.Endpoints; set => EndpointsVM.Endpoints = value; }
