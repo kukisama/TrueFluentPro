@@ -32,9 +32,9 @@ namespace TrueFluentPro.ViewModels
         private readonly DispatcherTimer _subscriptionLampTimer;
         private bool _reviewLampBlinkOn = true;
         private string _sourceLanguage = "auto";
-        private string _targetLanguage = "zh-CN";
-        private readonly string[] _sourceLanguages = { "auto", "en", "zh-CN", "ja-JP", "ko-KR", "fr-FR", "de-DE", "es-ES" };
-        private readonly string[] _targetLanguages = { "en", "zh-CN", "ja-JP", "ko-KR", "fr-FR", "de-DE", "es-ES" };
+        private string _targetLanguage = "zh-Hans";
+        private readonly string[] _sourceLanguages = { "auto", "en-US", "zh-CN", "ja-JP", "ko-KR", "fr-FR", "de-DE", "es-ES" };
+        private readonly string[] _targetLanguages = { "en", "zh-Hans", "ja", "ko", "fr", "de", "es" };
         private bool _isConfigurationEnabled = true;
         private bool _suppressIndexPersistence;
 
@@ -327,8 +327,10 @@ namespace TrueFluentPro.ViewModels
                 }
 
                 ApplyActiveSpeechResourceSelection(savedIndex, resources);
-                _sourceLanguage = _config.SourceLanguage;
-                _targetLanguage = _config.TargetLanguage;
+                _sourceLanguage = NormalizeToKnown(_config.SourceLanguage, _sourceLanguages);
+                _config.SourceLanguage = _sourceLanguage;
+                _targetLanguage = NormalizeToKnown(_config.TargetLanguage, _targetLanguages);
+                _config.TargetLanguage = _targetLanguage;
                 _activeSpeechResourceIndex = savedIndex;
 
                 OnPropertyChanged(nameof(Config));
@@ -521,6 +523,10 @@ namespace TrueFluentPro.ViewModels
             _translationCommandsRefresh();
             TriggerSubscriptionValidation();
         }
+
+        /// <summary>配置值不在已知选项中时，回退到第一项。</summary>
+        private static string NormalizeToKnown(string value, string[] known)
+            => Array.IndexOf(known, value) >= 0 ? value : known[0];
 
         public void ForceUpdateComboBoxSelection()
         {

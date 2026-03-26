@@ -101,13 +101,13 @@
                   Margin="0,0,4,0"
                           SelectedIndex="{Binding ConfigVM.SourceLanguageIndex}">
                 <ComboBoxItem Tag="auto" Content="自动识别"/>
-                <ComboBoxItem Tag="en" Content="英语"/>
+                <ComboBoxItem Tag="en-US" Content="英语"/>
                 <ComboBoxItem Tag="zh-CN" Content="中文"/>
                 <ComboBoxItem Tag="ja-JP" Content="日语"/>
                 <ComboBoxItem Tag="ko-KR" Content="韩语"/>
                 <ComboBoxItem Tag="fr-FR" Content="法语"/>
                 <ComboBoxItem Tag="de-DE" Content="德语"/>
-                <ComboBoxItem Tag="es" Content="西班牙语"/>
+                <ComboBoxItem Tag="es-ES" Content="西班牙语"/>
                 </ComboBox>
                     <TextBlock Text="→" VerticalAlignment="Center" FontSize="16" FontWeight="Bold" Margin="0,0,4,0"/>
                 <ComboBox Name="TargetLanguageComboBox" MinWidth="100"
@@ -116,11 +116,11 @@
                         Margin="0,0,8,0"
                       SelectedIndex="{Binding ConfigVM.TargetLanguageIndex}">
                 <ComboBoxItem Tag="en" Content="英语"/>
-                <ComboBoxItem Tag="zh-CN" Content="中文"/>
-                <ComboBoxItem Tag="ja-JP" Content="日语"/>
-                <ComboBoxItem Tag="ko-KR" Content="韩语"/>
-                <ComboBoxItem Tag="fr-FR" Content="法语"/>
-                <ComboBoxItem Tag="de-DE" Content="德语"/>
+                <ComboBoxItem Tag="zh-Hans" Content="中文"/>
+                <ComboBoxItem Tag="ja" Content="日语"/>
+                <ComboBoxItem Tag="ko" Content="韩语"/>
+                <ComboBoxItem Tag="fr" Content="法语"/>
+                <ComboBoxItem Tag="de" Content="德语"/>
                 <ComboBoxItem Tag="es" Content="西班牙语"/>
                 </ComboBox>
 

@@ -877,7 +877,7 @@ namespace TrueFluentPro.Services
             }
             if (!IsAutoDetectSourceLanguage())
             {
-                speechConfig.SpeechRecognitionLanguage = _config.SourceLanguage;
+                speechConfig.SpeechRecognitionLanguage = NormalizeSpeechRecognitionLocale(_config.SourceLanguage);
             }
             speechConfig.AddTargetLanguage(_config.TargetLanguage);
             speechConfig.OutputFormat = OutputFormat.Detailed;
@@ -1267,6 +1267,22 @@ namespace TrueFluentPro.Services
         {
             return string.Equals(_config.SourceLanguage, "auto", StringComparison.OrdinalIgnoreCase);
         }
+
+        /// <summary>
+        /// 将短语言代码归一化为 BCP-47 完整 locale，
+        /// 兼容旧版配置中保存的 "en" 等短代码。
+        /// </summary>
+        private static string NormalizeSpeechRecognitionLocale(string lang) => lang switch
+        {
+            "en" => "en-US",
+            "zh" => "zh-CN",
+            "ja" => "ja-JP",
+            "ko" => "ko-KR",
+            "fr" => "fr-FR",
+            "de" => "de-DE",
+            "es" => "es-ES",
+            _ => lang
+        };
 
         private async Task CleanupAudioAsync()
         {

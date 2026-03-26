@@ -143,7 +143,7 @@ namespace TrueFluentPro.Models
         public bool IsMainNavPaneOpen { get; set; } = false;
 
         public string SourceLanguage { get; set; } = "auto";
-        public string TargetLanguage { get; set; } = "zh-CN";
+        public string TargetLanguage { get; set; } = "zh-Hans";
 
         public bool FilterModalParticles { get; set; } = true;
         public int MaxHistoryItems { get; set; } = 15;
