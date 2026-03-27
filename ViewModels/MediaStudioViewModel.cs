@@ -10,9 +10,11 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using Avalonia.Threading;
+using Microsoft.Extensions.DependencyInjection;
 using TrueFluentPro.Services.WebSearch;
 using TrueFluentPro.Models;
 using TrueFluentPro.Services;
+using TrueFluentPro.Services.Storage;
 
 namespace TrueFluentPro.ViewModels
 {
@@ -594,7 +596,15 @@ namespace TrueFluentPro.ViewModels
 
         private async Task LoadSessionsAsync()
         {
-            // 磁盘 I/O 在后台线程
+            // P3: 优先从 SQLite 加载会话列表
+            var switches = App.Services.GetRequiredService<SqliteFeatureSwitches>();
+            if (switches.UseSqliteSessionList)
+            {
+                await LoadSessionsFromSqliteAsync();
+                return;
+            }
+
+            // 旧路径：磁盘 I/O 在后台线程
             var loadedEntries = await Task.Run(() =>
             {
                 try
@@ -653,6 +663,52 @@ namespace TrueFluentPro.ViewModels
                 {
                     CurrentSession = Sessions[0];
                 }
+            });
+        }
+
+        private async Task LoadSessionsFromSqliteAsync()
+        {
+            var sessionRepo = App.Services.GetRequiredService<ICreativeSessionRepository>();
+            var paths = App.Services.GetRequiredService<IStoragePathResolver>();
+
+            var records = await Task.Run(() =>
+            {
+                return sessionRepo.List(limit: 200, sessionType: "media-studio")
+                    .ToArray();
+            }).ConfigureAwait(false);
+
+            await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                foreach (var rec in records)
+                {
+                    var dir = paths.ToAbsolutePath(rec.DirectoryPath);
+                    if (!Directory.Exists(dir)) continue;
+
+                    var session = new MediaSessionViewModel(
+                        rec.Id, rec.Name, dir,
+                        _aiConfig, _genConfig, _endpoints,
+                        _modelRuntimeResolver, _azureTokenProviderStore,
+                        _imageService, _videoService,
+                        OnSessionTaskCountChanged,
+                        s => SaveSessionMeta(s));
+                    session.UpdateWebSearchConfig(_webSearchProviderId, _webSearchTriggerMode, _webSearchMaxResults,
+                        _webSearchEnableIntentAnalysis, _webSearchEnableResultCompression,
+                        _webSearchMcpEndpoint, _webSearchMcpToolName, _webSearchMcpApiKey);
+                    session.IsContentLoaded = false;
+                    session.ForkRequested += HandleForkRequested;
+                    Sessions.Add(session);
+                }
+
+                if (Sessions.Count == 0)
+                {
+                    CreateNewSession();
+                }
+                else
+                {
+                    CurrentSession = Sessions[0];
+                }
+
+                SqliteDebugLogger.LogRead("sessions", "P3-load-list", Sessions.Count);
             });
         }
 
@@ -766,6 +822,15 @@ namespace TrueFluentPro.ViewModels
                 return;
             }
 
+            // P4: 优先从 SQLite 懒加载消息
+            var switches = App.Services.GetRequiredService<SqliteFeatureSwitches>();
+            if (switches.UseSqliteMessagePaging)
+            {
+                LoadSessionFromSqlite(session);
+                return;
+            }
+
+            // 旧路径：从 session.json 全量读取
             // 保留已有的滚动位置快照（LRU 淘汰后重新加载时恢复原位置）
 
             var sw = Stopwatch.StartNew();
@@ -909,6 +974,9 @@ namespace TrueFluentPro.ViewModels
                 }
 
                 UpdateSessionIndexFromSession(session, saveIndex: true);
+
+                // ── P2: 同步写入 SQLite ──
+                WriteSqliteSession(session, "media-studio");
             }
             catch (Exception ex)
             {
@@ -1026,6 +1094,268 @@ namespace TrueFluentPro.ViewModels
             catch
             {
                 return value;
+            }
+        }
+
+        private void LoadSessionFromSqlite(MediaSessionViewModel session)
+        {
+            var sw = Stopwatch.StartNew();
+            try
+            {
+                var msgRepo = App.Services.GetRequiredService<ISessionMessageRepository>();
+                var contentRepo = App.Services.GetRequiredService<ISessionContentRepository>();
+                var paths = App.Services.GetRequiredService<IStoragePathResolver>();
+
+                // P4: 只加载最近 40 条消息（懒加载首屏）
+                var messageRecords = msgRepo.GetLatest(session.SessionId, limit: 40);
+                var loadedMessages = new List<ChatMessageViewModel>();
+
+                foreach (var rec in messageRecords)
+                {
+                    var mediaRefs = msgRepo.GetMediaRefs(rec.Id);
+                    var citations = msgRepo.GetCitations(rec.Id);
+
+                    var msg = new MediaChatMessage
+                    {
+                        Role = rec.Role,
+                        Text = rec.Text,
+                        ContentType = rec.ContentType,
+                        ReasoningText = rec.ReasoningText,
+                        Timestamp = rec.Timestamp,
+                        GenerateSeconds = rec.GenerateSeconds,
+                        DownloadSeconds = rec.DownloadSeconds,
+                        PromptTokens = rec.PromptTokens,
+                        CompletionTokens = rec.CompletionTokens,
+                        SearchSummary = rec.SearchSummary ?? "",
+                        MediaPaths = mediaRefs.Select(r => paths.ToAbsolutePath(r.MediaPath)).ToList(),
+                        Citations = citations.Count > 0
+                            ? citations.Select(c => new MediaChatCitation
+                            {
+                                Number = c.CitationNumber,
+                                Title = c.Title,
+                                Url = c.Url,
+                                Snippet = c.Snippet,
+                                Hostname = c.Hostname,
+                            }).ToList()
+                            : null,
+                    };
+
+                    loadedMessages.Add(new ChatMessageViewModel(msg));
+                }
+
+                session.ReplaceAllMessages(loadedMessages);
+
+                // 加载任务历史
+                session.TaskHistory.Clear();
+                var taskRecords = contentRepo.GetSessionTasks(session.SessionId);
+                foreach (var t in taskRecords)
+                {
+                    session.TaskHistory.Add(new MediaGenTask
+                    {
+                        Id = t.Id,
+                        Type = Enum.TryParse<MediaGenType>(t.TaskType, out var tt) ? tt : MediaGenType.Image,
+                        Status = Enum.TryParse<MediaGenStatus>(t.Status, out var ts) ? ts : MediaGenStatus.Completed,
+                        Prompt = t.Prompt,
+                        Progress = (int)t.Progress,
+                        ResultFilePath = string.IsNullOrWhiteSpace(t.ResultFilePath) ? null : paths.ToAbsolutePath(t.ResultFilePath),
+                        ErrorMessage = t.ErrorMessage,
+                        HasReferenceInput = t.HasReferenceInput,
+                        RemoteVideoId = t.RemoteVideoId,
+                        RemoteGenerationId = t.RemoteGenerationId,
+                        RemoteDownloadUrl = t.RemoteDownloadUrl,
+                        GenerateSeconds = t.GenerateSeconds,
+                        DownloadSeconds = t.DownloadSeconds,
+                        CreatedAt = t.CreatedAt,
+                    });
+                }
+
+                session.IsContentLoaded = true;
+                sw.Stop();
+                SqliteDebugLogger.LogLazyLoad(session.SessionId, loadedMessages.Count > 0 ? 1 : 0, loadedMessages.Count);
+                Debug.WriteLine($"[SQLite] P4 加载会话 {session.SessionId}: messages={loadedMessages.Count}, tasks={taskRecords.Count}, {sw.ElapsedMilliseconds}ms");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[SQLite] P4 加载失败 {session.SessionId}: {ex.Message}，回退到 JSON");
+                // 回退到旧路径
+                session.IsContentLoaded = false;
+                LoadSessionFromJson(session);
+            }
+        }
+
+        /// <summary>旧路径：从 session.json 全量加载（作为 SQLite 加载失败时的回退）</summary>
+        private void LoadSessionFromJson(MediaSessionViewModel session)
+        {
+            if (session.IsContentLoaded) return;
+
+            var metaPath = Path.Combine(session.SessionDirectory, "session.json");
+            if (!File.Exists(metaPath))
+            {
+                session.IsContentLoaded = true;
+                return;
+            }
+
+            try
+            {
+                var json = File.ReadAllText(metaPath);
+                var sessionData = JsonSerializer.Deserialize<MediaGenSession>(json);
+                if (sessionData == null) { session.IsContentLoaded = true; return; }
+
+                var loadedMessages = new List<ChatMessageViewModel>();
+                if (sessionData.Messages != null)
+                {
+                    foreach (var msg in sessionData.Messages)
+                    {
+                        var normalizedMessage = new MediaChatMessage
+                        {
+                            Role = msg.Role, Text = msg.Text, ContentType = msg.ContentType,
+                            ReasoningText = msg.ReasoningText, Timestamp = msg.Timestamp,
+                            GenerateSeconds = msg.GenerateSeconds, DownloadSeconds = msg.DownloadSeconds,
+                            PromptTokens = msg.PromptTokens, CompletionTokens = msg.CompletionTokens,
+                            Citations = msg.Citations, SearchSummary = msg.SearchSummary,
+                            MediaPaths = msg.MediaPaths?
+                                .Select(p => ResolveStoredPathForLoad(p, session.SessionDirectory))
+                                .Where(p => !string.IsNullOrWhiteSpace(p)).ToList() ?? new List<string>()
+                        };
+                        loadedMessages.Add(new ChatMessageViewModel(normalizedMessage));
+                    }
+                }
+                session.ReplaceAllMessages(loadedMessages);
+                session.TaskHistory.Clear();
+                if (sessionData.Tasks != null)
+                {
+                    foreach (var task in sessionData.Tasks)
+                    {
+                        task.ResultFilePath = ResolveStoredPathForLoad(task.ResultFilePath, session.SessionDirectory);
+                        session.TaskHistory.Add(task);
+                    }
+                }
+                session.IsContentLoaded = true;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[JSON] 加载失败 {session.SessionId}: {ex.Message}");
+                session.IsContentLoaded = true;
+            }
+        }
+
+        private void WriteSqliteSession(MediaSessionViewModel session, string sessionType)
+        {
+            try
+            {
+                var switches = App.Services.GetRequiredService<SqliteFeatureSwitches>();
+                if (!switches.UseSqliteSessionWrite) return;
+
+                var sessionRepo = App.Services.GetRequiredService<ICreativeSessionRepository>();
+                var msgRepo = App.Services.GetRequiredService<ISessionMessageRepository>();
+                var contentRepo = App.Services.GetRequiredService<ISessionContentRepository>();
+                var paths = App.Services.GetRequiredService<IStoragePathResolver>();
+
+                var existingRec = sessionRepo.GetById(session.SessionId);
+                sessionRepo.Upsert(new SessionRecord
+                {
+                    Id = session.SessionId,
+                    SessionType = sessionType,
+                    Name = session.SessionName,
+                    DirectoryPath = paths.ToRelativePath(session.SessionDirectory),
+                    CanvasMode = existingRec?.CanvasMode ?? "",
+                    MediaKind = existingRec?.MediaKind ?? "",
+                    CreatedAt = existingRec?.CreatedAt ?? DateTime.Now,
+                    UpdatedAt = DateTime.Now,
+                    MessageCount = session.TotalMessageCount,
+                    TaskCount = session.TaskHistory.Count,
+                    AssetCount = session.AssetCatalog.Count,
+                    LatestMessagePreview = session.AllMessages.LastOrDefault()?.Text?.Length > 60
+                        ? session.AllMessages.Last().Text[..60]
+                        : session.AllMessages.LastOrDefault()?.Text,
+                });
+
+                // 消息增量写入：只写新增的
+                var maxSeq = msgRepo.GetMaxSequence(session.SessionId);
+                var allMessages = session.AllMessages;
+                for (var i = maxSeq; i < allMessages.Count; i++)
+                {
+                    var m = allMessages[i];
+                    var msgId = Guid.NewGuid().ToString("N")[..8];
+                    msgRepo.Insert(new MessageRecord
+                    {
+                        Id = msgId,
+                        SessionId = session.SessionId,
+                        SequenceNo = i + 1,
+                        Role = m.Role,
+                        ContentType = m.ContentType,
+                        Text = m.Text,
+                        ReasoningText = m.ReasoningText ?? "",
+                        PromptTokens = m.PromptTokens,
+                        CompletionTokens = m.CompletionTokens,
+                        GenerateSeconds = m.GenerateSeconds,
+                        DownloadSeconds = m.DownloadSeconds,
+                        SearchSummary = m.SearchSummary,
+                        Timestamp = m.Timestamp,
+                    });
+
+                    if (m.MediaPaths.Count > 0)
+                    {
+                        var refs = m.MediaPaths.Select((p, idx) => new MediaRefRecord
+                        {
+                            MediaPath = paths.ToRelativePath(p),
+                            MediaKind = Path.GetExtension(p).ToLowerInvariant() switch
+                            {
+                                ".mp4" or ".webm" or ".mov" => "video",
+                                ".mp3" or ".wav" => "audio",
+                                _ => "image"
+                            },
+                            SortOrder = idx,
+                        }).ToList();
+                        msgRepo.InsertMediaRefs(msgId, refs);
+                    }
+
+                    // BUG-1 fix: 写入网页搜索引用
+                    if (m.Citations.Count > 0)
+                    {
+                        var citations = m.Citations.Select(c => new CitationRecord
+                        {
+                            CitationNumber = c.Number,
+                            Title = c.Title,
+                            Url = c.Url,
+                            Snippet = c.Snippet,
+                            Hostname = c.Hostname,
+                        }).ToList();
+                        msgRepo.InsertCitations(msgId, citations);
+                    }
+                }
+
+                // 任务全量 upsert
+                foreach (var t in session.TaskHistory)
+                {
+                    contentRepo.UpsertTask(new TaskRecord
+                    {
+                        Id = t.Id,
+                        SessionId = session.SessionId,
+                        TaskType = t.Type.ToString(),
+                        Status = t.Status.ToString(),
+                        Prompt = t.Prompt ?? "",
+                        Progress = t.Progress,
+                        ResultFilePath = string.IsNullOrWhiteSpace(t.ResultFilePath) ? null
+                            : paths.ToRelativePath(t.ResultFilePath),
+                        ErrorMessage = t.ErrorMessage,
+                        HasReferenceInput = t.HasReferenceInput,
+                        RemoteVideoId = t.RemoteVideoId,
+                        RemoteVideoApiMode = t.RemoteVideoApiMode?.ToString(),
+                        RemoteGenerationId = t.RemoteGenerationId,
+                        RemoteDownloadUrl = t.RemoteDownloadUrl,
+                        GenerateSeconds = t.GenerateSeconds,
+                        DownloadSeconds = t.DownloadSeconds,
+                        CreatedAt = t.CreatedAt,
+                        UpdatedAt = DateTime.Now,
+                    });
+                }
+
+                SqliteDebugLogger.LogWrite("sessions", session.SessionId, $"P2-write type={sessionType}");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[SQLite] P2 写入失败: {ex.Message}");
             }
         }
 

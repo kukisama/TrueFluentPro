@@ -92,15 +92,20 @@ INSERT INTO sessions (
             return ReadRow(r);
         }
 
-        public List<SessionRecord> List(int limit = 30, int offset = 0, bool includeDeleted = false)
+        public List<SessionRecord> List(int limit = 30, int offset = 0, bool includeDeleted = false, string? sessionType = null)
         {
             using var conn = _db.CreateConnection();
             using var cmd = conn.CreateCommand();
-            cmd.CommandText = includeDeleted
-                ? "SELECT * FROM sessions ORDER BY updated_at DESC LIMIT @limit OFFSET @offset;"
-                : "SELECT * FROM sessions WHERE is_deleted = 0 ORDER BY updated_at DESC LIMIT @limit OFFSET @offset;";
+
+            var where = includeDeleted ? "1=1" : "is_deleted = 0";
+            if (!string.IsNullOrEmpty(sessionType))
+                where += " AND session_type = @type";
+
+            cmd.CommandText = $"SELECT * FROM sessions WHERE {where} ORDER BY updated_at DESC LIMIT @limit OFFSET @offset;";
             cmd.Parameters.AddWithValue("@limit", limit);
             cmd.Parameters.AddWithValue("@offset", offset);
+            if (!string.IsNullOrEmpty(sessionType))
+                cmd.Parameters.AddWithValue("@type", sessionType);
 
             var list = new List<SessionRecord>();
             using var r = cmd.ExecuteReader();

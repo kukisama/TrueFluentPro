@@ -36,6 +36,7 @@ public partial class App : Application
         services.AddSingleton<ISessionContentRepository, SessionContentRepository>();
         services.AddSingleton<IAudioLibraryRepository, AudioLibraryRepository>();
         services.AddSingleton<ITranslationHistoryRepository, TranslationHistoryRepository>();
+        services.AddSingleton<ILegacyImportService, LegacyImportService>();
 
         // --- 基础服务 ---
         services.AddSingleton<ConfigurationService>();
@@ -84,7 +85,38 @@ public partial class App : Application
             desktop.MainWindow = mainWindow;
         }
 
+        // --- SQLite 启动初始化 ---
+        InitializeSqliteStorage();
+
         base.OnFrameworkInitializationCompleted();
+    }
+
+    private static void InitializeSqliteStorage()
+    {
+        try
+        {
+            // 1. 确保数据库和表结构已创建
+            var db = Services.GetRequiredService<ISqliteDbService>();
+            db.EnsureCreated();
+
+            // 2. 执行老资源导入（幂等，已存在的记录会被跳过）
+            var importService = Services.GetRequiredService<ILegacyImportService>();
+            importService.ImportAll();
+
+            // 3. 启用全部功能开关 —— 进入 SQLite 主路径
+            var switches = Services.GetRequiredService<SqliteFeatureSwitches>();
+            switches.UseSqliteSessionList = true;
+            switches.UseSqliteSessionWrite = true;
+            switches.UseSqliteMessagePaging = true;
+            switches.UseSqliteAssetCatalog = true;
+            switches.UseSqliteWorkspaceWrite = true;
+            switches.UseSqliteAudioIndexWrite = true;
+            switches.EnableLegacyImport = true;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[SQLite] 初始化失败: {ex.Message}");
+        }
     }
 }
 
