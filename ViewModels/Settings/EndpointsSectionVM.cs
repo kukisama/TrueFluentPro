@@ -516,6 +516,30 @@ namespace TrueFluentPro.ViewModels.Settings
             Config.SyncSpeechResourcesFromEndpoints();
         }
 
+        /// <summary>
+        /// 按模板默认 API 版本基线清洗配置中的终结点版本：
+        /// 若用户填写版本的日期部分（yyyy-MM-dd）早于模板默认版本日期，则清空该字段。
+        /// 比较仅基于日期，忽略 -preview 等后缀。
+        /// </summary>
+        public bool NormalizeApiVersionsInConfig(AzureSpeechConfig config)
+        {
+            if (config.Endpoints == null || config.Endpoints.Count == 0)
+            {
+                return false;
+            }
+
+            var changed = false;
+            foreach (var endpoint in config.Endpoints)
+            {
+                if (NormalizeEndpointApiVersion(endpoint))
+                {
+                    changed = true;
+                }
+            }
+
+            return changed;
+        }
+
         private void SubscribeEndpoints(IEnumerable<AiEndpoint> endpoints)
         {
             foreach (var endpoint in endpoints)
@@ -627,6 +651,95 @@ namespace TrueFluentPro.ViewModels.Settings
             var used = Endpoints
                 .Count(endpoint => endpoint.Name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
             return $"{prefix} {used + 1}";
+        }
+
+        private bool NormalizeEndpointApiVersion(AiEndpoint endpoint)
+        {
+            if (endpoint == null)
+            {
+                return false;
+            }
+
+            var current = endpoint.ApiVersion?.Trim() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(current))
+            {
+                return false;
+            }
+
+            var baseline = _endpointTemplateService.GetTemplate(endpoint).DefaultApiVersion?.Trim() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(baseline))
+            {
+                return false;
+            }
+
+            if (!TryParseApiVersionDate(current, out var currentDate)
+                || !TryParseApiVersionDate(baseline, out var baselineDate))
+            {
+                return false;
+            }
+
+            if (currentDate >= baselineDate)
+            {
+                return false;
+            }
+
+            endpoint.ApiVersion = string.Empty;
+            return true;
+        }
+
+        private static bool TryParseApiVersionDate(string input, out DateOnly date)
+        {
+            date = default;
+            if (string.IsNullOrWhiteSpace(input))
+            {
+                return false;
+            }
+
+            var value = input.Trim();
+            var parts = value.Split('-', 4, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (parts.Length < 3)
+            {
+                return false;
+            }
+
+            if (!int.TryParse(parts[0], out var year)
+                || !int.TryParse(parts[1], out var month)
+                || !TryParseLeadingInt(parts[2], out var day))
+            {
+                return false;
+            }
+
+            try
+            {
+                date = new DateOnly(year, month, day);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool TryParseLeadingInt(string input, out int value)
+        {
+            value = 0;
+            if (string.IsNullOrWhiteSpace(input))
+            {
+                return false;
+            }
+
+            var i = 0;
+            while (i < input.Length && char.IsDigit(input[i]))
+            {
+                i++;
+            }
+
+            if (i == 0)
+            {
+                return false;
+            }
+
+            return int.TryParse(input[..i], out value);
         }
 
     }

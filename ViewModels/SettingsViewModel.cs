@@ -33,6 +33,7 @@ namespace TrueFluentPro.ViewModels
         private AzureSpeechConfig _config = new();
         private Timer? _debounceTimer;
         private bool _isDirty;
+        private bool _suppressDirtyTracking;
         private string _autoSaveStatus = "";
 
         private const int DebounceMs = 500;
@@ -235,6 +236,8 @@ namespace TrueFluentPro.ViewModels
 
         private void LoadFromConfig()
         {
+            EndpointsVM.NormalizeApiVersionsInConfig(_config);
+
             SubscriptionVM.Config = _config;
             EndpointsVM.Config = _config;
             StorageVM.Config = _config;
@@ -361,8 +364,18 @@ namespace TrueFluentPro.ViewModels
 
             if (section is ISettingsSection settingsSection)
             {
-                settingsSection.Changed += MarkDirty;
+                settingsSection.Changed += OnSectionChanged;
             }
+        }
+
+        private void OnSectionChanged()
+        {
+            if (_suppressDirtyTracking)
+            {
+                return;
+            }
+
+            MarkDirty();
         }
 
         private void ConfigureInsightSection(InsightSectionVM section)
@@ -447,6 +460,17 @@ namespace TrueFluentPro.ViewModels
             try
             {
                 ApplyToConfig();
+
+                _suppressDirtyTracking = true;
+                try
+                {
+                    EndpointsVM.NormalizeApiVersionsInConfig(_config);
+                }
+                finally
+                {
+                    _suppressDirtyTracking = false;
+                }
+
                 await _configService.SaveConfigAsync(_config);
                 AutoSaveStatus = "✓ 配置已自动保存";
                 ConfigSaved?.Invoke(_config);

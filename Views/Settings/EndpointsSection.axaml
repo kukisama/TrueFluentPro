@@ -186,7 +186,7 @@
                     </StackPanel>
                     <StackPanel Spacing="5">
                         <TextBlock Text="API 版本（可选）"/>
-                        <TextBox Text="{Binding SelectedEndpoint.ApiVersion, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                        <TextBox Text="{Binding SelectedEndpoint.ApiVersion, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
                                  Watermark="{Binding SelectedEndpointApiVersionWatermark}"
                                  Width="420"
                                  MaxWidth="420"
