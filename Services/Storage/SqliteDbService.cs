@@ -81,6 +81,12 @@ CREATE TABLE IF NOT EXISTS _schema_version (
 );");
 
             Exec(conn, @"
+CREATE TABLE IF NOT EXISTS _meta (
+    key    TEXT PRIMARY KEY,
+    value  TEXT NOT NULL
+);");
+
+            Exec(conn, @"
 CREATE TABLE IF NOT EXISTS sessions (
     id                              TEXT PRIMARY KEY,
     session_type                    TEXT NOT NULL,
@@ -310,6 +316,26 @@ CREATE TABLE IF NOT EXISTS translation_history (
             cmd.Parameters.AddWithValue("@t", DateTime.Now.ToString("o"));
             cmd.ExecuteNonQuery();
             SchemaVersion = CurrentSchemaVersion;
+        }
+
+        public string? GetMeta(string key)
+        {
+            using var conn = CreateConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT value FROM _meta WHERE key = @k;";
+            cmd.Parameters.AddWithValue("@k", key);
+            var result = cmd.ExecuteScalar();
+            return result is string s ? s : null;
+        }
+
+        public void SetMeta(string key, string value)
+        {
+            using var conn = CreateConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "INSERT INTO _meta (key, value) VALUES (@k, @v) ON CONFLICT(key) DO UPDATE SET value = @v;";
+            cmd.Parameters.AddWithValue("@k", key);
+            cmd.Parameters.AddWithValue("@v", value);
+            cmd.ExecuteNonQuery();
         }
 
         private static void Exec(SqliteConnection conn, string sql)

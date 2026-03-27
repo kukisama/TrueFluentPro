@@ -12,5 +12,11 @@ namespace TrueFluentPro.Services.Storage
         int SchemaVersion { get; }
         SqliteConnection CreateConnection();
         void EnsureCreated();
+
+        /// <summary>读取 _meta 表中的值，不存在返回 null。</summary>
+        string? GetMeta(string key);
+
+        /// <summary>写入或更新 _meta 表中的值。</summary>
+        void SetMeta(string key, string value);
     }
 }

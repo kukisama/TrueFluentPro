@@ -1,17 +1,11 @@
 namespace TrueFluentPro.Services.Storage
 {
     /// <summary>
-    /// SQLite 功能开关。每个模块可独立控制是否启用 SQLite 读/写路径。
-    /// 默认全部关闭，逐步打开以便验收与回退。
+    /// SQLite 就绪状态。InitializeSqliteStorage 完成后置 true，
+    /// 所有 SQLite 读写路径在此为 false 时静默跳过（后台初始化尚未完成）。
     /// </summary>
     public class SqliteFeatureSwitches
     {
-        public bool UseSqliteSessionList { get; set; }
-        public bool UseSqliteSessionWrite { get; set; }
-        public bool UseSqliteMessagePaging { get; set; }
-        public bool UseSqliteAssetCatalog { get; set; }
-        public bool UseSqliteWorkspaceWrite { get; set; }
-        public bool UseSqliteAudioIndexWrite { get; set; }
-        public bool EnableLegacyImport { get; set; }
+        public bool IsReady { get; set; }
     }
 }

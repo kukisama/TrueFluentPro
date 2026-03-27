@@ -191,9 +191,9 @@ namespace TrueFluentPro.ViewModels
 
         private AudioLibrarySnapshot BuildAudioLibrarySnapshot(CancellationToken cancellationToken)
         {
-            // P3: 优先从 SQLite 读取音频索引
+            // SQLite 音频索引
             var switches = App.Services.GetRequiredService<SqliteFeatureSwitches>();
-            if (switches.UseSqliteAudioIndexWrite)
+            if (switches.IsReady)
             {
                 return BuildAudioLibrarySnapshotFromSqlite(cancellationToken);
             }

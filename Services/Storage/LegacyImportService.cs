@@ -10,6 +10,9 @@ namespace TrueFluentPro.Services.Storage
 {
     public sealed class LegacyImportService : ILegacyImportService
     {
+        private const string ImportCompletedKey = "legacy_import_completed";
+
+        private readonly ISqliteDbService _db;
         private readonly ICreativeSessionRepository _sessionRepo;
         private readonly ISessionMessageRepository _messageRepo;
         private readonly ISessionContentRepository _contentRepo;
@@ -20,12 +23,14 @@ namespace TrueFluentPro.Services.Storage
         public LegacyImportStats LastStats { get; private set; } = new();
 
         public LegacyImportService(
+            ISqliteDbService db,
             ICreativeSessionRepository sessionRepo,
             ISessionMessageRepository messageRepo,
             ISessionContentRepository contentRepo,
             IAudioLibraryRepository audioRepo,
             IStoragePathResolver paths)
         {
+            _db = db;
             _sessionRepo = sessionRepo;
             _messageRepo = messageRepo;
             _contentRepo = contentRepo;
@@ -35,6 +40,13 @@ namespace TrueFluentPro.Services.Storage
 
         public void ImportAll()
         {
+            // 已完成过一次完整导入，跳过
+            if (_db.GetMeta(ImportCompletedKey) != null)
+            {
+                SqliteDebugLogger.LogImport("已检测到完成标记，跳过 Legacy 导入");
+                return;
+            }
+
             var batchId = DateTime.Now.ToString("yyyyMMdd_HHmmss");
             LastImportBatchId = batchId;
             var stats = new LegacyImportStats();
@@ -46,6 +58,8 @@ namespace TrueFluentPro.Services.Storage
             if (!Directory.Exists(sessionsPath))
             {
                 SqliteDebugLogger.LogImport("Sessions 目录不存在，跳过导入");
+                // 无数据可导入，视为完成
+                _db.SetMeta(ImportCompletedKey, DateTime.Now.ToString("o"));
                 return;
             }
 
@@ -62,17 +76,25 @@ namespace TrueFluentPro.Services.Storage
                 $"===== 导入完成: sessions={stats.SessionsImported}, messages={stats.MessagesImported}, " +
                 $"tasks={stats.TasksImported}, assets={stats.AssetsImported}, " +
                 $"audio={stats.AudioFilesImported}, skipped={stats.Skipped}, errors={stats.Errors} =====");
+
+            // 全部无错才写完成标记；有错则下次重跑（幂等，已导入的自动跳过）
+            if (stats.Errors == 0)
+            {
+                _db.SetMeta(ImportCompletedKey, DateTime.Now.ToString("o"));
+                SqliteDebugLogger.LogImport("已写入完成标记，后续启动将跳过导入");
+            }
         }
 
         private void ImportMediaStudioSessions(string sessionsPath, string batchId, LegacyImportStats stats)
         {
-            foreach (var dir in Directory.GetDirectories(sessionsPath, "session_*"))
+            // 实际目录结构: Sessions/media-studio/session_xxx/session.json
+            var studioRoot = Path.Combine(sessionsPath, "media-studio");
+            if (!Directory.Exists(studioRoot)) return;
+
+            foreach (var dir in Directory.GetDirectories(studioRoot, "session_*"))
             {
                 var metaPath = Path.Combine(dir, "session.json");
                 if (!File.Exists(metaPath)) continue;
-
-                // 如果同目录还有 workspace.json，那这个目录属于 media-center-v2
-                if (File.Exists(Path.Combine(dir, "workspace.json"))) continue;
 
                 try
                 {
@@ -134,7 +156,11 @@ namespace TrueFluentPro.Services.Storage
 
         private void ImportMediaCenterWorkspaces(string sessionsPath, string batchId, LegacyImportStats stats)
         {
-            foreach (var dir in Directory.GetDirectories(sessionsPath, "session_*"))
+            // 实际目录结构: Sessions/media-center-v2/session_xxx/workspace.json
+            var centerRoot = Path.Combine(sessionsPath, "media-center-v2");
+            if (!Directory.Exists(centerRoot)) return;
+
+            foreach (var dir in Directory.GetDirectories(centerRoot, "workspace_*"))
             {
                 var metaPath = Path.Combine(dir, "workspace.json");
                 if (!File.Exists(metaPath)) continue;

@@ -4,8 +4,6 @@ using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Text.Json.Serialization;
-using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Input;
@@ -47,15 +45,10 @@ namespace TrueFluentPro.ViewModels
         private AzureTokenProvider _imageTokenProvider;
         private AzureTokenProvider _videoTokenProvider;
         private readonly string _studioDirectory;
-        private readonly string _indexFilePath;
-        private MediaStudioIndex _sessionIndex = new();
 
-
-        private static readonly JsonSerializerOptions JsonOptions = new()
-        {
-            WriteIndented = true,
-            Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
-        };
+        // SQLite 写入去重：指纹 + 任务状态追踪
+        private readonly Dictionary<string, (int MsgCount, int TaskCount, int Completed, int Active, int Terminal, int AssetCount, string? Name)> _sqliteFingerprints = new();
+        private readonly Dictionary<string, Dictionary<string, string>> _persistedTaskStates = new();
 
         // --- 会话管理 ---
         public ObservableCollection<MediaSessionViewModel> Sessions { get; } = new();
@@ -145,7 +138,6 @@ namespace TrueFluentPro.ViewModels
 
             var sessionsPath = PathManager.Instance.SessionsPath;
             _studioDirectory = Path.Combine(sessionsPath, "media-studio");
-            _indexFilePath = Path.Combine(_studioDirectory, "media-studio.index.json");
             Directory.CreateDirectory(_studioDirectory);
 
             NewSessionCommand = new RelayCommand(_ => CreateNewSession());
@@ -448,7 +440,6 @@ namespace TrueFluentPro.ViewModels
             session.ForkRequested -= HandleForkRequested;
 
             MarkSessionDeleted(session);
-            MarkSessionDeletedInIndex(session.SessionId);
 
             var idx = Sessions.IndexOf(session);
             Sessions.Remove(session);
@@ -465,14 +456,19 @@ namespace TrueFluentPro.ViewModels
 
         private string AllocateNextDefaultSessionName()
         {
-            EnsureNextSessionNumberInitialized();
-
-            var usedNames = _sessionIndex.Sessions
-                .Select(s => s.Name)
+            var usedNames = Sessions
+                .Select(s => s.SessionName)
                 .Where(n => !string.IsNullOrWhiteSpace(n))
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-            var number = Math.Max(1, _sessionIndex.NextSessionNumber);
+            var maxUsed = Sessions
+                .Select(s => TryParseDefaultSessionNumber(s.SessionName))
+                .Where(n => n.HasValue)
+                .Select(n => n!.Value)
+                .DefaultIfEmpty(0)
+                .Max();
+
+            var number = Math.Max(1, maxUsed + 1);
             string candidate;
             do
             {
@@ -481,28 +477,7 @@ namespace TrueFluentPro.ViewModels
             }
             while (usedNames.Contains(candidate));
 
-            _sessionIndex.NextSessionNumber = number;
             return candidate;
-        }
-
-        private void EnsureNextSessionNumberInitialized()
-        {
-            var maxUsed = _sessionIndex.Sessions
-                .Select(s => TryParseDefaultSessionNumber(s.Name))
-                .Where(n => n.HasValue)
-                .Select(n => n!.Value)
-                .DefaultIfEmpty(0)
-                .Max();
-
-            if (_sessionIndex.NextSessionNumber <= maxUsed)
-            {
-                _sessionIndex.NextSessionNumber = maxUsed + 1;
-            }
-
-            if (_sessionIndex.NextSessionNumber < 1)
-            {
-                _sessionIndex.NextSessionNumber = 1;
-            }
         }
 
         private static int? TryParseDefaultSessionNumber(string? name)
@@ -523,45 +498,16 @@ namespace TrueFluentPro.ViewModels
         {
             try
             {
-                var metaPath = Path.Combine(session.SessionDirectory, "session.json");
-                if (File.Exists(metaPath))
-                {
-                    var json = File.ReadAllText(metaPath);
-                    var sessionData = JsonSerializer.Deserialize<MediaGenSession>(json);
-                    if (sessionData != null)
-                    {
-                        sessionData.IsDeleted = true;
-                        File.WriteAllText(metaPath, JsonSerializer.Serialize(sessionData, JsonOptions));
-                        return;
-                    }
-                }
+                var switches = App.Services.GetRequiredService<SqliteFeatureSwitches>();
+                if (!switches.IsReady) return;
 
-                // 不存在或无法反序列化时，兜底写入最小删除标记
-                var fallback = new MediaGenSession
-                {
-                    Id = session.SessionId,
-                    Name = session.SessionName,
-                    IsDeleted = true
-                };
-                File.WriteAllText(metaPath, JsonSerializer.Serialize(fallback, JsonOptions));
+                var sessionRepo = App.Services.GetRequiredService<ICreativeSessionRepository>();
+                sessionRepo.SoftDelete(session.SessionId);
             }
             catch (Exception ex)
             {
                 Debug.WriteLine($"标记会话删除失败: {ex.Message}");
             }
-        }
-
-        private void MarkSessionDeletedInIndex(string sessionId)
-        {
-            var entry = _sessionIndex.Sessions.FirstOrDefault(s => s.Id == sessionId);
-            if (entry == null)
-            {
-                return;
-            }
-
-            entry.IsDeleted = true;
-            entry.UpdatedAt = DateTime.Now;
-            SaveSessionIndex();
         }
 
         public void RenameCurrentSession(string newName)
@@ -596,74 +542,15 @@ namespace TrueFluentPro.ViewModels
 
         private async Task LoadSessionsAsync()
         {
-            // P3: 优先从 SQLite 加载会话列表
             var switches = App.Services.GetRequiredService<SqliteFeatureSwitches>();
-            if (switches.UseSqliteSessionList)
+            if (!switches.IsReady)
             {
-                await LoadSessionsFromSqliteAsync();
-                return;
+                // SQLite 尚未就绪，延迟加载
+                await Task.Delay(100);
+                if (!switches.IsReady) { CreateNewSession(); return; }
             }
 
-            // 旧路径：磁盘 I/O 在后台线程
-            var loadedEntries = await Task.Run(() =>
-            {
-                try
-                {
-                    if (!Directory.Exists(_studioDirectory)) return Array.Empty<(MediaSessionIndexItem entry, string dir)>();
-                    LoadOrRebuildSessionIndex();
-
-                    var entries = new List<(MediaSessionIndexItem entry, string dir)>();
-                    foreach (var entry in _sessionIndex.Sessions.Where(s => !s.IsDeleted))
-                    {
-                        var dir = ResolveSessionDirectory(entry);
-                        var metaPath = Path.Combine(dir, "session.json");
-                        if (!File.Exists(metaPath))
-                        {
-                            entry.IsDeleted = true;
-                            entry.UpdatedAt = DateTime.Now;
-                            continue;
-                        }
-                        entries.Add((entry, dir));
-                    }
-                    SaveSessionIndex();
-                    return entries.ToArray();
-                }
-                catch (Exception ex)
-                {
-                    Debug.WriteLine($"加载会话索引失败: {ex.Message}");
-                    return Array.Empty<(MediaSessionIndexItem entry, string dir)>();
-                }
-            }).ConfigureAwait(false);
-
-            // UI 操作回到主线程
-            await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
-            {
-                foreach (var (entry, dir) in loadedEntries)
-                {
-                    var session = new MediaSessionViewModel(
-                        entry.Id, entry.Name, dir,
-                        _aiConfig, _genConfig, _endpoints,
-                        _modelRuntimeResolver, _azureTokenProviderStore,
-                        _imageService, _videoService,
-                        OnSessionTaskCountChanged,
-                        s => SaveSessionMeta(s));
-                    session.UpdateWebSearchConfig(_webSearchProviderId, _webSearchTriggerMode, _webSearchMaxResults,
-                        _webSearchEnableIntentAnalysis, _webSearchEnableResultCompression,
-                        _webSearchMcpEndpoint, _webSearchMcpToolName, _webSearchMcpApiKey);
-                    session.IsContentLoaded = false;
-                    session.ForkRequested += HandleForkRequested;
-                    Sessions.Add(session);
-                }
-
-                if (Sessions.Count == 0)
-                {
-                    CreateNewSession();
-                }
-                else
-                {
-                    CurrentSession = Sessions[0];
-                }
-            });
+            await LoadSessionsFromSqliteAsync();
         }
 
         private async Task LoadSessionsFromSqliteAsync()
@@ -712,109 +599,6 @@ namespace TrueFluentPro.ViewModels
             });
         }
 
-        private void LoadOrRebuildSessionIndex()
-        {
-            if (!File.Exists(_indexFilePath))
-            {
-                RebuildSessionIndexFromDisk();
-                SaveSessionIndex();
-                return;
-            }
-
-            try
-            {
-                var json = File.ReadAllText(_indexFilePath);
-                _sessionIndex = JsonSerializer.Deserialize<MediaStudioIndex>(json) ?? new MediaStudioIndex();
-                // 确保索引始终按最近更新排序（JSON 文件可能保留了旧的追加顺序）
-                _sessionIndex.Sessions = _sessionIndex.Sessions
-                    .OrderByDescending(s => s.UpdatedAt)
-                    .ToList();
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"读取会话索引失败，改为重建: {ex.Message}");
-                RebuildSessionIndexFromDisk();
-                SaveSessionIndex();
-                return;
-            }
-
-            if (NeedRebuildIndexFromDisk())
-            {
-                RebuildSessionIndexFromDisk();
-                SaveSessionIndex();
-            }
-
-            EnsureNextSessionNumberInitialized();
-        }
-
-        private bool NeedRebuildIndexFromDisk()
-        {
-            try
-            {
-                var diskDirs = Directory.GetDirectories(_studioDirectory, "session_*")
-                    .Select(Path.GetFileName)
-                    .Where(s => !string.IsNullOrWhiteSpace(s))
-                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-                var indexedDirs = _sessionIndex.Sessions
-                    .Select(s => string.IsNullOrWhiteSpace(s.DirectoryName) ? $"session_{s.Id}" : s.DirectoryName)
-                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-                return !diskDirs.SetEquals(indexedDirs);
-            }
-            catch
-            {
-                return true;
-            }
-        }
-
-        private void RebuildSessionIndexFromDisk()
-        {
-            var rebuilt = new List<MediaSessionIndexItem>();
-
-            foreach (var dir in Directory.GetDirectories(_studioDirectory, "session_*"))
-            {
-                var metaPath = Path.Combine(dir, "session.json");
-                if (!File.Exists(metaPath))
-                {
-                    continue;
-                }
-
-                try
-                {
-                    var json = File.ReadAllText(metaPath);
-                    var sessionData = JsonSerializer.Deserialize<MediaGenSession>(json);
-                    if (sessionData == null)
-                    {
-                        continue;
-                    }
-
-                    rebuilt.Add(new MediaSessionIndexItem
-                    {
-                        Id = sessionData.Id,
-                        Name = string.IsNullOrWhiteSpace(sessionData.Name) ? "新会话" : sessionData.Name,
-                        DirectoryName = Path.GetFileName(dir) ?? $"session_{sessionData.Id}",
-                        IsDeleted = sessionData.IsDeleted,
-                        MessageCount = sessionData.Messages?.Count ?? 0,
-                        TaskCount = sessionData.Tasks?.Count ?? 0,
-                        UpdatedAt = File.GetLastWriteTime(metaPath)
-                    });
-                }
-                catch (Exception ex)
-                {
-                    Debug.WriteLine($"重建索引时读取会话失败 {dir}: {ex.Message}");
-                }
-            }
-
-            _sessionIndex = new MediaStudioIndex
-            {
-                Version = 1,
-                Sessions = rebuilt
-                    .OrderByDescending(s => s.UpdatedAt)
-                    .ToList()
-            };
-        }
-
         private void EnsureSessionLoaded(MediaSessionViewModel session)
         {
             if (session.IsContentLoaded)
@@ -822,207 +606,21 @@ namespace TrueFluentPro.ViewModels
                 return;
             }
 
-            // P4: 优先从 SQLite 懒加载消息
-            var switches = App.Services.GetRequiredService<SqliteFeatureSwitches>();
-            if (switches.UseSqliteMessagePaging)
-            {
-                LoadSessionFromSqlite(session);
-                return;
-            }
-
-            // 旧路径：从 session.json 全量读取
-            // 保留已有的滚动位置快照（LRU 淘汰后重新加载时恢复原位置）
-
-            var sw = Stopwatch.StartNew();
-
-            var metaPath = Path.Combine(session.SessionDirectory, "session.json");
-            if (!File.Exists(metaPath))
-            {
-                session.IsContentLoaded = true;
-                sw.Stop();
-                Debug.WriteLine($"加载会话 {session.SessionId}: session.json 不存在，mark loaded，{sw.ElapsedMilliseconds}ms");
-                return;
-            }
-
-            try
-            {
-                var json = File.ReadAllText(metaPath);
-                var sessionData = JsonSerializer.Deserialize<MediaGenSession>(json);
-                if (sessionData == null)
-                {
-                    session.IsContentLoaded = true;
-                    return;
-                }
-
-                var loadedMessages = new List<ChatMessageViewModel>();
-                if (sessionData.Messages != null)
-                {
-                    foreach (var msg in sessionData.Messages)
-                    {
-                        var normalizedMessage = new MediaChatMessage
-                        {
-                            Role = msg.Role,
-                            Text = msg.Text,
-                            ContentType = msg.ContentType,
-                            ReasoningText = msg.ReasoningText,
-                            Timestamp = msg.Timestamp,
-                            GenerateSeconds = msg.GenerateSeconds,
-                            DownloadSeconds = msg.DownloadSeconds,
-                            PromptTokens = msg.PromptTokens,
-                            CompletionTokens = msg.CompletionTokens,
-                            Citations = msg.Citations,
-                            SearchSummary = msg.SearchSummary,
-                            MediaPaths = msg.MediaPaths?
-                                .Select(p => ResolveStoredPathForLoad(p, session.SessionDirectory))
-                                .Where(p => !string.IsNullOrWhiteSpace(p))
-                                .ToList() ?? new List<string>()
-                        };
-
-                        loadedMessages.Add(new ChatMessageViewModel(normalizedMessage));
-                    }
-                }
-
-                session.ReplaceAllMessages(loadedMessages);
-
-                session.TaskHistory.Clear();
-                if (sessionData.Tasks != null)
-                {
-                    foreach (var task in sessionData.Tasks)
-                    {
-                        task.ResultFilePath = ResolveStoredPathForLoad(task.ResultFilePath, session.SessionDirectory);
-                        session.TaskHistory.Add(task);
-                    }
-                }
-
-                session.IsContentLoaded = true;
-                UpdateSessionIndexFromSession(session, saveIndex: true);
-                sw.Stop();
-                Debug.WriteLine($"加载会话 {session.SessionId}: messages={session.Messages.Count}, tasks={session.TaskHistory.Count}, {sw.ElapsedMilliseconds}ms");
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"按需加载会话失败 {session.SessionId}: {ex.Message}");
-                session.IsContentLoaded = true;
-                sw.Stop();
-                Debug.WriteLine($"加载会话 {session.SessionId}: 失败后标记为已加载，{sw.ElapsedMilliseconds}ms");
-            }
+            LoadSessionFromSqlite(session);
         }
-
-        private string ResolveSessionDirectory(MediaSessionIndexItem entry)
-            => Path.Combine(
-                _studioDirectory,
-                string.IsNullOrWhiteSpace(entry.DirectoryName) ? $"session_{entry.Id}" : entry.DirectoryName);
 
         public void SaveSessionMeta(MediaSessionViewModel session)
         {
+            if (!session.IsContentLoaded) return;
+
             try
             {
-                if (session.IsContentLoaded)
-                {
-                    var metaPath = Path.Combine(session.SessionDirectory, "session.json");
-                    Directory.CreateDirectory(session.SessionDirectory);
-
-                    var data = new MediaGenSession
-                    {
-                        Id = session.SessionId,
-                        Name = session.SessionName,
-                        Messages = session.AllMessages.Select(m => new MediaChatMessage
-                        {
-                            Role = m.Role,
-                            Text = m.Text,
-                            ContentType = m.ContentType,
-                            ReasoningText = m.ReasoningText,
-                            MediaPaths = m.MediaPaths
-                                .Select(p => ConvertPathForSave(p, session.SessionDirectory))
-                                .Where(p => !string.IsNullOrWhiteSpace(p))
-                                .ToList(),
-                            Timestamp = m.Timestamp,
-                            GenerateSeconds = m.GenerateSeconds,
-                            DownloadSeconds = m.DownloadSeconds,
-                            PromptTokens = m.PromptTokens,
-                            CompletionTokens = m.CompletionTokens,
-                            Citations = m.Citations?.Select(c => new MediaChatCitation
-                            {
-                                Number = c.Number,
-                                Title = c.Title,
-                                Url = c.Url,
-                                Snippet = c.Snippet,
-                                Hostname = c.Hostname
-                            }).ToList(),
-                            SearchSummary = m.SearchSummary
-                        }).ToList(),
-                        Tasks = session.TaskHistory.Select(t => new MediaGenTask
-                        {
-                            Id = t.Id,
-                            Type = t.Type,
-                            Status = t.Status,
-                            Prompt = t.Prompt,
-                            Progress = t.Progress,
-                            ResultFilePath = ConvertPathForSave(t.ResultFilePath, session.SessionDirectory),
-                            ErrorMessage = t.ErrorMessage,
-                            CreatedAt = t.CreatedAt,
-                            RemoteVideoId = t.RemoteVideoId,
-                            RemoteVideoApiMode = t.RemoteVideoApiMode,
-                            RemoteGenerationId = t.RemoteGenerationId,
-                            GenerateSeconds = t.GenerateSeconds,
-                            DownloadSeconds = t.DownloadSeconds,
-                            RemoteDownloadUrl = t.RemoteDownloadUrl
-                        }).ToList()
-                    };
-
-                    File.WriteAllText(metaPath, JsonSerializer.Serialize(data, JsonOptions));
-                }
-
-                UpdateSessionIndexFromSession(session, saveIndex: true);
-
-                // ── P2: 同步写入 SQLite ──
+                Directory.CreateDirectory(session.SessionDirectory);
                 WriteSqliteSession(session, "media-studio");
             }
             catch (Exception ex)
             {
                 Debug.WriteLine($"保存会话元数据失败: {ex.Message}");
-            }
-        }
-
-        private void UpdateSessionIndexFromSession(MediaSessionViewModel session, bool saveIndex)
-        {
-            var entry = _sessionIndex.Sessions.FirstOrDefault(s => s.Id == session.SessionId);
-            if (entry == null)
-            {
-                entry = new MediaSessionIndexItem
-                {
-                    Id = session.SessionId,
-                    DirectoryName = Path.GetFileName(session.SessionDirectory) ?? $"session_{session.SessionId}"
-                };
-                _sessionIndex.Sessions.Add(entry);
-            }
-
-            entry.Name = session.SessionName;
-            entry.IsDeleted = false;
-            entry.DirectoryName = Path.GetFileName(session.SessionDirectory) ?? entry.DirectoryName;
-            if (session.IsContentLoaded)
-            {
-                entry.MessageCount = session.TotalMessageCount;
-                entry.TaskCount = session.TaskHistory.Count;
-            }
-            entry.UpdatedAt = DateTime.Now;
-
-            if (saveIndex)
-            {
-                SaveSessionIndex();
-            }
-        }
-
-        private void SaveSessionIndex()
-        {
-            try
-            {
-                Directory.CreateDirectory(_studioDirectory);
-                File.WriteAllText(_indexFilePath, JsonSerializer.Serialize(_sessionIndex, JsonOptions));
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"保存会话索引失败: {ex.Message}");
             }
         }
 
@@ -1032,8 +630,6 @@ namespace TrueFluentPro.ViewModels
             {
                 SaveSessionMeta(session);
             }
-
-            SaveSessionIndex();
         }
 
         public void Dispose()
@@ -1055,47 +651,6 @@ namespace TrueFluentPro.ViewModels
                 MediaGenConfig = _genConfig,
                 Endpoints = _endpoints
             };
-
-        private static string ConvertPathForSave(string? path, string sessionDirectory)
-        {
-            if (string.IsNullOrWhiteSpace(path))
-            {
-                return string.Empty;
-            }
-
-            var value = path.Trim();
-            if (Uri.TryCreate(value, UriKind.Absolute, out var uri)
-                && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
-            {
-                return value;
-            }
-
-            try
-            {
-                if (!Path.IsPathRooted(value))
-                {
-                    return value.Replace('\\', '/');
-                }
-
-                var fullPath = Path.GetFullPath(value);
-                var fullSessionDirectory = Path.GetFullPath(sessionDirectory);
-                var sessionPrefix = fullSessionDirectory.EndsWith(Path.DirectorySeparatorChar)
-                    ? fullSessionDirectory
-                    : fullSessionDirectory + Path.DirectorySeparatorChar;
-
-                if (fullPath.StartsWith(sessionPrefix, StringComparison.OrdinalIgnoreCase))
-                {
-                    var relative = Path.GetRelativePath(fullSessionDirectory, fullPath);
-                    return relative.Replace('\\', '/');
-                }
-
-                return fullPath;
-            }
-            catch
-            {
-                return value;
-            }
-        }
 
         private void LoadSessionFromSqlite(MediaSessionViewModel session)
         {
@@ -1170,71 +725,26 @@ namespace TrueFluentPro.ViewModels
                 }
 
                 session.IsContentLoaded = true;
+
+                // 预填充指纹 + task 状态，避免 Dispose 时全量重写
+                _sqliteFingerprints[session.SessionId] = (
+                    session.TotalMessageCount,
+                    session.TaskHistory.Count,
+                    session.TaskHistory.Count(t => t.Status == MediaGenStatus.Completed),
+                    session.TaskHistory.Count(t => t.Status is MediaGenStatus.Running or MediaGenStatus.Queued),
+                    session.TaskHistory.Count(t => t.Status is MediaGenStatus.Failed or MediaGenStatus.Cancelled),
+                    session.AssetCatalog.Count,
+                    session.SessionName);
+                _persistedTaskStates[session.SessionId] = session.TaskHistory
+                    .ToDictionary(t => t.Id, t => t.Status.ToString());
+
                 sw.Stop();
                 SqliteDebugLogger.LogLazyLoad(session.SessionId, loadedMessages.Count > 0 ? 1 : 0, loadedMessages.Count);
                 Debug.WriteLine($"[SQLite] P4 加载会话 {session.SessionId}: messages={loadedMessages.Count}, tasks={taskRecords.Count}, {sw.ElapsedMilliseconds}ms");
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[SQLite] P4 加载失败 {session.SessionId}: {ex.Message}，回退到 JSON");
-                // 回退到旧路径
-                session.IsContentLoaded = false;
-                LoadSessionFromJson(session);
-            }
-        }
-
-        /// <summary>旧路径：从 session.json 全量加载（作为 SQLite 加载失败时的回退）</summary>
-        private void LoadSessionFromJson(MediaSessionViewModel session)
-        {
-            if (session.IsContentLoaded) return;
-
-            var metaPath = Path.Combine(session.SessionDirectory, "session.json");
-            if (!File.Exists(metaPath))
-            {
-                session.IsContentLoaded = true;
-                return;
-            }
-
-            try
-            {
-                var json = File.ReadAllText(metaPath);
-                var sessionData = JsonSerializer.Deserialize<MediaGenSession>(json);
-                if (sessionData == null) { session.IsContentLoaded = true; return; }
-
-                var loadedMessages = new List<ChatMessageViewModel>();
-                if (sessionData.Messages != null)
-                {
-                    foreach (var msg in sessionData.Messages)
-                    {
-                        var normalizedMessage = new MediaChatMessage
-                        {
-                            Role = msg.Role, Text = msg.Text, ContentType = msg.ContentType,
-                            ReasoningText = msg.ReasoningText, Timestamp = msg.Timestamp,
-                            GenerateSeconds = msg.GenerateSeconds, DownloadSeconds = msg.DownloadSeconds,
-                            PromptTokens = msg.PromptTokens, CompletionTokens = msg.CompletionTokens,
-                            Citations = msg.Citations, SearchSummary = msg.SearchSummary,
-                            MediaPaths = msg.MediaPaths?
-                                .Select(p => ResolveStoredPathForLoad(p, session.SessionDirectory))
-                                .Where(p => !string.IsNullOrWhiteSpace(p)).ToList() ?? new List<string>()
-                        };
-                        loadedMessages.Add(new ChatMessageViewModel(normalizedMessage));
-                    }
-                }
-                session.ReplaceAllMessages(loadedMessages);
-                session.TaskHistory.Clear();
-                if (sessionData.Tasks != null)
-                {
-                    foreach (var task in sessionData.Tasks)
-                    {
-                        task.ResultFilePath = ResolveStoredPathForLoad(task.ResultFilePath, session.SessionDirectory);
-                        session.TaskHistory.Add(task);
-                    }
-                }
-                session.IsContentLoaded = true;
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"[JSON] 加载失败 {session.SessionId}: {ex.Message}");
+                Debug.WriteLine($"[SQLite] P4 加载失败 {session.SessionId}: {ex.Message}");
                 session.IsContentLoaded = true;
             }
         }
@@ -1244,7 +754,19 @@ namespace TrueFluentPro.ViewModels
             try
             {
                 var switches = App.Services.GetRequiredService<SqliteFeatureSwitches>();
-                if (!switches.UseSqliteSessionWrite) return;
+                if (!switches.IsReady) return;
+
+                // 指纹去重：数据未变则跳过整个 SQLite 写入
+                var fp = (
+                    session.TotalMessageCount,
+                    session.TaskHistory.Count,
+                    session.TaskHistory.Count(t => t.Status == MediaGenStatus.Completed),
+                    session.TaskHistory.Count(t => t.Status is MediaGenStatus.Running or MediaGenStatus.Queued),
+                    session.TaskHistory.Count(t => t.Status is MediaGenStatus.Failed or MediaGenStatus.Cancelled),
+                    session.AssetCatalog.Count,
+                    session.SessionName);
+                if (_sqliteFingerprints.TryGetValue(session.SessionId, out var last) && last == fp)
+                    return;
 
                 var sessionRepo = App.Services.GetRequiredService<ICreativeSessionRepository>();
                 var msgRepo = App.Services.GetRequiredService<ISessionMessageRepository>();
@@ -1325,15 +847,22 @@ namespace TrueFluentPro.ViewModels
                     }
                 }
 
-                // 任务全量 upsert
+                // 任务增量 upsert：只写新增或状态变化的 task
+                var knownTasks = _persistedTaskStates.GetValueOrDefault(session.SessionId);
+                var newTaskStates = new Dictionary<string, string>();
                 foreach (var t in session.TaskHistory)
                 {
+                    var status = t.Status.ToString();
+                    newTaskStates[t.Id] = status;
+                    if (knownTasks != null && knownTasks.TryGetValue(t.Id, out var old) && old == status)
+                        continue;
+
                     contentRepo.UpsertTask(new TaskRecord
                     {
                         Id = t.Id,
                         SessionId = session.SessionId,
                         TaskType = t.Type.ToString(),
-                        Status = t.Status.ToString(),
+                        Status = status,
                         Prompt = t.Prompt ?? "",
                         Progress = t.Progress,
                         ResultFilePath = string.IsNullOrWhiteSpace(t.ResultFilePath) ? null
@@ -1350,7 +879,9 @@ namespace TrueFluentPro.ViewModels
                         UpdatedAt = DateTime.Now,
                     });
                 }
+                _persistedTaskStates[session.SessionId] = newTaskStates;
 
+                _sqliteFingerprints[session.SessionId] = fp;
                 SqliteDebugLogger.LogWrite("sessions", session.SessionId, $"P2-write type={sessionType}");
             }
             catch (Exception ex)
@@ -1359,61 +890,5 @@ namespace TrueFluentPro.ViewModels
             }
         }
 
-        private static string ResolveStoredPathForLoad(string? storedPath, string sessionDirectory)
-        {
-            if (string.IsNullOrWhiteSpace(storedPath))
-            {
-                return string.Empty;
-            }
-
-            var value = storedPath.Trim();
-            if (Uri.TryCreate(value, UriKind.Absolute, out var uri)
-                && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
-            {
-                return value;
-            }
-
-            try
-            {
-                if (!Path.IsPathRooted(value))
-                {
-                    var candidate = Path.GetFullPath(Path.Combine(sessionDirectory, value.Replace('/', Path.DirectorySeparatorChar)));
-                    return candidate;
-                }
-
-                var fullPath = Path.GetFullPath(value);
-                if (File.Exists(fullPath) || Directory.Exists(fullPath))
-                {
-                    return fullPath;
-                }
-
-                var fileName = Path.GetFileName(fullPath);
-                if (string.IsNullOrWhiteSpace(fileName))
-                {
-                    return fullPath;
-                }
-
-                var fallbackCandidates = new[]
-                {
-                    Path.Combine(sessionDirectory, fileName),
-                    Path.Combine(sessionDirectory, "media", fileName),
-                    Path.Combine(sessionDirectory, "outputs", fileName)
-                };
-
-                foreach (var candidate in fallbackCandidates)
-                {
-                    if (File.Exists(candidate) || Directory.Exists(candidate))
-                    {
-                        return candidate;
-                    }
-                }
-
-                return fullPath;
-            }
-            catch
-            {
-                return value;
-            }
-        }
     }
 }

@@ -22,12 +22,6 @@ namespace TrueFluentPro.ViewModels
     /// </summary>
     public class MediaCenterV2ViewModel : ViewModelBase, IDisposable
     {
-        private static readonly JsonSerializerOptions SaveJsonOptions = new()
-        {
-            WriteIndented = true,
-            Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
-        };
-
         private readonly AiConfig _aiConfig = new();
         private readonly MediaGenConfig _genConfig = new();
         private readonly List<AiEndpoint> _endpoints = new();
@@ -42,6 +36,10 @@ namespace TrueFluentPro.ViewModels
         private readonly ObservableCollection<MediaCreatorResultAsset> _resultRailItems = new();
         private readonly Dictionary<ChatMessageViewModel, NotifyCollectionChangedEventHandler> _messageMediaHandlers = new();
         private readonly Dictionary<MediaGenTask, PropertyChangedEventHandler> _taskHandlers = new();
+
+        // SQLite 写入去重：指纹 + 任务状态追踪
+        private readonly Dictionary<string, (int MsgCount, int TaskCount, int Completed, int Active, int Terminal, int AssetCount, string? Name, string? Canvas, string? Kind, bool Deleted)> _sqliteFingerprints = new();
+        private readonly Dictionary<string, Dictionary<string, string>> _persistedTaskStates = new();
 
         private MediaSessionViewModel? _workspaceSession;
         private MediaWorkspaceTabViewModel? _selectedWorkspaceTab;
@@ -552,28 +550,42 @@ namespace TrueFluentPro.ViewModels
             _ = TrySilentLoginForMediaAsync();
         }
 
+        /// <summary>右侧面板最多加载的工作区数。超出部分不加载，节省内存和启动时间。</summary>
+        private const int MaxLoadedWorkspaces = 20;
+
         private void LoadExistingWorkspaces()
         {
-            var directories = Directory.GetDirectories(_workspaceRootDirectory, "workspace_*")
-                .OrderByDescending(GetWorkspaceDirectorySortKey)
-                .ToList();
+            var switches = App.Services.GetRequiredService<SqliteFeatureSwitches>();
+            if (!switches.IsReady)
+            {
+                // SQLite 后台初始化未完成，暂时创建空白画布
+                CreateNewWorkspace();
+                return;
+            }
+
+            var sessionRepo = App.Services.GetRequiredService<ICreativeSessionRepository>();
+            var paths = App.Services.GetRequiredService<IStoragePathResolver>();
+            var records = sessionRepo.List(limit: MaxLoadedWorkspaces * 3, sessionType: "media-center-v2");
 
             var loadedTabs = new List<MediaWorkspaceTabViewModel>();
-            foreach (var directory in directories)
+            foreach (var rec in records)
             {
-                var snapshot = LoadWorkspaceSnapshot(directory);
-                if (snapshot.IsDeleted)
+                var directory = paths.ToAbsolutePath(rec.DirectoryPath);
+                if (!Directory.Exists(directory))
                 {
                     continue;
                 }
 
+                var canvasMode = Enum.TryParse<CreatorCanvasMode>(rec.CanvasMode, true, out var cm) ? cm : _canvasMode;
+                var mediaKind = Enum.TryParse<CreatorMediaKind>(rec.MediaKind, true, out var mk) ? mk : _mediaKind;
+
                 var tab = CreateWorkspaceTab(
                     directory,
-                    Path.GetFileName(directory),
+                    rec.Name,
                     true,
-                    snapshot.CanvasMode ?? _canvasMode,
-                    snapshot.MediaKind ?? _mediaKind,
-                    snapshot);
+                    canvasMode,
+                    mediaKind,
+                    existingSessionId: rec.Id);
 
                 if (!ShouldRestoreWorkspace(tab))
                 {
@@ -582,6 +594,10 @@ namespace TrueFluentPro.ViewModels
                 }
 
                 loadedTabs.Add(tab);
+                if (loadedTabs.Count >= MaxLoadedWorkspaces)
+                {
+                    break;
+                }
             }
 
             if (loadedTabs.Count == 0)
@@ -597,17 +613,6 @@ namespace TrueFluentPro.ViewModels
 
             SelectWorkspaceTab(loadedTabs[0]);
             StatusText = loadedTabs.Count == 1 ? "已载入最近画布" : $"已恢复 {loadedTabs.Count} 个历史会话";
-        }
-
-        private static DateTime GetWorkspaceDirectorySortKey(string directory)
-        {
-            var metaPath = Path.Combine(directory, "workspace.json");
-            if (File.Exists(metaPath))
-            {
-                return File.GetLastWriteTime(metaPath);
-            }
-
-            return Directory.GetLastWriteTime(directory);
         }
 
         public void CreateNewWorkspace()
@@ -755,12 +760,13 @@ namespace TrueFluentPro.ViewModels
             bool loadFromDisk,
             CreatorCanvasMode defaultCanvasMode,
             CreatorMediaKind defaultMediaKind,
-            WorkspaceSnapshot? snapshotOverride = null)
+            WorkspaceSnapshot? snapshotOverride = null,
+            string? existingSessionId = null)
         {
             var snapshot = snapshotOverride ?? (loadFromDisk
-                ? LoadWorkspaceSnapshot(directory)
+                ? default
                 : default);
-            var sessionId = Guid.NewGuid().ToString("N")[..8];
+            var sessionId = existingSessionId ?? Guid.NewGuid().ToString("N")[..8];
             var sessionName = loadFromDisk
                 ? snapshot.Name ?? nameOrDirectory
                 : nameOrDirectory;
@@ -795,53 +801,6 @@ namespace TrueFluentPro.ViewModels
 
             ApplyWorkflowToSession(session, tab.MediaKind);
             return tab;
-        }
-
-        private static WorkspaceSnapshot LoadWorkspaceSnapshot(string directory)
-        {
-            try
-            {
-                var metaPath = Path.Combine(directory, "workspace.json");
-                if (!File.Exists(metaPath))
-                {
-                    return default;
-                }
-
-                var json = File.ReadAllText(metaPath);
-                var data = JsonSerializer.Deserialize<MediaGenSession>(json);
-                if (data == null)
-                {
-                    return default;
-                }
-
-                var parsedKind = ParseMediaKind(data.MediaKind);
-
-                // 如果任务列表中存在视频类型任务，强制标记为视频会话，不依赖目录中的帧图片
-                if (data.Tasks != null && data.Tasks.Any(t => t.Type == MediaGenType.Video))
-                {
-                    parsedKind = CreatorMediaKind.Video;
-                }
-
-                return new WorkspaceSnapshot(
-                    data.Name,
-                    ParseCanvasMode(data.CanvasMode),
-                    parsedKind,
-                    data.IsDeleted);
-            }
-            catch
-            {
-                return default;
-            }
-        }
-
-        private static CreatorCanvasMode? ParseCanvasMode(string? value)
-        {
-            return Enum.TryParse<CreatorCanvasMode>(value, true, out var mode) ? mode : null;
-        }
-
-        private static CreatorMediaKind? ParseMediaKind(string? value)
-        {
-            return Enum.TryParse<CreatorMediaKind>(value, true, out var kind) ? kind : null;
         }
 
         private static bool ShouldRestoreWorkspace(MediaWorkspaceTabViewModel tab)
@@ -1769,70 +1728,15 @@ namespace TrueFluentPro.ViewModels
         {
             try
             {
-                var metaPath = Path.Combine(session.SessionDirectory, "workspace.json");
                 Directory.CreateDirectory(session.SessionDirectory);
                 var tab = WorkspaceTabs.FirstOrDefault(candidate => ReferenceEquals(candidate.Session, session));
 
-                var data = new MediaGenSession
-                {
-                    Id = session.SessionId,
-                    Name = session.SessionName,
-                    IsDeleted = isDeleted,
-                    CanvasMode = (tab?.CanvasMode ?? CanvasMode).ToString(),
-                    MediaKind = InferSessionMediaKind(session, tab).ToString(),
-                    Source = ConvertSourceInfoForSave(session.SourceInfo, session.SessionDirectory),
-                    Messages = session.AllMessages.Select(m => new MediaChatMessage
-                    {
-                        Role = m.Role,
-                        Text = m.Text,
-                        ReasoningText = m.ReasoningText,
-                        MediaPaths = m.MediaPaths
-                            .Select(p => ConvertPathForSave(p, session.SessionDirectory))
-                            .Where(p => !string.IsNullOrWhiteSpace(p))
-                            .ToList(),
-                        Timestamp = m.Timestamp,
-                        GenerateSeconds = m.GenerateSeconds,
-                        DownloadSeconds = m.DownloadSeconds,
-                        SearchSummary = m.SearchSummary,
-                        Citations = m.Citations.Count > 0
-                            ? m.Citations.Select(c => new Models.MediaChatCitation
-                            {
-                                Number = c.Number,
-                                Title = c.Title,
-                                Url = c.Url,
-                                Snippet = c.Snippet,
-                                Hostname = c.Hostname
-                            }).ToList()
-                            : null
-                    }).ToList(),
-                    Tasks = session.TaskHistory
-                        .Where(t => ShouldPersistTask(t))
-                        .Select(t => new MediaGenTask
-                        {
-                            Id = t.Id,
-                            Type = t.Type,
-                            Status = t.Status,
-                            Prompt = t.Prompt,
-                            Progress = t.Progress,
-                            ResultFilePath = ConvertPathForSave(t.ResultFilePath, session.SessionDirectory),
-                            ErrorMessage = t.ErrorMessage,
-                            HasReferenceInput = t.HasReferenceInput,
-                            CreatedAt = t.CreatedAt,
-                            RemoteVideoId = t.RemoteVideoId,
-                            RemoteVideoApiMode = t.RemoteVideoApiMode,
-                            RemoteGenerationId = t.RemoteGenerationId,
-                            GenerateSeconds = t.GenerateSeconds,
-                            DownloadSeconds = t.DownloadSeconds,
-                            RemoteDownloadUrl = t.RemoteDownloadUrl
-                        }).ToList(),
-                    Assets = BuildAssetRecordsForSave(session)
-                };
+                var canvasMode = (tab?.CanvasMode ?? CanvasMode).ToString();
+                var mediaKind = InferSessionMediaKind(session, tab).ToString();
+                var assets = BuildAssetRecordsForSave(session);
+                session.ReplaceAssetCatalog(assets);
 
-                session.ReplaceAssetCatalog(data.Assets);
-                File.WriteAllText(metaPath, JsonSerializer.Serialize(data, SaveJsonOptions));
-
-                // ── P2: 同步写入 SQLite ──
-                WriteSqliteWorkspace(session, data, isDeleted);
+                WriteSqliteWorkspace(session, canvasMode, mediaKind, assets, isDeleted);
             }
             catch (Exception ex)
             {
@@ -1853,44 +1757,62 @@ namespace TrueFluentPro.ViewModels
             return tab?.MediaKind ?? _mediaKind;
         }
 
-        private void WriteSqliteWorkspace(MediaSessionViewModel session, MediaGenSession data, bool isDeleted)
+        private void WriteSqliteWorkspace(MediaSessionViewModel session, string canvasMode, string mediaKind, List<MediaAssetRecord>? assets, bool isDeleted)
         {
             try
             {
                 var switches = App.Services.GetRequiredService<SqliteFeatureSwitches>();
-                if (!switches.UseSqliteWorkspaceWrite) return;
+                if (!switches.IsReady) return;
+
+                // 指纹去重：数据未变则跳过整个 SQLite 写入
+                var fp = (
+                    session.TotalMessageCount,
+                    session.TaskHistory.Count,
+                    session.TaskHistory.Count(t => t.Status == MediaGenStatus.Completed),
+                    session.TaskHistory.Count(t => t.Status is MediaGenStatus.Running or MediaGenStatus.Queued),
+                    session.TaskHistory.Count(t => t.Status is MediaGenStatus.Failed or MediaGenStatus.Cancelled),
+                    assets?.Count ?? 0,
+                    session.SessionName,
+                    canvasMode,
+                    mediaKind,
+                    isDeleted);
+                if (_sqliteFingerprints.TryGetValue(session.SessionId, out var last) && last == fp)
+                    return;
 
                 var sessionRepo = App.Services.GetRequiredService<ICreativeSessionRepository>();
                 var msgRepo = App.Services.GetRequiredService<ISessionMessageRepository>();
                 var contentRepo = App.Services.GetRequiredService<ISessionContentRepository>();
                 var paths = App.Services.GetRequiredService<IStoragePathResolver>();
 
+                var srcInfo = session.SourceInfo;
                 sessionRepo.Upsert(new SessionRecord
                 {
                     Id = session.SessionId,
                     SessionType = "media-center-v2",
                     Name = session.SessionName,
                     DirectoryPath = paths.ToRelativePath(session.SessionDirectory),
-                    CanvasMode = data.CanvasMode,
-                    MediaKind = data.MediaKind,
+                    CanvasMode = canvasMode,
+                    MediaKind = mediaKind,
                     IsDeleted = isDeleted,
-                    CreatedAt = data.CreatedAt,
+                    CreatedAt = DateTime.Now,
                     UpdatedAt = DateTime.Now,
                     MessageCount = session.TotalMessageCount,
                     TaskCount = session.TaskHistory.Count,
-                    AssetCount = data.Assets?.Count ?? 0,
+                    AssetCount = assets?.Count ?? 0,
                     LatestMessagePreview = session.AllMessages.LastOrDefault()?.Text?.Length > 60
                         ? session.AllMessages.Last().Text[..60]
                         : session.AllMessages.LastOrDefault()?.Text,
-                    SourceSessionId = data.Source?.SourceSessionId,
-                    SourceSessionName = data.Source?.SourceSessionName,
-                    SourceSessionDirectoryName = data.Source?.SourceSessionDirectoryName,
-                    SourceAssetId = data.Source?.SourceAssetId,
-                    SourceAssetKind = data.Source?.SourceAssetKind,
-                    SourceAssetFileName = data.Source?.SourceAssetFileName,
-                    SourceAssetPath = data.Source?.SourceAssetPath,
-                    SourcePreviewPath = data.Source?.SourcePreviewPath,
-                    SourceReferenceRole = data.Source?.ReferenceRole,
+                    SourceSessionId = srcInfo?.SourceSessionId,
+                    SourceSessionName = srcInfo?.SourceSessionName,
+                    SourceSessionDirectoryName = srcInfo?.SourceSessionDirectoryName,
+                    SourceAssetId = srcInfo?.SourceAssetId,
+                    SourceAssetKind = srcInfo?.SourceAssetKind,
+                    SourceAssetFileName = srcInfo?.SourceAssetFileName,
+                    SourceAssetPath = string.IsNullOrWhiteSpace(srcInfo?.SourceAssetPath) ? null
+                        : paths.ToRelativePath(srcInfo.SourceAssetPath),
+                    SourcePreviewPath = string.IsNullOrWhiteSpace(srcInfo?.SourcePreviewPath) ? null
+                        : paths.ToRelativePath(srcInfo.SourcePreviewPath),
+                    SourceReferenceRole = srcInfo?.ReferenceRole,
                 });
 
                 // 消息增量写入
@@ -1948,15 +1870,22 @@ namespace TrueFluentPro.ViewModels
                     }
                 }
 
-                // 任务全量 upsert
+                // 任务增量 upsert：只写新增或状态变化的 task
+                var knownTasks = _persistedTaskStates.GetValueOrDefault(session.SessionId);
+                var newTaskStates = new Dictionary<string, string>();
                 foreach (var t in session.TaskHistory.Where(ShouldPersistTask))
                 {
+                    var status = t.Status.ToString();
+                    newTaskStates[t.Id] = status;
+                    if (knownTasks != null && knownTasks.TryGetValue(t.Id, out var old) && old == status)
+                        continue;
+
                     contentRepo.UpsertTask(new TaskRecord
                     {
                         Id = t.Id,
                         SessionId = session.SessionId,
                         TaskType = t.Type.ToString(),
-                        Status = t.Status.ToString(),
+                        Status = status,
                         Prompt = t.Prompt ?? "",
                         Progress = t.Progress,
                         ResultFilePath = string.IsNullOrWhiteSpace(t.ResultFilePath) ? null
@@ -1973,9 +1902,10 @@ namespace TrueFluentPro.ViewModels
                         UpdatedAt = DateTime.Now,
                     });
                 }
+                _persistedTaskStates[session.SessionId] = newTaskStates;
 
                 // P5: 资产全量 upsert（路径需从 session-relative 转为 workspace-relative）
-                foreach (var asset in data.Assets ?? new List<MediaAssetRecord>())
+                foreach (var asset in assets ?? new List<MediaAssetRecord>())
                 {
                     contentRepo.UpsertAsset(new AssetRecord
                     {
@@ -2006,6 +1936,7 @@ namespace TrueFluentPro.ViewModels
                     });
                 }
 
+                _sqliteFingerprints[session.SessionId] = fp;
                 SqliteDebugLogger.LogWrite("sessions", session.SessionId, "P2-workspace-write");
             }
             catch (Exception ex)
@@ -2016,68 +1947,7 @@ namespace TrueFluentPro.ViewModels
 
         private void LoadWorkspaceMeta(MediaSessionViewModel session)
         {
-            // P4: 优先从 SQLite 加载
-            var switches = App.Services.GetRequiredService<SqliteFeatureSwitches>();
-            if (switches.UseSqliteMessagePaging)
-            {
-                if (LoadWorkspaceFromSqlite(session)) return;
-                // SQLite 加载失败则回退到 JSON
-            }
-
-            try
-            {
-                var metaPath = Path.Combine(session.SessionDirectory, "workspace.json");
-                if (!File.Exists(metaPath))
-                {
-                    return;
-                }
-
-                var json = File.ReadAllText(metaPath);
-                var data = JsonSerializer.Deserialize<MediaGenSession>(json);
-                if (data == null)
-                {
-                    return;
-                }
-
-                session.SetSourceInfo(ResolveSourceInfoForLoad(data.Source, session.SessionDirectory), requestSave: false);
-
-                var messages = (data.Messages ?? new List<MediaChatMessage>())
-                    .Select(m => new ChatMessageViewModel(new MediaChatMessage
-                    {
-                        Role = m.Role,
-                        Text = m.Text,
-                        ReasoningText = m.ReasoningText,
-                        Timestamp = m.Timestamp,
-                        GenerateSeconds = m.GenerateSeconds,
-                        DownloadSeconds = m.DownloadSeconds,
-                        SearchSummary = m.SearchSummary,
-                        Citations = m.Citations,
-                        MediaPaths = m.MediaPaths
-                            .Select(p => ResolveStoredPathForLoad(p, session.SessionDirectory))
-                            .Where(p => !string.IsNullOrWhiteSpace(p))
-                            .ToList()
-                    }))
-                    .ToList();
-
-                session.ReplaceAllMessages(messages);
-                session.TaskHistory.Clear();
-                foreach (var task in data.Tasks ?? new List<MediaGenTask>())
-                {
-                    task.ResultFilePath = ResolveStoredPathForLoad(task.ResultFilePath, session.SessionDirectory);
-                    if (!ShouldRestoreTask(task))
-                    {
-                        continue;
-                    }
-
-                    session.TaskHistory.Add(task);
-                }
-
-                session.ReplaceAssetCatalog(ResolveAssetRecordsForLoad(data.Assets, session.SessionDirectory));
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"[MediaCenterV2] Load workspace meta failed: {ex.Message}");
-            }
+            LoadWorkspaceFromSqlite(session);
         }
 
         /// <summary>P4/P5: 从 SQLite 加载工作区消息、任务、资产。成功返回 true。</summary>
@@ -2193,6 +2063,21 @@ namespace TrueFluentPro.ViewModels
                 }).ToList();
                 session.ReplaceAssetCatalog(assetList);
 
+                // 预填充指纹 + task 状态，避免 Dispose 时全量重写
+                _sqliteFingerprints[session.SessionId] = (
+                    session.TotalMessageCount,
+                    session.TaskHistory.Count,
+                    session.TaskHistory.Count(t => t.Status == MediaGenStatus.Completed),
+                    session.TaskHistory.Count(t => t.Status is MediaGenStatus.Running or MediaGenStatus.Queued),
+                    session.TaskHistory.Count(t => t.Status is MediaGenStatus.Failed or MediaGenStatus.Cancelled),
+                    assetList.Count,
+                    session.SessionName,
+                    rec.CanvasMode,
+                    rec.MediaKind,
+                    rec.IsDeleted);
+                _persistedTaskStates[session.SessionId] = session.TaskHistory
+                    .ToDictionary(t => t.Id, t => t.Status.ToString());
+
                 SqliteDebugLogger.LogRead("workspace", $"session={session.SessionId}", messageRecords.Count);
                 Debug.WriteLine($"[SQLite] P4/P5 加载工作区 {session.SessionId}: msgs={messageRecords.Count}, tasks={taskRecords.Count}, assets={assetRecords.Count}");
                 return true;
@@ -2295,73 +2180,6 @@ namespace TrueFluentPro.ViewModels
             }
 
             return results;
-        }
-
-        private static MediaSessionSourceInfo? ConvertSourceInfoForSave(MediaSessionSourceInfo? sourceInfo, string sessionDirectory)
-        {
-            if (sourceInfo == null)
-            {
-                return null;
-            }
-
-            return new MediaSessionSourceInfo
-            {
-                SourceSessionId = sourceInfo.SourceSessionId,
-                SourceSessionName = sourceInfo.SourceSessionName,
-                SourceSessionDirectoryName = sourceInfo.SourceSessionDirectoryName,
-                SourceAssetId = sourceInfo.SourceAssetId,
-                SourceAssetKind = sourceInfo.SourceAssetKind,
-                SourceAssetFileName = sourceInfo.SourceAssetFileName,
-                SourceAssetPath = ConvertPathForSave(sourceInfo.SourceAssetPath, sessionDirectory),
-                SourcePreviewPath = ConvertPathForSave(sourceInfo.SourcePreviewPath, sessionDirectory),
-                ReferenceRole = sourceInfo.ReferenceRole
-            };
-        }
-
-        private static MediaSessionSourceInfo? ResolveSourceInfoForLoad(MediaSessionSourceInfo? sourceInfo, string sessionDirectory)
-        {
-            if (sourceInfo == null)
-            {
-                return null;
-            }
-
-            return new MediaSessionSourceInfo
-            {
-                SourceSessionId = sourceInfo.SourceSessionId,
-                SourceSessionName = sourceInfo.SourceSessionName,
-                SourceSessionDirectoryName = sourceInfo.SourceSessionDirectoryName,
-                SourceAssetId = sourceInfo.SourceAssetId,
-                SourceAssetKind = sourceInfo.SourceAssetKind,
-                SourceAssetFileName = sourceInfo.SourceAssetFileName,
-                SourceAssetPath = ResolveStoredPathForLoad(sourceInfo.SourceAssetPath, sessionDirectory),
-                SourcePreviewPath = ResolveStoredPathForLoad(sourceInfo.SourcePreviewPath, sessionDirectory),
-                ReferenceRole = sourceInfo.ReferenceRole
-            };
-        }
-
-        private static List<MediaAssetRecord> ResolveAssetRecordsForLoad(IEnumerable<MediaAssetRecord>? assets, string sessionDirectory)
-        {
-            return (assets ?? Array.Empty<MediaAssetRecord>())
-                .Select(asset => new MediaAssetRecord
-                {
-                    AssetId = asset.AssetId,
-                    GroupId = asset.GroupId,
-                    Kind = asset.Kind,
-                    Workflow = asset.Workflow,
-                    FileName = asset.FileName,
-                    FilePath = ResolveStoredPathForLoad(asset.FilePath, sessionDirectory),
-                    PreviewPath = ResolveStoredPathForLoad(asset.PreviewPath, sessionDirectory),
-                    PromptText = asset.PromptText,
-                    CreatedAt = asset.CreatedAt,
-                    ModifiedAt = asset.ModifiedAt,
-                    DerivedFromSessionId = asset.DerivedFromSessionId,
-                    DerivedFromSessionName = asset.DerivedFromSessionName,
-                    DerivedFromAssetId = asset.DerivedFromAssetId,
-                    DerivedFromAssetFileName = asset.DerivedFromAssetFileName,
-                    DerivedFromAssetKind = asset.DerivedFromAssetKind,
-                    DerivedFromReferenceRole = asset.DerivedFromReferenceRole
-                })
-                .ToList();
         }
 
         private static void ApplySessionLineage(MediaSessionViewModel session, MediaCreatorResultGroup group)
@@ -2592,8 +2410,7 @@ namespace TrueFluentPro.ViewModels
 
         private void OnWorkspaceTabStateChanged(MediaWorkspaceTabViewModel tab)
         {
-            SaveWorkspaceMeta(tab.Session);
-
+            // 不在 UI 状态通知中触发持久化 —— _onRequestSave 和 Dispose 已覆盖所有数据变更
             if (!ReferenceEquals(tab, SelectedWorkspaceTab))
             {
                 return;

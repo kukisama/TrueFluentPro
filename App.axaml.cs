@@ -4,6 +4,7 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Microsoft.Extensions.DependencyInjection;
 using System;
+using System.Threading.Tasks;
 using TrueFluentPro.Services.EndpointProfiles;
 using TrueFluentPro.Services;
 using TrueFluentPro.Services.EndpointTesting;
@@ -85,8 +86,8 @@ public partial class App : Application
             desktop.MainWindow = mainWindow;
         }
 
-        // --- SQLite 启动初始化 ---
-        InitializeSqliteStorage();
+        // --- SQLite 启动初始化（后台线程，避免卡首页） ---
+        Task.Run(InitializeSqliteStorage);
 
         base.OnFrameworkInitializationCompleted();
     }
@@ -103,15 +104,9 @@ public partial class App : Application
             var importService = Services.GetRequiredService<ILegacyImportService>();
             importService.ImportAll();
 
-            // 3. 启用全部功能开关 —— 进入 SQLite 主路径
+            // 3. 标记 SQLite 就绪 —— 所有读写进入 SQLite 主路径
             var switches = Services.GetRequiredService<SqliteFeatureSwitches>();
-            switches.UseSqliteSessionList = true;
-            switches.UseSqliteSessionWrite = true;
-            switches.UseSqliteMessagePaging = true;
-            switches.UseSqliteAssetCatalog = true;
-            switches.UseSqliteWorkspaceWrite = true;
-            switches.UseSqliteAudioIndexWrite = true;
-            switches.EnableLegacyImport = true;
+            switches.IsReady = true;
         }
         catch (Exception ex)
         {
