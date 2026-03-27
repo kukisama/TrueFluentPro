@@ -7,6 +7,7 @@ using System;
 using TrueFluentPro.Services.EndpointProfiles;
 using TrueFluentPro.Services;
 using TrueFluentPro.Services.EndpointTesting;
+using TrueFluentPro.Services.Storage;
 using TrueFluentPro.ViewModels;
 
 namespace TrueFluentPro;
@@ -25,6 +26,16 @@ public partial class App : Application
         CrashLogger.HookAvaloniaUiThread();
 
         var services = new ServiceCollection();
+
+        // --- SQLite 存储层 ---
+        services.AddSingleton<SqliteFeatureSwitches>();
+        services.AddSingleton<ISqliteDbService, SqliteDbService>();
+        services.AddSingleton<IStoragePathResolver, StoragePathResolver>();
+        services.AddSingleton<ICreativeSessionRepository, CreativeSessionRepository>();
+        services.AddSingleton<ISessionMessageRepository, SessionMessageRepository>();
+        services.AddSingleton<ISessionContentRepository, SessionContentRepository>();
+        services.AddSingleton<IAudioLibraryRepository, AudioLibraryRepository>();
+        services.AddSingleton<ITranslationHistoryRepository, TranslationHistoryRepository>();
 
         // --- 基础服务 ---
         services.AddSingleton<ConfigurationService>();
