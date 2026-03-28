@@ -88,32 +88,6 @@ namespace TrueFluentPro.ViewModels
         public List<MediaAssetRecord> AssetCatalog { get; } = new();
 
         /// <summary>
-        /// 记录该会话上次“非底部”滚动位置；为空表示采用默认到底部行为。
-        /// </summary>
-        public double? LastNonBottomScrollOffsetY { get; set; }
-
-        /// <summary>
-        /// 记录上次视口锚点对应的消息索引（仅内存）。
-        /// </summary>
-        public int? LastScrollAnchorMessageIndex { get; set; }
-
-        /// <summary>
-        /// 记录上次滚动比例（0~1，仅内存）。
-        /// </summary>
-        public double? LastScrollAnchorRatio { get; set; }
-
-        /// <summary>
-        /// 记录保存滚动位置时的可滚动最大值（Extent-Viewport，仅内存）。
-        /// 用于恢复时判断是否需要从“绝对像素”切换为“比例恢复”。
-        /// </summary>
-        public double? LastScrollSavedMaxY { get; set; }
-
-        /// <summary>
-        /// 记录锚点消息在视口中的 Y 偏移（像素，仅内存）。
-        /// </summary>
-        public double? LastScrollAnchorViewportOffsetY { get; set; }
-
-        /// <summary>
         /// 是否已从 session.json 加载完整消息与任务内容。
         /// </summary>
         public bool IsContentLoaded { get; set; }
@@ -141,6 +115,22 @@ namespace TrueFluentPro.ViewModels
         public IReadOnlyList<ChatMessageViewModel> AllMessages => _allMessages;
 
         public int TotalMessageCount => _allMessages.Count;
+
+        /// <summary>首次加载到 Messages 的最大条数（约 1.5~2 屏）。后续向上滚动时逐步补充。</summary>
+        public const int InitialVisibleCount = 30;
+        /// <summary>每次向上滚动加载的条数。</summary>
+        public const int LoadMoreBatchSize = 20;
+
+        /// <summary>_allMessages 中已加载到 Messages 的起始索引（含）。</summary>
+        private int _visibleStartIndex;
+
+        /// <summary>是否还有更早的消息可以加载到 Messages。</summary>
+        private bool _hasMoreMessages;
+        public bool HasMoreMessages
+        {
+            get => _hasMoreMessages;
+            private set => SetProperty(ref _hasMoreMessages, value);
+        }
 
         // --- 进行中的任务 ---
         public ObservableCollection<MediaGenTask> RunningTasks { get; } = new();
@@ -708,12 +698,40 @@ namespace TrueFluentPro.ViewModels
 
             _allMessages.AddRange(snapshot);
 
-            for (var i = 0; i < _allMessages.Count; i++)
+            // 只加载尾部 InitialVisibleCount 条到 UI
+            _visibleStartIndex = Math.Max(0, _allMessages.Count - InitialVisibleCount);
+            for (var i = _visibleStartIndex; i < _allMessages.Count; i++)
             {
                 Messages.Add(_allMessages[i]);
             }
 
+            HasMoreMessages = _visibleStartIndex > 0;
             UpdateMessageWindowState();
+        }
+
+        /// <summary>
+        /// 向上滚动时调用：从 _allMessages 前端补充更多消息到 Messages 头部。
+        /// 返回实际加载的条数（0 表示没有更多）。
+        /// </summary>
+        public int LoadOlderMessages(int count = LoadMoreBatchSize)
+        {
+            if (_visibleStartIndex <= 0)
+            {
+                HasMoreMessages = false;
+                return 0;
+            }
+
+            var newStart = Math.Max(0, _visibleStartIndex - count);
+            var loaded = 0;
+            for (var i = _visibleStartIndex - 1; i >= newStart; i--)
+            {
+                Messages.Insert(0, _allMessages[i]);
+                loaded++;
+            }
+
+            _visibleStartIndex = newStart;
+            HasMoreMessages = _visibleStartIndex > 0;
+            return loaded;
         }
 
         public void SetSourceInfo(MediaSessionSourceInfo? sourceInfo, bool requestSave = true)
@@ -746,12 +764,34 @@ namespace TrueFluentPro.ViewModels
             UpdateMessageWindowState();
         }
 
+        /// <summary>将全部剩余消息加载到 Messages（用于需要全量搜索等场景）。</summary>
+        public void EnsureAllMessagesVisible()
+        {
+            if (_visibleStartIndex <= 0) return;
+            for (var i = _visibleStartIndex - 1; i >= 0; i--)
+                Messages.Insert(0, _allMessages[i]);
+            _visibleStartIndex = 0;
+            HasMoreMessages = false;
+        }
+
         public void ClearLoadedContent()
         {
             Messages.Clear();
             _allMessages.Clear();
             TaskHistory.Clear();
             UpdateMessageWindowState();
+        }
+
+        public void UnloadLoadedContent()
+        {
+            if (!IsContentLoaded)
+            {
+                return;
+            }
+
+            ClearLoadedContent();
+            ReplaceAssetCatalog(null);
+            IsContentLoaded = false;
         }
 
         private bool RemoveMessageInternal(ChatMessageViewModel message)
@@ -3056,6 +3096,12 @@ namespace TrueFluentPro.ViewModels
             }
         }
         public bool HasSearchSummary => !string.IsNullOrEmpty(_searchSummary);
+
+        /// <summary>
+        /// 渲染后的真实高度缓存。VirtualizingStackPanel 回收后复用时
+        /// 立即恢复此高度，避免面板用平均值估算导致 Extent 震荡。
+        /// </summary>
+        public double CachedRenderHeight { get; set; } = double.NaN;
 
         public string TimestampText => Timestamp.ToString("yyyy-MM-dd HH:mm:ss");
         public string TimeText => Timestamp.ToString("HH:mm:ss");

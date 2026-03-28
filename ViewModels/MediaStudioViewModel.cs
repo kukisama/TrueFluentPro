@@ -49,6 +49,8 @@ namespace TrueFluentPro.ViewModels
         // SQLite 写入去重：指纹 + 任务状态追踪
         private readonly Dictionary<string, (int MsgCount, int TaskCount, int Completed, int Active, int Terminal, int AssetCount, string? Name)> _sqliteFingerprints = new();
         private readonly Dictionary<string, Dictionary<string, string>> _persistedTaskStates = new();
+        private readonly Dictionary<string, long> _sessionAccessTicks = new();
+        private long _sessionAccessCounter;
 
         // --- 会话管理 ---
         public ObservableCollection<MediaSessionViewModel> Sessions { get; } = new();
@@ -71,8 +73,10 @@ namespace TrueFluentPro.ViewModels
 
                     if (value != null)
                     {
+                        MarkSessionAccessed(value);
                         value.ActivateOnFirstSelection();
                         EnsureSessionLoaded(value);
+                        EnforceLoadedSessionLimit(value);
                     }
                 }
             }
@@ -443,6 +447,7 @@ namespace TrueFluentPro.ViewModels
 
             var idx = Sessions.IndexOf(session);
             Sessions.Remove(session);
+            _sessionAccessTicks.Remove(session.SessionId);
 
             if (Sessions.Count > 0)
                 CurrentSession = Sessions[Math.Min(idx, Sessions.Count - 1)];
@@ -609,6 +614,58 @@ namespace TrueFluentPro.ViewModels
             LoadSessionFromSqlite(session);
         }
 
+        private void MarkSessionAccessed(MediaSessionViewModel session)
+        {
+            _sessionAccessTicks[session.SessionId] = ++_sessionAccessCounter;
+        }
+
+        private void EnforceLoadedSessionLimit(MediaSessionViewModel keepSession)
+        {
+            var maxLoaded = Math.Clamp(_genConfig.MaxLoadedSessionsInMemory, 1, 64);
+            var loadedSessions = Sessions
+                .Where(s => s.IsContentLoaded)
+                .ToList();
+
+            if (loadedSessions.Count <= maxLoaded)
+            {
+                return;
+            }
+
+            var evictionCandidates = loadedSessions
+                .Where(s => !ReferenceEquals(s, keepSession))
+                .Where(CanUnloadSession)
+                .OrderBy(s => _sessionAccessTicks.GetValueOrDefault(s.SessionId, long.MinValue))
+                .ToList();
+
+            foreach (var candidate in evictionCandidates)
+            {
+                if (loadedSessions.Count <= maxLoaded)
+                {
+                    break;
+                }
+
+                SaveSessionMeta(candidate);
+                candidate.UnloadLoadedContent();
+                loadedSessions.Remove(candidate);
+                Debug.WriteLine($"[SessionCache] 卸载普通会话缓存 {candidate.SessionId} ({candidate.SessionName})");
+            }
+        }
+
+        private static bool CanUnloadSession(MediaSessionViewModel session)
+        {
+            if (!session.IsContentLoaded)
+            {
+                return false;
+            }
+
+            if (session.RunningTaskCount > 0 || session.IsGenerating || session.IsChatStreaming)
+            {
+                return false;
+            }
+
+            return true;
+        }
+
         public void SaveSessionMeta(MediaSessionViewModel session)
         {
             if (!session.IsContentLoaded) return;
@@ -661,8 +718,9 @@ namespace TrueFluentPro.ViewModels
                 var contentRepo = App.Services.GetRequiredService<ISessionContentRepository>();
                 var paths = App.Services.GetRequiredService<IStoragePathResolver>();
 
-                // P4: 只加载最近 40 条消息（懒加载首屏）
-                var messageRecords = msgRepo.GetLatest(session.SessionId, limit: 40);
+                // 全量加载消息（配合虚拟化，仅可见区域实际渲染）
+                var totalCount = msgRepo.GetCount(session.SessionId);
+                var messageRecords = msgRepo.GetLatest(session.SessionId, limit: Math.Max(totalCount, 1));
                 var loadedMessages = new List<ChatMessageViewModel>();
 
                 foreach (var rec in messageRecords)

@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Collections.Specialized;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -29,11 +28,16 @@ namespace TrueFluentPro.Views
     {
         private MediaStudioViewModel? _viewModel;
         private MediaSessionViewModel? _attachedSession;
-        private ScrollViewer? _chatScrollViewer;
         private ListBox? _sessionListBox;
-        private bool _isUserNearBottom = true;
-        private const double AutoScrollThreshold = 80;
-        private const double QuickNavVisibilityThreshold = 200;
+
+        // ── 滚动诊断 ──
+        private ScrollViewer? _diagScrollViewer;
+        private double _diagLastExtentH;
+        private int _diagScrollEventCount;
+        private DateTime _diagLastLogTime = DateTime.MinValue;
+
+        // ── 懒加载防重入 ──
+        private bool _isLoadingOlderMessages;
 
         private string? _capturedSelection;
         private SelectableTextBlock? _capturedStb;
@@ -41,6 +45,9 @@ namespace TrueFluentPro.Views
         private int _capturedSelEnd;
         private TrueFluentPro.Controls.Markdown.MarkdownRenderer? _capturedRenderer;
         private bool _initialized;
+
+        // ── 高度缓存：防 VirtualizingStackPanel 估算误差 ──
+        private ListBox? _messageListBox;
 
         public MediaStudioView()
         {
@@ -68,6 +75,16 @@ namespace TrueFluentPro.Views
             DataContext = _viewModel;
 
             _sessionListBox = this.FindControl<ListBox>("SessionListBox");
+
+            // 配置会话视图缓存：用 SessionId 做 key，缓存已渲染的视觉树
+            var sessionContentHost = this.FindControl<Controls.CachedContentControl>("SessionContentHost");
+            if (sessionContentHost != null)
+            {
+                sessionContentHost.KeySelector = content =>
+                    (content as MediaSessionViewModel)?.SessionId;
+                sessionContentHost.MaxCachedViews = Math.Clamp(
+                    genConfig?.MaxLoadedSessionsInMemory ?? 8, 1, 64);
+            }
 
             AttachSession(_viewModel.CurrentSession);
 
@@ -117,21 +134,72 @@ namespace TrueFluentPro.Views
 
         public void Cleanup()
         {
-            if (_attachedSession != null)
-                _attachedSession.Messages.CollectionChanged -= CurrentSessionMessages_CollectionChanged;
-
             _viewModel?.Dispose();
         }
 
-        private void ScrollToBottom()
+        /// <summary>
+        /// 通过视觉树查找 chat-message-list ListBox（在 DataTemplate 内，FindControl 无法获取）。
+        /// </summary>
+        private ListBox? FindMessageListBox()
         {
-            _chatScrollViewer?.ScrollToEnd();
+            return this.GetVisualDescendants()
+                .OfType<ListBox>()
+                .FirstOrDefault(lb => lb.Classes.Contains("chat-message-list"));
         }
 
-        private void ScrollToTop()
+        /// <summary>
+        /// 通过视觉树查找 MessageListBox 内部的 ScrollViewer（ListBox 在 DataTemplate 内，FindControl 无法获取）。
+        /// </summary>
+        private ScrollViewer? FindChatScrollViewer()
         {
-            if (_chatScrollViewer == null) return;
-            _chatScrollViewer.Offset = new Vector(_chatScrollViewer.Offset.X, 0);
+            return FindMessageListBox()
+                ?.GetVisualDescendants()
+                .OfType<ScrollViewer>()
+                .FirstOrDefault();
+        }
+
+        /// <summary>
+        /// 容器回收复用时：恢复缓存高度，防止 VirtualizingStackPanel 用平均值估算。
+        /// </summary>
+        private void MessageListBox_ContainerPrepared(object? sender, ContainerPreparedEventArgs e)
+        {
+            var container = e.Container;
+            if (container.DataContext is ChatMessageViewModel msg && !double.IsNaN(msg.CachedRenderHeight))
+            {
+                // 立即恢复缓存高度，面板 Measure 时就能用到精确值
+                container.Height = msg.CachedRenderHeight;
+            }
+            container.SizeChanged += MessageContainer_SizeChanged;
+        }
+
+        /// <summary>
+        /// 容器被清理时：取消 SizeChanged 订阅。
+        /// </summary>
+        private void MessageListBox_ContainerClearing(object? sender, ContainerClearingEventArgs e)
+        {
+            e.Container.SizeChanged -= MessageContainer_SizeChanged;
+            // 清除强制高度，让下一次复用自然布局
+            e.Container.Height = double.NaN;
+        }
+
+        /// <summary>
+        /// 容器尺寸变化时：缓存高度到 ViewModel，并清除强制高度让后续布局自然。
+        /// </summary>
+        private void MessageContainer_SizeChanged(object? sender, SizeChangedEventArgs e)
+        {
+            if (sender is Control container && container.DataContext is ChatMessageViewModel msg)
+            {
+                var newH = e.NewSize.Height;
+                if (newH > 0 && Math.Abs(newH - msg.CachedRenderHeight) > 1)
+                {
+                    msg.CachedRenderHeight = newH;
+                }
+                // 首次渲染后清除强制高度，使编辑/折叠等操作能自然改变高度
+                if (!double.IsNaN(container.Height))
+                {
+                    container.Height = double.NaN;
+                }
+            }
         }
 
         private void AttachSession(MediaSessionViewModel? session)
@@ -139,82 +207,144 @@ namespace TrueFluentPro.Views
             if (ReferenceEquals(_attachedSession, session))
                 return;
 
-            if (_attachedSession != null)
-                _attachedSession.Messages.CollectionChanged -= CurrentSessionMessages_CollectionChanged;
+            // 解除旧诊断订阅
+            if (_diagScrollViewer != null)
+            {
+                _diagScrollViewer.ScrollChanged -= DiagScrollViewer_ScrollChanged;
+                _diagScrollViewer = null;
+            }
 
             _attachedSession = session;
-            _isUserNearBottom = true;
 
-            if (_attachedSession != null)
+            if (_attachedSession == null)
+                return;
+
+            // 判断是否缓存命中（CachedContentControl 已保留滚动位置）
+            var sessionContentHost = this.FindControl<Controls.CachedContentControl>("SessionContentHost");
+            var isCacheHit = sessionContentHost?.LastSwitchWasCacheHit ?? false;
+
+            // 延迟到视觉树就绪后订阅
+            Dispatcher.UIThread.Post(() =>
             {
-                _attachedSession.Messages.CollectionChanged += CurrentSessionMessages_CollectionChanged;
-                Dispatcher.UIThread.Post(ScrollToBottom, DispatcherPriority.Background);
-            }
+                // 订阅 ListBox 容器生命周期事件，实现高度缓存
+                var newListBox = FindMessageListBox();
+                if (newListBox != null && !ReferenceEquals(newListBox, _messageListBox))
+                {
+                    if (_messageListBox != null)
+                    {
+                        _messageListBox.ContainerPrepared -= MessageListBox_ContainerPrepared;
+                        _messageListBox.ContainerClearing -= MessageListBox_ContainerClearing;
+                    }
+                    _messageListBox = newListBox;
+                    _messageListBox.ContainerPrepared += MessageListBox_ContainerPrepared;
+                    _messageListBox.ContainerClearing += MessageListBox_ContainerClearing;
+                }
+
+                _diagScrollViewer = FindChatScrollViewer();
+                if (_diagScrollViewer != null)
+                {
+                    _diagScrollEventCount = 0;
+                    _diagLastExtentH = _diagScrollViewer.Extent.Height;
+                    _diagScrollViewer.ScrollChanged += DiagScrollViewer_ScrollChanged;
+                }
+
+                // 缓存未命中（新建视觉树）→ 首次打开定位到最底部
+                if (!isCacheHit)
+                {
+                    ScrollToBottomReliable();
+                }
+            }, DispatcherPriority.Loaded);
         }
 
-        private void CurrentSessionMessages_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+        /// <summary>可靠滚到底：双轮 ScrollToEnd，覆盖 StackPanel 布局延迟。</summary>
+        private void ScrollToBottomReliable()
         {
-            if (_chatScrollViewer == null) return;
+            var sv = FindChatScrollViewer();
+            if (sv == null) return;
 
-            if ((e.Action == NotifyCollectionChangedAction.Add || e.Action == NotifyCollectionChangedAction.Reset)
-                && _isUserNearBottom)
+            var lb = FindMessageListBox();
+            if (lb != null && lb.ItemCount > 0)
+                lb.ScrollIntoView(lb.ItemCount - 1);
+            sv.ScrollToEnd();
+
+            Dispatcher.UIThread.Post(() =>
             {
-                ScrollToBottom();
-            }
+                if (lb != null && lb.ItemCount > 0)
+                    lb.ScrollIntoView(lb.ItemCount - 1);
+                sv.ScrollToEnd();
+            }, DispatcherPriority.Render);
         }
 
-        private void ChatScrollViewer_ScrollChanged(object? sender, ScrollChangedEventArgs e)
+        private void DiagScrollViewer_ScrollChanged(object? sender, ScrollChangedEventArgs e)
         {
-            if (sender is not ScrollViewer viewer) return;
+            if (_diagScrollViewer == null || _attachedSession == null) return;
 
-            _chatScrollViewer = viewer;
+            var offsetY = _diagScrollViewer.Offset.Y;
+            var extentH = _diagScrollViewer.Extent.Height;
+            var viewportH = _diagScrollViewer.Viewport.Height;
 
-            // 内容高度增长（流式输出、展开 Reasoning/Citation 等）时，
-            // 若用户此前在底部附近，自动跟随滚到底部
-            if (e.ExtentDelta.Y > 0 && _isUserNearBottom)
+            // ── 向上滚动接近顶部 → 加载更多旧消息 ──
+            if (offsetY < viewportH * 0.5 && _attachedSession.HasMoreMessages && !_isLoadingOlderMessages)
             {
-                // 直接同步滚到底部，避免 Post 延迟导致状态不一致
-                viewer.ScrollToEnd();
-                return;  // ScrollToEnd 会触发新的 ScrollChanged，在那里更新 _isUserNearBottom
+                _isLoadingOlderMessages = true;
+
+                // 记住当前锚点：最顶部可见项及其相对偏移
+                var oldExtent = extentH;
+
+                var loaded = _attachedSession.LoadOlderMessages();
+                if (loaded > 0)
+                {
+                    // 布局后补偿滚动位置，使用户看到的内容不跳动
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        if (_diagScrollViewer != null)
+                        {
+                            var newExtent = _diagScrollViewer.Extent.Height;
+                            var delta = newExtent - oldExtent;
+                            if (delta > 0)
+                            {
+                                _diagScrollViewer.Offset = new Vector(
+                                    _diagScrollViewer.Offset.X,
+                                    _diagScrollViewer.Offset.Y + delta);
+                            }
+                        }
+                        _isLoadingOlderMessages = false;
+                    }, DispatcherPriority.Render);
+                }
+                else
+                {
+                    _isLoadingOlderMessages = false;
+                }
             }
 
-            _isUserNearBottom = IsNearBottom(viewer);
-            UpdateQuickNavButtonsVisibility();
-        }
-
-        private static bool IsNearBottom(ScrollViewer scrollViewer)
-        {
-            var remaining = scrollViewer.Extent.Height - (scrollViewer.Offset.Y + scrollViewer.Viewport.Height);
-            return remaining <= AutoScrollThreshold;
-        }
-
-        private void UpdateQuickNavButtonsVisibility()
-        {
-            if (_chatScrollViewer == null) return;
-
-            var topVisible = _chatScrollViewer.Offset.Y > QuickNavVisibilityThreshold;
-            var distanceToBottom = _chatScrollViewer.Extent.Height - (_chatScrollViewer.Offset.Y + _chatScrollViewer.Viewport.Height);
-            var bottomVisible = distanceToBottom > QuickNavVisibilityThreshold;
-
-            var topButton = _chatScrollViewer.GetVisualDescendants().OfType<Button>().FirstOrDefault(b => b.Name == "ScrollToTopButton");
-            var bottomButton = _chatScrollViewer.GetVisualDescendants().OfType<Button>().FirstOrDefault(b => b.Name == "ScrollToBottomButton");
-
-            if (topButton != null)
-                topButton.IsVisible = topVisible;
-
-            if (bottomButton != null)
-                bottomButton.IsVisible = bottomVisible;
+            // ── 诊断日志（降频）──
+            _diagScrollEventCount++;
+            var now = DateTime.UtcNow;
+            var extentDelta = extentH - _diagLastExtentH;
+            if ((now - _diagLastLogTime).TotalMilliseconds >= 200 || Math.Abs(extentDelta) > 1)
+            {
+                Helpers.ScrollDiagLog.Log($"[ScrollDiag] #{_diagScrollEventCount} OffsetY={offsetY:F0} Extent={extentH:F0} ExtentΔ={extentDelta:+0.0;-0.0;0} Viewport={viewportH:F0} Ratio={offsetY / Math.Max(1, extentH - viewportH):P0}");
+                _diagLastLogTime = now;
+            }
+            _diagLastExtentH = extentH;
         }
 
         private void ScrollToTop_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
         {
-            ScrollToTop();
+            var sv = FindChatScrollViewer();
+            if (sv != null)
+                sv.Offset = new Vector(sv.Offset.X, 0);
             e.Handled = true;
         }
 
         private void ScrollToBottom_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
         {
-            ScrollToBottom();
+            var sv = FindChatScrollViewer();
+            sv?.ScrollToEnd();
+            Dispatcher.UIThread.Post(() =>
+            {
+                sv?.ScrollToEnd();
+            }, DispatcherPriority.Render);
             e.Handled = true;
         }
 

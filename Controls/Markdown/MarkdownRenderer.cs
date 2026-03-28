@@ -197,6 +197,8 @@ public class MarkdownRenderer : StackPanel
             return;
         }
 
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+
         md = InjectCitationLinks(md);
         var doc = Markdig.Markdown.Parse(md, s_pipeline);
 
@@ -219,6 +221,10 @@ public class MarkdownRenderer : StackPanel
             Children.Add(RenderBlock(doc[i]));
             _blockSources.Add(newSources[i]);
         }
+
+        sw.Stop();
+        if (sw.ElapsedMilliseconds > 5)
+            TrueFluentPro.Helpers.ScrollDiagLog.Log($"[MdRender] {sw.ElapsedMilliseconds}ms blocks={doc.Count} new={doc.Count - match} len={md.Length}");
     }
 
     private static string ExtractSource(string md, Block block)

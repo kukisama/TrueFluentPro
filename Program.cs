@@ -12,6 +12,7 @@ class Program
     public static void Main(string[] args)
     {
         CrashLogger.Init();
+        Helpers.ScrollDiagLog.Reset();
         try
         {
             Environment.ExitCode = 0;

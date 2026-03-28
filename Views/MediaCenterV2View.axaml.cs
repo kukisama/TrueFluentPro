@@ -46,6 +46,11 @@ namespace TrueFluentPro.Views
                 InputElement.KeyDownEvent,
                 PromptTextBox_KeyDown,
                 RoutingStrategies.Tunnel);
+
+            AddHandler(
+                InputElement.KeyDownEvent,
+                ArrowKeys_KeyDown,
+                RoutingStrategies.Tunnel);
         }
 
         public void UpdateConfiguration(AiConfig aiConfig, MediaGenConfig genConfig, List<AiEndpoint> endpoints)
@@ -76,6 +81,39 @@ namespace TrueFluentPro.Views
                     _viewModel.SubmitPromptCommand.Execute(null);
                     e.Handled = true;
                 }
+            }
+        }
+
+        private void ArrowKeys_KeyDown(object? sender, KeyEventArgs e)
+        {
+            // 输入框内不拦截方向键
+            if (e.Source is TextBox) return;
+            if (_viewModel == null) return;
+
+            switch (e.Key)
+            {
+                case Key.Left:
+                    if (_viewModel.CanSelectPreviousAsset)
+                    {
+                        _viewModel.SelectPreviousAssetCommand.Execute(null);
+                        e.Handled = true;
+                    }
+                    break;
+                case Key.Right:
+                    if (_viewModel.CanSelectNextAsset)
+                    {
+                        _viewModel.SelectNextAssetCommand.Execute(null);
+                        e.Handled = true;
+                    }
+                    break;
+                case Key.Up:
+                    _viewModel.SelectAdjacentWorkspaceTab(-1);
+                    e.Handled = true;
+                    break;
+                case Key.Down:
+                    _viewModel.SelectAdjacentWorkspaceTab(1);
+                    e.Handled = true;
+                    break;
             }
         }
 

@@ -1490,6 +1490,19 @@ namespace TrueFluentPro.ViewModels
             SelectAsset(SelectedGroup.Items[nextIndex]);
         }
 
+        public void SelectAdjacentWorkspaceTab(int delta)
+        {
+            if (SelectedWorkspaceTab == null || WorkspaceTabs.Count == 0) return;
+
+            var index = WorkspaceTabs.IndexOf(SelectedWorkspaceTab);
+            if (index < 0) return;
+
+            var next = index + delta;
+            if (next < 0 || next >= WorkspaceTabs.Count) return;
+
+            SelectWorkspaceTab(WorkspaceTabs[next]);
+        }
+
         private int GetSelectedGroupIndex()
         {
             if (SelectedGroup == null || SelectedAsset == null)
@@ -1980,8 +1993,8 @@ namespace TrueFluentPro.ViewModels
                     }, requestSave: false);
                 }
 
-                // P4: 懒加载最近 40 条消息
-                var messageRecords = msgRepo.GetLatest(session.SessionId, limit: 40);
+                // P4: 懒加载最近 15 条消息
+                var messageRecords = msgRepo.GetLatest(session.SessionId, limit: 15);
                 var messages = new List<ChatMessageViewModel>();
                 foreach (var mr in messageRecords)
                 {
@@ -2040,8 +2053,8 @@ namespace TrueFluentPro.ViewModels
                     session.TaskHistory.Add(task);
                 }
 
-                // P5: 从资产表加载资产目录
-                var assetRecords = contentRepo.GetSessionAssets(session.SessionId, limit: 200);
+                // P5: 从资产表加载资产目录（仅用于指纹去重，显示由 Messages 驱动）
+                var assetRecords = contentRepo.GetSessionAssets(session.SessionId, limit: 30);
                 var assetList = assetRecords.Select(a => new MediaAssetRecord
                 {
                     AssetId = a.AssetId,

@@ -124,6 +124,35 @@
             <Setter Property="BorderBrush" Value="{DynamicResource AccentBlueBrush}"/>
             <Setter Property="Foreground" Value="{DynamicResource AccentBlueBrush}"/>
         </Style>
+        <Style Selector="ListBox.chat-message-list">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="8"/>
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto"/>
+            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
+        </Style>
+        <Style Selector="ListBox.chat-message-list ListBoxItem">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Margin" Value="0"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="Focusable" Value="False"/>
+        </Style>
+        <Style Selector="ListBox.chat-message-list ListBoxItem:selected">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+        </Style>
+        <Style Selector="ListBox.chat-message-list ListBoxItem:pointerover">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+        </Style>
+        <Style Selector="ListBox.chat-message-list ListBoxItem:selected:pointerover">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+        </Style>
     </UserControl.Styles>
 
         <Grid RowDefinitions="*,Auto"
@@ -212,9 +241,11 @@
             <!-- 右侧内容区 -->
             <Grid Grid.Column="2" RowDefinitions="*,Auto"
                             x:Name="SessionViewsHost">
-                            <ContentControl Content="{Binding CurrentSession}"
+                            <controls:CachedContentControl x:Name="SessionContentHost"
+                                            Content="{Binding CurrentSession}"
+                                            MaxCachedViews="8"
                                             IsVisible="{Binding HasCurrentSession}">
-                                <ContentControl.ContentTemplate>
+                                <controls:CachedContentControl.ContentTemplate>
                                     <DataTemplate>
                                         <Grid RowDefinitions="*,Auto"
                                               x:Name="SessionContentRoot">
@@ -246,18 +277,17 @@
 
                         <Grid Grid.Row="1"
                               DragDrop.AllowDrop="True">
-                        <ScrollViewer x:Name="SessionScrollViewer"
-                                      VerticalScrollBarVisibility="Auto"
-                                      HorizontalScrollBarVisibility="Disabled"
-                                      Padding="8"
-                                      ScrollChanged="ChatScrollViewer_ScrollChanged">
-                            <ItemsControl ItemsSource="{Binding Messages}">
-                                <ItemsControl.ItemsPanel>
+                        <ListBox x:Name="MessageListBox"
+                                 Classes="chat-message-list"
+                                 ItemsSource="{Binding Messages}">
+                                <!-- StackPanel 全量渲染，每项高度精确，无 Extent 震荡。
+                                     切换性能靠 CachedContentControl 缓存已渲染视觉树。 -->
+                                <ListBox.ItemsPanel>
                                     <ItemsPanelTemplate>
                                         <StackPanel/>
                                     </ItemsPanelTemplate>
-                                </ItemsControl.ItemsPanel>
-                                <ItemsControl.ItemTemplate>
+                                </ListBox.ItemsPanel>
+                                <ListBox.ItemTemplate>
                                     <DataTemplate>
                                         <Panel>
                                             <!-- 用户消息 -->
@@ -280,18 +310,18 @@
                                                         <StackPanel Orientation="Horizontal" Spacing="6"
                                                                     HorizontalAlignment="Right">
                                                             <Button ToolTip.Tip="取消编辑" Padding="6,3" FontSize="11"
-                                                                    Command="{Binding $parent[ItemsControl].DataContext.CancelEditCommand}"
+                                                                    Command="{Binding $parent[ListBox].DataContext.CancelEditCommand}"
                                                                     CommandParameter="{Binding}">
                                                                 <icons:Icon Value="fa-solid fa-xmark" FontSize="12"/>
                                                             </Button>
                                                             <Button ToolTip.Tip="仅保存修改" Padding="6,3" FontSize="11"
-                                                                    Command="{Binding $parent[ItemsControl].DataContext.SaveEditCommand}"
+                                                                    Command="{Binding $parent[ListBox].DataContext.SaveEditCommand}"
                                                                     CommandParameter="{Binding}">
                                                                 <icons:Icon Value="fa-regular fa-floppy-disk" FontSize="12"/>
                                                             </Button>
                                                             <Button ToolTip.Tip="保存并重新生成回复" Padding="8,3" FontSize="11"
                                                                     Background="{DynamicResource AccentBlueBrush}" Foreground="White"
-                                                                    Command="{Binding $parent[ItemsControl].DataContext.SendEditCommand}"
+                                                                    Command="{Binding $parent[ListBox].DataContext.SendEditCommand}"
                                                                     CommandParameter="{Binding}">
                                                                 <StackPanel Orientation="Horizontal" Spacing="4">
                                                                     <icons:Icon Value="fa-solid fa-paper-plane" FontSize="12"/>
@@ -308,7 +338,7 @@
                                                         <!-- 编辑按钮 -->
                                                         <Button ToolTip.Tip="编辑" FontSize="10" Padding="4,2"
                                                                 Opacity="0.6" Cursor="Hand"
-                                                                Command="{Binding $parent[ItemsControl].DataContext.EditMessageCommand}"
+                                                                Command="{Binding $parent[ListBox].DataContext.EditMessageCommand}"
                                                                 CommandParameter="{Binding}">
                                                             <icons:Icon Value="fa-regular fa-pen-to-square" FontSize="11"/>
                                                         </Button>
@@ -427,26 +457,26 @@
                                                                 IsVisible="{Binding !IsLoading}">
                                                         <Button Classes="msg-footer-btn"
                                                                 ToolTip.Tip="复制"
-                                                                Command="{Binding $parent[ItemsControl].DataContext.CopyMessageCommand}"
+                                                                Command="{Binding $parent[ListBox].DataContext.CopyMessageCommand}"
                                                                 CommandParameter="{Binding}">
                                                             <icons:Icon Value="fa-regular fa-copy" FontSize="12"/>
                                                         </Button>
                                                         <Button Classes="msg-footer-btn"
                                                                 ToolTip.Tip="重新生成"
                                                                 IsVisible="{Binding IsTextContent}"
-                                                                Command="{Binding $parent[ItemsControl].DataContext.RegenerateMessageCommand}"
+                                                                Command="{Binding $parent[ListBox].DataContext.RegenerateMessageCommand}"
                                                                 CommandParameter="{Binding}">
                                                             <icons:Icon Value="fa-solid fa-rotate" FontSize="12"/>
                                                         </Button>
                                                         <Button Classes="msg-footer-btn"
                                                                 ToolTip.Tip="从此处创建对话分支"
-                                                                Command="{Binding $parent[ItemsControl].DataContext.ForkFromMessageCommand}"
+                                                                Command="{Binding $parent[ListBox].DataContext.ForkFromMessageCommand}"
                                                                 CommandParameter="{Binding}">
                                                             <icons:Icon Value="fa-solid fa-code-branch" FontSize="12"/>
                                                         </Button>
                                                         <Button Classes="msg-footer-btn"
                                                                 ToolTip.Tip="删除"
-                                                                Command="{Binding $parent[ItemsControl].DataContext.DeleteMessageCommand}"
+                                                                Command="{Binding $parent[ListBox].DataContext.DeleteMessageCommand}"
                                                                 CommandParameter="{Binding}">
                                                             <icons:Icon Value="fa-regular fa-trash-can" FontSize="12"/>
                                                         </Button>
@@ -517,9 +547,8 @@
                                             </Border>
                                         </Panel>
                                     </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                        </ScrollViewer>
+                                </ListBox.ItemTemplate>
+                        </ListBox>
 
                                         <StackPanel HorizontalAlignment="Right"
                                                     VerticalAlignment="Bottom"
@@ -543,7 +572,6 @@
                                             </Button>
                                             <Button x:Name="ScrollToBottomButton"
                                                     ToolTip.Tip="回到底部"
-                                                    IsVisible="False"
                                                     Padding="10,4"
                                                     Click="ScrollToBottom_Click">
                                                 <icons:Icon Value="fa-solid fa-arrow-down" FontSize="13"/>
@@ -793,8 +821,8 @@
                 </Border>
                                         </Grid>
                                     </DataTemplate>
-                                </ContentControl.ContentTemplate>
-                            </ContentControl>
+                                </controls:CachedContentControl.ContentTemplate>
+                            </controls:CachedContentControl>
             </Grid>
 
             <!-- 无会话提示 -->
