@@ -138,13 +138,14 @@ namespace TrueFluentPro.Views
         }
 
         /// <summary>
-        /// 通过视觉树查找 chat-message-list ListBox（在 DataTemplate 内，FindControl 无法获取）。
+        /// 通过视觉树查找当前可见的 chat-message-list ListBox。
+        /// CachedContentControl 中可能同时存在多个隐藏的旧会话视觉树，必须过滤 IsEffectivelyVisible。
         /// </summary>
         private ListBox? FindMessageListBox()
         {
             return this.GetVisualDescendants()
                 .OfType<ListBox>()
-                .FirstOrDefault(lb => lb.Classes.Contains("chat-message-list"));
+                .FirstOrDefault(lb => lb.Classes.Contains("chat-message-list") && lb.IsEffectivelyVisible);
         }
 
         /// <summary>
@@ -214,6 +215,10 @@ namespace TrueFluentPro.Views
                 _diagScrollViewer = null;
             }
 
+            // 解除旧会话的 CollectionChanged 订阅
+            if (_attachedSession != null)
+                _attachedSession.Messages.CollectionChanged -= OnAttachedSessionMessagesReset;
+
             _attachedSession = session;
 
             if (_attachedSession == null)
@@ -222,6 +227,11 @@ namespace TrueFluentPro.Views
             // 判断是否缓存命中（CachedContentControl 已保留滚动位置）
             var sessionContentHost = this.FindControl<Controls.CachedContentControl>("SessionContentHost");
             var isCacheHit = sessionContentHost?.LastSwitchWasCacheHit ?? false;
+
+            // 通用策略：监听 Messages 集合重置（ReplaceAllMessages 会 Clear + Add）
+            // 无论 HIT/MISS，只要 Messages 从空→有数据，就 scroll-to-bottom。
+            // 真正的缓存 HIT 且数据未卸载时，CollectionChanged 不会触发，滚动位置自然保持。
+            _attachedSession.Messages.CollectionChanged += OnAttachedSessionMessagesReset;
 
             // 延迟到视觉树就绪后订阅
             Dispatcher.UIThread.Post(() =>
@@ -248,12 +258,38 @@ namespace TrueFluentPro.Views
                     _diagScrollViewer.ScrollChanged += DiagScrollViewer_ScrollChanged;
                 }
 
-                // 缓存未命中（新建视觉树）→ 首次打开定位到最底部
-                if (!isCacheHit)
+                // 缓存未命中 且 已有数据 → 立即滚到底（首会话在启动时已加载）
+                if (!isCacheHit && session!.Messages.Count > 0)
                 {
                     ScrollToBottomReliable();
                 }
+                // 其余情况（MISS+空数据、HIT+数据被卸载）由 OnAttachedSessionMessagesReset 兜底
             }, DispatcherPriority.Loaded);
+        }
+
+        /// <summary>
+        /// 通用 CollectionChanged 监听：检测 Messages 经历 Reset（Clear+批量 Add）后，
+        /// 在布局完成时 scroll-to-bottom。覆盖所有"数据延迟加载"场景。
+        /// 只响应一次 Reset 周期，避免向上滚动加载时误触发。
+        /// </summary>
+        private bool _pendingScrollAfterReset;
+
+        private void OnAttachedSessionMessagesReset(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+        {
+            // Reset = Clear 操作，标记"下次有数据时需要 scroll-to-bottom"
+            if (e.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Reset)
+            {
+                _pendingScrollAfterReset = true;
+                return;
+            }
+
+            // Add 操作 + 有待处理的 Reset → 数据填充完成，安排 scroll
+            if (_pendingScrollAfterReset && e.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Add
+                && _attachedSession?.Messages.Count > 0)
+            {
+                _pendingScrollAfterReset = false;
+                Dispatcher.UIThread.Post(() => ScrollToBottomReliable(), DispatcherPriority.Loaded);
+            }
         }
 
         /// <summary>可靠滚到底：双轮 ScrollToEnd，覆盖 StackPanel 布局延迟。</summary>
