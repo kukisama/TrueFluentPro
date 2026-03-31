@@ -7,7 +7,6 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Threading;
-using Microsoft.Extensions.DependencyInjection;
 using TrueFluentPro.Helpers;
 using TrueFluentPro.Models;
 using TrueFluentPro.Services;
@@ -191,13 +190,8 @@ namespace TrueFluentPro.ViewModels
 
         private AudioLibrarySnapshot BuildAudioLibrarySnapshot(CancellationToken cancellationToken)
         {
-            // SQLite 音频索引
-            var switches = App.Services.GetRequiredService<SqliteFeatureSwitches>();
-            if (switches.IsReady)
-            {
-                return BuildAudioLibrarySnapshotFromSqlite(cancellationToken);
-            }
-
+            // 始终从磁盘扫描：音频文件的真实来源是文件系统，
+            // 用户可在外部自由增删，SQLite 无法保证与磁盘一致。
             var sessionsPath = PathManager.Instance.SessionsPath;
             var audioFiles = new List<MediaFileItem>();
 
@@ -224,30 +218,6 @@ namespace TrueFluentPro.ViewModels
             {
                 AudioFiles = audioFiles
             };
-        }
-
-        private AudioLibrarySnapshot BuildAudioLibrarySnapshotFromSqlite(CancellationToken cancellationToken)
-        {
-            var audioRepo = App.Services.GetRequiredService<IAudioLibraryRepository>();
-            var paths = App.Services.GetRequiredService<IStoragePathResolver>();
-            var records = audioRepo.List(limit: 500);
-            var audioFiles = new List<MediaFileItem>();
-
-            foreach (var rec in records)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                var absPath = paths.ToAbsolutePath(rec.FilePath);
-                if (!File.Exists(absPath)) continue;
-
-                audioFiles.Add(new MediaFileItem
-                {
-                    Name = rec.FileName,
-                    FullPath = absPath,
-                });
-            }
-
-            SqliteDebugLogger.LogRead("audio_library_items", "P3-snapshot", audioFiles.Count);
-            return new AudioLibrarySnapshot { AudioFiles = audioFiles };
         }
 
         private void ApplyAudioLibrarySnapshot(AudioLibrarySnapshot snapshot)

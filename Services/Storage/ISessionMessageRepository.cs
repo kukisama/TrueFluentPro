@@ -26,5 +26,10 @@ namespace TrueFluentPro.Services.Storage
         void InsertCitations(string messageId, List<CitationRecord> citations);
         List<CitationRecord> GetCitations(string messageId);
         void DeleteCitations(string messageId);
+
+        // ── 消息附件 ──
+        void InsertAttachments(string messageId, List<AttachmentRecord> attachments);
+        List<AttachmentRecord> GetAttachments(string messageId);
+        void DeleteAttachments(string messageId);
     }
 }

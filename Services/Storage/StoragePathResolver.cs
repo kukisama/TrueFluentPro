@@ -52,5 +52,13 @@ namespace TrueFluentPro.Services.Storage
             SqliteDebugLogger.LogPathResolve($"[新资源] {mediaType}{extension}", relative);
             return relative;
         }
+
+        public string GetNewResourceDirectory(string mediaType)
+        {
+            var now = DateTime.Now;
+            var fullDir = Path.Combine(WorkspaceRoot, "library", mediaType, now.ToString("yyyy"), now.ToString("MM"));
+            Directory.CreateDirectory(fullDir);
+            return fullDir;
+        }
     }
 }

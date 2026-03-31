@@ -43,6 +43,29 @@
                     </StackPanel>
                 </Button>
             </StackPanel>
+            <Separator Margin="0,4"/>
+            <StackPanel Orientation="Horizontal" Spacing="12">
+                <Button MinWidth="120"
+                        Padding="16,8"
+                        IsEnabled="{Binding !IsBusy}"
+                        ToolTip.Tip="将基本AI配置复制到剪贴板（JSON 格式），方便直接粘贴到其他设备。"
+                        Click="OnCopyBasicAiConfigToClipboardClick">
+                    <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+                        <icons:Icon Value="fa-solid fa-clipboard" FontSize="12"/>
+                        <TextBlock Text="复制AI配置" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+                <Button MinWidth="120"
+                        Padding="16,8"
+                        IsEnabled="{Binding !IsBusy}"
+                        ToolTip.Tip="从剪贴板导入配置 JSON，自动识别基本AI配置与完整配置格式。"
+                        Click="OnImportFromClipboardClick">
+                    <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+                        <icons:Icon Value="fa-solid fa-paste" FontSize="12"/>
+                        <TextBlock Text="从剪贴板导入" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+            </StackPanel>
         </StackPanel>
     </Border>
 </UserControl>

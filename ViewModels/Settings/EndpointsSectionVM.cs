@@ -20,6 +20,7 @@ namespace TrueFluentPro.ViewModels.Settings
         private readonly IEndpointBatchTestService _endpointBatchTestService;
         private readonly AzureSubscriptionValidator _speechValidator;
         private ObservableCollection<AiEndpoint> _endpoints = new();
+        private int _pendingRemovalCount;
         private ObservableCollection<string> _discoveredModelIds = new();
         private AiEndpoint? _selectedEndpoint;
         private string _endpointDiscoveryStatus = "";
@@ -275,7 +276,9 @@ namespace TrueFluentPro.ViewModels.Settings
             SelectedEndpoint = Endpoints.FirstOrDefault();
             OnPropertyChanged(nameof(HasEndpoints));
             OnPropertyChanged(nameof(ShowEmptyState));
+            _pendingRemovalCount = 1;
             SyncEndpointsToConfig();
+            _pendingRemovalCount = 0;
             EndpointsChanged?.Invoke();
             OnChanged();
         }
@@ -299,7 +302,9 @@ namespace TrueFluentPro.ViewModels.Settings
 
             OnPropertyChanged(nameof(HasEndpoints));
             OnPropertyChanged(nameof(ShowEmptyState));
+            _pendingRemovalCount = 1;
             SyncEndpointsToConfig();
+            _pendingRemovalCount = 0;
             EndpointsChanged?.Invoke();
             OnChanged();
         }
@@ -512,6 +517,27 @@ namespace TrueFluentPro.ViewModels.Settings
 
         internal void SyncEndpointsToConfig()
         {
+            var prevCount = Config.Endpoints?.Count ?? 0;
+            var newCount = Endpoints.Count;
+
+            // 安全护栏：终结点数量减少时，必须来自显式删除操作且每次只能减 1
+            if (newCount < prevCount)
+            {
+                var delta = prevCount - newCount;
+                if (_pendingRemovalCount == 0)
+                {
+                    System.Diagnostics.Debug.WriteLine(
+                        $"[EndpointGuard] 阻止非删除路径的终结点丢失: {prevCount} → {newCount}");
+                    return;
+                }
+                if (delta > 1)
+                {
+                    System.Diagnostics.Debug.WriteLine(
+                        $"[EndpointGuard] 阻止批量终结点丢失: {prevCount} → {newCount} (允许减少 {_pendingRemovalCount})");
+                    return;
+                }
+            }
+
             Config.Endpoints = Endpoints.ToList();
             Config.SyncSpeechResourcesFromEndpoints();
         }

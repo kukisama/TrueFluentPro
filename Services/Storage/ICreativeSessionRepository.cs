@@ -7,7 +7,7 @@ namespace TrueFluentPro.Services.Storage
     {
         void Upsert(SessionRecord record);
         SessionRecord? GetById(string id);
-        List<SessionRecord> List(int limit = 30, int offset = 0, bool includeDeleted = false, string? sessionType = null);
+        List<SessionRecord> List(int limit = 30, int offset = 0, bool includeDeleted = false, string? sessionType = null, string orderBy = "updated_at", bool excludeEmpty = false);
         int Count(bool includeDeleted = false);
         void SoftDelete(string id);
         void Restore(string id);

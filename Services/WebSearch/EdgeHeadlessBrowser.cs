@@ -35,7 +35,8 @@ public static class EdgeHeadlessBrowser
             // --disable-gpu: 无需 GPU
             // --dump-dom: 渲染完成后输出 DOM 到 stdout
             // --no-sandbox: 避免沙箱权限问题
-            Arguments = $"--headless --disable-gpu --no-sandbox --dump-dom \"{url}\"",
+            // --blink-settings=imagesEnabled=false: 跳过图片请求，加速加载
+            Arguments = $"--headless --disable-gpu --no-sandbox --blink-settings=imagesEnabled=false --dump-dom \"{url}\"",
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,

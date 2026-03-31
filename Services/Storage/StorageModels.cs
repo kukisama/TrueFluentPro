@@ -76,6 +76,18 @@ namespace TrueFluentPro.Services.Storage
         public string Hostname { get; set; } = "";
     }
 
+    /// <summary>消息附件（对应 message_attachments 表）</summary>
+    public class AttachmentRecord
+    {
+        public long Id { get; set; }
+        public string MessageId { get; set; } = "";
+        public string AttachmentType { get; set; } = "";
+        public string FileName { get; set; } = "";
+        public string FilePath { get; set; } = "";
+        public long FileSize { get; set; }
+        public int SortOrder { get; set; }
+    }
+
     /// <summary>会话任务（对应 session_tasks 表）</summary>
     public class TaskRecord
     {

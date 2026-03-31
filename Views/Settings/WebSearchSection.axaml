@@ -58,6 +58,11 @@
             <TextBlock Classes="caption-text" Margin="28,0,0,0"
                        Text="搜索后再用 AI 精炼结果，去除冗余内容。会额外消耗一次 AI 调用。"/>
 
+            <CheckBox Content="🐞 搜索调试模式"
+                      IsChecked="{Binding DebugMode, Mode=TwoWay}"/>
+            <TextBlock Classes="caption-text" Margin="28,0,0,0"
+                       Text="开启后，每次搜索增强对话会在消息下方显示完整调试信息：意图分析原始输出、搜索关键词、各网页抓取内容长度、提交给 AI 的完整上下文等，方便排查 Token 消耗。"/>
+
             <!-- MCP 配置（仅当选择 MCP 引擎时显示） -->
             <Separator Margin="0,8,0,8" IsVisible="{Binding IsMcpProvider}"/>
             <StackPanel Spacing="10" IsVisible="{Binding IsMcpProvider}">

@@ -38,6 +38,7 @@ namespace TrueFluentPro.ViewModels
         private int _webSearchMaxResults = 5;
         private bool _webSearchEnableIntentAnalysis = true;
         private bool _webSearchEnableResultCompression;
+        private bool _webSearchDebugMode;
         private string _webSearchMcpEndpoint = "";
         private string _webSearchMcpToolName = "web_search";
         private string _webSearchMcpApiKey = "";
@@ -140,6 +141,18 @@ namespace TrueFluentPro.ViewModels
             _imageService.SetTokenProvider(_imageTokenProvider);
             _videoService.SetTokenProvider(_videoTokenProvider);
 
+            // 从全局配置初始化网页搜索设置（构造时 configProvider 已可用）
+            var initialConfig = configProvider();
+            _webSearchProviderId = initialConfig.WebSearchProviderId;
+            _webSearchTriggerMode = initialConfig.WebSearchTriggerMode;
+            _webSearchMaxResults = initialConfig.WebSearchMaxResults;
+            _webSearchEnableIntentAnalysis = initialConfig.WebSearchEnableIntentAnalysis;
+            _webSearchEnableResultCompression = initialConfig.WebSearchEnableResultCompression;
+            _webSearchDebugMode = initialConfig.WebSearchDebugMode;
+            _webSearchMcpEndpoint = initialConfig.WebSearchMcpEndpoint;
+            _webSearchMcpToolName = initialConfig.WebSearchMcpToolName;
+            _webSearchMcpApiKey = initialConfig.WebSearchMcpApiKey;
+
             var sessionsPath = PathManager.Instance.SessionsPath;
             _studioDirectory = Path.Combine(sessionsPath, "media-studio");
             Directory.CreateDirectory(_studioDirectory);
@@ -161,7 +174,8 @@ namespace TrueFluentPro.ViewModels
         public void UpdateConfiguration(AiConfig aiConfig, MediaGenConfig genConfig, List<AiEndpoint> endpoints,
             string? webSearchProviderId = null, WebSearchTriggerMode? webSearchTriggerMode = null, int? webSearchMaxResults = null,
             bool? webSearchEnableIntentAnalysis = null, bool? webSearchEnableResultCompression = null,
-            string? webSearchMcpEndpoint = null, string? webSearchMcpToolName = null, string? webSearchMcpApiKey = null)
+            string? webSearchMcpEndpoint = null, string? webSearchMcpToolName = null, string? webSearchMcpApiKey = null,
+            bool? webSearchDebugMode = null)
         {
             CopyAiConfig(aiConfig, _aiConfig);
             CopyMediaGenConfig(genConfig, _genConfig);
@@ -174,6 +188,7 @@ namespace TrueFluentPro.ViewModels
             if (webSearchMaxResults is not null) _webSearchMaxResults = webSearchMaxResults.Value;
             if (webSearchEnableIntentAnalysis is not null) _webSearchEnableIntentAnalysis = webSearchEnableIntentAnalysis.Value;
             if (webSearchEnableResultCompression is not null) _webSearchEnableResultCompression = webSearchEnableResultCompression.Value;
+            if (webSearchDebugMode is not null) _webSearchDebugMode = webSearchDebugMode.Value;
             if (webSearchMcpEndpoint is not null) _webSearchMcpEndpoint = webSearchMcpEndpoint;
             if (webSearchMcpToolName is not null) _webSearchMcpToolName = webSearchMcpToolName;
             if (webSearchMcpApiKey is not null) _webSearchMcpApiKey = webSearchMcpApiKey;
@@ -182,7 +197,8 @@ namespace TrueFluentPro.ViewModels
             foreach (var session in Sessions)
                 session.UpdateWebSearchConfig(_webSearchProviderId, _webSearchTriggerMode, _webSearchMaxResults,
                     _webSearchEnableIntentAnalysis, _webSearchEnableResultCompression,
-                    _webSearchMcpEndpoint, _webSearchMcpToolName, _webSearchMcpApiKey);
+                    _webSearchMcpEndpoint, _webSearchMcpToolName, _webSearchMcpApiKey,
+                    _webSearchDebugMode);
 
             OnPropertyChanged(nameof(CurrentWebSearchProviderId));
             OnPropertyChanged(nameof(CurrentWebSearchProviderDisplayName));
@@ -199,7 +215,8 @@ namespace TrueFluentPro.ViewModels
             {
                 session.UpdateWebSearchConfig(_webSearchProviderId, _webSearchTriggerMode, _webSearchMaxResults,
                     _webSearchEnableIntentAnalysis, _webSearchEnableResultCompression,
-                    _webSearchMcpEndpoint, _webSearchMcpToolName, _webSearchMcpApiKey);
+                    _webSearchMcpEndpoint, _webSearchMcpToolName, _webSearchMcpApiKey,
+                    _webSearchDebugMode);
             }
 
             if (enableForCurrentSession && CurrentSession != null)
@@ -357,7 +374,6 @@ namespace TrueFluentPro.ViewModels
         {
             var sessionId = Guid.NewGuid().ToString("N")[..8];
             var sessionDir = Path.Combine(_studioDirectory, $"session_{sessionId}");
-            Directory.CreateDirectory(sessionDir);
             var defaultName = AllocateNextDefaultSessionName();
 
             var session = new MediaSessionViewModel(
@@ -367,11 +383,13 @@ namespace TrueFluentPro.ViewModels
                 _azureTokenProviderStore,
                 _imageService, _videoService,
                 OnSessionTaskCountChanged,
-                s => SaveSessionMeta(s));
+                s => SaveSessionMeta(s),
+                App.Services.GetRequiredService<IStoragePathResolver>());
 
             session.UpdateWebSearchConfig(_webSearchProviderId, _webSearchTriggerMode, _webSearchMaxResults,
                 _webSearchEnableIntentAnalysis, _webSearchEnableResultCompression,
-                _webSearchMcpEndpoint, _webSearchMcpToolName, _webSearchMcpApiKey);
+                _webSearchMcpEndpoint, _webSearchMcpToolName, _webSearchMcpApiKey,
+                _webSearchDebugMode);
             session.IsContentLoaded = true;
             session.ForkRequested += HandleForkRequested;
 
@@ -388,7 +406,6 @@ namespace TrueFluentPro.ViewModels
 
             var sessionId = Guid.NewGuid().ToString("N")[..8];
             var sessionDir = Path.Combine(_studioDirectory, $"session_{sessionId}");
-            Directory.CreateDirectory(sessionDir);
             var defaultName = $"{sourceSession.SessionName} (分支)";
 
             var newSession = new MediaSessionViewModel(
@@ -398,11 +415,13 @@ namespace TrueFluentPro.ViewModels
                 _azureTokenProviderStore,
                 _imageService, _videoService,
                 OnSessionTaskCountChanged,
-                s => SaveSessionMeta(s));
+                s => SaveSessionMeta(s),
+                App.Services.GetRequiredService<IStoragePathResolver>());
 
             newSession.UpdateWebSearchConfig(_webSearchProviderId, _webSearchTriggerMode, _webSearchMaxResults,
                 _webSearchEnableIntentAnalysis, _webSearchEnableResultCompression,
-                _webSearchMcpEndpoint, _webSearchMcpToolName, _webSearchMcpApiKey);
+                _webSearchMcpEndpoint, _webSearchMcpToolName, _webSearchMcpApiKey,
+                _webSearchDebugMode);
             newSession.EnableReasoning = sourceSession.EnableReasoning;
             newSession.EnableWebSearch = sourceSession.EnableWebSearch;
             newSession.IsContentLoaded = true;
@@ -420,7 +439,16 @@ namespace TrueFluentPro.ViewModels
                 GenerateSeconds = m.GenerateSeconds,
                 DownloadSeconds = m.DownloadSeconds,
                 PromptTokens = m.PromptTokens,
-                CompletionTokens = m.CompletionTokens
+                CompletionTokens = m.CompletionTokens,
+                Attachments = m.Attachments.Count > 0
+                    ? m.Attachments.Select(a => new ChatAttachmentInfo
+                    {
+                        Type = a.Type,
+                        FileName = a.FileName,
+                        FilePath = a.FilePath,
+                        FileSize = a.FileSize,
+                    }).ToList()
+                    : null,
             })).ToList();
 
             newSession.ReplaceAllMessages(clonedMessages);
@@ -574,7 +602,6 @@ namespace TrueFluentPro.ViewModels
                 foreach (var rec in records)
                 {
                     var dir = paths.ToAbsolutePath(rec.DirectoryPath);
-                    if (!Directory.Exists(dir)) continue;
 
                     var session = new MediaSessionViewModel(
                         rec.Id, rec.Name, dir,
@@ -582,10 +609,12 @@ namespace TrueFluentPro.ViewModels
                         _modelRuntimeResolver, _azureTokenProviderStore,
                         _imageService, _videoService,
                         OnSessionTaskCountChanged,
-                        s => SaveSessionMeta(s));
+                        s => SaveSessionMeta(s),
+                        paths);
                     session.UpdateWebSearchConfig(_webSearchProviderId, _webSearchTriggerMode, _webSearchMaxResults,
                         _webSearchEnableIntentAnalysis, _webSearchEnableResultCompression,
-                        _webSearchMcpEndpoint, _webSearchMcpToolName, _webSearchMcpApiKey);
+                        _webSearchMcpEndpoint, _webSearchMcpToolName, _webSearchMcpApiKey,
+                        _webSearchDebugMode);
                     session.IsContentLoaded = false;
                     session.ForkRequested += HandleForkRequested;
                     Sessions.Add(session);
@@ -672,7 +701,6 @@ namespace TrueFluentPro.ViewModels
 
             try
             {
-                Directory.CreateDirectory(session.SessionDirectory);
                 WriteSqliteSession(session, "media-studio");
             }
             catch (Exception ex)
@@ -727,6 +755,7 @@ namespace TrueFluentPro.ViewModels
                 {
                     var mediaRefs = msgRepo.GetMediaRefs(rec.Id);
                     var citations = msgRepo.GetCitations(rec.Id);
+                    var attachmentRecs = msgRepo.GetAttachments(rec.Id);
 
                     var msg = new MediaChatMessage
                     {
@@ -749,6 +778,15 @@ namespace TrueFluentPro.ViewModels
                                 Url = c.Url,
                                 Snippet = c.Snippet,
                                 Hostname = c.Hostname,
+                            }).ToList()
+                            : null,
+                        Attachments = attachmentRecs.Count > 0
+                            ? attachmentRecs.Select(a => new ChatAttachmentInfo
+                            {
+                                Type = a.AttachmentType,
+                                FileName = a.FileName,
+                                FilePath = a.FilePath,
+                                FileSize = a.FileSize,
                             }).ToList()
                             : null,
                     };
@@ -902,6 +940,20 @@ namespace TrueFluentPro.ViewModels
                             Hostname = c.Hostname,
                         }).ToList();
                         msgRepo.InsertCitations(msgId, citations);
+                    }
+
+                    // 写入消息附件
+                    if (m.Attachments.Count > 0)
+                    {
+                        var attachments = m.Attachments.Select((a, idx) => new AttachmentRecord
+                        {
+                            AttachmentType = a.Type,
+                            FileName = a.FileName,
+                            FilePath = a.FilePath,
+                            FileSize = a.FileSize,
+                            SortOrder = idx,
+                        }).ToList();
+                        msgRepo.InsertAttachments(msgId, attachments);
                     }
                 }
 

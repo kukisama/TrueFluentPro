@@ -20,9 +20,9 @@ namespace TrueFluentPro.Services
         {
             var result = CloneConfig(config);
             result.Endpoints = (result.Endpoints ?? new List<AiEndpoint>())
-                .Where(IsImportableEndpoint)
                 .Select(endpoint =>
                 {
+                    // AAD 端点保留空壳：清除登录凭据但保留 AuthMode 和模型列表
                     endpoint.AzureTenantId = "";
                     endpoint.AzureClientId = "";
                     return endpoint;
@@ -32,10 +32,6 @@ namespace TrueFluentPro.Services
             var ai = result.AiConfig ??= new AiConfig();
             ai.AzureTenantId = "";
             ai.AzureClientId = "";
-            if (ai.AzureAuthMode == AzureAuthMode.AAD)
-            {
-                ai.AzureAuthMode = AzureAuthMode.ApiKey;
-            }
 
             var media = result.MediaGenConfig ??= new MediaGenConfig();
 
@@ -59,9 +55,7 @@ namespace TrueFluentPro.Services
         {
             var ai = config.AiConfig ?? new AiConfig();
             var media = config.MediaGenConfig ?? new MediaGenConfig();
-            var exportableEndpoints = (config.Endpoints ?? new List<AiEndpoint>())
-                .Where(IsImportableEndpoint)
-                .ToList();
+            var allEndpoints = config.Endpoints ?? new List<AiEndpoint>();
 
             return new SettingsTransferPackage
             {
@@ -100,7 +94,7 @@ namespace TrueFluentPro.Services
                     BatchResultContainerName = config.BatchResultContainerName,
                     ReviewSubtitleSourceMode = config.GetEffectiveReviewSubtitleSourceMode()
                 },
-                Endpoints = exportableEndpoints.Select(endpoint => new TransferAiEndpoint
+                Endpoints = allEndpoints.Select(endpoint => new TransferAiEndpoint
                 {
                     Id = endpoint.Id,
                     ProfileId = endpoint.ProfileId,
@@ -108,12 +102,14 @@ namespace TrueFluentPro.Services
                     IsEnabled = endpoint.IsEnabled,
                     EndpointType = endpoint.EndpointType,
                     BaseUrl = endpoint.BaseUrl,
-                    ApiKey = endpoint.ApiKey,
+                    ApiKey = endpoint.AuthMode == AzureAuthMode.AAD ? "" : endpoint.ApiKey,
                     ApiVersion = endpoint.ApiVersion,
                     AuthMode = endpoint.AuthMode,
                     ApiKeyHeaderMode = endpoint.ApiKeyHeaderMode,
                     TextApiProtocolMode = endpoint.TextApiProtocolMode,
                     ImageApiRouteMode = endpoint.ImageApiRouteMode,
+                    AzureTenantId = "",
+                    AzureClientId = "",
                     Models = endpoint.Models.Select(model => new TransferAiModel
                     {
                         ModelId = model.ModelId,
@@ -121,7 +117,11 @@ namespace TrueFluentPro.Services
                         DeploymentName = model.DeploymentName,
                         GroupName = model.GroupName,
                         Capabilities = model.Capabilities
-                    }).ToList()
+                    }).ToList(),
+                    SpeechSubscriptionKey = endpoint.SpeechSubscriptionKey,
+                    SpeechRegion = endpoint.SpeechRegion,
+                    SpeechEndpoint = endpoint.SpeechEndpoint,
+                    SpeechCapabilities = endpoint.SpeechCapabilities
                 }).ToList(),
                 ModelSelections = new TransferModelSelections
                 {
@@ -270,11 +270,6 @@ namespace TrueFluentPro.Services
 
             foreach (var endpoint in endpoints ?? Enumerable.Empty<TransferAiEndpoint>())
             {
-                if (!IsImportableEndpoint(endpoint))
-                {
-                    continue;
-                }
-
                 var endpointId = string.IsNullOrWhiteSpace(endpoint.Id) ? Guid.NewGuid().ToString() : endpoint.Id.Trim();
                 if (!usedIds.Add(endpointId))
                 {
@@ -308,7 +303,11 @@ namespace TrueFluentPro.Services
                         DeploymentName = model.DeploymentName?.Trim() ?? "",
                         GroupName = model.GroupName?.Trim() ?? "",
                         Capabilities = model.Capabilities
-                    }).ToList()
+                    }).ToList(),
+                    SpeechSubscriptionKey = endpoint.SpeechSubscriptionKey?.Trim() ?? "",
+                    SpeechRegion = endpoint.SpeechRegion?.Trim() ?? "",
+                    SpeechEndpoint = endpoint.SpeechEndpoint?.Trim() ?? "",
+                    SpeechCapabilities = endpoint.SpeechCapabilities
                 });
             }
 
@@ -370,12 +369,6 @@ namespace TrueFluentPro.Services
                      && resolved.Model.Capabilities.HasFlag(capability)
                      && EndpointCapabilityPolicyResolver.IsCapabilityAllowed(resolved.Endpoint.ProfileId, resolved.Endpoint.EndpointType, capability);
         }
-
-        private static bool IsImportableEndpoint(AiEndpoint endpoint)
-            => endpoint.AuthMode != AzureAuthMode.AAD;
-
-        private static bool IsImportableEndpoint(TransferAiEndpoint endpoint)
-            => endpoint.AuthMode != AzureAuthMode.AAD;
 
         private static AiProviderType MapProviderType(EndpointApiType endpointType)
             => endpointType == EndpointApiType.AzureOpenAi

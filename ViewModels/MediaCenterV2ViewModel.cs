@@ -97,7 +97,7 @@ namespace TrueFluentPro.ViewModels
                 _ => SelectedAsset is { IsPending: false } && File.Exists(SelectedAsset.FilePath));
             OpenWorkspaceFolderCommand = new RelayCommand(
                 _ => OpenWorkspaceFolder(),
-                _ => WorkspaceSession != null && Directory.Exists(WorkspaceSession.SessionDirectory));
+                _ => WorkspaceSession != null && FindFirstExistingAssetPath() != null);
             RefreshWorkspaceCommand = new RelayCommand(_ => RebuildResultCollections(selectLatest: false));
             EditAssetCommand = new RelayCommand(
                 p => _ = EditAssetAsync(p as MediaCreatorResultAsset),
@@ -550,69 +550,97 @@ namespace TrueFluentPro.ViewModels
             _ = TrySilentLoginForMediaAsync();
         }
 
-        /// <summary>右侧面板最多加载的工作区数。超出部分不加载，节省内存和启动时间。</summary>
-        private const int MaxLoadedWorkspaces = 20;
+        private const int WorkspacePageSize = 10;
+        private int _workspaceDbOffset;
+        private bool _hasMoreWorkspaces = true;
+        // 初始为 true：阻止 LayoutUpdated→InitialFill 在 LoadExistingWorkspaces 执行前抢先加载
+        private bool _isLoadingMoreWorkspaces = true;
+
+        public bool HasMoreWorkspaces
+        {
+            get => _hasMoreWorkspaces;
+            private set => SetProperty(ref _hasMoreWorkspaces, value);
+        }
 
         private void LoadExistingWorkspaces()
         {
             var switches = App.Services.GetRequiredService<SqliteFeatureSwitches>();
             if (!switches.IsReady)
             {
-                // SQLite 后台初始化未完成，暂时创建空白画布
                 CreateNewWorkspace();
                 return;
             }
+
+            // 清除 InitialFill 可能抢先加载的残留数据
+            _workspaceTabs.Clear();
+            _sqliteFingerprints.Clear();
+            _persistedTaskStates.Clear();
+            _workspaceDbOffset = 0;
+            HasMoreWorkspaces = true;
+            _isLoadingMoreWorkspaces = true;
+            try
+            {
+                LoadNextPage();
+
+                if (WorkspaceTabs.Count == 0)
+                {
+                    CreateNewWorkspace();
+                    return;
+                }
+
+                SelectWorkspaceTab(WorkspaceTabs[0]);
+                StatusText = WorkspaceTabs.Count == 1 ? "已载入最近画布" : $"已恢复 {WorkspaceTabs.Count} 个历史会话";
+            }
+            finally
+            {
+                _isLoadingMoreWorkspaces = false;
+            }
+        }
+
+        public void LoadMoreWorkspaces()
+        {
+            if (_isLoadingMoreWorkspaces || !_hasMoreWorkspaces) return;
+            _isLoadingMoreWorkspaces = true;
+            try
+            {
+                LoadNextPage();
+                if (WorkspaceTabs.Count > 0)
+                    StatusText = $"已加载 {WorkspaceTabs.Count} 个历史会话";
+            }
+            finally
+            {
+                _isLoadingMoreWorkspaces = false;
+            }
+        }
+
+        private void LoadNextPage()
+        {
+            if (!_hasMoreWorkspaces) return;
 
             var sessionRepo = App.Services.GetRequiredService<ICreativeSessionRepository>();
             var paths = App.Services.GetRequiredService<IStoragePathResolver>();
-            var records = sessionRepo.List(limit: MaxLoadedWorkspaces * 3, sessionType: "media-center-v2");
 
-            var loadedTabs = new List<MediaWorkspaceTabViewModel>();
+            var records = sessionRepo.List(
+                limit: WorkspacePageSize,
+                offset: _workspaceDbOffset,
+                sessionType: "media-center-v2",
+                orderBy: "created_at",
+                excludeEmpty: true);
+
+            _workspaceDbOffset += records.Count;
+            if (records.Count < WorkspacePageSize)
+                HasMoreWorkspaces = false;
+
             foreach (var rec in records)
             {
                 var directory = paths.ToAbsolutePath(rec.DirectoryPath);
-                if (!Directory.Exists(directory))
-                {
-                    continue;
-                }
-
                 var canvasMode = Enum.TryParse<CreatorCanvasMode>(rec.CanvasMode, true, out var cm) ? cm : _canvasMode;
                 var mediaKind = Enum.TryParse<CreatorMediaKind>(rec.MediaKind, true, out var mk) ? mk : _mediaKind;
 
-                var tab = CreateWorkspaceTab(
-                    directory,
-                    rec.Name,
-                    true,
-                    canvasMode,
-                    mediaKind,
-                    existingSessionId: rec.Id);
-
-                if (!ShouldRestoreWorkspace(tab))
-                {
-                    tab.Dispose();
-                    continue;
-                }
-
-                loadedTabs.Add(tab);
-                if (loadedTabs.Count >= MaxLoadedWorkspaces)
-                {
-                    break;
-                }
+                WorkspaceTabs.Add(CreateWorkspaceTab(
+                    directory, rec.Name, true, canvasMode, mediaKind,
+                    existingSessionId: rec.Id));
             }
-
-            if (loadedTabs.Count == 0)
-            {
-                CreateNewWorkspace();
-                return;
-            }
-
-            foreach (var tab in loadedTabs)
-            {
-                WorkspaceTabs.Add(tab);
-            }
-
-            SelectWorkspaceTab(loadedTabs[0]);
-            StatusText = loadedTabs.Count == 1 ? "已载入最近画布" : $"已恢复 {loadedTabs.Count} 个历史会话";
         }
 
         public void CreateNewWorkspace()
@@ -630,7 +658,6 @@ namespace TrueFluentPro.ViewModels
 
             var workspaceId = Guid.NewGuid().ToString("N")[..8];
             var workspaceDirectory = Path.Combine(_workspaceRootDirectory, $"workspace_{DateTime.Now:yyyyMMdd_HHmmss}_{workspaceId}");
-            Directory.CreateDirectory(workspaceDirectory);
 
             var tab = CreateWorkspaceTab(
                 workspaceDirectory,
@@ -783,7 +810,8 @@ namespace TrueFluentPro.ViewModels
                 _imageService,
                 _videoService,
                 OnWorkspaceTaskCountChanged,
-                SaveWorkspaceMeta);
+                SaveWorkspaceMeta,
+                App.Services.GetRequiredService<IStoragePathResolver>());
 
             session.IsContentLoaded = true;
             session.ActivateOnFirstSelection();
@@ -801,21 +829,6 @@ namespace TrueFluentPro.ViewModels
 
             ApplyWorkflowToSession(session, tab.MediaKind);
             return tab;
-        }
-
-        private static bool ShouldRestoreWorkspace(MediaWorkspaceTabViewModel tab)
-        {
-            if (tab.HasCompletedResult)
-            {
-                return true;
-            }
-
-            if (tab.MediaKind != CreatorMediaKind.Video)
-            {
-                return false;
-            }
-
-            return tab.Session.TaskHistory.Any(IsResumableVideoTask);
         }
 
         private static bool IsResumableVideoTask(MediaGenTask task)
@@ -1564,15 +1577,12 @@ namespace TrueFluentPro.ViewModels
 
             try
             {
-                var dir = Path.GetDirectoryName(SelectedAsset.FilePath);
-                if (!string.IsNullOrWhiteSpace(dir))
+                Process.Start(new ProcessStartInfo
                 {
-                    Process.Start(new ProcessStartInfo
-                    {
-                        FileName = dir,
-                        UseShellExecute = true
-                    });
-                }
+                    FileName = "explorer.exe",
+                    Arguments = $"/select,\"{SelectedAsset.FilePath}\"",
+                    UseShellExecute = true
+                });
             }
             catch (Exception ex)
             {
@@ -1582,16 +1592,15 @@ namespace TrueFluentPro.ViewModels
 
         public void OpenWorkspaceFolder()
         {
-            if (WorkspaceSession == null || !Directory.Exists(WorkspaceSession.SessionDirectory))
-            {
-                return;
-            }
+            var filePath = FindFirstExistingAssetPath();
+            if (filePath == null) return;
 
             try
             {
                 Process.Start(new ProcessStartInfo
                 {
-                    FileName = WorkspaceSession.SessionDirectory,
+                    FileName = "explorer.exe",
+                    Arguments = $"/select,\"{filePath}\"",
                     UseShellExecute = true
                 });
             }
@@ -1599,6 +1608,27 @@ namespace TrueFluentPro.ViewModels
             {
                 Debug.WriteLine($"[MediaCenterV2] Open workspace folder error: {ex.Message}");
             }
+        }
+
+        private string? FindFirstExistingAssetPath()
+        {
+            if (WorkspaceSession == null) return null;
+
+            // 优先从当前选中资产
+            if (SelectedAsset is { IsPending: false } && File.Exists(SelectedAsset.FilePath))
+                return SelectedAsset.FilePath;
+
+            // 从结果组中找第一个存在的文件
+            foreach (var group in ResultGroups)
+            {
+                foreach (var asset in group.Items)
+                {
+                    if (!asset.IsPending && File.Exists(asset.FilePath))
+                        return asset.FilePath;
+                }
+            }
+
+            return null;
         }
 
         /// <summary>
@@ -1664,13 +1694,23 @@ namespace TrueFluentPro.ViewModels
             }
 
             var sourceSession = WorkspaceSession;
-            var tab = CreateNewWorkspaceCore(copyFromCurrentSession: true, selectNewWorkspace: true);
-            var targetSession = tab.Session;
+            // 当前工作区无内容时复用，避免改图反复产生空白工作区
+            bool canReuse = WorkspaceSession != null
+                && WorkspaceSession.TotalMessageCount == 0
+                && SelectedWorkspaceTab is { HasCompletedResult: false };
 
-            if (!ReferenceEquals(sourceSession, targetSession))
+            MediaWorkspaceTabViewModel tab;
+            if (canReuse)
             {
-                targetSession.ClearReferenceImage(silent: true);
+                tab = SelectedWorkspaceTab!;
             }
+            else
+            {
+                tab = CreateNewWorkspaceCore(copyFromCurrentSession: true, selectNewWorkspace: true);
+            }
+
+            var targetSession = tab.Session;
+            targetSession.ClearReferenceImage(silent: true);
 
             await targetSession.SetReferenceImageFromFileAsync(referenceImagePath);
 
@@ -1741,7 +1781,6 @@ namespace TrueFluentPro.ViewModels
         {
             try
             {
-                Directory.CreateDirectory(session.SessionDirectory);
                 var tab = WorkspaceTabs.FirstOrDefault(candidate => ReferenceEquals(candidate.Session, session));
 
                 var canvasMode = (tab?.CanvasMode ?? CanvasMode).ToString();
@@ -1828,9 +1867,65 @@ namespace TrueFluentPro.ViewModels
                     SourceReferenceRole = srcInfo?.ReferenceRole,
                 });
 
-                // 消息增量写入
+                // 消息增量写入 + 已有消息变更回写
                 var maxSeq = msgRepo.GetMaxSequence(session.SessionId);
                 var allMessages = session.AllMessages;
+
+                // 回写已持久化但内容已变更的消息（修复生成中占位消息被提前写入后不再更新的问题）
+                if (maxSeq > 0)
+                {
+                    var existingRecords = msgRepo.GetLatest(session.SessionId, limit: maxSeq);
+                    foreach (var existing in existingRecords)
+                    {
+                        var idx = existing.SequenceNo - 1;
+                        if (idx < 0 || idx >= allMessages.Count) continue;
+                        var current = allMessages[idx];
+                        if (!string.Equals(existing.Role, "assistant", StringComparison.Ordinal)) continue;
+
+                        var existingMediaCount = msgRepo.GetMediaRefs(existing.Id).Count;
+                        var needsTextUpdate = !string.Equals(existing.Text, current.Text, StringComparison.Ordinal);
+                        var needsMediaUpdate = current.MediaPaths.Count > 0 && existingMediaCount == 0;
+
+                        if (!needsTextUpdate && !needsMediaUpdate) continue;
+
+                        msgRepo.Update(new MessageRecord
+                        {
+                            Id = existing.Id,
+                            SessionId = existing.SessionId,
+                            SequenceNo = existing.SequenceNo,
+                            Role = existing.Role,
+                            ContentType = current.ContentType,
+                            Text = current.Text,
+                            ReasoningText = current.ReasoningText ?? "",
+                            PromptTokens = current.PromptTokens,
+                            CompletionTokens = current.CompletionTokens,
+                            GenerateSeconds = current.GenerateSeconds,
+                            DownloadSeconds = current.DownloadSeconds,
+                            SearchSummary = current.SearchSummary,
+                            Timestamp = existing.Timestamp,
+                        });
+
+                        if (needsMediaUpdate)
+                        {
+                            msgRepo.DeleteMediaRefs(existing.Id);
+                            var refs = current.MediaPaths.Select((p, pidx) => new MediaRefRecord
+                            {
+                                MediaPath = paths.ToRelativePath(p),
+                                MediaKind = Path.GetExtension(p).ToLowerInvariant() switch
+                                {
+                                    ".mp4" or ".webm" or ".mov" => "video",
+                                    ".mp3" or ".wav" => "audio",
+                                    _ => "image"
+                                },
+                                SortOrder = pidx,
+                            }).ToList();
+                            msgRepo.InsertMediaRefs(existing.Id, refs);
+                        }
+
+                        Debug.WriteLine($"[SQLite] 回写消息 {existing.Id} seq={existing.SequenceNo}: text={needsTextUpdate}, media={needsMediaUpdate}");
+                    }
+                }
+
                 for (var i = maxSeq; i < allMessages.Count; i++)
                 {
                     var m = allMessages[i];
@@ -1868,7 +1963,6 @@ namespace TrueFluentPro.ViewModels
                         msgRepo.InsertMediaRefs(msgId, refs);
                     }
 
-                    // BUG-1 fix: 写入网页搜索引用
                     if (m.Citations.Count > 0)
                     {
                         var citations = m.Citations.Select(c => new CitationRecord
@@ -2597,7 +2691,7 @@ namespace TrueFluentPro.ViewModels
 
         public string MetaSummaryText => Group == null
             ? AppendLineage(IsPending ? PendingStatusText : $"{KindText} · {TimestampText}")
-            : AppendLineage(IsPending ? $"{PendingStatusText} · {Group.SecondaryText}" : $"{KindText} · {Group.SecondaryText}");
+            : IsPending ? $"{PendingStatusText} · {Group.SecondaryText}" : $"{KindText} · {Group.SecondaryText}";
 
         public string PromptSummaryText => Group?.PromptSummaryText
             ?? (string.IsNullOrWhiteSpace(PromptText) ? "未记录提示词" : Compact(PromptText, 220));

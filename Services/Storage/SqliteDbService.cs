@@ -160,6 +160,18 @@ CREATE TABLE IF NOT EXISTS message_citations (
 );");
 
             Exec(conn, @"
+CREATE TABLE IF NOT EXISTS message_attachments (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    message_id      TEXT    NOT NULL,
+    attachment_type TEXT    NOT NULL DEFAULT '',
+    file_name       TEXT    NOT NULL DEFAULT '',
+    file_path       TEXT    NOT NULL DEFAULT '',
+    file_size       INTEGER NOT NULL DEFAULT 0,
+    sort_order      INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY (message_id) REFERENCES session_messages(id)
+);");;
+
+            Exec(conn, @"
 CREATE TABLE IF NOT EXISTS session_tasks (
     id                      TEXT PRIMARY KEY,
     session_id              TEXT    NOT NULL,
@@ -264,6 +276,7 @@ CREATE TABLE IF NOT EXISTS translation_history (
         private static void CreateAllIndexes(SqliteConnection conn)
         {
             Exec(conn, "CREATE INDEX IF NOT EXISTS idx_sessions_updated ON sessions(updated_at DESC);");
+            Exec(conn, "CREATE INDEX IF NOT EXISTS idx_sessions_created ON sessions(created_at DESC);");
             Exec(conn, "CREATE INDEX IF NOT EXISTS idx_sessions_type ON sessions(session_type);");
             Exec(conn, "CREATE INDEX IF NOT EXISTS idx_messages_session_seq ON session_messages(session_id, sequence_no DESC);");
             Exec(conn, "CREATE INDEX IF NOT EXISTS idx_tasks_session_created ON session_tasks(session_id, created_at DESC);");

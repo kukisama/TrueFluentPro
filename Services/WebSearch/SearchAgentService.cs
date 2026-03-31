@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -195,19 +196,11 @@ public sealed class SearchAgentService
         // ── 第 4 步：Cherry 核心 — 抓取每个 URL 的网页正文 ──
         // Cherry LocalSearchProvider: fetchWebContent(item.url, 'markdown', ...)
         progress?.OnFetchingContent?.Invoke();
-        var http = WebSearchProviderFactory.GetSharedHttpClient();
-        var fetcher = new WebPageFetcher(http);
+        var fetcher = new WebPageFetcher();
         var fetchTasks = uniqueResults.Select(async r =>
         {
-            var url = r.Url;
-            // 如果 URL 仍是 bing.com 重定向（Base64 解码失败），用 HEAD 请求跟随重定向
-            if (Uri.TryCreate(url, UriKind.Absolute, out var parsedUri) &&
-                parsedUri.Host.Contains("bing.com", StringComparison.OrdinalIgnoreCase))
-            {
-                url = await BingSearchProvider.ResolveRedirectAsync(http, url, ct);
-            }
-            var content = await fetcher.FetchTextAsync(url, ct);
-            return r with { Url = url, Content = content };
+            var content = await fetcher.FetchTextAsync(r.Url, ct);
+            return r with { Content = content };
         });
         var resultsWithContent = await Task.WhenAll(fetchTasks);
 
@@ -340,7 +333,11 @@ public sealed class SearchAgentService
         }
 
         var json = JsonSerializer.Serialize(citationData,
-            new JsonSerializerOptions { WriteIndented = true });
+            new JsonSerializerOptions
+            {
+                WriteIndented = true,
+                Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+            });
         var references = $"```json\n{json}\n```";
 
         return ReferencePrompt

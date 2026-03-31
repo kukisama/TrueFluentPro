@@ -29,8 +29,8 @@
             <Setter Property="Background" Value="{DynamicResource AiMessageBrush}"/>
             <Setter Property="CornerRadius" Value="10,10,10,2"/>
             <Setter Property="Padding" Value="16,12"/>
-            <Setter Property="Margin" Value="8,8,60,8"/>
-            <Setter Property="HorizontalAlignment" Value="Left"/>
+            <Setter Property="Margin" Value="8,8,8,8"/>
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
         </Style>
         <!-- 参数区域标签 -->
         <Style Selector="TextBlock.param-label">
@@ -60,6 +60,33 @@
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderBrush" Value="Transparent"/>
             <Setter Property="BorderThickness" Value="0"/>
+        </Style>
+        <!-- 附件预览项样式 -->
+        <Style Selector="Grid.att-anchor Button.att-remove">
+            <Setter Property="IsVisible" Value="False"/>
+        </Style>
+        <Style Selector="Grid.att-anchor:pointerover Button.att-remove">
+            <Setter Property="IsVisible" Value="True"/>
+        </Style>
+        <Style Selector="Border.att-pill">
+            <Setter Property="Background" Value="{DynamicResource SubtleFillColorTertiaryBrush}"/>
+            <Setter Property="CornerRadius" Value="6"/>
+            <Setter Property="Padding" Value="8,4"/>
+            <Setter Property="Height" Value="48"/>
+        </Style>
+        <Style Selector="Border.att-image-thumb">
+            <Setter Property="BorderBrush" Value="{DynamicResource ThumbnailBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="4"/>
+            <Setter Property="Width" Value="48"/>
+            <Setter Property="Height" Value="48"/>
+        </Style>
+        <!-- 用户消息操作按钮：默认隐藏，hover 气泡时显示 -->
+        <Style Selector="StackPanel.user-msg-actions">
+            <Setter Property="Opacity" Value="0"/>
+        </Style>
+        <Style Selector="Border.user-msg:pointerover StackPanel.user-msg-actions">
+            <Setter Property="Opacity" Value="1"/>
         </Style>
         <!-- 消息操作按钮：默认半透明，hover 气泡时显示，hover 按钮时高亮 -->
         <Style Selector="StackPanel.msg-actions">
@@ -240,7 +267,8 @@
 
             <!-- 右侧内容区 -->
             <Grid Grid.Column="2" RowDefinitions="*,Auto"
-                            x:Name="SessionViewsHost">
+                            x:Name="SessionViewsHost"
+                            DragDrop.AllowDrop="True">
                             <controls:CachedContentControl x:Name="SessionContentHost"
                                             Content="{Binding CurrentSession}"
                                             MaxCachedViews="8"
@@ -275,8 +303,7 @@
                             </Grid>
                         </Border>
 
-                        <Grid Grid.Row="1"
-                              DragDrop.AllowDrop="True">
+                        <Grid Grid.Row="1">
                         <ListBox x:Name="MessageListBox"
                                  Classes="chat-message-list"
                                  ItemsSource="{Binding Messages}">
@@ -294,6 +321,39 @@
                                             <Border Classes="user-msg" IsVisible="{Binding IsUser}"
                                                     PointerReleased="ChatMessageBorder_PointerReleased">
                                                 <StackPanel Spacing="4">
+                                                    <!-- 附件标签（仅显示文件名 badge，不展开内容） -->
+                                                    <ItemsControl ItemsSource="{Binding Attachments}"
+                                                                  IsVisible="{Binding HasAttachments}">
+                                                        <ItemsControl.ItemsPanel>
+                                                            <ItemsPanelTemplate>
+                                                                <WrapPanel Orientation="Horizontal" Margin="0,0,0,4"/>
+                                                            </ItemsPanelTemplate>
+                                                        </ItemsControl.ItemsPanel>
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate>
+                                                                <Border Background="{DynamicResource SubtleFillColorSecondaryBrush}"
+                                                                        CornerRadius="4" Padding="6,2" Margin="0,0,4,2">
+                                                                    <StackPanel Orientation="Horizontal" Spacing="4">
+                                                                        <TextBlock Text="{Binding Type, StringFormat={}{0}}"
+                                                                                   FontSize="11"
+                                                                                   Foreground="{DynamicResource TextSubtleBrush}"
+                                                                                   VerticalAlignment="Center">
+                                                                            <TextBlock.Styles>
+                                                                                <Style Selector="TextBlock">
+                                                                                    <Setter Property="Text" Value="📄"/>
+                                                                                </Style>
+                                                                            </TextBlock.Styles>
+                                                                        </TextBlock>
+                                                                        <TextBlock Text="{Binding FileName}"
+                                                                                   FontSize="11"
+                                                                                   MaxWidth="160"
+                                                                                   TextTrimming="CharacterEllipsis"
+                                                                                   VerticalAlignment="Center"/>
+                                                                    </StackPanel>
+                                                                </Border>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
                                                     <!-- 正常显示模式 -->
                                                     <SelectableTextBlock Text="{Binding Text}"
                                                              TextWrapping="Wrap"
@@ -336,11 +396,22 @@
                                                                    Foreground="{DynamicResource TimestampBrush}"
                                                                    VerticalAlignment="Center"/>
                                                         <!-- 编辑按钮 -->
-                                                        <Button ToolTip.Tip="编辑" FontSize="10" Padding="4,2"
-                                                                Opacity="0.6" Cursor="Hand"
+                                                        <Button Classes="msg-footer-btn" ToolTip.Tip="编辑"
                                                                 Command="{Binding $parent[ListBox].DataContext.EditMessageCommand}"
                                                                 CommandParameter="{Binding}">
                                                             <icons:Icon Value="fa-regular fa-pen-to-square" FontSize="11"/>
+                                                        </Button>
+                                                        <!-- 复制按钮 -->
+                                                        <Button Classes="msg-footer-btn" ToolTip.Tip="复制"
+                                                                Command="{Binding $parent[ListBox].DataContext.CopyMessageCommand}"
+                                                                CommandParameter="{Binding}">
+                                                            <icons:Icon Value="fa-regular fa-copy" FontSize="11"/>
+                                                        </Button>
+                                                        <!-- 删除按钮 -->
+                                                        <Button Classes="msg-footer-btn" ToolTip.Tip="删除"
+                                                                Command="{Binding $parent[ListBox].DataContext.DeleteMessageCommand}"
+                                                                CommandParameter="{Binding}">
+                                                            <icons:Icon Value="fa-regular fa-trash-can" FontSize="11"/>
                                                         </Button>
                                                     </StackPanel>
                                                 </StackPanel>
@@ -385,6 +456,33 @@
                                                                FontSize="10.5" Opacity="0.6"
                                                                TextWrapping="Wrap"
                                                                Margin="0,4,0,0"/>
+
+                                                    <!-- 搜索调试详情（仅调试模式下显示） -->
+                                                    <StackPanel Spacing="4"
+                                                                IsVisible="{Binding HasSearchDebugInfo}"
+                                                                Margin="0,4,0,0">
+                                                        <Button Classes="pressable" Padding="6,3" FontSize="11"
+                                                                HorizontalAlignment="Left"
+                                                                Click="ToggleSearchDebug_Click"
+                                                                ToolTip.Tip="展开/折叠搜索调试信息">
+                                                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                                                <icons:Icon Value="fa-solid fa-bug" FontSize="12" VerticalAlignment="Center"/>
+                                                                <TextBlock Text="搜索调试" VerticalAlignment="Center"/>
+                                                                <TextBlock Text="▾" FontSize="10" VerticalAlignment="Center"
+                                                                           IsVisible="{Binding !IsSearchDebugExpanded}"/>
+                                                                <TextBlock Text="▴" FontSize="10" VerticalAlignment="Center"
+                                                                           IsVisible="{Binding IsSearchDebugExpanded}"/>
+                                                            </StackPanel>
+                                                        </Button>
+                                                        <Border IsVisible="{Binding IsSearchDebugExpanded}"
+                                                                Background="{DynamicResource CodeBlockBackgroundBrush}"
+                                                                CornerRadius="6" Padding="10,8" Margin="0,2,0,4"
+                                                                MaxHeight="500">
+                                                            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                                                <controls:ChatMarkdownBlock Markdown="{Binding SearchDebugInfo}"/>
+                                                            </ScrollViewer>
+                                                        </Border>
+                                                    </StackPanel>
 
                                                     <ProgressBar IsIndeterminate="True" Height="4"
                                                                  IsVisible="{Binding IsLoading}"/>
@@ -584,6 +682,58 @@
                 <!-- ===== 底部输入区 ===== -->
                 <Border Grid.Row="1" Classes="app-card" Padding="12,10">
                     <Grid RowDefinitions="Auto,Auto,Auto,Auto">
+                        <!-- 附件预览区（文字模式，有附件时显示） -->
+                        <Border Grid.Row="0" Classes="sub-card"
+                                BorderBrush="{DynamicResource InputBorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="6"
+                                Padding="6"
+                                Margin="0,0,0,6"
+                                IsVisible="{Binding HasPendingAttachments}">
+                            <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                                          VerticalScrollBarVisibility="Disabled">
+                                <ItemsControl ItemsSource="{Binding PendingAttachments}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <StackPanel Orientation="Horizontal" Spacing="6"/>
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid Classes="att-anchor">
+                                                <Border Classes="att-pill">
+                                                    <StackPanel Orientation="Horizontal" Spacing="4"
+                                                                VerticalAlignment="Center">
+                                                        <icons:Icon Value="fa-regular fa-file-lines" FontSize="14"
+                                                                    x:Name="TextIcon"/>
+                                                        <icons:Icon Value="fa-regular fa-image" FontSize="14"
+                                                                    x:Name="ImageIcon" IsVisible="False"/>
+                                                        <TextBlock Text="{Binding FileName}" FontSize="11"
+                                                                   MaxWidth="140" TextTrimming="CharacterEllipsis"
+                                                                   VerticalAlignment="Center"/>
+                                                    </StackPanel>
+                                                </Border>
+                                                <Button Classes="att-remove"
+                                                        Width="14" Height="14"
+                                                        HorizontalAlignment="Right"
+                                                        VerticalAlignment="Top"
+                                                        Margin="0,-3,-3,0"
+                                                        Padding="0"
+                                                        FontSize="9" FontWeight="Bold"
+                                                        Content="×"
+                                                        HorizontalContentAlignment="Center"
+                                                        VerticalContentAlignment="Center"
+                                                        Background="#CC000000" Foreground="White"
+                                                        BorderThickness="0" CornerRadius="7"
+                                                        Command="{Binding $parent[ItemsControl].DataContext.RemoveAttachmentCommand}"
+                                                        CommandParameter="{Binding .}"
+                                                        ToolTip.Tip="移除此附件"/>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                        </Border>
                         <!-- 参数行 -->
                         <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="10" Margin="0,0,0,6">
                             <!-- 模式切换（三选一） -->
@@ -762,14 +912,14 @@
                                 <Grid Grid.Row="1" ColumnDefinitions="Auto,*" ColumnSpacing="6">
                                     <Button Grid.Column="0"
                                             Classes="ref-add"
-                                            IsVisible="{Binding CanAddMoreReferenceImages}"
                                             Width="36"
                                             Height="38"
                                             Padding="0"
                                             FontSize="16"
-                                            Content="🖼"
-                                            Click="AttachReferenceImage_Click"
-                                            ToolTip.Tip="添加参考图（最多8张，支持 Ctrl+V）"/>
+                                            Click="AttachFileOrImage_Click"
+                                            ToolTip.Tip="添加附件（图片或文本文件）">
+                                        <icons:Icon Value="fa-solid fa-paperclip" FontSize="16"/>
+                                    </Button>
 
                                     <TextBox x:Name="PromptTextBox"
                                              Grid.Column="1"

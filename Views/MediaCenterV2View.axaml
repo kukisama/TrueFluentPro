@@ -357,14 +357,14 @@
                                        Text="{Binding CanvasPlaceholderDescription}"/>
                         </StackPanel>
 
-                        <!-- 资产预览：图片和视频首帧均全画布显示 -->
-                        <controls:ViewportLazyImage FilePath="{Binding CanvasPreviewPath}"
-                                                    Stretch="Uniform"
-                                                    Margin="18"
-                                                    HorizontalAlignment="Center"
-                                                    VerticalAlignment="Center"
-                                                    PointerPressed="PreviewSurface_PointerPressed"
-                                                    IsVisible="{Binding HasCanvasPreview}"/>
+                        <!-- 资产预览：适应画布高度等比缩放 -->
+                        <Image Source="{Binding CanvasPreviewPath, Converter={StaticResource FilePathToBitmapConverter}}"
+                               Stretch="Uniform"
+                               Margin="8"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"
+                               PointerPressed="PreviewSurface_PointerPressed"
+                               IsVisible="{Binding HasCanvasPreview}"/>
 
                         <!-- 视频播放按钮：居中覆盖，点击用系统播放器打开 -->
                         <Button HorizontalAlignment="Center"
@@ -485,6 +485,24 @@
                                                                             HorizontalAlignment="Stretch"
                                                                             VerticalAlignment="Stretch"
                                                                             IsVisible="{Binding HasPreview}"/>
+                                                <Border HorizontalAlignment="Center"
+                                                        VerticalAlignment="Center"
+                                                        Width="24"
+                                                        Height="24"
+                                                        CornerRadius="12"
+                                                        Background="#99000000"
+                                                        BorderBrush="#D9FFFFFF"
+                                                        BorderThickness="1"
+                                                        IsHitTestVisible="False"
+                                                        IsVisible="{Binding IsVideo}">
+                                                    <TextBlock Text="▶"
+                                                               FontSize="11"
+                                                               FontWeight="Bold"
+                                                               Foreground="White"
+                                                               HorizontalAlignment="Center"
+                                                               VerticalAlignment="Center"
+                                                               Margin="1,0,0,0"/>
+                                                </Border>
                                                 <Border HorizontalAlignment="Left"
                                                         VerticalAlignment="Top"
                                                         Margin="5"
@@ -524,7 +542,7 @@
                     <icons:Icon Value="fa-solid fa-plus" FontSize="18"/>
                 </Button>
 
-                <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <ScrollViewer Grid.Row="2" Name="WorkspaceScrollViewer" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <ItemsControl ItemsSource="{Binding WorkspaceTabs}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>

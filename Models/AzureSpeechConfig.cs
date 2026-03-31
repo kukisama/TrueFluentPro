@@ -220,6 +220,8 @@ namespace TrueFluentPro.Models
         public bool WebSearchEnableIntentAnalysis { get; set; } = true;
         public bool WebSearchEnableResultCompression { get; set; } = false;
 
+        public bool WebSearchDebugMode { get; set; }
+
         // MCP 搜索配置
         public string WebSearchMcpEndpoint { get; set; } = "";
         public string WebSearchMcpToolName { get; set; } = "web_search";

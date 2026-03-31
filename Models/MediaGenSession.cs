@@ -90,6 +90,9 @@ namespace TrueFluentPro.Models
 
         /// <summary>搜索过程摘要</summary>
         public string SearchSummary { get; set; } = "";
+
+        /// <summary>随消息提交的附件（图片/文本文件）</summary>
+        public List<ChatAttachmentInfo>? Attachments { get; set; }
     }
 
     /// <summary>搜索引用来源（持久化用）</summary>
@@ -100,6 +103,19 @@ namespace TrueFluentPro.Models
         public string Url { get; set; } = "";
         public string Snippet { get; set; } = "";
         public string Hostname { get; set; } = "";
+    }
+
+    /// <summary>消息附件元数据（持久化用）</summary>
+    public class ChatAttachmentInfo
+    {
+        /// <summary>image / text</summary>
+        public string Type { get; set; } = "text";
+        /// <summary>显示用文件名</summary>
+        public string FileName { get; set; } = "";
+        /// <summary>本地文件路径（存储相对路径）</summary>
+        public string FilePath { get; set; } = "";
+        /// <summary>文件大小（字节）</summary>
+        public long FileSize { get; set; }
     }
 
     /// <summary>

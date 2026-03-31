@@ -114,6 +114,14 @@ namespace TrueFluentPro.Views
                 CaptureSelectionBeforeRightClick,
                 Avalonia.Interactivity.RoutingStrategies.Tunnel);
 
+            // 在 DataTemplate 外层的 SessionViewsHost 上注册拖拽事件（Bubble 策略）
+            var dropZone = this.FindControl<Grid>("SessionViewsHost");
+            if (dropZone != null)
+            {
+                dropZone.AddHandler(DragDrop.DragOverEvent, ChatArea_DragOver);
+                dropZone.AddHandler(DragDrop.DropEvent, ChatArea_Drop);
+            }
+
             // 隧道阶段拦截右键释放，在 STB 处理 PointerReleased 之前显示菜单并恢复选区
             this.AddHandler(
                 InputElement.PointerReleasedEvent,
@@ -124,12 +132,14 @@ namespace TrueFluentPro.Views
         public void UpdateConfiguration(AiConfig aiConfig, MediaGenConfig genConfig, List<AiEndpoint> endpoints,
             string? webSearchProviderId = null, WebSearchTriggerMode? webSearchTriggerMode = null, int? webSearchMaxResults = null,
             bool? webSearchEnableIntentAnalysis = null, bool? webSearchEnableResultCompression = null,
-            string? webSearchMcpEndpoint = null, string? webSearchMcpToolName = null, string? webSearchMcpApiKey = null)
+            string? webSearchMcpEndpoint = null, string? webSearchMcpToolName = null, string? webSearchMcpApiKey = null,
+            bool? webSearchDebugMode = null)
         {
             _viewModel?.UpdateConfiguration(aiConfig, genConfig, endpoints,
                 webSearchProviderId, webSearchTriggerMode, webSearchMaxResults,
                 webSearchEnableIntentAnalysis, webSearchEnableResultCompression,
-                webSearchMcpEndpoint, webSearchMcpToolName, webSearchMcpApiKey);
+                webSearchMcpEndpoint, webSearchMcpToolName, webSearchMcpApiKey,
+                webSearchDebugMode);
         }
 
         public void Cleanup()
@@ -157,6 +167,24 @@ namespace TrueFluentPro.Views
                 ?.GetVisualDescendants()
                 .OfType<ScrollViewer>()
                 .FirstOrDefault();
+        }
+
+        /// <summary>
+        /// 在当前可见的会话视觉树中查找 ScrollToTopButton。
+        /// CachedContentControl 保留多棵视觉树，直接全局搜索会命中隐藏会话的按钮。
+        /// 改为从当前可见的 MessageListBox 向上找到父 Grid，再在其中定位。
+        /// </summary>
+        private Avalonia.Controls.Button? FindScrollToTopButton()
+        {
+            var listBox = FindMessageListBox();
+            if (listBox == null) return null;
+            // 向上找到包含按钮的父 Grid
+            var parent = listBox.Parent;
+            while (parent != null && parent is not Grid)
+                parent = (parent as Control)?.Parent;
+            return (parent as Visual)?.GetVisualDescendants()
+                .OfType<Avalonia.Controls.Button>()
+                .FirstOrDefault(b => b.Name == "ScrollToTopButton");
         }
 
         /// <summary>
@@ -353,6 +381,11 @@ namespace TrueFluentPro.Views
                 }
             }
 
+            // ── 回到顶部按钮显隐 ──
+            var scrollToTopBtn = FindScrollToTopButton();
+            if (scrollToTopBtn != null)
+                scrollToTopBtn.IsVisible = offsetY > viewportH * 0.5;
+
             // ── 诊断日志（降频）──
             _diagScrollEventCount++;
             var now = DateTime.UtcNow;
@@ -392,6 +425,14 @@ namespace TrueFluentPro.Views
             }
         }
 
+        private void ToggleSearchDebug_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        {
+            if (sender is Avalonia.Controls.Button btn && btn.DataContext is ChatMessageViewModel msg)
+            {
+                msg.IsSearchDebugExpanded = !msg.IsSearchDebugExpanded;
+            }
+        }
+
         private async void PromptTextBox_KeyDown(object? sender, KeyEventArgs e)
         {
             // Ctrl+C：优先处理跨块选择复制
@@ -414,7 +455,7 @@ namespace TrueFluentPro.Views
 
             if (e.Key == Key.V && e.KeyModifiers.HasFlag(KeyModifiers.Control))
             {
-                if (await TryAttachReferenceImageFromClipboardAsync())
+                if (await TryAttachFromClipboardAsync())
                 {
                     e.Handled = true;
                     return;
@@ -509,6 +550,86 @@ namespace TrueFluentPro.Views
 
                 await _viewModel.CurrentSession.SetReferenceImageFromFileAsync(localPath);
             }
+        }
+
+        /// <summary>统一附件按钮：文字模式打开图片+文本选择器；图片/视频模式走现有参考图逻辑。</summary>
+        private async void AttachFileOrImage_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        {
+            var session = _viewModel?.CurrentSession;
+            if (session == null) return;
+
+            var provider = TopLevel.GetTopLevel(this)?.StorageProvider;
+            if (provider == null) return;
+
+            if (session.IsTextMode)
+            {
+                // 文字模式：支持图片 + 文本文件
+                var files = await provider.OpenFilePickerAsync(new FilePickerOpenOptions
+                {
+                    Title = "添加附件（图片或文本文件）",
+                    AllowMultiple = true,
+                    FileTypeFilter = new[]
+                    {
+                        new FilePickerFileType("图片")
+                        {
+                            Patterns = new[] { "*.png", "*.jpg", "*.jpeg", "*.webp", "*.bmp", "*.gif" }
+                        },
+                        new FilePickerFileType("文本文件")
+                        {
+                            Patterns = new[] { "*.txt", "*.md", "*.json", "*.xml", "*.csv", "*.log", "*.yaml", "*.yml", "*.html", "*.css", "*.js", "*.ts", "*.py", "*.cs" }
+                        },
+                        new FilePickerFileType("所有文件")
+                        {
+                            Patterns = new[] { "*.*" }
+                        }
+                    }
+                });
+
+                if (files == null || files.Count == 0) return;
+
+                foreach (var file in files)
+                {
+                    var localPath = file.TryGetLocalPath();
+                    if (string.IsNullOrWhiteSpace(localPath)) continue;
+                    if (session.IsAllowedAttachmentFile(localPath))
+                        session.AddAttachmentFile(localPath);
+                }
+            }
+            else
+            {
+                // 图片/视频模式：走现有参考图逻辑
+                AttachReferenceImage_Click(sender, e);
+            }
+        }
+
+        /// <summary>Ctrl+V 统一粘贴：文字模式走附件系统，其他模式走参考图。</summary>
+        private async Task<bool> TryAttachFromClipboardAsync()
+        {
+            var session = _viewModel?.CurrentSession;
+            if (session == null) return false;
+
+            if (session.IsTextMode)
+            {
+                // 文字模式：剪贴板图片→附件
+                var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+                if (clipboard == null) return false;
+
+                using (var bitmap = await clipboard.TryGetBitmapAsync())
+                {
+                    if (bitmap != null)
+                    {
+                        var tempPngPath = Path.Combine(Path.GetTempPath(), $"attclip_{Guid.NewGuid():N}.png");
+                        bitmap.Save(tempPngPath, 100);
+                        session.AddAttachmentFile(tempPngPath);
+                        return true;
+                    }
+                }
+
+                return false; // 非图片粘贴不拦截，让 TextBox 自行处理
+            }
+
+            // 图片/视频模式：走现有参考图粘贴
+            return await TryAttachReferenceImageFromClipboardAsync();
         }
 
         private async Task<bool> TryAttachReferenceImageFromClipboardAsync()
@@ -1393,11 +1514,13 @@ namespace TrueFluentPro.Views
         private void ChatArea_DragOver(object? sender, DragEventArgs e)
         {
             e.DragEffects = DragDropEffects.Copy;
+            e.Handled = true;
         }
 
 #pragma warning disable CS0618 // DragEventArgs.Data / DataFormats are deprecated but DataTransfer API not yet stable
         private async void ChatArea_Drop(object? sender, DragEventArgs e)
         {
+            e.Handled = true;
             var session = _viewModel?.CurrentSession;
             if (session == null) return;
 
@@ -1412,20 +1535,18 @@ namespace TrueFluentPro.Views
                         if (string.IsNullOrEmpty(path)) continue;
 
                         var ext = Path.GetExtension(path).ToLowerInvariant();
-                        if (ext is ".png" or ".jpg" or ".jpeg" or ".bmp" or ".webp")
+                        var isImage = ext is ".png" or ".jpg" or ".jpeg" or ".bmp" or ".webp" or ".gif";
+
+                        if (session.IsTextMode)
                         {
-                            await session.SetReferenceImageFromFileAsync(path);
+                            // 文字模式：图片和文本都走附件系统
+                            if (session.IsAllowedAttachmentFile(path))
+                                session.AddAttachmentFile(path);
                         }
-                        else if (ext is ".txt" or ".md" or ".json" or ".csv" or ".log")
+                        else if (isImage)
                         {
-                            try
-                            {
-                                var content = await File.ReadAllTextAsync(path);
-                                if (content.Length > 10000)
-                                    content = content[..10000] + "\n...(已截断)";
-                                session.PromptText += $"\n--- {Path.GetFileName(path)} ---\n{content}\n";
-                            }
-                            catch { /* 静默 */ }
+                            // 图片/视频模式：图片走参考图
+                            await session.SetReferenceImageFromFileAsync(path);
                         }
                     }
                 }

@@ -175,6 +175,15 @@
         <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
     </Style>
 
+    <!-- 选中+hover 时强制保持白色前景，防止 :pointerover 覆盖 :selected -->
+    <Style Selector="ListBox.sidebar-nav-list > ListBoxItem:selected:pointerover TextBlock">
+        <Setter Property="Foreground" Value="White"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+    <Style Selector="ListBox.sidebar-nav-list > ListBoxItem:selected:pointerover icons|Icon">
+        <Setter Property="Foreground" Value="White"/>
+    </Style>
+
     <Style Selector="Border.sidebar-nav-badge">
         <Setter Property="Background" Value="{DynamicResource SurfaceHoverBrush}"/>
         <Setter Property="Padding" Value="8,2"/>

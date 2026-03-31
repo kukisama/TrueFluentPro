@@ -42,6 +42,14 @@ namespace TrueFluentPro.Views
             _viewModel = new MediaCenterV2ViewModel(aiConfig, genConfig, endpoints, modelRuntimeResolver, azureTokenProviderStore);
             DataContext = _viewModel;
 
+            var workspaceScroll = this.FindControl<ScrollViewer>("WorkspaceScrollViewer");
+            if (workspaceScroll != null)
+            {
+                workspaceScroll.ScrollChanged += WorkspaceScrollViewer_ScrollChanged;
+                // 初始 10 条可能不够撑满视口，布局完成后补充加载
+                workspaceScroll.LayoutUpdated += WorkspaceScrollViewer_InitialFill;
+            }
+
             AddHandler(
                 InputElement.KeyDownEvent,
                 PromptTextBox_KeyDown,
@@ -61,6 +69,29 @@ namespace TrueFluentPro.Views
         public void Cleanup()
         {
             _viewModel?.Dispose();
+        }
+
+        private void WorkspaceScrollViewer_ScrollChanged(object? sender, ScrollChangedEventArgs e)
+        {
+            if (sender is not ScrollViewer sv || _viewModel is not { HasMoreWorkspaces: true }) return;
+            if (sv.Offset.Y + sv.Viewport.Height >= sv.Extent.Height - 200)
+            {
+                _viewModel.LoadMoreWorkspaces();
+            }
+        }
+
+        private void WorkspaceScrollViewer_InitialFill(object? sender, EventArgs e)
+        {
+            if (sender is not ScrollViewer sv || _viewModel is not { HasMoreWorkspaces: true }) return;
+
+            if (sv.Extent.Height <= sv.Viewport.Height && sv.Extent.Height > 0)
+            {
+                _viewModel.LoadMoreWorkspaces();
+            }
+            else if (sv.Extent.Height > sv.Viewport.Height)
+            {
+                sv.LayoutUpdated -= WorkspaceScrollViewer_InitialFill;
+            }
         }
 
         private async void PromptTextBox_KeyDown(object? sender, KeyEventArgs e)
@@ -526,17 +557,18 @@ namespace TrueFluentPro.Views
                 };
                 flyout.Items.Add(openItem);
 
-                var dir = Path.GetDirectoryName(asset.FilePath);
-                if (!string.IsNullOrWhiteSpace(dir))
+                if (File.Exists(asset.FilePath))
                 {
                     var explorerItem = new MenuItem { Header = "在文件夹中显示" };
+                    var filePath = asset.FilePath;
                     explorerItem.Click += (_, _) =>
                     {
                         try
                         {
                             Process.Start(new ProcessStartInfo
                             {
-                                FileName = dir,
+                                FileName = "explorer.exe",
+                                Arguments = $"/select,\"{filePath}\"",
                                 UseShellExecute = true
                             });
                         }

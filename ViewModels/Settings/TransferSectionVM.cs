@@ -1,5 +1,8 @@
 using System;
+using System.Text.Encodings.Web;
+using System.Text.Json;
 using System.Threading.Tasks;
+using Avalonia.Input.Platform;
 using Avalonia.Platform.Storage;
 using TrueFluentPro.Models;
 using TrueFluentPro.Services;
@@ -8,6 +11,13 @@ namespace TrueFluentPro.ViewModels.Settings;
 
 public class TransferSectionVM : ViewModelBase
 {
+    private static readonly JsonSerializerOptions ClipboardJsonOptions = new()
+    {
+        WriteIndented = true,
+        PropertyNameCaseInsensitive = true,
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+    };
+
     private readonly ISettingsTransferFileService _transferFileService;
     private readonly Func<SettingsTransferPackage> _createBasicExportPackage;
     private readonly Func<AzureSpeechConfig> _createFullExportConfig;
@@ -149,5 +159,115 @@ public class TransferSectionVM : ViewModelBase
             2 => $"已导入 v2 资源级配置：{displayName}。当前终结点类型、模型清单与模型引用已生效。",
             _ => $"已导入 v{package.Version} 资源级配置：{displayName}。"
         };
+    }
+
+    public void ReportClipboardUnavailable()
+    {
+        _reportStatus("操作失败：无法访问系统剪贴板");
+    }
+
+    public async Task CopyBasicAiConfigToClipboardAsync(IClipboard clipboard)
+    {
+        if (IsBusy)
+        {
+            return;
+        }
+
+        try
+        {
+            IsBusy = true;
+            var package = _createBasicExportPackage();
+            var json = JsonSerializer.Serialize(package, ClipboardJsonOptions);
+            await clipboard.SetTextAsync(json);
+            _reportStatus("基本AI配置已复制到剪贴板");
+        }
+        catch (Exception ex)
+        {
+            _reportStatus($"复制到剪贴板失败: {ex.Message}");
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    public async Task ImportFromClipboardAsync(IClipboard clipboard)
+    {
+        if (IsBusy)
+        {
+            return;
+        }
+
+        try
+        {
+            IsBusy = true;
+            var json = await clipboard.TryGetTextAsync();
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                _reportStatus("剪贴板为空或不包含文本内容。");
+                return;
+            }
+
+            using var document = JsonDocument.Parse(json, new JsonDocumentOptions
+            {
+                AllowTrailingCommas = true,
+                CommentHandling = JsonCommentHandling.Skip
+            });
+
+            var root = document.RootElement;
+            if (TryGetPropertyIgnoreCase(root, "Format", out var formatElement)
+                && formatElement.ValueKind == JsonValueKind.String
+                && string.Equals(formatElement.GetString(), "TrueFluentPro.ResourceConfig", StringComparison.OrdinalIgnoreCase))
+            {
+                var package = JsonSerializer.Deserialize<SettingsTransferPackage>(json, ClipboardJsonOptions)
+                    ?? throw new InvalidOperationException("基本AI配置内容为空或格式不正确。");
+
+                await _importPackageAsync(package);
+                _reportStatus(BuildBasicImportSuccessMessage("剪贴板", package));
+                return;
+            }
+
+            if (!TryGetPropertyIgnoreCase(root, "Subscriptions", out _)
+                && !TryGetPropertyIgnoreCase(root, "AiConfig", out _)
+                && !TryGetPropertyIgnoreCase(root, "SourceLanguage", out _)
+                && !TryGetPropertyIgnoreCase(root, "TargetLanguage", out _))
+            {
+                _reportStatus("无法识别剪贴板中的配置格式。请确保剪贴板包含有效的配置 JSON。");
+                return;
+            }
+
+            var fullConfig = JsonSerializer.Deserialize<AzureSpeechConfig>(json, ClipboardJsonOptions)
+                ?? throw new InvalidOperationException("完整配置内容为空或格式不正确。");
+
+            await _importFullConfigAsync(fullConfig);
+            _reportStatus("已从剪贴板导入完整配置。AAD 相关字段与 AAD 认证端点已自动忽略。");
+        }
+        catch (JsonException)
+        {
+            _reportStatus("剪贴板内容不是有效的 JSON 格式。");
+        }
+        catch (Exception ex)
+        {
+            _reportStatus($"从剪贴板导入失败: {ex.Message}");
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private static bool TryGetPropertyIgnoreCase(JsonElement element, string propertyName, out JsonElement value)
+    {
+        foreach (var property in element.EnumerateObject())
+        {
+            if (string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase))
+            {
+                value = property.Value;
+                return true;
+            }
+        }
+
+        value = default;
+        return false;
     }
 }

@@ -527,7 +527,7 @@ namespace TrueFluentPro.ViewModels
                 _config = _settingsImportExportService.NormalizeImportedFullConfig(config);
                 LoadFromConfig();
                 await _configService.SaveConfigAsync(_config);
-                AutoSaveStatus = "✓ 已导入完整配置；AAD 相关字段与 AAD 认证端点已自动忽略";
+                AutoSaveStatus = "✓ 已导入完整配置；AAD 端点已保留空壳（需重新登录），Speech 端点已包含";
                 ConfigSaved?.Invoke(_config);
             }
             catch (Exception ex)

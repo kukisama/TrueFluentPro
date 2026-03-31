@@ -13,6 +13,16 @@ namespace TrueFluentPro.Services.Storage
         public void Upsert(SessionRecord r)
         {
             using var conn = _db.CreateConnection();
+
+            // 同一目录只保留当前 ID 的记录，清理历史残留
+            using (var cleanup = conn.CreateCommand())
+            {
+                cleanup.CommandText = "UPDATE sessions SET is_deleted = 1 WHERE directory_path = @dir AND id != @id AND is_deleted = 0;";
+                cleanup.Parameters.AddWithValue("@dir", r.DirectoryPath);
+                cleanup.Parameters.AddWithValue("@id", r.Id);
+                cleanup.ExecuteNonQuery();
+            }
+
             using var cmd = conn.CreateCommand();
             cmd.CommandText = @"
 INSERT INTO sessions (
@@ -92,7 +102,7 @@ INSERT INTO sessions (
             return ReadRow(r);
         }
 
-        public List<SessionRecord> List(int limit = 30, int offset = 0, bool includeDeleted = false, string? sessionType = null)
+        public List<SessionRecord> List(int limit = 30, int offset = 0, bool includeDeleted = false, string? sessionType = null, string orderBy = "updated_at", bool excludeEmpty = false)
         {
             using var conn = _db.CreateConnection();
             using var cmd = conn.CreateCommand();
@@ -100,8 +110,12 @@ INSERT INTO sessions (
             var where = includeDeleted ? "1=1" : "is_deleted = 0";
             if (!string.IsNullOrEmpty(sessionType))
                 where += " AND session_type = @type";
+            if (excludeEmpty)
+                where += " AND (task_count > 0 OR asset_count > 0)";
 
-            cmd.CommandText = $"SELECT * FROM sessions WHERE {where} ORDER BY updated_at DESC LIMIT @limit OFFSET @offset;";
+            // 只允许白名单排序列，防止注入；id 作为二级排序确保分页确定性
+            var orderCol = orderBy == "created_at" ? "created_at" : "updated_at";
+            cmd.CommandText = $"SELECT * FROM sessions WHERE {where} ORDER BY {orderCol} DESC, id DESC LIMIT @limit OFFSET @offset;";
             cmd.Parameters.AddWithValue("@limit", limit);
             cmd.Parameters.AddWithValue("@offset", offset);
             if (!string.IsNullOrEmpty(sessionType))

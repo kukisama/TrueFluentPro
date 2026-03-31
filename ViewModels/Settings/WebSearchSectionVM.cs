@@ -17,6 +17,8 @@ public class WebSearchSectionVM : SettingsSectionBase
     private bool _enableResultCompression;
     private bool _studioDefaultEnableWebSearch;
 
+    private bool _debugMode;
+
     // MCP 配置
     private string _mcpEndpoint = "";
     private string _mcpToolName = "web_search";
@@ -61,6 +63,9 @@ public class WebSearchSectionVM : SettingsSectionBase
 
     /// <summary>是否启用结果压缩</summary>
     public bool EnableResultCompression { get => _enableResultCompression; set => Set(ref _enableResultCompression, value); }
+
+    /// <summary>是否启用搜索调试模式（显示完整提交内容和搜索细节）</summary>
+    public bool DebugMode { get => _debugMode; set => Set(ref _debugMode, value); }
 
     /// <summary>创作工坊文本会话默认是否启用联网搜索</summary>
     public bool StudioDefaultEnableWebSearch { get => _studioDefaultEnableWebSearch; set => Set(ref _studioDefaultEnableWebSearch, value); }
@@ -116,6 +121,7 @@ public class WebSearchSectionVM : SettingsSectionBase
         EnableIntentAnalysis = config.WebSearchEnableIntentAnalysis;
         EnableResultCompression = config.WebSearchEnableResultCompression;
         StudioDefaultEnableWebSearch = config.MediaGenConfig.DefaultEnableStudioWebSearch;
+        DebugMode = config.WebSearchDebugMode;
         McpEndpoint = config.WebSearchMcpEndpoint;
         McpToolName = config.WebSearchMcpToolName;
         McpApiKey = config.WebSearchMcpApiKey;
@@ -129,6 +135,7 @@ public class WebSearchSectionVM : SettingsSectionBase
         config.WebSearchEnableIntentAnalysis = EnableIntentAnalysis;
         config.WebSearchEnableResultCompression = EnableResultCompression;
         config.MediaGenConfig.DefaultEnableStudioWebSearch = StudioDefaultEnableWebSearch;
+        config.WebSearchDebugMode = DebugMode;
         config.WebSearchMcpEndpoint = McpEndpoint;
         config.WebSearchMcpToolName = McpToolName;
         config.WebSearchMcpApiKey = McpApiKey;

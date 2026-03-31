@@ -240,6 +240,68 @@ VALUES (@mid, @num, @title, @url, @snippet, @hostname);";
             cmd.ExecuteNonQuery();
         }
 
+        // ── 消息附件 ──────────────────────────────────
+
+        public void InsertAttachments(string messageId, List<AttachmentRecord> attachments)
+        {
+            if (attachments.Count == 0) return;
+            using var conn = _db.CreateConnection();
+            using var tx = conn.BeginTransaction();
+
+            foreach (var a in attachments)
+            {
+                using var cmd = conn.CreateCommand();
+                cmd.Transaction = tx;
+                cmd.CommandText = @"
+INSERT INTO message_attachments (message_id, attachment_type, file_name, file_path, file_size, sort_order)
+VALUES (@mid, @type, @name, @path, @size, @sort);";
+                cmd.Parameters.AddWithValue("@mid", messageId);
+                cmd.Parameters.AddWithValue("@type", a.AttachmentType);
+                cmd.Parameters.AddWithValue("@name", a.FileName);
+                cmd.Parameters.AddWithValue("@path", a.FilePath);
+                cmd.Parameters.AddWithValue("@size", a.FileSize);
+                cmd.Parameters.AddWithValue("@sort", a.SortOrder);
+                cmd.ExecuteNonQuery();
+            }
+
+            tx.Commit();
+            SqliteDebugLogger.LogWrite("message_attachments", messageId, $"insert {attachments.Count} 条");
+        }
+
+        public List<AttachmentRecord> GetAttachments(string messageId)
+        {
+            using var conn = _db.CreateConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT * FROM message_attachments WHERE message_id = @mid ORDER BY sort_order;";
+            cmd.Parameters.AddWithValue("@mid", messageId);
+
+            var list = new List<AttachmentRecord>();
+            using var r = cmd.ExecuteReader();
+            while (r.Read())
+            {
+                list.Add(new AttachmentRecord
+                {
+                    Id = Db.Long(r["id"]),
+                    MessageId = Db.Str(r["message_id"]),
+                    AttachmentType = Db.Str(r["attachment_type"]),
+                    FileName = Db.Str(r["file_name"]),
+                    FilePath = Db.Str(r["file_path"]),
+                    FileSize = Db.Long(r["file_size"]),
+                    SortOrder = Db.Int(r["sort_order"]),
+                });
+            }
+            return list;
+        }
+
+        public void DeleteAttachments(string messageId)
+        {
+            using var conn = _db.CreateConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "DELETE FROM message_attachments WHERE message_id = @mid;";
+            cmd.Parameters.AddWithValue("@mid", messageId);
+            cmd.ExecuteNonQuery();
+        }
+
         // ── 内部辅助 ──────────────────────────────────
 
         private static void BindMessage(SqliteCommand cmd, MessageRecord r)

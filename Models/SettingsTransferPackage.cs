@@ -5,14 +5,14 @@ namespace TrueFluentPro.Models
 {
     /// <summary>
     /// 设置页资源配置导入/导出包（仅包含可迁移、可复用的资源项）。
-    /// 不包含本机个性化细项，也不包含 AAD 登录相关字段与 AAD 认证端点。
+    /// 包含所有终结点类型（含 AAD 和 Speech），但 AAD 登录凭据已清除，仅保留空壳结构。
     /// </summary>
     public class SettingsTransferPackage
     {
         public string Format { get; set; } = "TrueFluentPro.ResourceConfig";
         public int Version { get; set; } = 2;
         public DateTimeOffset ExportedAt { get; set; } = DateTimeOffset.Now;
-        public string Description { get; set; } = "仅包含 Azure Speech、存储、AI 终结点（按 EndpointType）、模型清单与模型引用；不包含 AAD 登录字段、AAD 认证端点和细微个性化配置。";
+        public string Description { get; set; } = "包含所有 AI 终结点（含 AAD 空壳与 Speech）、模型清单与模型引用、Azure Speech 资源与存储配置；AAD 登录凭据已自动清除。";
         public TransferSpeechConfig Speech { get; set; } = new();
         public TransferStorageConfig Storage { get; set; } = new();
         public List<TransferAiEndpoint> Endpoints { get; set; } = new();
@@ -74,7 +74,15 @@ namespace TrueFluentPro.Models
         public ApiKeyHeaderMode ApiKeyHeaderMode { get; set; } = ApiKeyHeaderMode.Auto;
         public TextApiProtocolMode TextApiProtocolMode { get; set; } = TextApiProtocolMode.Auto;
         public ImageApiRouteMode ImageApiRouteMode { get; set; } = ImageApiRouteMode.Auto;
+        public string AzureTenantId { get; set; } = "";
+        public string AzureClientId { get; set; } = "";
         public List<TransferAiModel> Models { get; set; } = new();
+
+        // --- Azure Speech 专属字段 ---
+        public string SpeechSubscriptionKey { get; set; } = "";
+        public string SpeechRegion { get; set; } = "";
+        public string SpeechEndpoint { get; set; } = "";
+        public SpeechCapability SpeechCapabilities { get; set; } = SpeechCapability.None;
     }
 
     public class TransferAiModel

@@ -12,6 +12,7 @@ using System.Windows.Input;
 using Avalonia.Threading;
 using TrueFluentPro.Models;
 using TrueFluentPro.Services;
+using TrueFluentPro.Services.Storage;
 using TrueFluentPro.Services.WebSearch;
 
 namespace TrueFluentPro.ViewModels
@@ -30,6 +31,7 @@ namespace TrueFluentPro.ViewModels
         private readonly IAiVideoGenService _videoService;
         private readonly Action _onTaskCountChanged;
         private readonly Action<MediaSessionViewModel>? _onRequestSave;
+        private readonly IStoragePathResolver? _pathResolver;
 
         // 网页搜索配置（可由外部更新）
         private string _webSearchProviderId = "bing";
@@ -38,6 +40,7 @@ namespace TrueFluentPro.ViewModels
         private string _webSearchMcpEndpoint = "";
         private string _webSearchMcpToolName = "web_search";
         private string _webSearchMcpApiKey = "";
+        private bool _webSearchDebugMode;
 
         private CancellationTokenSource _cts = new();
         private readonly SemaphoreSlim _videoFrameBackfillLock = new(1, 1);
@@ -211,6 +214,44 @@ namespace TrueFluentPro.ViewModels
                 if (SetProperty(ref _promptText, value))
                     ((RelayCommand)GenerateCommand).RaiseCanExecuteChanged();
             }
+        }
+
+        // --- 待提交附件（文字模式） ---
+        public ObservableCollection<ChatAttachmentInfo> PendingAttachments { get; } = new();
+        public bool HasPendingAttachments => PendingAttachments.Count > 0;
+        public ICommand RemoveAttachmentCommand { get; }
+
+        private static readonly HashSet<string> ImageExtensions = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"
+        };
+
+        private static readonly HashSet<string> TextExtensions = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ".txt", ".md", ".json", ".xml", ".csv", ".log", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".conf", ".html", ".htm", ".css", ".js", ".ts", ".py", ".cs", ".java", ".c", ".cpp", ".h", ".sh", ".bat", ".ps1"
+        };
+
+        public void AddAttachmentFile(string filePath)
+        {
+            var ext = Path.GetExtension(filePath).ToLowerInvariant();
+            var type = ImageExtensions.Contains(ext) ? "image" : "text";
+
+            long fileSize = 0;
+            try { fileSize = new FileInfo(filePath).Length; } catch { }
+
+            PendingAttachments.Add(new ChatAttachmentInfo
+            {
+                Type = type,
+                FileName = Path.GetFileName(filePath),
+                FilePath = filePath,
+                FileSize = fileSize,
+            });
+        }
+
+        public bool IsAllowedAttachmentFile(string filePath)
+        {
+            var ext = Path.GetExtension(filePath).ToLowerInvariant();
+            return ImageExtensions.Contains(ext) || TextExtensions.Contains(ext);
         }
 
         private MediaGenType _selectedType = MediaGenType.Text;
@@ -391,7 +432,8 @@ namespace TrueFluentPro.ViewModels
         /// <summary>从全局配置同步网页搜索引擎设置</summary>
         public void UpdateWebSearchConfig(string providerId, WebSearchTriggerMode triggerMode, int maxResults,
             bool enableIntentAnalysis = true, bool enableResultCompression = false,
-            string mcpEndpoint = "", string mcpToolName = "web_search", string mcpApiKey = "")
+            string mcpEndpoint = "", string mcpToolName = "web_search", string mcpApiKey = "",
+            bool debugMode = false)
         {
             _webSearchProviderId = providerId;
             _webSearchTriggerMode = triggerMode;
@@ -401,6 +443,7 @@ namespace TrueFluentPro.ViewModels
             _webSearchMcpEndpoint = mcpEndpoint;
             _webSearchMcpToolName = mcpToolName;
             _webSearchMcpApiKey = mcpApiKey;
+            _webSearchDebugMode = debugMode;
             OnPropertyChanged(nameof(WebSearchProviderDisplayName));
             OnPropertyChanged(nameof(WebSearchTriggerModeDisplayName));
             OnPropertyChanged(nameof(WebSearchButtonToolTip));
@@ -514,7 +557,8 @@ namespace TrueFluentPro.ViewModels
             IAiImageGenService imageService,
             IAiVideoGenService videoService,
             Action onTaskCountChanged,
-            Action<MediaSessionViewModel>? onRequestSave = null)
+            Action<MediaSessionViewModel>? onRequestSave = null,
+            IStoragePathResolver? pathResolver = null)
         {
             SessionId = sessionId;
             _sessionName = sessionName;
@@ -528,6 +572,7 @@ namespace TrueFluentPro.ViewModels
             _videoService = videoService;
             _onTaskCountChanged = onTaskCountChanged;
             _onRequestSave = onRequestSave;
+            _pathResolver = pathResolver;
             _enableReasoning = _genConfig.DefaultEnableStudioReasoning;
             _enableWebSearch = _genConfig.DefaultEnableStudioWebSearch;
 
@@ -552,6 +597,9 @@ namespace TrueFluentPro.ViewModels
             RemoveReferenceImageCommand = new RelayCommand(
                 p => RemoveReferenceImage(p as string),
                 _ => HasReferenceImage);
+
+            RemoveAttachmentCommand = new RelayCommand(
+                p => { if (p is ChatAttachmentInfo a) PendingAttachments.Remove(a); });
 
             CopyMessageCommand = new RelayCommand(
                 param => CopyMessage(param as ChatMessageViewModel));
@@ -613,16 +661,23 @@ namespace TrueFluentPro.ViewModels
                 ((RelayCommand)GenerateCommand).RaiseCanExecuteChanged();
             };
 
+            PendingAttachments.CollectionChanged += (_, _) =>
+            {
+                OnPropertyChanged(nameof(HasPendingAttachments));
+                ((RelayCommand)GenerateCommand).RaiseCanExecuteChanged();
+            };
+
             ReevaluateReferenceImageValidation();
         }
 
         private bool CanGenerateNow()
         {
+            // 文字模式：有文本或有附件即可发送
+            if (IsTextMode)
+                return !IsChatStreaming && (!string.IsNullOrWhiteSpace(PromptText) || PendingAttachments.Count > 0);
+
             if (string.IsNullOrWhiteSpace(PromptText))
                 return false;
-
-            if (IsTextMode)
-                return !IsChatStreaming;
 
             if (IsGenerating)
                 return false;
@@ -707,6 +762,7 @@ namespace TrueFluentPro.ViewModels
 
             HasMoreMessages = _visibleStartIndex > 0;
             UpdateMessageWindowState();
+            ((RelayCommand)ExportConversationCommand).RaiseCanExecuteChanged();
         }
 
         /// <summary>
@@ -762,6 +818,7 @@ namespace TrueFluentPro.ViewModels
             _allMessages.Add(message);
             Messages.Add(message);
             UpdateMessageWindowState();
+            ((RelayCommand)ExportConversationCommand).RaiseCanExecuteChanged();
         }
 
         /// <summary>将全部剩余消息加载到 Messages（用于需要全量搜索等场景）。</summary>
@@ -810,6 +867,8 @@ namespace TrueFluentPro.ViewModels
                 Messages.RemoveAt(visibleIndex);
                 removed = true;
             }
+
+            ((RelayCommand)ExportConversationCommand).RaiseCanExecuteChanged();
 
             if (Messages.Count == 0 && _allMessages.Count > 0)
             {
@@ -898,14 +957,20 @@ namespace TrueFluentPro.ViewModels
 
         public void Generate()
         {
-            if (string.IsNullOrWhiteSpace(PromptText)) return;
+            var hasText = !string.IsNullOrWhiteSpace(PromptText);
+            var hasAttachments = PendingAttachments.Count > 0;
+            if (!hasText && !hasAttachments) return;
 
             var prompt = PromptText.Trim();
             PromptText = "";
 
+            // 快照并清空待提交附件
+            var attachments = PendingAttachments.ToList();
+            PendingAttachments.Clear();
+
             if (SelectedType == MediaGenType.Text)
             {
-                SendTextChatAsync(prompt);
+                SendTextChatAsync(prompt, attachments);
                 return;
             }
 
@@ -1006,8 +1071,9 @@ namespace TrueFluentPro.ViewModels
                 try
                 {
                     var imageService = await CreateScopedImageServiceAsync(imageRuntime, ct);
+                    var outputDir = _pathResolver?.GetNewResourceDirectory("image") ?? SessionDirectory;
                     var result = await imageService.GenerateAndSaveImagesAsync(
-                        imageConfig, prompt, effectiveConfig, SessionDirectory, ct,
+                        imageConfig, prompt, effectiveConfig, outputDir, ct,
                         ReferenceImagePaths.ToList(),
                         p => Dispatcher.UIThread.Post(() =>
                         {
@@ -1195,7 +1261,8 @@ namespace TrueFluentPro.ViewModels
             var videoConfig = videoRuntime.CreateRequestConfig();
 
             var randomId = Guid.NewGuid().ToString("N")[..8];
-            var outputPath = Path.Combine(SessionDirectory, $"vid_001_{randomId}.mp4");
+            var videoDir = _pathResolver?.GetNewResourceDirectory("video") ?? SessionDirectory;
+            var outputPath = Path.Combine(videoDir, $"vid_001_{randomId}.mp4");
 
             var ct = _cts.Token;
 
@@ -1361,8 +1428,9 @@ namespace TrueFluentPro.ViewModels
 
             var videoConfig = videoRuntime.CreateRequestConfig();
             var randomId = Guid.NewGuid().ToString("N")[..8];
+            var videoDir = _pathResolver?.GetNewResourceDirectory("video") ?? SessionDirectory;
             var outputPath = task.ResultFilePath
-                ?? Path.Combine(SessionDirectory, $"vid_resume_{randomId}.mp4");
+                ?? Path.Combine(videoDir, $"vid_resume_{randomId}.mp4");
 
             var effectiveConfig = new MediaGenConfig
             {
@@ -1642,7 +1710,7 @@ namespace TrueFluentPro.ViewModels
                 ext = ".png";
             }
 
-            var refsDir = Path.Combine(SessionDirectory, "refs");
+            var refsDir = _pathResolver?.GetNewResourceDirectory("reference") ?? Path.Combine(SessionDirectory, "refs");
             Directory.CreateDirectory(refsDir);
 
             var targetPath = Path.Combine(refsDir, $"reference_{Guid.NewGuid():N}{ext}");
@@ -1681,7 +1749,7 @@ namespace TrueFluentPro.ViewModels
                 extension = "." + extension;
             }
 
-            var refsDir = Path.Combine(SessionDirectory, "refs");
+            var refsDir = _pathResolver?.GetNewResourceDirectory("reference") ?? Path.Combine(SessionDirectory, "refs");
             Directory.CreateDirectory(refsDir);
 
             var targetPath = Path.Combine(refsDir, $"reference_{Guid.NewGuid():N}{extension}");
@@ -2017,7 +2085,8 @@ namespace TrueFluentPro.ViewModels
             string FormattedContext,
             IReadOnlyList<Services.WebSearch.WebSearchResult> RawResults,
             string SearchQuery,
-            string ProviderId);
+            string ProviderId,
+            string DebugInfo = "");
 
         /// <summary>
         /// 为搜索意图分析构建对话快照。
@@ -2122,8 +2191,15 @@ namespace TrueFluentPro.ViewModels
                 var formatted = Services.WebSearch.SearchAgentService
                     .FormatContext(agentResult, prompt);
 
+                // 调试信息：仅在调试模式下收集
+                var debugInfo = "";
+                if (_webSearchDebugMode)
+                {
+                    debugInfo = BuildSearchDebugInfo(prompt, chatHistory, agentResult, formatted);
+                }
+
                 return new WebSearchContext(
-                    formatted, agentResult.Results, displayQuery, _webSearchProviderId);
+                    formatted, agentResult.Results, displayQuery, _webSearchProviderId, debugInfo);
             }
             catch
             {
@@ -2145,21 +2221,95 @@ namespace TrueFluentPro.ViewModels
             var queries = webSearch.SearchQuery.Split("」「");
             var summary = $"🔍 搜索「{webSearch.SearchQuery}」→ 返回 {webSearch.RawResults.Count} 条结果";
             aiMessage.SearchSummary = summary;
+
+            // 调试信息
+            if (!string.IsNullOrEmpty(webSearch.DebugInfo))
+                aiMessage.SearchDebugInfo = webSearch.DebugInfo;
+        }
+
+        /// <summary>构建搜索调试信息文本，包含完整的搜索过程和提交内容</summary>
+        private static string BuildSearchDebugInfo(
+            string userPrompt,
+            string chatHistory,
+            Services.WebSearch.SearchAgentService.AgentResult agentResult,
+            string formattedContext)
+        {
+            var sb = new StringBuilder();
+
+            sb.AppendLine("## 🐞 搜索调试信息");
+            sb.AppendLine();
+
+            // 1. 意图分析结果
+            sb.AppendLine("### 意图分析");
+            sb.AppendLine($"- 需要搜索: {agentResult.NeedsSearch}");
+            sb.AppendLine($"- 提取的搜索查询 ({agentResult.AllQueries.Count} 条):");
+            foreach (var q in agentResult.AllQueries)
+                sb.AppendLine($"  - `{q}`");
+            sb.AppendLine();
+
+            // 2. 搜索结果 — 每条 URL 的内容长度
+            sb.AppendLine("### 搜索结果详情");
+            sb.AppendLine($"- 总结果数: {agentResult.Results.Count}");
+            var totalContentChars = 0;
+            for (int i = 0; i < agentResult.Results.Count; i++)
+            {
+                var r = agentResult.Results[i];
+                var contentLen = r.Content?.Length ?? 0;
+                var snippetLen = r.Snippet?.Length ?? 0;
+                var usedContent = contentLen > 0 ? $"正文 {contentLen} 字符" : $"Snippet {snippetLen} 字符";
+                totalContentChars += contentLen > 0 ? contentLen : snippetLen;
+                sb.AppendLine($"  [{i + 1}] {r.Title}");
+                sb.AppendLine($"      URL: {r.Url}");
+                sb.AppendLine($"      内容: {usedContent}");
+            }
+            sb.AppendLine($"- **内容总字符数: {totalContentChars:N0}**（约 {totalContentChars / 2:N0} token）");
+            sb.AppendLine();
+
+            // 3. 格式化后的引用上下文体积
+            sb.AppendLine("### 格式化引用上下文");
+            sb.AppendLine($"- 字符数: {formattedContext.Length:N0}（约 {formattedContext.Length / 2:N0} token）");
+            sb.AppendLine();
+
+            // 4. 完整引用上下文（原文）
+            sb.AppendLine("### 完整引用上下文（原文）");
+            sb.AppendLine($"- 字符数: {formattedContext.Length:N0}");
+            sb.AppendLine("```");
+            sb.AppendLine(formattedContext);
+            sb.AppendLine("```");
+            sb.AppendLine();
+
+            // 5. 对话历史上下文（原文）
+            if (!string.IsNullOrWhiteSpace(chatHistory))
+            {
+                sb.AppendLine("### 对话历史上下文（用于意图分析，原文）");
+                sb.AppendLine($"- 字符数: {chatHistory.Length:N0}");
+                sb.AppendLine("```");
+                sb.AppendLine(chatHistory);
+                sb.AppendLine("```");
+            }
+
+            return sb.ToString();
         }
 
         // ── 文本聊天 ───────────────────────────────────────
 
-        private async void SendTextChatAsync(string prompt)
+        private async void SendTextChatAsync(string prompt, List<ChatAttachmentInfo>? attachments = null)
         {
             if (IsChatStreaming) return;
 
-            // 添加用户消息
+            attachments ??= new List<ChatAttachmentInfo>();
+
+            // 展开文本附件内容，拼接到实际发送给 API 的 prompt
+            var expandedPrompt = ExpandAttachmentsIntoPrompt(prompt, attachments);
+
+            // 添加用户消息（气泡中只显示原始 prompt + 附件标签，不展开内容）
             AppendMessage(new ChatMessageViewModel(new MediaChatMessage
             {
                 Role = "user",
                 Text = prompt,
                 ContentType = "text",
-                Timestamp = DateTime.Now
+                Timestamp = DateTime.Now,
+                Attachments = attachments.Count > 0 ? attachments : null,
             }));
 
             // 构建运行时配置
@@ -2234,10 +2384,19 @@ namespace TrueFluentPro.ViewModels
                 aiMessage.Text = displayedText;
             });
 
-            // 构建多轮上下文
-            var contextContent = BuildMultiTurnContent(prompt);
+            // 构建多轮上下文（使用展开附件后的完整 prompt）
+            var contextContent = BuildMultiTurnContent(expandedPrompt);
             if (!string.IsNullOrEmpty(webSearch.FormattedContext))
                 contextContent = webSearch.FormattedContext + "\n\n---\n\n" + contextContent;
+
+            // 调试模式：追加完整提交体积信息
+            if (_webSearchDebugMode && aiMessage.HasSearchDebugInfo)
+            {
+                aiMessage.SearchDebugInfo += $"\n### 最终提交给 AI 的完整上下文\n"
+                    + $"- **总字符数: {contextContent.Length:N0}**（约 {contextContent.Length / 2:N0} token）\n"
+                    + $"- 系统提示词: 固定\n"
+                    + $"- 多轮对话历史 + 搜索引用 + 当前提问 合计\n";
+            }
 
             try
             {
@@ -2351,6 +2510,44 @@ namespace TrueFluentPro.ViewModels
             return "⚠️ 思考：已请求但服务端未返回推理内容（模型可能不支持 reasoning）";
         }
 
+        /// <summary>将附件内容展开并合并到 prompt 中（内部使用，用户看不到展开内容）</summary>
+        private static string ExpandAttachmentsIntoPrompt(string prompt, List<ChatAttachmentInfo> attachments)
+        {
+            if (attachments.Count == 0) return prompt;
+
+            var sb = new StringBuilder();
+
+            foreach (var att in attachments)
+            {
+                if (att.Type == "text" && File.Exists(att.FilePath))
+                {
+                    try
+                    {
+                        var content = File.ReadAllText(att.FilePath);
+                        if (content.Length > 15000)
+                            content = content[..15000] + "\n...(已截断)";
+                        sb.AppendLine($"[附件: {att.FileName}]");
+                        sb.AppendLine("---");
+                        sb.AppendLine(content);
+                        sb.AppendLine("---");
+                        sb.AppendLine();
+                    }
+                    catch { /* 静默跳过无法读取的文件 */ }
+                }
+                // 图片附件暂时在 prompt 中标注（未来可扩展为 vision API 的 image_url part）
+                else if (att.Type == "image")
+                {
+                    sb.AppendLine($"[附件图片: {att.FileName}]");
+                    sb.AppendLine();
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(prompt))
+                sb.AppendLine(prompt);
+
+            return sb.ToString().TrimEnd();
+        }
+
         private string BuildMultiTurnContent(string currentPrompt)
         {
             var textMessages = _allMessages
@@ -2367,11 +2564,28 @@ namespace TrueFluentPro.ViewModels
             foreach (var msg in textMessages.Take(textMessages.Count - 1))
             {
                 var label = msg.IsUser ? "用户" : "AI";
-                sb.AppendLine($"[{label}]: {msg.Text}");
+                // 对 AI 消息：如果它携带了搜索引用，只保留回答文本（截断到合理长度），
+                // 避免把上一轮搜索的完整网页正文滚雪球带入后续轮次。
+                var text = msg.Text;
+                if (!msg.IsUser && msg.Citations is { Count: > 0 })
+                {
+                    text = TruncateHistoryMessage(text, 800);
+                }
+                sb.AppendLine($"[{label}]: {text}");
                 sb.AppendLine();
             }
             sb.AppendLine($"[用户]: {currentPrompt}");
             return sb.ToString();
+        }
+
+        /// <summary>
+        /// 截断历史消息文本，保留开头内容 + 省略标记。
+        /// 用于防止搜索增强轮次的 AI 回复（可能很长）在多轮上下文中无限膨胀。
+        /// </summary>
+        private static string TruncateHistoryMessage(string text, int maxChars)
+        {
+            if (text.Length <= maxChars) return text;
+            return text[..maxChars] + "\n\n[...后续内容已省略]";
         }
 
         private bool TryBuildChatRuntimeConfig(
@@ -2678,6 +2892,15 @@ namespace TrueFluentPro.ViewModels
             var contextContent = BuildMultiTurnContent(prompt);
             if (!string.IsNullOrEmpty(webSearch.FormattedContext))
                 contextContent = webSearch.FormattedContext + "\n\n---\n\n" + contextContent;
+
+            // 调试模式：追加完整提交体积信息
+            if (_webSearchDebugMode && aiMessage.HasSearchDebugInfo)
+            {
+                aiMessage.SearchDebugInfo += $"\n### 最终提交给 AI 的完整上下文\n"
+                    + $"- **总字符数: {contextContent.Length:N0}**（约 {contextContent.Length / 2:N0} token）\n"
+                    + $"- 系统提示词: 固定\n"
+                    + $"- 多轮对话历史 + 搜索引用 + 当前提问 合计\n";
+            }
 
             try
             {
@@ -3097,6 +3320,26 @@ namespace TrueFluentPro.ViewModels
         }
         public bool HasSearchSummary => !string.IsNullOrEmpty(_searchSummary);
 
+        /// <summary>搜索调试详情（完整提交内容、网页抓取详情等），仅调试模式下填充</summary>
+        private string _searchDebugInfo = "";
+        public string SearchDebugInfo
+        {
+            get => _searchDebugInfo;
+            set
+            {
+                if (SetProperty(ref _searchDebugInfo, value))
+                    OnPropertyChanged(nameof(HasSearchDebugInfo));
+            }
+        }
+        public bool HasSearchDebugInfo => !string.IsNullOrEmpty(_searchDebugInfo);
+
+        private bool _isSearchDebugExpanded;
+        public bool IsSearchDebugExpanded
+        {
+            get => _isSearchDebugExpanded;
+            set => SetProperty(ref _isSearchDebugExpanded, value);
+        }
+
         /// <summary>
         /// 渲染后的真实高度缓存。VirtualizingStackPanel 回收后复用时
         /// 立即恢复此高度，避免面板用平均值估算导致 Extent 震荡。
@@ -3105,6 +3348,11 @@ namespace TrueFluentPro.ViewModels
 
         public string TimestampText => Timestamp.ToString("yyyy-MM-dd HH:mm:ss");
         public string TimeText => Timestamp.ToString("HH:mm:ss");
+
+        // ── 附件 ────────────────────────────────────────
+        private List<ChatAttachmentInfo> _attachments = new();
+        public IReadOnlyList<ChatAttachmentInfo> Attachments => _attachments;
+        public bool HasAttachments => _attachments.Count > 0;
 
         // ── IDialogMessage 显式实现 ─────────────────────
         IReadOnlyList<string> Controls.Markdown.IDialogMessage.MediaPaths => new List<string>(MediaPaths);
@@ -3122,6 +3370,10 @@ namespace TrueFluentPro.ViewModels
             _promptTokens = message.PromptTokens;
             _completionTokens = message.CompletionTokens;
             _searchSummary = message.SearchSummary ?? "";
+
+            // 恢复附件元数据
+            if (message.Attachments is { Count: > 0 })
+                _attachments = message.Attachments.ToList();
 
             // 恢复搜索引用来源
             if (message.Citations is { Count: > 0 })

@@ -336,7 +336,8 @@ public partial class MainWindow : Window
                 config.WebSearchEnableResultCompression,
                 config.WebSearchMcpEndpoint,
                 config.WebSearchMcpToolName,
-                config.WebSearchMcpApiKey);
+                config.WebSearchMcpApiKey,
+                config.WebSearchDebugMode);
         }
 
         if (_mediaCenterV2Initialized)

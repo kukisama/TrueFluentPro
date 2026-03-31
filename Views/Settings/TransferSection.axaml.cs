@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using TrueFluentPro.ViewModels.Settings;
 
@@ -60,5 +61,39 @@ public partial class TransferSection : UserControl
         }
 
         await vm.ImportAsync(provider);
+    }
+
+    private async void OnCopyBasicAiConfigToClipboardClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not TransferSectionVM vm)
+        {
+            return;
+        }
+
+        var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+        if (clipboard == null)
+        {
+            vm.ReportClipboardUnavailable();
+            return;
+        }
+
+        await vm.CopyBasicAiConfigToClipboardAsync(clipboard);
+    }
+
+    private async void OnImportFromClipboardClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not TransferSectionVM vm)
+        {
+            return;
+        }
+
+        var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+        if (clipboard == null)
+        {
+            vm.ReportClipboardUnavailable();
+            return;
+        }
+
+        await vm.ImportFromClipboardAsync(clipboard);
     }
 }
