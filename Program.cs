@@ -15,6 +15,7 @@ class Program
         Helpers.ScrollDiagLog.Reset();
         try
         {
+            WindowsDpiAwareness.TryEnablePerMonitorV2();
             NativePrelaunchSplash.Show(title: "TrueFluentPro", status: "正在启动...");
             Environment.ExitCode = 0;
             var exitCode = BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
