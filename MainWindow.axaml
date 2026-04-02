@@ -234,8 +234,9 @@
         </Border>
 
         <Panel Grid.Column="1">
-            <ContentControl Name="PageHost">
-                <Border Margin="16"
+            <Panel Name="PageHost">
+                <Border Name="PagePlaceholder"
+                        Margin="16"
                         Padding="18,14"
                         CornerRadius="10"
                         Background="{DynamicResource CardBackgroundBrush}"
@@ -252,7 +253,7 @@
                                    Foreground="{DynamicResource TextSubtleBrush}"/>
                     </StackPanel>
                 </Border>
-            </ContentControl>
+            </Panel>
             <ui:InfoBar IsOpen="{Binding IsInfoBarOpen, Mode=TwoWay}"
                         Message="{Binding InfoBarMessage}"
                         Severity="{Binding InfoBarSeverity}"

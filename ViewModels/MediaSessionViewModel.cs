@@ -121,6 +121,12 @@ namespace TrueFluentPro.ViewModels
 
         /// <summary>首次加载到 Messages 的最大条数（约 1.5~2 屏）。后续向上滚动时逐步补充。</summary>
         public const int InitialVisibleCount = 30;
+        /// <summary>首批渲染的最小条数下限，即使视口极小也至少显示这些。</summary>
+        public const int MinFirstPaintCount = 2;
+        /// <summary>首批渲染的最大条数上限，避免估算偏差导致加载过多。</summary>
+        public const int MaxFirstPaintCount = 15;
+        /// <summary>未提供视口高度时使用的默认值。</summary>
+        public const double DefaultViewportHeight = 700;
         /// <summary>每次向上滚动加载的条数。</summary>
         public const int LoadMoreBatchSize = 20;
 
@@ -744,7 +750,7 @@ namespace TrueFluentPro.ViewModels
             }
         }
 
-        public void ReplaceAllMessages(IEnumerable<ChatMessageViewModel>? messages)
+        public void ReplaceAllMessages(IEnumerable<ChatMessageViewModel>? messages, double viewportHeight = DefaultViewportHeight)
         {
             var snapshot = messages?.ToList() ?? new List<ChatMessageViewModel>();
 
@@ -755,14 +761,58 @@ namespace TrueFluentPro.ViewModels
 
             // 只加载尾部 InitialVisibleCount 条到 UI
             _visibleStartIndex = Math.Max(0, _allMessages.Count - InitialVisibleCount);
-            for (var i = _visibleStartIndex; i < _allMessages.Count; i++)
+
+            // 根据视口高度 + 消息预估高度，计算首批恰好填满一屏的条数
+            var totalToLoad = _allMessages.Count - _visibleStartIndex;
+            var firstBatch = 0;
+            var heightBudget = viewportHeight;
+            for (var i = _allMessages.Count - 1; i >= _visibleStartIndex && heightBudget > 0; i--)
+            {
+                heightBudget -= _allMessages[i].EstimateHeight();
+                firstBatch++;
+            }
+            firstBatch = Math.Clamp(firstBatch, MinFirstPaintCount, Math.Min(MaxFirstPaintCount, totalToLoad));
+
+            // 从尾部往前数 firstBatch 条作为第一批
+            var firstBatchStart = _allMessages.Count - firstBatch;
+            for (var i = firstBatchStart; i < _allMessages.Count; i++)
             {
                 Messages.Add(_allMessages[i]);
             }
 
             HasMoreMessages = _visibleStartIndex > 0;
+            _pendingSecondBatchStart = _visibleStartIndex;
+            _pendingSecondBatchEnd = firstBatchStart;
             UpdateMessageWindowState();
             ((RelayCommand)ExportConversationCommand).RaiseCanExecuteChanged();
+        }
+
+        // ── 延迟加载第二批消息 ──────────────────────────────
+        private int _pendingSecondBatchStart;
+        private int _pendingSecondBatchEnd;
+
+        /// <summary>
+        /// 是否有待插入的第二批消息。View 层在首帧渲染后调用 FlushPendingMessages()。
+        /// </summary>
+        public bool HasPendingMessages => _pendingSecondBatchStart < _pendingSecondBatchEnd;
+
+        /// <summary>
+        /// 将第二批消息插入 Messages 头部。返回插入条数。
+        /// 调用时机：首批渲染完成 + scroll-to-bottom 后。
+        /// </summary>
+        public int FlushPendingMessages()
+        {
+            if (_pendingSecondBatchStart >= _pendingSecondBatchEnd)
+                return 0;
+
+            var count = _pendingSecondBatchEnd - _pendingSecondBatchStart;
+            for (var i = _pendingSecondBatchEnd - 1; i >= _pendingSecondBatchStart; i--)
+            {
+                Messages.Insert(0, _allMessages[i]);
+            }
+
+            _pendingSecondBatchStart = _pendingSecondBatchEnd; // 清除待处理标记
+            return count;
         }
 
         /// <summary>
@@ -3345,6 +3395,41 @@ namespace TrueFluentPro.ViewModels
         /// 立即恢复此高度，避免面板用平均值估算导致 Extent 震荡。
         /// </summary>
         public double CachedRenderHeight { get; set; } = double.NaN;
+
+        /// <summary>
+        /// 快速预估消息渲染高度（像素）。
+        /// 优先返回 CachedRenderHeight；否则根据文本长度粗算。
+        /// 用于两阶段渲染时决定首批加载多少条填满视口。
+        /// </summary>
+        public double EstimateHeight()
+        {
+            if (!double.IsNaN(CachedRenderHeight))
+                return CachedRenderHeight;
+
+            // ── 基础高度：头像行 + padding + margin ──
+            const double baseHeight = 56;
+            const double lineHeight = 22;
+            const int charsPerLine = 55; // CJK 混排大约每行 55 字符
+
+            var text = _text ?? "";
+            var hardBreaks = 0;
+            foreach (var c in text)
+                if (c == '\n') hardBreaks++;
+            var softLines = Math.Max(1, text.Length / charsPerLine);
+            var totalLines = Math.Max(1, hardBreaks + softLines);
+
+            var height = baseHeight + totalLines * lineHeight;
+
+            // 代码块额外高度（含 header + padding）
+            if (text.Contains("```"))
+                height += 40;
+
+            // 媒体附件缩略图
+            if (MediaPaths.Count > 0)
+                height += 120;
+
+            return height;
+        }
 
         public string TimestampText => Timestamp.ToString("yyyy-MM-dd HH:mm:ss");
         public string TimeText => Timestamp.ToString("HH:mm:ss");

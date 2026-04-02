@@ -14,6 +14,11 @@ namespace TrueFluentPro.Services.Storage
         List<MessageRecord> GetLatest(string sessionId, int limit = 40);
         List<MessageRecord> GetBefore(string sessionId, int beforeSequence, int limit = 40);
         int GetCount(string sessionId);
+
+        /// <summary>
+        /// 一次查询获取会话的全部消息及其关联的媒体引用、引文、附件，消除 N+1 查询。
+        /// </summary>
+        SessionMessagesBundle GetSessionBundle(string sessionId);
         int GetMaxSequence(string sessionId);
         void SoftDelete(string id);
 
@@ -31,5 +36,14 @@ namespace TrueFluentPro.Services.Storage
         void InsertAttachments(string messageId, List<AttachmentRecord> attachments);
         List<AttachmentRecord> GetAttachments(string messageId);
         void DeleteAttachments(string messageId);
+    }
+
+    /// <summary>批量加载结果：消息 + 关联数据已预填充到字典。</summary>
+    public sealed class SessionMessagesBundle
+    {
+        public List<MessageRecord> Messages { get; init; } = new();
+        public Dictionary<string, List<MediaRefRecord>> MediaRefs { get; init; } = new();
+        public Dictionary<string, List<CitationRecord>> Citations { get; init; } = new();
+        public Dictionary<string, List<AttachmentRecord>> Attachments { get; init; } = new();
     }
 }

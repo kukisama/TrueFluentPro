@@ -53,6 +53,12 @@ namespace TrueFluentPro.ViewModels
         private readonly Dictionary<string, long> _sessionAccessTicks = new();
         private long _sessionAccessCounter;
 
+        /// <summary>View 层报告的聊天区域视口高度，用于计算首批渲染条数。</summary>
+        public double ChatViewportHeight { get; set; } = MediaSessionViewModel.DefaultViewportHeight;
+
+        // 会话内容异步加载取消令牌（防止快速连点竞态）
+        private CancellationTokenSource? _sessionLoadCts;
+
         // --- 会话管理 ---
         public ObservableCollection<MediaSessionViewModel> Sessions { get; } = new();
 
@@ -76,7 +82,7 @@ namespace TrueFluentPro.ViewModels
                     {
                         MarkSessionAccessed(value);
                         value.ActivateOnFirstSelection();
-                        EnsureSessionLoaded(value);
+                        _ = EnsureSessionLoadedAsync(value);
                         EnforceLoadedSessionLimit(value);
                     }
                 }
@@ -451,7 +457,7 @@ namespace TrueFluentPro.ViewModels
                     : null,
             })).ToList();
 
-            newSession.ReplaceAllMessages(clonedMessages);
+            newSession.ReplaceAllMessages(clonedMessages, ChatViewportHeight);
 
             Sessions.Add(newSession);
             CurrentSession = newSession;
@@ -467,7 +473,7 @@ namespace TrueFluentPro.ViewModels
                 return;
             }
 
-            EnsureSessionLoaded(session);
+            EnsureSessionLoadedSync(session);
             session.CancelAll();
             session.ForkRequested -= HandleForkRequested;
 
@@ -633,14 +639,30 @@ namespace TrueFluentPro.ViewModels
             });
         }
 
-        private void EnsureSessionLoaded(MediaSessionViewModel session)
+        private async Task EnsureSessionLoadedAsync(MediaSessionViewModel session)
         {
             if (session.IsContentLoaded)
-            {
                 return;
-            }
 
-            LoadSessionFromSqlite(session);
+            // 取消上一次正在进行的加载（快速连点场景）
+            _sessionLoadCts?.Cancel();
+            var cts = _sessionLoadCts = new CancellationTokenSource();
+            var ct = cts.Token;
+
+            try
+            {
+                await LoadSessionFromSqliteAsync(session, ct);
+            }
+            catch (OperationCanceledException) { /* 被新选择取消，正常 */ }
+        }
+
+        /// <summary>同步版本，仅用于删除等必须即时准备数据的场景。</summary>
+        private void EnsureSessionLoadedSync(MediaSessionViewModel session)
+        {
+            if (session.IsContentLoaded)
+                return;
+            var (msgs, tasks) = LoadSessionData(session.SessionId);
+            ApplySessionData(session, msgs, tasks);
         }
 
         private void MarkSessionAccessed(MediaSessionViewModel session)
@@ -719,6 +741,8 @@ namespace TrueFluentPro.ViewModels
 
         public void Dispose()
         {
+            _sessionLoadCts?.Cancel();
+            _sessionLoadCts?.Dispose();
             SaveAllSessions();
             CancelAll();
         }
@@ -737,112 +761,147 @@ namespace TrueFluentPro.ViewModels
                 Endpoints = _endpoints
             };
 
-        private void LoadSessionFromSqlite(MediaSessionViewModel session)
+        private async Task LoadSessionFromSqliteAsync(MediaSessionViewModel session, CancellationToken ct)
         {
             var sw = Stopwatch.StartNew();
             try
             {
-                var msgRepo = App.Services.GetRequiredService<ISessionMessageRepository>();
-                var contentRepo = App.Services.GetRequiredService<ISessionContentRepository>();
-                var paths = App.Services.GetRequiredService<IStoragePathResolver>();
+                var sessionId = session.SessionId;
 
-                // 全量加载消息（配合虚拟化，仅可见区域实际渲染）
-                var totalCount = msgRepo.GetCount(session.SessionId);
-                var messageRecords = msgRepo.GetLatest(session.SessionId, limit: Math.Max(totalCount, 1));
-                var loadedMessages = new List<ChatMessageViewModel>();
+                // ── 后台线程：DB 查询 + 对象构建 ──────────────────
+                var (loadedMessages, taskItems) = await Task.Run(
+                    () => LoadSessionData(sessionId, ct), ct).ConfigureAwait(false);
 
-                foreach (var rec in messageRecords)
+                ct.ThrowIfCancellationRequested();
+
+                // ── 回到 UI 线程：一次性刷入 ────────────────────
+                await Dispatcher.UIThread.InvokeAsync(() =>
                 {
-                    var mediaRefs = msgRepo.GetMediaRefs(rec.Id);
-                    var citations = msgRepo.GetCitations(rec.Id);
-                    var attachmentRecs = msgRepo.GetAttachments(rec.Id);
+                    // 加载完成时 CurrentSession 可能已变（用户快速连点），此时放弃
+                    if (!ReferenceEquals(CurrentSession, session))
+                        return;
 
-                    var msg = new MediaChatMessage
-                    {
-                        Role = rec.Role,
-                        Text = rec.Text,
-                        ContentType = rec.ContentType,
-                        ReasoningText = rec.ReasoningText,
-                        Timestamp = rec.Timestamp,
-                        GenerateSeconds = rec.GenerateSeconds,
-                        DownloadSeconds = rec.DownloadSeconds,
-                        PromptTokens = rec.PromptTokens,
-                        CompletionTokens = rec.CompletionTokens,
-                        SearchSummary = rec.SearchSummary ?? "",
-                        MediaPaths = mediaRefs.Select(r => paths.ToAbsolutePath(r.MediaPath)).ToList(),
-                        Citations = citations.Count > 0
-                            ? citations.Select(c => new MediaChatCitation
-                            {
-                                Number = c.CitationNumber,
-                                Title = c.Title,
-                                Url = c.Url,
-                                Snippet = c.Snippet,
-                                Hostname = c.Hostname,
-                            }).ToList()
-                            : null,
-                        Attachments = attachmentRecs.Count > 0
-                            ? attachmentRecs.Select(a => new ChatAttachmentInfo
-                            {
-                                Type = a.AttachmentType,
-                                FileName = a.FileName,
-                                FilePath = a.FilePath,
-                                FileSize = a.FileSize,
-                            }).ToList()
-                            : null,
-                    };
-
-                    loadedMessages.Add(new ChatMessageViewModel(msg));
-                }
-
-                session.ReplaceAllMessages(loadedMessages);
-
-                // 加载任务历史
-                session.TaskHistory.Clear();
-                var taskRecords = contentRepo.GetSessionTasks(session.SessionId);
-                foreach (var t in taskRecords)
-                {
-                    session.TaskHistory.Add(new MediaGenTask
-                    {
-                        Id = t.Id,
-                        Type = Enum.TryParse<MediaGenType>(t.TaskType, out var tt) ? tt : MediaGenType.Image,
-                        Status = Enum.TryParse<MediaGenStatus>(t.Status, out var ts) ? ts : MediaGenStatus.Completed,
-                        Prompt = t.Prompt,
-                        Progress = (int)t.Progress,
-                        ResultFilePath = string.IsNullOrWhiteSpace(t.ResultFilePath) ? null : paths.ToAbsolutePath(t.ResultFilePath),
-                        ErrorMessage = t.ErrorMessage,
-                        HasReferenceInput = t.HasReferenceInput,
-                        RemoteVideoId = t.RemoteVideoId,
-                        RemoteGenerationId = t.RemoteGenerationId,
-                        RemoteDownloadUrl = t.RemoteDownloadUrl,
-                        GenerateSeconds = t.GenerateSeconds,
-                        DownloadSeconds = t.DownloadSeconds,
-                        CreatedAt = t.CreatedAt,
-                    });
-                }
-
-                session.IsContentLoaded = true;
-
-                // 预填充指纹 + task 状态，避免 Dispose 时全量重写
-                _sqliteFingerprints[session.SessionId] = (
-                    session.TotalMessageCount,
-                    session.TaskHistory.Count,
-                    session.TaskHistory.Count(t => t.Status == MediaGenStatus.Completed),
-                    session.TaskHistory.Count(t => t.Status is MediaGenStatus.Running or MediaGenStatus.Queued),
-                    session.TaskHistory.Count(t => t.Status is MediaGenStatus.Failed or MediaGenStatus.Cancelled),
-                    session.AssetCatalog.Count,
-                    session.SessionName);
-                _persistedTaskStates[session.SessionId] = session.TaskHistory
-                    .ToDictionary(t => t.Id, t => t.Status.ToString());
+                    ApplySessionData(session, loadedMessages, taskItems);
+                });
 
                 sw.Stop();
-                SqliteDebugLogger.LogLazyLoad(session.SessionId, loadedMessages.Count > 0 ? 1 : 0, loadedMessages.Count);
-                Debug.WriteLine($"[SQLite] P4 加载会话 {session.SessionId}: messages={loadedMessages.Count}, tasks={taskRecords.Count}, {sw.ElapsedMilliseconds}ms");
+                Debug.WriteLine($"[SQLite] P4 异步加载会话 {session.SessionId}: messages={loadedMessages.Count}, tasks={taskItems.Count}, {sw.ElapsedMilliseconds}ms");
             }
+            catch (OperationCanceledException) { throw; }
             catch (Exception ex)
             {
                 Debug.WriteLine($"[SQLite] P4 加载失败 {session.SessionId}: {ex.Message}");
-                session.IsContentLoaded = true;
+                await Dispatcher.UIThread.InvokeAsync(() => session.IsContentLoaded = true);
             }
+        }
+
+        /// <summary>纯数据加载（无 UI 依赖，可在任意线程调用）。</summary>
+        private (List<ChatMessageViewModel> Messages, List<MediaGenTask> Tasks) LoadSessionData(
+            string sessionId, CancellationToken ct = default)
+        {
+            var msgRepo = App.Services.GetRequiredService<ISessionMessageRepository>();
+            var contentRepo = App.Services.GetRequiredService<ISessionContentRepository>();
+            var paths = App.Services.GetRequiredService<IStoragePathResolver>();
+
+            ct.ThrowIfCancellationRequested();
+
+            // P1: 一次 bundle 查询替代 N+1
+            var bundle = msgRepo.GetSessionBundle(sessionId);
+
+            ct.ThrowIfCancellationRequested();
+
+            var msgs = new List<ChatMessageViewModel>(bundle.Messages.Count);
+            foreach (var rec in bundle.Messages)
+            {
+                bundle.MediaRefs.TryGetValue(rec.Id, out var mediaRefs);
+                bundle.Citations.TryGetValue(rec.Id, out var citations);
+                bundle.Attachments.TryGetValue(rec.Id, out var attachmentRecs);
+
+                var msg = new MediaChatMessage
+                {
+                    Role = rec.Role,
+                    Text = rec.Text,
+                    ContentType = rec.ContentType,
+                    ReasoningText = rec.ReasoningText,
+                    Timestamp = rec.Timestamp,
+                    GenerateSeconds = rec.GenerateSeconds,
+                    DownloadSeconds = rec.DownloadSeconds,
+                    PromptTokens = rec.PromptTokens,
+                    CompletionTokens = rec.CompletionTokens,
+                    SearchSummary = rec.SearchSummary ?? "",
+                    MediaPaths = mediaRefs?.Select(r => paths.ToAbsolutePath(r.MediaPath)).ToList() ?? new(),
+                    Citations = citations is { Count: > 0 }
+                        ? citations.Select(c => new MediaChatCitation
+                        {
+                            Number = c.CitationNumber,
+                            Title = c.Title,
+                            Url = c.Url,
+                            Snippet = c.Snippet,
+                            Hostname = c.Hostname,
+                        }).ToList()
+                        : null,
+                    Attachments = attachmentRecs is { Count: > 0 }
+                        ? attachmentRecs.Select(a => new ChatAttachmentInfo
+                        {
+                            Type = a.AttachmentType,
+                            FileName = a.FileName,
+                            FilePath = a.FilePath,
+                            FileSize = a.FileSize,
+                        }).ToList()
+                        : null,
+                };
+                msgs.Add(new ChatMessageViewModel(msg));
+            }
+
+            ct.ThrowIfCancellationRequested();
+
+            var taskRecords = contentRepo.GetSessionTasks(sessionId);
+            var tasks = taskRecords.Select(t => new MediaGenTask
+            {
+                Id = t.Id,
+                Type = Enum.TryParse<MediaGenType>(t.TaskType, out var tt) ? tt : MediaGenType.Image,
+                Status = Enum.TryParse<MediaGenStatus>(t.Status, out var ts) ? ts : MediaGenStatus.Completed,
+                Prompt = t.Prompt,
+                Progress = (int)t.Progress,
+                ResultFilePath = string.IsNullOrWhiteSpace(t.ResultFilePath) ? null : paths.ToAbsolutePath(t.ResultFilePath),
+                ErrorMessage = t.ErrorMessage,
+                HasReferenceInput = t.HasReferenceInput,
+                RemoteVideoId = t.RemoteVideoId,
+                RemoteGenerationId = t.RemoteGenerationId,
+                RemoteDownloadUrl = t.RemoteDownloadUrl,
+                GenerateSeconds = t.GenerateSeconds,
+                DownloadSeconds = t.DownloadSeconds,
+                CreatedAt = t.CreatedAt,
+            }).ToList();
+
+            SqliteDebugLogger.LogLazyLoad(sessionId, msgs.Count > 0 ? 1 : 0, msgs.Count);
+            return (msgs, tasks);
+        }
+
+        /// <summary>将加载好的数据应用到会话（必须在 UI 线程调用）。</summary>
+        private void ApplySessionData(
+            MediaSessionViewModel session,
+            List<ChatMessageViewModel> messages,
+            List<MediaGenTask> tasks)
+        {
+            session.ReplaceAllMessages(messages, ChatViewportHeight);
+
+            session.TaskHistory.Clear();
+            foreach (var t in tasks)
+                session.TaskHistory.Add(t);
+
+            session.IsContentLoaded = true;
+
+            _sqliteFingerprints[session.SessionId] = (
+                session.TotalMessageCount,
+                session.TaskHistory.Count,
+                session.TaskHistory.Count(t => t.Status == MediaGenStatus.Completed),
+                session.TaskHistory.Count(t => t.Status is MediaGenStatus.Running or MediaGenStatus.Queued),
+                session.TaskHistory.Count(t => t.Status is MediaGenStatus.Failed or MediaGenStatus.Cancelled),
+                session.AssetCatalog.Count,
+                session.SessionName);
+            _persistedTaskStates[session.SessionId] = session.TaskHistory
+                .ToDictionary(t => t.Id, t => t.Status.ToString());
         }
 
         private void WriteSqliteSession(MediaSessionViewModel session, string sessionType)

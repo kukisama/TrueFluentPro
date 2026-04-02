@@ -284,6 +284,10 @@ namespace TrueFluentPro.Views
                     _diagScrollEventCount = 0;
                     _diagLastExtentH = _diagScrollViewer.Extent.Height;
                     _diagScrollViewer.ScrollChanged += DiagScrollViewer_ScrollChanged;
+
+                    // 把实际视口高度报告给 ViewModel，用于后续首批渲染条数计算
+                    if (_viewModel != null && _diagScrollViewer.Viewport.Height > 0)
+                        _viewModel.ChatViewportHeight = _diagScrollViewer.Viewport.Height;
                 }
 
                 // 缓存未命中 且 已有数据 → 立即滚到底（首会话在启动时已加载）
@@ -311,13 +315,52 @@ namespace TrueFluentPro.Views
                 return;
             }
 
-            // Add 操作 + 有待处理的 Reset → 数据填充完成，安排 scroll
+            // Add 操作 + 有待处理的 Reset → 首批数据填充完成，安排 scroll + 延迟补充剩余消息
             if (_pendingScrollAfterReset && e.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Add
                 && _attachedSession?.Messages.Count > 0)
             {
                 _pendingScrollAfterReset = false;
-                Dispatcher.UIThread.Post(() => ScrollToBottomReliable(), DispatcherPriority.Loaded);
+                Dispatcher.UIThread.Post(() =>
+                {
+                    ScrollToBottomReliable();
+                    // 首批渲染+滚动完成后，补充第二批（插入到头部）
+                    FlushPendingMessagesDeferred();
+                }, DispatcherPriority.Loaded);
             }
+        }
+
+        /// <summary>
+        /// 延迟将剩余消息插入 Messages 头部，并补偿滚动位置使画面不跳动。
+        /// </summary>
+        private void FlushPendingMessagesDeferred()
+        {
+            if (_attachedSession == null || !_attachedSession.HasPendingMessages)
+                return;
+
+            // 再延一帧，确保首批渲染和 scroll-to-bottom 的 layout 都已完成
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (_attachedSession == null || !_attachedSession.HasPendingMessages)
+                    return;
+
+                var sv = FindChatScrollViewer();
+                var oldExtent = sv?.Extent.Height ?? 0;
+
+                _attachedSession.FlushPendingMessages();
+
+                // 补偿滚动位置：新内容插入头部，Extent 增长了多少就补偿多少
+                if (sv != null)
+                {
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        var delta = sv.Extent.Height - oldExtent;
+                        if (delta > 0)
+                        {
+                            sv.Offset = new Avalonia.Vector(sv.Offset.X, sv.Offset.Y + delta);
+                        }
+                    }, DispatcherPriority.Render);
+                }
+            }, DispatcherPriority.Background);
         }
 
         /// <summary>可靠滚到底：双轮 ScrollToEnd，覆盖 StackPanel 布局延迟。</summary>

@@ -5,7 +5,6 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
-    <PublishReadyToRun>true</PublishReadyToRun>
     <TieredPGO>true</TieredPGO>
     <!-- app.manifest 仅在 Windows 构建时生效（macOS/Linux 发布时自动跳过） -->
     <ApplicationManifest Condition="!$(RuntimeIdentifier.StartsWith('osx')) AND !$(RuntimeIdentifier.StartsWith('linux'))">app.manifest</ApplicationManifest>

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Microsoft.Data.Sqlite;
 
 namespace TrueFluentPro.Services.Storage
@@ -300,6 +301,115 @@ VALUES (@mid, @type, @name, @path, @size, @sort);";
             cmd.CommandText = "DELETE FROM message_attachments WHERE message_id = @mid;";
             cmd.Parameters.AddWithValue("@mid", messageId);
             cmd.ExecuteNonQuery();
+        }
+
+        // ══════ 批量加载（消除 N+1） ══════════════════
+
+        public SessionMessagesBundle GetSessionBundle(string sessionId)
+        {
+            using var conn = _db.CreateConnection();
+
+            // 1. 全量消息
+            using var msgCmd = conn.CreateCommand();
+            msgCmd.CommandText = @"
+SELECT * FROM session_messages
+WHERE session_id = @sid AND is_deleted = 0
+ORDER BY sequence_no ASC;";
+            msgCmd.Parameters.AddWithValue("@sid", sessionId);
+            var messages = ReadAll(msgCmd);
+            if (messages.Count == 0)
+                return new SessionMessagesBundle { Messages = messages };
+
+            // 收集所有 messageId
+            var ids = messages.Select(m => m.Id).ToList();
+            var inClause = string.Join(",", ids.Select((_, i) => $"@id{i}"));
+
+            // 2. 全量媒体引用
+            var mediaRefs = new Dictionary<string, List<MediaRefRecord>>();
+            using (var cmd2 = conn.CreateCommand())
+            {
+                cmd2.CommandText = $"SELECT * FROM message_media_refs WHERE message_id IN ({inClause}) ORDER BY sort_order;";
+                for (var i = 0; i < ids.Count; i++)
+                    cmd2.Parameters.AddWithValue($"@id{i}", ids[i]);
+                using var r = cmd2.ExecuteReader();
+                while (r.Read())
+                {
+                    var rec = new MediaRefRecord
+                    {
+                        Id = Db.Long(r["id"]),
+                        MessageId = Db.Str(r["message_id"]),
+                        MediaPath = Db.Str(r["media_path"]),
+                        MediaKind = Db.Str(r["media_kind"]),
+                        SortOrder = Db.Int(r["sort_order"]),
+                        PreviewPath = Db.NStr(r["preview_path"]),
+                    };
+                    if (!mediaRefs.TryGetValue(rec.MessageId, out var list))
+                        mediaRefs[rec.MessageId] = list = new();
+                    list.Add(rec);
+                }
+            }
+
+            // 3. 全量引文
+            var citations = new Dictionary<string, List<CitationRecord>>();
+            using (var cmd3 = conn.CreateCommand())
+            {
+                cmd3.CommandText = $"SELECT * FROM message_citations WHERE message_id IN ({inClause}) ORDER BY citation_number;";
+                for (var i = 0; i < ids.Count; i++)
+                    cmd3.Parameters.AddWithValue($"@id{i}", ids[i]);
+                using var r = cmd3.ExecuteReader();
+                while (r.Read())
+                {
+                    var rec = new CitationRecord
+                    {
+                        Id = Db.Long(r["id"]),
+                        MessageId = Db.Str(r["message_id"]),
+                        CitationNumber = Db.Int(r["citation_number"]),
+                        Title = Db.Str(r["title"]),
+                        Url = Db.Str(r["url"]),
+                        Snippet = Db.Str(r["snippet"]),
+                        Hostname = Db.Str(r["hostname"]),
+                    };
+                    if (!citations.TryGetValue(rec.MessageId, out var list))
+                        citations[rec.MessageId] = list = new();
+                    list.Add(rec);
+                }
+            }
+
+            // 4. 全量附件
+            var attachments = new Dictionary<string, List<AttachmentRecord>>();
+            using (var cmd4 = conn.CreateCommand())
+            {
+                cmd4.CommandText = $"SELECT * FROM message_attachments WHERE message_id IN ({inClause}) ORDER BY sort_order;";
+                for (var i = 0; i < ids.Count; i++)
+                    cmd4.Parameters.AddWithValue($"@id{i}", ids[i]);
+                using var r = cmd4.ExecuteReader();
+                while (r.Read())
+                {
+                    var rec = new AttachmentRecord
+                    {
+                        Id = Db.Long(r["id"]),
+                        MessageId = Db.Str(r["message_id"]),
+                        AttachmentType = Db.Str(r["attachment_type"]),
+                        FileName = Db.Str(r["file_name"]),
+                        FilePath = Db.Str(r["file_path"]),
+                        FileSize = Db.Long(r["file_size"]),
+                        SortOrder = Db.Int(r["sort_order"]),
+                    };
+                    if (!attachments.TryGetValue(rec.MessageId, out var list))
+                        attachments[rec.MessageId] = list = new();
+                    list.Add(rec);
+                }
+            }
+
+            SqliteDebugLogger.LogRead("session_messages", "bundle", messages.Count);
+
+            return new SessionMessagesBundle
+            {
+                Messages = messages,
+                MediaRefs = mediaRefs,
+                Citations = citations,
+                Attachments = attachments,
+            };
         }
 
         // ── 内部辅助 ──────────────────────────────────

@@ -25,6 +25,7 @@ public partial class MainWindow : Window
     private bool _mediaCenterV2Initialized;
     private bool _isApplyingNavPaneState;
     private readonly Dictionary<string, Control> _pageCache = new(StringComparer.Ordinal);
+    private Control? _currentPage;
 
     private MediaStudioView? MediaStudioViewPage => GetCachedPage<MediaStudioView>(MainWindowViewModel.NavTagMedia);
     private MediaCenterV2View? MediaCenterV2ViewPage => GetCachedPage<MediaCenterV2View>(MainWindowViewModel.NavTagMediaV2);
@@ -188,9 +189,21 @@ public partial class MainWindow : Window
         tag = NormalizeNavTag(tag);
         var page = GetOrCreatePage(tag);
 
-        if (!ReferenceEquals(PageHost.Content, page))
+        if (!ReferenceEquals(_currentPage, page))
         {
-            PageHost.Content = page;
+            // 隐藏旧页面（保留在视觉树中，避免下次切回时重新 Measure/Arrange）
+            if (_currentPage != null)
+                _currentPage.IsVisible = false;
+
+            // 首次展示的页面加入 PageHost 子级
+            if (!PageHost.Children.Contains(page))
+            {
+                PagePlaceholder.IsVisible = false;
+                PageHost.Children.Add(page);
+            }
+
+            page.IsVisible = true;
+            _currentPage = page;
         }
 
         if (_viewModel != null)
