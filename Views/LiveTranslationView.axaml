@@ -17,6 +17,8 @@
     </UserControl.Resources>
 
     <UserControl.Styles>
+        <StyleInclude Source="avares://AvaloniaEdit/Themes/Fluent/AvaloniaEdit.xaml" />
+
         <Style Selector="ToggleButton.audio-pill">
             <Setter Property="Padding" Value="10,4" />
             <Setter Property="CornerRadius" Value="999" />

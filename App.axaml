@@ -142,8 +142,6 @@
 
     <Application.Styles>
         <sty:FluentAvaloniaTheme />
-
-        <StyleInclude Source="avares://AvaloniaEdit/Themes/Fluent/AvaloniaEdit.xaml" />
         <StyleInclude Source="avares://TrueFluentPro/Styles/AppSurfaces.axaml" />
         <StyleInclude Source="avares://TrueFluentPro/Styles/AppTypography.axaml" />
 

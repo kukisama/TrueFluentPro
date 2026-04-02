@@ -5,6 +5,8 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+    <PublishReadyToRun>true</PublishReadyToRun>
+    <TieredPGO>true</TieredPGO>
     <!-- app.manifest 仅在 Windows 构建时生效（macOS/Linux 发布时自动跳过） -->
     <ApplicationManifest Condition="!$(RuntimeIdentifier.StartsWith('osx')) AND !$(RuntimeIdentifier.StartsWith('linux'))">app.manifest</ApplicationManifest>
     <AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault>
@@ -67,6 +69,7 @@
   <ItemGroup>
     <None Include="Assets\RELEASE_NOTES.md" Link="RELEASE_NOTES.md" CopyToOutputDirectory="PreserveNewest" Condition="Exists('Assets\RELEASE_NOTES.md')" />
     <None Include="RELEASE_NOTES.md" CopyToOutputDirectory="PreserveNewest" Condition="!Exists('Assets\RELEASE_NOTES.md') and Exists('RELEASE_NOTES.md')" />
+    <None Update="Assets\AppIcon.png" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <!-- 构建后自动编译 Updater 并拷贝到输出目录（仅 Windows，macOS/Linux 构建时跳过） -->

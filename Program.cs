@@ -15,6 +15,7 @@ class Program
         Helpers.ScrollDiagLog.Reset();
         try
         {
+            NativePrelaunchSplash.Show(title: "TrueFluentPro", status: "正在启动...");
             Environment.ExitCode = 0;
             var exitCode = BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
             Environment.ExitCode = exitCode;
@@ -23,9 +24,12 @@ class Program
             {
                 CrashLogger.WriteMessage("Avalonia.StartWithClassicDesktopLifetime", $"exitCode={exitCode}");
             }
+
+            NativePrelaunchSplash.CloseIfOpen();
         }
         catch (Exception ex)
         {
+            NativePrelaunchSplash.CloseIfOpen();
             CrashLogger.Write(source: "Program.Main", exception: ex, isTerminating: true);
             Environment.Exit(1);
         }

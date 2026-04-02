@@ -88,6 +88,7 @@ public partial class MainWindow : Window
     protected override void OnOpened(EventArgs e)
     {
         base.OnOpened(e);
+        NativePrelaunchSplash.CloseIfOpen();
         ApplyMainNavPaneState(_viewModel?.IsMainNavPaneOpen ?? false);
 
         Dispatcher.UIThread.Post(() =>

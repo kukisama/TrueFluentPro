@@ -4,9 +4,10 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Microsoft.Extensions.DependencyInjection;
 using System;
+using System.Diagnostics;
 using System.Threading.Tasks;
-using TrueFluentPro.Services.EndpointProfiles;
 using TrueFluentPro.Services;
+using TrueFluentPro.Services.EndpointProfiles;
 using TrueFluentPro.Services.EndpointTesting;
 using TrueFluentPro.Services.Storage;
 using TrueFluentPro.ViewModels;
@@ -26,6 +27,29 @@ public partial class App : Application
     {
         CrashLogger.HookAvaloniaUiThread();
 
+        Services = BuildServiceProvider();
+
+        if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+        {
+            desktop.ShutdownMode = ShutdownMode.OnMainWindowClose;
+            var mainWindow = new MainWindow();
+            var configService = Services.GetRequiredService<ConfigurationService>();
+            var startupShellPreferencesTask = Task.Run(configService.LoadShellStartupPreferences);
+            var vm = Services.GetRequiredService<MainWindowViewModel>();
+            var startupShellPreferences = startupShellPreferencesTask.GetAwaiter().GetResult();
+            vm.ApplyStartupShellPreferences(startupShellPreferences);
+            vm.SetMainWindow(mainWindow);
+            mainWindow.DataContext = vm;
+            desktop.MainWindow = mainWindow;
+        }
+
+        _ = Task.Run(InitializeSqliteStorage);
+
+        base.OnFrameworkInitializationCompleted();
+    }
+
+    private static IServiceProvider BuildServiceProvider()
+    {
         var services = new ServiceCollection();
 
         // --- SQLite 存储层 ---
@@ -71,25 +95,7 @@ public partial class App : Application
         services.AddSingleton<SettingsViewModel>();
         services.AddSingleton<MainWindowViewModel>();
 
-        Services = services.BuildServiceProvider();
-
-        if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
-        {
-            desktop.ShutdownMode = ShutdownMode.OnMainWindowClose;
-            var mainWindow = new MainWindow();
-            var configService = Services.GetRequiredService<ConfigurationService>();
-            var startupShellPreferences = configService.LoadShellStartupPreferences();
-            var vm = Services.GetRequiredService<MainWindowViewModel>();
-            vm.ApplyStartupShellPreferences(startupShellPreferences);
-            vm.SetMainWindow(mainWindow);
-            mainWindow.DataContext = vm;
-            desktop.MainWindow = mainWindow;
-        }
-
-        // --- SQLite 启动初始化（后台线程，避免卡首页） ---
-        Task.Run(InitializeSqliteStorage);
-
-        base.OnFrameworkInitializationCompleted();
+        return services.BuildServiceProvider();
     }
 
     private static void InitializeSqliteStorage()
@@ -110,7 +116,7 @@ public partial class App : Application
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[SQLite] 初始化失败: {ex.Message}");
+            Debug.WriteLine($"[SQLite] 初始化失败: {ex.Message}");
         }
     }
 }
