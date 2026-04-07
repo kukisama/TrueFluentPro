@@ -1,0 +1,141 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:IconToolUI.ViewModels"
+        x:Class="IconToolUI.MainWindow"
+        Title="IconTool UI — 目录图标管理"
+        Width="900" Height="640"
+        MinWidth="640" MinHeight="480"
+        WindowStartupLocation="CenterScreen">
+
+    <Window.DataContext>
+        <vm:MainViewModel />
+    </Window.DataContext>
+
+    <Window.Styles>
+        <!-- 图标卡片样式 -->
+        <Style Selector="ListBox.IconGrid">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="ListBox.IconGrid ListBoxItem">
+            <Setter Property="Padding" Value="4" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Margin" Value="2" />
+        </Style>
+        <Style Selector="ListBox.IconGrid ListBoxItem:selected Border.IconCard">
+            <Setter Property="Border.BorderBrush" Value="#0078D4" />
+            <Setter Property="Border.BorderThickness" Value="2" />
+        </Style>
+    </Window.Styles>
+
+    <Grid RowDefinitions="Auto,*,Auto">
+
+        <!-- ═══ 顶部：目录选择区 ═══ -->
+        <Border Grid.Row="0" Padding="16,12"
+                Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}">
+            <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+                <TextBlock Grid.Column="0" Text="📁 目录" VerticalAlignment="Center"
+                           FontSize="14" FontWeight="SemiBold" Margin="0,0,12,0" />
+                <TextBox Grid.Column="1" Text="{Binding DirectoryPath, Mode=TwoWay}"
+                         Watermark="输入目录路径或点击浏览..."
+                         VerticalAlignment="Center"
+                         KeyDown="DirectoryPath_KeyDown" />
+                <Button Grid.Column="2" Content="浏览" Margin="8,0,0,0"
+                        VerticalAlignment="Center"
+                        Click="BrowseButton_Click"
+                        Classes="accent" />
+                <Button Grid.Column="3" Content="加载" Margin="4,0,0,0"
+                        VerticalAlignment="Center"
+                        Command="{Binding LoadPathCommand}" />
+            </Grid>
+        </Border>
+
+        <!-- ═══ 中部：图标网格 ═══ -->
+        <Grid Grid.Row="1">
+            <!-- 加载中指示 -->
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
+                        IsVisible="{Binding IsLoading}">
+                <ProgressBar IsIndeterminate="True" Width="200" />
+                <TextBlock Text="正在扫描..." HorizontalAlignment="Center" Margin="0,8,0,0"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+            </StackPanel>
+
+            <!-- 空状态提示 -->
+            <TextBlock Text="选择一个包含 EXE 文件的目录，即可预览并选择目录图标"
+                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                       FontSize="14" Opacity="0.5"
+                       IsVisible="{Binding !HasIcons}"
+                       TextWrapping="Wrap" Margin="40" />
+
+            <!-- 图标列表 — 使用 ListBox 实现选择高亮 -->
+            <ListBox ItemsSource="{Binding Icons}"
+                     SelectedItem="{Binding SelectedIcon}"
+                     IsVisible="{Binding HasIcons}"
+                     Classes="IconGrid"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                <ListBox.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <WrapPanel />
+                    </ItemsPanelTemplate>
+                </ListBox.ItemsPanel>
+                <ListBox.ItemTemplate>
+                    <DataTemplate DataType="{x:Type vm:IconItem}">
+                        <Border Padding="8" CornerRadius="6" MinWidth="140"
+                                Classes="IconCard"
+                                Background="{DynamicResource SystemControlBackgroundAltHighBrush}"
+                                BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
+                                BorderThickness="1">
+                            <StackPanel HorizontalAlignment="Center" Spacing="4">
+                                <!-- 图标预览 -->
+                                <Border Width="64" Height="64"
+                                        Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}"
+                                        CornerRadius="4" ClipToBounds="True">
+                                    <Image Source="{Binding Preview}"
+                                           Stretch="Uniform"
+                                           Width="56" Height="56"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center" />
+                                </Border>
+                                <!-- 文件名 -->
+                                <TextBlock Text="{Binding DisplayLabel}"
+                                           FontSize="11" FontWeight="SemiBold"
+                                           HorizontalAlignment="Center"
+                                           TextTrimming="CharacterEllipsis"
+                                           MaxWidth="130" />
+                                <!-- 尺寸信息 -->
+                                <TextBlock Text="{Binding SizeLabel}"
+                                           FontSize="10" Opacity="0.7"
+                                           HorizontalAlignment="Center"
+                                           TextTrimming="CharacterEllipsis"
+                                           MaxWidth="130" />
+                                <!-- 文件大小 -->
+                                <TextBlock Text="{Binding FileSizeText}"
+                                           FontSize="10" Opacity="0.5"
+                                           HorizontalAlignment="Center" />
+                            </StackPanel>
+                        </Border>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+        </Grid>
+
+        <!-- ═══ 底部：操作区 + 状态栏 ═══ -->
+        <Border Grid.Row="2" Padding="16,8"
+                Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
+                BorderThickness="0,1,0,0">
+            <Grid ColumnDefinitions="*,Auto">
+                <!-- 状态信息 -->
+                <TextBlock Grid.Column="0" Text="{Binding StatusMessage}"
+                           VerticalAlignment="Center" FontSize="12"
+                           TextTrimming="CharacterEllipsis"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                <!-- 设置按钮 -->
+                <Button Grid.Column="1" Content="✓ 设为目录图标"
+                        Command="{Binding SetAsDirectoryIconCommand}"
+                        IsEnabled="{Binding SelectedIcon, Converter={x:Static ObjectConverters.IsNotNull}}"
+                        Classes="accent" FontWeight="SemiBold"
+                        Padding="16,8" />
+            </Grid>
+        </Border>
+    </Grid>
+</Window>
