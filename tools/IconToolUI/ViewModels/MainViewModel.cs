@@ -95,7 +95,9 @@ public partial class MainViewModel : ObservableObject
 
         try
         {
-            var icoFileName = $"{Path.GetFileNameWithoutExtension(SelectedIcon.ExeFileName)}_icon{SelectedIcon.GroupId}.ico";
+            var safeName = SanitizeFileName(
+                Path.GetFileNameWithoutExtension(SelectedIcon.ExeFileName));
+            var icoFileName = $"{safeName}_icon{SelectedIcon.GroupId}.ico";
 
             DirectoryIconService.SetDirectoryIconFromBytes(
                 SelectedIcon.IcoData,
@@ -191,5 +193,15 @@ public partial class MainViewModel : ObservableObject
         {
             return null;
         }
+    }
+
+    /// <summary>
+    /// 清理文件名中的非法字符，防止路径遍历。
+    /// </summary>
+    private static string SanitizeFileName(string name)
+    {
+        var invalidChars = Path.GetInvalidFileNameChars();
+        var sanitized = string.Concat(name.Where(c => !invalidChars.Contains(c)));
+        return string.IsNullOrWhiteSpace(sanitized) ? "icon" : sanitized;
     }
 }
