@@ -112,8 +112,6 @@ public static class DirectoryIconService
 
     private static void NotifyShellIconChanged(string directoryPath)
     {
-        if (!OperatingSystem.IsWindows()) return;
-
         try
         {
             var desktopIniPath = Path.Combine(directoryPath, "desktop.ini");
@@ -150,7 +148,11 @@ public static class DirectoryIconService
 /// Shell 通知 P/Invoke 封装。
 /// 使用 SHGetSetFolderCustomSettings（Explorer 自身使用的 API）+ 多层 SHChangeNotify 通知。
 /// </summary>
-internal static partial class ShellNotify
+internal static
+#if NET7_0_OR_GREATER
+    partial
+#endif
+    class ShellNotify
 {
     // ─── SHChangeNotify 常量 ───
     private const int SHCNE_UPDATEITEM = 0x00002000;
@@ -171,26 +173,43 @@ internal static partial class ShellNotify
     private const int WM_SETTINGCHANGE = 0x001A;
     private const int SMTO_ABORTIFHUNG = 0x0002;
 
-    // ─── P/Invoke: shell32.dll (LibraryImport) ───
+    // ─── P/Invoke: shell32.dll ───
 
+#if NET7_0_OR_GREATER
     [LibraryImport("shell32.dll", StringMarshalling = StringMarshalling.Utf16)]
     private static partial void SHChangeNotify(int wEventId, int uFlags, string? dwItem1, string? dwItem2);
 
     [LibraryImport("shell32.dll")]
     private static partial void SHChangeNotify(int wEventId, int uFlags, IntPtr dwItem1, IntPtr dwItem2);
 
-    // ─── P/Invoke: shlwapi.dll (LibraryImport) ───
+    // ─── P/Invoke: shlwapi.dll ───
 
     [LibraryImport("shlwapi.dll", StringMarshalling = StringMarshalling.Utf16)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static partial bool PathMakeSystemFolderW(string pszPath);
 
-    // ─── P/Invoke: user32.dll (LibraryImport) ───
+    // ─── P/Invoke: user32.dll ───
 
     [LibraryImport("user32.dll", StringMarshalling = StringMarshalling.Utf16)]
     private static partial IntPtr SendMessageTimeoutW(
         IntPtr hWnd, int msg, IntPtr wParam, string? lParam,
         int fuFlags, int uTimeout, out IntPtr lpdwResult);
+#else
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+    private static extern void SHChangeNotify(int wEventId, int uFlags, string? dwItem1, string? dwItem2);
+
+    [DllImport("shell32.dll")]
+    private static extern void SHChangeNotify(int wEventId, int uFlags, IntPtr dwItem1, IntPtr dwItem2);
+
+    [DllImport("shlwapi.dll", CharSet = CharSet.Unicode)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool PathMakeSystemFolderW(string pszPath);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern IntPtr SendMessageTimeoutW(
+        IntPtr hWnd, int msg, IntPtr wParam, string? lParam,
+        int fuFlags, int uTimeout, out IntPtr lpdwResult);
+#endif
 
     // ─── P/Invoke: shell32.dll (DllImport — 复杂结构体需传统 Marshaller) ───
 
@@ -233,8 +252,6 @@ internal static partial class ShellNotify
     /// </summary>
     public static int SetFolderIcon(string folderPath, string icoFileName, int iconIndex)
     {
-        if (!OperatingSystem.IsWindows()) return -1;
-
         var settings = new SHFOLDERCUSTOMSETTINGS
         {
             dwSize = (uint)Marshal.SizeOf<SHFOLDERCUSTOMSETTINGS>(),
@@ -253,7 +270,6 @@ internal static partial class ShellNotify
     /// </summary>
     public static void WriteIniEntry(string folderPath, string key, string value)
     {
-        if (!OperatingSystem.IsWindows()) return;
         var desktopIniPath = Path.Combine(folderPath, "desktop.ini");
         WritePrivateProfileString(".ShellClassInfo", key, value, desktopIniPath);
     }
@@ -263,7 +279,6 @@ internal static partial class ShellNotify
     /// </summary>
     public static void MakeSystemFolder(string directoryPath)
     {
-        if (!OperatingSystem.IsWindows()) return;
         PathMakeSystemFolderW(directoryPath);
     }
 
@@ -299,6 +314,7 @@ internal static partial class ShellNotify
     {
         try
         {
+#if NET5_0_OR_GREATER
             var shell32 = NativeLibrary.Load("shell32.dll");
             if (NativeLibrary.TryGetExport(shell32, "#660", out var funcPtr))
             {
@@ -306,6 +322,19 @@ internal static partial class ShellNotify
                 fileIconInit(false);
                 fileIconInit(true);
             }
+#else
+            var shell32 = LoadLibrary("shell32.dll");
+            if (shell32 != IntPtr.Zero)
+            {
+                var funcPtr = GetProcAddress(shell32, "#660");
+                if (funcPtr != IntPtr.Zero)
+                {
+                    var fileIconInit = Marshal.GetDelegateForFunctionPointer<FileIconInitDelegate>(funcPtr);
+                    fileIconInit(false);
+                    fileIconInit(true);
+                }
+            }
+#endif
         }
         catch
         {

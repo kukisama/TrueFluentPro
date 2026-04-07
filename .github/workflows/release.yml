@@ -69,7 +69,7 @@ jobs:
           name: release-${{ matrix.rid }}
           path: artifacts/TrueFluentPro-${{ matrix.rid }}-fdd.zip
 
-  # ── 第一阶段 B：IconTool + IconToolUI（自包含单文件，仅 win-x64） ──
+  # ── 第一阶段 B：IconTool（自包含trimmed单文件） + IconToolUI（FDD单文件），仅 win-x64 ──
   build-tools:
     runs-on: windows-latest
     steps:
@@ -84,11 +84,11 @@ jobs:
 
       - name: Publish IconTool
         run: |
-          dotnet publish tools/IconTool/IconTool.csproj -c Release -r win-x64 --self-contained false -o artifacts/publish/IconTool
+          dotnet publish tools/IconTool/IconTool.csproj -c Release -o artifacts/publish/IconTool
 
       - name: Publish IconToolUI
         run: |
-          dotnet publish tools/IconToolUI/IconToolUI.csproj -c Release -r win-x64 --self-contained false -o artifacts/publish/IconToolUI
+          dotnet publish tools/IconToolUI/IconToolUI.csproj -c Release -o artifacts/publish/IconToolUI
 
       - name: Create zips
         run: |

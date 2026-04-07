@@ -48,12 +48,16 @@ public static class PeIconExtractor
             throw new DirectoryNotFoundException($"目录不存在: {directoryPath}");
 
         var result = new List<ExeIconInfo>();
+#if NET5_0_OR_GREATER
         var exeFiles = Directory.EnumerateFiles(directoryPath, "*.exe",
             new EnumerationOptions
             {
                 RecurseSubdirectories = true,
                 IgnoreInaccessible = true
             });
+#else
+        var exeFiles = Directory.EnumerateFiles(directoryPath, "*.exe", SearchOption.AllDirectories);
+#endif
 
         foreach (var exePath in exeFiles)
         {
@@ -62,7 +66,13 @@ public static class PeIconExtractor
                 var groups = ExtractFromFile(exePath);
                 if (groups.Count > 0)
                 {
+#if NET5_0_OR_GREATER
                     var relativePath = Path.GetRelativePath(directoryPath, exePath);
+#else
+                    var relativePath = exePath.StartsWith(directoryPath, StringComparison.OrdinalIgnoreCase)
+                        ? exePath.Substring(directoryPath.TrimEnd('\\').Length + 1)
+                        : Path.GetFileName(exePath);
+#endif
                     result.Add(new ExeIconInfo(
                         exePath,
                         relativePath,

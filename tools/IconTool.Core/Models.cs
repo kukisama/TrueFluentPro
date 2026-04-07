@@ -15,3 +15,10 @@ public record IconEntryInfo(int Width, int Height, int BitCount, int DataSize);
 /// 扫描目录时，描述一个 EXE 文件及其包含的所有图标组。
 /// </summary>
 public record ExeIconInfo(string ExeFilePath, string ExeFileName, List<IconGroupInfo> IconGroups);
+
+#if !NET5_0_OR_GREATER
+namespace System.Runtime.CompilerServices
+{
+    internal static class IsExternalInit { }
+}
+#endif
