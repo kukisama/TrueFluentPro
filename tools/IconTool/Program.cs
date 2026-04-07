@@ -57,6 +57,7 @@ return command switch
     "compose" => RunCompose(args),
     "favicon" => RunFavicon(args),
     "sheet" => RunSheet(args),
+    "browseicons" => RunBrowseIcons(args),
     "help" or "--help" or "-h" or "/?" => PrintUsageAndReturn(),
     _ => Error($"未知命令: {command}。使用 'IconTool help' 查看帮助。")
 };
@@ -89,6 +90,7 @@ static void PrintUsage()
       IconTool compose [选项] <文件1> <文件2>...  多图拼合成 ICO
       IconTool favicon <文件路径> [选项]        一键生成 Web 全套 favicon
       IconTool sheet [选项] <文件1> <文件2>...    图标合并为 sprite sheet
+      IconTool browseicons <目录路径>             浏览目录中 EXE 的图标并设置为目录图标
 
     使用 'IconTool help' 查看详细用法。
     """);
@@ -2395,6 +2397,145 @@ static Image<Rgba32> CenterCropAndResize(Image<Rgba32> source, int targetSize)
     });
 
     return result;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// browseicons 命令：浏览目录中 EXE 的图标并设置为目录图标
+// ═══════════════════════════════════════════════════════════════════
+
+static int RunBrowseIcons(string[] args)
+{
+    var targetDir = args.Length >= 2 ? args[1] : Directory.GetCurrentDirectory();
+    targetDir = Path.GetFullPath(targetDir);
+
+    if (!Directory.Exists(targetDir))
+        return Error($"目录不存在: {targetDir}");
+
+    Console.WriteLine($"── 浏览目录中的 EXE 图标 ──");
+    Console.WriteLine($"  目录: {targetDir}");
+    Console.WriteLine();
+
+    // 扫描 EXE 文件
+    var exeFiles = Directory.GetFiles(targetDir, "*.exe", SearchOption.TopDirectoryOnly);
+    if (exeFiles.Length == 0)
+    {
+        Console.WriteLine("  该目录下没有找到 EXE 文件。");
+        return 0;
+    }
+
+    // 提取所有图标
+    var allIcons = new List<(string ExeName, int GroupId, byte[] IcoData, string SizeInfo)>();
+
+    foreach (var exePath in exeFiles)
+    {
+        try
+        {
+            var peBytes = File.ReadAllBytes(exePath);
+            var icons = ExtractIconsFromPE(peBytes);
+            var exeName = Path.GetFileName(exePath);
+
+            foreach (var (index, icoData) in icons)
+            {
+                var sizeInfo = DescribeIcoSizes(icoData);
+                allIcons.Add((exeName, index, icoData, sizeInfo));
+            }
+        }
+        catch
+        {
+            // 跳过无法解析的文件
+        }
+    }
+
+    if (allIcons.Count == 0)
+    {
+        Console.WriteLine("  未从任何 EXE 中找到图标资源。");
+        return 0;
+    }
+
+    // 列出所有图标
+    Console.WriteLine($"  找到 {allIcons.Count} 个图标:");
+    Console.WriteLine();
+
+    for (int i = 0; i < allIcons.Count; i++)
+    {
+        var (exeName, groupId, icoData, sizeInfo) = allIcons[i];
+        // 计算最大尺寸以标记高清图标
+        int maxSize = GetIcoMaxSize(icoData);
+        var hdTag = maxSize >= 256 ? " ★HD" : "";
+        Console.WriteLine($"  [{i + 1}] {exeName} → 图标组 {groupId}: {sizeInfo}{hdTag}  ({FormatFileSize(icoData.Length)})");
+    }
+
+    Console.WriteLine();
+    Console.WriteLine("  输入编号选择图标设为目录图标，输入 0 或 q 退出:");
+    Console.Write("  > ");
+
+    var input = Console.ReadLine()?.Trim();
+    if (string.IsNullOrEmpty(input) || input == "0" || input.Equals("q", StringComparison.OrdinalIgnoreCase))
+    {
+        Console.WriteLine("  已取消。");
+        return 0;
+    }
+
+    if (!int.TryParse(input, out var selection) || selection < 1 || selection > allIcons.Count)
+        return Error($"无效的选择: {input}");
+
+    var selected = allIcons[selection - 1];
+    Console.WriteLine();
+    Console.WriteLine($"  选中: {selected.ExeName} 图标组 {selected.GroupId} ({selected.SizeInfo})");
+
+    // 生成 ICO 文件名并保存
+    var icoFileName = $"{Path.GetFileNameWithoutExtension(selected.ExeName)}_icon{selected.GroupId}.ico";
+    var icoPath = Path.Combine(targetDir, icoFileName);
+    File.WriteAllBytes(icoPath, selected.IcoData);
+    Console.WriteLine($"  已保存图标: {icoFileName}");
+
+    // 设置 ICO 文件为隐藏+系统
+    File.SetAttributes(icoPath, FileAttributes.Hidden | FileAttributes.System);
+
+    // 创建/更新 desktop.ini
+    var desktopIniPath = Path.Combine(targetDir, "desktop.ini");
+    if (File.Exists(desktopIniPath))
+    {
+        var existingAttr = File.GetAttributes(desktopIniPath);
+        File.SetAttributes(desktopIniPath,
+            existingAttr & ~(FileAttributes.Hidden | FileAttributes.System | FileAttributes.ReadOnly));
+    }
+
+    var iniContent = $"[.ShellClassInfo]\nIconResource={icoFileName},0\n";
+    File.WriteAllText(desktopIniPath, iniContent, Encoding.UTF8);
+    Console.WriteLine($"  写入: desktop.ini");
+
+    File.SetAttributes(desktopIniPath, FileAttributes.Hidden | FileAttributes.System);
+
+    var dirInfo = new DirectoryInfo(targetDir);
+    dirInfo.Attributes |= FileAttributes.ReadOnly;
+    Console.WriteLine($"  设置目录属性: ReadOnly");
+
+    NotifyShellIconChanged(targetDir);
+    Console.WriteLine($"  已通知资源管理器刷新图标缓存");
+
+    Console.WriteLine();
+    Console.WriteLine("✓ 目录图标设置完成。");
+    return 0;
+}
+
+/// <summary>
+/// 获取 ICO 中最大尺寸。
+/// </summary>
+static int GetIcoMaxSize(byte[] icoData)
+{
+    if (icoData.Length < 6) return 0;
+    var count = BitConverter.ToUInt16(icoData, 4);
+    int maxSize = 0;
+    for (int i = 0; i < count; i++)
+    {
+        var entryOffset = 6 + i * 16;
+        if (entryOffset + 16 > icoData.Length) break;
+        var w = icoData[entryOffset] == 0 ? 256 : icoData[entryOffset];
+        var h = icoData[entryOffset + 1] == 0 ? 256 : icoData[entryOffset + 1];
+        maxSize = Math.Max(maxSize, Math.Max(w, h));
+    }
+    return maxSize;
 }
 
 // ═══════════════════════════════════════════════════════════════════
