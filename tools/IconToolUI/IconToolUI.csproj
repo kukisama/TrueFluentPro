@@ -8,14 +8,6 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <RootNamespace>IconToolUI</RootNamespace>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
-
-    <!-- 单文件自包含发布 + 强制 trim（只用基础控件，full trim 实测通过） -->
-    <PublishSingleFile>true</PublishSingleFile>
-    <SelfContained>true</SelfContained>
-    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-    <PublishTrimmed>true</PublishTrimmed>
-    <TrimMode>full</TrimMode>
-    <_SuppressWinFormsTrimError>true</_SuppressWinFormsTrimError>
   </PropertyGroup>
 
   <ItemGroup>
