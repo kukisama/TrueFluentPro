@@ -281,6 +281,18 @@ public partial class ReviewModeView : UserControl
         };
         flyout.Items.Add(copyItem);
 
+        flyout.Items.Add(new Separator());
+
+        var askAiItem = new MenuItem { Header = "以此向AI提问" };
+        askAiItem.Click += (_, _) =>
+        {
+            var subtitleFilePath = ViewModel?.FileLibrary.SelectedSubtitleFile?.FullPath;
+            if (string.IsNullOrWhiteSpace(subtitleFilePath) || !File.Exists(subtitleFilePath)) return;
+
+            ViewModel?.NavigateToWorkshopWithAttachments?.Invoke(new[] { subtitleFilePath });
+        };
+        flyout.Items.Add(askAiItem);
+
         flyout.ShowAt(listBox, true);
         e.Handled = true;
     }

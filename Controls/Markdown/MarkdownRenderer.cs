@@ -53,8 +53,14 @@ public class MarkdownRenderer : StackPanel
     public static readonly StyledProperty<bool> ShowCodeLineNumbersProperty =
         AvaloniaProperty.Register<MarkdownRenderer, bool>(nameof(ShowCodeLineNumbers), false);
 
+    public static readonly StyledProperty<bool> EnableContextMenuProperty =
+        AvaloniaProperty.Register<MarkdownRenderer, bool>(nameof(EnableContextMenu), true);
+
     public static readonly StyledProperty<IReadOnlyDictionary<int, string>?> CitationUrlsProperty =
         AvaloniaProperty.Register<MarkdownRenderer, IReadOnlyDictionary<int, string>?>(nameof(CitationUrls));
+
+    public static readonly StyledProperty<System.Windows.Input.ICommand?> HyperlinkCommandProperty =
+        AvaloniaProperty.Register<MarkdownRenderer, System.Windows.Input.ICommand?>(nameof(HyperlinkCommand));
 
     public string? Markdown
     {
@@ -88,11 +94,25 @@ public class MarkdownRenderer : StackPanel
         set => SetValue(ShowCodeLineNumbersProperty, value);
     }
 
+    /// <summary>是否启用右键菜单（复制选中/复制全文/全选）及 Ctrl+C 快捷键。默认 true。</summary>
+    public bool EnableContextMenu
+    {
+        get => GetValue(EnableContextMenuProperty);
+        set => SetValue(EnableContextMenuProperty, value);
+    }
+
     /// <summary>引用编号 → URL 映射，用于 [N] 角标点击跳转</summary>
     public IReadOnlyDictionary<int, string>? CitationUrls
     {
         get => GetValue(CitationUrlsProperty);
         set => SetValue(CitationUrlsProperty, value);
+    }
+
+    /// <summary>超链接点击命令，参数为 URL 字符串。设置后优先走此命令，否则默认浏览器打开。</summary>
+    public System.Windows.Input.ICommand? HyperlinkCommand
+    {
+        get => GetValue(HyperlinkCommandProperty);
+        set => SetValue(HyperlinkCommandProperty, value);
     }
 
     // ── 解析管线 ─────────────────────────────────────────
@@ -150,12 +170,14 @@ public class MarkdownRenderer : StackPanel
     public MarkdownRenderer()
     {
         Spacing = _theme.BlockSpacing;
+        Focusable = true;  // 使控件可接收键盘事件
     }
 
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnAttachedToVisualTree(e);
         UpdateSelectionManager();
+        UpdateContextFlyout();
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
@@ -176,6 +198,68 @@ public class MarkdownRenderer : StackPanel
             _selectionManager.Detach();
             _selectionManager = null;
         }
+    }
+
+    // ── 右键菜单 & 快捷键 ───────────────────────────────
+
+    private void UpdateContextFlyout()
+    {
+        if (!EnableContextMenu) { ContextFlyout = null; return; }
+        if (ContextFlyout != null) return; // 已设置
+
+        var copySelItem = new MenuItem { Header = "复制选中" };
+        copySelItem.Click += async (_, _) => await CopySelectedToClipboard();
+
+        var copyAllItem = new MenuItem { Header = "复制全文" };
+        copyAllItem.Click += async (_, _) => await CopyAllToClipboard();
+
+        var selectAllItem = new MenuItem { Header = "全选" };
+        selectAllItem.Click += (_, _) => SelectAll();
+
+        var flyout = new MenuFlyout();
+        flyout.Items.Add(copySelItem);
+        flyout.Items.Add(copyAllItem);
+        flyout.Items.Add(selectAllItem);
+        ContextFlyout = flyout;
+    }
+
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        base.OnKeyDown(e);
+        if (e.KeyModifiers == KeyModifiers.Control && e.Key == Key.C)
+        {
+            _ = CopySelectedToClipboard();
+            e.Handled = true;
+        }
+        else if (e.KeyModifiers == KeyModifiers.Control && e.Key == Key.A)
+        {
+            SelectAll();
+            e.Handled = true;
+        }
+    }
+
+    private async Task CopySelectedToClipboard()
+    {
+        var text = GetSelectedText();
+        if (string.IsNullOrEmpty(text)) text = Markdown ?? "";
+        if (string.IsNullOrEmpty(text)) return;
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel?.Clipboard != null)
+            await topLevel.Clipboard.SetTextAsync(text);
+    }
+
+    private async Task CopyAllToClipboard()
+    {
+        var text = Markdown ?? "";
+        if (string.IsNullOrEmpty(text)) return;
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel?.Clipboard != null)
+            await topLevel.Clipboard.SetTextAsync(text);
+    }
+
+    private void SelectAll()
+    {
+        _selectionManager?.SelectAll();
     }
 
     /// <summary>MaxContentWidth 变化时强制全量重建（宽度影响排版）</summary>
@@ -643,6 +727,20 @@ public class MarkdownRenderer : StackPanel
         };
     }
 
+    // ── 链接点击 ─────────────────────────────────────────
+
+    private void InvokeLink(string url)
+    {
+        var cmd = HyperlinkCommand;
+        if (cmd != null && cmd.CanExecute(url))
+        {
+            cmd.Execute(url);
+            return;
+        }
+        try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); }
+        catch { }
+    }
+
     // ── 分隔线 ───────────────────────────────────────────
 
     private Control RenderHorizontalRule()
@@ -778,11 +876,7 @@ public class MarkdownRenderer : StackPanel
                     };
                     if (!string.IsNullOrEmpty(linkUrl))
                     {
-                        tb.PointerPressed += (_, _) =>
-                        {
-                            try { Process.Start(new ProcessStartInfo(linkUrl) { UseShellExecute = true }); }
-                            catch { }
-                        };
+                        tb.PointerPressed += (_, _) => InvokeLink(linkUrl);
                     }
                     target.Add(new InlineUIContainer { Child = tb });
                     break;
@@ -798,11 +892,7 @@ public class MarkdownRenderer : StackPanel
                         TextDecorations = TextDecorations.Underline,
                         Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand),
                     };
-                    autoTb.PointerPressed += (_, _) =>
-                    {
-                        try { Process.Start(new ProcessStartInfo(autoUrl) { UseShellExecute = true }); }
-                        catch { }
-                    };
+                    autoTb.PointerPressed += (_, _) => InvokeLink(autoUrl);
                     target.Add(new InlineUIContainer { Child = autoTb });
                     break;
                 }

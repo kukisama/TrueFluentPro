@@ -43,6 +43,9 @@ public sealed class SelectionManager
     // 当前管理选区的 STB 集合
     private readonly List<SelectableTextBlock> _selectedBlocks = new();
 
+    // 选区保护：STB 失焦时 Avalonia 会 ClearSelection，我们记录每个 STB 的选区值并在 LostFocus 回调中立即恢复
+    private readonly Dictionary<SelectableTextBlock, (int Start, int End)> _guardedSelections = new();
+
     // ── 自动滚动 ──
     private ScrollViewer? _scrollViewer;
     private DispatcherTimer? _autoScrollTimer;
@@ -67,22 +70,42 @@ public sealed class SelectionManager
 
     // ── 公开 API ─────────────────────────────────────────
 
-    /// <summary>获取管理选区内的完整文本</summary>
+    /// <summary>获取选区文本</summary>
     public string GetSelectedText()
     {
-        if (_selectedBlocks.Count == 0) return string.Empty;
-        var sb = new StringBuilder();
-        foreach (var stb in _selectedBlocks)
+        return GetLiveSelectedText();
+    }
+
+    /// <summary>从当前活动选区读取文本</summary>
+    private string GetLiveSelectedText()
+    {
+        // managed 选区（跨块拖选）
+        if (_selectedBlocks.Count > 0)
         {
-            if (stb.SelectionStart == stb.SelectionEnd) continue;
-            var sel = GetSelectedSubstring(stb);
-            if (!string.IsNullOrEmpty(sel))
+            var sb = new StringBuilder();
+            foreach (var stb in _selectedBlocks)
             {
-                if (sb.Length > 0) sb.AppendLine();
-                sb.Append(sel);
+                if (stb.SelectionStart == stb.SelectionEnd) continue;
+                var sel = GetSelectedSubstring(stb);
+                if (!string.IsNullOrEmpty(sel))
+                {
+                    if (sb.Length > 0) sb.AppendLine();
+                    sb.Append(sel);
+                }
             }
+            if (sb.Length > 0) return sb.ToString();
         }
-        return sb.ToString();
+
+        // 回退：用户在单个 STB 内选中（未触发 managed mode）
+        var allStbs = CollectSelectableTextBlocks();
+        foreach (var info in allStbs)
+        {
+            if (info.Stb.SelectionStart == info.Stb.SelectionEnd) continue;
+            var sel = GetSelectedSubstring(info.Stb);
+            if (!string.IsNullOrEmpty(sel)) return sel;
+        }
+
+        return string.Empty;
     }
 
     /// <summary>是否有 SelectionManager 管理的选区</summary>
@@ -95,6 +118,7 @@ public sealed class SelectionManager
     /// <summary>清除所有管理选区</summary>
     public void ClearSelection()
     {
+        UnguardAll();
         foreach (var stb in _selectedBlocks)
         {
             stb.SelectionStart = 0;
@@ -103,20 +127,97 @@ public sealed class SelectionManager
         _selectedBlocks.Clear();
     }
 
+    /// <summary>选中容器内所有文本</summary>
+    public void SelectAll()
+    {
+        ClearSelection();
+        var stbs = CollectSelectableTextBlocks();
+        foreach (var info in stbs)
+        {
+            if (info.TextLength == 0) continue;
+            info.Stb.SelectionStart = 0;
+            info.Stb.SelectionEnd = info.TextLength;
+            _selectedBlocks.Add(info.Stb);
+        }
+        GuardAll();
+    }
+
     /// <summary>分离事件</summary>
     public void Detach()
     {
         StopAutoScroll();
+        UnguardAll();
         _container.RemoveHandler(InputElement.PointerPressedEvent, OnPointerPressed);
         _container.RemoveHandler(InputElement.PointerMovedEvent, OnPointerMoved);
         _container.RemoveHandler(InputElement.PointerReleasedEvent, OnPointerReleased);
+    }
+
+    // ── 选区保护（防止 STB.OnLostFocus 清除选区）────────
+
+    private void GuardAll()
+    {
+        foreach (var stb in _selectedBlocks)
+            GuardStb(stb);
+    }
+
+    private void UnguardAll()
+    {
+        foreach (var stb in _guardedSelections.Keys.ToArray())
+            UnguardStb(stb);
+    }
+
+    private void GuardStb(SelectableTextBlock stb)
+    {
+        // 记录当前选区值，并订阅 LostFocus
+        _guardedSelections[stb] = (stb.SelectionStart, stb.SelectionEnd);
+        stb.LostFocus -= OnStbLostFocus;  // 防止重复订阅
+        stb.LostFocus += OnStbLostFocus;
+    }
+
+    private void UnguardStb(SelectableTextBlock stb)
+    {
+        stb.LostFocus -= OnStbLostFocus;
+        _guardedSelections.Remove(stb);
+    }
+
+    private void OnStbLostFocus(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        // STB.OnLostFocus 调用了 ClearSelection()，立即恢复
+        if (sender is SelectableTextBlock stb && _guardedSelections.TryGetValue(stb, out var sel))
+        {
+            // 用 Dispatcher.Post 确保在 Avalonia 内部清除完成之后再恢复
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (_guardedSelections.ContainsKey(stb))
+                {
+                    stb.SelectionStart = sel.Start;
+                    stb.SelectionEnd = sel.End;
+                }
+            }, DispatcherPriority.Send);
+        }
     }
 
     // ── 事件处理 ─────────────────────────────────────────
 
     private void OnPointerPressed(object? sender, PointerPressedEventArgs e)
     {
-        if (!e.GetCurrentPoint(_container).Properties.IsLeftButtonPressed) return;
+        var point = e.GetCurrentPoint(_container);
+
+        // 右键：保护当前所有有选区的 STB，防止菜单打开后失焦清除
+        if (point.Properties.IsRightButtonPressed)
+        {
+            // 除已跟踪的 _selectedBlocks 外，也保护单 STB 内的原生选区
+            var allStbs = CollectSelectableTextBlocks();
+            foreach (var info in allStbs)
+            {
+                if (info.Stb.SelectionStart != info.Stb.SelectionEnd)
+                    GuardStb(info.Stb);
+            }
+            e.Handled = true;
+            return;
+        }
+
+        if (!point.Properties.IsLeftButtonPressed) return;
 
         // 新选区开始：清除其他 renderer 的残留选区
         if (s_activeManager != null && s_activeManager != this)
@@ -226,6 +327,7 @@ public sealed class SelectionManager
         {
             if (!newSet.Contains(_selectedBlocks[i]))
             {
+                UnguardStb(_selectedBlocks[i]);
                 _selectedBlocks[i].SelectionStart = 0;
                 _selectedBlocks[i].SelectionEnd = 0;
             }
@@ -233,6 +335,9 @@ public sealed class SelectionManager
 
         _selectedBlocks.Clear();
         _selectedBlocks.AddRange(newSet);
+
+        // ③ 为所有参与选区的 STB 挂上 LostFocus 保护
+        GuardAll();
     }
 
     // ── 自动滚动 ─────────────────────────────────────────
@@ -427,6 +532,17 @@ public sealed class SelectionManager
     {
         if (inline is Run run)
             sb.Append(run.Text);
+        else if (inline is LineBreak)
+            sb.Append('\n');
+        else if (inline is InlineUIContainer iuc)
+        {
+            // 链接等用 InlineUIContainer 包装的 TextBlock
+            if (iuc.Child is TextBlock tb)
+                sb.Append(tb.Text);
+            // InlineUIContainer 在 TextLayout 中占 1 个字符位（U+FFFC）
+            else
+                sb.Append('\uFFFC');
+        }
         else if (inline is Span span && span.Inlines is { Count: > 0 } children)
             foreach (var child in children)
                 AppendInlineText(sb, child);

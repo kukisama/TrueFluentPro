@@ -63,6 +63,7 @@ public partial class MainWindow : Window
         if (_viewModel != null)
         {
             _viewModel.NavigateToSettings = () => ShowPage(MainWindowViewModel.NavTagSettings);
+            _viewModel.NavigateToWorkshopWithAttachments = NavigateToWorkshopWithAttachments;
 
             _viewModel.Settings.ConfigSaved += OnSettingsConfigSaved;
             _viewModel.ThemeModeChanged += OnThemeModeChanged;
@@ -451,6 +452,28 @@ public partial class MainWindow : Window
     private void MediaNavButton_Click(object? sender, RoutedEventArgs e)
     {
         ShowPage(MainWindowViewModel.NavTagMedia);
+    }
+
+    private void NavigateToWorkshopWithAttachments(string[] filePaths)
+    {
+        ShowPage(MainWindowViewModel.NavTagMedia);
+
+        // 确保创作工坊已初始化后再操作
+        Dispatcher.UIThread.Post(() =>
+        {
+            var studio = MediaStudioViewPage;
+            if (studio?.ViewModel == null) return;
+
+            studio.ViewModel.CreateNewSession();
+            var session = studio.ViewModel.CurrentSession;
+            if (session == null) return;
+
+            foreach (var path in filePaths)
+            {
+                if (System.IO.File.Exists(path))
+                    session.AddAttachmentFile(path);
+            }
+        }, DispatcherPriority.Background);
     }
 
     private void MediaV2NavButton_Click(object? sender, RoutedEventArgs e)

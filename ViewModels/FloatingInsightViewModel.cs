@@ -1,7 +1,6 @@
 using System;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
-using Avalonia.Media;
 
 namespace TrueFluentPro.ViewModels
 {
@@ -11,7 +10,6 @@ namespace TrueFluentPro.ViewModels
         private const double MaxFontSize = 36;
 
         private string _insightMarkdown = "";
-        private int _backgroundMode = 0; // default: transparent (matches subtitle)
         private double _fontSize = 14;
         private readonly AiInsightViewModel _aiInsight;
 
@@ -37,23 +35,6 @@ namespace TrueFluentPro.ViewModels
             }
         }
 
-        public int BackgroundMode
-        {
-            get => _backgroundMode;
-            set
-            {
-                if (_backgroundMode != value)
-                {
-                    _backgroundMode = value;
-                    OnPropertyChanged();
-                    OnPropertyChanged(nameof(BackgroundBrush));
-                    OnPropertyChanged(nameof(ContentBackgroundBrush));
-                    OnPropertyChanged(nameof(BorderBrush));
-                    OnPropertyChanged(nameof(TextBrush));
-                }
-            }
-        }
-
         public double FontSize
         {
             get => _fontSize;
@@ -66,67 +47,6 @@ namespace TrueFluentPro.ViewModels
                     OnPropertyChanged();
                 }
             }
-        }
-
-        public IBrush BackgroundBrush
-        {
-            get
-            {
-                return _backgroundMode switch
-                {
-                    0 => new SolidColorBrush(Color.FromArgb(40, 15, 23, 42)),
-                    1 => new SolidColorBrush(Color.FromArgb(238, 15, 23, 42)),
-                    2 => new SolidColorBrush(Color.FromArgb(244, 248, 250, 252)),
-                    _ => new SolidColorBrush(Color.FromArgb(40, 15, 23, 42))
-                };
-            }
-        }
-
-        public IBrush ContentBackgroundBrush
-        {
-            get
-            {
-                return _backgroundMode switch
-                {
-                    0 => new SolidColorBrush(Color.FromArgb(76, 15, 23, 42)),
-                    1 => new SolidColorBrush(Color.FromArgb(128, 30, 41, 59)),
-                    2 => new SolidColorBrush(Color.FromArgb(235, 255, 255, 255)),
-                    _ => new SolidColorBrush(Color.FromArgb(76, 15, 23, 42))
-                };
-            }
-        }
-
-        public IBrush BorderBrush
-        {
-            get
-            {
-                return _backgroundMode switch
-                {
-                    0 => new SolidColorBrush(Color.FromArgb(120, 244, 114, 182)),
-                    1 => new SolidColorBrush(Color.FromArgb(150, 99, 102, 241)),
-                    2 => new SolidColorBrush(Color.FromArgb(120, 148, 163, 184)),
-                    _ => new SolidColorBrush(Color.FromArgb(120, 244, 114, 182))
-                };
-            }
-        }
-
-        public IBrush TextBrush
-        {
-            get
-            {
-                return _backgroundMode switch
-                {
-                    0 => new SolidColorBrush(Color.FromRgb(255, 85, 170)),
-                    1 => new SolidColorBrush(Color.FromRgb(241, 245, 249)),
-                    2 => new SolidColorBrush(Color.FromRgb(15, 23, 42)),
-                    _ => new SolidColorBrush(Color.FromRgb(255, 85, 170))
-                };
-            }
-        }
-
-        public void ToggleBackground()
-        {
-            BackgroundMode = (BackgroundMode + 1) % 3;
         }
 
         public void IncreaseFontSize()

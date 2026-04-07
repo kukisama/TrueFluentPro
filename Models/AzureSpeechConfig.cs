@@ -165,6 +165,45 @@ namespace TrueFluentPro.Models
         public double AutoGainMaxGain { get; set; } = 6.0;
         public double AutoGainSmoothing { get; set; } = 0.08;
 
+        /// <summary>应用层音频预处理插件。主线路预留给 WebRTC APM 等可跨平台实现。</summary>
+        public AudioPreProcessorPluginType AudioPreProcessorPlugin { get; set; } = AudioPreProcessorPluginType.None;
+
+        /// <summary>WebRTC APM：回声消除。</summary>
+        public bool WebRtcAecEnabled { get; set; } = true;
+        /// <summary>WebRTC APM：是否使用移动端 AEC 模式。桌面默认 false。</summary>
+        public bool WebRtcAecMobileMode { get; set; } = false;
+        /// <summary>WebRTC APM：AEC 估计延迟（毫秒）。</summary>
+        public int WebRtcAecLatencyMs { get; set; } = 40;
+        /// <summary>WebRTC APM：降噪开关。</summary>
+        public bool WebRtcNoiseSuppressionEnabled { get; set; } = true;
+        /// <summary>WebRTC APM：降噪等级索引（0=Low,1=Moderate,2=High,3=VeryHigh）。</summary>
+        public int WebRtcNoiseSuppressionLevel { get; set; } = 2;
+        /// <summary>WebRTC APM：AGC1 开关。</summary>
+        public bool WebRtcAgc1Enabled { get; set; } = true;
+        /// <summary>WebRTC APM：AGC2 开关。</summary>
+        public bool WebRtcAgc2Enabled { get; set; } = false;
+        /// <summary>WebRTC APM：AGC 模式（0=AdaptiveAnalog,1=AdaptiveDigital,2=FixedDigital）。</summary>
+        public int WebRtcAgcMode { get; set; } = 1;
+        /// <summary>WebRTC APM：AGC 目标电平（dBFS）。</summary>
+        public int WebRtcAgcTargetLevelDbfs { get; set; } = -3;
+        /// <summary>WebRTC APM：AGC 压缩增益（dB）。</summary>
+        public int WebRtcAgcCompressionGainDb { get; set; } = 9;
+        /// <summary>WebRTC APM：AGC limiter 开关。</summary>
+        public bool WebRtcAgcLimiterEnabled { get; set; } = true;
+        /// <summary>WebRTC APM：高通滤波开关。</summary>
+        public bool WebRtcHighPassFilterEnabled { get; set; } = true;
+        /// <summary>WebRTC APM：前置放大开关。</summary>
+        public bool WebRtcPreAmpEnabled { get; set; } = false;
+        /// <summary>WebRTC APM：前置放大倍数。</summary>
+        public float WebRtcPreAmpGain { get; set; } = 1.0f;
+
+        /// <summary>启用 Microsoft Audio Stack (MAS) 识别增强（仅作用于云端识别支路）。需重启翻译生效。</summary>
+        public bool EnableMasAudioProcessing { get; set; } = false;
+        /// <summary>MAS 子开关：回声消除 (AEC)。仅 EnableMasAudioProcessing=true 时生效。</summary>
+        public bool MasEchoCancellationEnabled { get; set; } = true;
+        /// <summary>MAS 子开关：降噪 (NS)。仅 EnableMasAudioProcessing=true 时生效。</summary>
+        public bool MasNoiseSuppressionEnabled { get; set; } = true;
+
         public AudioSourceMode AudioSourceMode { get; set; } = AudioSourceMode.DefaultMic;
         public string SelectedAudioDeviceId { get; set; } = "";
         public string SelectedOutputDeviceId { get; set; } = "";

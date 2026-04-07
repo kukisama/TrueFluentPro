@@ -30,8 +30,8 @@ namespace TrueFluentPro.Services
         private string? _currentAudioMp3Path;
 
         private AudioConfig? _audioConfig;
-        private PushAudioInputStream? _pushStream;
         private WasapiPcm16AudioSource? _naudioSource;
+        private AudioProcessingCoordinator? _audioCoordinator;
         private readonly object _audioSourceSwapLock = new();
         private readonly object _liveRoutingDebounceLock = new();
         private readonly object _liveRoutingApplyLock = new();
@@ -41,7 +41,6 @@ namespace TrueFluentPro.Services
         private string _recognizeInputDeviceIdInUse = "";
         private string _recognizeOutputDeviceIdInUse = "";
 
-        private HighQualityRecorder? _highQualityRecorder;
         private Task? _pendingTranscodeTask;
 
         private readonly object _subtitleLock = new();
@@ -646,46 +645,45 @@ namespace TrueFluentPro.Services
                     _liveRoutingDebouncePendingCount = 0;
 
                     var (recLoopback, recMic) = GetRecognitionRouting();
+                    var (recordLoopback, recordMic) = _config.EnableRecording ? GetRecordingRouting() : (false, false);
+                    var captureLoopback = recLoopback || recordLoopback;
+                    var captureMic = recMic || recordMic;
                     var prevRecLoopback = _recognizeLoopbackEnabled;
                     var prevRecMic = _recognizeMicEnabled;
+                    var prevRecordLoopback = _recordLoopbackEnabled;
+                    var prevRecordMic = _recordMicEnabled;
                     _recognizeLoopbackEnabled = recLoopback;
                     _recognizeMicEnabled = recMic;
+                    _recordLoopbackEnabled = recordLoopback;
+                    _recordMicEnabled = recordMic;
 
-                    var inputChanged = recMic && !string.Equals(_recognizeInputDeviceIdInUse, _config.SelectedAudioDeviceId ?? "", StringComparison.Ordinal);
-                    var outputChanged = recLoopback && !string.Equals(_recognizeOutputDeviceIdInUse, _config.SelectedOutputDeviceId ?? "", StringComparison.Ordinal);
-                    var topologyChanged = _naudioSource.HasLoopbackCapture != recLoopback ||
-                                          _naudioSource.HasMicCapture != recMic;
+                    var inputChanged = captureMic && !string.Equals(_recognizeInputDeviceIdInUse, _config.SelectedAudioDeviceId ?? "", StringComparison.Ordinal);
+                    var outputChanged = captureLoopback && !string.Equals(_recognizeOutputDeviceIdInUse, _config.SelectedOutputDeviceId ?? "", StringComparison.Ordinal);
+                    var topologyChanged = _naudioSource.HasLoopbackCapture != captureLoopback ||
+                                          _naudioSource.HasMicCapture != captureMic;
                     var deviceChanged = inputChanged || outputChanged;
-                    _auditLog?.Invoke($"[翻译流] 实时路由应用 合并次数={debounceCount} 识别目标[回环:{recLoopback},麦:{recMic}] 拓扑变更={topologyChanged} 设备变更={deviceChanged}");
+                    _auditLog?.Invoke($"[翻译流] 实时路由应用 合并次数={debounceCount} 识别[回环:{recLoopback},麦:{recMic}] 录制[回环:{recordLoopback},麦:{recordMic}] 采集[回环:{captureLoopback},麦:{captureMic}] 拓扑变更={topologyChanged} 设备变更={deviceChanged}");
 
                     if (topologyChanged || deviceChanged)
                     {
-                        RebuildRecognitionAudioSource(recLoopback, recMic,
+                        RebuildRecognitionAudioSource(captureLoopback, captureMic,
                             topologyChanged ? "拓扑变化" : "设备切换");
                     }
                     else
                     {
-                        _naudioSource.UpdateRouting(recLoopback, recMic, fadeMilliseconds);
+                        _naudioSource.UpdateRouting(captureLoopback, captureMic, fadeMilliseconds);
                     }
+
+                    _audioCoordinator?.UpdateRouting(recLoopback, recMic, recordLoopback, recordMic);
 
                     if (prevRecMic != recMic || prevRecLoopback != recLoopback)
                     {
                         _auditLog?.Invoke($"[翻译流] 识别切换信号 回环:{prevRecLoopback}->{recLoopback} 麦克风:{prevRecMic}->{recMic}");
                     }
 
-                    if (_highQualityRecorder != null)
+                    if (prevRecordMic != recordMic || prevRecordLoopback != recordLoopback)
                     {
-                        var (recordLoopback, recordMic) = GetRecordingRouting();
-                        var prevRecordLoopback = _recordLoopbackEnabled;
-                        var prevRecordMic = _recordMicEnabled;
-                        _recordLoopbackEnabled = recordLoopback;
-                        _recordMicEnabled = recordMic;
-                        _highQualityRecorder.UpdateRouting(recordLoopback, recordMic, fadeMilliseconds);
-
-                        if (prevRecordMic != recordMic || prevRecordLoopback != recordLoopback)
-                        {
-                            _auditLog?.Invoke($"[录制流] 录制切换信号 回环:{prevRecordLoopback}->{recordLoopback} 麦克风:{prevRecordMic}->{recordMic}");
-                        }
+                        _auditLog?.Invoke($"[录制流] 录制切换信号 回环:{prevRecordLoopback}->{recordLoopback} 麦克风:{prevRecordMic}->{recordMic}");
                     }
 
                     PublishDiagnostics(force: true);
@@ -712,11 +710,12 @@ namespace TrueFluentPro.Services
                     _config.SelectedAudioDeviceId,
                     _config.ChunkDurationMs,
                     enableLoopback,
-                    enableMic);
+                    enableMic,
+                    emitCapturedFrames: true);
 
                 _auditLog?.Invoke($"[翻译流] 识别热重建 开始 原因={reason} 目标[回环:{enableLoopback},麦:{enableMic}] 旧拓扑[回环:{oldSource.HasLoopbackCapture},麦:{oldSource.HasMicCapture}] 输入设备ID='{_config.SelectedAudioDeviceId}' 输出设备ID='{_config.SelectedOutputDeviceId}'");
 
-                newSource.Pcm16ChunkReady += OnPcm16ChunkReady;
+                newSource.CapturedAudioFrameReady += OnCapturedAudioFrameReady;
                 newSource.StartAsync().GetAwaiter().GetResult();
                 _recognizeInputDeviceIdInUse = _config.SelectedAudioDeviceId ?? "";
                 _recognizeOutputDeviceIdInUse = _config.SelectedOutputDeviceId ?? "";
@@ -725,7 +724,7 @@ namespace TrueFluentPro.Services
 
                 try
                 {
-                    oldSource.Pcm16ChunkReady -= OnPcm16ChunkReady;
+                    oldSource.CapturedAudioFrameReady -= OnCapturedAudioFrameReady;
                     oldSource.DisposeAsync().AsTask().GetAwaiter().GetResult();
                 }
                 catch
@@ -745,83 +744,106 @@ namespace TrueFluentPro.Services
                 {
                     OnStatusChanged?.Invoke(this, "当前平台不支持 NAudio 录音/设备枚举；识别将回退默认麦克风，且不会本地录音。");
                 }
-                _pushStream = null;
                 _naudioSource = null;
+                _audioCoordinator = null;
                 return AudioConfig.FromDefaultMicrophoneInput();
             }
 
-            var streamFormat = AudioStreamFormat.GetWaveFormatPCM(16000, 16, 1);
-            _pushStream = AudioInputStream.CreatePushStream(streamFormat);
-
             var (recognizeLoopback, recognizeMic) = GetRecognitionRouting();
+            var (recordLoopback, recordMic) = _config.EnableRecording ? GetRecordingRouting() : (false, false);
+            var captureLoopback = recognizeLoopback || recordLoopback;
+            var captureMic = recognizeMic || recordMic;
             _recognizeLoopbackEnabled = recognizeLoopback;
             _recognizeMicEnabled = recognizeMic;
-            _auditLog?.Invoke($"[翻译流] 识别路由 音源模式={_config.AudioSourceMode} 输入识别={_config.UseInputForRecognition} 输出识别={_config.UseOutputForRecognition} => 回环={recognizeLoopback} 麦克风={recognizeMic} 输入设备ID='{_config.SelectedAudioDeviceId}' 输出设备ID='{_config.SelectedOutputDeviceId}'");
+            _recordLoopbackEnabled = recordLoopback;
+            _recordMicEnabled = recordMic;
+
+            _auditLog?.Invoke($"[翻译流] 识别路由 音源模式={_config.AudioSourceMode} 输入识别={_config.UseInputForRecognition} 输出识别={_config.UseOutputForRecognition} => 识别[回环={recognizeLoopback},麦={recognizeMic}] 录制[回环={recordLoopback},麦={recordMic}] 采集[回环={captureLoopback},麦={captureMic}] 插件={_config.AudioPreProcessorPlugin} MAS增强={_config.EnableMasAudioProcessing} 输入设备ID='{_config.SelectedAudioDeviceId}' 输出设备ID='{_config.SelectedOutputDeviceId}'");
+
             _naudioSource = new WasapiPcm16AudioSource(
                 _config.SelectedOutputDeviceId,
                 _config.SelectedAudioDeviceId,
                 _config.ChunkDurationMs,
-                recognizeLoopback,
-                recognizeMic);
+                captureLoopback,
+                captureMic,
+                emitCapturedFrames: true);
             _recognizeInputDeviceIdInUse = _config.SelectedAudioDeviceId ?? "";
             _recognizeOutputDeviceIdInUse = _config.SelectedOutputDeviceId ?? "";
-            _naudioSource.Pcm16ChunkReady += OnPcm16ChunkReady;
+            _naudioSource.CapturedAudioFrameReady += OnCapturedAudioFrameReady;
 
             try
             {
+                var recognitionSink = new SpeechSdkPushStreamRecognitionSink(
+                    sampleRate: 16000,
+                    enableMasEnhancement: _config.EnableMasAudioProcessing,
+                    masNoiseSuppressionEnabled: _config.MasNoiseSuppressionEnabled,
+                    log: message =>
+                    {
+                        _auditLog?.Invoke(message);
+                        OnStatusChanged?.Invoke(this, message);
+                    });
+
+                var preProcessor = AudioPreProcessorFactory.Create(_config, message =>
+                {
+                    _auditLog?.Invoke(message);
+                    OnStatusChanged?.Invoke(this, message);
+                });
+
+                var (autoGainEnabled, targetRms, minGain, maxGain, smoothing) = GetAutoGainSettings();
+                IAudioRecordingSink? recordingSink = null;
+
+                _currentAudioMp3Path = null;
+                if (_config.EnableRecording)
+                {
+                    _currentAudioMp3Path = PathManager.Instance.GetSessionFile($"Audio_{_currentRunStamp}.mp3");
+                    recordingSink = new ProcessedAudioMp3RecordingSink(
+                        _currentAudioMp3Path,
+                        16000,
+                        _config.RecordingMp3BitrateKbps,
+                        autoGainEnabled,
+                        targetRms,
+                        minGain,
+                        maxGain,
+                        smoothing);
+                }
+
+                _audioCoordinator = new AudioProcessingCoordinator(
+                    preProcessor,
+                    recognitionSink,
+                    recordingSink,
+                    recognizeLoopback,
+                    recognizeMic,
+                    recordLoopback,
+                    recordMic,
+                    autoGainEnabled,
+                    targetRms,
+                    minGain,
+                    maxGain,
+                    smoothing);
+
                 _naudioSource.StartAsync().GetAwaiter().GetResult();
 
                 if (_config.EnableRecording)
                 {
-                    _currentAudioMp3Path = PathManager.Instance.GetSessionFile($"Audio_{_currentRunStamp}.mp3");
-                    try
-                    {
-                        var (autoGainEnabled, targetRms, minGain, maxGain, smoothing) = GetAutoGainSettings();
-                        var (recordLoopback, recordMic) = GetRecordingRouting();
-                        _recordLoopbackEnabled = recordLoopback;
-                        _recordMicEnabled = recordMic;
-                        _highQualityRecorder = new HighQualityRecorder(
-                            _currentAudioMp3Path,
-                            _config.SelectedOutputDeviceId,
-                            _config.SelectedAudioDeviceId,
-                            recordLoopback,
-                            recordMic,
-                            _config.RecordingMp3BitrateKbps,
-                            autoGainEnabled,
-                            targetRms,
-                            minGain,
-                            maxGain,
-                            smoothing,
-                            _auditLog);
-                        _highQualityRecorder.StartAsync().GetAwaiter().GetResult();
-                        OnStatusChanged?.Invoke(this, $"录音已开始: {_currentAudioMp3Path}");
-                    }
-                    catch (Exception ex)
-                    {
-                        _highQualityRecorder = null;
-                        OnStatusChanged?.Invoke(this, $"录音启动失败: {ex.Message}");
-                    }
+                    OnStatusChanged?.Invoke(this, $"录音已开始（统一管线）: {_currentAudioMp3Path}");
                 }
+
+                return recognitionSink.AudioConfig;
             }
             catch (Exception ex)
             {
                 OnStatusChanged?.Invoke(this, $"启动音频采集失败，已回退默认麦克风: {ex.Message}");
-                _naudioSource.Pcm16ChunkReady -= OnPcm16ChunkReady;
+                _naudioSource.CapturedAudioFrameReady -= OnCapturedAudioFrameReady;
                 _naudioSource.DisposeAsync().AsTask().GetAwaiter().GetResult();
                 _naudioSource = null;
 
-                _highQualityRecorder?.DisposeAsync().AsTask().GetAwaiter().GetResult();
-                _highQualityRecorder = null;
+                _audioCoordinator?.Dispose();
+                _audioCoordinator = null;
                 _currentAudioWavPath = null;
                 _currentAudioMp3Path = null;
 
-                _pushStream.Dispose();
-                _pushStream = null;
-
                 return AudioConfig.FromDefaultMicrophoneInput();
             }
-
-            return AudioConfig.FromStreamInput(_pushStream);
         }
 
         private (bool enableLoopback, bool enableMic) GetRecognitionRouting()
@@ -911,14 +933,16 @@ namespace TrueFluentPro.Services
             return speechConfig;
         }
 
-        private void OnPcm16ChunkReady(byte[] chunk)
+        private void OnCapturedAudioFrameReady(CapturedAudioFrame frame)
         {
             try
             {
-                if (_config.AutoGainEnabled)
+                if (_audioCoordinator == null)
                 {
-                    _autoGainProcessor.ProcessInPlace(chunk, chunk.Length);
+                    return;
                 }
+
+                var chunk = _audioCoordinator.ProcessAndDispatch(frame);
 
                 _lastChunkHadActivity = HasAudioActivity(chunk, _config.AudioActivityThreshold);
                 if (_lastChunkHadActivity)
@@ -926,7 +950,6 @@ namespace TrueFluentPro.Services
                     _lastAudioActivityUtc = DateTime.UtcNow;
                 }
                 UpdateAudioLevel(chunk);
-                _pushStream?.Write(chunk);
                 PublishDiagnostics();
             }
             catch
@@ -1286,29 +1309,17 @@ namespace TrueFluentPro.Services
 
         private async Task CleanupAudioAsync()
         {
-            if (_highQualityRecorder != null)
-            {
-                try
-                {
-                    await _highQualityRecorder.DisposeAsync().ConfigureAwait(false);
-                }
-                catch
-                {
-                    // ignore
-                }
-            }
-
             var wavPath = _currentAudioWavPath;
             var mp3Path = _currentAudioMp3Path;
-            _highQualityRecorder = null;
             _currentAudioWavPath = null;
             _currentAudioMp3Path = null;
+            var audioConfigOwnedByCoordinator = _audioCoordinator != null;
 
             if (_naudioSource != null)
             {
                 try
                 {
-                    _naudioSource.Pcm16ChunkReady -= OnPcm16ChunkReady;
+                    _naudioSource.CapturedAudioFrameReady -= OnCapturedAudioFrameReady;
                     await _naudioSource.DisposeAsync().ConfigureAwait(false);
                 }
                 catch
@@ -1321,12 +1332,12 @@ namespace TrueFluentPro.Services
                 }
             }
 
-            if (_pushStream != null)
+            if (_audioCoordinator != null)
             {
                 try
                 {
-                    _pushStream.Close();
-                    _pushStream.Dispose();
+                    _audioCoordinator.CloseRecognition();
+                    _audioCoordinator.Dispose();
                 }
                 catch
                 {
@@ -1334,11 +1345,11 @@ namespace TrueFluentPro.Services
                 }
                 finally
                 {
-                    _pushStream = null;
+                    _audioCoordinator = null;
                 }
             }
 
-            if (_audioConfig != null)
+            if (_audioConfig != null && !audioConfigOwnedByCoordinator)
             {
                 try
                 {
@@ -1352,6 +1363,10 @@ namespace TrueFluentPro.Services
                 {
                     _audioConfig = null;
                 }
+            }
+            else if (audioConfigOwnedByCoordinator)
+            {
+                _audioConfig = null;
             }
 
             ResetManagedReconnectState();

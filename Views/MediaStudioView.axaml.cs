@@ -27,6 +27,7 @@ namespace TrueFluentPro.Views
     public partial class MediaStudioView : UserControl
     {
         private MediaStudioViewModel? _viewModel;
+        public MediaStudioViewModel? ViewModel => _viewModel;
         private MediaSessionViewModel? _attachedSession;
         private ListBox? _sessionListBox;
 

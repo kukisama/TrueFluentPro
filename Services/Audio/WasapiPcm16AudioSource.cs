@@ -27,6 +27,8 @@ namespace TrueFluentPro.Services.Audio
         private float _micTargetVolume;
 
         private IWaveProvider? _pcm16Provider;
+        private IWaveProvider? _micMonoProvider;
+        private IWaveProvider? _loopbackMonoProvider;
         private CancellationTokenSource? _cts;
         private Task? _readerTask;
         private CancellationTokenSource? _fadeCts;
@@ -34,6 +36,8 @@ namespace TrueFluentPro.Services.Audio
         private readonly AutoResetEvent _dataAvailableEvent = new(false);
         private bool _silenceOnlyMode;
         private byte[]? _silenceChunkTemplate;
+        private readonly bool _interleavedDualChannel;
+        private readonly bool _emitCapturedFrames;
 
         public WaveFormat OutputWaveFormat { get; }
 
@@ -42,14 +46,21 @@ namespace TrueFluentPro.Services.Audio
         public bool HasMicCapture => _micCapture != null;
 
         public event Action<byte[]>? Pcm16ChunkReady;
+        public event Action<CapturedAudioFrame>? CapturedAudioFrameReady;
 
+        /// <param name="interleavedDualChannel">
+        /// true = 输出 2 声道交错 PCM（ch1=mic, ch2=loopback），供 MAS AEC 使用参考通道。
+        /// false = 保持现有混合单声道行为。
+        /// </param>
         public WasapiPcm16AudioSource(
             string? loopbackDeviceId,
             string? micDeviceId,
             int chunkDurationMs,
             bool enableLoopback,
             bool enableMic,
-            int sampleRate = 16000)
+            int sampleRate = 16000,
+            bool interleavedDualChannel = false,
+            bool emitCapturedFrames = false)
         {
             _loopbackDeviceId = string.IsNullOrWhiteSpace(loopbackDeviceId) ? null : loopbackDeviceId;
             _micDeviceId = string.IsNullOrWhiteSpace(micDeviceId) ? null : micDeviceId;
@@ -58,7 +69,10 @@ namespace TrueFluentPro.Services.Audio
             _micCurrentVolume = enableMic ? 1f : 0f;
             _loopbackTargetVolume = _loopbackCurrentVolume;
             _micTargetVolume = _micCurrentVolume;
-            OutputWaveFormat = new WaveFormat(Math.Clamp(sampleRate, 8000, 48000), 16, 1);
+            _interleavedDualChannel = interleavedDualChannel && enableLoopback && enableMic;
+            _emitCapturedFrames = emitCapturedFrames;
+            var channels = _interleavedDualChannel ? 2 : 1;
+            OutputWaveFormat = new WaveFormat(Math.Clamp(sampleRate, 8000, 48000), 16, channels);
         }
 
         public Task StartAsync(CancellationToken cancellationToken = default)
@@ -116,6 +130,9 @@ namespace TrueFluentPro.Services.Audio
             var providers = new System.Collections.Generic.List<ISampleProvider>(2);
             if (_loopbackBuffer != null)
             {
+                var loopbackMono = ConvertToOutputRate(_loopbackBuffer.ToSampleProvider());
+                _loopbackMonoProvider = new SampleToWaveProvider16(loopbackMono);
+
                 var loopbackProvider = ConvertToOutputFormat(_loopbackBuffer.ToSampleProvider());
                 _loopbackVolume = new VolumeSampleProvider(loopbackProvider)
                 {
@@ -126,6 +143,9 @@ namespace TrueFluentPro.Services.Audio
 
             if (_micBuffer != null)
             {
+                var micMono = ConvertToOutputRate(_micBuffer.ToSampleProvider());
+                _micMonoProvider = new SampleToWaveProvider16(micMono);
+
                 var micProvider = ConvertToOutputFormat(_micBuffer.ToSampleProvider());
                 _micVolume = new VolumeSampleProvider(micProvider)
                 {
@@ -140,6 +160,13 @@ namespace TrueFluentPro.Services.Audio
                 _silenceChunkTemplate = new byte[GetChunkByteCount(_chunkDurationMs)];
                 _pcm16Provider = null;
             }
+            else if (_interleavedDualChannel && _micBuffer != null && _loopbackBuffer != null)
+            {
+                // 双通道模式：mic 和 loopback 各自独立转为单声道 PCM16，不混合
+                _silenceOnlyMode = false;
+                _silenceChunkTemplate = null;
+                _pcm16Provider = null; // 不使用混合 provider
+            }
             else
             {
                 _silenceOnlyMode = false;
@@ -153,7 +180,11 @@ namespace TrueFluentPro.Services.Audio
             }
 
             _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            _readerTask = Task.Run(() => ReaderLoop(_cts.Token), CancellationToken.None);
+            _readerTask = _emitCapturedFrames && (_micMonoProvider != null || _loopbackMonoProvider != null)
+                ? Task.Run(() => CapturedFrameReaderLoop(_cts.Token), CancellationToken.None)
+                : _interleavedDualChannel && _micMonoProvider != null && _loopbackMonoProvider != null
+                    ? Task.Run(() => DualChannelReaderLoop(_cts.Token), CancellationToken.None)
+                    : Task.Run(() => ReaderLoop(_cts.Token), CancellationToken.None);
 
             _loopbackCapture?.StartRecording();
             _micCapture?.StartRecording();
@@ -377,6 +408,61 @@ namespace TrueFluentPro.Services.Audio
             }
         }
 
+        private async Task CapturedFrameReaderLoop(CancellationToken token)
+        {
+            var monoChunkBytes = GetMonoChunkByteCount(_chunkDurationMs);
+            var micBuf = new byte[monoChunkBytes];
+            var loopBuf = new byte[monoChunkBytes];
+            var silenceTemplate = new byte[monoChunkBytes];
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            var nextDue = TimeSpan.FromMilliseconds(_chunkDurationMs);
+
+            while (!token.IsCancellationRequested)
+            {
+                var frameDeadline = stopwatch.Elapsed + TimeSpan.FromMilliseconds(_chunkDurationMs);
+
+                while (!HasBufferedData() && !_silenceOnlyMode && !token.IsCancellationRequested)
+                {
+                    var remaining = frameDeadline - stopwatch.Elapsed;
+                    if (remaining <= TimeSpan.Zero)
+                    {
+                        break;
+                    }
+
+                    _dataAvailableEvent.WaitOne(remaining > TimeSpan.FromMilliseconds(50)
+                        ? TimeSpan.FromMilliseconds(50)
+                        : remaining);
+                }
+
+                var micChunk = ReadMonoChunk(_micMonoProvider, micBuf, silenceTemplate);
+                var loopChunk = ReadMonoChunk(_loopbackMonoProvider, loopBuf, silenceTemplate);
+
+                lock (_mixLock)
+                {
+                    Pcm16AudioMixer.ApplyGainInPlace(micChunk, _micCurrentVolume);
+                    Pcm16AudioMixer.ApplyGainInPlace(loopChunk, _loopbackCurrentVolume);
+                }
+
+                CapturedAudioFrameReady?.Invoke(new CapturedAudioFrame(micChunk, loopChunk, OutputWaveFormat.SampleRate));
+
+                var delay = nextDue - stopwatch.Elapsed;
+                if (delay > TimeSpan.Zero)
+                {
+                    try
+                    {
+                        await Task.Delay(delay, token).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        break;
+                    }
+                }
+
+                nextDue += TimeSpan.FromMilliseconds(_chunkDurationMs);
+                await Task.Yield();
+            }
+        }
+
         private bool HasBufferedData()
         {
             var loopbackBuffered = _loopbackBuffer?.BufferedBytes ?? 0;
@@ -406,6 +492,105 @@ namespace TrueFluentPro.Services.Audio
             }
 
             return new WdlResamplingSampleProvider(mono, OutputWaveFormat.SampleRate);
+        }
+
+        /// <summary>转为单声道并重采样到目标采样率（不带音量控制，供双通道模式使用）。</summary>
+        private ISampleProvider ConvertToOutputRate(ISampleProvider provider)
+        {
+            var mono = ToMono(provider);
+            if (mono.WaveFormat.SampleRate == OutputWaveFormat.SampleRate)
+            {
+                return mono;
+            }
+
+            return new WdlResamplingSampleProvider(mono, OutputWaveFormat.SampleRate);
+        }
+
+        /// <summary>双通道交错读取：ch1=mic, ch2=loopback，每帧按采样点交错写入。</summary>
+        private async Task DualChannelReaderLoop(CancellationToken token)
+        {
+            // 每声道每 chunk 的字节数（16-bit 单声道）
+            var monoChunkBytes = GetMonoChunkByteCount(_chunkDurationMs);
+            var micBuf = new byte[monoChunkBytes];
+            var loopBuf = new byte[monoChunkBytes];
+            // 输出 = 2 声道交错，字节数翻倍
+            var interleavedBytes = monoChunkBytes * 2;
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            var nextDue = TimeSpan.FromMilliseconds(_chunkDurationMs);
+
+            while (!token.IsCancellationRequested)
+            {
+                var frameDeadline = stopwatch.Elapsed + TimeSpan.FromMilliseconds(_chunkDurationMs);
+
+                // 等待至少一路有数据
+                while (!HasBufferedData() && !token.IsCancellationRequested)
+                {
+                    var remaining = frameDeadline - stopwatch.Elapsed;
+                    if (remaining <= TimeSpan.Zero) break;
+                    _dataAvailableEvent.WaitOne(remaining > TimeSpan.FromMilliseconds(50)
+                        ? TimeSpan.FromMilliseconds(50) : remaining);
+                }
+
+                // 分别读取 mic 和 loopback 各自的单声道 PCM
+                var micFilled = _micMonoProvider!.Read(micBuf, 0, monoChunkBytes);
+                if (micFilled < monoChunkBytes) Array.Clear(micBuf, micFilled, monoChunkBytes - micFilled);
+
+                var loopFilled = _loopbackMonoProvider!.Read(loopBuf, 0, monoChunkBytes);
+                if (loopFilled < monoChunkBytes) Array.Clear(loopBuf, loopFilled, monoChunkBytes - loopFilled);
+
+                // 交错：[mic_sample0, loop_sample0, mic_sample1, loop_sample1, ...]
+                var interleaved = new byte[interleavedBytes];
+                var sampleCount = monoChunkBytes / 2; // 16-bit = 2 bytes per sample
+                for (var i = 0; i < sampleCount; i++)
+                {
+                    var srcOffset = i * 2;
+                    var dstOffset = i * 4; // 2 channels * 2 bytes
+                    interleaved[dstOffset] = micBuf[srcOffset];
+                    interleaved[dstOffset + 1] = micBuf[srcOffset + 1];
+                    interleaved[dstOffset + 2] = loopBuf[srcOffset];
+                    interleaved[dstOffset + 3] = loopBuf[srcOffset + 1];
+                }
+
+                Pcm16ChunkReady?.Invoke(interleaved);
+
+                var delay = nextDue - stopwatch.Elapsed;
+                if (delay > TimeSpan.Zero)
+                {
+                    try { await Task.Delay(delay, token).ConfigureAwait(false); }
+                    catch (OperationCanceledException) { break; }
+                }
+
+                nextDue += TimeSpan.FromMilliseconds(_chunkDurationMs);
+                await Task.Yield();
+            }
+        }
+
+        private int GetMonoChunkByteCount(int chunkDurationMs)
+        {
+            var ms = Math.Clamp(chunkDurationMs, 20, 2000);
+            var sampleRate = OutputWaveFormat.SampleRate;
+            var bytes = (sampleRate * 2 * ms) / 1000; // 16-bit mono = 2 bytes/sample
+            return Math.Max(2, bytes - (bytes % 2));
+        }
+
+        private static byte[] ReadMonoChunk(IWaveProvider? provider, byte[] workBuffer, byte[] silenceTemplate)
+        {
+            if (provider == null)
+            {
+                var silence = new byte[silenceTemplate.Length];
+                Buffer.BlockCopy(silenceTemplate, 0, silence, 0, silenceTemplate.Length);
+                return silence;
+            }
+
+            var read = provider.Read(workBuffer, 0, workBuffer.Length);
+            if (read < workBuffer.Length)
+            {
+                Array.Clear(workBuffer, read, workBuffer.Length - read);
+            }
+
+            var chunk = new byte[workBuffer.Length];
+            Buffer.BlockCopy(workBuffer, 0, chunk, 0, workBuffer.Length);
+            return chunk;
         }
 
         private static ISampleProvider ToMono(ISampleProvider provider)
@@ -547,6 +732,8 @@ namespace TrueFluentPro.Services.Audio
             _loopbackVolume = null;
             _micVolume = null;
             _pcm16Provider = null;
+            _micMonoProvider = null;
+            _loopbackMonoProvider = null;
             _silenceOnlyMode = false;
             _silenceChunkTemplate = null;
         }

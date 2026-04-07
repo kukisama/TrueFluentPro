@@ -309,6 +309,10 @@ namespace TrueFluentPro.ViewModels
 
         private System.Threading.CancellationTokenSource? _infoBarCts;
 
+        private static bool IsShortLivedStartupSuccessMessage(string message)
+            => message.Contains("配置已加载", StringComparison.Ordinal)
+                || message.Contains("加载配置成功", StringComparison.Ordinal);
+
         private void ShowInfoBar(string message)
         {
             if (string.IsNullOrWhiteSpace(message)) return;
@@ -331,7 +335,11 @@ namespace TrueFluentPro.ViewModels
             _infoBarCts?.Cancel();
             _infoBarCts = new System.Threading.CancellationTokenSource();
             var token = _infoBarCts.Token;
-            var delay = InfoBarSeverity == 3 ? 5000 : 3000;
+            var delay = InfoBarSeverity == 3
+                ? 5000
+                : IsShortLivedStartupSuccessMessage(message)
+                    ? 1000
+                    : 3000;
             _ = AutoCloseInfoBarAsync(delay, token);
         }
 
@@ -665,6 +673,9 @@ namespace TrueFluentPro.ViewModels
 
         /// <summary>由 MainWindow 注册的导航回调，切换到 Settings 页</summary>
         public Action? NavigateToSettings { get; set; }
+
+        /// <summary>由 MainWindow 注册的导航回调，切换到创作工坊并附带文件</summary>
+        public Action<string[]>? NavigateToWorkshopWithAttachments { get; set; }
 
         private void OpenHistoryFolder()
         {

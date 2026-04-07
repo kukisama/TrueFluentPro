@@ -121,6 +121,121 @@
                     <ComboBoxItem Content="高"/>
                 </ComboBox>
             </StackPanel>
+
+            <StackPanel Spacing="5" Margin="0,8,0,0">
+                <TextBlock Text="音频预处理插件" FontWeight="SemiBold"/>
+                <TextBlock Text="主处理链路插在采集之后、录音/识别之前。录音和识别会共用同一份处理后音频。"
+                           FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                           TextWrapping="Wrap"/>
+                <ComboBox MinWidth="220"
+                          HorizontalAlignment="Left"
+                          SelectedIndex="{Binding AudioPreProcessorPluginIndex, Mode=TwoWay}">
+                    <ComboBoxItem Content="关闭"/>
+                    <ComboBoxItem Content="WebRTC APM（主线）"/>
+                </ComboBox>
+            </StackPanel>
+
+            <Border Margin="0,8,0,0" Padding="12"
+                    Background="{DynamicResource LayerFillColorDefaultBrush}"
+                    CornerRadius="6"
+                    IsVisible="{Binding IsWebRtcPluginSelected}">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="WebRTC APM 参数" FontWeight="SemiBold"/>
+                    <TextBlock Text="状态说明会告诉你当前参数下插件能否在本机初始化；“检测 WebRTC 插件”只做本地加载/初始化检查，不会启动真实录音。"
+                           FontSize="12"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                           TextWrapping="Wrap"/>
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button Content="检测 WebRTC 插件"
+                        Command="{Binding TestWebRtcPluginCommand}"
+                        HorizontalAlignment="Left"/>
+                    <TextBlock Text="{Binding WebRtcPluginStatus}"
+                           VerticalAlignment="Center"
+                           TextWrapping="Wrap"
+                           MaxWidth="520"/>
+                    </StackPanel>
+                    <CheckBox Content="回声消除 (AEC)" IsChecked="{Binding WebRtcAecEnabled, Mode=TwoWay}"/>
+                    <CheckBox Content="移动端 AEC 模式" IsChecked="{Binding WebRtcAecMobileMode, Mode=TwoWay}"
+                              IsEnabled="{Binding WebRtcAecEnabled}" Margin="20,0,0,0"/>
+                    <StackPanel Spacing="5">
+                        <TextBlock Text="AEC 延迟估计 (ms)"/>
+                        <NumericUpDown Value="{Binding WebRtcAecLatencyMs, Mode=TwoWay}"
+                                       Minimum="0" Maximum="500" Width="120" FormatString="F0"
+                                       HorizontalAlignment="Left"
+                                       IsEnabled="{Binding WebRtcAecEnabled}"/>
+                    </StackPanel>
+
+                    <CheckBox Content="降噪 (NS)" IsChecked="{Binding WebRtcNoiseSuppressionEnabled, Mode=TwoWay}"/>
+                    <StackPanel Spacing="5">
+                        <TextBlock Text="降噪等级"/>
+                        <ComboBox MinWidth="160"
+                                  HorizontalAlignment="Left"
+                                  SelectedIndex="{Binding WebRtcNoiseSuppressionLevel, Mode=TwoWay}"
+                                  IsEnabled="{Binding WebRtcNoiseSuppressionEnabled}">
+                            <ComboBoxItem Content="低"/>
+                            <ComboBoxItem Content="中"/>
+                            <ComboBoxItem Content="高"/>
+                            <ComboBoxItem Content="很高"/>
+                        </ComboBox>
+                    </StackPanel>
+
+                    <CheckBox Content="AGC1 自动增益" IsChecked="{Binding WebRtcAgc1Enabled, Mode=TwoWay}"/>
+                    <CheckBox Content="AGC2 自动增益" IsChecked="{Binding WebRtcAgc2Enabled, Mode=TwoWay}"/>
+                    <StackPanel Spacing="5">
+                        <TextBlock Text="AGC 模式"/>
+                        <ComboBox MinWidth="180"
+                                  HorizontalAlignment="Left"
+                                  SelectedIndex="{Binding WebRtcAgcMode, Mode=TwoWay}">
+                            <ComboBoxItem Content="AdaptiveAnalog"/>
+                            <ComboBoxItem Content="AdaptiveDigital"/>
+                            <ComboBoxItem Content="FixedDigital"/>
+                        </ComboBox>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <StackPanel Spacing="5">
+                            <TextBlock Text="目标电平 (dBFS)"/>
+                            <NumericUpDown Value="{Binding WebRtcAgcTargetLevelDbfs, Mode=TwoWay}"
+                                           Minimum="-31" Maximum="0" Width="120" FormatString="F0"
+                                           HorizontalAlignment="Left"/>
+                        </StackPanel>
+                        <StackPanel Spacing="5">
+                            <TextBlock Text="压缩增益 (dB)"/>
+                            <NumericUpDown Value="{Binding WebRtcAgcCompressionGainDb, Mode=TwoWay}"
+                                           Minimum="0" Maximum="90" Width="120" FormatString="F0"
+                                           HorizontalAlignment="Left"/>
+                        </StackPanel>
+                    </StackPanel>
+                    <CheckBox Content="AGC Limiter" IsChecked="{Binding WebRtcAgcLimiterEnabled, Mode=TwoWay}"/>
+                    <CheckBox Content="高通滤波 (HPF)" IsChecked="{Binding WebRtcHighPassFilterEnabled, Mode=TwoWay}"/>
+                    <CheckBox Content="前置放大" IsChecked="{Binding WebRtcPreAmpEnabled, Mode=TwoWay}"/>
+                    <StackPanel Spacing="5">
+                        <TextBlock Text="前置放大倍数"/>
+                        <NumericUpDown Value="{Binding WebRtcPreAmpGain, Mode=TwoWay}"
+                                       Minimum="0.5" Maximum="8" Width="120" FormatString="F1"
+                                       HorizontalAlignment="Left"
+                                       IsEnabled="{Binding WebRtcPreAmpEnabled}"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- Microsoft Audio Stack (MAS) 识别增强 -->
+            <StackPanel Spacing="5" Margin="0,8,0,0">
+                <TextBlock Text="Microsoft 音频处理 (MAS) 云端识别增强" FontWeight="SemiBold"/>
+                <TextBlock Text="该选项仅增强云端识别支路，不会替代应用层主插件。适合在主插件处理后，额外给 Speech SDK 做降噪/去混响增强。"
+                           FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                           TextWrapping="Wrap"/>
+                <CheckBox Content="启用 MAS 识别增强"
+                          IsChecked="{Binding EnableMasAudioProcessing, Mode=TwoWay}"/>
+                <CheckBox Content="回声消除 (AEC)"
+                          IsChecked="{Binding MasEchoCancellationEnabled, Mode=TwoWay}"
+                          IsEnabled="{Binding EnableMasAudioProcessing}"
+                          Margin="20,0,0,0"/>
+                <CheckBox Content="降噪 (NS)"
+                          IsChecked="{Binding MasNoiseSuppressionEnabled, Mode=TwoWay}"
+                          IsEnabled="{Binding EnableMasAudioProcessing}"
+                          Margin="20,0,0,0"/>
+            </StackPanel>
+
             <CheckBox Content="在字幕中显示 *触发重连* 提示"
                       IsChecked="{Binding ShowReconnectMarker, Mode=TwoWay}"
                       IsEnabled="{Binding EnableNoResponseRestart}"/>

@@ -65,6 +65,7 @@ namespace TrueFluentPro.ViewModels
         public RelayCommand CancelBatchQueueItemCommand { get; }
         public RelayCommand GenerateReviewSummaryCommand { get; }
         public RelayCommand GenerateAllReviewSheetsCommand { get; }
+        public RelayCommand OpenReviewFileFolderCommand { get; }
         public RelayCommand ReviewMarkdownLinkCommand { get; }
         public RelayCommand EnqueueSubtitleReviewCommand { get; }
         public RelayCommand GenerateSpeechSubtitleCommand { get; }
@@ -152,6 +153,10 @@ namespace TrueFluentPro.ViewModels
             GenerateAllReviewSheetsCommand = new RelayCommand(
                 execute: _ => GenerateAllReviewSheets(),
                 canExecute: _ => CanGenerateAllReviewSheets());
+
+            OpenReviewFileFolderCommand = new RelayCommand(
+                execute: _ => OpenReviewFileFolder(),
+                canExecute: _ => _fileLibrary.SelectedAudioFile != null);
 
             ReviewMarkdownLinkCommand = new RelayCommand(
                 execute: param => OnReviewMarkdownLink(param));
@@ -523,6 +528,7 @@ namespace TrueFluentPro.ViewModels
 
             GenerateReviewSummaryCommand.RaiseCanExecuteChanged();
             GenerateAllReviewSheetsCommand.RaiseCanExecuteChanged();
+            OpenReviewFileFolderCommand.RaiseCanExecuteChanged();
             GenerateSpeechSubtitleCommand.RaiseCanExecuteChanged();
             GenerateBatchSpeechSubtitleCommand.RaiseCanExecuteChanged();
         }
@@ -2629,6 +2635,38 @@ namespace TrueFluentPro.ViewModels
             var baseName = Path.GetFileNameWithoutExtension(audioFilePath);
             var tag = string.IsNullOrWhiteSpace(fileTag) ? "summary" : fileTag.Trim();
             return Path.Combine(directory, baseName + $".ai.{tag}.md");
+        }
+
+        private void OpenReviewFileFolder()
+        {
+            var audioFile = _fileLibrary.SelectedAudioFile;
+            if (audioFile == null) return;
+
+            var tag = _selectedReviewSheet?.FileTag ?? "summary";
+            var mdPath = GetReviewSheetPath(audioFile.FullPath, tag);
+            var directory = Path.GetDirectoryName(mdPath);
+
+            try
+            {
+                if (File.Exists(mdPath))
+                {
+                    // 打开文件夹并定位到 md 文件
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = "explorer.exe",
+                        Arguments = $"/select,\"{mdPath}\""
+                    });
+                }
+                else if (Directory.Exists(directory))
+                {
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = directory,
+                        UseShellExecute = true
+                    });
+                }
+            }
+            catch { /* 静默失败 */ }
         }
 
         private void CancelAllReviewSheetGeneration()

@@ -6,7 +6,6 @@
              xmlns:models="using:TrueFluentPro.Models"
              xmlns:controls="using:TrueFluentPro.Controls"
              xmlns:icons="https://github.com/projektanker/icons.avalonia"
-             xmlns:md="clr-namespace:Markdown.Avalonia;assembly=Markdown.Avalonia"
              mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="600"
              x:Class="TrueFluentPro.Views.ReviewModeView"
              x:DataType="vm:MainWindowViewModel"
@@ -260,12 +259,12 @@
                             <TabControl.ContentTemplate>
                                 <DataTemplate x:CompileBindings="False">
                                     <Grid>
-                                        <md:MarkdownScrollViewer IsVisible="{Binding !IsEmpty}"
-                                                                 Markdown="{Binding Markdown}">
-                                            <md:MarkdownScrollViewer.Engine>
-                                                <md:Markdown HyperlinkCommand="{Binding $parent[TabControl].DataContext.BatchProcessing.ReviewMarkdownLinkCommand}" />
-                                            </md:MarkdownScrollViewer.Engine>
-                                        </md:MarkdownScrollViewer>
+                                        <ScrollViewer IsVisible="{Binding !IsEmpty}">
+                                            <controls:ChatMarkdownBlock
+                                                Markdown="{Binding Markdown}"
+                                                HyperlinkCommand="{Binding $parent[TabControl].DataContext.BatchProcessing.ReviewMarkdownLinkCommand}"
+                                                Margin="10"/>
+                                        </ScrollViewer>
                                         <TextBlock Text="选择当前文件与字幕后生成复盘内容"
                                                    Foreground="{DynamicResource TextSubtleBrush}" FontSize="12"
                                                    HorizontalAlignment="Center" VerticalAlignment="Center"
@@ -276,6 +275,8 @@
                         </TabControl>
                     </Border>
                     <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="6">
+                        <Button Content="📂 打开所在文件夹" Padding="8,4"
+                                Command="{Binding BatchProcessing.OpenReviewFileFolderCommand}"/>
                         <Button Content="生成内容" Padding="8,4"
                                 Command="{Binding BatchProcessing.GenerateReviewSummaryCommand}"/>
                         <Button Content="生成全部" Padding="8,4"

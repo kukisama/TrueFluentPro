@@ -153,6 +153,24 @@ namespace TrueFluentPro.ViewModels
         public int AudioActivityThreshold { get => RecognitionVM.AudioActivityThreshold; set => RecognitionVM.AudioActivityThreshold = value; }
         public double AudioLevelGain { get => RecognitionVM.AudioLevelGain; set => RecognitionVM.AudioLevelGain = value; }
         public int AutoGainPresetIndex { get => RecognitionVM.AutoGainPresetIndex; set => RecognitionVM.AutoGainPresetIndex = value; }
+        public int AudioPreProcessorPluginIndex { get => RecognitionVM.AudioPreProcessorPluginIndex; set => RecognitionVM.AudioPreProcessorPluginIndex = value; }
+        public bool WebRtcAecEnabled { get => RecognitionVM.WebRtcAecEnabled; set => RecognitionVM.WebRtcAecEnabled = value; }
+        public bool WebRtcAecMobileMode { get => RecognitionVM.WebRtcAecMobileMode; set => RecognitionVM.WebRtcAecMobileMode = value; }
+        public int WebRtcAecLatencyMs { get => RecognitionVM.WebRtcAecLatencyMs; set => RecognitionVM.WebRtcAecLatencyMs = value; }
+        public bool WebRtcNoiseSuppressionEnabled { get => RecognitionVM.WebRtcNoiseSuppressionEnabled; set => RecognitionVM.WebRtcNoiseSuppressionEnabled = value; }
+        public int WebRtcNoiseSuppressionLevel { get => RecognitionVM.WebRtcNoiseSuppressionLevel; set => RecognitionVM.WebRtcNoiseSuppressionLevel = value; }
+        public bool WebRtcAgc1Enabled { get => RecognitionVM.WebRtcAgc1Enabled; set => RecognitionVM.WebRtcAgc1Enabled = value; }
+        public bool WebRtcAgc2Enabled { get => RecognitionVM.WebRtcAgc2Enabled; set => RecognitionVM.WebRtcAgc2Enabled = value; }
+        public int WebRtcAgcMode { get => RecognitionVM.WebRtcAgcMode; set => RecognitionVM.WebRtcAgcMode = value; }
+        public int WebRtcAgcTargetLevelDbfs { get => RecognitionVM.WebRtcAgcTargetLevelDbfs; set => RecognitionVM.WebRtcAgcTargetLevelDbfs = value; }
+        public int WebRtcAgcCompressionGainDb { get => RecognitionVM.WebRtcAgcCompressionGainDb; set => RecognitionVM.WebRtcAgcCompressionGainDb = value; }
+        public bool WebRtcAgcLimiterEnabled { get => RecognitionVM.WebRtcAgcLimiterEnabled; set => RecognitionVM.WebRtcAgcLimiterEnabled = value; }
+        public bool WebRtcHighPassFilterEnabled { get => RecognitionVM.WebRtcHighPassFilterEnabled; set => RecognitionVM.WebRtcHighPassFilterEnabled = value; }
+        public bool WebRtcPreAmpEnabled { get => RecognitionVM.WebRtcPreAmpEnabled; set => RecognitionVM.WebRtcPreAmpEnabled = value; }
+        public double WebRtcPreAmpGain { get => RecognitionVM.WebRtcPreAmpGain; set => RecognitionVM.WebRtcPreAmpGain = value; }
+        public bool EnableMasAudioProcessing { get => RecognitionVM.EnableMasAudioProcessing; set => RecognitionVM.EnableMasAudioProcessing = value; }
+        public bool MasEchoCancellationEnabled { get => RecognitionVM.MasEchoCancellationEnabled; set => RecognitionVM.MasEchoCancellationEnabled = value; }
+        public bool MasNoiseSuppressionEnabled { get => RecognitionVM.MasNoiseSuppressionEnabled; set => RecognitionVM.MasNoiseSuppressionEnabled = value; }
         public bool ShowReconnectMarker { get => RecognitionVM.ShowReconnectMarker; set => RecognitionVM.ShowReconnectMarker = value; }
 
         // — Text —
