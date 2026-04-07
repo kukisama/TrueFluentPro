@@ -1,0 +1,10 @@
+/home/runner/work/TrueFluentPro/TrueFluentPro/tools/rust/target/debug/deps/wayland_protocols-214061f0f7671f46.d: /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wayland-protocols-0.32.12/src/lib.rs /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wayland-protocols-0.32.12/src/protocol_macro.rs /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wayland-protocols-0.32.12/src/ext.rs /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wayland-protocols-0.32.12/src/wp.rs /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wayland-protocols-0.32.12/src/xdg.rs /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wayland-protocols-0.32.12/src/xwayland.rs
+
+/home/runner/work/TrueFluentPro/TrueFluentPro/tools/rust/target/debug/deps/libwayland_protocols-214061f0f7671f46.rmeta: /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wayland-protocols-0.32.12/src/lib.rs /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wayland-protocols-0.32.12/src/protocol_macro.rs /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wayland-protocols-0.32.12/src/ext.rs /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wayland-protocols-0.32.12/src/wp.rs /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wayland-protocols-0.32.12/src/xdg.rs /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wayland-protocols-0.32.12/src/xwayland.rs
+
+/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wayland-protocols-0.32.12/src/lib.rs:
+/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wayland-protocols-0.32.12/src/protocol_macro.rs:
+/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wayland-protocols-0.32.12/src/ext.rs:
+/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wayland-protocols-0.32.12/src/wp.rs:
+/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wayland-protocols-0.32.12/src/xdg.rs:
+/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wayland-protocols-0.32.12/src/xwayland.rs:

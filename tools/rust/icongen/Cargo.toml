@@ -1,0 +1,13 @@
+[package]
+name = "icon-gen"
+version = "0.1.0"
+edition = "2021"
+description = "PNG to ICO converter"
+
+[[bin]]
+name = "icon-gen"
+path = "src/main.rs"
+
+[dependencies]
+image = { version = "0.25", features = ["png", "ico"] }
+sha2 = "0.10"
