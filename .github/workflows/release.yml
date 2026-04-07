@@ -23,7 +23,7 @@ permissions:
   contents: write
 
 jobs:
-  # ── 第一阶段：并行构建各平台 zip ──
+  # ── 第一阶段 A：TrueFluentPro + Updater（按 RID 并行） ──
   build:
     runs-on: windows-latest
     strategy:
@@ -69,9 +69,47 @@ jobs:
           name: release-${{ matrix.rid }}
           path: artifacts/TrueFluentPro-${{ matrix.rid }}-fdd.zip
 
+  # ── 第一阶段 B：IconTool + IconToolUI（自包含单文件，仅 win-x64） ──
+  build-tools:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Publish IconTool
+        run: |
+          dotnet publish tools/IconTool/IconTool.csproj -c Release -o artifacts/publish/IconTool
+
+      - name: Publish IconToolUI
+        run: |
+          dotnet publish tools/IconToolUI/IconToolUI.csproj -c Release -o artifacts/publish/IconToolUI
+
+      - name: Create zips
+        run: |
+          Compress-Archive -Path "artifacts/publish/IconTool/*" -DestinationPath "artifacts/IconTool-win-x64.zip"
+          Compress-Archive -Path "artifacts/publish/IconToolUI/*" -DestinationPath "artifacts/IconToolUI-win-x64.zip"
+
+      - name: Upload IconTool
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-icontool
+          path: artifacts/IconTool-win-x64.zip
+
+      - name: Upload IconToolUI
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-icontoolui
+          path: artifacts/IconToolUI-win-x64.zip
+
   # ── 第二阶段：汇总所有 zip，读取 RELEASE_NOTES.md，创建 GitHub Release ──
   release:
-    needs: build
+    needs: [build, build-tools]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

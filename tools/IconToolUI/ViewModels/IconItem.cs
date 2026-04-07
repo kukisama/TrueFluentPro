@@ -44,7 +44,7 @@ public partial class IconItem : ObservableObject
     public string FileSizeText => FormatFileSize(FileSize);
 
     /// <summary>显示标签</summary>
-    public string DisplayLabel => $"{ExeFileName} #{GroupId}";
+    public string DisplayLabel => $"{Path.GetFileName(ExeFileName)} #{GroupId}";
 
     /// <summary>尺寸标签</summary>
     public string SizeLabel => IsHD ? $"{SizeDescription} ★HD" : SizeDescription;

@@ -27,6 +27,7 @@
         </Style>
     </Window.Styles>
 
+    <Panel>
     <Grid RowDefinitions="Auto,*,Auto">
 
         <!-- ═══ 顶部：目录选择区 ═══ -->
@@ -66,8 +67,9 @@
                        IsVisible="{Binding !HasIcons}"
                        TextWrapping="Wrap" Margin="40" />
 
-            <!-- 图标列表 — 使用 ListBox 实现选择高亮 -->
-            <ListBox ItemsSource="{Binding Icons}"
+            <!-- 图标列表 — 使用 ListBox 实现选择高亮，双击可直接设为目录图标 -->
+            <ListBox x:Name="IconListBox"
+                     ItemsSource="{Binding Icons}"
                      SelectedItem="{Binding SelectedIcon}"
                      IsVisible="{Binding HasIcons}"
                      Classes="IconGrid"
@@ -138,4 +140,12 @@
             </Grid>
         </Border>
     </Grid>
+
+    <!-- ⇐⇐⇐ Toast 浮窗通知 ⇒⇒⇒ -->
+    <Border x:Name="ToastPanel" IsVisible="False"
+            HorizontalAlignment="Right" VerticalAlignment="Bottom"
+            Margin="0,0,20,56" Padding="16,10" CornerRadius="8">
+        <TextBlock x:Name="ToastText" Foreground="White" FontSize="13" FontWeight="SemiBold" />
+    </Border>
+    </Panel>
 </Window>

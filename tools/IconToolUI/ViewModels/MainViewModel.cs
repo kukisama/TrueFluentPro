@@ -1,5 +1,8 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.IO;
+using System.Security.Principal;
+using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -34,6 +37,29 @@ public partial class MainViewModel : ObservableObject
     private bool _hasIcons;
 
     public ObservableCollection<IconItem> Icons { get; } = [];
+
+    /// <summary>
+    /// 是否以管理员身份运行。
+    /// </summary>
+    public bool IsAdmin { get; } = CheckIsAdmin();
+
+    /// <summary>
+    /// UI 确认对话框回调（由 MainWindow 在 OnOpened 时设置）。
+    /// </summary>
+    public Func<string, string, Task<bool>>? ConfirmDialog { get; set; }
+
+    /// <summary>
+    /// 浮窗通知回调（message, isSuccess）。
+    /// </summary>
+    public Action<string, bool>? ShowToast { get; set; }
+
+    private static bool CheckIsAdmin()
+    {
+        if (!OperatingSystem.IsWindows()) return true;
+        using var identity = WindowsIdentity.GetCurrent();
+        var principal = new WindowsPrincipal(identity);
+        return principal.IsInRole(WindowsBuiltInRole.Administrator);
+    }
 
     /// <summary>
     /// 浏览并加载指定目录中的 EXE 图标。
@@ -85,7 +111,7 @@ public partial class MainViewModel : ObservableObject
     /// 将选中的图标设为目录图标。
     /// </summary>
     [RelayCommand]
-    private void SetAsDirectoryIcon()
+    private async Task SetAsDirectoryIcon()
     {
         if (SelectedIcon is null || string.IsNullOrWhiteSpace(DirectoryPath))
         {
@@ -96,7 +122,8 @@ public partial class MainViewModel : ObservableObject
         try
         {
             var safeName = SanitizeFileName(
-                Path.GetFileNameWithoutExtension(SelectedIcon.ExeFileName));
+                Path.GetFileNameWithoutExtension(
+                    Path.GetFileName(SelectedIcon.ExeFileName)));
             var icoFileName = $"{safeName}_icon{SelectedIcon.GroupId}.ico";
 
             DirectoryIconService.SetDirectoryIconFromBytes(
@@ -105,10 +132,36 @@ public partial class MainViewModel : ObservableObject
                 DirectoryPath);
 
             StatusMessage = $"✅ 已将 {SelectedIcon.DisplayLabel} 设为目录图标 → {icoFileName}";
+            ShowToast?.Invoke("✅ 已设为目录图标", true);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            if (IsAdmin)
+            {
+                StatusMessage = "❌ 即使以管理员身份运行仍无法写入，请检查目录权限";
+                ShowToast?.Invoke("❌ 权限不足", false);
+                return;
+            }
+
+            if (ConfirmDialog is not null)
+            {
+                var shouldElevate = await ConfirmDialog(
+                    "权限不足",
+                    "设置目录图标需要修改文件属性和写入 desktop.ini，当前权限不足。\n是否以管理员身份重新启动？");
+                if (shouldElevate)
+                {
+                    RestartElevated(DirectoryPath);
+                }
+            }
+            else
+            {
+                StatusMessage = "❌ 权限不足，请以管理员身份运行";
+            }
         }
         catch (Exception ex)
         {
             StatusMessage = $"❌ 设置失败: {ex.Message}";
+            ShowToast?.Invoke("❌ 设置失败", false);
         }
     }
 
@@ -203,5 +256,38 @@ public partial class MainViewModel : ObservableObject
         var invalidChars = Path.GetInvalidFileNameChars();
         var sanitized = string.Concat(name.Where(c => !invalidChars.Contains(c)));
         return string.IsNullOrWhiteSpace(sanitized) ? "icon" : sanitized;
+    }
+
+    /// <summary>
+    /// 以管理员身份重启应用。
+    /// </summary>
+    private static void RestartElevated(string? directoryPath)
+    {
+        var exePath = Environment.ProcessPath;
+        if (exePath is null) return;
+
+        var psi = new ProcessStartInfo
+        {
+            FileName = exePath,
+            Verb = "runas",
+            UseShellExecute = true,
+        };
+
+        if (!string.IsNullOrEmpty(directoryPath))
+            psi.Arguments = $"\"{directoryPath}\"";
+
+        try
+        {
+            Process.Start(psi);
+            if (Avalonia.Application.Current?.ApplicationLifetime
+                is IClassicDesktopStyleApplicationLifetime desktop)
+            {
+                desktop.Shutdown();
+            }
+        }
+        catch
+        {
+            // 用户取消了 UAC 对话框
+        }
     }
 }
