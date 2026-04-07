@@ -84,11 +84,11 @@ jobs:
 
       - name: Publish IconTool
         run: |
-          dotnet publish tools/IconTool/IconTool.csproj -c Release -o artifacts/publish/IconTool
+          dotnet publish tools/IconTool/IconTool.csproj -c Release -r win-x64 --self-contained false -o artifacts/publish/IconTool
 
       - name: Publish IconToolUI
         run: |
-          dotnet publish tools/IconToolUI/IconToolUI.csproj -c Release -o artifacts/publish/IconToolUI
+          dotnet publish tools/IconToolUI/IconToolUI.csproj -c Release -r win-x64 --self-contained false -o artifacts/publish/IconToolUI
 
       - name: Create zips
         run: |
