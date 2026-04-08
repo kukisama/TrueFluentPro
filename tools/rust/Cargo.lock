@@ -1839,6 +1839,7 @@ dependencies = [
  "icon-core",
  "image",
  "rfd",
+ "windows",
 ]
 
 [[package]]

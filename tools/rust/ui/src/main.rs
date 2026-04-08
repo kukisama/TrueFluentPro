@@ -1,10 +1,22 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 use eframe::egui;
 use icon_core::{ico_helper, pe_icon_extractor};
 use std::path::PathBuf;
 
+/// 卡片固定尺寸常量
+const CARD_WIDTH: f32 = 152.0;
+const CARD_INNER_WIDTH: f32 = 136.0;
+const CARD_INNER_HEIGHT: f32 = 140.0;
+const ICON_SIZE: f32 = 56.0;
+const TEXT_MAX_WIDTH: f32 = 130.0;
+
 fn main() -> eframe::Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let initial_path = args.first().cloned();
+
+    // 如果带了 --elevated 参数，说明已经提权过了，不再重复提权
+    let is_elevated_flag = args.iter().any(|a| a == "--elevated");
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
@@ -17,8 +29,54 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "IconTool UI",
         options,
-        Box::new(move |_cc| Ok(Box::new(IconToolApp::new(initial_path)))),
+        Box::new(move |cc| {
+            configure_chinese_fonts(&cc.egui_ctx);
+            Ok(Box::new(IconToolApp::new(initial_path, is_elevated_flag)))
+        }),
     )
+}
+
+/// 加载系统中文字体，确保 UI 中文正常显示
+fn configure_chinese_fonts(ctx: &egui::Context) {
+    let mut fonts = egui::FontDefinitions::default();
+
+    // 尝试加载 Windows 系统中文字体（微软雅黑）
+    let font_paths = [
+        "C:\\Windows\\Fonts\\msyh.ttc",
+        "C:\\Windows\\Fonts\\msyhbd.ttc",
+        "C:\\Windows\\Fonts\\simsun.ttc",
+    ];
+
+    let mut loaded = false;
+    for font_path in &font_paths {
+        if let Ok(font_data) = std::fs::read(font_path) {
+            fonts.font_data.insert(
+                "chinese_font".to_owned(),
+                egui::FontData::from_owned(font_data).into(),
+            );
+
+            // 在所有字体族最前面插入中文字体，保证中文优先匹配
+            fonts
+                .families
+                .entry(egui::FontFamily::Proportional)
+                .or_default()
+                .insert(0, "chinese_font".to_owned());
+            fonts
+                .families
+                .entry(egui::FontFamily::Monospace)
+                .or_default()
+                .insert(0, "chinese_font".to_owned());
+
+            loaded = true;
+            break;
+        }
+    }
+
+    if !loaded {
+        eprintln!("警告: 未找到系统中文字体，中文可能显示异常");
+    }
+
+    ctx.set_fonts(fonts);
 }
 
 struct IconItem {
@@ -35,15 +93,24 @@ struct IconToolApp {
     icons: Vec<IconItem>,
     selected_index: Option<usize>,
     status: String,
+    is_elevated: bool,
 }
 
 impl IconToolApp {
-    fn new(initial_path: Option<String>) -> Self {
+    fn new(initial_path: Option<String>, is_elevated: bool) -> Self {
+        let path = initial_path.as_deref().unwrap_or_default();
+        // 过滤掉 --elevated 标记作为路径
+        let path = if path == "--elevated" { "" } else { path };
         let mut app = Self {
-            path: initial_path.unwrap_or_default(),
+            path: path.to_string(),
             icons: Vec::new(),
             selected_index: None,
-            status: "就绪 — 选择一个目录以浏览其中 EXE 文件的图标".to_string(),
+            status: if is_elevated {
+                "就绪（管理员模式）— 选择一个目录以浏览其中 EXE 文件的图标".to_string()
+            } else {
+                "就绪 — 选择一个目录以浏览其中 EXE 文件的图标".to_string()
+            },
+            is_elevated,
         };
 
         if !app.path.is_empty() && std::path::Path::new(&app.path).is_dir() {
@@ -65,7 +132,9 @@ impl IconToolApp {
             return;
         }
 
-        self.path = path.to_string_lossy().to_string();
+        // 去掉 Windows canonicalize 产生的 \\?\ 前缀
+        let path_str = path.to_string_lossy().to_string();
+        self.path = path_str.strip_prefix(r"\\?\").unwrap_or(&path_str).to_string();
         self.status = "正在扫描 EXE 文件...".to_string();
 
         match pe_icon_extractor::scan_directory(&path) {
@@ -129,14 +198,23 @@ impl IconToolApp {
                     self.status = format!("✅ 已将图标设为目录图标 → {}", ico_file_name);
                 }
                 Err(e) => {
-                    self.status = format!("❌ 设置失败: {}", e);
+                    let err_msg = e.to_string();
+                    if is_permission_error(&err_msg) && !self.is_elevated {
+                        self.status = "🔒 权限不足，正在请求管理员权限...".to_string();
+                        if restart_as_admin(&self.path) {
+                            std::process::exit(0);
+                        } else {
+                            self.status = "❌ 用户取消了管理员权限请求".to_string();
+                        }
+                    } else {
+                        self.status = format!("❌ 设置失败: {}", e);
+                    }
                 }
             }
         }
 
         #[cfg(not(windows))]
         {
-            // On non-Windows, just save the ICO file
             let dest = std::path::Path::new(&self.path).join(&ico_file_name);
             match std::fs::write(&dest, &icon.ico_data) {
                 Ok(_) => {
@@ -173,11 +251,13 @@ impl IconToolApp {
 
 impl eframe::App for IconToolApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // Top panel
+        // Top panel — 目录输入
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.label("📁 目录");
-                let response = ui.text_edit_singleline(&mut self.path);
+                let response = ui.add(
+                    egui::TextEdit::singleline(&mut self.path).desired_width(ui.available_width() - 130.0),
+                );
                 if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                     self.load_icons();
                 }
@@ -193,18 +273,22 @@ impl eframe::App for IconToolApp {
             });
         });
 
-        // Bottom panel
+        // Bottom panel — 状态栏 + 操作按钮（分左右布局，互不挤占）
         egui::TopBottomPanel::bottom("bottom_panel").show(ctx, |ui| {
             ui.horizontal(|ui| {
-                ui.label(&self.status);
+                // 右侧按钮先占位
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let enabled = self.selected_index.is_some();
                     if ui
-                        .add_enabled(enabled, egui::Button::new("✓ 设为目录图标"))
+                        .add_enabled(enabled, egui::Button::new("📌 设为目录图标"))
                         .clicked()
                     {
                         self.set_as_directory_icon();
                     }
+                    // 左侧状态文字（在右到左布局里，剩余空间用 label）
+                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        ui.label(&self.status);
+                    });
                 });
             });
         });
@@ -216,8 +300,7 @@ impl eframe::App for IconToolApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
                 let available_width = ui.available_width();
-                let card_width = 152.0;
-                let cols = ((available_width / card_width) as usize).max(1);
+                let cols = ((available_width / (CARD_WIDTH + 8.0)) as usize).max(1);
 
                 egui::Grid::new("icon_grid")
                     .num_columns(cols)
@@ -235,18 +318,18 @@ impl eframe::App for IconToolApp {
                                     egui::Color32::WHITE
                                 })
                                 .stroke(if is_selected {
-                                    egui::Stroke::new(1.0, egui::Color32::from_rgb(0, 120, 212))
+                                    egui::Stroke::new(2.0, egui::Color32::from_rgb(0, 120, 212))
                                 } else {
                                     egui::Stroke::new(1.0, egui::Color32::from_gray(210))
                                 });
 
                             let response = frame
                                 .show(ui, |ui| {
-                                    ui.set_width(136.0);
-                                    ui.set_height(114.0);
+                                    ui.set_width(CARD_INNER_WIDTH);
+                                    ui.set_height(CARD_INNER_HEIGHT);
 
                                     ui.vertical_centered(|ui| {
-                                        // Icon preview
+                                        // 图标预览 — 固定尺寸
                                         if icon.texture.is_none() {
                                             icon.texture =
                                                 Self::load_texture(ctx, &icon.ico_data);
@@ -255,35 +338,56 @@ impl eframe::App for IconToolApp {
                                         if let Some(tex) = &icon.texture {
                                             ui.image(egui::load::SizedTexture::new(
                                                 tex.id(),
-                                                [56.0, 56.0],
+                                                [ICON_SIZE, ICON_SIZE],
                                             ));
                                         } else {
-                                            ui.allocate_space(egui::vec2(56.0, 56.0));
+                                            ui.allocate_space(egui::vec2(ICON_SIZE, ICON_SIZE));
                                         }
 
-                                        // File name
+                                        ui.add_space(4.0);
+
+                                        // 文件名 — 截断 + tooltip
                                         let display_name =
                                             std::path::Path::new(&icon.exe_file_name)
                                                 .file_name()
                                                 .unwrap_or_default()
                                                 .to_string_lossy();
-                                        ui.strong(format!("{} #{}", display_name, icon.group_id));
+                                        let full_name = format!("{} #{}", display_name, icon.group_id);
+                                        let name_label = egui::Label::new(
+                                            egui::RichText::new(&full_name).strong().size(12.0),
+                                        )
+                                        .truncate()
+                                        .sense(egui::Sense::hover());
+                                        let r = ui.add_sized([TEXT_MAX_WIDTH, 16.0], name_label);
+                                        r.on_hover_text(&full_name);
 
-                                        // Size info
+                                        // 尺寸信息 — 截断 + tooltip
                                         let hd = if icon.max_size >= 256 { " ★HD" } else { "" };
-                                        ui.colored_label(
-                                            egui::Color32::GRAY,
-                                            format!("{}{}", icon.size_description, hd),
+                                        let count = ico_helper::parse_entries(&icon.ico_data).len();
+                                        let size_text = format!(
+                                            "{} 张 ({}){hd}",
+                                            count,
+                                            icon.size_description,
                                         );
+                                        let size_label = egui::Label::new(
+                                            egui::RichText::new(&size_text)
+                                                .color(egui::Color32::GRAY)
+                                                .size(11.0),
+                                        )
+                                        .truncate()
+                                        .sense(egui::Sense::hover());
+                                        let r = ui.add_sized([TEXT_MAX_WIDTH, 14.0], size_label);
+                                        r.on_hover_text(&size_text);
 
-                                        // File size
+                                        // 文件大小
                                         ui.colored_label(
-                                            egui::Color32::from_gray(160),
+                                            egui::Color32::from_gray(140),
                                             format_file_size(icon.ico_data.len() as u64),
                                         );
                                     });
                                 })
-                                .response;
+                                .response
+                                .interact(egui::Sense::click());
 
                             if response.clicked() {
                                 clicked_idx = Some(idx);
@@ -342,4 +446,65 @@ fn sanitize_filename(name: &str) -> String {
     } else {
         sanitized
     }
+}
+
+/// 判断错误是否为权限不足
+fn is_permission_error(err_msg: &str) -> bool {
+    let lower = err_msg.to_lowercase();
+    lower.contains("permission denied")
+        || lower.contains("access is denied")
+        || lower.contains("拒绝访问")
+        || lower.contains("权限")
+        || lower.contains("os error 5")
+}
+
+/// 以管理员身份重启当前程序，传入当前目录路径
+#[cfg(windows)]
+fn restart_as_admin(current_path: &str) -> bool {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+
+    let exe = std::env::current_exe().unwrap_or_default();
+    let exe_wide: Vec<u16> = OsStr::new(&exe)
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+
+    // 构造参数：传入当前路径 + --elevated 标记
+    let params = if current_path.is_empty() {
+        "--elevated".to_string()
+    } else {
+        format!("\"{}\" --elevated", current_path)
+    };
+    let params_wide: Vec<u16> = OsStr::new(&params)
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+
+    let verb: Vec<u16> = OsStr::new("runas")
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+
+    unsafe {
+        use windows::Win32::UI::Shell::ShellExecuteW;
+        use windows::core::PCWSTR;
+
+        let result = ShellExecuteW(
+            None,
+            PCWSTR(verb.as_ptr()),
+            PCWSTR(exe_wide.as_ptr()),
+            PCWSTR(params_wide.as_ptr()),
+            PCWSTR::null(),
+            windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL,
+        );
+
+        // ShellExecuteW 返回值 > 32 表示成功
+        result.0 as usize > 32
+    }
+}
+
+#[cfg(not(windows))]
+fn restart_as_admin(_current_path: &str) -> bool {
+    false
 }

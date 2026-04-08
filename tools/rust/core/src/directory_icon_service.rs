@@ -196,144 +196,56 @@ fn set_hidden_system_attributes(path: &Path) {
 }
 
 fn shell_set_folder_icon(folder_path: &Path, ico_file_name: &str) -> i32 {
-    use std::ffi::OsStr;
-    use std::os::windows::ffi::OsStrExt;
+    let result1 = write_private_profile_string(
+        folder_path,
+        "IconFile",
+        ico_file_name,
+    );
+    let result2 = write_private_profile_string(
+        folder_path,
+        "IconIndex",
+        "0",
+    );
 
-    let folder_wide: Vec<u16> = OsStr::new(&folder_path.to_string_lossy().to_string())
-        .encode_wide()
-        .chain(std::iter::once(0))
-        .collect();
-
-    let ico_wide: Vec<u16> = OsStr::new(ico_file_name)
-        .encode_wide()
-        .chain(std::iter::once(0))
-        .collect();
-
-    // Use WritePrivateProfileString as primary approach
-    let section: Vec<u16> = OsStr::new(".ShellClassInfo")
-        .encode_wide()
-        .chain(std::iter::once(0))
-        .collect();
-    let key_icon_file: Vec<u16> = OsStr::new("IconFile")
-        .encode_wide()
-        .chain(std::iter::once(0))
-        .collect();
-    let key_icon_index: Vec<u16> = OsStr::new("IconIndex")
-        .encode_wide()
-        .chain(std::iter::once(0))
-        .collect();
-    let zero_str: Vec<u16> = OsStr::new("0")
-        .encode_wide()
-        .chain(std::iter::once(0))
-        .collect();
-
-    let ini_path = folder_path.join("desktop.ini");
-    let ini_wide: Vec<u16> = OsStr::new(&ini_path.to_string_lossy().to_string())
-        .encode_wide()
-        .chain(std::iter::once(0))
-        .collect();
-
-    unsafe {
-        use windows::core::PCWSTR;
-        // WritePrivateProfileStringW
-        type WriteProfileFn = unsafe extern "system" fn(
-            PCWSTR,
-            PCWSTR,
-            PCWSTR,
-            PCWSTR,
-        ) -> i32;
-
-        let kernel32 = windows::Win32::System::LibraryLoader::LoadLibraryW(
-            PCWSTR::from_raw(
-                OsStr::new("kernel32.dll")
-                    .encode_wide()
-                    .chain(std::iter::once(0))
-                    .collect::<Vec<u16>>()
-                    .as_ptr(),
-            ),
-        );
-        if let Ok(lib) = kernel32 {
-            let func = windows::Win32::System::LibraryLoader::GetProcAddress(
-                lib,
-                windows::core::PCSTR::from_raw(b"WritePrivateProfileStringW\0".as_ptr()),
-            );
-            if let Some(f) = func {
-                let write_fn: WriteProfileFn = std::mem::transmute(f);
-                write_fn(
-                    PCWSTR::from_raw(section.as_ptr()),
-                    PCWSTR::from_raw(key_icon_file.as_ptr()),
-                    PCWSTR::from_raw(ico_wide.as_ptr()),
-                    PCWSTR::from_raw(ini_wide.as_ptr()),
-                );
-                write_fn(
-                    PCWSTR::from_raw(section.as_ptr()),
-                    PCWSTR::from_raw(key_icon_index.as_ptr()),
-                    PCWSTR::from_raw(zero_str.as_ptr()),
-                    PCWSTR::from_raw(ini_wide.as_ptr()),
-                );
-            }
-            let _ = windows::Win32::Foundation::FreeLibrary(lib);
-        }
-    }
-    0
+    if result1 && result2 { 0 } else { -1 }
 }
 
 fn shell_write_ini_entry(folder_path: &Path, key: &str, value: &str) {
+    write_private_profile_string(folder_path, key, value);
+}
+
+/// 封装 WritePrivateProfileStringW 调用，将 &str 正确转为 PCWSTR。
+fn write_private_profile_string(folder_path: &Path, key: &str, value: &str) -> bool {
     use std::ffi::OsStr;
     use std::os::windows::ffi::OsStrExt;
+    use windows::Win32::System::WindowsProgramming::WritePrivateProfileStringW;
+    use windows::core::PCWSTR;
 
     let section: Vec<u16> = OsStr::new(".ShellClassInfo")
-        .encode_wide()
-        .chain(std::iter::once(0))
-        .collect();
+        .encode_wide().chain(std::iter::once(0)).collect();
     let key_wide: Vec<u16> = OsStr::new(key)
-        .encode_wide()
-        .chain(std::iter::once(0))
-        .collect();
+        .encode_wide().chain(std::iter::once(0)).collect();
     let value_wide: Vec<u16> = OsStr::new(value)
-        .encode_wide()
-        .chain(std::iter::once(0))
-        .collect();
+        .encode_wide().chain(std::iter::once(0)).collect();
     let ini_path = folder_path.join("desktop.ini");
     let ini_wide: Vec<u16> = OsStr::new(&ini_path.to_string_lossy().to_string())
-        .encode_wide()
-        .chain(std::iter::once(0))
-        .collect();
+        .encode_wide().chain(std::iter::once(0)).collect();
 
     unsafe {
-        use windows::core::PCWSTR;
-        type WriteProfileFn =
-            unsafe extern "system" fn(PCWSTR, PCWSTR, PCWSTR, PCWSTR) -> i32;
-
-        let kernel32 = windows::Win32::System::LibraryLoader::LoadLibraryW(PCWSTR::from_raw(
-            OsStr::new("kernel32.dll")
-                .encode_wide()
-                .chain(std::iter::once(0))
-                .collect::<Vec<u16>>()
-                .as_ptr(),
-        ));
-        if let Ok(lib) = kernel32 {
-            let func = windows::Win32::System::LibraryLoader::GetProcAddress(
-                lib,
-                windows::core::PCSTR::from_raw(b"WritePrivateProfileStringW\0".as_ptr()),
-            );
-            if let Some(f) = func {
-                let write_fn: WriteProfileFn = std::mem::transmute(f);
-                write_fn(
-                    PCWSTR::from_raw(section.as_ptr()),
-                    PCWSTR::from_raw(key_wide.as_ptr()),
-                    PCWSTR::from_raw(value_wide.as_ptr()),
-                    PCWSTR::from_raw(ini_wide.as_ptr()),
-                );
-            }
-            let _ = windows::Win32::Foundation::FreeLibrary(lib);
-        }
+        WritePrivateProfileStringW(
+            PCWSTR::from_raw(section.as_ptr()),
+            PCWSTR::from_raw(key_wide.as_ptr()),
+            PCWSTR::from_raw(value_wide.as_ptr()),
+            PCWSTR::from_raw(ini_wide.as_ptr()),
+        ).is_ok()
     }
 }
 
 fn shell_make_system_folder(directory_path: &Path) {
     use std::ffi::OsStr;
     use std::os::windows::ffi::OsStrExt;
+    use windows::Win32::UI::Shell::PathMakeSystemFolderW;
+    use windows::core::PCWSTR;
 
     let path_wide: Vec<u16> = OsStr::new(&directory_path.to_string_lossy().to_string())
         .encode_wide()
@@ -341,26 +253,7 @@ fn shell_make_system_folder(directory_path: &Path) {
         .collect();
 
     unsafe {
-        use windows::core::PCWSTR;
-        let shlwapi = windows::Win32::System::LibraryLoader::LoadLibraryW(PCWSTR::from_raw(
-            OsStr::new("shlwapi.dll")
-                .encode_wide()
-                .chain(std::iter::once(0))
-                .collect::<Vec<u16>>()
-                .as_ptr(),
-        ));
-        if let Ok(lib) = shlwapi {
-            let func = windows::Win32::System::LibraryLoader::GetProcAddress(
-                lib,
-                windows::core::PCSTR::from_raw(b"PathMakeSystemFolderW\0".as_ptr()),
-            );
-            if let Some(f) = func {
-                let make_sys: unsafe extern "system" fn(PCWSTR) -> i32 =
-                    std::mem::transmute(f);
-                make_sys(PCWSTR::from_raw(path_wide.as_ptr()));
-            }
-            let _ = windows::Win32::Foundation::FreeLibrary(lib);
-        }
+        let _ = PathMakeSystemFolderW(PCWSTR::from_raw(path_wide.as_ptr()));
     }
 }
 
@@ -382,7 +275,7 @@ fn shell_change_notify(
     item1: Option<&Path>,
     _item2: Option<&Path>,
 ) {
-    use windows::Win32::UI::Shell::SHChangeNotify;
+    use windows::Win32::UI::Shell::{SHChangeNotify, SHCNE_ID, SHCNF_FLAGS};
     use std::ffi::OsStr;
     use std::os::windows::ffi::OsStrExt;
 
@@ -397,45 +290,41 @@ fn shell_change_notify(
         match item1_wide {
             Some(ref w) => {
                 SHChangeNotify(
-                    event_id,
-                    flags as u32,
+                    SHCNE_ID(event_id as u32),
+                    SHCNF_FLAGS(flags as u32),
                     Some(w.as_ptr() as *const std::ffi::c_void),
                     None,
                 );
             }
             None => {
-                SHChangeNotify(event_id, flags as u32, None, None);
+                SHChangeNotify(SHCNE_ID(event_id as u32), SHCNF_FLAGS(flags as u32), None, None);
             }
         }
     }
 }
 
+/// 调用 shell32.dll 未文档化的 FileIconInit (ordinal #660) 重置系统图标缓存。
+/// 该函数未在 Windows SDK 中公开，只能通过 ordinal 动态加载。
 fn shell_reinitialize_icon_cache() {
-    use std::ffi::OsStr;
-    use std::os::windows::ffi::OsStrExt;
-
     unsafe {
-        use windows::core::PCWSTR;
-        let shell32 = windows::Win32::System::LibraryLoader::LoadLibraryW(PCWSTR::from_raw(
-            OsStr::new("shell32.dll")
-                .encode_wide()
-                .chain(std::iter::once(0))
-                .collect::<Vec<u16>>()
-                .as_ptr(),
-        ));
-        if let Ok(lib) = shell32 {
-            let func = windows::Win32::System::LibraryLoader::GetProcAddress(
-                lib,
-                windows::core::PCSTR::from_raw(b"#660\0".as_ptr()),
-            );
-            if let Some(f) = func {
-                let file_icon_init: unsafe extern "system" fn(i32) -> i32 =
-                    std::mem::transmute(f);
-                file_icon_init(0);
-                file_icon_init(1);
-            }
-            let _ = windows::Win32::Foundation::FreeLibrary(lib);
-        }
+        use windows::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress};
+
+        // shell32.dll 在 GUI 进程中始终已加载，用 GetModuleHandleW 获取句柄（不增加引用计数）
+        let Ok(shell32) = GetModuleHandleW(windows::core::w!("shell32.dll")) else {
+            return;
+        };
+
+        let Some(func) = GetProcAddress(
+            shell32,
+            windows::core::PCSTR::from_raw(b"#660\0".as_ptr()),
+        ) else {
+            return;
+        };
+
+        let file_icon_init: unsafe extern "system" fn(i32) -> i32 =
+            std::mem::transmute(func);
+        file_icon_init(0); // 清除缓存
+        file_icon_init(1); // 重新初始化
     }
 }
 

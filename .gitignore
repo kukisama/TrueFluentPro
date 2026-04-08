@@ -3,6 +3,9 @@ bin/
 obj/
 out/
 artifacts/
+
+# Rust build output
+**/target/
 Docs/
 .github/copilot-instructions.md
 

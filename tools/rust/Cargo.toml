@@ -1,3 +1,6 @@
 [workspace]
 members = ["core", "cli", "icongen", "ui"]
 resolver = "2"
+
+[profile.release]
+strip = "symbols"
