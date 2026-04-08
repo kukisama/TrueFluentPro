@@ -1,0 +1,13 @@
+[package]
+name = "icon-ui"
+version = "0.1.0"
+edition = "2021"
+description = "Directory icon management GUI tool"
+
+[dependencies]
+icon-core = { path = "../core" }
+eframe = "0.31"
+egui = "0.31"
+egui_extras = { version = "0.31", features = ["image"] }
+image = { version = "0.25", features = ["png", "ico"] }
+rfd = "0.15"
