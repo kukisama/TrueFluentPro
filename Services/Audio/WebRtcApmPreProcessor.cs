@@ -17,6 +17,8 @@ namespace TrueFluentPro.Services.Audio
         private readonly int _frameSamples;
         private readonly int _frameBytes;
         private readonly bool _aecEnabled;
+        private readonly Action<string>? _log;
+        private bool _runtimeFailureLogged;
 
         public string Id => "webrtc-apm";
         public string DisplayName => "WebRTC APM";
@@ -25,6 +27,7 @@ namespace TrueFluentPro.Services.Audio
 
         public WebRtcApmPreProcessor(AzureSpeechConfig config, Action<string>? log = null)
         {
+            _log = log;
             try
             {
                 _sampleRate = 16000;
@@ -119,9 +122,13 @@ namespace TrueFluentPro.Services.Audio
 
                 return output;
             }
-            catch
+            catch (Exception ex)
             {
-                // Native call failure — fall back to passthrough so recording is not disrupted
+                if (!_runtimeFailureLogged)
+                {
+                    _runtimeFailureLogged = true;
+                    _log?.Invoke($"[音频插件] WebRTC APM 运行时处理失败（已回退透传）: {ex.Message}");
+                }
                 return CloneOrSilence(frame.MicPcm16, frame.ByteLength);
             }
         }
