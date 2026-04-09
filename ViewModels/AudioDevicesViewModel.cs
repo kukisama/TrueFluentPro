@@ -23,6 +23,9 @@ namespace TrueFluentPro.ViewModels
         private readonly Action<string, string> _logger;
         private readonly Func<Window?> _mainWindowProvider;
 
+        /// <summary>音频管线配置变化时触发（录制来源等切换）</summary>
+        public event Action? PipelineConfigChanged;
+
         private int _audioSourceModeIndex;
         private readonly ObservableCollection<AudioDeviceInfo> _audioDevices;
         private readonly ObservableCollection<AudioDeviceInfo> _outputDevices;
@@ -552,6 +555,7 @@ namespace TrueFluentPro.ViewModels
             OnPropertyChanged(nameof(IsRecordingLoopbackOnly));
             OnPropertyChanged(nameof(IsRecordingLoopbackMix));
             OnPropertyChanged(nameof(IsRecordingMicOnly));
+            PipelineConfigChanged?.Invoke();
         }
 
         private void SetInputRecognitionEnabled(bool enabled)

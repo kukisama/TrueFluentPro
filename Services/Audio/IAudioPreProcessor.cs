@@ -13,6 +13,13 @@ namespace TrueFluentPro.Services.Audio
         bool IsAvailable { get; }
         string? UnavailableReason { get; }
 
+        /// <summary>最近一次处理的输入 RMS（0~1）</summary>
+        double LastInputRms { get; }
+        /// <summary>最近一次处理的输出 RMS（0~1）</summary>
+        double LastOutputRms { get; }
+        /// <summary>已处理的帧总数</summary>
+        long ProcessedFrameCount { get; }
+
         byte[] Process(CapturedAudioFrame frame);
     }
 }

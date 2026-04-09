@@ -257,6 +257,8 @@ namespace TrueFluentPro.ViewModels
                 OnPropertyChanged(nameof(TranslationToggleButtonText));
                 OnPropertyChanged(nameof(TranslationToggleButtonBackground));
                 OnPropertyChanged(nameof(TranslationToggleButtonForeground));
+                OnPropertyChanged(nameof(AudioPipelineStatusText));
+                OnPropertyChanged(nameof(AudioPipelineTooltip));
                 AudioDevices.NotifyTranslatingChanged();
 
                 if (!value)
@@ -275,6 +277,86 @@ namespace TrueFluentPro.ViewModels
         public IBrush TranslationToggleButtonBackground => IsTranslating ? Brushes.Red : Brushes.Green;
 
         public IBrush TranslationToggleButtonForeground => Brushes.White;
+
+        /// <summary>音频管线状态摘要（翻译中顶部显示）</summary>
+        public string AudioPipelineStatusText
+        {
+            get
+            {
+                if (!IsTranslating) return "";
+                var parts = new System.Collections.Generic.List<string>();
+
+                // 录制来源
+                var recMode = _config.RecordingMode switch
+                {
+                    RecordingMode.LoopbackOnly => "环回",
+                    RecordingMode.MicOnly => "麦克风",
+                    RecordingMode.LoopbackWithMic => "环回+麦",
+                    _ => "混合"
+                };
+                parts.Add($"录制:{recMode}");
+
+                // WebRTC（含实时降噪指标）
+                if (_config.AudioPreProcessorPlugin == AudioPreProcessorPluginType.WebRtcApm)
+                {
+                    var tags = new System.Collections.Generic.List<string>();
+                    if (_config.WebRtcNoiseSuppressionEnabled) tags.Add("NS");
+                    if (_config.WebRtcAecEnabled) tags.Add("AEC");
+                    if (_config.WebRtcAgc1Enabled || _config.WebRtcAgc2Enabled) tags.Add("AGC");
+                    if (_config.WebRtcHighPassFilterEnabled) tags.Add("HPF");
+                    var label = $"WebRTC:{(tags.Count > 0 ? string.Join("+", tags) : "开")}";
+                    if (!string.IsNullOrEmpty(_audioPipelineLiveMetrics))
+                        label += $" {_audioPipelineLiveMetrics}";
+                    parts.Add(label);
+                }
+
+                // MAS
+                if (_config.EnableMasAudioProcessing)
+                {
+                    parts.Add($"MAS:{(_config.MasNoiseSuppressionEnabled ? "NS" : "开")}");
+                }
+
+                return string.Join("  ", parts);
+            }
+        }
+
+        /// <summary>音频管线状态 Tooltip（详细信息）</summary>
+        public string AudioPipelineTooltip
+        {
+            get
+            {
+                if (!IsTranslating) return "";
+                var lines = new System.Collections.Generic.List<string>();
+
+                lines.Add($"录制来源: {_config.RecordingMode switch { RecordingMode.LoopbackOnly => "仅环回", RecordingMode.MicOnly => "仅麦克风", RecordingMode.LoopbackWithMic => "环回+麦克风", _ => "混合" }}");
+
+                if (_config.AudioPreProcessorPlugin == AudioPreProcessorPluginType.WebRtcApm)
+                {
+                    lines.Add("WebRTC APM: 已启用");
+                    lines.Add($"  降噪(NS): {(_config.WebRtcNoiseSuppressionEnabled ? $"开 (级别{_config.WebRtcNoiseSuppressionLevel})" : "关")}");
+                    lines.Add($"  回声消除(AEC): {(_config.WebRtcAecEnabled ? "开" : "关")}");
+                    lines.Add($"  自动增益(AGC): {(_config.WebRtcAgc1Enabled ? "开" : "关")}");
+                    lines.Add($"  高通滤波(HPF): {(_config.WebRtcHighPassFilterEnabled ? "开" : "关")}");
+                    if (!string.IsNullOrEmpty(_audioPipelineLiveMetrics))
+                        lines.Add($"  实时指标: {_audioPipelineLiveMetrics}");
+                }
+                else
+                {
+                    lines.Add("WebRTC APM: 未启用");
+                }
+
+                if (_config.EnableMasAudioProcessing)
+                {
+                    lines.Add($"MAS 识别增强: 已启用 (降噪={(_config.MasNoiseSuppressionEnabled ? "开" : "关")})");
+                }
+                else
+                {
+                    lines.Add("MAS 识别增强: 未启用");
+                }
+
+                return string.Join("\n", lines);
+            }
+        }
 
         public string StatusMessage
         {
@@ -915,6 +997,30 @@ namespace TrueFluentPro.ViewModels
             Dispatcher.UIThread.Post(() =>
             {
                 AudioDiagnosticStatus = message;
+
+                // 从诊断信息提取 WebRTC 实时指标并刷新管线状态标签
+                var idx = message.IndexOf("WebRTC APM[", StringComparison.Ordinal);
+                if (idx >= 0)
+                {
+                    var end = message.IndexOf(']', idx);
+                    if (end > idx)
+                    {
+                        var segment = message.Substring(idx + "WebRTC APM[".Length, end - idx - "WebRTC APM[".Length);
+                        // 解析 "帧:123 入:-30.0dB 出:-42.5dB 降噪:12.5dB"
+                        var metricsText = "";
+                        foreach (var part in segment.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+                        {
+                            if (part.StartsWith("降噪:", StringComparison.Ordinal))
+                                metricsText = part;
+                        }
+                        if (_audioPipelineLiveMetrics != metricsText)
+                        {
+                            _audioPipelineLiveMetrics = metricsText;
+                            OnPropertyChanged(nameof(AudioPipelineStatusText));
+                            OnPropertyChanged(nameof(AudioPipelineTooltip));
+                        }
+                    }
+                }
             });
         }
 

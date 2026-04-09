@@ -1,6 +1,19 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="TrueFluentPro.Controls.ReviewSheetsEditor">
+    <UserControl.Styles>
+        <Style Selector="TextBox.review-prompt">
+            <Setter Property="MinHeight" Value="28"/>
+            <Setter Property="MaxHeight" Value="28"/>
+            <Setter Property="AcceptsReturn" Value="False"/>
+            <Setter Property="TextWrapping" Value="NoWrap"/>
+        </Style>
+        <Style Selector="TextBox.review-prompt:focus">
+            <Setter Property="MaxHeight" Value="120"/>
+            <Setter Property="AcceptsReturn" Value="True"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+        </Style>
+    </UserControl.Styles>
     <Border BorderBrush="#FFE2E8F0" BorderThickness="0,1,0,0" Padding="0,12,0,0">
         <StackPanel Spacing="8">
             <TextBlock Text="复盘洞察模板配置" FontSize="14" FontWeight="SemiBold"/>
@@ -8,31 +21,43 @@
             <ItemsControl x:Name="ReviewSheetsItemsControl">
                 <ItemsControl.ItemTemplate>
                     <DataTemplate x:CompileBindings="False">
-                        <Grid ColumnDefinitions="Auto,120,Auto,90,Auto,70,Auto,*,Auto" Margin="0,4">
-                            <TextBlock Grid.Column="0" Text="名称:" FontSize="11"
+                        <Grid ColumnDefinitions="Auto,Auto,120,Auto,90,Auto,70,Auto,*,Auto" Margin="0,4">
+                            <ToggleSwitch Grid.Column="0" IsChecked="{Binding IsEnabled, Mode=TwoWay}"
+                                          OnContent="" OffContent=""
+                                          Checked="ReviewField_LostFocus"
+                                          Unchecked="ReviewField_LostFocus"
+                                          VerticalAlignment="Center" Margin="0,0,4,0"
+                                          MinWidth="0" Padding="0"
+                                          ToolTip.Tip="启用/禁用此洞察模板"/>
+                            <TextBlock Grid.Column="1" Text="名称:" FontSize="11"
                                        VerticalAlignment="Center" Margin="0,0,6,0"/>
-                            <TextBox Grid.Column="1" Text="{Binding Name, Mode=TwoWay}"
+                            <TextBox Grid.Column="2" Text="{Binding Name, Mode=TwoWay}"
                                      LostFocus="ReviewField_LostFocus"
+                                     IsEnabled="{Binding IsEnabled}"
                                      Padding="4,3" VerticalAlignment="Center"/>
-                            <TextBlock Grid.Column="2" Text="标记:" FontSize="11"
+                            <TextBlock Grid.Column="3" Text="标记:" FontSize="11"
                                        VerticalAlignment="Center" Margin="10,0,6,0"/>
-                            <TextBox Grid.Column="3" Text="{Binding FileTag, Mode=TwoWay}"
+                            <TextBox Grid.Column="4" Text="{Binding FileTag, Mode=TwoWay}"
                                      LostFocus="ReviewField_LostFocus"
+                                     IsEnabled="{Binding IsEnabled}"
                                      Padding="4,3" VerticalAlignment="Center"/>
-                            <TextBlock Grid.Column="4" Text="批处理:" FontSize="11"
+                            <TextBlock Grid.Column="5" Text="批处理:" FontSize="11"
                                        VerticalAlignment="Center" Margin="10,0,6,0"/>
-                            <CheckBox Grid.Column="5" IsChecked="{Binding IncludeInBatch, Mode=TwoWay}"
+                            <CheckBox Grid.Column="6" IsChecked="{Binding IncludeInBatch, Mode=TwoWay}"
                                       Checked="ReviewField_LostFocus"
                                       Unchecked="ReviewField_LostFocus"
+                                      IsEnabled="{Binding IsEnabled}"
                                       VerticalAlignment="Center"/>
-                            <TextBlock Grid.Column="6" Text="提示词:" FontSize="11"
+                            <TextBlock Grid.Column="7" Text="提示词:" FontSize="11"
                                        VerticalAlignment="Center" Margin="10,0,6,0"/>
-                            <TextBox Grid.Column="7" Text="{Binding Prompt, Mode=TwoWay}"
+                            <TextBox Grid.Column="8" Text="{Binding Prompt, Mode=TwoWay}"
+                                     Classes="review-prompt"
                                      LostFocus="ReviewField_LostFocus"
-                                     Padding="4,3" VerticalAlignment="Center"/>
-                            <Button Grid.Column="8" Content="删除" Margin="6,0,0,0" Padding="6,2"
+                                     IsEnabled="{Binding IsEnabled}"
+                                     Padding="4,3" VerticalAlignment="Top"/>
+                            <Button Grid.Column="9" Content="删除" Margin="6,0,0,0" Padding="6,2"
                                     FontSize="11" Click="RemoveReviewSheet_Click"
-                                    Tag="{Binding}"/>
+                                    Tag="{Binding}" VerticalAlignment="Center"/>
                         </Grid>
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>

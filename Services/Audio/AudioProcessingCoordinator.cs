@@ -17,6 +17,9 @@ namespace TrueFluentPro.Services.Audio
         private bool _recordLoopback;
         private bool _recordMic;
 
+        /// <summary>当前使用的预处理器</summary>
+        public IAudioPreProcessor PreProcessor => _preProcessor;
+
         public AudioProcessingCoordinator(
             IAudioPreProcessor preProcessor,
             IAudioRecognitionSink recognitionSink,

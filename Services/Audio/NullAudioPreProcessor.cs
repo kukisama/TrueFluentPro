@@ -9,6 +9,9 @@ namespace TrueFluentPro.Services.Audio
         public string DisplayName => "关闭";
         public bool IsAvailable => true;
         public string? UnavailableReason => null;
+        public double LastInputRms => 0;
+        public double LastOutputRms => 0;
+        public long ProcessedFrameCount => 0;
 
         public byte[] Process(CapturedAudioFrame frame)
         {

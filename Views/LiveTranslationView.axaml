@@ -55,6 +55,15 @@
             <Setter Property="BorderBrush" Value="{DynamicResource PrimaryDarkBrush}" />
             <Setter Property="Foreground" Value="White" />
         </Style>
+        <!-- 翻译按钮：禁止悬停变色，保持红绿切换 -->
+        <Style Selector="Button.translation-toggle:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{TemplateBinding Background}"/>
+            <Setter Property="BorderBrush" Value="{TemplateBinding BorderBrush}"/>
+        </Style>
+        <Style Selector="Button.translation-toggle:pressed /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{TemplateBinding Background}"/>
+            <Setter Property="BorderBrush" Value="{TemplateBinding BorderBrush}"/>
+        </Style>
         <!-- 可展开提示词输入框：默认单行紧凑，聚焦后展开多行 -->
         <Style Selector="TextBox.expandable-prompt">
             <Setter Property="MinHeight" Value="28"/>
@@ -97,7 +106,6 @@
                 <!-- 语言对 -->
             <TextBlock Text="源语言:" VerticalAlignment="Center" Margin="0,0,6,0"/>
                 <ComboBox Name="SourceLanguageComboBox" MinWidth="100"
-                          IsEnabled="{Binding ConfigVM.IsConfigurationEnabled}"
                           AutomationProperties.Name="源语言"
                   Margin="0,0,4,0"
                           SelectedIndex="{Binding ConfigVM.SourceLanguageIndex}">
@@ -112,7 +120,6 @@
                 </ComboBox>
                     <TextBlock Text="→" VerticalAlignment="Center" FontSize="16" FontWeight="Bold" Margin="0,0,4,0"/>
                 <ComboBox Name="TargetLanguageComboBox" MinWidth="100"
-                      IsEnabled="{Binding ConfigVM.IsConfigurationEnabled}"
                       AutomationProperties.Name="目标语言"
                         Margin="0,0,8,0"
                       SelectedIndex="{Binding ConfigVM.TargetLanguageIndex}">
@@ -126,7 +133,7 @@
                 </ComboBox>
 
                 <!-- 开始/停止翻译 -->
-                <Button Classes="pressable"
+                <Button Classes="pressable translation-toggle"
                     Content="{Binding TranslationToggleButtonText}"
                     Command="{Binding ToggleTranslationCommand}"
                     Background="{Binding TranslationToggleButtonBackground}"
@@ -204,6 +211,18 @@
                     </Flyout>
                 </Button.Flyout>
                 </Button>
+
+                <!-- 音频管线状态标签（翻译中显示） -->
+                <Border IsVisible="{Binding IsTranslating}"
+                        Background="{DynamicResource SurfaceBrush}"
+                        BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="1"
+                        CornerRadius="4" Padding="6,3" Margin="4,0,4,0"
+                        VerticalAlignment="Center"
+                        ToolTip.Tip="{Binding AudioPipelineTooltip}">
+                    <TextBlock Text="{Binding AudioPipelineStatusText}"
+                               FontSize="11" Opacity="0.85"
+                               VerticalAlignment="Center"/>
+                </Border>
 
                 <Border Width="84" Height="22"
                     Background="Transparent" BorderBrush="{DynamicResource BorderStrongBrush}" BorderThickness="1"

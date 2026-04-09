@@ -554,7 +554,7 @@ namespace TrueFluentPro.ViewModels
                 presets = new AiConfig().ReviewSheets;
             }
 
-            foreach (var preset in presets)
+            foreach (var preset in presets.Where(p => p.IsEnabled))
             {
                 _reviewSheets.Add(ReviewSheetState.FromPreset(preset));
             }
@@ -670,7 +670,8 @@ namespace TrueFluentPro.ViewModels
                     Name = sheet.Name,
                     FileTag = sheet.FileTag,
                     Prompt = sheet.Prompt,
-                    IncludeInBatch = sheet.IncludeInBatch
+                    IncludeInBatch = sheet.IncludeInBatch,
+                    IsEnabled = sheet.IsEnabled
                 }).ToList();
             }
 
@@ -1676,7 +1677,7 @@ namespace TrueFluentPro.ViewModels
         {
             var config = _configProvider();
             var sheets = config.AiConfig?.ReviewSheets
-                ?.Where(s => s.IncludeInBatch)
+                ?.Where(s => s.IsEnabled && s.IncludeInBatch)
                 .ToList();
 
             return sheets ?? new List<ReviewSheetPreset>();

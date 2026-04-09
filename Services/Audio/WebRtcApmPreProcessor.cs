@@ -19,11 +19,17 @@ namespace TrueFluentPro.Services.Audio
         private readonly bool _aecEnabled;
         private readonly Action<string>? _log;
         private bool _runtimeFailureLogged;
+        private double _lastInputRms;
+        private double _lastOutputRms;
+        private long _processedFrameCount;
 
         public string Id => "webrtc-apm";
         public string DisplayName => "WebRTC APM";
         public bool IsAvailable { get; }
         public string? UnavailableReason { get; }
+        public double LastInputRms => _lastInputRms;
+        public double LastOutputRms => _lastOutputRms;
+        public long ProcessedFrameCount => _processedFrameCount;
 
         public WebRtcApmPreProcessor(AzureSpeechConfig config, Action<string>? log = null)
         {
@@ -88,6 +94,8 @@ namespace TrueFluentPro.Services.Audio
                 var reference = CloneOrSilence(frame.ReferencePcm16, input.Length);
                 var output = new byte[input.Length];
 
+                _lastInputRms = ComputeRms(input);
+
                 var offset = 0;
                 while (offset < input.Length)
                 {
@@ -119,6 +127,9 @@ namespace TrueFluentPro.Services.Audio
 
                     offset += chunkLen;
                 }
+
+                _lastOutputRms = ComputeRms(output);
+                _processedFrameCount++;
 
                 return output;
             }
@@ -180,6 +191,21 @@ namespace TrueFluentPro.Services.Audio
                 target[index] = (byte)(sample & 0xFF);
                 target[index + 1] = (byte)((sample >> 8) & 0xFF);
             }
+        }
+
+        private static double ComputeRms(byte[] pcm16)
+        {
+            if (pcm16.Length < 2) return 0;
+            double sumSq = 0;
+            var count = pcm16.Length / 2;
+            for (var i = 0; i < count; i++)
+            {
+                var idx = i * 2;
+                var sample = (short)(pcm16[idx] | (pcm16[idx + 1] << 8));
+                var normalized = sample / 32768.0;
+                sumSq += normalized * normalized;
+            }
+            return Math.Sqrt(sumSq / count);
         }
     }
 }

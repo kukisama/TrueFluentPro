@@ -1030,6 +1030,16 @@ namespace TrueFluentPro.Services
                 $"录制[回环:{(_recordLoopbackEnabled ? "开" : "关")},麦:{(_recordMicEnabled ? "开" : "关")}] " +
                 $"活动:{(_lastChunkHadActivity ? "有" : "无")} 峰值:{_smoothedAudioLevel:F2} {recognitionPart}";
 
+            // 追加音频预处理器实时指标
+            var coordinator = _audioCoordinator;
+            if (coordinator?.PreProcessor is { IsAvailable: true, Id: not "none" } pp)
+            {
+                var inDb = pp.LastInputRms > 0 ? 20 * Math.Log10(pp.LastInputRms) : -96;
+                var outDb = pp.LastOutputRms > 0 ? 20 * Math.Log10(pp.LastOutputRms) : -96;
+                var reduction = inDb - outDb;
+                message += $" {pp.DisplayName}[帧:{pp.ProcessedFrameCount} 入:{inDb:F1}dB 出:{outDb:F1}dB 降噪:{reduction:F1}dB]";
+            }
+
             OnDiagnosticsUpdated?.Invoke(this, message);
         }
 
