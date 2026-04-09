@@ -17,6 +17,8 @@ namespace TrueFluentPro.Services.Audio
         private readonly int _frameSamples;
         private readonly int _frameBytes;
         private readonly bool _aecEnabled;
+        private readonly Action<string>? _log;
+        private bool _runtimeFailureLogged;
 
         public string Id => "webrtc-apm";
         public string DisplayName => "WebRTC APM";
@@ -25,6 +27,7 @@ namespace TrueFluentPro.Services.Audio
 
         public WebRtcApmPreProcessor(AzureSpeechConfig config, Action<string>? log = null)
         {
+            _log = log;
             try
             {
                 _sampleRate = 16000;
@@ -79,43 +82,55 @@ namespace TrueFluentPro.Services.Audio
                 return CloneOrSilence(frame.MicPcm16, frame.ByteLength);
             }
 
-            var input = CloneOrSilence(frame.MicPcm16, frame.ByteLength);
-            var reference = CloneOrSilence(frame.ReferencePcm16, input.Length);
-            var output = new byte[input.Length];
-
-            var offset = 0;
-            while (offset < input.Length)
+            try
             {
-                var chunkLen = Math.Min(_frameBytes, input.Length - offset);
-                if (chunkLen <= 0)
+                var input = CloneOrSilence(frame.MicPcm16, frame.ByteLength);
+                var reference = CloneOrSilence(frame.ReferencePcm16, input.Length);
+                var output = new byte[input.Length];
+
+                var offset = 0;
+                while (offset < input.Length)
                 {
-                    break;
+                    var chunkLen = Math.Min(_frameBytes, input.Length - offset);
+                    if (chunkLen <= 0)
+                    {
+                        break;
+                    }
+
+                    var micFrame = ExtractFloatFrame(input, offset, chunkLen, _frameSamples);
+                    var outFrame = new[] { new float[_frameSamples] };
+
+                    if (_aecEnabled)
+                    {
+                        var refFrame = ExtractFloatFrame(reference, offset, chunkLen, _frameSamples);
+                        var reverseOut = new[] { new float[_frameSamples] };
+                        _module.ProcessReverseStream(refFrame, _streamConfig, _streamConfig, reverseOut);
+                    }
+
+                    var err = _module.ProcessStream(micFrame, _streamConfig, _streamConfig, outFrame);
+                    if (err != ApmError.NoError)
+                    {
+                        WritePcm16(output, offset, micFrame[0], chunkLen / 2);
+                    }
+                    else
+                    {
+                        WritePcm16(output, offset, outFrame[0], chunkLen / 2);
+                    }
+
+                    offset += chunkLen;
                 }
 
-                var micFrame = ExtractFloatFrame(input, offset, chunkLen, _frameSamples);
-                var outFrame = new[] { new float[_frameSamples] };
-
-                if (_aecEnabled)
-                {
-                    var refFrame = ExtractFloatFrame(reference, offset, chunkLen, _frameSamples);
-                    var reverseOut = new[] { new float[_frameSamples] };
-                    _module.ProcessReverseStream(refFrame, _streamConfig, _streamConfig, reverseOut);
-                }
-
-                var err = _module.ProcessStream(micFrame, _streamConfig, _streamConfig, outFrame);
-                if (err != ApmError.NoError)
-                {
-                    WritePcm16(output, offset, micFrame[0], chunkLen / 2);
-                }
-                else
-                {
-                    WritePcm16(output, offset, outFrame[0], chunkLen / 2);
-                }
-
-                offset += chunkLen;
+                return output;
             }
-
-            return output;
+            catch (Exception ex)
+            {
+                if (!_runtimeFailureLogged)
+                {
+                    _runtimeFailureLogged = true;
+                    _log?.Invoke($"[音频插件] WebRTC APM 运行时处理失败（已回退透传）: {ex.Message}");
+                }
+                return CloneOrSilence(frame.MicPcm16, frame.ByteLength);
+            }
         }
 
         public void Dispose()

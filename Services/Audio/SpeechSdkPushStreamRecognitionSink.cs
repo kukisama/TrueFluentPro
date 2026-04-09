@@ -19,16 +19,23 @@ namespace TrueFluentPro.Services.Audio
         {
             if (enableMasEnhancement)
             {
-                _masPipeline = MasAudioPipeline.CreateRecognitionEnhancement(sampleRate, masNoiseSuppressionEnabled, log);
-                _pushStream = _masPipeline.PushStream;
-                AudioConfig = _masPipeline.AudioConfig;
+                try
+                {
+                    _masPipeline = MasAudioPipeline.CreateRecognitionEnhancement(sampleRate, masNoiseSuppressionEnabled, log);
+                    _pushStream = _masPipeline.PushStream;
+                    AudioConfig = _masPipeline.AudioConfig;
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    log?.Invoke($"[MAS] 识别增强管线创建失败: {ex.Message}，已回退普通模式");
+                    _masPipeline = null;
+                }
             }
-            else
-            {
-                var streamFormat = AudioStreamFormat.GetWaveFormatPCM((uint)sampleRate, 16, 1);
-                _pushStream = AudioInputStream.CreatePushStream(streamFormat);
-                AudioConfig = AudioConfig.FromStreamInput(_pushStream);
-            }
+
+            var streamFormat = AudioStreamFormat.GetWaveFormatPCM((uint)sampleRate, 16, 1);
+            _pushStream = AudioInputStream.CreatePushStream(streamFormat);
+            AudioConfig = AudioConfig.FromStreamInput(_pushStream);
         }
 
         public void WriteChunk(byte[] pcm16Chunk)
