@@ -213,12 +213,19 @@ namespace TrueFluentPro.Services
                 {
                     originalText = FilterModalParticles(originalText);
                 }
+                var currentVadSource = _audioCoordinator?.VadGate?.Current
+                    ?? VadGateController.ActiveSource.None;
+
                 var translationItem = new TranslationItem
                 {
                     Timestamp = DateTime.Now,
                     OriginalText = originalText,
-                    TranslatedText = translatedText
+                    TranslatedText = translatedText,
+                    Source = currentVadSource
                 };
+
+                // 句子结束，释放 VAD 句级锁
+                _audioCoordinator?.VadGate?.NotifySentenceFinalized();
 
                 SaveTranslationToFile(translationItem);
                 WriteSubtitleEntry(e.Result, translatedText);
@@ -248,7 +255,9 @@ namespace TrueFluentPro.Services
                 {
                     Timestamp = DateTime.Now,
                     OriginalText = originalText,
-                    TranslatedText = translatedText
+                    TranslatedText = translatedText,
+                    Source = _audioCoordinator?.VadGate?.Current
+                        ?? VadGateController.ActiveSource.None
                 };
                 OnRealtimeTranslationReceived?.Invoke(this, translationItem);
 
@@ -807,6 +816,22 @@ namespace TrueFluentPro.Services
                         smoothing);
                 }
 
+                // 双路模式下按配置创建 VAD 门控器
+                VadGateController? vadGate = null;
+                if (_config.EnableVadGating && recognizeLoopback && recognizeMic)
+                {
+                    var conflictPriority = _config.VadConflictPriority == 1
+                        ? VadGateController.ActiveSource.Mic
+                        : VadGateController.ActiveSource.Loopback;
+                    vadGate = new VadGateController(
+                        voiceThreshold: _config.VadVoiceThreshold,
+                        interruptionThreshold: _config.VadInterruptionChunks,
+                        safetyValveChunks: _config.VadSafetyValveChunks,
+                        conflictPriority: conflictPriority,
+                        log: _auditLog);
+                    _auditLog?.Invoke($"[翻译流] VAD门控已启用 阈值={_config.VadVoiceThreshold} 打断={_config.VadInterruptionChunks}chunks 安全阀={_config.VadSafetyValveChunks}chunks 冲突优先={conflictPriority}");
+                }
+
                 _audioCoordinator = new AudioProcessingCoordinator(
                     preProcessor,
                     recognitionSink,
@@ -819,7 +844,8 @@ namespace TrueFluentPro.Services
                     targetRms,
                     minGain,
                     maxGain,
-                    smoothing);
+                    smoothing,
+                    vadGate: vadGate);
 
                 _naudioSource.StartAsync().GetAwaiter().GetResult();
 

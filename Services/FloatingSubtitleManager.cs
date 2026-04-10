@@ -2,6 +2,7 @@ using System;
 using TrueFluentPro.Views;
 using TrueFluentPro.ViewModels;
 using TrueFluentPro.Services;
+using TrueFluentPro.Services.Audio;
 
 namespace TrueFluentPro.Services
 {
@@ -11,10 +12,20 @@ namespace TrueFluentPro.Services
         private FloatingSubtitleViewModel? _viewModel;
         private SubtitleSyncService? _syncService;
         private bool _isWindowOpen = false;
+        private readonly VadGateController.ActiveSource _sourceFilter;
 
         public bool IsWindowOpen => _isWindowOpen;
 
+        /// <summary>该管理器关注的音频来源（None=不筛选）。</summary>
+        public VadGateController.ActiveSource SourceFilter => _sourceFilter;
+
         public event EventHandler<bool>? WindowStateChanged;
+
+        public FloatingSubtitleManager(
+            VadGateController.ActiveSource sourceFilter = VadGateController.ActiveSource.None)
+        {
+            _sourceFilter = sourceFilter;
+        }
 
         public void ToggleWindow()
         {
@@ -36,7 +47,7 @@ namespace TrueFluentPro.Services
             {
                 _syncService = new SubtitleSyncService();
 
-                _viewModel = new FloatingSubtitleViewModel(_syncService);
+                _viewModel = new FloatingSubtitleViewModel(_syncService, _sourceFilter);
 
                 _window = new FloatingSubtitleWindow(_viewModel);
 

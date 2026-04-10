@@ -213,6 +213,18 @@ namespace TrueFluentPro.Models
 
         public int ChunkDurationMs { get; set; } = 200;
 
+        // ── VAD 门控（双路说话人分离）──
+        /// <summary>启用 VAD 门控（仅环回+麦克风双路模式下生效）。谁先说话整句归谁，被打断后自动切源。</summary>
+        public bool EnableVadGating { get; set; } = true;
+        /// <summary>RMS 低于此值视为静音（0~1，默认 0.01 ≈ -40dBFS）。</summary>
+        public double VadVoiceThreshold { get; set; } = 0.01;
+        /// <summary>锁定方沉默 + 对方有声连续多少 chunk 后判定打断（每 chunk ≈ ChunkDurationMs）。</summary>
+        public int VadInterruptionChunks { get; set; } = 3;
+        /// <summary>两路都静音超过多少 chunk 后强制解锁。</summary>
+        public int VadSafetyValveChunks { get; set; } = 15;
+        /// <summary>两人同时开口时优先谁：0=Loopback（对方），1=Mic（我）。</summary>
+        public int VadConflictPriority { get; set; } = 0;
+
         public bool EnableRecording { get; set; } = true;
         public int RecordingMp3BitrateKbps { get; set; } = 256;
         public bool DeleteWavAfterMp3 { get; set; } = true;

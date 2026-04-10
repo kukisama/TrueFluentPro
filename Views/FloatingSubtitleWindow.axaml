@@ -27,12 +27,12 @@
         Background="{Binding BackgroundBrush}"
         CornerRadius="8"
         BorderThickness="2"
-        BorderBrush="#40FFFFFF"
+        BorderBrush="{Binding SourceBorderBrush}"
         Margin="4"
         PointerPressed="OnSurfacePointerPressed">
 
         <Grid>
-            <Grid Margin="10,0,10,0" ColumnDefinitions="Auto,*">
+            <Grid Margin="10,0,10,0" ColumnDefinitions="Auto,Auto,*">
                 <Border Grid.Column="0"
                     Background="#80000000"
                     CornerRadius="12"
@@ -48,7 +48,11 @@
                         Height="16" />
                 </Border>
 
-                <Border Grid.Column="1" Name="SubtitleHost"
+                <TextBlock Grid.Column="1" Text="{Binding SourceLabel}"
+                    FontSize="11" Foreground="#A0FFFFFF"
+                    VerticalAlignment="Center" Margin="0,0,8,0"/>
+
+                <Border Grid.Column="2" Name="SubtitleHost"
                     Background="Transparent"
                     Padding="0,2,0,4"
                     ClipToBounds="True">

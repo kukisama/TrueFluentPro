@@ -10,6 +10,8 @@ namespace TrueFluentPro.Services.Audio
         private readonly object _writeLock = new();
         private readonly LameMP3FileWriter _writer;
         private readonly AutoGainProcessor? _autoGainProcessor;
+        private long _unflushedBytes;
+        private const long FlushThresholdBytes = 64_000; // ≈2秒 @16kHz/16bit/mono
 
         public ProcessedAudioMp3RecordingSink(
             string mp3Path,
@@ -40,6 +42,12 @@ namespace TrueFluentPro.Services.Audio
                 Buffer.BlockCopy(pcm16Chunk, 0, chunk, 0, pcm16Chunk.Length);
                 _autoGainProcessor?.ProcessInPlace(chunk, chunk.Length);
                 _writer.Write(chunk, 0, chunk.Length);
+                _unflushedBytes += chunk.Length;
+                if (_unflushedBytes >= FlushThresholdBytes)
+                {
+                    _writer.Flush();
+                    _unflushedBytes = 0;
+                }
             }
         }
 

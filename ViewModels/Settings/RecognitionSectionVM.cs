@@ -43,6 +43,11 @@ namespace TrueFluentPro.ViewModels.Settings
         private bool _masEchoCancellationEnabled = true;
         private bool _masNoiseSuppressionEnabled = true;
         private bool _showReconnectMarker = true;
+        private bool _enableVadGating = true;
+        private double _vadVoiceThreshold = 0.01;
+        private int _vadInterruptionChunks = 3;
+        private int _vadSafetyValveChunks = 15;
+        private int _vadConflictPriority;
         private List<ModelOption> _speechToTextModels = new();
         private List<ModelOption> _textToSpeechModels = new();
         private ModelOption? _selectedRealtimeTranscriptionModel;
@@ -97,6 +102,11 @@ namespace TrueFluentPro.ViewModels.Settings
         public bool MasEchoCancellationEnabled { get => _masEchoCancellationEnabled; set => Set(ref _masEchoCancellationEnabled, value); }
         public bool MasNoiseSuppressionEnabled { get => _masNoiseSuppressionEnabled; set => Set(ref _masNoiseSuppressionEnabled, value); }
         public bool ShowReconnectMarker { get => _showReconnectMarker; set => Set(ref _showReconnectMarker, value); }
+        public bool EnableVadGating { get => _enableVadGating; set => Set(ref _enableVadGating, value); }
+        public double VadVoiceThreshold { get => _vadVoiceThreshold; set => Set(ref _vadVoiceThreshold, value); }
+        public int VadInterruptionChunks { get => _vadInterruptionChunks; set => Set(ref _vadInterruptionChunks, value); }
+        public int VadSafetyValveChunks { get => _vadSafetyValveChunks; set => Set(ref _vadSafetyValveChunks, value); }
+        public int VadConflictPriority { get => _vadConflictPriority; set => Set(ref _vadConflictPriority, value); }
         public List<ModelOption> SpeechToTextModels { get => _speechToTextModels; set => SetProperty(ref _speechToTextModels, value); }
         public List<ModelOption> TextToSpeechModels { get => _textToSpeechModels; set => SetProperty(ref _textToSpeechModels, value); }
         public bool HasSpeechToTextModels => SpeechToTextModels.Count > 0;
@@ -139,6 +149,11 @@ namespace TrueFluentPro.ViewModels.Settings
             MasEchoCancellationEnabled = config.MasEchoCancellationEnabled;
             MasNoiseSuppressionEnabled = config.MasNoiseSuppressionEnabled;
             ShowReconnectMarker = config.ShowReconnectMarkerInSubtitle;
+            EnableVadGating = config.EnableVadGating;
+            VadVoiceThreshold = config.VadVoiceThreshold;
+            VadInterruptionChunks = config.VadInterruptionChunks;
+            VadSafetyValveChunks = config.VadSafetyValveChunks;
+            VadConflictPriority = config.VadConflictPriority;
             RefreshWebRtcPluginStatus(manual: false);
         }
 
@@ -177,6 +192,11 @@ namespace TrueFluentPro.ViewModels.Settings
             config.MasEchoCancellationEnabled = MasEchoCancellationEnabled;
             config.MasNoiseSuppressionEnabled = MasNoiseSuppressionEnabled;
             config.ShowReconnectMarkerInSubtitle = ShowReconnectMarker;
+            config.EnableVadGating = EnableVadGating;
+            config.VadVoiceThreshold = Math.Clamp(VadVoiceThreshold, 0.001, 0.5);
+            config.VadInterruptionChunks = Math.Clamp(VadInterruptionChunks, 1, 50);
+            config.VadSafetyValveChunks = Math.Clamp(VadSafetyValveChunks, 5, 100);
+            config.VadConflictPriority = Math.Clamp(VadConflictPriority, 0, 1);
             config.RealtimeTranscriptionModelRef = SelectedRealtimeTranscriptionModel?.Reference;
             config.BatchTranscriptionModelRef = SelectedBatchTranscriptionModel?.Reference;
             config.TextToSpeechModelRef = SelectedTextToSpeechModel?.Reference;

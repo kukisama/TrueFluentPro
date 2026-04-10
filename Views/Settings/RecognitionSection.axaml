@@ -236,6 +236,48 @@
                           Margin="20,0,0,0"/>
             </StackPanel>
 
+            <!-- VAD 门控（双路说话人分离） -->
+            <StackPanel Spacing="5" Margin="0,8,0,0">
+                <TextBlock Text="VAD 门控（双路说话人分离）" FontWeight="SemiBold"/>
+                <TextBlock Text="环回+麦克风双路模式下，自动识别谁在说话并切源。谁先开口整句归谁，被打断后自动切换。需重启翻译生效。"
+                           FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                           TextWrapping="Wrap"/>
+                <CheckBox Content="启用 VAD 门控"
+                          IsChecked="{Binding EnableVadGating, Mode=TwoWay}"/>
+                <StackPanel Spacing="5" IsEnabled="{Binding EnableVadGating}">
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <StackPanel Spacing="5">
+                            <TextBlock Text="语音检测阈值 (RMS)"/>
+                            <NumericUpDown Value="{Binding VadVoiceThreshold, Mode=TwoWay}"
+                                           Minimum="0.001" Maximum="0.5" Width="120" FormatString="F3"
+                                           Increment="0.005"
+                                           HorizontalAlignment="Left"/>
+                        </StackPanel>
+                        <StackPanel Spacing="5">
+                            <TextBlock Text="打断判定 (chunk 数)"/>
+                            <NumericUpDown Value="{Binding VadInterruptionChunks, Mode=TwoWay}"
+                                           Minimum="1" Maximum="50" Width="120" FormatString="F0"
+                                           HorizontalAlignment="Left"/>
+                        </StackPanel>
+                        <StackPanel Spacing="5">
+                            <TextBlock Text="安全阀 (chunk 数)"/>
+                            <NumericUpDown Value="{Binding VadSafetyValveChunks, Mode=TwoWay}"
+                                           Minimum="5" Maximum="100" Width="120" FormatString="F0"
+                                           HorizontalAlignment="Left"/>
+                        </StackPanel>
+                    </StackPanel>
+                    <StackPanel Spacing="5">
+                        <TextBlock Text="同时开口时优先"/>
+                        <ComboBox MinWidth="160"
+                                  HorizontalAlignment="Left"
+                                  SelectedIndex="{Binding VadConflictPriority, Mode=TwoWay}">
+                            <ComboBoxItem Content="对方 (环回)"/>
+                            <ComboBoxItem Content="我 (麦克风)"/>
+                        </ComboBox>
+                    </StackPanel>
+                </StackPanel>
+            </StackPanel>
+
             <CheckBox Content="在字幕中显示 *触发重连* 提示"
                       IsChecked="{Binding ShowReconnectMarker, Mode=TwoWay}"
                       IsEnabled="{Binding EnableNoResponseRestart}"/>

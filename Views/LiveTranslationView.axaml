@@ -323,6 +323,7 @@
                                                 <Expander.Header>
                                                     <StackPanel Spacing="2">
                                                         <DockPanel>
+                                                            <TextBlock Text="{Binding SourceDisplayLabel}" DockPanel.Dock="Left" Margin="0,0,4,0" FontSize="13"/>
                                                             <TextBlock Text="{Binding Timestamp, StringFormat=\{0:yyyy-MM-dd HH:mm:ss\}}" FontWeight="Bold" DockPanel.Dock="Left"/>
                                                             <TextBlock Text="{Binding TranslatedText}" Foreground="{DynamicResource PrimaryBrush}"
                                                                        TextTrimming="CharacterEllipsis" Margin="8,0,0,0"/>
@@ -461,7 +462,7 @@
     
         <!-- 底部操作栏 -->
         <Border Grid.Row="2" Classes="toolbar-surface" BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="0,1,0,0" Padding="10,6" Margin="0,8,0,0">
-            <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,*,Auto">
+            <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*,Auto">
                 <!-- 清空历史 -->
                 <Button Grid.Column="0" Command="{Binding ClearHistoryCommand}" 
                         Padding="10,5" Margin="0,0,6,0"
@@ -481,7 +482,7 @@
                         <TextBlock Text="查看历史记录" VerticalAlignment="Center"/>
                     </StackPanel>
                 </Button>
-                <!-- 浮动字幕 -->
+                <!-- 浮动字幕（通用） -->
                 <Button Grid.Column="2" Command="{Binding ShowFloatingSubtitlesCommand}" 
                         Padding="10,5" Margin="0,0,6,0"
                         Background="{Binding FloatingSubtitleButtonBackground}"
@@ -493,8 +494,32 @@
                         <TextBlock Text="浮动字幕" VerticalAlignment="Center"/>
                     </StackPanel>
                 </Button>
+                <!-- 我的语音字幕 -->
+                <Button Grid.Column="3" Command="{Binding ShowFloatingMicSubtitleCommand}" 
+                        Padding="10,5" Margin="0,0,6,0"
+                        Background="{Binding FloatingMicSubtitleButtonBackground}"
+                        Foreground="{Binding FloatingMicSubtitleButtonForeground}"
+                        AutomationProperties.Name="切换我的语音字幕窗口"
+                        ToolTip.Tip="仅显示麦克风（我的语音）的浮动字幕">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <icons:Icon Value="fa-solid fa-microphone" FontSize="12"/>
+                        <TextBlock Text="我的字幕" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+                <!-- 对方语音字幕 -->
+                <Button Grid.Column="4" Command="{Binding ShowFloatingLoopbackSubtitleCommand}" 
+                        Padding="10,5" Margin="0,0,6,0"
+                        Background="{Binding FloatingLoopbackSubtitleButtonBackground}"
+                        Foreground="{Binding FloatingLoopbackSubtitleButtonForeground}"
+                        AutomationProperties.Name="切换对方语音字幕窗口"
+                        ToolTip.Tip="仅显示环回（对方语音）的浮动字幕">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <icons:Icon Value="fa-solid fa-volume-high" FontSize="12"/>
+                        <TextBlock Text="对方字幕" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
                 <!-- 浮动洞察 -->
-                <Button Grid.Column="3" Command="{Binding ShowFloatingInsightCommand}" 
+                <Button Grid.Column="5" Command="{Binding ShowFloatingInsightCommand}" 
                         Padding="10,5" Margin="0,0,6,0"
                         Background="{Binding FloatingInsightButtonBackground}"
                         Foreground="{Binding FloatingInsightButtonForeground}"
@@ -506,7 +531,7 @@
                     </StackPanel>
                 </Button>
                 <!-- 状态信息（右侧） -->
-                <StackPanel Grid.Column="5" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                <StackPanel Grid.Column="7" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                     <TextBlock Text="{Binding StatusMessage}" FontSize="11" Foreground="{DynamicResource TextSubtleBrush}"
                                VerticalAlignment="Center" MaxWidth="400" TextTrimming="CharacterEllipsis"
                                AutomationProperties.Name="翻译状态信息"/>

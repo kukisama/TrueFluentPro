@@ -2,6 +2,7 @@
 using System;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using TrueFluentPro.Services.Audio;
 
 namespace TrueFluentPro.Models
 {
@@ -11,6 +12,7 @@ namespace TrueFluentPro.Models
         private string _originalText = "";
         private string _translatedText = "";
         private bool _hasBeenWrittenToFile = false;
+        private VadGateController.ActiveSource _source = VadGateController.ActiveSource.None;
 
         public DateTime Timestamp
         {
@@ -63,6 +65,29 @@ namespace TrueFluentPro.Models
                 }
             }
         }
+
+        /// <summary>音频来源：None=未标记/单路, Mic=麦克风(我), Loopback=环回(对方)。</summary>
+        public VadGateController.ActiveSource Source
+        {
+            get => _source;
+            set
+            {
+                if (_source != value)
+                {
+                    _source = value;
+                    OnPropertyChanged();
+                    OnPropertyChanged(nameof(SourceDisplayLabel));
+                }
+            }
+        }
+
+        /// <summary>来源显示文本，用于 UI 绑定。</summary>
+        public string SourceDisplayLabel => _source switch
+        {
+            VadGateController.ActiveSource.Mic => "\U0001f3a4",
+            VadGateController.ActiveSource.Loopback => "\U0001f50a",
+            _ => ""
+        };
 
         public event PropertyChangedEventHandler? PropertyChanged;
 

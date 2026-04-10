@@ -13,6 +13,7 @@ using Avalonia.Media;
 using Avalonia.Threading;
 using TrueFluentPro.Models;
 using TrueFluentPro.Services;
+using TrueFluentPro.Services.Audio;
 using TrueFluentPro.Views;
 
 namespace TrueFluentPro.ViewModels
@@ -218,6 +219,52 @@ namespace TrueFluentPro.ViewModels
             : new SolidColorBrush(Color.Parse("#FFE5E7EB"));
 
         public object? FloatingSubtitleButtonForeground => IsFloatingSubtitleOpen
+            ? Brushes.White
+            : new SolidColorBrush(Color.Parse("#FF111827"));
+
+        public bool IsFloatingMicSubtitleOpen
+        {
+            get => _isFloatingMicSubtitleOpen;
+            private set
+            {
+                if (!SetProperty(ref _isFloatingMicSubtitleOpen, value))
+                {
+                    return;
+                }
+
+                OnPropertyChanged(nameof(FloatingMicSubtitleButtonBackground));
+                OnPropertyChanged(nameof(FloatingMicSubtitleButtonForeground));
+            }
+        }
+
+        public object? FloatingMicSubtitleButtonBackground => IsFloatingMicSubtitleOpen
+            ? new SolidColorBrush(Color.Parse("#FF3B82F6"))
+            : new SolidColorBrush(Color.Parse("#FFE5E7EB"));
+
+        public object? FloatingMicSubtitleButtonForeground => IsFloatingMicSubtitleOpen
+            ? Brushes.White
+            : new SolidColorBrush(Color.Parse("#FF111827"));
+
+        public bool IsFloatingLoopbackSubtitleOpen
+        {
+            get => _isFloatingLoopbackSubtitleOpen;
+            private set
+            {
+                if (!SetProperty(ref _isFloatingLoopbackSubtitleOpen, value))
+                {
+                    return;
+                }
+
+                OnPropertyChanged(nameof(FloatingLoopbackSubtitleButtonBackground));
+                OnPropertyChanged(nameof(FloatingLoopbackSubtitleButtonForeground));
+            }
+        }
+
+        public object? FloatingLoopbackSubtitleButtonBackground => IsFloatingLoopbackSubtitleOpen
+            ? new SolidColorBrush(Color.Parse("#FFF59E0B"))
+            : new SolidColorBrush(Color.Parse("#FFE5E7EB"));
+
+        public object? FloatingLoopbackSubtitleButtonForeground => IsFloatingLoopbackSubtitleOpen
             ? Brushes.White
             : new SolidColorBrush(Color.Parse("#FF111827"));
 
@@ -733,6 +780,14 @@ namespace TrueFluentPro.ViewModels
                 {
                     _floatingSubtitleManager.UpdateSubtitle(CurrentTranslated);
                 }
+                if (_floatingMicSubtitleManager?.IsWindowOpen == true)
+                {
+                    _floatingMicSubtitleManager.UpdateSubtitle(CurrentTranslated);
+                }
+                if (_floatingLoopbackSubtitleManager?.IsWindowOpen == true)
+                {
+                    _floatingLoopbackSubtitleManager.UpdateSubtitle(CurrentTranslated);
+                }
             });
         }
 
@@ -905,6 +960,54 @@ namespace TrueFluentPro.ViewModels
             }
         }
 
+        private void ShowFloatingMicSubtitle()
+        {
+            try
+            {
+                if (_floatingMicSubtitleManager == null)
+                {
+                    _floatingMicSubtitleManager = new FloatingSubtitleManager(
+                        VadGateController.ActiveSource.Mic);
+                    _floatingMicSubtitleManager.WindowStateChanged += (_, isOpen) => IsFloatingMicSubtitleOpen = isOpen;
+                }
+
+                _floatingMicSubtitleManager.ToggleWindow();
+                IsFloatingMicSubtitleOpen = _floatingMicSubtitleManager.IsWindowOpen;
+
+                StatusMessage = _floatingMicSubtitleManager.IsWindowOpen
+                    ? "我的语音字幕窗口已打开"
+                    : "我的语音字幕窗口已关闭";
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"我的语音字幕窗口操作失败: {ex.Message}";
+            }
+        }
+
+        private void ShowFloatingLoopbackSubtitle()
+        {
+            try
+            {
+                if (_floatingLoopbackSubtitleManager == null)
+                {
+                    _floatingLoopbackSubtitleManager = new FloatingSubtitleManager(
+                        VadGateController.ActiveSource.Loopback);
+                    _floatingLoopbackSubtitleManager.WindowStateChanged += (_, isOpen) => IsFloatingLoopbackSubtitleOpen = isOpen;
+                }
+
+                _floatingLoopbackSubtitleManager.ToggleWindow();
+                IsFloatingLoopbackSubtitleOpen = _floatingLoopbackSubtitleManager.IsWindowOpen;
+
+                StatusMessage = _floatingLoopbackSubtitleManager.IsWindowOpen
+                    ? "对方语音字幕窗口已打开"
+                    : "对方语音字幕窗口已关闭";
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"对方语音字幕窗口操作失败: {ex.Message}";
+            }
+        }
+
         private void ShowFloatingInsight()
         {
             try
@@ -944,9 +1047,24 @@ namespace TrueFluentPro.ViewModels
                 CurrentOriginal = TrimRealtimeDisplayText(item.OriginalText);
                 CurrentTranslated = TrimRealtimeDisplayText(item.TranslatedText);
 
+                // 通用浮动字幕（不区分来源）
                 if (_floatingSubtitleManager?.IsWindowOpen == true && !string.IsNullOrEmpty(CurrentTranslated))
                 {
                     _floatingSubtitleManager.UpdateSubtitle(CurrentTranslated);
+                }
+
+                // 按来源分发到对应的浮动窗口
+                if (item.Source == VadGateController.ActiveSource.Mic
+                    && _floatingMicSubtitleManager?.IsWindowOpen == true
+                    && !string.IsNullOrEmpty(CurrentTranslated))
+                {
+                    _floatingMicSubtitleManager.UpdateSubtitle(CurrentTranslated);
+                }
+                else if (item.Source == VadGateController.ActiveSource.Loopback
+                    && _floatingLoopbackSubtitleManager?.IsWindowOpen == true
+                    && !string.IsNullOrEmpty(CurrentTranslated))
+                {
+                    _floatingLoopbackSubtitleManager.UpdateSubtitle(CurrentTranslated);
                 }
             });
         }

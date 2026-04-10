@@ -5,6 +5,7 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using Avalonia.Media;
 using TrueFluentPro.Services;
+using TrueFluentPro.Services.Audio;
 
 namespace TrueFluentPro.ViewModels
 {    public class FloatingSubtitleViewModel : INotifyPropertyChanged
@@ -15,9 +16,30 @@ namespace TrueFluentPro.ViewModels
         private double _fontScaleBias = 1.0;
         private readonly SubtitleSyncService _syncService;
 
-        public FloatingSubtitleViewModel(SubtitleSyncService syncService)
+        /// <summary>该浮动窗口关注的音频来源（None 表示不区分来源，显示所有）。</summary>
+        public VadGateController.ActiveSource SourceFilter { get; }
+
+        /// <summary>标题标签</summary>
+        public string SourceLabel => SourceFilter switch
+        {
+            VadGateController.ActiveSource.Mic => "\U0001f3a4 我的语音",
+            VadGateController.ActiveSource.Loopback => "\U0001f50a 对方语音",
+            _ => "\U0001f50a 浮动字幕"
+        };
+
+        /// <summary>窗口边框颜色</summary>
+        public IBrush SourceBorderBrush => SourceFilter switch
+        {
+            VadGateController.ActiveSource.Mic => new SolidColorBrush(Color.Parse("#603B82F6")),
+            VadGateController.ActiveSource.Loopback => new SolidColorBrush(Color.Parse("#60F59E0B")),
+            _ => new SolidColorBrush(Color.Parse("#40FFFFFF"))
+        };
+
+        public FloatingSubtitleViewModel(SubtitleSyncService syncService,
+            VadGateController.ActiveSource sourceFilter = VadGateController.ActiveSource.None)
         {
             _syncService = syncService;
+            SourceFilter = sourceFilter;
             _syncService.SubtitleUpdated += OnSubtitleUpdated;
         }        public string SubtitleText
         {

@@ -60,8 +60,12 @@ namespace TrueFluentPro.ViewModels
         private bool _isFloatingSubtitleOpen;
 
         private FloatingSubtitleManager? _floatingSubtitleManager;
+        private FloatingSubtitleManager? _floatingMicSubtitleManager;
+        private FloatingSubtitleManager? _floatingLoopbackSubtitleManager;
         private FloatingInsightManager? _floatingInsightManager;
         private bool _isFloatingInsightOpen;
+        private bool _isFloatingMicSubtitleOpen;
+        private bool _isFloatingLoopbackSubtitleOpen;
         private int _liveSidePanelTabIndex;
         private bool _isLiveInsightPanelLoaded;
 
@@ -236,6 +240,16 @@ namespace TrueFluentPro.ViewModels
                 canExecute: _ => true
             );              ShowFloatingSubtitlesCommand = new RelayCommand(
                 execute: _ => ShowFloatingSubtitles(),
+                canExecute: _ => true
+            );
+
+            ShowFloatingMicSubtitleCommand = new RelayCommand(
+                execute: _ => ShowFloatingMicSubtitle(),
+                canExecute: _ => true
+            );
+
+            ShowFloatingLoopbackSubtitleCommand = new RelayCommand(
+                execute: _ => ShowFloatingLoopbackSubtitle(),
                 canExecute: _ => true
             );
 
