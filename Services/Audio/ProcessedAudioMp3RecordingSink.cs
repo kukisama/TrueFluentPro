@@ -1,13 +1,20 @@
 using System;
+using System.IO;
 using NAudio.Lame;
 using NAudio.Wave;
 
 namespace TrueFluentPro.Services.Audio
 {
     /// <summary>把处理后的单声道 PCM16 直接写成 MP3，避免再独立采集一遍设备。</summary>
+    /// <remarks>
+    /// 自行持有 FileStream 并定期刷盘，以防进程崩溃丢失数据。
+    /// 注意：LameMP3FileWriter.Flush() 是终结操作（会置空内部 _outStream），
+    /// 因此录制过程中只能刷底层 FileStream，不能调 LAME 的 Flush。
+    /// </remarks>
     public sealed class ProcessedAudioMp3RecordingSink : IAudioRecordingSink
     {
         private readonly object _writeLock = new();
+        private readonly FileStream _fileStream;
         private readonly LameMP3FileWriter _writer;
         private readonly AutoGainProcessor? _autoGainProcessor;
         private long _unflushedBytes;
@@ -23,7 +30,8 @@ namespace TrueFluentPro.Services.Audio
             double maxGain,
             double smoothing)
         {
-            _writer = new LameMP3FileWriter(mp3Path, new WaveFormat(sampleRate, 16, 1), Math.Clamp(bitrateKbps, 32, 320));
+            _fileStream = new FileStream(mp3Path, FileMode.Create, FileAccess.ReadWrite, FileShare.Read);
+            _writer = new LameMP3FileWriter(_fileStream, new WaveFormat(sampleRate, 16, 1), Math.Clamp(bitrateKbps, 32, 320));
             _autoGainProcessor = autoGainEnabled
                 ? new AutoGainProcessor(targetRms, minGain, maxGain, smoothing)
                 : null;
@@ -45,7 +53,7 @@ namespace TrueFluentPro.Services.Audio
                 _unflushedBytes += chunk.Length;
                 if (_unflushedBytes >= FlushThresholdBytes)
                 {
-                    _writer.Flush();
+                    _fileStream.Flush();
                     _unflushedBytes = 0;
                 }
             }
@@ -55,8 +63,8 @@ namespace TrueFluentPro.Services.Audio
         {
             lock (_writeLock)
             {
-                _writer.Flush();
                 _writer.Dispose();
+                _fileStream.Dispose();
             }
         }
     }
