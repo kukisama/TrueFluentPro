@@ -190,14 +190,19 @@ static Dictionary<string, string> ParseArgs(string[] argv)
 
 static void BackupFiles(string sourceDir, string backupDir)
 {
-    foreach (var file in Directory.GetFiles(sourceDir))
+    foreach (var file in Directory.GetFiles(sourceDir, "*", SearchOption.AllDirectories))
     {
-        var name = Path.GetFileName(file);
-        if (name.Equals("update.log", StringComparison.OrdinalIgnoreCase))
+        var relativePath = Path.GetRelativePath(sourceDir, file);
+        // 跳过备份目录自身和日志
+        if (relativePath.StartsWith("_update_backup", StringComparison.OrdinalIgnoreCase))
+            continue;
+        if (relativePath.Equals("update.log", StringComparison.OrdinalIgnoreCase))
             continue;
         try
         {
-            File.Copy(file, Path.Combine(backupDir, name), overwrite: true);
+            var destPath = Path.Combine(backupDir, relativePath);
+            Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);
+            File.Copy(file, destPath, overwrite: true);
         }
         catch
         {
@@ -208,12 +213,14 @@ static void BackupFiles(string sourceDir, string backupDir)
 
 static void RestoreBackup(string backupDir, string targetDir)
 {
-    foreach (var file in Directory.GetFiles(backupDir))
+    foreach (var file in Directory.GetFiles(backupDir, "*", SearchOption.AllDirectories))
     {
-        var name = Path.GetFileName(file);
+        var relativePath = Path.GetRelativePath(backupDir, file);
         try
         {
-            File.Copy(file, Path.Combine(targetDir, name), overwrite: true);
+            var destPath = Path.Combine(targetDir, relativePath);
+            Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);
+            File.Copy(file, destPath, overwrite: true);
         }
         catch { }
     }

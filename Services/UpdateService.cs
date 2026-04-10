@@ -65,7 +65,9 @@ namespace TrueFluentPro.Services
                     foreach (var asset in assets.EnumerateArray())
                     {
                         var name = asset.GetProperty("name").GetString() ?? "";
-                        if (name.Contains(rid, StringComparison.OrdinalIgnoreCase) && name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+                        if (name.Contains("TrueFluentPro", StringComparison.OrdinalIgnoreCase)
+                            && name.Contains(rid, StringComparison.OrdinalIgnoreCase)
+                            && name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
                         {
                             downloadUrl = asset.GetProperty("browser_download_url").GetString() ?? "";
                             assetSize = asset.TryGetProperty("size", out var sizeEl) ? sizeEl.GetInt64() : 0;
