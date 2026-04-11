@@ -64,6 +64,9 @@
             <Setter Property="Background" Value="{TemplateBinding Background}"/>
             <Setter Property="BorderBrush" Value="{TemplateBinding BorderBrush}"/>
         </Style>
+
+        <!-- ToggleSplitButton / ToggleButton 使用 Fluent 内置 :checked 状态，无需自定义样式 -->
+
         <!-- 可展开提示词输入框：默认单行紧凑，聚焦后展开多行 -->
         <Style Selector="TextBox.expandable-prompt">
             <Setter Property="MinHeight" Value="28"/>
@@ -75,6 +78,20 @@
             <Setter Property="MaxHeight" Value="100"/>
             <Setter Property="AcceptsReturn" Value="True"/>
             <Setter Property="TextWrapping" Value="Wrap"/>
+        </Style>
+
+        <!-- 字幕菜单 MenuItem 绿色 hover -->
+        <Style Selector="MenuFlyoutPresenter.green-hover MenuItem:selected /template/ Border#PART_LayoutRoot">
+            <Setter Property="Background" Value="#FF10B981" />
+        </Style>
+        <Style Selector="MenuFlyoutPresenter.green-hover MenuItem:selected /template/ ContentPresenter#PART_HeaderPresenter">
+            <Setter Property="Foreground" Value="White" />
+        </Style>
+        <Style Selector="MenuFlyoutPresenter.green-hover MenuItem:pressed /template/ Border#PART_LayoutRoot:pointerover">
+            <Setter Property="Background" Value="#FF0D9668" />
+        </Style>
+        <Style Selector="MenuFlyoutPresenter.green-hover MenuItem:pressed /template/ ContentPresenter#PART_HeaderPresenter">
+            <Setter Property="Foreground" Value="White" />
         </Style>
     </UserControl.Styles>
 
@@ -102,6 +119,10 @@
                          Opacity="{Binding ConfigVM.SubscriptionLampOpacity}"
                  Margin="0,0,8,0"
                          ToolTip.Tip="{Binding ConfigVM.SubscriptionValidationStatusMessage}"/>
+
+                <!-- 分隔：资源 | 语言 -->
+                <Border Width="1" Height="20" Margin="4,0,10,0"
+                        Background="{DynamicResource BorderSubtleBrush}" VerticalAlignment="Center"/>
 
                 <!-- 语言对 -->
             <TextBlock Text="源语言:" VerticalAlignment="Center" Margin="0,0,6,0"/>
@@ -141,6 +162,10 @@
                     Padding="10,5" Margin="0,0,8,0"
                     AutomationProperties.Name="开始/停止翻译 (F5/F6)"
                     ToolTip.Tip="F5 开始翻译, F6 停止翻译"/>
+
+                <!-- 分隔：翻译 | 设备 -->
+                <Border Width="1" Height="20" Margin="4,0,8,0"
+                        Background="{DynamicResource BorderSubtleBrush}" VerticalAlignment="Center"/>
 
             <!-- 3.3 翻译状态脉冲动画：录音指示器 -->
                  <Ellipse Name="RecordingIndicator" Width="10" Height="10"
@@ -313,9 +338,8 @@
             <Border Grid.Column="2" Classes="app-card" BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="1">
                 <TabControl SelectedIndex="{Binding LiveSidePanelTabIndex, Mode=TwoWay}">
                     <TabItem Header="历史记录">
-                        <Grid RowDefinitions="Auto,*,Auto">
-                            <TextBlock Grid.Row="0" Text="历史记录" FontWeight="Bold" Margin="5"/>
-                            <ListBox Grid.Row="1" ItemsSource="{Binding History}" Margin="5">
+                        <Grid RowDefinitions="*,Auto">
+                            <ListBox Grid.Row="0" ItemsSource="{Binding History}" Margin="5">
                                 <ListBox.ItemTemplate>
                                     <DataTemplate DataType="models:TranslationItem">
                                         <Border Classes="sub-card" Margin="0,4" BorderBrush="{DynamicResource SubCardBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="6">
@@ -462,74 +486,111 @@
     
         <!-- 底部操作栏 -->
         <Border Grid.Row="2" Classes="toolbar-surface" BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="0,1,0,0" Padding="10,6" Margin="0,8,0,0">
+            <Border.Resources>
+                <!-- 底栏按钮绿色 hover 主题 -->
+                <SolidColorBrush x:Key="ButtonBackground" Color="{DynamicResource ControlFillColorDefault}" />
+                <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="#FF10B981" />
+                <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="#FF0D9668" />
+                <SolidColorBrush x:Key="ButtonForegroundPointerOver" Color="White" />
+                <SolidColorBrush x:Key="ButtonForegroundPressed" Color="White" />
+                <SolidColorBrush x:Key="ButtonBorderBrush" Color="{DynamicResource ControlStrokeColorDefault}" />
+                <SolidColorBrush x:Key="ButtonBorderBrushPointerOver" Color="#FF10B981" />
+
+                <SolidColorBrush x:Key="SplitButtonBackground" Color="{DynamicResource ControlFillColorDefault}" />
+                <SolidColorBrush x:Key="SplitButtonBackgroundPointerOver" Color="#FF10B981" />
+                <SolidColorBrush x:Key="SplitButtonBackgroundPressed" Color="#FF0D9668" />
+                <SolidColorBrush x:Key="SplitButtonForegroundPointerOver" Color="White" />
+                <SolidColorBrush x:Key="SplitButtonForegroundPressed" Color="White" />
+                <SolidColorBrush x:Key="SplitButtonBorderBrush" Color="{DynamicResource ControlStrokeColorDefault}" />
+                <SolidColorBrush x:Key="SplitButtonBorderBrushPointerOver" Color="#FF10B981" />
+                <!-- checked + hover 绿色 -->
+                <SolidColorBrush x:Key="SplitButtonBackgroundCheckedPointerOver" Color="#FF0D9668" />
+                <SolidColorBrush x:Key="SplitButtonBackgroundCheckedPressed" Color="#FF0A7B55" />
+                <SolidColorBrush x:Key="SplitButtonForegroundCheckedPointerOver" Color="White" />
+                <SolidColorBrush x:Key="SplitButtonForegroundCheckedPressed" Color="White" />
+
+                <SolidColorBrush x:Key="ToggleButtonBackground" Color="{DynamicResource ControlFillColorDefault}" />
+                <SolidColorBrush x:Key="ToggleButtonBackgroundPointerOver" Color="#FF10B981" />
+                <SolidColorBrush x:Key="ToggleButtonBackgroundPressed" Color="#FF0D9668" />
+                <SolidColorBrush x:Key="ToggleButtonForegroundPointerOver" Color="White" />
+                <SolidColorBrush x:Key="ToggleButtonForegroundPressed" Color="White" />
+                <SolidColorBrush x:Key="ToggleButtonBorderBrush" Color="{DynamicResource ControlStrokeColorDefault}" />
+                <SolidColorBrush x:Key="ToggleButtonBorderBrushPointerOver" Color="#FF10B981" />
+                <!-- checked + hover 绿色 -->
+                <SolidColorBrush x:Key="ToggleButtonBackgroundCheckedPointerOver" Color="#FF0D9668" />
+                <SolidColorBrush x:Key="ToggleButtonBackgroundCheckedPressed" Color="#FF0A7B55" />
+                <SolidColorBrush x:Key="ToggleButtonForegroundCheckedPointerOver" Color="White" />
+                <SolidColorBrush x:Key="ToggleButtonForegroundCheckedPressed" Color="White" />
+            </Border.Resources>
             <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*,Auto">
-                <!-- 清空历史 -->
+                <!-- ── 数据操作组 ── -->
                 <Button Grid.Column="0" Command="{Binding ClearHistoryCommand}" 
                         Padding="10,5" Margin="0,0,6,0"
-                        AutomationProperties.Name="清空翻译历史">
+                        AutomationProperties.Name="清空翻译历史"
+                        ToolTip.Tip="清空当前翻译历史记录">
                     <StackPanel Orientation="Horizontal" Spacing="6">
                         <icons:Icon Value="fa-solid fa-trash-can" FontSize="12"/>
                         <TextBlock Text="清空历史" VerticalAlignment="Center"/>
                     </StackPanel>
                 </Button>
-                <!-- 查看历史记录 -->
                 <Button Grid.Column="1" Command="{Binding OpenHistoryFolderCommand}" 
                         Padding="10,5" Margin="0,0,6,0"
                         AutomationProperties.Name="打开历史记录文件夹"
                         ToolTip.Tip="打开本地历史记录文件夹，查看保存的翻译文件">
                     <StackPanel Orientation="Horizontal" Spacing="6">
                         <icons:Icon Value="fa-solid fa-folder-open" FontSize="12"/>
-                        <TextBlock Text="查看历史记录" VerticalAlignment="Center"/>
+                        <TextBlock Text="查看历史" VerticalAlignment="Center"/>
                     </StackPanel>
                 </Button>
-                <!-- 浮动字幕（通用） -->
-                <Button Grid.Column="2" Command="{Binding ShowFloatingSubtitlesCommand}" 
-                        Padding="10,5" Margin="0,0,6,0"
-                        Background="{Binding FloatingSubtitleButtonBackground}"
-                        Foreground="{Binding FloatingSubtitleButtonForeground}"
-                        AutomationProperties.Name="切换浮动字幕窗口"
-                        ToolTip.Tip="使用可拖动的透明字幕框提供服务">
+
+                <!-- 分隔线 -->
+                <Border Grid.Column="2" Width="1" Height="20" Margin="6,0,12,0"
+                        Background="{DynamicResource BorderSubtleBrush}" VerticalAlignment="Center"/>
+
+                <!-- ── 浮动窗口组 ── -->
+                <!-- 字幕 SplitButton：主按钮开全部字幕，下拉开分源字幕 -->
+                <ToggleSplitButton Grid.Column="3" Command="{Binding ShowFloatingSubtitlesCommand}"
+                             IsChecked="{Binding IsAnySubtitleOpen, Mode=OneWay}"
+                             Padding="10,5" Margin="0,0,6,0"
+                             AutomationProperties.Name="字幕浮动窗口"
+                             ToolTip.Tip="点击打开全部字幕浮窗，展开选择分源字幕">
                     <StackPanel Orientation="Horizontal" Spacing="6">
                         <icons:Icon Value="fa-solid fa-closed-captioning" FontSize="12"/>
-                        <TextBlock Text="浮动字幕" VerticalAlignment="Center"/>
+                        <TextBlock Text="字幕" VerticalAlignment="Center"/>
                     </StackPanel>
-                </Button>
-                <!-- 我的语音字幕 -->
-                <Button Grid.Column="3" Command="{Binding ShowFloatingMicSubtitleCommand}" 
-                        Padding="10,5" Margin="0,0,6,0"
-                        Background="{Binding FloatingMicSubtitleButtonBackground}"
-                        Foreground="{Binding FloatingMicSubtitleButtonForeground}"
-                        AutomationProperties.Name="切换我的语音字幕窗口"
-                        ToolTip.Tip="仅显示麦克风（我的语音）的浮动字幕">
-                    <StackPanel Orientation="Horizontal" Spacing="6">
-                        <icons:Icon Value="fa-solid fa-microphone" FontSize="12"/>
-                        <TextBlock Text="我的字幕" VerticalAlignment="Center"/>
-                    </StackPanel>
-                </Button>
-                <!-- 对方语音字幕 -->
-                <Button Grid.Column="4" Command="{Binding ShowFloatingLoopbackSubtitleCommand}" 
-                        Padding="10,5" Margin="0,0,6,0"
-                        Background="{Binding FloatingLoopbackSubtitleButtonBackground}"
-                        Foreground="{Binding FloatingLoopbackSubtitleButtonForeground}"
-                        AutomationProperties.Name="切换对方语音字幕窗口"
-                        ToolTip.Tip="仅显示环回（对方语音）的浮动字幕">
-                    <StackPanel Orientation="Horizontal" Spacing="6">
-                        <icons:Icon Value="fa-solid fa-volume-high" FontSize="12"/>
-                        <TextBlock Text="对方字幕" VerticalAlignment="Center"/>
-                    </StackPanel>
-                </Button>
+                    <ToggleSplitButton.Flyout>
+                        <MenuFlyout Placement="TopEdgeAlignedLeft" FlyoutPresenterClasses="green-hover">
+                            <MenuItem Header="全部字幕 — 显示所有语音" Command="{Binding ShowFloatingSubtitlesCommand}">
+                                <MenuItem.Icon>
+                                    <icons:Icon Value="fa-solid fa-closed-captioning" FontSize="12"/>
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <MenuItem Header="我的字幕 — 仅麦克风语音" Command="{Binding ShowFloatingMicSubtitleCommand}">
+                                <MenuItem.Icon>
+                                    <icons:Icon Value="fa-solid fa-microphone" FontSize="12"/>
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <MenuItem Header="对方字幕 — 仅系统回环" Command="{Binding ShowFloatingLoopbackSubtitleCommand}">
+                                <MenuItem.Icon>
+                                    <icons:Icon Value="fa-solid fa-volume-high" FontSize="12"/>
+                                </MenuItem.Icon>
+                            </MenuItem>
+                        </MenuFlyout>
+                    </ToggleSplitButton.Flyout>
+                </ToggleSplitButton>
+
                 <!-- 浮动洞察 -->
-                <Button Grid.Column="5" Command="{Binding ShowFloatingInsightCommand}" 
-                        Padding="10,5" Margin="0,0,6,0"
-                        Background="{Binding FloatingInsightButtonBackground}"
-                        Foreground="{Binding FloatingInsightButtonForeground}"
-                        AutomationProperties.Name="切换浮动洞察窗口"
-                        ToolTip.Tip="弹出浮动洞察窗口，实时同步 AI 洞察结果">
+                <ToggleButton Grid.Column="4" Command="{Binding ShowFloatingInsightCommand}"
+                              IsChecked="{Binding IsFloatingInsightOpen, Mode=OneWay}"
+                              Padding="10,5" Margin="0,0,6,0"
+                              AutomationProperties.Name="切换浮动洞察窗口"
+                              ToolTip.Tip="弹出浮动洞察窗口，实时同步 AI 洞察结果">
                     <StackPanel Orientation="Horizontal" Spacing="6">
                         <icons:Icon Value="fa-solid fa-brain" FontSize="12"/>
                         <TextBlock Text="浮动洞察" VerticalAlignment="Center"/>
                     </StackPanel>
-                </Button>
+                </ToggleButton>
+
                 <!-- 状态信息（右侧） -->
                 <StackPanel Grid.Column="7" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                     <TextBlock Text="{Binding StatusMessage}" FontSize="11" Foreground="{DynamicResource TextSubtleBrush}"

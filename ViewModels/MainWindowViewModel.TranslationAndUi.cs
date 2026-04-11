@@ -209,18 +209,12 @@ namespace TrueFluentPro.ViewModels
                     return;
                 }
 
-                OnPropertyChanged(nameof(FloatingSubtitleButtonBackground));
-                OnPropertyChanged(nameof(FloatingSubtitleButtonForeground));
+                OnPropertyChanged(nameof(IsAnySubtitleOpen));
             }
         }
 
-        public object? FloatingSubtitleButtonBackground => IsFloatingSubtitleOpen
-            ? new SolidColorBrush(Color.Parse("#FF10B981"))
-            : new SolidColorBrush(Color.Parse("#FFE5E7EB"));
-
-        public object? FloatingSubtitleButtonForeground => IsFloatingSubtitleOpen
-            ? Brushes.White
-            : new SolidColorBrush(Color.Parse("#FF111827"));
+        /// <summary>任意字幕浮窗是否打开（用于 SplitButton 高亮）</summary>
+        public bool IsAnySubtitleOpen => IsFloatingSubtitleOpen || IsFloatingMicSubtitleOpen || IsFloatingLoopbackSubtitleOpen;
 
         public bool IsFloatingMicSubtitleOpen
         {
@@ -232,18 +226,9 @@ namespace TrueFluentPro.ViewModels
                     return;
                 }
 
-                OnPropertyChanged(nameof(FloatingMicSubtitleButtonBackground));
-                OnPropertyChanged(nameof(FloatingMicSubtitleButtonForeground));
+                OnPropertyChanged(nameof(IsAnySubtitleOpen));
             }
         }
-
-        public object? FloatingMicSubtitleButtonBackground => IsFloatingMicSubtitleOpen
-            ? new SolidColorBrush(Color.Parse("#FF3B82F6"))
-            : new SolidColorBrush(Color.Parse("#FFE5E7EB"));
-
-        public object? FloatingMicSubtitleButtonForeground => IsFloatingMicSubtitleOpen
-            ? Brushes.White
-            : new SolidColorBrush(Color.Parse("#FF111827"));
 
         public bool IsFloatingLoopbackSubtitleOpen
         {
@@ -255,18 +240,9 @@ namespace TrueFluentPro.ViewModels
                     return;
                 }
 
-                OnPropertyChanged(nameof(FloatingLoopbackSubtitleButtonBackground));
-                OnPropertyChanged(nameof(FloatingLoopbackSubtitleButtonForeground));
+                OnPropertyChanged(nameof(IsAnySubtitleOpen));
             }
         }
-
-        public object? FloatingLoopbackSubtitleButtonBackground => IsFloatingLoopbackSubtitleOpen
-            ? new SolidColorBrush(Color.Parse("#FFF59E0B"))
-            : new SolidColorBrush(Color.Parse("#FFE5E7EB"));
-
-        public object? FloatingLoopbackSubtitleButtonForeground => IsFloatingLoopbackSubtitleOpen
-            ? Brushes.White
-            : new SolidColorBrush(Color.Parse("#FF111827"));
 
         public bool IsFloatingInsightOpen
         {
@@ -277,19 +253,8 @@ namespace TrueFluentPro.ViewModels
                 {
                     return;
                 }
-
-                OnPropertyChanged(nameof(FloatingInsightButtonBackground));
-                OnPropertyChanged(nameof(FloatingInsightButtonForeground));
             }
         }
-
-        public object? FloatingInsightButtonBackground => IsFloatingInsightOpen
-            ? new SolidColorBrush(Color.Parse("#FF8B5CF6"))
-            : new SolidColorBrush(Color.Parse("#FFE5E7EB"));
-
-        public object? FloatingInsightButtonForeground => IsFloatingInsightOpen
-            ? Brushes.White
-            : new SolidColorBrush(Color.Parse("#FF111827"));
 
         public bool IsTranslating
         {
@@ -931,6 +896,15 @@ namespace TrueFluentPro.ViewModels
         {
             try
             {
+                // 如果任意字幕浮窗打开，则关闭全部
+                if (IsAnySubtitleOpen)
+                {
+                    CloseAllFloatingSubtitles();
+                    StatusMessage = "所有字幕窗口已关闭";
+                    return;
+                }
+
+                // 否则打开全部字幕浮窗
                 if (_floatingSubtitleManager == null)
                 {
                     _floatingSubtitleManager = new FloatingSubtitleManager();
@@ -942,21 +916,37 @@ namespace TrueFluentPro.ViewModels
 
                 if (_floatingSubtitleManager.IsWindowOpen)
                 {
-                    StatusMessage = "浮动字幕窗口已打开";
+                    StatusMessage = "全部字幕窗口已打开";
 
                     if (!string.IsNullOrEmpty(CurrentTranslated))
                     {
                         _floatingSubtitleManager.UpdateSubtitle(CurrentTranslated);
                     }
                 }
-                else
-                {
-                    StatusMessage = "浮动字幕窗口已关闭";
-                }
             }
             catch (Exception ex)
             {
-                StatusMessage = $"浮动字幕窗口操作失败: {ex.Message}";
+                StatusMessage = $"字幕窗口操作失败: {ex.Message}";
+            }
+        }
+
+        /// <summary>关闭所有浮动字幕窗口</summary>
+        private void CloseAllFloatingSubtitles()
+        {
+            if (_floatingSubtitleManager?.IsWindowOpen == true)
+            {
+                _floatingSubtitleManager.CloseWindow();
+                IsFloatingSubtitleOpen = false;
+            }
+            if (_floatingMicSubtitleManager?.IsWindowOpen == true)
+            {
+                _floatingMicSubtitleManager.CloseWindow();
+                IsFloatingMicSubtitleOpen = false;
+            }
+            if (_floatingLoopbackSubtitleManager?.IsWindowOpen == true)
+            {
+                _floatingLoopbackSubtitleManager.CloseWindow();
+                IsFloatingLoopbackSubtitleOpen = false;
             }
         }
 

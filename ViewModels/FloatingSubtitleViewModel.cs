@@ -24,7 +24,7 @@ namespace TrueFluentPro.ViewModels
         {
             VadGateController.ActiveSource.Mic => "\U0001f3a4 我的语音",
             VadGateController.ActiveSource.Loopback => "\U0001f50a 对方语音",
-            _ => "\U0001f50a 浮动字幕"
+            _ => "\U0001f50a 全部字幕"
         };
 
         /// <summary>窗口边框颜色</summary>
