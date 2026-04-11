@@ -1,12 +1,24 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Windows.Input;
+using Avalonia.Threading;
 using TrueFluentPro.Models;
+using TrueFluentPro.Services;
+using TrueFluentPro.Services.Speech;
+using TrueFluentPro.ViewModels;
 
 namespace TrueFluentPro.ViewModels.Settings
 {
     public class AudioLabSectionVM : SettingsSectionBase
     {
+        private readonly SpeechSynthesisService? _ttsService;
+        private readonly IAzureTokenProviderStore? _tokenProviderStore;
+        private Func<AzureSpeechConfig>? _configProvider;
+
         // ── 文本模型 ──
         private List<ModelOption> _textModels = new();
         private ModelOption? _selectedTextModel;
@@ -30,6 +42,65 @@ namespace TrueFluentPro.ViewModels.Settings
         private string _podcastSpeakerCVoice = "Xiaoshuang";
         private string _podcastLanguage = "zh-CN";
         private string _podcastOutputFormat = "";
+
+        // ── 语音列表（下拉选择用） ──
+        private List<VoiceInfo> _allVoices = new();
+        private bool _voicesLoaded;
+        private bool _isLoadingVoices;
+        private string _voiceLoadStatus = "";
+        private VoiceLanguageOption? _selectedVoiceLanguage;
+
+        public ObservableCollection<VoiceInfo> AvailableVoices { get; } = new();
+        public ObservableCollection<VoiceLanguageOption> AvailableLanguages { get; } = new();
+        public ObservableCollection<SpeakerProfile> SpeakerProfiles { get; } = new();
+
+        public bool VoicesLoaded { get => _voicesLoaded; set => SetProperty(ref _voicesLoaded, value); }
+        public bool IsLoadingVoices { get => _isLoadingVoices; set => SetProperty(ref _isLoadingVoices, value); }
+        public string VoiceLoadStatus { get => _voiceLoadStatus; set => SetProperty(ref _voiceLoadStatus, value); }
+
+        public VoiceLanguageOption? SelectedVoiceLanguage
+        {
+            get => _selectedVoiceLanguage;
+            set
+            {
+                if (!SetProperty(ref _selectedVoiceLanguage, value)) return;
+                ApplyVoiceLanguageFilter();
+                // 更新配置语言
+                PodcastLanguage = value?.Locale ?? "";
+                OnChanged();
+            }
+        }
+
+        public ICommand LoadVoicesCommand { get; }
+
+        public AudioLabSectionVM() : this(null, null) { }
+
+        public AudioLabSectionVM(
+            SpeechSynthesisService? ttsService,
+            IAzureTokenProviderStore? tokenProviderStore)
+        {
+            _ttsService = ttsService;
+            _tokenProviderStore = tokenProviderStore;
+
+            // 初始化 3 个发言人
+            SpeakerProfiles.Add(new SpeakerProfile("A", "发言人 A"));
+            SpeakerProfiles.Add(new SpeakerProfile("B", "发言人 B"));
+            SpeakerProfiles.Add(new SpeakerProfile("C", "发言人 C"));
+
+            foreach (var p in SpeakerProfiles)
+                p.PropertyChanged += (_, e) =>
+                {
+                    if (e.PropertyName == nameof(SpeakerProfile.Voice))
+                    {
+                        SyncSpeakerVoicesToConfig();
+                        OnChanged();
+                    }
+                };
+
+            LoadVoicesCommand = new RelayCommand(_ => _ = LoadVoicesAsync(), _ => !IsLoadingVoices);
+        }
+
+        public void SetConfigProvider(Func<AzureSpeechConfig> provider) => _configProvider = provider;
 
         // ═══ 文本模型 ═══
         public List<ModelOption> TextModels { get => _textModels; set => SetProperty(ref _textModels, value); }
@@ -325,6 +396,171 @@ namespace TrueFluentPro.ViewModels.Settings
                     o.Reference.ModelId == reference.ModelId);
             setter(match);
             OnPropertyChanged(propertyName);
+        }
+
+        // ── 语音列表加载 ─────────────────────────────
+
+        private async Task LoadVoicesAsync()
+        {
+            if (IsLoadingVoices || _ttsService == null) return;
+            IsLoadingVoices = true;
+            VoiceLoadStatus = "正在加载语音列表...";
+
+            try
+            {
+                var auth = BuildTtsAuthContext();
+                var voices = await _ttsService.ListVoicesAsync(auth);
+
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    _allVoices = voices.OrderBy(v => v.Locale).ThenBy(v => v.ShortName).ToList();
+
+                    // 构建语言筛选选项
+                    AvailableLanguages.Clear();
+                    AvailableLanguages.Add(new VoiceLanguageOption("", "全部语言"));
+                    var locales = _allVoices
+                        .Select(v => (v.Locale, v.LocaleName))
+                        .Distinct()
+                        .OrderBy(x => x.Locale);
+                    foreach (var (locale, localeName) in locales)
+                    {
+                        var label = string.IsNullOrWhiteSpace(localeName) ? locale : $"{localeName} ({locale})";
+                        AvailableLanguages.Add(new VoiceLanguageOption(locale, label));
+                    }
+
+                    // 默认选择配置的语言
+                    var preferredLang = string.IsNullOrWhiteSpace(PodcastLanguage) ? "zh-CN" : PodcastLanguage;
+                    _selectedVoiceLanguage = AvailableLanguages.FirstOrDefault(l => l.Locale == preferredLang)
+                                          ?? AvailableLanguages.FirstOrDefault();
+                    OnPropertyChanged(nameof(SelectedVoiceLanguage));
+                    ApplyVoiceLanguageFilter();
+
+                    VoicesLoaded = true;
+                    VoiceLoadStatus = $"已加载 {voices.Count} 个语音";
+
+                    ApplyDefaultVoicePresets();
+                });
+            }
+            catch (Exception ex)
+            {
+                VoiceLoadStatus = $"加载语音失败：{ex.Message}";
+            }
+            finally
+            {
+                IsLoadingVoices = false;
+            }
+        }
+
+        private void ApplyVoiceLanguageFilter()
+        {
+            AvailableVoices.Clear();
+            var locale = SelectedVoiceLanguage?.Locale;
+            var filtered = string.IsNullOrWhiteSpace(locale)
+                ? _allVoices
+                : _allVoices.Where(v => v.Locale.Equals(locale, StringComparison.OrdinalIgnoreCase)).ToList();
+            foreach (var v in filtered)
+                AvailableVoices.Add(v);
+        }
+
+        private void ApplyDefaultVoicePresets()
+        {
+            var presets = new (string Tag, string Pattern)[]
+            {
+                ("A", PodcastSpeakerAVoice ?? "XiaochenMultilingual"),
+                ("B", PodcastSpeakerBVoice ?? "Yunfeng"),
+                ("C", PodcastSpeakerCVoice ?? "Xiaoshuang"),
+            };
+
+            foreach (var (tag, pattern) in presets)
+            {
+                var profile = SpeakerProfiles.FirstOrDefault(p => p.Tag == tag);
+                if (profile == null || profile.Voice != null) continue;
+
+                var match = AvailableVoices.FirstOrDefault(v =>
+                    v.ShortName.Contains(pattern, StringComparison.OrdinalIgnoreCase))
+                    ?? _allVoices.FirstOrDefault(v =>
+                    v.ShortName.Contains(pattern, StringComparison.OrdinalIgnoreCase));
+
+                if (match != null)
+                    profile.Voice = match;
+            }
+        }
+
+        private void SyncSpeakerVoicesToConfig()
+        {
+            var profileA = SpeakerProfiles.FirstOrDefault(p => p.Tag == "A");
+            var profileB = SpeakerProfiles.FirstOrDefault(p => p.Tag == "B");
+            var profileC = SpeakerProfiles.FirstOrDefault(p => p.Tag == "C");
+
+            if (profileA?.Voice != null) PodcastSpeakerAVoice = ExtractVoiceKeyword(profileA.Voice.ShortName);
+            if (profileB?.Voice != null) PodcastSpeakerBVoice = ExtractVoiceKeyword(profileB.Voice.ShortName);
+            if (profileC?.Voice != null) PodcastSpeakerCVoice = ExtractVoiceKeyword(profileC.Voice.ShortName);
+        }
+
+        private static string ExtractVoiceKeyword(string shortName)
+        {
+            var lastDash = shortName.LastIndexOf('-');
+            if (lastDash >= 0 && lastDash < shortName.Length - 1)
+                return shortName[(lastDash + 1)..];
+            return shortName;
+        }
+
+        private SpeechSynthesisService.TtsAuthContext BuildTtsAuthContext()
+        {
+            var config = _configProvider?.Invoke() ?? new AzureSpeechConfig();
+
+            if (config.AudioLabSpeechMode == 0 && _tokenProviderStore != null)
+            {
+                var provider = _tokenProviderStore.GetProvider("ai");
+                if (provider != null && provider.IsLoggedIn)
+                {
+                    var tokenTask = provider.GetTokenAsync(CancellationToken.None);
+                    var token = tokenTask.IsCompleted ? tokenTask.Result : tokenTask.GetAwaiter().GetResult();
+
+                    var speechRes = FindSpeechResource(config, SpeechCapability.TextToSpeech);
+                    if (speechRes != null && !string.IsNullOrWhiteSpace(speechRes.Endpoint))
+                    {
+                        var endpoint = speechRes.Endpoint.TrimEnd('/');
+                        var isCustomDomain = endpoint.Contains(".cognitiveservices.azure.", StringComparison.OrdinalIgnoreCase);
+                        var resourceId = speechRes.Id;
+                        var bearerValue = $"aad#{resourceId}#{token}";
+
+                        return new SpeechSynthesisService.TtsAuthContext
+                        {
+                            AadBearerValue = bearerValue,
+                            BaseUrl = endpoint,
+                            IsCustomDomainEndpoint = isCustomDomain,
+                        };
+                    }
+                }
+            }
+
+            {
+                var speechRes = FindSpeechResource(config, SpeechCapability.TextToSpeech);
+                if (speechRes != null && !string.IsNullOrWhiteSpace(speechRes.SubscriptionKey))
+                {
+                    var region = speechRes.ServiceRegion;
+                    return new SpeechSynthesisService.TtsAuthContext
+                    {
+                        SubscriptionKey = speechRes.SubscriptionKey,
+                        BaseUrl = $"https://{region}.tts.speech.microsoft.com",
+                        IsCustomDomainEndpoint = false,
+                    };
+                }
+            }
+
+            throw new InvalidOperationException("无法建立 TTS 认证。请在设置中配置语音资源（AAD 或 API Key）。");
+        }
+
+        private static SpeechResource? FindSpeechResource(AzureSpeechConfig config, SpeechCapability capability)
+        {
+            var exact = config.SpeechResources?
+                .FirstOrDefault(r => r.IsEnabled && r.Capabilities.HasFlag(capability));
+            if (exact != null) return exact;
+            return config.SpeechResources?
+                .FirstOrDefault(r => r.IsEnabled
+                    && r.Vendor == SpeechVendorType.Microsoft
+                    && !string.IsNullOrWhiteSpace(r.SubscriptionKey));
         }
     }
 

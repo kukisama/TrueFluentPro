@@ -56,6 +56,7 @@ namespace TrueFluentPro.Views
                 controlPanelViewModel);
             vm.FilePanelStateChanged += OnFilePanelStateChanged;
             DataContext = vm;
+            ApplyFilePanelState(vm.IsFilePanelOpen);
             _ = vm.RefreshAudioFilesAsync();
         }
 
@@ -86,8 +87,14 @@ namespace TrueFluentPro.Views
         // ── 生命周期面板展开/收起 ────────────────────────────
         private void ToggleLifecyclePanel_Click(object? sender, RoutedEventArgs e)
         {
-            if (LifecyclePopup != null)
-                LifecyclePopup.IsVisible = !LifecyclePopup.IsVisible;
+            if (LifecycleOverlay != null)
+                LifecycleOverlay.IsVisible = !LifecycleOverlay.IsVisible;
+        }
+
+        private void LifecycleOverlayBackdrop_PointerPressed(object? sender, PointerPressedEventArgs e)
+        {
+            if (LifecycleOverlay != null)
+                LifecycleOverlay.IsVisible = false;
         }
 
         // ── 标签页切换 ───────────────────────────────────────

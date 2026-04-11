@@ -10,6 +10,7 @@ using Avalonia.Threading;
 using TrueFluentPro.Models;
 using TrueFluentPro.Services;
 using TrueFluentPro.Services.EndpointTesting;
+using TrueFluentPro.Services.Speech;
 using TrueFluentPro.ViewModels.Settings;
 
 namespace TrueFluentPro.ViewModels
@@ -65,7 +66,9 @@ namespace TrueFluentPro.ViewModels
             ISettingsTransferFileService settingsTransferFileService,
             IModelRuntimeResolver modelRuntimeResolver,
             IAboutSectionService aboutSectionService,
-            IEndpointBatchTestService endpointBatchTestService)
+            IEndpointBatchTestService endpointBatchTestService,
+            SpeechSynthesisService? ttsService = null,
+            IAzureTokenProviderStore? tokenProviderStore = null)
         {
             _configService = configService;
             _settingsImportExportService = settingsImportExportService;
@@ -74,7 +77,7 @@ namespace TrueFluentPro.ViewModels
             EndpointsVM = new EndpointsSectionVM(modelDiscoveryService, endpointTemplateService, endpointBatchTestService, subscriptionValidator);
             StorageVM = new StorageSectionVM();
             RecognitionVM = new RecognitionSectionVM();
-            AudioLabVM = new AudioLabSectionVM();
+            AudioLabVM = new AudioLabSectionVM(ttsService, tokenProviderStore);
             TextVM = new TextSectionVM();
 
             _insightVm = CreateLazySection(() => new InsightSectionVM(modelRuntimeResolver), ConfigureInsightSection);
@@ -273,6 +276,7 @@ namespace TrueFluentPro.ViewModels
                 BuildModelOptions(ModelCapability.SpeechToText),
                 BuildModelOptions(ModelCapability.TextToSpeech));
             AudioLabVM.LoadFrom(_config);
+            AudioLabVM.SetConfigProvider(() => _config ?? new AzureSpeechConfig());
             AudioLabVM.SelectModels(_config, BuildModelOptions(ModelCapability.Text));
             AudioLabVM.LoadEndpoints(_config);
 

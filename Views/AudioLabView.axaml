@@ -547,22 +547,41 @@
                 </Border>
             </Grid>
 
-            <!-- ─── 生命周期折叠面板（浮动覆盖层） ─── -->
-            <Border Name="LifecyclePopup"
-                    IsVisible="False"
-                    HorizontalAlignment="Right"
-                    VerticalAlignment="Top"
-                    Margin="0,40,16,0"
-                    Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
-                    BorderBrush="{DynamicResource CardBorderBrush}"
-                    BorderThickness="1"
-                    CornerRadius="8"
-                    Padding="0"
-                    BoxShadow="0 4 12 0 #30000000"
-                    Width="260"
-                    MaxHeight="500">
-                <views:AudioLabControlPanel DataContext="{Binding ControlPanel}"/>
-            </Border>
+            <!-- ─── 生命周期折叠面板（浮动覆盖层 + 点击外部关闭） ─── -->
+            <Panel Name="LifecycleOverlay" IsVisible="False">
+                <!-- 透明遮罩：点击关闭弹出面板 -->
+                <Border Background="Transparent"
+                        PointerPressed="LifecycleOverlayBackdrop_PointerPressed"/>
+                <!-- 弹出面板 -->
+                <Border HorizontalAlignment="Right"
+                        VerticalAlignment="Top"
+                        Margin="0,40,16,0"
+                        Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                        BorderBrush="{DynamicResource CardBorderBrush}"
+                        BorderThickness="1"
+                        CornerRadius="8"
+                        Padding="0"
+                        BoxShadow="0 4 12 0 #30000000"
+                        Width="280"
+                        MaxHeight="500">
+                    <Grid RowDefinitions="Auto,*">
+                        <!-- 头部：显示当前文件名 -->
+                        <Border Grid.Row="0" Padding="12,10"
+                                BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}"
+                                BorderThickness="0,0,0,1">
+                            <StackPanel Spacing="2">
+                                <TextBlock Text="处理进度" FontWeight="SemiBold" FontSize="13"/>
+                                <TextBlock Text="{Binding CurrentFileName}"
+                                           FontSize="11" Opacity="0.6"
+                                           TextTrimming="CharacterEllipsis"
+                                           ToolTip.Tip="{Binding CurrentFileName}"/>
+                            </StackPanel>
+                        </Border>
+                        <!-- 控制面板内容 -->
+                        <views:AudioLabControlPanel Grid.Row="1" DataContext="{Binding ControlPanel}"/>
+                    </Grid>
+                </Border>
+            </Panel>
 
             </Panel>
         </Grid>

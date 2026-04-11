@@ -1,7 +1,9 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:TrueFluentPro.ViewModels.Settings"
+             xmlns:models="using:TrueFluentPro.Models"
              x:Class="TrueFluentPro.Views.Settings.AudioLabSection"
+             x:Name="AudioLabSectionRoot"
              x:DataType="vm:AudioLabSectionVM"
              x:CompileBindings="False">
     <Border Classes="app-card"
@@ -120,9 +122,28 @@
             <!-- ═══ 播客语音配置 ═══ -->
             <TextBlock Text="播客语音配置" FontWeight="Bold"/>
             <TextBlock Classes="field-note" TextWrapping="Wrap"
-                       Text="基础播客配置。详细语音选择请使用听析中心面板中的「...」菜单加载语音列表。"/>
+                       Text="点击「加载语音列表」后可下拉选择语音；未加载时仍可手动输入关键字。"/>
 
-            <StackPanel Spacing="5">
+            <Button Content="加载语音列表"
+                    Command="{Binding LoadVoicesCommand}"
+                    HorizontalAlignment="Left"
+                    IsVisible="{Binding !VoicesLoaded}"/>
+            <TextBlock Text="{Binding VoiceLoadStatus}" FontSize="12" Opacity="0.6"
+                       IsVisible="{Binding VoiceLoadStatus.Length}"
+                       Margin="0,4,0,0"/>
+
+            <!-- 语言筛选（加载后显示） -->
+            <StackPanel Spacing="5" IsVisible="{Binding VoicesLoaded}">
+                <TextBlock Text="语言筛选"/>
+                <ComboBox ItemsSource="{Binding AvailableLanguages}"
+                          SelectedItem="{Binding SelectedVoiceLanguage, Mode=TwoWay}"
+                          PlaceholderText="全部语言"
+                          MinWidth="320" HorizontalAlignment="Left"/>
+                <TextBlock Classes="hint-text" Text="加载语音列表后按语言筛选可用语音。"/>
+            </StackPanel>
+
+            <!-- 未加载时：手动输入关键字 -->
+            <StackPanel Spacing="5" IsVisible="{Binding !VoicesLoaded}">
                 <TextBlock Text="默认语言筛选"/>
                 <TextBox Text="{Binding PodcastLanguage, Mode=TwoWay}"
                          Watermark="如: zh-CN（留空表示全部）"
@@ -130,8 +151,34 @@
                 <TextBlock Classes="hint-text" Text="加载语音列表时仅显示指定语言。常用值：zh-CN（中文）、en-US（英语）、ja-JP（日语）"/>
             </StackPanel>
 
+            <!-- 发言人语音选择（加载后：下拉 ComboBox） -->
+            <ItemsControl ItemsSource="{Binding SpeakerProfiles}"
+                          IsVisible="{Binding VoicesLoaded}"
+                          Margin="0,8,0,0">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="models:SpeakerProfile" x:CompileBindings="False">
+                        <StackPanel Spacing="2" Margin="0,4">
+                            <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" FontSize="12"/>
+                            <ComboBox ItemsSource="{Binding #AudioLabSectionRoot.DataContext.AvailableVoices}"
+                                      SelectedItem="{Binding Voice}"
+                                      PlaceholderText="选择语音..."
+                                      MinWidth="320" HorizontalAlignment="Left"
+                                      MaxDropDownHeight="300">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate x:DataType="models:VoiceInfo">
+                                        <TextBlock Text="{Binding PreferredDisplayName}"/>
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
+                        </StackPanel>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <!-- 发言人语音（未加载：手动输入关键字） -->
             <Grid ColumnDefinitions="80,*" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="12" RowSpacing="8"
-                  Margin="0,8,0,0">
+                  Margin="0,8,0,0"
+                  IsVisible="{Binding !VoicesLoaded}">
                 <TextBlock Grid.Row="0" Grid.Column="0" Text="发言人 A" VerticalAlignment="Center"/>
                 <TextBox Grid.Row="0" Grid.Column="1"
                          Text="{Binding PodcastSpeakerAVoice, Mode=TwoWay}"
@@ -151,8 +198,9 @@
                          MinWidth="280" HorizontalAlignment="Left"/>
             </Grid>
             <TextBlock Classes="hint-text"
-                       Text="填写 Azure Speech 语音的 ShortName 关键字（部分匹配即可），加载语音时自动预选对应语音。"
-                       TextWrapping="Wrap"/>
+                       Text="加载语音列表后可直接下拉选择；未加载时填写关键字（部分匹配），加载时自动预选。"
+                       TextWrapping="Wrap"
+                       IsVisible="{Binding !VoicesLoaded}"/>
 
             <StackPanel Spacing="5" Margin="0,8,0,0">
                 <TextBlock Text="输出音频格式"/>
