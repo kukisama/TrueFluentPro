@@ -23,12 +23,14 @@ public partial class MainWindow : Window
     private MainWindowViewModel? _viewModel;
     private bool _mediaStudioInitialized;
     private bool _mediaCenterV2Initialized;
+    private bool _audioLabInitialized;
     private bool _isApplyingNavPaneState;
     private readonly Dictionary<string, Control> _pageCache = new(StringComparer.Ordinal);
     private Control? _currentPage;
 
     private MediaStudioView? MediaStudioViewPage => GetCachedPage<MediaStudioView>(MainWindowViewModel.NavTagMedia);
     private MediaCenterV2View? MediaCenterV2ViewPage => GetCachedPage<MediaCenterV2View>(MainWindowViewModel.NavTagMediaV2);
+    private AudioLabView? AudioLabViewPage => GetCachedPage<AudioLabView>(MainWindowViewModel.NavTagAudioLab);
 
     public MainWindow()
     {
@@ -156,6 +158,10 @@ public partial class MainWindow : Window
                 ShowPage(MainWindowViewModel.NavTagMediaV2);
                 e.Handled = true;
                 break;
+            case Key.D7 when ctrl:
+                ShowPage(MainWindowViewModel.NavTagAudioLab);
+                e.Handled = true;
+                break;
             case Key.OemComma when ctrl:
                 ShowPage(MainWindowViewModel.NavTagSettings);
                 e.Handled = true;
@@ -261,6 +267,24 @@ public partial class MainWindow : Window
                 }
             }, DispatcherPriority.Background);
         }
+
+        if (tag == MainWindowViewModel.NavTagAudioLab && !_audioLabInitialized)
+        {
+            _audioLabInitialized = true;
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (_viewModel != null)
+                {
+                    AudioLabViewPage?.Initialize(
+                        App.Services.GetRequiredService<IAiInsightService>(),
+                        App.Services.GetRequiredService<IAzureTokenProviderStore>(),
+                        App.Services.GetRequiredService<IModelRuntimeResolver>(),
+                        App.Services.GetRequiredService<ISpeechResourceRuntimeResolver>(),
+                        App.Services.GetRequiredService<IAiAudioTranscriptionService>(),
+                        () => _viewModel.ConfigVM.Config ?? new AzureSpeechConfig());
+                }
+            }, DispatcherPriority.Background);
+        }
     }
 
     private static string NormalizeNavTag(string? tag)
@@ -271,6 +295,7 @@ public partial class MainWindow : Window
             MainWindowViewModel.NavTagBatch => MainWindowViewModel.NavTagBatch,
             MainWindowViewModel.NavTagMedia => MainWindowViewModel.NavTagMedia,
             MainWindowViewModel.NavTagMediaV2 => MainWindowViewModel.NavTagMediaV2,
+            MainWindowViewModel.NavTagAudioLab => MainWindowViewModel.NavTagAudioLab,
             MainWindowViewModel.NavTagSettings => MainWindowViewModel.NavTagSettings,
             _ => MainWindowViewModel.NavTagLive
         };
@@ -304,6 +329,7 @@ public partial class MainWindow : Window
             MainWindowViewModel.NavTagBatch => CreateBoundPage(new BatchCenterView()),
             MainWindowViewModel.NavTagMedia => new MediaStudioView(),
             MainWindowViewModel.NavTagMediaV2 => new MediaCenterV2View(),
+            MainWindowViewModel.NavTagAudioLab => new Views.AudioLabView(),
             MainWindowViewModel.NavTagSettings => CreateBoundPage(new SettingsView()),
             _ => CreateBoundPage(new LiveTranslationView())
         };
@@ -317,7 +343,7 @@ public partial class MainWindow : Window
 
     private void UpdatePageDataContext(Control page)
     {
-        if (page is MediaStudioView || page is MediaCenterV2View)
+        if (page is MediaStudioView || page is MediaCenterV2View || page is AudioLabView)
         {
             return;
         }
@@ -421,6 +447,7 @@ public partial class MainWindow : Window
         BatchNavButton.Classes.Set("selected", _viewModel?.SelectedNavTag == MainWindowViewModel.NavTagBatch);
         MediaNavButton.Classes.Set("selected", _viewModel?.SelectedNavTag == MainWindowViewModel.NavTagMedia);
         MediaV2NavButton.Classes.Set("selected", _viewModel?.SelectedNavTag == MainWindowViewModel.NavTagMediaV2);
+        AudioLabNavButton.Classes.Set("selected", _viewModel?.SelectedNavTag == MainWindowViewModel.NavTagAudioLab);
         SettingsNavButton.Classes.Set("selected", _viewModel?.SelectedNavTag == MainWindowViewModel.NavTagSettings);
     }
 
@@ -479,6 +506,11 @@ public partial class MainWindow : Window
     private void MediaV2NavButton_Click(object? sender, RoutedEventArgs e)
     {
         ShowPage(MainWindowViewModel.NavTagMediaV2);
+    }
+
+    private void AudioLabNavButton_Click(object? sender, RoutedEventArgs e)
+    {
+        ShowPage(MainWindowViewModel.NavTagAudioLab);
     }
 
     private void SettingsNavButton_Click(object? sender, RoutedEventArgs e)

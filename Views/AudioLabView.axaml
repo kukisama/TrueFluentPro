@@ -1,0 +1,568 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:TrueFluentPro.ViewModels"
+             xmlns:models="using:TrueFluentPro.Models"
+             xmlns:controls="using:TrueFluentPro.Controls"
+             xmlns:icons="https://github.com/projektanker/icons.avalonia"
+             x:Class="TrueFluentPro.Views.AudioLabView"
+             x:DataType="vm:AudioLabViewModel"
+             x:CompileBindings="False">
+
+    <UserControl.Styles>
+        <!-- 说话人圆标颜色 -->
+        <Style Selector="Ellipse.speaker-dot">
+            <Setter Property="Width" Value="16"/>
+            <Setter Property="Height" Value="16"/>
+            <Setter Property="VerticalAlignment" Value="Top"/>
+            <Setter Property="Margin" Value="0,4,8,0"/>
+        </Style>
+
+        <!-- 转录段落项 -->
+        <Style Selector="ListBoxItem.transcript-item">
+            <Setter Property="Padding" Value="12,10"/>
+            <Setter Property="Margin" Value="0,2"/>
+            <Setter Property="CornerRadius" Value="6"/>
+        </Style>
+
+        <!-- 当前播放段高亮 -->
+        <Style Selector="Border.segment-current">
+            <Setter Property="Background" Value="{DynamicResource SystemAccentColorLight3}"/>
+            <Setter Property="Opacity" Value="0.15"/>
+            <Setter Property="CornerRadius" Value="6"/>
+        </Style>
+
+        <!-- Tab 按钮样式 -->
+        <Style Selector="RadioButton.tab-button">
+            <Setter Property="Padding" Value="12,8"/>
+            <Setter Property="Margin" Value="0,0,4,0"/>
+            <Setter Property="CornerRadius" Value="6"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Cursor" Value="Hand"/>
+        </Style>
+        <Style Selector="RadioButton.tab-button:checked">
+            <Setter Property="Background" Value="{DynamicResource SystemAccentColorLight3}"/>
+        </Style>
+
+        <!-- 倍速菜单项 -->
+        <Style Selector="MenuItem.speed-item">
+            <Setter Property="Padding" Value="16,6"/>
+        </Style>
+
+        <!-- 文件面板侧栏项 -->
+        <Style Selector="ListBoxItem.file-panel-item">
+            <Setter Property="Padding" Value="8,6"/>
+            <Setter Property="Margin" Value="0,1"/>
+            <Setter Property="CornerRadius" Value="4"/>
+        </Style>
+    </UserControl.Styles>
+
+    <!-- 最外层 Grid：左列文件面板 + 右列主内容（与 MainWindow ShellNavRail 同构） -->
+    <Grid ColumnDefinitions="Auto,*">
+
+        <!-- ═══ 左侧文件面板（与一级导航 ShellNavRail 同模式） ═══ -->
+        <Border Grid.Column="0" Name="FilePanelRail"
+                Width="52"
+                ClipToBounds="True"
+                Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                BorderBrush="{DynamicResource CardBorderBrush}"
+                BorderThickness="0,0,1,0">
+            <Grid RowDefinitions="Auto,Auto,Auto,*">
+                <!-- Row 0: 展开/收起按钮（与 ShellNavRail 的 ToggleShellNavButton 同构） -->
+                <StackPanel Grid.Row="0" Margin="0,8,0,0">
+                    <Button Classes="shell-nav-toggle"
+                            Click="ToggleFilePanel_Click"
+                            ToolTip.Tip="展开/收起文件面板"
+                            AutomationProperties.Name="展开或收起文件面板">
+                        <icons:Icon Value="fa-solid fa-bars" FontSize="14"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"/>
+                    </Button>
+                </StackPanel>
+
+                <!-- Row 1: 标题栏（展开时显示文字 + 刷新按钮） -->
+                <Grid Grid.Row="1" ColumnDefinitions="20,*,Auto" ColumnSpacing="10"
+                      Margin="16,8,8,4">
+                    <icons:Icon Grid.Column="0" Value="fa-solid fa-list-ul" FontSize="14"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center" Opacity="0.6"/>
+                    <TextBlock Grid.Column="1" Text="音频列表"
+                               FontSize="13" FontWeight="SemiBold"
+                               VerticalAlignment="Center"
+                               IsVisible="{Binding IsFilePanelOpen}"/>
+                    <Button Grid.Column="2" Padding="4"
+                            ToolTip.Tip="刷新列表"
+                            Command="{Binding RefreshAudioFilesCommand}"
+                            Background="Transparent" BorderThickness="0"
+                            IsVisible="{Binding IsFilePanelOpen}">
+                        <icons:Icon Value="fa-solid fa-arrows-rotate" FontSize="11"/>
+                    </Button>
+                </Grid>
+
+                <!-- Row 2: 从文件加载按钮（展开时显示） -->
+                <Button Grid.Row="2" Padding="8,6" Margin="8,4,8,8"
+                        HorizontalAlignment="Stretch"
+                        Click="OpenFile_Click"
+                        HorizontalContentAlignment="Center"
+                        IsVisible="{Binding IsFilePanelOpen}">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <icons:Icon Value="fa-solid fa-folder-open" FontSize="12"/>
+                        <TextBlock Text="从文件加载" FontSize="12"/>
+                    </StackPanel>
+                </Button>
+
+                <!-- Row 3: 文件列表（展开时显示） -->
+                <ListBox Grid.Row="3"
+                         ItemsSource="{Binding AudioFiles}"
+                         SelectedItem="{Binding SelectedAudioFile}"
+                         Classes="sidebar-nav-list"
+                         SelectionMode="Single"
+                         IsVisible="{Binding IsFilePanelOpen}">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate DataType="models:MediaFileItem">
+                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6">
+                                <icons:Icon Grid.Column="0"
+                                            Value="fa-solid fa-file-audio"
+                                            FontSize="12" Opacity="0.5"
+                                            VerticalAlignment="Center"/>
+                                <TextBlock Grid.Column="1"
+                                           Text="{Binding Name}"
+                                           FontSize="12"
+                                           TextTrimming="CharacterEllipsis"
+                                           ToolTip.Tip="{Binding FullPath}"
+                                           VerticalAlignment="Center"/>
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </Grid>
+        </Border>
+
+        <!-- ═══ 主内容区 ═══ -->
+        <Grid Grid.Column="1" Name="MainContentArea" RowDefinitions="Auto,Auto,*,Auto">
+
+        <!-- ═══ 面包屑 ═══ -->
+        <Border Grid.Row="0" Padding="16,12,16,4">
+            <TextBlock Text="{Binding BreadcrumbText}"
+                       FontSize="13" Opacity="0.7"/>
+        </Border>
+
+        <!-- ═══ 增强播放器 ═══ -->
+        <Border Grid.Row="1" Padding="16,8" Margin="0,0,0,4"
+                Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                CornerRadius="8">
+            <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,*,Auto,Auto">
+                <!-- 音频图标 -->
+                <icons:Icon Grid.Column="0" Value="fa-solid fa-music"
+                            FontSize="14" Margin="0,0,12,0"
+                            VerticalAlignment="Center" Opacity="0.6"/>
+
+                <!-- ⏮ 上一段 -->
+                <Button Grid.Column="1" Padding="6"
+                        Command="{Binding Playback.PreviousSegmentCommand}"
+                        ToolTip.Tip="上一段"
+                        Background="Transparent" BorderThickness="0">
+                    <icons:Icon Value="fa-solid fa-backward-step" FontSize="14"/>
+                </Button>
+
+                <!-- ▶ / ⏸ 播放/暂停 -->
+                <Button Grid.Column="2" Padding="8" Margin="4,0"
+                        Command="{Binding Playback.TogglePlayPauseCommand}"
+                        ToolTip.Tip="播放 / 暂停"
+                        Background="Transparent" BorderThickness="0">
+                    <Panel>
+                        <icons:Icon Value="fa-solid fa-play" FontSize="16"
+                                    IsVisible="{Binding Playback.IsPlayEnabled}"/>
+                        <icons:Icon Value="fa-solid fa-pause" FontSize="16"
+                                    IsVisible="{Binding Playback.IsPauseEnabled}"/>
+                    </Panel>
+                </Button>
+
+                <!-- ⏭ 下一段 -->
+                <Button Grid.Column="3" Padding="6"
+                        Command="{Binding Playback.NextSegmentCommand}"
+                        ToolTip.Tip="下一段"
+                        Background="Transparent" BorderThickness="0">
+                    <icons:Icon Value="fa-solid fa-forward-step" FontSize="14"/>
+                </Button>
+
+                <!-- 进度条 -->
+                <Slider Grid.Column="4" Margin="12,0"
+                        Minimum="0" Maximum="1"
+                        Value="{Binding Playback.Progress}"
+                        VerticalAlignment="Center"/>
+
+                <!-- 时间 -->
+                <TextBlock Grid.Column="5" Text="{Binding Playback.TimeText}"
+                           VerticalAlignment="Center" FontSize="12"
+                           Margin="4,0,12,0" Opacity="0.8"
+                           MinWidth="80" TextAlignment="Center"/>
+
+                <!-- 倍速 -->
+                <SplitButton Grid.Column="6" Content="{Binding Playback.PlaybackSpeedText}"
+                             Padding="8,4" FontSize="12"
+                             VerticalAlignment="Center">
+                    <SplitButton.Flyout>
+                        <MenuFlyout Placement="BottomEdgeAlignedRight">
+                            <MenuItem Header="0.5X" Classes="speed-item"
+                                      Command="{Binding Playback.SetPlaybackSpeedCommand}"
+                                      CommandParameter="0.5"/>
+                            <MenuItem Header="0.75X" Classes="speed-item"
+                                      Command="{Binding Playback.SetPlaybackSpeedCommand}"
+                                      CommandParameter="0.75"/>
+                            <MenuItem Header="1.0X" Classes="speed-item"
+                                      Command="{Binding Playback.SetPlaybackSpeedCommand}"
+                                      CommandParameter="1"/>
+                            <MenuItem Header="1.25X" Classes="speed-item"
+                                      Command="{Binding Playback.SetPlaybackSpeedCommand}"
+                                      CommandParameter="1.25"/>
+                            <MenuItem Header="1.5X" Classes="speed-item"
+                                      Command="{Binding Playback.SetPlaybackSpeedCommand}"
+                                      CommandParameter="1.5"/>
+                            <MenuItem Header="2.0X" Classes="speed-item"
+                                      Command="{Binding Playback.SetPlaybackSpeedCommand}"
+                                      CommandParameter="2"/>
+                        </MenuFlyout>
+                    </SplitButton.Flyout>
+                </SplitButton>
+            </Grid>
+        </Border>
+
+        <!-- ═══ 主内容区 ═══ -->
+        <Grid Grid.Row="2" ColumnDefinitions="*">
+
+            <Grid RowDefinitions="Auto,*">
+
+                <!-- ─── 标签页栏 ─── -->
+                <Border Grid.Row="0" Padding="16,4,16,8">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <RadioButton Classes="tab-button" GroupName="AudioLabTab"
+                                     IsChecked="{Binding SelectedTab, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static vm:AudioLabTabKind.Summary}}"
+                                     Click="Tab_Summary_Click">
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <TextBlock Text="📋" FontSize="14"/>
+                                <TextBlock Text="总结"/>
+                            </StackPanel>
+                        </RadioButton>
+                        <RadioButton Classes="tab-button" GroupName="AudioLabTab"
+                                     IsChecked="{Binding SelectedTab, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static vm:AudioLabTabKind.Transcript}}"
+                                     Click="Tab_Transcript_Click">
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <TextBlock Text="📝" FontSize="14"/>
+                                <TextBlock Text="转录"/>
+                            </StackPanel>
+                        </RadioButton>
+                        <RadioButton Classes="tab-button" GroupName="AudioLabTab"
+                                     IsChecked="{Binding SelectedTab, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static vm:AudioLabTabKind.MindMap}}"
+                                     Click="Tab_MindMap_Click">
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <TextBlock Text="🧠" FontSize="14"/>
+                                <TextBlock Text="导图"/>
+                            </StackPanel>
+                        </RadioButton>
+                        <RadioButton Classes="tab-button" GroupName="AudioLabTab"
+                                     IsChecked="{Binding SelectedTab, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static vm:AudioLabTabKind.Insight}}"
+                                     Click="Tab_Insight_Click">
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <TextBlock Text="💡" FontSize="14"/>
+                                <TextBlock Text="顿悟"/>
+                            </StackPanel>
+                        </RadioButton>
+                        <RadioButton Classes="tab-button" GroupName="AudioLabTab"
+                                     IsChecked="{Binding SelectedTab, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static vm:AudioLabTabKind.Research}}"
+                                     Click="Tab_Research_Click">
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <TextBlock Text="🔬" FontSize="14"/>
+                                <TextBlock Text="研究"/>
+                            </StackPanel>
+                        </RadioButton>
+                        <RadioButton Classes="tab-button" GroupName="AudioLabTab"
+                                     IsChecked="{Binding SelectedTab, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static vm:AudioLabTabKind.Podcast}}"
+                                     Click="Tab_Podcast_Click">
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <TextBlock Text="🎙" FontSize="14"/>
+                                <TextBlock Text="播客"/>
+                            </StackPanel>
+                        </RadioButton>
+
+                        <!-- 分隔 + 打开文件按钮 -->
+                        <Border Width="1" Height="20" Margin="8,0"
+                                Background="{DynamicResource DividerStrokeColorDefaultBrush}"/>
+                        <Button Padding="8,6" ToolTip.Tip="打开音频文件"
+                                Click="OpenFile_Click"
+                                Background="Transparent" BorderThickness="0">
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <icons:Icon Value="fa-solid fa-folder-open" FontSize="12"/>
+                                <TextBlock Text="打开文件" FontSize="12"/>
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                </Border>
+
+                <!-- ─── 标签页内容 ─── -->
+                <Border Grid.Row="1" Padding="16,0">
+
+                    <!-- 无文件空状态 -->
+                    <Panel>
+                        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
+                                    Spacing="12" Opacity="0.5"
+                                    IsVisible="{Binding !CurrentFilePath.Length}">
+                            <icons:Icon Value="fa-solid fa-headphones" FontSize="48"
+                                        HorizontalAlignment="Center"/>
+                            <TextBlock Text="拖拽音频文件到此处，或点击「打开文件」"
+                                       FontSize="14" HorizontalAlignment="Center"/>
+                        </StackPanel>
+
+                        <!-- Tab: 总结 -->
+                        <ScrollViewer IsVisible="{Binding SelectedTab, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static vm:AudioLabTabKind.Summary}}">
+                            <StackPanel Spacing="12" Margin="0,0,0,24">
+                                <!-- 元数据区 -->
+                                <StackPanel Spacing="4">
+                                    <TextBlock Text="{Binding CurrentFileName}"
+                                               FontSize="20" FontWeight="SemiBold"/>
+                                    <TextBlock FontSize="12" Opacity="0.6"
+                                               Text="{Binding StatusMessage}"/>
+                                    <!-- AI 标签 -->
+                                    <ItemsControl ItemsSource="{Binding AutoTags}" Margin="0,4">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <WrapPanel Orientation="Horizontal"/>
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="x:String">
+                                                <Border CornerRadius="10" Padding="10,4" Margin="0,0,6,4"
+                                                        Background="{DynamicResource SystemAccentColorLight3}">
+                                                    <TextBlock Text="{Binding}" FontSize="11"/>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+
+                                <!-- 操作栏：编辑 + 重新生成 -->
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="4">
+                                    <Button Padding="8,4"
+                                            Command="{Binding GenerateSummaryCommand}"
+                                            Background="Transparent" BorderThickness="0"
+                                            ToolTip.Tip="重新生成总结">
+                                        <StackPanel Orientation="Horizontal" Spacing="4">
+                                            <icons:Icon Value="fa-solid fa-arrows-rotate" FontSize="12"/>
+                                            <TextBlock FontSize="12" Text="重新生成"/>
+                                        </StackPanel>
+                                    </Button>
+                                    <Button Padding="8,4"
+                                            Command="{Binding ToggleEditModeCommand}"
+                                            Background="Transparent" BorderThickness="0">
+                                        <StackPanel Orientation="Horizontal" Spacing="4">
+                                            <icons:Icon Value="fa-solid fa-pen-to-square" FontSize="12"/>
+                                            <TextBlock FontSize="12" Text="编辑"/>
+                                        </StackPanel>
+                                    </Button>
+                                </StackPanel>
+
+                                <!-- Markdown 渲染 / 编辑器 -->
+                                <controls:ChatMarkdownBlock Markdown="{Binding SummaryMarkdown}"
+                                                            IsVisible="{Binding !IsSummaryEditing}"/>
+                                <controls:ConfigurableTextEditor Text="{Binding SummaryEditText, Mode=TwoWay}"
+                                                                  IsVisible="{Binding IsSummaryEditing}"
+                                                                  MinHeight="300"/>
+
+                                <!-- 空状态提示 -->
+                                <TextBlock Text="尚未生成总结。加载音频后会自动转录并生成。"
+                                           Opacity="0.4" FontSize="13"
+                                           IsVisible="{Binding !SummaryMarkdown.Length}"
+                                           HorizontalAlignment="Center" Margin="0,40"/>
+                            </StackPanel>
+                        </ScrollViewer>
+
+                        <!-- Tab: 转录 -->
+                        <DockPanel IsVisible="{Binding SelectedTab, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static vm:AudioLabTabKind.Transcript}}">
+                            <StackPanel DockPanel.Dock="Top" Orientation="Horizontal"
+                                        HorizontalAlignment="Right" Spacing="4" Margin="0,0,0,4">
+                                <Button Padding="8,4"
+                                        Command="{Binding TranscribeCommand}"
+                                        Background="Transparent" BorderThickness="0"
+                                        ToolTip.Tip="重新转录">
+                                    <StackPanel Orientation="Horizontal" Spacing="4">
+                                        <icons:Icon Value="fa-solid fa-arrows-rotate" FontSize="12"/>
+                                        <TextBlock FontSize="12" Text="重新转录"/>
+                                    </StackPanel>
+                                </Button>
+                            </StackPanel>
+                            <ListBox Name="TranscriptListBox"
+                                     ItemsSource="{Binding Segments}"
+                                     SelectedItem="{Binding CurrentSegment}"
+                                     SelectionMode="Single">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate x:DataType="models:TranscriptSegment">
+                                    <Border Padding="12,10" Margin="0,2" CornerRadius="6">
+                                        <Grid ColumnDefinitions="Auto,*,Auto">
+                                            <!-- 说话人圆标 + 名称 -->
+                                            <StackPanel Grid.Column="0" Spacing="4" Width="80">
+                                                <TextBlock Text="{Binding Speaker}"
+                                                           FontSize="12" FontWeight="SemiBold"
+                                                           TextTrimming="CharacterEllipsis"/>
+                                                <TextBlock Text="{Binding TimeText}"
+                                                           FontSize="11" Opacity="0.5"
+                                                           Cursor="Hand"/>
+                                            </StackPanel>
+
+                                            <!-- 内容 -->
+                                            <TextBlock Grid.Column="1" Text="{Binding Text}"
+                                                       TextWrapping="Wrap" Margin="12,0,0,0"
+                                                       FontSize="13" LineHeight="20"/>
+
+                                            <!-- 播放指示 -->
+                                            <TextBlock Grid.Column="2" Text="🔊"
+                                                       FontSize="14" Margin="8,0,0,0"
+                                                       VerticalAlignment="Top"
+                                                       IsVisible="{Binding IsCurrent}"/>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                        </DockPanel>
+
+                        <!-- Tab: 思维导图 -->
+                        <Panel IsVisible="{Binding SelectedTab, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static vm:AudioLabTabKind.MindMap}}">
+                            <!-- 有导图数据 -->
+                            <ScrollViewer IsVisible="{Binding MindMapRoot, Converter={x:Static ObjectConverters.IsNotNull}}">
+                                <StackPanel Spacing="8" Margin="0,0,0,24">
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="4" Margin="0,0,0,8">
+                                        <Button Padding="8,4"
+                                                Command="{Binding GenerateSummaryCommand}"
+                                                Background="Transparent" BorderThickness="0"
+                                                ToolTip.Tip="重新生成导图（先重新总结）">
+                                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                                <icons:Icon Value="fa-solid fa-arrows-rotate" FontSize="12"/>
+                                                <TextBlock FontSize="12" Text="重新生成"/>
+                                            </StackPanel>
+                                        </Button>
+                                    </StackPanel>
+                                    <TreeView ItemsSource="{Binding MindMapRoot.Children}">
+                                        <TreeView.ItemTemplate>
+                                            <TreeDataTemplate ItemsSource="{Binding Children}" DataType="models:MindMapNode">
+                                                <TextBlock Text="{Binding Title}" FontSize="13" TextWrapping="Wrap" Margin="2,4"/>
+                                            </TreeDataTemplate>
+                                        </TreeView.ItemTemplate>
+                                    </TreeView>
+                                </StackPanel>
+                            </ScrollViewer>
+
+                            <!-- 空状态 -->
+                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
+                                        Spacing="8" Opacity="0.4" Margin="0,60"
+                                        IsVisible="{Binding MindMapRoot, Converter={x:Static ObjectConverters.IsNull}}">
+                                <TextBlock Text="🧠" FontSize="40" HorizontalAlignment="Center"/>
+                                <TextBlock Text="思维导图将在总结生成后自动创建" FontSize="14" HorizontalAlignment="Center"/>
+                            </StackPanel>
+                        </Panel>
+
+                        <!-- Tab: 顿悟 -->
+                        <ScrollViewer IsVisible="{Binding SelectedTab, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static vm:AudioLabTabKind.Insight}}">
+                            <StackPanel Spacing="12" Margin="0,0,0,24">
+                                <Button Padding="8,4" HorizontalAlignment="Right"
+                                        Command="{Binding GenerateInsightCommand}"
+                                        Background="Transparent" BorderThickness="0"
+                                        ToolTip.Tip="重新生成顿悟">
+                                    <StackPanel Orientation="Horizontal" Spacing="4">
+                                        <icons:Icon Value="fa-solid fa-arrows-rotate" FontSize="12"/>
+                                        <TextBlock FontSize="12" Text="重新生成"/>
+                                    </StackPanel>
+                                </Button>
+                                <controls:ChatMarkdownBlock Markdown="{Binding InsightMarkdown}"/>
+                                <TextBlock Text="尚未生成。转录完成后可点击重新生成。"
+                                           Opacity="0.4" FontSize="13"
+                                           IsVisible="{Binding !InsightMarkdown.Length}"
+                                           HorizontalAlignment="Center" Margin="0,40"/>
+                            </StackPanel>
+                        </ScrollViewer>
+
+                        <!-- Tab: 深度研究 -->
+                        <ScrollViewer IsVisible="{Binding SelectedTab, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static vm:AudioLabTabKind.Research}}">
+                            <StackPanel Spacing="8" Margin="0,0,0,24">
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="4">
+                                    <Button Padding="8,4"
+                                            Command="{Binding GenerateResearchCommand}"
+                                            Background="Transparent" BorderThickness="0"
+                                            ToolTip.Tip="生成 / 重新生成研究报告">
+                                        <StackPanel Orientation="Horizontal" Spacing="4">
+                                            <icons:Icon Value="fa-solid fa-arrows-rotate" FontSize="12"/>
+                                            <TextBlock FontSize="12" Text="生成研究"/>
+                                        </StackPanel>
+                                    </Button>
+                                </StackPanel>
+                                <TextBlock Text="💡 基于音频内容，建议以下研究方向："
+                                           FontSize="14" FontWeight="SemiBold" Margin="0,0,0,8"
+                                           IsVisible="{Binding ResearchTopics.Count}"/>
+                                <ItemsControl ItemsSource="{Binding ResearchTopics}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="models:ResearchTopic">
+                                            <CheckBox IsChecked="{Binding IsSelected}"
+                                                      Content="{Binding Title}"
+                                                      Margin="0,2"/>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <controls:ChatMarkdownBlock Markdown="{Binding ResearchReportMarkdown}"
+                                                            Margin="0,12,0,0"/>
+                                <TextBlock Text="尚未生成研究大纲。转录完成后可点击生成。"
+                                           Opacity="0.4" FontSize="13"
+                                           IsVisible="{Binding !ResearchTopics.Count}"
+                                           HorizontalAlignment="Center" Margin="0,40"/>
+                            </StackPanel>
+                        </ScrollViewer>
+
+                        <!-- Tab: 播客 -->
+                        <ScrollViewer IsVisible="{Binding SelectedTab, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static vm:AudioLabTabKind.Podcast}}">
+                            <StackPanel Spacing="12" Margin="0,0,0,24">
+                                <Button Padding="8,4" HorizontalAlignment="Right"
+                                        Command="{Binding GeneratePodcastCommand}"
+                                        Background="Transparent" BorderThickness="0"
+                                        ToolTip.Tip="重新生成播客脚本">
+                                    <StackPanel Orientation="Horizontal" Spacing="4">
+                                        <icons:Icon Value="fa-solid fa-arrows-rotate" FontSize="12"/>
+                                        <TextBlock FontSize="12" Text="重新生成"/>
+                                    </StackPanel>
+                                </Button>
+                                <controls:ChatMarkdownBlock Markdown="{Binding PodcastMarkdown}"/>
+                                <TextBlock Text="尚未生成。转录完成后可点击重新生成。"
+                                           Opacity="0.4" FontSize="13"
+                                           IsVisible="{Binding !PodcastMarkdown.Length}"
+                                           HorizontalAlignment="Center" Margin="0,40"/>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Panel>
+                </Border>
+            </Grid>
+        </Grid>
+
+        <!-- ═══ 底部状态栏（生成进度 + 停止按钮） ═══ -->
+        <Border Grid.Row="3" Padding="16,6" 
+                Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                BorderBrush="{DynamicResource CardBorderBrush}"
+                BorderThickness="0,1,0,0"
+                IsVisible="{Binding IsGenerating}">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+                <ProgressBar Grid.Column="0" IsIndeterminate="True"
+                             Width="80" Height="3" Margin="0,0,12,0"
+                             VerticalAlignment="Center"/>
+                <TextBlock Grid.Column="1" Text="{Binding StatusMessage}"
+                           FontSize="12" Opacity="0.7"
+                           VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis"/>
+                <Button Grid.Column="2" Padding="8,4"
+                        Command="{Binding StopGenerationCommand}"
+                        ToolTip.Tip="停止生成">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <icons:Icon Value="fa-solid fa-stop" FontSize="12"/>
+                        <TextBlock FontSize="12" Text="停止"/>
+                    </StackPanel>
+                </Button>
+            </Grid>
+        </Border>
+        </Grid>
+
+    </Grid>
+</UserControl>
