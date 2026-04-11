@@ -190,4 +190,21 @@ namespace TrueFluentPro.Services.Storage
         public DateTime CreatedAt { get; set; }
         public bool IsDeleted { get; set; }
     }
+
+    /// <summary>音频生命周期记录（对应 audio_lifecycle 表）</summary>
+    public class AudioLifecycleRecord
+    {
+        public string Id { get; set; } = "";
+        public string AudioItemId { get; set; } = "";
+        /// <summary>阶段名称，对应 AudioLifecycleStage 枚举的 ToString()。</summary>
+        public string Stage { get; set; } = "";
+        /// <summary>该阶段生成的内容 JSON（总结文本、台本文本、配置等）。</summary>
+        public string? ContentJson { get; set; }
+        /// <summary>该阶段生成的文件路径（如 TTS 音频文件）。</summary>
+        public string? FilePath { get; set; }
+        /// <summary>当上游数据变更时标记为 stale，需要重新生成。</summary>
+        public bool IsStale { get; set; }
+        public DateTime GeneratedAt { get; set; }
+        public DateTime UpdatedAt { get; set; }
+    }
 }

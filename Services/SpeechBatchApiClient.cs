@@ -22,6 +22,44 @@ namespace TrueFluentPro.Services
             Action<string, string>? onBatchLog = null)
         {
             var endpoint = subscription.GetBatchTranscriptionEndpoint();
+            Action<HttpRequestMessage> setAuth = req =>
+                req.Headers.Add("Ocp-Apim-Subscription-Key", subscription.SubscriptionKey);
+
+            return await BatchTranscribeCoreAsync(contentUrl, locale, endpoint, setAuth, token, onStatus, splitOptions, onBatchLog);
+        }
+
+        /// <summary>AAD Bearer token 认证的批量转写入口</summary>
+        public static async Task<(List<SubtitleCue> Cues, string TranscriptionJson)> BatchTranscribeSpeechToCuesAsync(
+            Uri contentUrl,
+            string locale,
+            string batchEndpoint,
+            Func<CancellationToken, Task<string>> getTokenAsync,
+            CancellationToken token,
+            Action<string> onStatus,
+            BatchSubtitleSplitOptions splitOptions,
+            Action<string, string>? onBatchLog = null)
+        {
+            Action<HttpRequestMessage> setAuth = req =>
+            {
+                // 每次请求前刷新令牌
+                var tokenTask = getTokenAsync(token);
+                tokenTask.Wait(token);
+                req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", tokenTask.Result);
+            };
+
+            return await BatchTranscribeCoreAsync(contentUrl, locale, batchEndpoint, setAuth, token, onStatus, splitOptions, onBatchLog);
+        }
+
+        private static async Task<(List<SubtitleCue> Cues, string TranscriptionJson)> BatchTranscribeCoreAsync(
+            Uri contentUrl,
+            string locale,
+            string endpoint,
+            Action<HttpRequestMessage> setAuth,
+            CancellationToken token,
+            Action<string> onStatus,
+            BatchSubtitleSplitOptions splitOptions,
+            Action<string, string>? onBatchLog)
+        {
             var requestBody = new
             {
                 displayName = $"Batch-{DateTime.Now:yyyyMMdd_HHmmss}",
@@ -37,7 +75,7 @@ namespace TrueFluentPro.Services
             };
 
             using var request = new HttpRequestMessage(HttpMethod.Post, endpoint);
-            request.Headers.Add("Ocp-Apim-Subscription-Key", subscription.SubscriptionKey);
+            setAuth(request);
             request.Content = new StringContent(JsonSerializer.Serialize(requestBody), System.Text.Encoding.UTF8, "application/json");
 
             using var response = await HttpClient.SendAsync(request, token);
@@ -71,7 +109,7 @@ namespace TrueFluentPro.Services
             {
                 token.ThrowIfCancellationRequested();
                 using var statusRequest = new HttpRequestMessage(HttpMethod.Get, statusUrl);
-                statusRequest.Headers.Add("Ocp-Apim-Subscription-Key", subscription.SubscriptionKey);
+                setAuth(statusRequest);
 
                 using var statusResponse = await HttpClient.SendAsync(statusRequest, token);
                 var statusBody = await statusResponse.Content.ReadAsStringAsync(token);
@@ -123,7 +161,7 @@ namespace TrueFluentPro.Services
             }
 
             using var filesRequest = new HttpRequestMessage(HttpMethod.Get, filesUrl);
-            filesRequest.Headers.Add("Ocp-Apim-Subscription-Key", subscription.SubscriptionKey);
+            setAuth(filesRequest);
 
             using var filesResponse = await HttpClient.SendAsync(filesRequest, token);
             var filesBody = await filesResponse.Content.ReadAsStringAsync(token);

@@ -1,0 +1,158 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:TrueFluentPro.ViewModels"
+             xmlns:models="using:TrueFluentPro.Models"
+             x:Class="TrueFluentPro.Views.AudioLabControlPanel"
+             x:Name="ControlPanelRoot"
+             x:DataType="vm:AudioLabControlPanelViewModel">
+
+  <UserControl.Styles>
+    <Style Selector="TextBlock.panel-title">
+      <Setter Property="FontSize" Value="14"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="Margin" Value="0,0,0,8"/>
+    </Style>
+    <Style Selector="TextBlock.section-label">
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="Opacity" Value="0.7"/>
+      <Setter Property="Margin" Value="0,0,0,4"/>
+    </Style>
+    <Style Selector="Border.stage-badge">
+      <Setter Property="CornerRadius" Value="4"/>
+      <Setter Property="Padding" Value="8,4"/>
+      <Setter Property="Margin" Value="0,2"/>
+    </Style>
+    <Style Selector="Border.stage-badge.done">
+      <Setter Property="Background" Value="#2050B86C"/>
+      <Setter Property="BorderBrush" Value="#50B86C"/>
+      <Setter Property="BorderThickness" Value="1"/>
+    </Style>
+    <Style Selector="Border.stage-badge.pending">
+      <Setter Property="Background" Value="#20E8913A"/>
+      <Setter Property="BorderBrush" Value="#E8913A"/>
+      <Setter Property="BorderThickness" Value="1"/>
+    </Style>
+  </UserControl.Styles>
+
+  <ScrollViewer VerticalScrollBarVisibility="Auto">
+    <StackPanel Margin="12" Spacing="16">
+
+      <!-- ═══ 生命周期总览 ═══ -->
+      <Border Classes="sub-card" Padding="12">
+        <StackPanel Spacing="4">
+          <TextBlock Classes="panel-title" Text="生命周期"/>
+
+          <Border Classes="stage-badge" Classes.done="{Binding HasTranscription}" Classes.pending="{Binding !HasTranscription}">
+            <TextBlock Text="① 转录" FontSize="12"/>
+          </Border>
+          <Border Classes="stage-badge" Classes.done="{Binding HasSummary}" Classes.pending="{Binding !HasSummary}">
+            <TextBlock Text="② AI 总结" FontSize="12"/>
+          </Border>
+          <Border Classes="stage-badge" Classes.done="{Binding HasMindMap}" Classes.pending="{Binding !HasMindMap}">
+            <TextBlock Text="③ 思维导图" FontSize="12"/>
+          </Border>
+          <Border Classes="stage-badge" Classes.done="{Binding HasInsight}" Classes.pending="{Binding !HasInsight}">
+            <TextBlock Text="④ 顿悟分析" FontSize="12"/>
+          </Border>
+          <Border Classes="stage-badge" Classes.done="{Binding HasResearch}" Classes.pending="{Binding !HasResearch}">
+            <TextBlock Text="⑤ 深度研究" FontSize="12"/>
+          </Border>
+          <Border Classes="stage-badge" Classes.done="{Binding HasPodcastScript}" Classes.pending="{Binding !HasPodcastScript}">
+            <TextBlock Text="⑥ 播客台本" FontSize="12"/>
+          </Border>
+          <Border Classes="stage-badge" Classes.done="{Binding HasPodcastAudio}" Classes.pending="{Binding !HasPodcastAudio}">
+            <TextBlock Text="⑦ 播客音频 (TTS)" FontSize="12"/>
+          </Border>
+
+          <Button Content="自动补齐缺失"
+                  Command="{Binding AutoFillMissingCommand}"
+                  Margin="0,8,0,0"
+                  HorizontalAlignment="Stretch"/>
+        </StackPanel>
+      </Border>
+
+      <!-- ═══ 播客语音配置 ═══ -->
+      <Border Classes="sub-card" Padding="12">
+        <StackPanel Spacing="8">
+          <TextBlock Classes="panel-title" Text="播客语音"/>
+
+          <Button Content="加载语音列表"
+                  Command="{Binding LoadVoicesCommand}"
+                  HorizontalAlignment="Stretch"
+                  IsVisible="{Binding !VoicesLoaded}"/>
+
+          <!-- 语言筛选（加载后显示） -->
+          <StackPanel IsVisible="{Binding VoicesLoaded}" Spacing="4">
+            <TextBlock Classes="section-label" Text="语言"/>
+            <ComboBox ItemsSource="{Binding AvailableLanguages}"
+                      SelectedItem="{Binding SelectedLanguage}"
+                      PlaceholderText="全部语言"
+                      HorizontalAlignment="Stretch"/>
+          </StackPanel>
+
+          <!-- 发言人语音选择（加载后显示） -->
+          <ItemsControl ItemsSource="{Binding SpeakerProfiles}"
+                        IsVisible="{Binding VoicesLoaded}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="models:SpeakerProfile" x:CompileBindings="False">
+                <StackPanel Spacing="2" Margin="0,4">
+                  <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" FontSize="12"/>
+                  <ComboBox ItemsSource="{Binding #ControlPanelRoot.DataContext.AvailableVoices}"
+                            SelectedItem="{Binding Voice}"
+                            PlaceholderText="选择语音..."
+                            HorizontalAlignment="Stretch"
+                            MaxDropDownHeight="300">
+                    <ComboBox.ItemTemplate>
+                      <DataTemplate x:DataType="models:VoiceInfo">
+                        <TextBlock Text="{Binding PreferredDisplayName}"/>
+                      </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                  </ComboBox>
+                </StackPanel>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+
+          <!-- 合成按钮 -->
+          <Button Content="合成播客音频"
+                  Command="{Binding SynthesizePodcastCommand}"
+                  Margin="0,4,0,0"
+                  HorizontalAlignment="Stretch"
+                  Classes="accent"
+                  IsVisible="{Binding VoicesLoaded}"/>
+        </StackPanel>
+      </Border>
+
+      <!-- ═══ 播客音频结果 ═══ -->
+      <Border Classes="sub-card" Padding="12"
+              IsVisible="{Binding HasPodcastAudioFile}">
+        <StackPanel Spacing="4">
+          <TextBlock Classes="panel-title" Text="播客音频"/>
+          <TextBlock Text="{Binding PodcastAudioPath}"
+                     TextWrapping="Wrap"
+                     FontSize="11"
+                     Opacity="0.7"/>
+        </StackPanel>
+      </Border>
+
+      <!-- ═══ 状态栏 ═══ -->
+      <Border Classes="sub-card" Padding="8">
+        <StackPanel Spacing="4">
+          <TextBlock Text="{Binding StatusMessage}"
+                     FontSize="11"
+                     TextWrapping="Wrap"
+                     Opacity="0.8"/>
+          <ProgressBar IsIndeterminate="{Binding IsBusy}"
+                       IsVisible="{Binding IsBusy}"
+                       Height="2"/>
+          <Button Content="取消"
+                  Command="{Binding CancelCommand}"
+                  IsVisible="{Binding IsBusy}"
+                  HorizontalAlignment="Right"/>
+        </StackPanel>
+      </Border>
+
+    </StackPanel>
+  </ScrollViewer>
+
+</UserControl>

@@ -258,6 +258,31 @@ namespace TrueFluentPro.Models
         public ModelReference? BatchTranscriptionModelRef { get; set; }
         public ModelReference? TextToSpeechModelRef { get; set; }
 
+        // ═══ 听析中心 ═══
+        /// <summary>语音来源模式：0 = AAD (Foundry)，1 = 传统语音终结点</summary>
+        public int AudioLabSpeechMode { get; set; }
+        /// <summary>AAD 模式下选中的 Foundry 终结点 ID</summary>
+        public string AudioLabAadEndpointId { get; set; } = "";
+        /// <summary>传统模式下选中的 AzureSpeech 终结点 ID</summary>
+        public string AudioLabSpeechEndpointId { get; set; } = "";
+        public ModelReference? AudioLabTextModelRef { get; set; }
+        public string AudioLabSourceLanguage { get; set; } = "auto";
+
+        /// <summary>听析中心文件面板是否展开</summary>
+        public bool AudioLabFilePanelOpen { get; set; } = true;
+
+        // ── 播客语音配置（持久化到 config.json） ──
+        /// <summary>发言人 A 语音关键字（ShortName 部分匹配）</summary>
+        public string AudioLabPodcastSpeakerAVoice { get; set; } = "XiaochenMultilingual";
+        /// <summary>发言人 B 语音关键字</summary>
+        public string AudioLabPodcastSpeakerBVoice { get; set; } = "Yunfeng";
+        /// <summary>发言人 C 语音关键字</summary>
+        public string AudioLabPodcastSpeakerCVoice { get; set; } = "Xiaoshuang";
+        /// <summary>播客语音语言筛选（如 zh-CN），空表示全部</summary>
+        public string AudioLabPodcastLanguage { get; set; } = "zh-CN";
+        /// <summary>播客输出音频格式 HeaderValue（空则使用默认 MP3 24kHz）</summary>
+        public string AudioLabPodcastOutputFormat { get; set; } = "";
+
         public AiConfig? AiConfig { get; set; }
 
         public bool IsAutoUpdateEnabled { get; set; } = true;

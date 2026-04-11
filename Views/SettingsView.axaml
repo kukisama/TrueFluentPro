@@ -123,6 +123,12 @@
                             <TextBlock Grid.Column="1" Text="音频设备" VerticalAlignment="Center"/>
                         </Grid>
                     </ListBoxItem>
+                    <ListBoxItem Tag="Section_AudioLab">
+                        <Grid Classes="sidebar-nav-item-content" ColumnDefinitions="18,*" ColumnSpacing="10">
+                            <icons:Icon Grid.Column="0" Value="fa-solid fa-ear-listen" FontSize="14"/>
+                            <TextBlock Grid.Column="1" Text="听析中心" VerticalAlignment="Center"/>
+                        </Grid>
+                    </ListBoxItem>
                     <ListBoxItem Tag="Section_Recognition">
                         <Grid Classes="sidebar-nav-item-content" ColumnDefinitions="18,*" ColumnSpacing="10">
                             <icons:Icon Grid.Column="0" Value="fa-solid fa-wave-square" FontSize="14"/>

@@ -6,6 +6,7 @@ using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using TrueFluentPro.Models;
 using TrueFluentPro.Services;
+using TrueFluentPro.Services.Speech;
 using TrueFluentPro.ViewModels;
 
 namespace TrueFluentPro.Views
@@ -36,7 +37,10 @@ namespace TrueFluentPro.Views
             IModelRuntimeResolver modelRuntimeResolver,
             ISpeechResourceRuntimeResolver speechResourceRuntimeResolver,
             IAiAudioTranscriptionService aiAudioTranscriptionService,
-            Func<AzureSpeechConfig> configProvider)
+            Func<AzureSpeechConfig> configProvider,
+            ConfigurationService configService,
+            AudioLifecyclePipelineService pipeline,
+            AudioLabControlPanelViewModel controlPanelViewModel)
         {
             if (_initialized) return;
             _initialized = true;
@@ -46,7 +50,10 @@ namespace TrueFluentPro.Views
                 modelRuntimeResolver,
                 speechResourceRuntimeResolver,
                 aiAudioTranscriptionService,
-                configProvider);
+                configProvider,
+                configService,
+                pipeline,
+                controlPanelViewModel);
             vm.FilePanelStateChanged += OnFilePanelStateChanged;
             DataContext = vm;
             _ = vm.RefreshAudioFilesAsync();
@@ -74,6 +81,13 @@ namespace TrueFluentPro.Views
         {
             if (ViewModel != null)
                 ViewModel.IsFilePanelOpen = !ViewModel.IsFilePanelOpen;
+        }
+
+        // ── 生命周期面板展开/收起 ────────────────────────────
+        private void ToggleLifecyclePanel_Click(object? sender, RoutedEventArgs e)
+        {
+            if (LifecyclePopup != null)
+                LifecyclePopup.IsVisible = !LifecyclePopup.IsVisible;
         }
 
         // ── 标签页切换 ───────────────────────────────────────

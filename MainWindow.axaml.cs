@@ -275,13 +275,23 @@ public partial class MainWindow : Window
             {
                 if (_viewModel != null)
                 {
+                    var pipeline = App.Services.GetRequiredService<AudioLifecyclePipelineService>();
+                    var ttsService = App.Services.GetRequiredService<Services.Speech.SpeechSynthesisService>();
+                    var tokenStore = App.Services.GetRequiredService<IAzureTokenProviderStore>();
+                    var configService = App.Services.GetRequiredService<ConfigurationService>();
+                    Func<AzureSpeechConfig> configProvider = () => _viewModel.ConfigVM.Config ?? new AzureSpeechConfig();
+                    var controlPanelVm = new AudioLabControlPanelViewModel(pipeline, ttsService, configProvider, tokenStore, configService);
+
                     AudioLabViewPage?.Initialize(
                         App.Services.GetRequiredService<IAiInsightService>(),
-                        App.Services.GetRequiredService<IAzureTokenProviderStore>(),
+                        tokenStore,
                         App.Services.GetRequiredService<IModelRuntimeResolver>(),
                         App.Services.GetRequiredService<ISpeechResourceRuntimeResolver>(),
                         App.Services.GetRequiredService<IAiAudioTranscriptionService>(),
-                        () => _viewModel.ConfigVM.Config ?? new AzureSpeechConfig());
+                        configProvider,
+                        configService,
+                        pipeline,
+                        controlPanelVm);
                 }
             }, DispatcherPriority.Background);
         }

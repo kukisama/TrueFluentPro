@@ -1,0 +1,166 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:TrueFluentPro.ViewModels.Settings"
+             x:Class="TrueFluentPro.Views.Settings.AudioLabSection"
+             x:DataType="vm:AudioLabSectionVM"
+             x:CompileBindings="False">
+    <Border Classes="app-card"
+            BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+            BorderThickness="1" CornerRadius="8" Padding="20">
+        <StackPanel Spacing="12">
+            <TextBlock Text="听析中心" Theme="{StaticResource SubtitleTextBlockStyle}"/>
+            <Separator/>
+
+            <!-- ═══ AI 文本模型 ═══ -->
+            <TextBlock Text="AI 文本模型" FontWeight="Bold"/>
+            <TextBlock Classes="field-note" TextWrapping="Wrap"
+                       Text="用于总结、顿悟、思维导图、深度研究和播客脚本生成。从已配置的 AI 终结点中选择具有文本能力的模型。"/>
+            <StackPanel Spacing="5">
+                <TextBlock Text="文本生成模型"/>
+                <ComboBox ItemsSource="{Binding TextModels}"
+                          SelectedItem="{Binding SelectedTextModel, Mode=TwoWay}"
+                          MinWidth="320"
+                          HorizontalAlignment="Left"
+                          IsEnabled="{Binding HasTextModels}"/>
+                <TextBlock Classes="hint-text"
+                           Text="该模型将用于听析中心的所有 AI 文本生成功能（总结、顿悟、研究、播客脚本）。"
+                           IsVisible="{Binding HasTextModels}"/>
+                <TextBlock Classes="hint-text"
+                           Text="还没有可用的文本模型，请先去「终结点管理」添加至少一个具有文本能力的终结点和模型。"
+                           IsVisible="{Binding !HasTextModels}"
+                           Foreground="{DynamicResource SystemFillColorCautionBrush}"/>
+            </StackPanel>
+
+            <Separator Margin="0,8"/>
+
+            <!-- ═══ 语音来源 ═══ -->
+            <TextBlock Text="语音服务来源" FontWeight="Bold"/>
+            <TextBlock Classes="field-note" TextWrapping="Wrap"
+                       Text="选择语音转文字（转录）和文字转语音（播客合成）的服务来源。"/>
+            <StackPanel Spacing="5">
+                <TextBlock Text="来源类型"/>
+                <ComboBox SelectedIndex="{Binding SpeechModeIndex, Mode=TwoWay}"
+                          MinWidth="280" HorizontalAlignment="Left">
+                    <ComboBoxItem Content="AAD (Foundry 终结点)"/>
+                    <ComboBoxItem Content="传统语音终结点"/>
+                </ComboBox>
+            </StackPanel>
+
+            <!-- AAD 模式 -->
+            <StackPanel Spacing="8" IsVisible="{Binding IsAadMode}">
+                <StackPanel Spacing="5">
+                    <TextBlock Text="Foundry 终结点"/>
+                    <ComboBox ItemsSource="{Binding AadEndpoints}"
+                              SelectedItem="{Binding SelectedAadEndpoint, Mode=TwoWay}"
+                              MinWidth="320"
+                              HorizontalAlignment="Left"
+                              IsEnabled="{Binding HasAadEndpoints}"/>
+                    <TextBlock Classes="hint-text"
+                               Text="选择已登录 AAD 的 Foundry 终结点。该终结点的 AAD 令牌将同时用于语音服务。"
+                               IsVisible="{Binding HasAadEndpoints}"/>
+                    <TextBlock Classes="hint-text"
+                               Text="没有可用的 AAD 终结点。请先去「终结点管理」添加一个 Azure OpenAI 终结点并启用 AAD 认证。"
+                               IsVisible="{Binding !HasAadEndpoints}"
+                               Foreground="{DynamicResource SystemFillColorCautionBrush}"/>
+                </StackPanel>
+
+                <!-- 自动推导的语音服务信息 -->
+                <Border IsVisible="{Binding HasAadEndpoints}"
+                        Background="{DynamicResource CardBackgroundFillColorSecondaryBrush}"
+                        CornerRadius="6" Padding="12" Margin="0,4">
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="自动推导的语音服务终结点" FontWeight="SemiBold" FontSize="12" Opacity="0.7"/>
+                        <Grid ColumnDefinitions="80,*" RowDefinitions="Auto,Auto,Auto" Margin="0,4,0,0">
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="区域" Opacity="0.7"/>
+                            <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding DerivedRegion}" FontWeight="SemiBold"/>
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="STT" Opacity="0.7" Margin="0,2,0,0"/>
+                            <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding DerivedSttUrl}" Margin="0,2,0,0"
+                                       TextWrapping="Wrap" FontSize="12"/>
+                            <TextBlock Grid.Row="2" Grid.Column="0" Text="TTS" Opacity="0.7" Margin="0,2,0,0"/>
+                            <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding DerivedTtsUrl}" Margin="0,2,0,0"
+                                       TextWrapping="Wrap" FontSize="12"/>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+
+            <!-- 传统语音终结点模式 -->
+            <StackPanel Spacing="5" IsVisible="{Binding IsTraditionalMode}">
+                <TextBlock Text="语音终结点"/>
+                <ComboBox ItemsSource="{Binding SpeechEndpoints}"
+                          SelectedItem="{Binding SelectedSpeechEndpoint, Mode=TwoWay}"
+                          MinWidth="320"
+                          HorizontalAlignment="Left"
+                          IsEnabled="{Binding HasSpeechEndpoints}"/>
+                <TextBlock Classes="hint-text"
+                           Text="使用订阅密钥认证的传统 Azure 认知服务语音终结点，适用于独立的 Speech 资源。"
+                           IsVisible="{Binding HasSpeechEndpoints}"/>
+                <TextBlock Classes="hint-text"
+                           Text="没有可用的语音终结点。请先去「终结点管理」添加一个 Azure Speech 类型的终结点。"
+                           IsVisible="{Binding !HasSpeechEndpoints}"
+                           Foreground="{DynamicResource SystemFillColorCautionBrush}"/>
+            </StackPanel>
+
+            <Separator Margin="0,8"/>
+
+            <!-- ═══ 源语言 ═══ -->
+            <TextBlock Text="转录设置" FontWeight="Bold"/>
+            <StackPanel Spacing="5">
+                <TextBlock Text="源语言"/>
+                <ComboBox ItemsSource="{x:Static vm:AudioLabSectionVM.SourceLanguageOptions}"
+                          SelectedIndex="0"
+                          MinWidth="220"
+                          HorizontalAlignment="Left"
+                          x:Name="SourceLanguageCombo"/>
+                <TextBlock Classes="hint-text" Text="选择「自动检测」可让模型自动识别语言；指定语言可提高识别准确率。"/>
+            </StackPanel>
+
+            <Separator Margin="0,8"/>
+
+            <!-- ═══ 播客语音配置 ═══ -->
+            <TextBlock Text="播客语音配置" FontWeight="Bold"/>
+            <TextBlock Classes="field-note" TextWrapping="Wrap"
+                       Text="基础播客配置。详细语音选择请使用听析中心面板中的「...」菜单加载语音列表。"/>
+
+            <StackPanel Spacing="5">
+                <TextBlock Text="默认语言筛选"/>
+                <TextBox Text="{Binding PodcastLanguage, Mode=TwoWay}"
+                         Watermark="如: zh-CN（留空表示全部）"
+                         MinWidth="220" HorizontalAlignment="Left"/>
+                <TextBlock Classes="hint-text" Text="加载语音列表时仅显示指定语言。常用值：zh-CN（中文）、en-US（英语）、ja-JP（日语）"/>
+            </StackPanel>
+
+            <Grid ColumnDefinitions="80,*" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="12" RowSpacing="8"
+                  Margin="0,8,0,0">
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="发言人 A" VerticalAlignment="Center"/>
+                <TextBox Grid.Row="0" Grid.Column="1"
+                         Text="{Binding PodcastSpeakerAVoice, Mode=TwoWay}"
+                         Watermark="如: XiaochenMultilingual"
+                         MinWidth="280" HorizontalAlignment="Left"/>
+
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="发言人 B" VerticalAlignment="Center"/>
+                <TextBox Grid.Row="1" Grid.Column="1"
+                         Text="{Binding PodcastSpeakerBVoice, Mode=TwoWay}"
+                         Watermark="如: Yunfeng"
+                         MinWidth="280" HorizontalAlignment="Left"/>
+
+                <TextBlock Grid.Row="2" Grid.Column="0" Text="发言人 C" VerticalAlignment="Center"/>
+                <TextBox Grid.Row="2" Grid.Column="1"
+                         Text="{Binding PodcastSpeakerCVoice, Mode=TwoWay}"
+                         Watermark="如: Xiaoshuang"
+                         MinWidth="280" HorizontalAlignment="Left"/>
+            </Grid>
+            <TextBlock Classes="hint-text"
+                       Text="填写 Azure Speech 语音的 ShortName 关键字（部分匹配即可），加载语音时自动预选对应语音。"
+                       TextWrapping="Wrap"/>
+
+            <StackPanel Spacing="5" Margin="0,8,0,0">
+                <TextBlock Text="输出音频格式"/>
+                <ComboBox ItemsSource="{x:Static vm:AudioLabSectionVM.PodcastOutputFormatOptions}"
+                          SelectedItem="{Binding SelectedPodcastOutputFormat, Mode=TwoWay}"
+                          MinWidth="280" HorizontalAlignment="Left"/>
+                <TextBlock Classes="hint-text" Text="合成的播客音频输出格式，默认为 MP3 24kHz。"/>
+            </StackPanel>
+        </StackPanel>
+    </Border>
+</UserControl>

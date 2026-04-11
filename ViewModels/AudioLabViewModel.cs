@@ -12,6 +12,9 @@ using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using TrueFluentPro.Models;
 using TrueFluentPro.Services;
+using TrueFluentPro.Services.Speech;
+using TrueFluentPro.Services.Storage;
+using TrueFluentPro.ViewModels.Settings;
 
 namespace TrueFluentPro.ViewModels
 {
@@ -36,7 +39,106 @@ namespace TrueFluentPro.ViewModels
         private readonly ISpeechResourceRuntimeResolver _speechResourceRuntimeResolver;
         private readonly IAiAudioTranscriptionService _aiAudioTranscriptionService;
         private readonly Func<AzureSpeechConfig> _configProvider;
-        private CancellationTokenSource? _generationCts;
+        private readonly ConfigurationService _configService;
+        private readonly AudioLifecyclePipelineService _pipeline;
+
+        // ── 会话管理（每个音频文件一个独立会话） ─────────────────
+        private readonly Dictionary<string, AudioFileSession> _sessions = new(StringComparer.OrdinalIgnoreCase);
+        private AudioFileSession? _activeSession;
+
+        private sealed class AudioFileSession : IDisposable
+        {
+            public string FilePath { get; }
+            public CancellationTokenSource Cts { get; private set; } = new();
+
+            public List<TranscriptSegment> Segments { get; set; } = new();
+            public string SummaryMarkdown { get; set; } = "";
+            public string InsightMarkdown { get; set; } = "";
+            public string PodcastMarkdown { get; set; } = "";
+            public MindMapNode? MindMapRoot { get; set; }
+            public List<ResearchTopic> ResearchTopics { get; set; } = new();
+            public string ResearchReportMarkdown { get; set; } = "";
+            public ResearchPhase CurrentResearchPhase { get; set; } = ResearchPhase.Idle;
+            public string StatusMessage { get; set; } = "就绪";
+            public bool IsGenerating { get; set; }
+            public bool IsSummaryEditing { get; set; }
+            public string SummaryEditText { get; set; } = "";
+
+            public AudioFileSession(string filePath) => FilePath = filePath;
+
+            public CancellationToken ResetCts()
+            {
+                Cts?.Cancel();
+                Cts?.Dispose();
+                Cts = new CancellationTokenSource();
+                return Cts.Token;
+            }
+
+            public void Dispose()
+            {
+                Cts?.Cancel();
+                Cts?.Dispose();
+            }
+        }
+
+        private bool IsActive(AudioFileSession s) => s == _activeSession;
+
+        private void PostIfActive(AudioFileSession s, Action action)
+        {
+            if (IsActive(s)) Dispatcher.UIThread.Post(action);
+        }
+
+        private async Task InvokeIfActiveAsync(AudioFileSession s, Action action)
+        {
+            if (IsActive(s)) await Dispatcher.UIThread.InvokeAsync(action);
+        }
+
+        private void SyncUiFromSession(AudioFileSession s)
+        {
+            SummaryMarkdown = s.SummaryMarkdown;
+            InsightMarkdown = s.InsightMarkdown;
+            PodcastMarkdown = s.PodcastMarkdown;
+            MindMapRoot = s.MindMapRoot;
+            ResearchReportMarkdown = s.ResearchReportMarkdown;
+            CurrentResearchPhase = s.CurrentResearchPhase;
+            StatusMessage = s.StatusMessage;
+            IsGenerating = s.IsGenerating;
+            IsSummaryEditing = s.IsSummaryEditing;
+            SummaryEditText = s.SummaryEditText;
+            CurrentSegment = null;
+
+            Segments.Clear();
+            foreach (var seg in s.Segments) Segments.Add(seg);
+
+            AutoTags.Clear();
+
+            ResearchTopics.Clear();
+            foreach (var t in s.ResearchTopics) ResearchTopics.Add(t);
+
+            RaiseAllCommandsCanExecuteChanged();
+        }
+
+        private void SaveUiToSession(AudioFileSession s)
+        {
+            s.SummaryMarkdown = SummaryMarkdown;
+            s.InsightMarkdown = InsightMarkdown;
+            s.PodcastMarkdown = PodcastMarkdown;
+            s.MindMapRoot = MindMapRoot;
+            s.ResearchReportMarkdown = ResearchReportMarkdown;
+            s.CurrentResearchPhase = CurrentResearchPhase;
+            s.StatusMessage = StatusMessage;
+            s.IsGenerating = IsGenerating;
+            s.IsSummaryEditing = IsSummaryEditing;
+            s.SummaryEditText = SummaryEditText;
+            s.Segments = new List<TranscriptSegment>(Segments);
+            s.ResearchTopics = new List<ResearchTopic>(ResearchTopics);
+        }
+
+        private void SyncSegmentsFromSession(AudioFileSession s)
+        {
+            Segments.Clear();
+            foreach (var seg in s.Segments) Segments.Add(seg);
+        }
 
         // ── 当前音频 ──────────────────────────────────────────
         [ObservableProperty]
@@ -81,6 +183,21 @@ namespace TrueFluentPro.ViewModels
         [ObservableProperty]
         private string _podcastMarkdown = "";
 
+        // ── 播客音频播放 ──────────────────────────────────────
+        public AudioLabPlaybackViewModel PodcastPlayback { get; }
+
+        [ObservableProperty]
+        private bool _hasPodcastAudioFile;
+
+        [ObservableProperty]
+        private string _podcastAudioPath = "";
+
+        /// <summary>播客播放栏是否可见（仅播客标签页 + 有音频文件时显示）</summary>
+        public bool ShowPodcastPlayback => HasPodcastAudioFile && SelectedTab == AudioLabTabKind.Podcast;
+
+        partial void OnHasPodcastAudioFileChanged(bool value) => OnPropertyChanged(nameof(ShowPodcastPlayback));
+        partial void OnSelectedTabChanged(AudioLabTabKind value) => OnPropertyChanged(nameof(ShowPodcastPlayback));
+
         // ── 深度研究 ──────────────────────────────────────────
         public ObservableCollection<ResearchTopic> ResearchTopics { get; } = new();
 
@@ -115,6 +232,10 @@ namespace TrueFluentPro.ViewModels
             {
                 if (!SetProperty(ref _isFilePanelOpen, value)) return;
                 FilePanelStateChanged?.Invoke(value);
+                // 持久化到配置
+                var config = _configProvider();
+                config.AudioLabFilePanelOpen = value;
+                _ = _configService.SaveConfigAsync(config);
             }
         }
 
@@ -132,13 +253,19 @@ namespace TrueFluentPro.ViewModels
         public ICommand GeneratePodcastCommand { get; }
         public ICommand StopGenerationCommand { get; }
 
+        /// <summary>控制面板 ViewModel — 管理生命周期和 TTS 配置。</summary>
+        public AudioLabControlPanelViewModel ControlPanel { get; }
+
         public AudioLabViewModel(
             IAiInsightService aiInsightService,
             IAzureTokenProviderStore azureTokenProviderStore,
             IModelRuntimeResolver modelRuntimeResolver,
             ISpeechResourceRuntimeResolver speechResourceRuntimeResolver,
             IAiAudioTranscriptionService aiAudioTranscriptionService,
-            Func<AzureSpeechConfig> configProvider)
+            Func<AzureSpeechConfig> configProvider,
+            ConfigurationService configService,
+            AudioLifecyclePipelineService pipeline,
+            AudioLabControlPanelViewModel controlPanel)
         {
             _aiInsightService = aiInsightService;
             _azureTokenProviderStore = azureTokenProviderStore;
@@ -146,11 +273,28 @@ namespace TrueFluentPro.ViewModels
             _speechResourceRuntimeResolver = speechResourceRuntimeResolver;
             _aiAudioTranscriptionService = aiAudioTranscriptionService;
             _configProvider = configProvider;
+            _configService = configService;
+            _pipeline = pipeline;
+            ControlPanel = controlPanel;
+
+            // 从配置恢复文件面板展开状态（默认展开）
+            _isFilePanelOpen = configProvider().AudioLabFilePanelOpen;
+
+            // 订阅自动补齐请求
+            ControlPanel.AutoFillMissingRequested += OnAutoFillMissingRequested;
+            ControlPanel.PodcastAudioSynthesized += OnPodcastAudioSynthesized;
 
             Playback = new AudioLabPlaybackViewModel(
                 () => Segments,
                 seg => CurrentSegment = seg,
                 () => CurrentSegment);
+
+            // 播客音频专用播放器（无段落跳转）
+            var emptySegments = new ObservableCollection<TranscriptSegment>();
+            PodcastPlayback = new AudioLabPlaybackViewModel(
+                () => emptySegments,
+                _ => { },
+                () => null);
 
             LoadFileCommand = new RelayCommand(p =>
             {
@@ -177,7 +321,7 @@ namespace TrueFluentPro.ViewModels
             GenerateInsightCommand = new RelayCommand(_ => _ = GenerateInsightAsync(), _ => !IsGenerating && Segments.Count > 0);
             GenerateResearchCommand = new RelayCommand(_ => _ = GenerateResearchAsync(), _ => !IsGenerating && Segments.Count > 0);
             GeneratePodcastCommand = new RelayCommand(_ => _ = GeneratePodcastAsync(), _ => !IsGenerating && Segments.Count > 0);
-            StopGenerationCommand = new RelayCommand(_ => _generationCts?.Cancel(), _ => IsGenerating);
+            StopGenerationCommand = new RelayCommand(_ => _activeSession?.Cts?.Cancel(), _ => IsGenerating);
         }
 
         partial void OnSelectedAudioFileChanged(MediaFileItem? value)
@@ -192,29 +336,54 @@ namespace TrueFluentPro.ViewModels
             if (string.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath))
                 return;
 
-            CurrentFilePath = filePath;
-            CurrentFileName = Path.GetFileName(filePath);
+            // 保存当前会话的 UI 编辑状态
+            if (_activeSession != null)
+                SaveUiToSession(_activeSession);
+
+            // 获取或创建目标文件会话
+            if (!_sessions.TryGetValue(filePath, out var session))
+            {
+                session = new AudioFileSession(filePath);
+                _sessions[filePath] = session;
+            }
+
+            _activeSession = session;
+            CurrentFilePath = session.FilePath;
+            CurrentFileName = Path.GetFileName(session.FilePath);
             BreadcrumbText = $"听析中心 / {CurrentFileName}";
-            StatusMessage = $"已加载: {CurrentFileName}";
 
             Playback.LoadAudio(filePath);
 
-            // 清空旧数据
-            SummaryMarkdown = "";
-            Segments.Clear();
-            AutoTags.Clear();
-            MindMapRoot = null;
-            InsightMarkdown = "";
-            PodcastMarkdown = "";
-            ResearchTopics.Clear();
-            ResearchReportMarkdown = "";
-            CurrentResearchPhase = ResearchPhase.Idle;
+            // 确保音频在数据库中有记录，同步控制面板
+            var audioItemId = _pipeline.EnsureAudioItem(filePath);
+            ControlPanel.SetCurrentAudio(audioItemId, CurrentFileName);
+
+            // 尝试从生命周期缓存恢复内容（避免重新生成）
+            TryRestoreFromLifecycleCache(session, audioItemId);
+
+            // 恢复播客音频播放器（如果有已合成的播客音频）
+            var podcastPath = _pipeline.TryLoadCachedFilePath(audioItemId, AudioLifecycleStage.PodcastAudio);
+            if (!string.IsNullOrWhiteSpace(podcastPath) && File.Exists(podcastPath))
+            {
+                PodcastAudioPath = podcastPath;
+                HasPodcastAudioFile = true;
+                PodcastPlayback.LoadAudio(podcastPath);
+            }
+            else
+            {
+                PodcastAudioPath = "";
+                HasPodcastAudioFile = false;
+            }
+
+            // 从会话恢复所有状态到 UI
+            SyncUiFromSession(session);
             SelectedTab = AudioLabTabKind.Summary;
 
-            RaiseAllCommandsCanExecuteChanged();
-
-            // 自动开始转录
-            _ = TranscribeAsync();
+            // 全新会话（无转录、无生成中、数据库无转录记录）才自动开始转录
+            var hasDbTranscription = _pipeline.GetCompletedStages(audioItemId)
+                .Contains(AudioLifecycleStage.Transcribed);
+            if (session.Segments.Count == 0 && !session.IsGenerating && !hasDbTranscription)
+                _ = TranscribeSessionAsync(session);
         }
 
         // ── 转录段合并（从外部 SubtitleCue 列表生成） ─────────
@@ -356,47 +525,37 @@ namespace TrueFluentPro.ViewModels
             endpoint = null;
             errorMessage = "";
 
-            var ai = config.AiConfig;
-            if (ai == null)
+            // 优先使用听析中心专用的文本模型引用
+            var reference = config.AudioLabTextModelRef;
+
+            // 回退到全局 AiConfig 的模型引用
+            if (reference == null)
             {
-                errorMessage = "AI 配置不存在，请先在设置中配置 AI 模型。";
-                return false;
+                var ai = config.AiConfig;
+                if (ai == null)
+                {
+                    errorMessage = "AI 配置不存在，请先在「设置 → 听析中心」中配置文本模型。";
+                    return false;
+                }
+                reference = SelectTextModelReference(ai);
             }
 
-            var reference = SelectTextModelReference(ai);
             if (_modelRuntimeResolver.TryResolve(config, reference, ModelCapability.Text, out var runtime, out var resolveError)
                 && runtime != null)
             {
                 endpoint = runtime.Endpoint;
-                runtimeRequest = runtime.CreateChatRequest(ai.SummaryEnableReasoning);
+                runtimeRequest = runtime.CreateChatRequest(config.AiConfig?.SummaryEnableReasoning ?? false);
                 return true;
             }
 
-            errorMessage = string.IsNullOrWhiteSpace(resolveError) ? "未配置可用的文本模型" : resolveError;
+            errorMessage = string.IsNullOrWhiteSpace(resolveError)
+                ? "未配置可用的文本模型，请在「设置 → 听析中心」中选择文本生成模型。"
+                : resolveError;
             return false;
         }
 
-        private bool TryResolveAiSpeechRuntime(
-            AzureSpeechConfig config,
-            out ModelRuntimeResolution? runtime,
-            out string errorMessage)
-        {
-            runtime = null;
-            if (!_speechResourceRuntimeResolver.TryResolveActive(config, SpeechCapability.BatchSpeechToText, out var resolution, out errorMessage)
-                || resolution == null)
-            {
-                return false;
-            }
-
-            if (!resolution.IsAiSpeech || resolution.AiRuntime == null)
-            {
-                errorMessage = $"当前语音资源「{resolution.Resource.Name}」不是可用的 AI 语音连接器。";
-                return false;
-            }
-
-            runtime = resolution.AiRuntime;
-            return true;
-        }
+        // TryResolveAiSpeechRuntime 已移除：转录改用 Speech Batch API，
+        // 语音端点解析在 TranscribeWithAadAsync / TranscribeWithTraditionalAsync 中完成。
 
         private async Task<AiInsightService> CreateAuthenticatedInsightServiceAsync(
             AiChatRequestConfig runtimeRequest, AiEndpoint? endpoint, CancellationToken token)
@@ -412,12 +571,12 @@ namespace TrueFluentPro.ViewModels
             return new AiInsightService(tokenProvider);
         }
 
-        private string FormatTranscriptForAi()
+        private static string FormatTranscriptForAi(IList<TranscriptSegment> segments)
         {
-            if (Segments.Count == 0) return "(暂无转录内容)";
+            if (segments.Count == 0) return "(暂无转录内容)";
 
             var sb = new StringBuilder();
-            foreach (var seg in Segments)
+            foreach (var seg in segments)
             {
                 var time = seg.StartTime.ToString(@"hh\:mm\:ss");
                 sb.AppendLine($"[{time}] {seg.Speaker}: {seg.Text}");
@@ -425,73 +584,117 @@ namespace TrueFluentPro.ViewModels
             return sb.ToString();
         }
 
+        private static List<TranscriptSegment> BuildSegmentsFromCues(IList<SubtitleCue> cues)
+        {
+            var segments = new List<TranscriptSegment>();
+            if (cues == null || cues.Count == 0) return segments;
+
+            var speakerMap = new Dictionary<string, int>();
+
+            // 每条 cue 保持为独立段落，保留断句粒度
+            foreach (var cue in cues)
+            {
+                var (speaker, text) = ParseSpeaker(cue.Text);
+                if (string.IsNullOrWhiteSpace(text)) continue;
+
+                if (!speakerMap.ContainsKey(speaker))
+                    speakerMap[speaker] = speakerMap.Count;
+
+                segments.Add(new TranscriptSegment
+                {
+                    Speaker = speaker,
+                    SpeakerIndex = speakerMap[speaker],
+                    StartTime = cue.Start,
+                    Text = text,
+                    SourceCues = new List<SubtitleCue> { cue }
+                });
+            }
+            return segments;
+        }
+
         // ── 转录 ─────────────────────────────────────────────
 
-        private async Task TranscribeAsync()
+        private Task TranscribeAsync()
         {
-            if (string.IsNullOrWhiteSpace(CurrentFilePath) || !File.Exists(CurrentFilePath))
+            var session = _activeSession;
+            return session != null ? TranscribeSessionAsync(session) : Task.CompletedTask;
+        }
+
+        private async Task TranscribeSessionAsync(AudioFileSession session)
+        {
+            if (string.IsNullOrWhiteSpace(session.FilePath) || !File.Exists(session.FilePath))
                 return;
 
             var config = _configProvider();
+            var token = session.ResetCts();
 
-            if (!TryResolveAiSpeechRuntime(config, out var runtime, out var errorMessage) || runtime == null)
+            session.IsGenerating = true;
+            session.StatusMessage = "正在转录音频...";
+            await InvokeIfActiveAsync(session, () =>
             {
-                StatusMessage = $"转录未启动：{errorMessage}";
-                return;
-            }
-
-            _generationCts?.Cancel();
-            _generationCts = new CancellationTokenSource();
-            var token = _generationCts.Token;
-
-            IsGenerating = true;
-            StatusMessage = "正在转录音频...";
-            RaiseAllCommandsCanExecuteChanged();
+                IsGenerating = true;
+                StatusMessage = session.StatusMessage;
+                RaiseAllCommandsCanExecuteChanged();
+            });
 
             try
             {
                 var splitOptions = new BatchSubtitleSplitOptions
                 {
-                    EnableSentenceSplit = true,
-                    SplitOnComma = false,
-                    MaxChars = 80,
-                    MaxDurationSeconds = 15,
-                    PauseSplitMs = 600
+                    EnableSentenceSplit = config.EnableBatchSubtitleSentenceSplit,
+                    SplitOnComma = config.BatchSubtitleSplitOnComma,
+                    MaxChars = config.BatchSubtitleMaxChars,
+                    MaxDurationSeconds = config.BatchSubtitleMaxDurationSeconds,
+                    PauseSplitMs = config.BatchSubtitlePauseSplitMs
                 };
+                var locale = RealtimeSpeechTranscriber.GetTranscriptionSourceLanguage(
+                    config.AudioLabSourceLanguage ?? config.SourceLanguage);
 
-                var result = await _aiAudioTranscriptionService.TranscribeAsync(
-                    runtime, CurrentFilePath, config.SourceLanguage, splitOptions, token);
+                List<SubtitleCue> cues;
 
-                if (result.Cues.Count == 0)
+                if (config.AudioLabSpeechMode == 0)
+                    cues = await TranscribeWithAadAsync(session, config, locale, splitOptions, token);
+                else
+                    cues = await TranscribeWithTraditionalAsync(session, config, locale, splitOptions, token);
+
+                // 将结果写入会话
+                session.Segments = BuildSegmentsFromCues(cues);
+
+                if (session.Segments.Count == 0)
                 {
-                    await Dispatcher.UIThread.InvokeAsync(() =>
-                    {
-                        StatusMessage = "转录完成，但未识别到内容。";
-                    });
+                    session.StatusMessage = "转录完成，但未识别到内容。";
+                    await InvokeIfActiveAsync(session, () => StatusMessage = session.StatusMessage);
                     return;
                 }
 
-                await Dispatcher.UIThread.InvokeAsync(() =>
+                session.StatusMessage = $"转录完成：{session.Segments.Count} 个段落";
+                await InvokeIfActiveAsync(session, () =>
                 {
-                    LoadTranscriptFromCues(result.Cues);
-                    StatusMessage = $"转录完成：{Segments.Count} 个段落";
+                    SyncSegmentsFromSession(session);
+                    StatusMessage = session.StatusMessage;
                     RaiseAllCommandsCanExecuteChanged();
                 });
 
-                // 转录完成后自动生成总结
-                await GenerateSummaryAsync();
+                // 保存转录到生命周期数据库
+                SaveTranscriptionToLifecycle(session);
+
+                // 转录完成后并发填充所有下游内容
+                await AutoFillDownstreamAsync(session);
             }
             catch (OperationCanceledException)
             {
-                await Dispatcher.UIThread.InvokeAsync(() => StatusMessage = "转录已取消");
+                session.StatusMessage = "转录已取消";
+                await InvokeIfActiveAsync(session, () => StatusMessage = session.StatusMessage);
             }
             catch (Exception ex)
             {
-                await Dispatcher.UIThread.InvokeAsync(() => StatusMessage = $"转录失败：{ex.Message}");
+                session.StatusMessage = $"转录失败：{ex.Message}";
+                await InvokeIfActiveAsync(session, () => StatusMessage = session.StatusMessage);
             }
             finally
             {
-                await Dispatcher.UIThread.InvokeAsync(() =>
+                session.IsGenerating = false;
+                await InvokeIfActiveAsync(session, () =>
                 {
                     IsGenerating = false;
                     RaiseAllCommandsCanExecuteChanged();
@@ -499,37 +702,161 @@ namespace TrueFluentPro.ViewModels
             }
         }
 
+        private async Task<List<SubtitleCue>> TranscribeWithAadAsync(
+            AudioFileSession session, AzureSpeechConfig config, string locale,
+            BatchSubtitleSplitOptions splitOptions, CancellationToken token)
+        {
+            var endpointId = config.AudioLabAadEndpointId;
+            if (string.IsNullOrWhiteSpace(endpointId))
+                throw new InvalidOperationException("听析中心未选择 AAD 终结点，请在「设置 → 听析中心」中选择 Foundry 终结点。");
+
+            var endpoint = config.Endpoints.FirstOrDefault(e => e.Id == endpointId);
+            if (endpoint == null || !endpoint.IsEnabled)
+                throw new InvalidOperationException("听析中心选择的 AAD 终结点已不存在或已禁用，请重新配置。");
+
+            if (!config.BatchStorageIsValid || string.IsNullOrWhiteSpace(config.BatchStorageConnectionString))
+                throw new InvalidOperationException("存储账号未配置或未验证，批量转录需要 Azure Blob Storage。请在「设置 → 录音与存储」中配置。");
+
+            var tokenProvider = await _azureTokenProviderStore.GetAuthenticatedProviderAsync(
+                GetEndpointProfileKey(endpoint),
+                endpoint.AzureTenantId,
+                endpoint.AzureClientId);
+
+            if (tokenProvider?.IsLoggedIn != true)
+                throw new InvalidOperationException("AAD 认证未登录。请先在终结点设置中完成 AAD 登录。");
+
+            session.StatusMessage = "转录：上传音频...";
+            await InvokeIfActiveAsync(session, () => StatusMessage = session.StatusMessage);
+            var (audioContainer, _) = await BlobStorageService.GetBatchContainersAsync(
+                config.BatchStorageConnectionString,
+                config.BatchAudioContainerName,
+                config.BatchResultContainerName,
+                token);
+            var uploadedBlob = await BlobStorageService.UploadAudioToBlobAsync(session.FilePath, audioContainer, token);
+            var contentUrl = BlobStorageService.CreateBlobReadSasUri(uploadedBlob, TimeSpan.FromHours(24));
+
+            var subdomain = AudioLabSectionVM.ParseSubdomainFromFoundryUrl(endpoint.BaseUrl);
+            if (string.IsNullOrWhiteSpace(subdomain))
+                throw new InvalidOperationException($"无法从终结点「{endpoint.Name}」的 URL 解析子域名。");
+            var cognitiveHost = AudioLabSectionVM.IsAzureChinaUrl(endpoint.BaseUrl)
+                ? $"https://{subdomain}.cognitiveservices.azure.cn"
+                : $"https://{subdomain}.cognitiveservices.azure.com";
+            var batchEndpoint = $"{cognitiveHost}/speechtotext/v3.1/transcriptions";
+
+            session.StatusMessage = "转录：提交批量任务...";
+            await InvokeIfActiveAsync(session, () => StatusMessage = session.StatusMessage);
+            var (cues, _) = await SpeechBatchApiClient.BatchTranscribeSpeechToCuesAsync(
+                contentUrl, locale, batchEndpoint,
+                async ct => await tokenProvider.GetTokenAsync(ct),
+                token,
+                status => { session.StatusMessage = status; PostIfActive(session, () => StatusMessage = status); },
+                splitOptions);
+
+            return cues;
+        }
+
+        private async Task<List<SubtitleCue>> TranscribeWithTraditionalAsync(
+            AudioFileSession session, AzureSpeechConfig config, string locale,
+            BatchSubtitleSplitOptions splitOptions, CancellationToken token)
+        {
+            AzureSubscription? subscription = null;
+            var endpointId = config.AudioLabSpeechEndpointId;
+
+            if (!string.IsNullOrWhiteSpace(endpointId))
+            {
+                var ep = config.Endpoints.FirstOrDefault(e => e.Id == endpointId && e.IsSpeechEndpoint && e.IsEnabled);
+                if (ep != null)
+                {
+                    var region = !string.IsNullOrWhiteSpace(ep.SpeechRegion)
+                        ? ep.SpeechRegion
+                        : AzureSubscription.ParseRegionFromEndpoint(ep.SpeechEndpoint ?? "");
+                    subscription = new AzureSubscription
+                    {
+                        Name = ep.Name,
+                        SubscriptionKey = ep.SpeechSubscriptionKey,
+                        ServiceRegion = region ?? "",
+                        Endpoint = ep.SpeechEndpoint ?? ""
+                    };
+                }
+            }
+
+            if (subscription == null || !subscription.IsValid())
+            {
+                if (!_speechResourceRuntimeResolver.TryResolveActive(config, SpeechCapability.BatchSpeechToText, out var resolution, out var resolveError)
+                    || resolution == null)
+                {
+                    throw new InvalidOperationException(string.IsNullOrWhiteSpace(resolveError)
+                        ? "未配置语音转写资源，请在「设置 → 听析中心」中选择语音终结点。"
+                        : resolveError);
+                }
+                if (resolution.MicrosoftSubscription != null)
+                    subscription = resolution.MicrosoftSubscription;
+                else
+                    throw new InvalidOperationException("当前语音资源不支持批量转录。请在「设置 → 听析中心」中选择传统语音终结点或切换到 AAD 模式。");
+            }
+
+            if (!config.BatchStorageIsValid || string.IsNullOrWhiteSpace(config.BatchStorageConnectionString))
+                throw new InvalidOperationException("存储账号未配置或未验证，批量转录需要 Azure Blob Storage。请在「设置 → 录音与存储」中配置。");
+
+            session.StatusMessage = "转录：上传音频...";
+            await InvokeIfActiveAsync(session, () => StatusMessage = session.StatusMessage);
+            var (audioContainer, _) = await BlobStorageService.GetBatchContainersAsync(
+                config.BatchStorageConnectionString,
+                config.BatchAudioContainerName,
+                config.BatchResultContainerName,
+                token);
+            var uploadedBlob = await BlobStorageService.UploadAudioToBlobAsync(session.FilePath, audioContainer, token);
+            var contentUrl = BlobStorageService.CreateBlobReadSasUri(uploadedBlob, TimeSpan.FromHours(24));
+
+            session.StatusMessage = "转录：提交批量任务...";
+            await InvokeIfActiveAsync(session, () => StatusMessage = session.StatusMessage);
+            var (cues, _) = await SpeechBatchApiClient.BatchTranscribeSpeechToCuesAsync(
+                contentUrl, locale, subscription, token,
+                status => { session.StatusMessage = status; PostIfActive(session, () => StatusMessage = status); },
+                splitOptions);
+
+            return cues;
+        }
+
         // ── 总结生成 ──────────────────────────────────────────
 
-        private async Task GenerateSummaryAsync()
+        private Task GenerateSummaryAsync()
         {
-            if (Segments.Count == 0) return;
+            var session = _activeSession;
+            return session != null ? GenerateSummarySessionAsync(session) : Task.CompletedTask;
+        }
+
+        private async Task GenerateSummarySessionAsync(AudioFileSession session)
+        {
+            if (session.Segments.Count == 0) return;
 
             var config = _configProvider();
             if (!TryBuildTextRuntimeConfig(config, out var runtimeRequest, out var endpoint, out var errorMessage))
             {
-                await Dispatcher.UIThread.InvokeAsync(() => StatusMessage = $"总结未启动：{errorMessage}");
+                session.StatusMessage = $"总结未启动：{errorMessage}";
+                await InvokeIfActiveAsync(session, () => StatusMessage = session.StatusMessage);
                 return;
             }
 
-            _generationCts?.Cancel();
-            _generationCts = new CancellationTokenSource();
-            var token = _generationCts.Token;
+            var token = session.ResetCts();
 
-            await Dispatcher.UIThread.InvokeAsync(() =>
+            session.IsGenerating = true;
+            session.SummaryMarkdown = "";
+            session.StatusMessage = "正在生成总结...";
+            await InvokeIfActiveAsync(session, () =>
             {
                 IsGenerating = true;
                 SummaryMarkdown = "";
-                StatusMessage = "正在生成总结...";
+                StatusMessage = session.StatusMessage;
                 RaiseAllCommandsCanExecuteChanged();
             });
 
             try
             {
                 var aiService = await CreateAuthenticatedInsightServiceAsync(runtimeRequest, endpoint, token);
-                var transcript = FormatTranscriptForAi();
+                var transcript = FormatTranscriptForAi(session.Segments);
 
-                const string systemPrompt = "你是一个专业的音频内容分析助手。根据转录文本生成结构化 Markdown 总结。\n请输出：\n1. **概要**：一段话概括核心内容\n2. **关键要点**：提炼 3-7 个最重要的要点\n3. **行动项**：如果有需要跟进的事项\n4. **关键词标签**：提取 3-5 个关键词\n\n引用内容时标注时间戳，格式为 [HH:MM:SS]。";
+                const string systemPrompt = "你是一个专业的音频内容分析助手。请根据转录文本生成简洁的 Markdown 总结。\n\n## 概要\n用一段话概括核心内容（50-100字），标注关键时间范围。\n\n## 关键要点\n提炼 3-5 个最重要的发现或观点，每条一句话，标注 [MM:SS]。\n\n## 行动建议\n如果有值得跟进的建议或结论，列出 2-3 条。\n\n## 关键词\n提取 3-5 个关键词。\n\n注意：时间戳格式统一用 [MM:SS]，内容要简洁，不要重复。";
                 var userContent = $"以下是音频转录内容：\n\n{transcript}";
 
                 var sb = new StringBuilder();
@@ -539,33 +866,45 @@ namespace TrueFluentPro.ViewModels
                     {
                         sb.Append(chunk);
                         var text = sb.ToString();
-                        Dispatcher.UIThread.Post(() => SummaryMarkdown = text);
+                        session.SummaryMarkdown = text;
+                        PostIfActive(session, () => SummaryMarkdown = text);
                     },
                     token, AiChatProfile.Summary,
                     enableReasoning: runtimeRequest.SummaryEnableReasoning);
 
-                await Dispatcher.UIThread.InvokeAsync(() =>
+                session.SummaryMarkdown = sb.ToString();
+                session.StatusMessage = "总结生成完成";
+                await InvokeIfActiveAsync(session, () =>
                 {
-                    SummaryMarkdown = sb.ToString();
-                    StatusMessage = "总结生成完成";
-                    _ = GenerateMindMapAsync();
+                    SummaryMarkdown = session.SummaryMarkdown;
+                    StatusMessage = session.StatusMessage;
                 });
+
+                // 保存到生命周期数据库
+                SaveSummaryToLifecycle(session);
+
+                // 总结后自动生成思维导图
+                await GenerateMindMapSessionAsync(session);
             }
             catch (OperationCanceledException)
             {
-                await Dispatcher.UIThread.InvokeAsync(() => StatusMessage = "总结生成已取消");
+                session.StatusMessage = "总结生成已取消";
+                await InvokeIfActiveAsync(session, () => StatusMessage = session.StatusMessage);
             }
             catch (Exception ex)
             {
-                await Dispatcher.UIThread.InvokeAsync(() =>
+                session.SummaryMarkdown += $"\n\n---\n**错误**: {ex.Message}";
+                session.StatusMessage = $"总结生成失败：{ex.Message}";
+                await InvokeIfActiveAsync(session, () =>
                 {
-                    SummaryMarkdown += $"\n\n---\n**错误**: {ex.Message}";
-                    StatusMessage = $"总结生成失败：{ex.Message}";
+                    SummaryMarkdown = session.SummaryMarkdown;
+                    StatusMessage = session.StatusMessage;
                 });
             }
             finally
             {
-                await Dispatcher.UIThread.InvokeAsync(() =>
+                session.IsGenerating = false;
+                await InvokeIfActiveAsync(session, () =>
                 {
                     IsGenerating = false;
                     RaiseAllCommandsCanExecuteChanged();
@@ -575,29 +914,35 @@ namespace TrueFluentPro.ViewModels
 
         // ── 思维导图生成 ──────────────────────────────────────
 
-        private async Task GenerateMindMapAsync()
+        private Task GenerateMindMapAsync()
         {
-            if (Segments.Count == 0) return;
+            var session = _activeSession;
+            return session != null ? GenerateMindMapSessionAsync(session) : Task.CompletedTask;
+        }
+
+        private async Task GenerateMindMapSessionAsync(AudioFileSession session)
+        {
+            if (session.Segments.Count == 0) return;
 
             var config = _configProvider();
             if (!TryBuildTextRuntimeConfig(config, out var runtimeRequest, out var endpoint, out _))
                 return;
 
-            _generationCts?.Cancel();
-            _generationCts = new CancellationTokenSource();
-            var token = _generationCts.Token;
+            var token = session.ResetCts();
 
-            await Dispatcher.UIThread.InvokeAsync(() =>
+            session.IsGenerating = true;
+            session.StatusMessage = "正在生成思维导图...";
+            await InvokeIfActiveAsync(session, () =>
             {
                 IsGenerating = true;
-                StatusMessage = "正在生成思维导图...";
+                StatusMessage = session.StatusMessage;
                 RaiseAllCommandsCanExecuteChanged();
             });
 
             try
             {
                 var aiService = await CreateAuthenticatedInsightServiceAsync(runtimeRequest, endpoint, token);
-                var transcript = FormatTranscriptForAi();
+                var transcript = FormatTranscriptForAi(session.Segments);
 
                 const string systemPrompt = "你是一个结构化分析专家。根据音频转录文本生成思维导图的 JSON 结构。\n你必须严格输出有效 JSON，不要输出任何其他内容（不要 markdown 代码块标记）。\n格式：\n{\"label\":\"主题\",\"children\":[{\"label\":\"分支1\",\"children\":[{\"label\":\"要点1\"},{\"label\":\"要点2\"}]}]}\n层级不超过 3 层，每个分支不超过 5 个子节点。";
                 var userContent = $"请根据以下转录内容生成思维导图结构：\n\n{transcript}";
@@ -618,21 +963,29 @@ namespace TrueFluentPro.ViewModels
                 }
 
                 var root = ParseMindMapJson(json);
-                await Dispatcher.UIThread.InvokeAsync(() =>
+                session.MindMapRoot = root;
+                session.StatusMessage = "思维导图生成完成";
+                await InvokeIfActiveAsync(session, () =>
                 {
                     MindMapRoot = root;
-                    StatusMessage = "思维导图生成完成";
+                    StatusMessage = session.StatusMessage;
                 });
+
+                // 保存到生命周期数据库
+                var audioItemId = _pipeline.EnsureAudioItem(session.FilePath);
+                _pipeline.SaveStageContent(audioItemId, AudioLifecycleStage.MindMap, json);
+                ControlPanel.RefreshLifecycleStatus();
             }
             catch (OperationCanceledException) { }
             catch (Exception ex)
             {
-                await Dispatcher.UIThread.InvokeAsync(() =>
-                    StatusMessage = $"思维导图生成失败：{ex.Message}");
+                session.StatusMessage = $"思维导图生成失败：{ex.Message}";
+                await InvokeIfActiveAsync(session, () => StatusMessage = session.StatusMessage);
             }
             finally
             {
-                await Dispatcher.UIThread.InvokeAsync(() =>
+                session.IsGenerating = false;
+                await InvokeIfActiveAsync(session, () =>
                 {
                     IsGenerating = false;
                     RaiseAllCommandsCanExecuteChanged();
@@ -674,9 +1027,17 @@ namespace TrueFluentPro.ViewModels
 
         private async Task GenerateInsightAsync()
         {
-            await GenerateAiContentAsync(
-                "顿悟",
+            var session = _activeSession;
+            if (session == null) return;
+            await GenerateAiContentSessionAsync(session, "顿悟",
                 "你是一个深度思考专家。根据音频转录内容，提供深层洞察和顿悟。\n请从以下角度分析：\n1. **隐含假设**：说话者可能不自知的假设\n2. **潜在矛盾**：观点之间的冲突\n3. **深层模式**：反复出现的主题或思维模式\n4. **未说出的内容**：重要但被忽略的方面\n5. **关联启发**：与其他领域的联系\n\n以 Markdown 格式输出，标注时间戳 [HH:MM:SS]。",
+                (s, text) =>
+                {
+                    s.InsightMarkdown = text;
+                    var audioItemId = _pipeline.EnsureAudioItem(s.FilePath);
+                    _pipeline.SaveStageContent(audioItemId, AudioLifecycleStage.Insight, text);
+                    ControlPanel.RefreshLifecycleStatus();
+                },
                 text => InsightMarkdown = text);
         }
 
@@ -684,9 +1045,21 @@ namespace TrueFluentPro.ViewModels
 
         private async Task GeneratePodcastAsync()
         {
-            await GenerateAiContentAsync(
-                "播客",
-                "你是一个播客脚本编写专家。根据音频转录内容，生成一段适合播客的内容改写。\n要求：\n1. 用对话体、口语化风格重新组织内容\n2. 添加适当的过渡语和解说\n3. 突出有趣的细节和故事\n4. 提供开场引言和结尾总结\n5. 标注适合插入音效或停顿的位置\n\n以 Markdown 格式输出。",
+            var session = _activeSession;
+            if (session == null) return;
+            await GenerateAiContentSessionAsync(session, "播客",
+                "你是一个播客脚本编写专家。根据音频转录内容，生成一段适合播客的对话内容改写。\n\n严格使用以下格式，每行一句：\n发言人 A：[主持人台词]\n发言人 B：[嘉宾台词]\n\n要求：\n1. 对话总轮次控制在 40 轮以内（A 和 B 各约 20 轮）\n2. 每轮发言控制在 200 字以内\n3. 口语化、自然过渡\n4. 不要加 Markdown 格式、括号注释或舞台指导\n5. 第一行必须是发言人 A 的开场白\n6. 突出有趣的细节和故事",
+                (s, text) =>
+                {
+                    s.PodcastMarkdown = text;
+                    // 保存到生命周期数据库
+                    var audioItemId = _pipeline.EnsureAudioItem(s.FilePath);
+                    _pipeline.SaveStageContent(audioItemId, AudioLifecycleStage.PodcastScript, text);
+                    ControlPanel.RefreshLifecycleStatus();
+                    // 台本就绪后自动合成播客音频（如定义了语音）
+                    if (ControlPanel.VoicesLoaded && ControlPanel.SpeakerProfiles.Any(p => p.Voice != null))
+                        _ = ControlPanel.SynthesizePodcastAsync(text);
+                },
                 text => PodcastMarkdown = text);
         }
 
@@ -694,24 +1067,35 @@ namespace TrueFluentPro.ViewModels
 
         private async Task GenerateResearchAsync()
         {
-            if (Segments.Count == 0) return;
+            var session = _activeSession;
+            if (session == null) return;
+            await GenerateResearchSessionAsync(session);
+        }
+
+        private async Task GenerateResearchSessionAsync(AudioFileSession session)
+        {
+            if (session.Segments.Count == 0) return;
 
             var config = _configProvider();
             if (!TryBuildTextRuntimeConfig(config, out var runtimeRequest, out var endpoint, out var errorMessage))
             {
-                await Dispatcher.UIThread.InvokeAsync(() => StatusMessage = $"研究未启动：{errorMessage}");
+                session.StatusMessage = $"研究未启动：{errorMessage}";
+                await InvokeIfActiveAsync(session, () => StatusMessage = session.StatusMessage);
                 return;
             }
 
-            _generationCts?.Cancel();
-            _generationCts = new CancellationTokenSource();
-            var token = _generationCts.Token;
+            var token = session.ResetCts();
 
-            await Dispatcher.UIThread.InvokeAsync(() =>
+            session.IsGenerating = true;
+            session.CurrentResearchPhase = ResearchPhase.GeneratingOutline;
+            session.StatusMessage = "正在规划研究方向...";
+            session.ResearchTopics = new List<ResearchTopic>();
+            session.ResearchReportMarkdown = "";
+            await InvokeIfActiveAsync(session, () =>
             {
                 IsGenerating = true;
                 CurrentResearchPhase = ResearchPhase.GeneratingOutline;
-                StatusMessage = "正在规划研究方向...";
+                StatusMessage = session.StatusMessage;
                 ResearchTopics.Clear();
                 ResearchReportMarkdown = "";
                 RaiseAllCommandsCanExecuteChanged();
@@ -720,7 +1104,7 @@ namespace TrueFluentPro.ViewModels
             try
             {
                 var aiService = await CreateAuthenticatedInsightServiceAsync(runtimeRequest, endpoint, token);
-                var transcript = FormatTranscriptForAi();
+                var transcript = FormatTranscriptForAi(session.Segments);
 
                 // Phase 1: 生成研究课题
                 var planSb = new StringBuilder();
@@ -737,16 +1121,22 @@ namespace TrueFluentPro.ViewModels
                     .Take(5)
                     .ToList();
 
-                await Dispatcher.UIThread.InvokeAsync(() =>
+                var topics = new List<ResearchTopic>();
+                foreach (var line in topicLines)
                 {
-                    foreach (var line in topicLines)
-                    {
-                        var title = line.TrimStart('0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '、', '-', ' ');
-                        if (string.IsNullOrWhiteSpace(title)) title = line;
-                        ResearchTopics.Add(new ResearchTopic { Title = title, IsSelected = true });
-                    }
+                    var title = line.TrimStart('0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '、', '-', ' ');
+                    if (string.IsNullOrWhiteSpace(title)) title = line;
+                    topics.Add(new ResearchTopic { Title = title, IsSelected = true });
+                }
+                session.ResearchTopics = topics;
+                session.CurrentResearchPhase = ResearchPhase.GeneratingReport;
+                session.StatusMessage = "正在生成深度研究报告...";
+                await InvokeIfActiveAsync(session, () =>
+                {
+                    ResearchTopics.Clear();
+                    foreach (var t in topics) ResearchTopics.Add(t);
                     CurrentResearchPhase = ResearchPhase.GeneratingReport;
-                    StatusMessage = "正在生成深度研究报告...";
+                    StatusMessage = session.StatusMessage;
                 });
 
                 // Phase 2: 生成研究报告
@@ -760,38 +1150,53 @@ namespace TrueFluentPro.ViewModels
                     {
                         reportSb.Append(chunk);
                         var text = reportSb.ToString();
-                        Dispatcher.UIThread.Post(() => ResearchReportMarkdown = text);
+                        session.ResearchReportMarkdown = text;
+                        PostIfActive(session, () => ResearchReportMarkdown = text);
                     },
                     token, AiChatProfile.Summary,
                     enableReasoning: runtimeRequest.SummaryEnableReasoning);
 
-                await Dispatcher.UIThread.InvokeAsync(() =>
+                session.ResearchReportMarkdown = reportSb.ToString();
+                session.CurrentResearchPhase = ResearchPhase.ReportReady;
+                session.StatusMessage = "深度研究完成";
+                await InvokeIfActiveAsync(session, () =>
                 {
-                    ResearchReportMarkdown = reportSb.ToString();
+                    ResearchReportMarkdown = session.ResearchReportMarkdown;
                     CurrentResearchPhase = ResearchPhase.ReportReady;
-                    StatusMessage = "深度研究完成";
+                    StatusMessage = session.StatusMessage;
                 });
+
+                // 保存到生命周期数据库
+                var audioItemId = _pipeline.EnsureAudioItem(session.FilePath);
+                _pipeline.SaveStageContent(audioItemId, AudioLifecycleStage.Research, session.ResearchReportMarkdown);
+                ControlPanel.RefreshLifecycleStatus();
             }
             catch (OperationCanceledException)
             {
-                await Dispatcher.UIThread.InvokeAsync(() =>
+                session.CurrentResearchPhase = ResearchPhase.Idle;
+                session.StatusMessage = "研究已取消";
+                await InvokeIfActiveAsync(session, () =>
                 {
                     CurrentResearchPhase = ResearchPhase.Idle;
-                    StatusMessage = "研究已取消";
+                    StatusMessage = session.StatusMessage;
                 });
             }
             catch (Exception ex)
             {
-                await Dispatcher.UIThread.InvokeAsync(() =>
+                session.ResearchReportMarkdown += $"\n\n---\n**错误**: {ex.Message}";
+                session.CurrentResearchPhase = ResearchPhase.Idle;
+                session.StatusMessage = $"研究失败：{ex.Message}";
+                await InvokeIfActiveAsync(session, () =>
                 {
-                    ResearchReportMarkdown += $"\n\n---\n**错误**: {ex.Message}";
+                    ResearchReportMarkdown = session.ResearchReportMarkdown;
                     CurrentResearchPhase = ResearchPhase.Idle;
-                    StatusMessage = $"研究失败：{ex.Message}";
+                    StatusMessage = session.StatusMessage;
                 });
             }
             finally
             {
-                await Dispatcher.UIThread.InvokeAsync(() =>
+                session.IsGenerating = false;
+                await InvokeIfActiveAsync(session, () =>
                 {
                     IsGenerating = false;
                     RaiseAllCommandsCanExecuteChanged();
@@ -801,33 +1206,37 @@ namespace TrueFluentPro.ViewModels
 
         // ── 通用 AI 内容生成 ──────────────────────────────────
 
-        private async Task GenerateAiContentAsync(string label, string systemPrompt, Action<string> resultSetter)
+        private async Task GenerateAiContentSessionAsync(
+            AudioFileSession session, string label, string systemPrompt,
+            Action<AudioFileSession, string> sessionSetter, Action<string> uiSetter)
         {
-            if (Segments.Count == 0) return;
+            if (session.Segments.Count == 0) return;
 
             var config = _configProvider();
             if (!TryBuildTextRuntimeConfig(config, out var runtimeRequest, out var endpoint, out var errorMessage))
             {
-                await Dispatcher.UIThread.InvokeAsync(() => StatusMessage = $"{label}未启动：{errorMessage}");
+                session.StatusMessage = $"{label}未启动：{errorMessage}";
+                await InvokeIfActiveAsync(session, () => StatusMessage = session.StatusMessage);
                 return;
             }
 
-            _generationCts?.Cancel();
-            _generationCts = new CancellationTokenSource();
-            var token = _generationCts.Token;
+            var token = session.ResetCts();
 
-            await Dispatcher.UIThread.InvokeAsync(() =>
+            session.IsGenerating = true;
+            sessionSetter(session, "");
+            session.StatusMessage = $"正在生成{label}...";
+            await InvokeIfActiveAsync(session, () =>
             {
                 IsGenerating = true;
-                resultSetter("");
-                StatusMessage = $"正在生成{label}...";
+                uiSetter("");
+                StatusMessage = session.StatusMessage;
                 RaiseAllCommandsCanExecuteChanged();
             });
 
             try
             {
                 var aiService = await CreateAuthenticatedInsightServiceAsync(runtimeRequest, endpoint, token);
-                var transcript = FormatTranscriptForAi();
+                var transcript = FormatTranscriptForAi(session.Segments);
                 var userContent = $"以下是音频转录内容：\n\n{transcript}";
 
                 var sb = new StringBuilder();
@@ -837,28 +1246,34 @@ namespace TrueFluentPro.ViewModels
                     {
                         sb.Append(chunk);
                         var text = sb.ToString();
-                        Dispatcher.UIThread.Post(() => resultSetter(text));
+                        sessionSetter(session, text);
+                        PostIfActive(session, () => uiSetter(text));
                     },
                     token, AiChatProfile.Quick);
 
-                await Dispatcher.UIThread.InvokeAsync(() =>
+                var result = sb.ToString();
+                sessionSetter(session, result);
+                session.StatusMessage = $"{label}生成完成";
+                await InvokeIfActiveAsync(session, () =>
                 {
-                    resultSetter(sb.ToString());
-                    StatusMessage = $"{label}生成完成";
+                    uiSetter(result);
+                    StatusMessage = session.StatusMessage;
                 });
             }
             catch (OperationCanceledException)
             {
-                await Dispatcher.UIThread.InvokeAsync(() => StatusMessage = $"{label}已取消");
+                session.StatusMessage = $"{label}已取消";
+                await InvokeIfActiveAsync(session, () => StatusMessage = session.StatusMessage);
             }
             catch (Exception ex)
             {
-                await Dispatcher.UIThread.InvokeAsync(() =>
-                    StatusMessage = $"{label}失败：{ex.Message}");
+                session.StatusMessage = $"{label}失败：{ex.Message}";
+                await InvokeIfActiveAsync(session, () => StatusMessage = session.StatusMessage);
             }
             finally
             {
-                await Dispatcher.UIThread.InvokeAsync(() =>
+                session.IsGenerating = false;
+                await InvokeIfActiveAsync(session, () =>
                 {
                     IsGenerating = false;
                     RaiseAllCommandsCanExecuteChanged();
@@ -876,11 +1291,174 @@ namespace TrueFluentPro.ViewModels
             ((RelayCommand)StopGenerationCommand).RaiseCanExecuteChanged();
         }
 
+        // ── 生命周期缓存恢复 ──────────────────────────────────
+
+        /// <summary>
+        /// 从数据库恢复已缓存的内容到会话，避免重新生成。
+        /// 每个字段独立判断：只在会话中该字段为空时才从 DB 恢复。
+        /// </summary>
+        private void TryRestoreFromLifecycleCache(AudioFileSession session, string audioItemId)
+        {
+            // 恢复转录段落
+            if (session.Segments.Count == 0)
+            {
+                var transcriptionJson = _pipeline.TryLoadCachedContent(audioItemId, AudioLifecycleStage.Transcribed);
+                if (!string.IsNullOrWhiteSpace(transcriptionJson))
+                {
+                    try
+                    {
+                        var dtos = System.Text.Json.JsonSerializer.Deserialize<List<TranscriptSegmentDto>>(transcriptionJson);
+                        if (dtos != null && dtos.Count > 0)
+                        {
+                            session.Segments = dtos.Select(d => new TranscriptSegment
+                            {
+                                Speaker = d.Speaker ?? "",
+                                SpeakerIndex = d.SpeakerIndex,
+                                StartTime = new TimeSpan(d.StartTimeTicks),
+                                Text = d.Text ?? "",
+                            }).ToList();
+                        }
+                    }
+                    catch { /* 兼容旧格式 */ }
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(session.SummaryMarkdown))
+            {
+                var summary = _pipeline.TryLoadCachedContent(audioItemId, AudioLifecycleStage.Summarized);
+                if (!string.IsNullOrWhiteSpace(summary)) session.SummaryMarkdown = summary;
+            }
+
+            if (session.MindMapRoot == null)
+            {
+                var mindMapJson = _pipeline.TryLoadCachedContent(audioItemId, AudioLifecycleStage.MindMap);
+                if (!string.IsNullOrWhiteSpace(mindMapJson)) session.MindMapRoot = ParseMindMapJson(mindMapJson);
+            }
+
+            if (string.IsNullOrWhiteSpace(session.InsightMarkdown))
+            {
+                var insight = _pipeline.TryLoadCachedContent(audioItemId, AudioLifecycleStage.Insight);
+                if (!string.IsNullOrWhiteSpace(insight)) session.InsightMarkdown = insight;
+            }
+
+            if (string.IsNullOrWhiteSpace(session.PodcastMarkdown))
+            {
+                var podcast = _pipeline.TryLoadCachedContent(audioItemId, AudioLifecycleStage.PodcastScript);
+                if (!string.IsNullOrWhiteSpace(podcast)) session.PodcastMarkdown = podcast;
+            }
+
+            if (string.IsNullOrWhiteSpace(session.ResearchReportMarkdown))
+            {
+                var research = _pipeline.TryLoadCachedContent(audioItemId, AudioLifecycleStage.Research);
+                if (!string.IsNullOrWhiteSpace(research)) session.ResearchReportMarkdown = research;
+            }
+        }
+
+        /// <summary>
+        /// 将当前会话中的总结结果保存到生命周期数据库。
+        /// 在 GenerateSummarySessionAsync 完成后调用。
+        /// </summary>
+        private void SaveSummaryToLifecycle(AudioFileSession session)
+        {
+            if (string.IsNullOrWhiteSpace(session.SummaryMarkdown)) return;
+            var audioItemId = _pipeline.EnsureAudioItem(session.FilePath);
+            _pipeline.SaveStageContent(audioItemId, AudioLifecycleStage.Summarized, session.SummaryMarkdown);
+            ControlPanel.RefreshLifecycleStatus();
+        }
+
+        /// <summary>
+        /// 将转录完成事件通知到生命周期系统。
+        /// </summary>
+        private void SaveTranscriptionToLifecycle(AudioFileSession session)
+        {
+            var audioItemId = _pipeline.EnsureAudioItem(session.FilePath);
+            // 保存完整转录段落到生命周期数据库（JSON 序列化）
+            var segmentDtos = session.Segments.Select(s => new
+            {
+                s.Speaker,
+                s.SpeakerIndex,
+                StartTimeTicks = s.StartTime.Ticks,
+                s.Text,
+            }).ToList();
+            var json = System.Text.Json.JsonSerializer.Serialize(segmentDtos);
+            _pipeline.SaveStageContent(audioItemId, AudioLifecycleStage.Transcribed, json);
+            ControlPanel.RefreshLifecycleStatus();
+        }
+
+        // ── 自动补齐 ─────────────────────────────────────────
+
+        private async void OnAutoFillMissingRequested()
+        {
+            var session = _activeSession;
+            if (session == null || session.Segments.Count == 0) return;
+            await AutoFillDownstreamAsync(session);
+        }
+
+        /// <summary>
+        /// 转录完成后并发填充所有下游内容。
+        /// 阶段一：总结 + 思维导图（有依赖）；
+        /// 阶段二：顿悟 / 研究 / 播客 并发。
+        /// </summary>
+        private async Task AutoFillDownstreamAsync(AudioFileSession session)
+        {
+            var audioItemId = _pipeline.EnsureAudioItem(session.FilePath);
+            var completed = _pipeline.GetCompletedStages(audioItemId);
+
+            // 阶段一：总结 + 思维导图（思维导图由总结自动链式触发）
+            if (!completed.Contains(AudioLifecycleStage.Summarized))
+            {
+                await GenerateSummarySessionAsync(session);
+            }
+            else if (!completed.Contains(AudioLifecycleStage.MindMap))
+            {
+                await GenerateMindMapSessionAsync(session);
+            }
+
+            // 刷新 completed 列表
+            completed = _pipeline.GetCompletedStages(audioItemId);
+
+            // 阶段二：独立阶段并发执行
+            var tasks = new List<Task>();
+
+            if (!completed.Contains(AudioLifecycleStage.Insight))
+                tasks.Add(GenerateInsightAsync());
+
+            if (!completed.Contains(AudioLifecycleStage.Research))
+                tasks.Add(GenerateResearchAsync());
+
+            if (!completed.Contains(AudioLifecycleStage.PodcastScript))
+                tasks.Add(GeneratePodcastAsync());
+
+            if (tasks.Count > 0)
+                await Task.WhenAll(tasks);
+        }
+
         public void Dispose()
         {
-            _generationCts?.Cancel();
-            _generationCts?.Dispose();
+            ControlPanel.AutoFillMissingRequested -= OnAutoFillMissingRequested;
+            ControlPanel.PodcastAudioSynthesized -= OnPodcastAudioSynthesized;
+            foreach (var session in _sessions.Values)
+                session.Dispose();
+            _sessions.Clear();
+            _activeSession = null;
             Playback.Dispose();
+            PodcastPlayback.Dispose();
+        }
+
+        private void OnPodcastAudioSynthesized(string path)
+        {
+            PodcastAudioPath = path;
+            HasPodcastAudioFile = true;
+            PodcastPlayback.LoadAudio(path);
+        }
+
+        /// <summary>转录段落序列化 DTO</summary>
+        private sealed class TranscriptSegmentDto
+        {
+            public string? Speaker { get; set; }
+            public int SpeakerIndex { get; set; }
+            public long StartTimeTicks { get; set; }
+            public string? Text { get; set; }
         }
     }
 }

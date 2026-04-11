@@ -61,6 +61,7 @@ public partial class App : Application
         services.AddSingleton<ISessionContentRepository, SessionContentRepository>();
         services.AddSingleton<IAudioLibraryRepository, AudioLibraryRepository>();
         services.AddSingleton<ITranslationHistoryRepository, TranslationHistoryRepository>();
+        services.AddSingleton<IAudioLifecycleRepository, AudioLifecycleRepository>();
         services.AddSingleton<ILegacyImportService, LegacyImportService>();
 
         // --- 基础服务 ---
@@ -90,6 +91,10 @@ public partial class App : Application
         });
         services.AddSingleton<IAiImageGenService, AiImageGenService>();
         services.AddSingleton<IAiVideoGenService, AiVideoGenService>();
+
+        // --- 音频生命周期 TTS 服务 ---
+        services.AddSingleton<Services.Speech.SpeechSynthesisService>();
+        services.AddSingleton<AudioLifecyclePipelineService>();
 
         // --- ViewModel ---
         services.AddSingleton<SettingsViewModel>();

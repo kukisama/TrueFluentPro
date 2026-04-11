@@ -46,6 +46,7 @@ namespace TrueFluentPro.ViewModels
         public EndpointsSectionVM EndpointsVM { get; }
         public StorageSectionVM StorageVM { get; }
         public RecognitionSectionVM RecognitionVM { get; }
+        public AudioLabSectionVM AudioLabVM { get; }
         public TextSectionVM TextVM { get; }
         public InsightSectionVM InsightVM => _insightVm.Value;
         public ReviewSectionVM ReviewVM => _reviewVm.Value;
@@ -73,6 +74,7 @@ namespace TrueFluentPro.ViewModels
             EndpointsVM = new EndpointsSectionVM(modelDiscoveryService, endpointTemplateService, endpointBatchTestService, subscriptionValidator);
             StorageVM = new StorageSectionVM();
             RecognitionVM = new RecognitionSectionVM();
+            AudioLabVM = new AudioLabSectionVM();
             TextVM = new TextSectionVM();
 
             _insightVm = CreateLazySection(() => new InsightSectionVM(modelRuntimeResolver), ConfigureInsightSection);
@@ -93,6 +95,7 @@ namespace TrueFluentPro.ViewModels
             SubscribeSection(EndpointsVM);
             SubscribeSection(StorageVM);
             SubscribeSection(RecognitionVM);
+            SubscribeSection(AudioLabVM);
             SubscribeSection(TextVM);
 
             EndpointsVM.EndpointsChanged += RefreshModelOptions;
@@ -269,6 +272,9 @@ namespace TrueFluentPro.ViewModels
                 _config,
                 BuildModelOptions(ModelCapability.SpeechToText),
                 BuildModelOptions(ModelCapability.TextToSpeech));
+            AudioLabVM.LoadFrom(_config);
+            AudioLabVM.SelectModels(_config, BuildModelOptions(ModelCapability.Text));
+            AudioLabVM.LoadEndpoints(_config);
 
             if (_insightVm.IsValueCreated)
             {
@@ -330,6 +336,9 @@ namespace TrueFluentPro.ViewModels
             RecognitionVM.RefreshModels(
                 BuildModelOptions(ModelCapability.SpeechToText),
                 BuildModelOptions(ModelCapability.TextToSpeech));
+
+            AudioLabVM.RefreshModels(BuildModelOptions(ModelCapability.Text));
+            AudioLabVM.RefreshEndpoints(_config);
         }
 
         private List<ModelOption> BuildModelOptions(ModelCapability required)
@@ -578,6 +587,7 @@ namespace TrueFluentPro.ViewModels
             StorageVM.ApplyTo(_config);
             RecognitionVM.ApplyTo(_config);
             TextVM.ApplyTo(_config);
+            AudioLabVM.ApplyTo(_config);
 
             if (_insightVm.IsValueCreated)
             {

@@ -3,6 +3,7 @@
              xmlns:vm="using:TrueFluentPro.ViewModels"
              xmlns:models="using:TrueFluentPro.Models"
              xmlns:controls="using:TrueFluentPro.Controls"
+             xmlns:views="using:TrueFluentPro.Views"
              xmlns:icons="https://github.com/projektanker/icons.avalonia"
              x:Class="TrueFluentPro.Views.AudioLabView"
              x:DataType="vm:AudioLabViewModel"
@@ -56,7 +57,7 @@
         </Style>
     </UserControl.Styles>
 
-    <!-- 最外层 Grid：左列文件面板 + 右列主内容（与 MainWindow ShellNavRail 同构） -->
+    <!-- 最外层 Grid：左列文件面板 + 主内容（无右侧控制面板） -->
     <Grid ColumnDefinitions="Auto,*">
 
         <!-- ═══ 左侧文件面板（与一级导航 ShellNavRail 同模式） ═══ -->
@@ -138,7 +139,7 @@
         </Border>
 
         <!-- ═══ 主内容区 ═══ -->
-        <Grid Grid.Column="1" Name="MainContentArea" RowDefinitions="Auto,Auto,*,Auto">
+        <Grid Grid.Column="1" Name="MainContentArea" RowDefinitions="Auto,Auto,*,Auto,Auto">
 
         <!-- ═══ 面包屑 ═══ -->
         <Border Grid.Row="0" Padding="16,12,16,4">
@@ -230,6 +231,9 @@
         <!-- ═══ 主内容区 ═══ -->
         <Grid Grid.Row="2" ColumnDefinitions="*">
 
+            <!-- Panel 层叠容器：底层是正常内容，顶层是弹出面板 -->
+            <Panel>
+
             <Grid RowDefinitions="Auto,*">
 
                 <!-- ─── 标签页栏 ─── -->
@@ -284,7 +288,7 @@
                             </StackPanel>
                         </RadioButton>
 
-                        <!-- 分隔 + 打开文件按钮 -->
+                        <!-- 分隔 + 打开文件按钮 + 生命周期按钮 -->
                         <Border Width="1" Height="20" Margin="8,0"
                                 Background="{DynamicResource DividerStrokeColorDefaultBrush}"/>
                         <Button Padding="8,6" ToolTip.Tip="打开音频文件"
@@ -293,6 +297,16 @@
                             <StackPanel Orientation="Horizontal" Spacing="4">
                                 <icons:Icon Value="fa-solid fa-folder-open" FontSize="12"/>
                                 <TextBlock Text="打开文件" FontSize="12"/>
+                            </StackPanel>
+                        </Button>
+
+                        <!-- 生命周期进度展开按钮 -->
+                        <Button Padding="8,6" ToolTip.Tip="查看处理进度"
+                                Background="Transparent" BorderThickness="0"
+                                Name="LifecycleToggleBtn"
+                                Click="ToggleLifecyclePanel_Click">
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <icons:Icon Value="fa-solid fa-ellipsis" FontSize="14"/>
                             </StackPanel>
                         </Button>
                     </StackPanel>
@@ -427,7 +441,9 @@
                         <!-- Tab: 思维导图 -->
                         <Panel IsVisible="{Binding SelectedTab, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static vm:AudioLabTabKind.MindMap}}">
                             <!-- 有导图数据 -->
-                            <ScrollViewer IsVisible="{Binding MindMapRoot, Converter={x:Static ObjectConverters.IsNotNull}}">
+                            <ScrollViewer IsVisible="{Binding MindMapRoot, Converter={x:Static ObjectConverters.IsNotNull}}"
+                                          HorizontalScrollBarVisibility="Auto"
+                                          VerticalScrollBarVisibility="Auto">
                                 <StackPanel Spacing="8" Margin="0,0,0,24">
                                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="4" Margin="0,0,0,8">
                                         <Button Padding="8,4"
@@ -440,13 +456,7 @@
                                             </StackPanel>
                                         </Button>
                                     </StackPanel>
-                                    <TreeView ItemsSource="{Binding MindMapRoot.Children}">
-                                        <TreeView.ItemTemplate>
-                                            <TreeDataTemplate ItemsSource="{Binding Children}" DataType="models:MindMapNode">
-                                                <TextBlock Text="{Binding Title}" FontSize="13" TextWrapping="Wrap" Margin="2,4"/>
-                                            </TreeDataTemplate>
-                                        </TreeView.ItemTemplate>
-                                    </TreeView>
+                                    <controls:MindMapCanvas Root="{Binding MindMapRoot}"/>
                                 </StackPanel>
                             </ScrollViewer>
 
@@ -536,6 +546,25 @@
                     </Panel>
                 </Border>
             </Grid>
+
+            <!-- ─── 生命周期折叠面板（浮动覆盖层） ─── -->
+            <Border Name="LifecyclePopup"
+                    IsVisible="False"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Top"
+                    Margin="0,40,16,0"
+                    Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{DynamicResource CardBorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="8"
+                    Padding="0"
+                    BoxShadow="0 4 12 0 #30000000"
+                    Width="260"
+                    MaxHeight="500">
+                <views:AudioLabControlPanel DataContext="{Binding ControlPanel}"/>
+            </Border>
+
+            </Panel>
         </Grid>
 
         <!-- ═══ 底部状态栏（生成进度 + 停止按钮） ═══ -->
@@ -560,6 +589,53 @@
                         <TextBlock FontSize="12" Text="停止"/>
                     </StackPanel>
                 </Button>
+            </Grid>
+        </Border>
+
+        <!-- ═══ 播客音频播放栏 ═══ -->
+        <Border Grid.Row="4" Padding="16,6"
+                Background="{DynamicResource CardBackgroundFillColorSecondaryBrush}"
+                BorderBrush="{DynamicResource CardBorderBrush}"
+                BorderThickness="0,1,0,0"
+                IsVisible="{Binding ShowPodcastPlayback}">
+            <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto">
+                <!-- 播客图标 -->
+                <icons:Icon Grid.Column="0" Value="fa-solid fa-podcast"
+                            FontSize="14" Margin="0,0,8,0"
+                            VerticalAlignment="Center" Opacity="0.7"/>
+
+                <!-- 播放/暂停 -->
+                <Button Grid.Column="1" Padding="6"
+                        Command="{Binding PodcastPlayback.TogglePlayPauseCommand}"
+                        Background="Transparent" BorderThickness="0"
+                        ToolTip.Tip="播放/暂停播客">
+                    <icons:Icon Value="fa-solid fa-play" FontSize="14"/>
+                </Button>
+
+                <!-- 停止 -->
+                <Button Grid.Column="2" Padding="6" Margin="4,0"
+                        Command="{Binding PodcastPlayback.StopCommand}"
+                        Background="Transparent" BorderThickness="0"
+                        ToolTip.Tip="停止">
+                    <icons:Icon Value="fa-solid fa-stop" FontSize="12"/>
+                </Button>
+
+                <!-- 进度条 -->
+                <Slider Grid.Column="3" Margin="8,0"
+                        Minimum="0" Maximum="1"
+                        Value="{Binding PodcastPlayback.Progress}"
+                        VerticalAlignment="Center"/>
+
+                <!-- 时间 -->
+                <TextBlock Grid.Column="4" Text="{Binding PodcastPlayback.TimeText}"
+                           FontSize="11" Opacity="0.7"
+                           VerticalAlignment="Center"
+                           Margin="4,0,8,0" MinWidth="80" TextAlignment="Center"/>
+
+                <!-- 文件名 -->
+                <TextBlock Grid.Column="5" Text="播客音频"
+                           FontSize="11" Opacity="0.5"
+                           VerticalAlignment="Center"/>
             </Grid>
         </Border>
         </Grid>
