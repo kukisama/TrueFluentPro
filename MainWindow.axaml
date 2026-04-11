@@ -209,6 +209,23 @@
                                        IsVisible="{Binding IsMainNavPaneOpen}"/>
                         </Grid>
                     </Button>
+                    <Button Name="TaskMonitorNavButton"
+                            Classes="shell-nav-action"
+                            Click="TaskMonitorNavButton_Click"
+                            ToolTip.Tip="任务监控 (Ctrl+8)"
+                            AutomationProperties.Name="任务监控 (Ctrl+8)">
+                        <Grid ColumnDefinitions="20,*" ColumnSpacing="10">
+                            <icons:Icon Grid.Column="0"
+                                        Value="fa-solid fa-list-check"
+                                        FontSize="15"
+                                        HorizontalAlignment="Center"
+                                        VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="1"
+                                       Text="任务监控"
+                                       VerticalAlignment="Center"
+                                       IsVisible="{Binding IsMainNavPaneOpen}"/>
+                        </Grid>
+                    </Button>
                 </StackPanel>
 
                 <StackPanel Grid.Row="2" Margin="0,0,0,8">

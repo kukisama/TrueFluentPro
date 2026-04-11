@@ -9,6 +9,7 @@ using System;
 using System.Collections.Generic;
 using TrueFluentPro.Models;
 using TrueFluentPro.Services;
+using TrueFluentPro.Services.Storage;
 using TrueFluentPro.ViewModels;
 using TrueFluentPro.Views;
 
@@ -24,6 +25,7 @@ public partial class MainWindow : Window
     private bool _mediaStudioInitialized;
     private bool _mediaCenterV2Initialized;
     private bool _audioLabInitialized;
+    private bool _taskMonitorInitialized;
     private bool _isApplyingNavPaneState;
     private readonly Dictionary<string, Control> _pageCache = new(StringComparer.Ordinal);
     private Control? _currentPage;
@@ -31,6 +33,7 @@ public partial class MainWindow : Window
     private MediaStudioView? MediaStudioViewPage => GetCachedPage<MediaStudioView>(MainWindowViewModel.NavTagMedia);
     private MediaCenterV2View? MediaCenterV2ViewPage => GetCachedPage<MediaCenterV2View>(MainWindowViewModel.NavTagMediaV2);
     private AudioLabView? AudioLabViewPage => GetCachedPage<AudioLabView>(MainWindowViewModel.NavTagAudioLab);
+    private TaskQueueMonitorView? TaskMonitorViewPage => GetCachedPage<TaskQueueMonitorView>(MainWindowViewModel.NavTagTaskMonitor);
 
     public MainWindow()
     {
@@ -160,6 +163,10 @@ public partial class MainWindow : Window
                 break;
             case Key.D7 when ctrl:
                 ShowPage(MainWindowViewModel.NavTagAudioLab);
+                e.Handled = true;
+                break;
+            case Key.D8 when ctrl:
+                ShowPage(MainWindowViewModel.NavTagTaskMonitor);
                 e.Handled = true;
                 break;
             case Key.OemComma when ctrl:
@@ -295,6 +302,19 @@ public partial class MainWindow : Window
                 }
             }, DispatcherPriority.Background);
         }
+
+        if (tag == MainWindowViewModel.NavTagTaskMonitor && !_taskMonitorInitialized)
+        {
+            _taskMonitorInitialized = true;
+            Dispatcher.UIThread.Post(() =>
+            {
+                var queueService = App.Services.GetRequiredService<IAudioTaskQueueService>();
+                var eventBus = App.Services.GetRequiredService<ITaskEventBus>();
+                var audioRepo = App.Services.GetRequiredService<IAudioLibraryRepository>();
+                var vm = new TaskQueueMonitorViewModel(queueService, eventBus, audioRepo);
+                TaskMonitorViewPage!.DataContext = vm;
+            }, DispatcherPriority.Background);
+        }
     }
 
     private static string NormalizeNavTag(string? tag)
@@ -306,6 +326,7 @@ public partial class MainWindow : Window
             MainWindowViewModel.NavTagMedia => MainWindowViewModel.NavTagMedia,
             MainWindowViewModel.NavTagMediaV2 => MainWindowViewModel.NavTagMediaV2,
             MainWindowViewModel.NavTagAudioLab => MainWindowViewModel.NavTagAudioLab,
+            MainWindowViewModel.NavTagTaskMonitor => MainWindowViewModel.NavTagTaskMonitor,
             MainWindowViewModel.NavTagSettings => MainWindowViewModel.NavTagSettings,
             _ => MainWindowViewModel.NavTagLive
         };
@@ -340,6 +361,7 @@ public partial class MainWindow : Window
             MainWindowViewModel.NavTagMedia => new MediaStudioView(),
             MainWindowViewModel.NavTagMediaV2 => new MediaCenterV2View(),
             MainWindowViewModel.NavTagAudioLab => new Views.AudioLabView(),
+            MainWindowViewModel.NavTagTaskMonitor => new Views.TaskQueueMonitorView(),
             MainWindowViewModel.NavTagSettings => CreateBoundPage(new SettingsView()),
             _ => CreateBoundPage(new LiveTranslationView())
         };
@@ -353,7 +375,7 @@ public partial class MainWindow : Window
 
     private void UpdatePageDataContext(Control page)
     {
-        if (page is MediaStudioView || page is MediaCenterV2View || page is AudioLabView)
+        if (page is MediaStudioView || page is MediaCenterV2View || page is AudioLabView || page is TaskQueueMonitorView)
         {
             return;
         }
@@ -458,6 +480,7 @@ public partial class MainWindow : Window
         MediaNavButton.Classes.Set("selected", _viewModel?.SelectedNavTag == MainWindowViewModel.NavTagMedia);
         MediaV2NavButton.Classes.Set("selected", _viewModel?.SelectedNavTag == MainWindowViewModel.NavTagMediaV2);
         AudioLabNavButton.Classes.Set("selected", _viewModel?.SelectedNavTag == MainWindowViewModel.NavTagAudioLab);
+        TaskMonitorNavButton.Classes.Set("selected", _viewModel?.SelectedNavTag == MainWindowViewModel.NavTagTaskMonitor);
         SettingsNavButton.Classes.Set("selected", _viewModel?.SelectedNavTag == MainWindowViewModel.NavTagSettings);
     }
 
@@ -521,6 +544,11 @@ public partial class MainWindow : Window
     private void AudioLabNavButton_Click(object? sender, RoutedEventArgs e)
     {
         ShowPage(MainWindowViewModel.NavTagAudioLab);
+    }
+
+    private void TaskMonitorNavButton_Click(object? sender, RoutedEventArgs e)
+    {
+        ShowPage(MainWindowViewModel.NavTagTaskMonitor);
     }
 
     private void SettingsNavButton_Click(object? sender, RoutedEventArgs e)
