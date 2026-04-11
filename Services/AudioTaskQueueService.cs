@@ -33,6 +33,9 @@ namespace TrueFluentPro.Services
         /// <summary>获取队列统计数据。</summary>
         AudioTaskQueueStats GetStats();
 
+        /// <summary>清理已完成/已取消的旧任务记录。</summary>
+        int CleanupCompleted(TimeSpan olderThan);
+
         /// <summary>有新任务入队时触发，供 Executor 订阅以唤醒调度循环。</summary>
         event Action? NewTaskEnqueued;
     }
@@ -221,6 +224,11 @@ namespace TrueFluentPro.Services
         public AudioTaskQueueStats GetStats()
         {
             return _taskRepo.GetStats();
+        }
+
+        public int CleanupCompleted(TimeSpan olderThan)
+        {
+            return _taskRepo.CleanupOldTasks(olderThan);
         }
     }
 }

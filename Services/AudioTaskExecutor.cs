@@ -26,16 +26,22 @@ namespace TrueFluentPro.Services
     /// </summary>
     public sealed class AudioTaskExecutor : IAudioTaskExecutor
     {
-        /// <summary>最大并发执行任务数。</summary>
-        private const int MaxConcurrency = 2;
+        /// <summary>最大并发执行任务数（可通过构造函数覆盖，默认 2）。</summary>
+        public static readonly int DefaultMaxConcurrency = 2;
 
         /// <summary>任务超时阈值（分钟），启动时用于恢复卡死的 Running 任务。</summary>
-        private const int StallThresholdMinutes = 30;
+        public static readonly int DefaultStallThresholdMinutes = 30;
+
+        /// <summary>调度循环轮询间隔（秒），兜底防止信号丢失。</summary>
+        private const int PollIntervalSeconds = 5;
+
+        private readonly int _maxConcurrency;
+        private readonly int _stallThresholdMinutes;
 
         private readonly IAudioTaskRepository _taskRepo;
         private readonly IAudioLifecycleRepository _lifecycleRepo;
         private readonly ITaskEventBus _eventBus;
-        private readonly SemaphoreSlim _concurrencySlot = new(MaxConcurrency, MaxConcurrency);
+        private readonly SemaphoreSlim _concurrencySlot;
         private readonly SemaphoreSlim _wakeSignal = new(0, int.MaxValue);
         private readonly Dictionary<string, CancellationTokenSource> _runningCts = new();
         private readonly object _ctsLock = new();
@@ -43,11 +49,16 @@ namespace TrueFluentPro.Services
         public AudioTaskExecutor(
             IAudioTaskRepository taskRepo,
             IAudioLifecycleRepository lifecycleRepo,
-            ITaskEventBus eventBus)
+            ITaskEventBus eventBus,
+            int maxConcurrency = 0,
+            int stallThresholdMinutes = 0)
         {
             _taskRepo = taskRepo;
             _lifecycleRepo = lifecycleRepo;
             _eventBus = eventBus;
+            _maxConcurrency = maxConcurrency > 0 ? maxConcurrency : DefaultMaxConcurrency;
+            _stallThresholdMinutes = stallThresholdMinutes > 0 ? stallThresholdMinutes : DefaultStallThresholdMinutes;
+            _concurrencySlot = new SemaphoreSlim(_maxConcurrency, _maxConcurrency);
         }
 
         public void NotifyNewTask()
@@ -59,7 +70,7 @@ namespace TrueFluentPro.Services
         public async Task StartAsync(CancellationToken appShutdown)
         {
             // 启动时恢复卡死的 Running 任务
-            var recovered = _taskRepo.RecoverStalledRunningTasks(TimeSpan.FromMinutes(StallThresholdMinutes));
+            var recovered = _taskRepo.RecoverStalledRunningTasks(TimeSpan.FromMinutes(_stallThresholdMinutes));
             if (recovered > 0)
             {
                 Debug.WriteLine($"[AudioTaskExecutor] 恢复 {recovered} 个卡死的 Running 任务");
@@ -71,7 +82,7 @@ namespace TrueFluentPro.Services
                 try
                 {
                     // 等待新任务信号或超时（定期轮询兜底）
-                    await _wakeSignal.WaitAsync(TimeSpan.FromSeconds(5), appShutdown);
+                    await _wakeSignal.WaitAsync(TimeSpan.FromSeconds(PollIntervalSeconds), appShutdown);
                 }
                 catch (OperationCanceledException)
                 {
@@ -154,9 +165,10 @@ namespace TrueFluentPro.Services
 
             try
             {
-                // ── 实际任务执行占位（Phase 3 将填充具体的生成逻辑） ──
-                // 目前作为框架，只做状态流转验证
-                await Task.Delay(100, ct); // 模拟最小延迟
+                // ── 任务执行占位 ──
+                // Phase 3 将在此处填充具体的生成逻辑（转录/总结/脑图/顿悟/播客/研究）。
+                // 当前版本只做状态流转验证，确保队列调度框架正确工作。
+                await Task.Delay(100, ct);
 
                 // 标记完成
                 _taskRepo.MarkCompleted(task.TaskId);

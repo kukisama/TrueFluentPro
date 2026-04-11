@@ -88,7 +88,7 @@ namespace TrueFluentPro.ViewModels
         public int FailedCount => _stats.FailedCount;
 
         public string StatsText =>
-            $"排队 {_stats.PendingCount} | 执行中 {_stats.RunningCount}/2 | 已完成 {_stats.CompletedCount} | 失败 {_stats.FailedCount}";
+            $"排队 {_stats.PendingCount} | 执行中 {_stats.RunningCount}/{AudioTaskExecutor.DefaultMaxConcurrency} | 已完成 {_stats.CompletedCount} | 失败 {_stats.FailedCount}";
 
         public bool ShowPending
         {
@@ -176,6 +176,8 @@ namespace TrueFluentPro.ViewModels
 
         private void CleanupCompleted()
         {
+            // 清理 7 天前的已完成/已取消任务
+            _queueService.CleanupCompleted(TimeSpan.FromDays(7));
             Refresh();
         }
 
