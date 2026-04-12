@@ -303,14 +303,14 @@ namespace TrueFluentPro.Services
             // Phase 1: 生成研究课题
             reportProgress("Phase 1/2：AI 规划研究课题中...");
             var planSb = new StringBuilder();
-            var firstChunk = true;
+            var firstChunkPhase1 = true;
             await aiService.StreamChatAsync(
                 runtimeRequest,
                 "你是一个学术研究规划专家。根据音频转录内容，提出 3-5 个值得深入研究的课题。每个课题一行，格式为纯文本标题。不要编号，不要其他格式。",
                 $"请根据以下内容提出研究课题：\n\n{transcript}",
                 chunk =>
                 {
-                    if (firstChunk) { reportProgress("Phase 1/2：AI 已返回首字节，正在生成研究课题..."); firstChunk = false; }
+                    if (firstChunkPhase1) { reportProgress("Phase 1/2：AI 已返回首字节，正在生成研究课题..."); firstChunkPhase1 = false; }
                     planSb.Append(chunk);
                 },
                 ct, AiChatProfile.Quick);
@@ -327,14 +327,14 @@ namespace TrueFluentPro.Services
             reportProgress("Phase 2/2：AI 生成深度研究报告中...");
             var selectedTopics = string.Join("\n", topicLines);
             var reportSb = new StringBuilder();
-            firstChunk = true;
+            var firstChunkPhase2 = true;
             await aiService.StreamChatAsync(
                 runtimeRequest,
                 "你是一个深度研究分析师。用户提供了音频转录内容和研究课题列表。请针对每个课题展开深度分析，包括核心论点和支撑证据、不同视角和反驳、与现有知识体系的关联、进一步研究建议。以 Markdown 格式输出，使用标题分隔各课题。引用时标注 [HH:MM:SS]。",
                 $"研究课题：\n{selectedTopics}\n\n音频转录内容：\n{transcript}",
                 chunk =>
                 {
-                    if (firstChunk) { reportProgress("Phase 2/2：AI 已返回首字节，正在生成研究报告..."); firstChunk = false; }
+                    if (firstChunkPhase2) { reportProgress("Phase 2/2：AI 已返回首字节，正在生成研究报告..."); firstChunkPhase2 = false; }
                     reportSb.Append(chunk);
                 },
                 ct, AiChatProfile.Summary,

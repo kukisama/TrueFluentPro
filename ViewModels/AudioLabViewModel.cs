@@ -284,7 +284,11 @@ namespace TrueFluentPro.ViewModels
             OnPropertyChanged(nameof(HasActiveProcessing));
         }
 
-        /// <summary>是否有任何阶段正在后台处理（队列模式）或前台直接生成。</summary>
+        /// <summary>
+        /// 是否有任何阶段正在处理。
+        /// IsGenerating 为前台直接生成模式；IsXxxProcessing 为后台任务队列模式
+        /// （来自 StageContentState.Processing，即有 Pending/Running 的队列任务）。
+        /// </summary>
         public bool HasActiveProcessing => IsGenerating
             || IsTranscribeProcessing || IsSummaryProcessing || IsMindMapProcessing
             || IsInsightProcessing || IsPodcastProcessing || IsResearchProcessing;
