@@ -213,6 +213,11 @@ namespace TrueFluentPro.ViewModels
         [ObservableProperty]
         private bool _isGenerating;
 
+        partial void OnIsGeneratingChanged(bool value)
+        {
+            OnPropertyChanged(nameof(HasActiveProcessing));
+        }
+
         [ObservableProperty]
         private string _statusMessage = "就绪";
 
@@ -234,6 +239,55 @@ namespace TrueFluentPro.ViewModels
 
         [ObservableProperty]
         private StageContentState _researchState = StageContentState.Empty;
+
+        // ── 各阶段 Processing 计算属性（供 XAML 绑定） ─────────
+        public bool IsTranscribeProcessing => TranscribeState == StageContentState.Processing;
+        public bool IsSummaryProcessing => SummaryState == StageContentState.Processing;
+        public bool IsMindMapProcessing => MindMapState == StageContentState.Processing;
+        public bool IsInsightProcessing => InsightState == StageContentState.Processing;
+        public bool IsPodcastProcessing => PodcastState == StageContentState.Processing;
+        public bool IsResearchProcessing => ResearchState == StageContentState.Processing;
+
+        partial void OnTranscribeStateChanged(StageContentState value)
+        {
+            OnPropertyChanged(nameof(IsTranscribeProcessing));
+            OnPropertyChanged(nameof(HasActiveProcessing));
+        }
+
+        partial void OnSummaryStateChanged(StageContentState value)
+        {
+            OnPropertyChanged(nameof(IsSummaryProcessing));
+            OnPropertyChanged(nameof(HasActiveProcessing));
+        }
+
+        partial void OnMindMapStateChanged(StageContentState value)
+        {
+            OnPropertyChanged(nameof(IsMindMapProcessing));
+            OnPropertyChanged(nameof(HasActiveProcessing));
+        }
+
+        partial void OnInsightStateChanged(StageContentState value)
+        {
+            OnPropertyChanged(nameof(IsInsightProcessing));
+            OnPropertyChanged(nameof(HasActiveProcessing));
+        }
+
+        partial void OnPodcastStateChanged(StageContentState value)
+        {
+            OnPropertyChanged(nameof(IsPodcastProcessing));
+            OnPropertyChanged(nameof(HasActiveProcessing));
+        }
+
+        partial void OnResearchStateChanged(StageContentState value)
+        {
+            OnPropertyChanged(nameof(IsResearchProcessing));
+            OnPropertyChanged(nameof(HasActiveProcessing));
+        }
+
+        /// <summary>是否有任何阶段正在后台处理（队列模式）或前台直接生成。</summary>
+        public bool HasActiveProcessing => IsGenerating
+            || IsTranscribeProcessing || IsSummaryProcessing || IsMindMapProcessing
+            || IsInsightProcessing || IsPodcastProcessing || IsResearchProcessing;
 
         /// <summary>当前音频的 audio_item_id（DB 主键），LoadAudioFile 后设置。</summary>
         private string? _currentAudioItemId;
@@ -353,7 +407,10 @@ namespace TrueFluentPro.ViewModels
 
             // 订阅任务事件总线（队列化模式下，任务完成后自动刷新 UI）
             if (_eventBus != null)
+            {
                 _eventBus.TaskStatusChanged += OnTaskStatusChanged;
+                _eventBus.TaskProgressUpdated += OnTaskProgressUpdated;
+            }
         }
 
         partial void OnSelectedAudioFileChanged(MediaFileItem? value)
@@ -1363,6 +1420,17 @@ namespace TrueFluentPro.ViewModels
         }
 
         /// <summary>
+        /// 任务进度更新事件处理 — 实时更新底部状态栏显示详细进度。
+        /// </summary>
+        private void OnTaskProgressUpdated(TaskProgressEvent e)
+        {
+            if (_currentAudioItemId == null || e.AudioItemId != _currentAudioItemId)
+                return;
+
+            StatusMessage = e.ProgressMessage;
+        }
+
+        /// <summary>
         /// 刷新各阶段的 UI 状态（Empty/Processing/Ready）。
         /// </summary>
         private void RefreshStageStates(string audioItemId)
@@ -1648,7 +1716,10 @@ namespace TrueFluentPro.ViewModels
             ControlPanel.AutoFillMissingRequested -= OnAutoFillMissingRequested;
             ControlPanel.PodcastAudioSynthesized -= OnPodcastAudioSynthesized;
             if (_eventBus != null)
+            {
                 _eventBus.TaskStatusChanged -= OnTaskStatusChanged;
+                _eventBus.TaskProgressUpdated -= OnTaskProgressUpdated;
+            }
             foreach (var session in _sessions.Values)
                 session.Dispose();
             _sessions.Clear();
