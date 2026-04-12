@@ -5,6 +5,7 @@ using Avalonia.Markup.Xaml;
 using Microsoft.Extensions.DependencyInjection;
 using System;
 using System.Diagnostics;
+using System.Threading;
 using System.Threading.Tasks;
 using TrueFluentPro.Services;
 using TrueFluentPro.Services.EndpointProfiles;
@@ -17,6 +18,7 @@ namespace TrueFluentPro;
 public partial class App : Application
 {
     public static IServiceProvider Services { get; private set; } = null!;
+    private static readonly CancellationTokenSource _appShutdownCts = new();
 
     public override void Initialize()
     {
@@ -32,6 +34,7 @@ public partial class App : Application
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             desktop.ShutdownMode = ShutdownMode.OnMainWindowClose;
+            desktop.ShutdownRequested += (_, _) => _appShutdownCts.Cancel();
             var mainWindow = new MainWindow();
             var configService = Services.GetRequiredService<ConfigurationService>();
             var startupShellPreferencesTask = Task.Run(configService.LoadShellStartupPreferences);
@@ -96,6 +99,13 @@ public partial class App : Application
         services.AddSingleton<Services.Speech.SpeechSynthesisService>();
         services.AddSingleton<AudioLifecyclePipelineService>();
 
+        // --- 音频任务队列 ---
+        services.AddSingleton<IAudioTaskRepository, AudioTaskRepository>();
+        services.AddSingleton<ITaskEventBus, TaskEventBus>();
+        services.AddSingleton<AudioTaskStageHandlerService>();
+        services.AddSingleton<IAudioTaskQueueService, AudioTaskQueueService>();
+        services.AddSingleton<IAudioTaskExecutor, AudioTaskExecutor>();
+
         // --- ViewModel ---
         services.AddSingleton<SettingsViewModel>();
         services.AddSingleton<MainWindowViewModel>();
@@ -118,6 +128,18 @@ public partial class App : Application
             // 3. 标记 SQLite 就绪 —— 所有读写进入 SQLite 主路径
             var switches = Services.GetRequiredService<SqliteFeatureSwitches>();
             switches.IsReady = true;
+
+            // 4. 启动音频任务执行器 —— 后台调度循环
+            var executor = Services.GetRequiredService<IAudioTaskExecutor>();
+            var queueService = Services.GetRequiredService<IAudioTaskQueueService>();
+
+            // 将队列服务的 NewTaskEnqueued 事件连接到执行器
+            if (queueService is AudioTaskQueueService concreteQueue)
+            {
+                concreteQueue.NewTaskEnqueued += () => executor.NotifyNewTask();
+            }
+
+            _ = Task.Run(() => executor.StartAsync(_appShutdownCts.Token));
         }
         catch (Exception ex)
         {

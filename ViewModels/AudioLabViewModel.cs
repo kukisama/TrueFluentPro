@@ -41,6 +41,8 @@ namespace TrueFluentPro.ViewModels
         private readonly Func<AzureSpeechConfig> _configProvider;
         private readonly ConfigurationService _configService;
         private readonly AudioLifecyclePipelineService _pipeline;
+        private readonly IAudioTaskQueueService? _queueService;
+        private readonly ITaskEventBus? _eventBus;
 
         // ── 会话管理（每个音频文件一个独立会话） ─────────────────
         private readonly Dictionary<string, AudioFileSession> _sessions = new(StringComparer.OrdinalIgnoreCase);
@@ -214,6 +216,28 @@ namespace TrueFluentPro.ViewModels
         [ObservableProperty]
         private string _statusMessage = "就绪";
 
+        // ── 各阶段内容状态（队列化三态） ─────────────────────
+        [ObservableProperty]
+        private StageContentState _transcribeState = StageContentState.Empty;
+
+        [ObservableProperty]
+        private StageContentState _summaryState = StageContentState.Empty;
+
+        [ObservableProperty]
+        private StageContentState _mindMapState = StageContentState.Empty;
+
+        [ObservableProperty]
+        private StageContentState _insightState = StageContentState.Empty;
+
+        [ObservableProperty]
+        private StageContentState _podcastState = StageContentState.Empty;
+
+        [ObservableProperty]
+        private StageContentState _researchState = StageContentState.Empty;
+
+        /// <summary>当前音频的 audio_item_id（DB 主键），LoadAudioFile 后设置。</summary>
+        private string? _currentAudioItemId;
+
         // ── 播放器 ────────────────────────────────────────────
         public AudioLabPlaybackViewModel Playback { get; }
 
@@ -265,7 +289,9 @@ namespace TrueFluentPro.ViewModels
             Func<AzureSpeechConfig> configProvider,
             ConfigurationService configService,
             AudioLifecyclePipelineService pipeline,
-            AudioLabControlPanelViewModel controlPanel)
+            AudioLabControlPanelViewModel controlPanel,
+            IAudioTaskQueueService? queueService = null,
+            ITaskEventBus? eventBus = null)
         {
             _aiInsightService = aiInsightService;
             _azureTokenProviderStore = azureTokenProviderStore;
@@ -275,6 +301,8 @@ namespace TrueFluentPro.ViewModels
             _configProvider = configProvider;
             _configService = configService;
             _pipeline = pipeline;
+            _queueService = queueService;
+            _eventBus = eventBus;
             ControlPanel = controlPanel;
 
             // 从配置恢复文件面板展开状态（默认展开）
@@ -322,6 +350,10 @@ namespace TrueFluentPro.ViewModels
             GenerateResearchCommand = new RelayCommand(_ => _ = GenerateResearchAsync(), _ => !IsGenerating && Segments.Count > 0);
             GeneratePodcastCommand = new RelayCommand(_ => _ = GeneratePodcastAsync(), _ => !IsGenerating && Segments.Count > 0);
             StopGenerationCommand = new RelayCommand(_ => _activeSession?.Cts?.Cancel(), _ => IsGenerating);
+
+            // 订阅任务事件总线（队列化模式下，任务完成后自动刷新 UI）
+            if (_eventBus != null)
+                _eventBus.TaskStatusChanged += OnTaskStatusChanged;
         }
 
         partial void OnSelectedAudioFileChanged(MediaFileItem? value)
@@ -356,6 +388,7 @@ namespace TrueFluentPro.ViewModels
 
             // 确保音频在数据库中有记录，同步控制面板
             var audioItemId = _pipeline.EnsureAudioItem(filePath);
+            _currentAudioItemId = audioItemId;
             ControlPanel.SetCurrentAudio(audioItemId, CurrentFileName);
 
             // 尝试从生命周期缓存恢复内容（避免重新生成）
@@ -383,7 +416,16 @@ namespace TrueFluentPro.ViewModels
             var hasDbTranscription = _pipeline.GetCompletedStages(audioItemId)
                 .Contains(AudioLifecycleStage.Transcribed);
             if (session.Segments.Count == 0 && !session.IsGenerating && !hasDbTranscription)
-                _ = TranscribeSessionAsync(session);
+            {
+                // 优先通过队列提交（后台执行），回退到直接执行
+                if (_queueService != null)
+                    _queueService.SubmitAll(audioItemId);
+                else
+                    _ = TranscribeSessionAsync(session);
+            }
+
+            // 刷新各阶段状态
+            RefreshStageStates(audioItemId);
         }
 
         // ── 转录段合并（从外部 SubtitleCue 列表生成） ─────────
@@ -1291,6 +1333,174 @@ namespace TrueFluentPro.ViewModels
             ((RelayCommand)StopGenerationCommand).RaiseCanExecuteChanged();
         }
 
+        // ── 队列事件处理 ──────────────────────────────────────
+
+        /// <summary>
+        /// 任务状态变更事件处理 — 当队列中的任务完成/失败时，
+        /// 从 DB 刷新对应阶段的内容到 UI。
+        /// </summary>
+        private void OnTaskStatusChanged(TaskStatusChangedEvent e)
+        {
+            // 仅处理与当前音频相关的事件
+            if (_currentAudioItemId == null || e.AudioItemId != _currentAudioItemId)
+                return;
+
+            var session = _activeSession;
+            if (session == null) return;
+
+            // 刷新阶段状态
+            RefreshStageStates(e.AudioItemId);
+
+            // 任务完成时，从 DB 重新加载内容到 UI
+            if (e.NewStatus == AudioTaskStatus.Completed)
+            {
+                RefreshStageContentFromDb(session, e.AudioItemId, e.Stage);
+            }
+            else if (e.NewStatus == AudioTaskStatus.Failed)
+            {
+                StatusMessage = $"{e.Stage} 失败：{e.ErrorMessage}";
+            }
+        }
+
+        /// <summary>
+        /// 刷新各阶段的 UI 状态（Empty/Processing/Ready）。
+        /// </summary>
+        private void RefreshStageStates(string audioItemId)
+        {
+            var completedStages = new HashSet<AudioLifecycleStage>(
+                _pipeline.GetCompletedStages(audioItemId));
+
+            // 查询活跃任务
+            var activeStages = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (_queueService != null)
+            {
+                var activeTasks = _queueService.Query(new AudioTaskQueryFilter
+                {
+                    AudioItemId = audioItemId,
+                    Status = AudioTaskStatus.Pending,
+                    Limit = 20
+                });
+                foreach (var t in activeTasks)
+                    activeStages.Add(t.Stage);
+
+                var runningTasks = _queueService.Query(new AudioTaskQueryFilter
+                {
+                    AudioItemId = audioItemId,
+                    Status = AudioTaskStatus.Running,
+                    Limit = 20
+                });
+                foreach (var t in runningTasks)
+                    activeStages.Add(t.Stage);
+            }
+
+            TranscribeState = GetStageState(AudioLifecycleStage.Transcribed, completedStages, activeStages);
+            SummaryState = GetStageState(AudioLifecycleStage.Summarized, completedStages, activeStages);
+            MindMapState = GetStageState(AudioLifecycleStage.MindMap, completedStages, activeStages);
+            InsightState = GetStageState(AudioLifecycleStage.Insight, completedStages, activeStages);
+            PodcastState = GetStageState(AudioLifecycleStage.PodcastScript, completedStages, activeStages);
+            ResearchState = GetStageState(AudioLifecycleStage.Research, completedStages, activeStages);
+        }
+
+        private static StageContentState GetStageState(
+            AudioLifecycleStage stage,
+            HashSet<AudioLifecycleStage> completed,
+            HashSet<string> active)
+        {
+            if (completed.Contains(stage))
+                return StageContentState.Ready;
+            if (active.Contains(stage.ToString()))
+                return StageContentState.Processing;
+            return StageContentState.Empty;
+        }
+
+        /// <summary>
+        /// 从 DB 重新加载指定阶段的内容到当前会话和 UI。
+        /// </summary>
+        private void RefreshStageContentFromDb(AudioFileSession session, string audioItemId, AudioLifecycleStage stage)
+        {
+            switch (stage)
+            {
+                case AudioLifecycleStage.Transcribed:
+                    var transcriptionJson = _pipeline.TryLoadCachedContent(audioItemId, AudioLifecycleStage.Transcribed);
+                    if (!string.IsNullOrWhiteSpace(transcriptionJson))
+                    {
+                        try
+                        {
+                            var dtos = System.Text.Json.JsonSerializer.Deserialize<List<TranscriptSegmentDto>>(transcriptionJson);
+                            if (dtos != null && dtos.Count > 0)
+                            {
+                                session.Segments = dtos.Select(d => new TranscriptSegment
+                                {
+                                    Speaker = d.Speaker ?? "",
+                                    SpeakerIndex = d.SpeakerIndex,
+                                    StartTime = new TimeSpan(d.StartTimeTicks),
+                                    Text = d.Text ?? "",
+                                }).ToList();
+                                SyncSegmentsFromSession(session);
+                                StatusMessage = $"转录完成：{session.Segments.Count} 个段落";
+                                RaiseAllCommandsCanExecuteChanged();
+                            }
+                        }
+                        catch { /* 兼容旧格式 */ }
+                    }
+                    break;
+
+                case AudioLifecycleStage.Summarized:
+                    var summary = _pipeline.TryLoadCachedContent(audioItemId, AudioLifecycleStage.Summarized);
+                    if (!string.IsNullOrWhiteSpace(summary))
+                    {
+                        session.SummaryMarkdown = summary;
+                        SummaryMarkdown = summary;
+                        StatusMessage = "总结生成完成";
+                    }
+                    break;
+
+                case AudioLifecycleStage.MindMap:
+                    var mindMapJson = _pipeline.TryLoadCachedContent(audioItemId, AudioLifecycleStage.MindMap);
+                    if (!string.IsNullOrWhiteSpace(mindMapJson))
+                    {
+                        session.MindMapRoot = ParseMindMapJson(mindMapJson);
+                        MindMapRoot = session.MindMapRoot;
+                        StatusMessage = "思维导图生成完成";
+                    }
+                    break;
+
+                case AudioLifecycleStage.Insight:
+                    var insight = _pipeline.TryLoadCachedContent(audioItemId, AudioLifecycleStage.Insight);
+                    if (!string.IsNullOrWhiteSpace(insight))
+                    {
+                        session.InsightMarkdown = insight;
+                        InsightMarkdown = insight;
+                        StatusMessage = "顿悟生成完成";
+                    }
+                    break;
+
+                case AudioLifecycleStage.PodcastScript:
+                    var podcast = _pipeline.TryLoadCachedContent(audioItemId, AudioLifecycleStage.PodcastScript);
+                    if (!string.IsNullOrWhiteSpace(podcast))
+                    {
+                        session.PodcastMarkdown = podcast;
+                        PodcastMarkdown = podcast;
+                        StatusMessage = "播客台本生成完成";
+                    }
+                    break;
+
+                case AudioLifecycleStage.Research:
+                    var research = _pipeline.TryLoadCachedContent(audioItemId, AudioLifecycleStage.Research);
+                    if (!string.IsNullOrWhiteSpace(research))
+                    {
+                        session.ResearchReportMarkdown = research;
+                        ResearchReportMarkdown = research;
+                        session.CurrentResearchPhase = ResearchPhase.ReportReady;
+                        CurrentResearchPhase = ResearchPhase.ReportReady;
+                        StatusMessage = "深度研究完成";
+                    }
+                    break;
+            }
+
+            ControlPanel.RefreshLifecycleStatus();
+        }
+
         // ── 生命周期缓存恢复 ──────────────────────────────────
 
         /// <summary>
@@ -1437,6 +1647,8 @@ namespace TrueFluentPro.ViewModels
         {
             ControlPanel.AutoFillMissingRequested -= OnAutoFillMissingRequested;
             ControlPanel.PodcastAudioSynthesized -= OnPodcastAudioSynthesized;
+            if (_eventBus != null)
+                _eventBus.TaskStatusChanged -= OnTaskStatusChanged;
             foreach (var session in _sessions.Values)
                 session.Dispose();
             _sessions.Clear();

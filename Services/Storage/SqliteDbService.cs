@@ -6,7 +6,7 @@ namespace TrueFluentPro.Services.Storage
 {
     public sealed class SqliteDbService : ISqliteDbService
     {
-        private const int CurrentSchemaVersion = 2;
+        private const int CurrentSchemaVersion = 3;
         private readonly string _connectionString;
         private readonly object _initLock = new();
         private bool _initialized;
@@ -285,6 +285,23 @@ CREATE TABLE IF NOT EXISTS audio_lifecycle (
     PRIMARY KEY (audio_item_id, stage),
     FOREIGN KEY (audio_item_id) REFERENCES audio_library_items(id)
 );");
+
+            Exec(conn, @"
+CREATE TABLE IF NOT EXISTS audio_task_queue (
+    task_id         TEXT    NOT NULL PRIMARY KEY,
+    audio_item_id   TEXT    NOT NULL,
+    stage           TEXT    NOT NULL,
+    status          TEXT    NOT NULL DEFAULT 'Pending',
+    priority        INTEGER NOT NULL DEFAULT 0,
+    depends_on      TEXT,
+    error_message   TEXT,
+    retry_count     INTEGER NOT NULL DEFAULT 0,
+    submitted_at    TEXT    NOT NULL,
+    started_at      TEXT,
+    completed_at    TEXT,
+    submitted_by    TEXT,
+    FOREIGN KEY (audio_item_id) REFERENCES audio_library_items(id)
+);");
         }
 
         private static void CreateAllIndexes(SqliteConnection conn)
@@ -302,6 +319,8 @@ CREATE TABLE IF NOT EXISTS audio_lifecycle (
             Exec(conn, "CREATE INDEX IF NOT EXISTS idx_subtitles_audio ON subtitle_assets(audio_item_id);");
             Exec(conn, "CREATE INDEX IF NOT EXISTS idx_translation_created ON translation_history(created_at DESC);");
             Exec(conn, "CREATE INDEX IF NOT EXISTS idx_lifecycle_audio ON audio_lifecycle(audio_item_id);");
+            Exec(conn, "CREATE INDEX IF NOT EXISTS idx_task_queue_status ON audio_task_queue(status);");
+            Exec(conn, "CREATE INDEX IF NOT EXISTS idx_task_queue_audio_stage ON audio_task_queue(audio_item_id, stage, status);");
         }
 
         private void EnsureSchemaVersion(SqliteConnection conn)
@@ -335,6 +354,7 @@ CREATE TABLE IF NOT EXISTS audio_lifecycle (
             SqliteDebugLogger.LogLifecycle($"执行迁移: v{fromVersion} → v{CurrentSchemaVersion}");
 
             if (fromVersion < 2) MigrateToV2(conn);
+            if (fromVersion < 3) MigrateToV3(conn);
 
             using var cmd = conn.CreateCommand();
             cmd.CommandText = "INSERT INTO _schema_version (version, applied_at) VALUES (@v, @t);";
@@ -361,6 +381,29 @@ CREATE TABLE IF NOT EXISTS audio_lifecycle (
 );");
             Exec(conn, "CREATE INDEX IF NOT EXISTS idx_lifecycle_audio ON audio_lifecycle(audio_item_id);");
             SqliteDebugLogger.LogLifecycle("已迁移到 schema v2: audio_lifecycle 表");
+        }
+
+        private static void MigrateToV3(SqliteConnection conn)
+        {
+            Exec(conn, @"
+CREATE TABLE IF NOT EXISTS audio_task_queue (
+    task_id         TEXT    NOT NULL PRIMARY KEY,
+    audio_item_id   TEXT    NOT NULL,
+    stage           TEXT    NOT NULL,
+    status          TEXT    NOT NULL DEFAULT 'Pending',
+    priority        INTEGER NOT NULL DEFAULT 0,
+    depends_on      TEXT,
+    error_message   TEXT,
+    retry_count     INTEGER NOT NULL DEFAULT 0,
+    submitted_at    TEXT    NOT NULL,
+    started_at      TEXT,
+    completed_at    TEXT,
+    submitted_by    TEXT,
+    FOREIGN KEY (audio_item_id) REFERENCES audio_library_items(id)
+);");
+            Exec(conn, "CREATE INDEX IF NOT EXISTS idx_task_queue_status ON audio_task_queue(status);");
+            Exec(conn, "CREATE INDEX IF NOT EXISTS idx_task_queue_audio_stage ON audio_task_queue(audio_item_id, stage, status);");
+            SqliteDebugLogger.LogLifecycle("已迁移到 schema v3: audio_task_queue 表");
         }
 
         public string? GetMeta(string key)

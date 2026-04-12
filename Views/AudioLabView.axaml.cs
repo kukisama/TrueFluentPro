@@ -40,7 +40,9 @@ namespace TrueFluentPro.Views
             Func<AzureSpeechConfig> configProvider,
             ConfigurationService configService,
             AudioLifecyclePipelineService pipeline,
-            AudioLabControlPanelViewModel controlPanelViewModel)
+            AudioLabControlPanelViewModel controlPanelViewModel,
+            IAudioTaskQueueService? queueService = null,
+            ITaskEventBus? eventBus = null)
         {
             if (_initialized) return;
             _initialized = true;
@@ -53,7 +55,9 @@ namespace TrueFluentPro.Views
                 configProvider,
                 configService,
                 pipeline,
-                controlPanelViewModel);
+                controlPanelViewModel,
+                queueService,
+                eventBus);
             vm.FilePanelStateChanged += OnFilePanelStateChanged;
             DataContext = vm;
             ApplyFilePanelState(vm.IsFilePanelOpen);
