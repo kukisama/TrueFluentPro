@@ -28,13 +28,16 @@ namespace TrueFluentPro.Services.Storage
         /// <summary>更新任务的依赖信息。</summary>
         void UpdateDependsOn(string taskId, string? dependsOnJson);
 
+        /// <summary>更新任务的进度描述消息。</summary>
+        void UpdateProgressMessage(string taskId, string? progressMessage);
+
         /// <summary>将任务标记为 Running（设置 started_at）。</summary>
         void MarkRunning(string taskId);
 
-        /// <summary>将任务标记为 Completed（设置 completed_at）。</summary>
+        /// <summary>将任务标记为 Completed（设置 completed_at，清空 progress_message）。</summary>
         void MarkCompleted(string taskId);
 
-        /// <summary>将任务标记为 Failed（设置 completed_at + error_message）。</summary>
+        /// <summary>将任务标记为 Failed（设置 completed_at + error_message，清空 progress_message）。</summary>
         void MarkFailed(string taskId, string errorMessage);
 
         /// <summary>将任务标记为 Cancelled。</summary>
@@ -94,11 +97,11 @@ namespace TrueFluentPro.Services.Storage
             cmd.CommandText = @"
 INSERT INTO audio_task_queue (
     task_id, audio_item_id, stage, status, priority,
-    depends_on, error_message, retry_count,
+    depends_on, error_message, progress_message, retry_count,
     submitted_at, started_at, completed_at, submitted_by
 ) VALUES (
     @tid, @aid, @stage, @status, @pri,
-    @deps, @err, @retry,
+    @deps, @err, @prog, @retry,
     @sub_at, @start_at, @comp_at, @sub_by
 );";
             BindParams(cmd, r);
@@ -169,6 +172,19 @@ WHERE task_id = @tid;";
             cmd.ExecuteNonQuery();
         }
 
+        public void UpdateProgressMessage(string taskId, string? progressMessage)
+        {
+            using var conn = _db.CreateConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = @"
+UPDATE audio_task_queue
+SET progress_message = @prog
+WHERE task_id = @tid;";
+            cmd.Parameters.AddWithValue("@tid", taskId);
+            cmd.Parameters.AddWithValue("@prog", Db.Val(progressMessage));
+            cmd.ExecuteNonQuery();
+        }
+
         public void MarkRunning(string taskId)
         {
             using var conn = _db.CreateConnection();
@@ -188,7 +204,7 @@ WHERE task_id = @tid;";
             using var cmd = conn.CreateCommand();
             cmd.CommandText = @"
 UPDATE audio_task_queue
-SET status = 'Completed', completed_at = @t
+SET status = 'Completed', completed_at = @t, progress_message = NULL
 WHERE task_id = @tid;";
             cmd.Parameters.AddWithValue("@tid", taskId);
             cmd.Parameters.AddWithValue("@t", Db.Ts(DateTime.Now));
@@ -201,7 +217,7 @@ WHERE task_id = @tid;";
             using var cmd = conn.CreateCommand();
             cmd.CommandText = @"
 UPDATE audio_task_queue
-SET status = 'Failed', completed_at = @t, error_message = @err
+SET status = 'Failed', completed_at = @t, error_message = @err, progress_message = NULL
 WHERE task_id = @tid;";
             cmd.Parameters.AddWithValue("@tid", taskId);
             cmd.Parameters.AddWithValue("@t", Db.Ts(DateTime.Now));
@@ -215,7 +231,7 @@ WHERE task_id = @tid;";
             using var cmd = conn.CreateCommand();
             cmd.CommandText = @"
 UPDATE audio_task_queue
-SET status = 'Cancelled', completed_at = @t
+SET status = 'Cancelled', completed_at = @t, progress_message = NULL
 WHERE task_id = @tid;";
             cmd.Parameters.AddWithValue("@tid", taskId);
             cmd.Parameters.AddWithValue("@t", Db.Ts(DateTime.Now));
@@ -228,7 +244,7 @@ WHERE task_id = @tid;";
             using var cmd = conn.CreateCommand();
             cmd.CommandText = @"
 UPDATE audio_task_queue
-SET status = 'Pending', error_message = NULL, started_at = NULL,
+SET status = 'Pending', error_message = NULL, progress_message = NULL, started_at = NULL,
     completed_at = NULL, retry_count = retry_count + 1
 WHERE task_id = @tid;";
             cmd.Parameters.AddWithValue("@tid", taskId);
@@ -344,6 +360,7 @@ WHERE status = 'Running'
             cmd.Parameters.AddWithValue("@pri", r.Priority);
             cmd.Parameters.AddWithValue("@deps", Db.Val(r.DependsOn));
             cmd.Parameters.AddWithValue("@err", Db.Val(r.ErrorMessage));
+            cmd.Parameters.AddWithValue("@prog", Db.Val(r.ProgressMessage));
             cmd.Parameters.AddWithValue("@retry", r.RetryCount);
             cmd.Parameters.AddWithValue("@sub_at", Db.Ts(r.SubmittedAt));
             cmd.Parameters.AddWithValue("@start_at", Db.Val(r.StartedAt));
@@ -360,6 +377,7 @@ WHERE status = 'Running'
             Priority = Db.Int(r["priority"]),
             DependsOn = Db.NStr(r["depends_on"]),
             ErrorMessage = Db.NStr(r["error_message"]),
+            ProgressMessage = Db.NStr(r["progress_message"]),
             RetryCount = Db.Int(r["retry_count"]),
             SubmittedAt = Db.Dt(r["submitted_at"]),
             StartedAt = Db.NDt(r["started_at"]),

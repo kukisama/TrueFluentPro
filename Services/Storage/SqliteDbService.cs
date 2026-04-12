@@ -6,7 +6,7 @@ namespace TrueFluentPro.Services.Storage
 {
     public sealed class SqliteDbService : ISqliteDbService
     {
-        private const int CurrentSchemaVersion = 3;
+        private const int CurrentSchemaVersion = 4;
         private readonly string _connectionString;
         private readonly object _initLock = new();
         private bool _initialized;
@@ -295,6 +295,7 @@ CREATE TABLE IF NOT EXISTS audio_task_queue (
     priority        INTEGER NOT NULL DEFAULT 0,
     depends_on      TEXT,
     error_message   TEXT,
+    progress_message TEXT,
     retry_count     INTEGER NOT NULL DEFAULT 0,
     submitted_at    TEXT    NOT NULL,
     started_at      TEXT,
@@ -355,6 +356,7 @@ CREATE TABLE IF NOT EXISTS audio_task_queue (
 
             if (fromVersion < 2) MigrateToV2(conn);
             if (fromVersion < 3) MigrateToV3(conn);
+            if (fromVersion < 4) MigrateToV4(conn);
 
             using var cmd = conn.CreateCommand();
             cmd.CommandText = "INSERT INTO _schema_version (version, applied_at) VALUES (@v, @t);";
@@ -404,6 +406,20 @@ CREATE TABLE IF NOT EXISTS audio_task_queue (
             Exec(conn, "CREATE INDEX IF NOT EXISTS idx_task_queue_status ON audio_task_queue(status);");
             Exec(conn, "CREATE INDEX IF NOT EXISTS idx_task_queue_audio_stage ON audio_task_queue(audio_item_id, stage, status);");
             SqliteDebugLogger.LogLifecycle("已迁移到 schema v3: audio_task_queue 表");
+        }
+
+        private static void MigrateToV4(SqliteConnection conn)
+        {
+            // 为 audio_task_queue 添加 progress_message 列
+            try
+            {
+                Exec(conn, "ALTER TABLE audio_task_queue ADD COLUMN progress_message TEXT;");
+            }
+            catch (SqliteException)
+            {
+                // 列可能已存在（例如新建的数据库已包含该列），忽略 duplicate column 错误
+            }
+            SqliteDebugLogger.LogLifecycle("已迁移到 schema v4: audio_task_queue 增加 progress_message 列");
         }
 
         public string? GetMeta(string key)

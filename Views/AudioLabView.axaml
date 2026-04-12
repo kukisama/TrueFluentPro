@@ -381,11 +381,25 @@
                                                                   IsVisible="{Binding IsSummaryEditing}"
                                                                   MinHeight="300"/>
 
-                                <!-- 空状态提示 -->
-                                <TextBlock Text="尚未生成总结。加载音频后会自动转录并生成。"
-                                           Opacity="0.4" FontSize="13"
-                                           IsVisible="{Binding !SummaryMarkdown.Length}"
-                                           HorizontalAlignment="Center" Margin="0,40"/>
+                                <!-- 空状态/处理中提示 -->
+                                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
+                                            Spacing="8" Margin="0,40"
+                                            IsVisible="{Binding !SummaryMarkdown.Length}">
+                                    <!-- 处理中状态 -->
+                                    <StackPanel Spacing="8" HorizontalAlignment="Center"
+                                                IsVisible="{Binding IsSummaryProcessing}">
+                                        <ProgressBar IsIndeterminate="True" Width="120" Height="3"
+                                                     HorizontalAlignment="Center"/>
+                                        <TextBlock Text="正在生成总结，请稍后回来查看..."
+                                                   Opacity="0.5" FontSize="13"
+                                                   HorizontalAlignment="Center"/>
+                                    </StackPanel>
+                                    <!-- 空状态 -->
+                                    <TextBlock Text="请先完成音频转录，转录完成后将自动生成总结。"
+                                               Opacity="0.4" FontSize="13"
+                                               HorizontalAlignment="Center"
+                                               IsVisible="{Binding !IsSummaryProcessing}"/>
+                                </StackPanel>
                             </StackPanel>
                         </ScrollViewer>
 
@@ -462,10 +476,24 @@
 
                             <!-- 空状态 -->
                             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
-                                        Spacing="8" Opacity="0.4" Margin="0,60"
+                                        Spacing="8" Margin="0,60"
                                         IsVisible="{Binding MindMapRoot, Converter={x:Static ObjectConverters.IsNull}}">
-                                <TextBlock Text="🧠" FontSize="40" HorizontalAlignment="Center"/>
-                                <TextBlock Text="思维导图将在总结生成后自动创建" FontSize="14" HorizontalAlignment="Center"/>
+                                <!-- 处理中状态 -->
+                                <StackPanel Spacing="8" HorizontalAlignment="Center"
+                                            IsVisible="{Binding IsMindMapProcessing}">
+                                    <ProgressBar IsIndeterminate="True" Width="120" Height="3"
+                                                 HorizontalAlignment="Center"/>
+                                    <TextBlock Text="正在生成思维导图，请稍后回来查看..."
+                                               Opacity="0.5" FontSize="13"
+                                               HorizontalAlignment="Center"/>
+                                </StackPanel>
+                                <!-- 空状态（无 Processing） -->
+                                <StackPanel Spacing="8" HorizontalAlignment="Center" Opacity="0.4"
+                                            IsVisible="{Binding !IsMindMapProcessing}">
+                                    <TextBlock Text="🧠" FontSize="40" HorizontalAlignment="Center"/>
+                                    <TextBlock Text="请先完成音频转录，思维导图将在总结生成后自动创建。"
+                                               FontSize="14" HorizontalAlignment="Center"/>
+                                </StackPanel>
                             </StackPanel>
                         </Panel>
 
@@ -482,10 +510,22 @@
                                     </StackPanel>
                                 </Button>
                                 <controls:ChatMarkdownBlock Markdown="{Binding InsightMarkdown}"/>
-                                <TextBlock Text="尚未生成。转录完成后可点击重新生成。"
-                                           Opacity="0.4" FontSize="13"
-                                           IsVisible="{Binding !InsightMarkdown.Length}"
-                                           HorizontalAlignment="Center" Margin="0,40"/>
+                                <!-- 空状态/处理中提示 -->
+                                <StackPanel HorizontalAlignment="Center" Spacing="8" Margin="0,40"
+                                            IsVisible="{Binding !InsightMarkdown.Length}">
+                                    <StackPanel Spacing="8" HorizontalAlignment="Center"
+                                                IsVisible="{Binding IsInsightProcessing}">
+                                        <ProgressBar IsIndeterminate="True" Width="120" Height="3"
+                                                     HorizontalAlignment="Center"/>
+                                        <TextBlock Text="正在生成顿悟分析，请稍后回来查看..."
+                                                   Opacity="0.5" FontSize="13"
+                                                   HorizontalAlignment="Center"/>
+                                    </StackPanel>
+                                    <TextBlock Text="请先完成音频转录，转录完成后可点击生成顿悟分析。"
+                                               Opacity="0.4" FontSize="13"
+                                               HorizontalAlignment="Center"
+                                               IsVisible="{Binding !IsInsightProcessing}"/>
+                                </StackPanel>
                             </StackPanel>
                         </ScrollViewer>
 
@@ -517,10 +557,22 @@
                                 </ItemsControl>
                                 <controls:ChatMarkdownBlock Markdown="{Binding ResearchReportMarkdown}"
                                                             Margin="0,12,0,0"/>
-                                <TextBlock Text="尚未生成研究大纲。转录完成后可点击生成。"
-                                           Opacity="0.4" FontSize="13"
-                                           IsVisible="{Binding !ResearchTopics.Count}"
-                                           HorizontalAlignment="Center" Margin="0,40"/>
+                                <!-- 空状态/处理中提示 -->
+                                <StackPanel HorizontalAlignment="Center" Spacing="8" Margin="0,40"
+                                            IsVisible="{Binding !ResearchTopics.Count}">
+                                    <StackPanel Spacing="8" HorizontalAlignment="Center"
+                                                IsVisible="{Binding IsResearchProcessing}">
+                                        <ProgressBar IsIndeterminate="True" Width="120" Height="3"
+                                                     HorizontalAlignment="Center"/>
+                                        <TextBlock Text="正在生成研究报告，请稍后回来查看..."
+                                                   Opacity="0.5" FontSize="13"
+                                                   HorizontalAlignment="Center"/>
+                                    </StackPanel>
+                                    <TextBlock Text="请先完成音频转录，转录完成后可点击生成研究报告。"
+                                               Opacity="0.4" FontSize="13"
+                                               HorizontalAlignment="Center"
+                                               IsVisible="{Binding !IsResearchProcessing}"/>
+                                </StackPanel>
                             </StackPanel>
                         </ScrollViewer>
 
@@ -537,10 +589,22 @@
                                     </StackPanel>
                                 </Button>
                                 <controls:ChatMarkdownBlock Markdown="{Binding PodcastMarkdown}"/>
-                                <TextBlock Text="尚未生成。转录完成后可点击重新生成。"
-                                           Opacity="0.4" FontSize="13"
-                                           IsVisible="{Binding !PodcastMarkdown.Length}"
-                                           HorizontalAlignment="Center" Margin="0,40"/>
+                                <!-- 空状态/处理中提示 -->
+                                <StackPanel HorizontalAlignment="Center" Spacing="8" Margin="0,40"
+                                            IsVisible="{Binding !PodcastMarkdown.Length}">
+                                    <StackPanel Spacing="8" HorizontalAlignment="Center"
+                                                IsVisible="{Binding IsPodcastProcessing}">
+                                        <ProgressBar IsIndeterminate="True" Width="120" Height="3"
+                                                     HorizontalAlignment="Center"/>
+                                        <TextBlock Text="正在生成播客台本，请稍后回来查看..."
+                                                   Opacity="0.5" FontSize="13"
+                                                   HorizontalAlignment="Center"/>
+                                    </StackPanel>
+                                    <TextBlock Text="请先完成音频转录，转录完成后可点击生成播客台本。"
+                                               Opacity="0.4" FontSize="13"
+                                               HorizontalAlignment="Center"
+                                               IsVisible="{Binding !IsPodcastProcessing}"/>
+                                </StackPanel>
                             </StackPanel>
                         </ScrollViewer>
                     </Panel>
@@ -591,7 +655,7 @@
                 Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
                 BorderBrush="{DynamicResource CardBorderBrush}"
                 BorderThickness="0,1,0,0"
-                IsVisible="{Binding IsGenerating}">
+                IsVisible="{Binding HasActiveProcessing}">
             <Grid ColumnDefinitions="Auto,*,Auto">
                 <ProgressBar Grid.Column="0" IsIndeterminate="True"
                              Width="80" Height="3" Margin="0,0,12,0"
@@ -602,7 +666,8 @@
                            TextTrimming="CharacterEllipsis"/>
                 <Button Grid.Column="2" Padding="8,4"
                         Command="{Binding StopGenerationCommand}"
-                        ToolTip.Tip="停止生成">
+                        ToolTip.Tip="停止生成"
+                        IsVisible="{Binding IsGenerating}">
                     <StackPanel Orientation="Horizontal" Spacing="4">
                         <icons:Icon Value="fa-solid fa-stop" FontSize="12"/>
                         <TextBlock FontSize="12" Text="停止"/>

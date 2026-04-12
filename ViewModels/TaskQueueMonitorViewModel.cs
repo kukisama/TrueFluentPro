@@ -54,6 +54,7 @@ namespace TrueFluentPro.ViewModels
             RefreshCommand = new RelayCommand(_ => Refresh());
 
             _eventBus.TaskStatusChanged += OnTaskStatusChanged;
+            _eventBus.TaskProgressUpdated += OnTaskProgressUpdated;
 
             Refresh();
         }
@@ -187,6 +188,16 @@ namespace TrueFluentPro.ViewModels
             Refresh();
         }
 
+        private void OnTaskProgressUpdated(TaskProgressEvent e)
+        {
+            // 实时更新对应任务项的进度描述（不做全量刷新，避免闪烁）
+            var item = _tasks.FirstOrDefault(t => t.TaskId == e.TaskId);
+            if (item != null)
+            {
+                item.ProgressMessage = e.ProgressMessage;
+            }
+        }
+
         private string ResolveAudioFileName(string audioItemId)
         {
             var item = _audioRepo.GetById(audioItemId);
@@ -196,6 +207,7 @@ namespace TrueFluentPro.ViewModels
         public void Dispose()
         {
             _eventBus.TaskStatusChanged -= OnTaskStatusChanged;
+            _eventBus.TaskProgressUpdated -= OnTaskProgressUpdated;
         }
     }
 
@@ -211,6 +223,7 @@ namespace TrueFluentPro.ViewModels
             Status = record.Status;
             Priority = record.Priority;
             ErrorMessage = record.ErrorMessage;
+            ProgressMessage = record.ProgressMessage;
             RetryCount = record.RetryCount;
             SubmittedAt = record.SubmittedAt;
             StartedAt = record.StartedAt;
@@ -225,6 +238,18 @@ namespace TrueFluentPro.ViewModels
         public AudioTaskStatus Status { get; }
         public int Priority { get; }
         public string? ErrorMessage { get; }
+        public string? ProgressMessage
+        {
+            get => _progressMessage;
+            set
+            {
+                if (SetProperty(ref _progressMessage, value))
+                {
+                    OnPropertyChanged(nameof(StatusDisplayName));
+                }
+            }
+        }
+        private string? _progressMessage;
         public int RetryCount { get; }
         public DateTime SubmittedAt { get; }
         public DateTime? StartedAt { get; }
@@ -246,7 +271,7 @@ namespace TrueFluentPro.ViewModels
         public string StatusDisplayName => Status switch
         {
             AudioTaskStatus.Pending => "排队中",
-            AudioTaskStatus.Running => "执行中",
+            AudioTaskStatus.Running => string.IsNullOrWhiteSpace(ProgressMessage) ? "执行中" : ProgressMessage,
             AudioTaskStatus.Completed => "已完成",
             AudioTaskStatus.Failed => "失败",
             AudioTaskStatus.Cancelled => "已取消",

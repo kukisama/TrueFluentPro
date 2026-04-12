@@ -26,6 +26,9 @@ namespace TrueFluentPro.Models
         /// <summary>失败时的错误信息。</summary>
         public string? ErrorMessage { get; set; }
 
+        /// <summary>当前进度描述（例如"上传音频到服务器"、"等待AI返回"等），用于任务监控面板展示。</summary>
+        public string? ProgressMessage { get; set; }
+
         /// <summary>已重试次数。</summary>
         public int RetryCount { get; set; }
 

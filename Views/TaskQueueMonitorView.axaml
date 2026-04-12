@@ -96,7 +96,7 @@
                 <Border Grid.Row="0" Classes="task-card">
                     <Grid RowDefinitions="Auto,*">
                         <!-- 列表表头 -->
-                        <Grid Grid.Row="0" ColumnDefinitions="100,*,80,80,70"
+                        <Grid Grid.Row="0" ColumnDefinitions="100,*,80,200,70"
                               Margin="0,0,0,8">
                             <TextBlock Grid.Column="0" Text="任务ID" FontWeight="SemiBold" FontSize="11"
                                        Foreground="{DynamicResource TextSubtleBrush}"/>
@@ -120,7 +120,7 @@
                                  Padding="0">
                             <ListBox.ItemTemplate>
                                 <DataTemplate x:CompileBindings="False">
-                                    <Grid ColumnDefinitions="100,*,80,80,70"
+                                    <Grid ColumnDefinitions="100,*,80,200,70"
                                           Margin="0,2">
                                         <TextBlock Grid.Column="0"
                                                    Text="{Binding ShortTaskId}"
@@ -138,6 +138,8 @@
                                         <TextBlock Grid.Column="3"
                                                    Text="{Binding StatusDisplayName}"
                                                    FontWeight="SemiBold"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   ToolTip.Tip="{Binding StatusDisplayName}"
                                                    VerticalAlignment="Center"/>
                                         <TextBlock Grid.Column="4"
                                                    Text="{Binding ElapsedTime}"

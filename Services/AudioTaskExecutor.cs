@@ -168,8 +168,18 @@ namespace TrueFluentPro.Services
 
             try
             {
+                // 构建进度回调：更新 DB + 发布事件
+                Action<string> reportProgress = message =>
+                {
+                    _taskRepo.UpdateProgressMessage(task.TaskId, message);
+                    _eventBus.PublishProgress(new TaskProgressEvent(
+                        task.TaskId, task.AudioItemId, stage, message));
+                };
+
+                reportProgress("准备执行...");
+
                 // 调用阶段处理器执行实际的生成逻辑
-                await _stageHandler.ExecuteStageAsync(task.AudioItemId, stage, ct);
+                await _stageHandler.ExecuteStageAsync(task.AudioItemId, stage, ct, reportProgress);
 
                 // 标记完成
                 _taskRepo.MarkCompleted(task.TaskId);
