@@ -394,11 +394,20 @@
                                                    Opacity="0.5" FontSize="13"
                                                    HorizontalAlignment="Center"/>
                                     </StackPanel>
-                                    <!-- 空状态 -->
-                                    <TextBlock Text="请先完成音频转录，转录完成后将自动生成总结。"
-                                               Opacity="0.4" FontSize="13"
-                                               HorizontalAlignment="Center"
-                                               IsVisible="{Binding !IsSummaryProcessing}"/>
+                                    <!-- 空状态（非处理中） -->
+                                    <StackPanel Spacing="4" HorizontalAlignment="Center"
+                                                IsVisible="{Binding !IsSummaryProcessing}">
+                                        <!-- 转录已完成但总结未生成 -->
+                                        <TextBlock Text="转录已完成，可点击「重新生成」或等待队列自动处理。"
+                                                   Opacity="0.4" FontSize="13"
+                                                   HorizontalAlignment="Center"
+                                                   IsVisible="{Binding IsTranscribeReady}"/>
+                                        <!-- 转录未完成 -->
+                                        <TextBlock Text="请先完成音频转录，转录完成后将自动生成总结。"
+                                                   Opacity="0.4" FontSize="13"
+                                                   HorizontalAlignment="Center"
+                                                   IsVisible="{Binding !IsTranscribeReady}"/>
+                                    </StackPanel>
                                 </StackPanel>
                             </StackPanel>
                         </ScrollViewer>
@@ -487,12 +496,18 @@
                                                Opacity="0.5" FontSize="13"
                                                HorizontalAlignment="Center"/>
                                 </StackPanel>
-                                <!-- 空状态（无 Processing） -->
+                                <!-- 空状态（非处理中） -->
                                 <StackPanel Spacing="8" HorizontalAlignment="Center" Opacity="0.4"
                                             IsVisible="{Binding !IsMindMapProcessing}">
                                     <TextBlock Text="🧠" FontSize="40" HorizontalAlignment="Center"/>
+                                    <!-- 转录已完成 -->
+                                    <TextBlock Text="转录已完成，思维导图将在总结生成后自动创建。"
+                                               FontSize="14" HorizontalAlignment="Center"
+                                               IsVisible="{Binding IsTranscribeReady}"/>
+                                    <!-- 转录未完成 -->
                                     <TextBlock Text="请先完成音频转录，思维导图将在总结生成后自动创建。"
-                                               FontSize="14" HorizontalAlignment="Center"/>
+                                               FontSize="14" HorizontalAlignment="Center"
+                                               IsVisible="{Binding !IsTranscribeReady}"/>
                                 </StackPanel>
                             </StackPanel>
                         </Panel>
@@ -521,10 +536,17 @@
                                                    Opacity="0.5" FontSize="13"
                                                    HorizontalAlignment="Center"/>
                                     </StackPanel>
-                                    <TextBlock Text="请先完成音频转录，转录完成后可点击生成顿悟分析。"
-                                               Opacity="0.4" FontSize="13"
-                                               HorizontalAlignment="Center"
-                                               IsVisible="{Binding !IsInsightProcessing}"/>
+                                    <StackPanel Spacing="4" HorizontalAlignment="Center"
+                                                IsVisible="{Binding !IsInsightProcessing}">
+                                        <TextBlock Text="转录已完成，可点击「重新生成」生成顿悟分析。"
+                                                   Opacity="0.4" FontSize="13"
+                                                   HorizontalAlignment="Center"
+                                                   IsVisible="{Binding IsTranscribeReady}"/>
+                                        <TextBlock Text="请先完成音频转录，转录完成后可点击生成顿悟分析。"
+                                                   Opacity="0.4" FontSize="13"
+                                                   HorizontalAlignment="Center"
+                                                   IsVisible="{Binding !IsTranscribeReady}"/>
+                                    </StackPanel>
                                 </StackPanel>
                             </StackPanel>
                         </ScrollViewer>
@@ -568,10 +590,17 @@
                                                    Opacity="0.5" FontSize="13"
                                                    HorizontalAlignment="Center"/>
                                     </StackPanel>
-                                    <TextBlock Text="请先完成音频转录，转录完成后可点击生成研究报告。"
-                                               Opacity="0.4" FontSize="13"
-                                               HorizontalAlignment="Center"
-                                               IsVisible="{Binding !IsResearchProcessing}"/>
+                                    <StackPanel Spacing="4" HorizontalAlignment="Center"
+                                                IsVisible="{Binding !IsResearchProcessing}">
+                                        <TextBlock Text="转录已完成，可点击「生成研究」生成研究报告。"
+                                                   Opacity="0.4" FontSize="13"
+                                                   HorizontalAlignment="Center"
+                                                   IsVisible="{Binding IsTranscribeReady}"/>
+                                        <TextBlock Text="请先完成音频转录，转录完成后可点击生成研究报告。"
+                                                   Opacity="0.4" FontSize="13"
+                                                   HorizontalAlignment="Center"
+                                                   IsVisible="{Binding !IsTranscribeReady}"/>
+                                    </StackPanel>
                                 </StackPanel>
                             </StackPanel>
                         </ScrollViewer>
@@ -600,10 +629,17 @@
                                                    Opacity="0.5" FontSize="13"
                                                    HorizontalAlignment="Center"/>
                                     </StackPanel>
-                                    <TextBlock Text="请先完成音频转录，转录完成后可点击生成播客台本。"
-                                               Opacity="0.4" FontSize="13"
-                                               HorizontalAlignment="Center"
-                                               IsVisible="{Binding !IsPodcastProcessing}"/>
+                                    <StackPanel Spacing="4" HorizontalAlignment="Center"
+                                                IsVisible="{Binding !IsPodcastProcessing}">
+                                        <TextBlock Text="转录已完成，可点击「重新生成」生成播客台本。"
+                                                   Opacity="0.4" FontSize="13"
+                                                   HorizontalAlignment="Center"
+                                                   IsVisible="{Binding IsTranscribeReady}"/>
+                                        <TextBlock Text="请先完成音频转录，转录完成后可点击生成播客台本。"
+                                                   Opacity="0.4" FontSize="13"
+                                                   HorizontalAlignment="Center"
+                                                   IsVisible="{Binding !IsTranscribeReady}"/>
+                                    </StackPanel>
                                 </StackPanel>
                             </StackPanel>
                         </ScrollViewer>

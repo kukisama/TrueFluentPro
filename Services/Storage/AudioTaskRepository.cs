@@ -22,6 +22,9 @@ namespace TrueFluentPro.Services.Storage
         /// <summary>获取下一个可执行的任务（Pending 且依赖满足，按优先级+提交时间排序）。</summary>
         AudioTaskRecord? GetNextPendingTask();
 
+        /// <summary>获取一批待执行的 Pending 任务（按优先级+提交时间排序）。</summary>
+        List<AudioTaskRecord> GetPendingTasks(int limit);
+
         /// <summary>更新任务状态。</summary>
         void UpdateStatus(string taskId, AudioTaskStatus newStatus, string? errorMessage = null);
 
@@ -143,6 +146,22 @@ ORDER BY priority DESC, submitted_at ASC
 LIMIT 1;";
             using var reader = cmd.ExecuteReader();
             return reader.Read() ? ReadRow(reader) : null;
+        }
+
+        public List<AudioTaskRecord> GetPendingTasks(int limit)
+        {
+            using var conn = _db.CreateConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = @"
+SELECT * FROM audio_task_queue
+WHERE status = 'Pending'
+ORDER BY priority DESC, submitted_at ASC
+LIMIT @limit;";
+            cmd.Parameters.AddWithValue("@limit", limit);
+            var list = new List<AudioTaskRecord>();
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read()) list.Add(ReadRow(reader));
+            return list;
         }
 
         public void UpdateStatus(string taskId, AudioTaskStatus newStatus, string? errorMessage = null)

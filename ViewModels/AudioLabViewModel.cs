@@ -248,9 +248,13 @@ namespace TrueFluentPro.ViewModels
         public bool IsPodcastProcessing => PodcastState == StageContentState.Processing;
         public bool IsResearchProcessing => ResearchState == StageContentState.Processing;
 
+        /// <summary>转录已完成（供 XAML 区分空状态提示文案）。</summary>
+        public bool IsTranscribeReady => TranscribeState == StageContentState.Ready;
+
         partial void OnTranscribeStateChanged(StageContentState value)
         {
             OnPropertyChanged(nameof(IsTranscribeProcessing));
+            OnPropertyChanged(nameof(IsTranscribeReady));
             OnPropertyChanged(nameof(HasActiveProcessing));
         }
 
@@ -483,6 +487,11 @@ namespace TrueFluentPro.ViewModels
                     _queueService.SubmitAll(audioItemId);
                 else
                     _ = TranscribeSessionAsync(session);
+            }
+            else if (hasDbTranscription && _queueService != null)
+            {
+                // 转录已完成时，自动提交缺失的下游阶段任务（去重机制避免重复提交）
+                _queueService.SubmitAll(audioItemId);
             }
 
             // 刷新各阶段状态
@@ -1471,6 +1480,9 @@ namespace TrueFluentPro.ViewModels
             InsightState = GetStageState(AudioLifecycleStage.Insight, completedStages, activeStages);
             PodcastState = GetStageState(AudioLifecycleStage.PodcastScript, completedStages, activeStages);
             ResearchState = GetStageState(AudioLifecycleStage.Research, completedStages, activeStages);
+
+            // 根据实际阶段状态同步 StatusMessage
+            UpdateStatusMessageFromStages();
         }
 
         private static StageContentState GetStageState(
@@ -1483,6 +1495,47 @@ namespace TrueFluentPro.ViewModels
             if (active.Contains(stage.ToString()))
                 return StageContentState.Processing;
             return StageContentState.Empty;
+        }
+
+        /// <summary>
+        /// 根据各阶段的实际状态同步 StatusMessage，避免与进度条矛盾。
+        /// </summary>
+        private void UpdateStatusMessageFromStages()
+        {
+            if (HasActiveProcessing)
+            {
+                // 有任务在处理中，描述正在处理的阶段
+                var parts = new List<string>();
+                if (IsTranscribeProcessing) parts.Add("转录");
+                if (IsSummaryProcessing) parts.Add("总结");
+                if (IsMindMapProcessing) parts.Add("思维导图");
+                if (IsInsightProcessing) parts.Add("顿悟");
+                if (IsPodcastProcessing) parts.Add("播客");
+                if (IsResearchProcessing) parts.Add("研究");
+
+                StatusMessage = parts.Count > 0
+                    ? $"队列处理中：{string.Join("、", parts)}..."
+                    : "处理中..."; // IsGenerating（前台直接模式）正在执行
+            }
+            else
+            {
+                // 根据完成度设置静态消息
+                var allReady = TranscribeState == StageContentState.Ready
+                    && SummaryState == StageContentState.Ready
+                    && MindMapState == StageContentState.Ready
+                    && InsightState == StageContentState.Ready
+                    && PodcastState == StageContentState.Ready
+                    && ResearchState == StageContentState.Ready;
+
+                if (allReady)
+                    StatusMessage = "所有阶段已完成";
+                else if (TranscribeState == StageContentState.Ready)
+                    StatusMessage = "转录完成，等待生成后续内容";
+                else if (TranscribeState == StageContentState.Empty && !string.IsNullOrWhiteSpace(CurrentFilePath))
+                    StatusMessage = "等待转录";
+                else
+                    StatusMessage = "就绪";
+            }
         }
 
         /// <summary>

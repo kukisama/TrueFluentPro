@@ -121,6 +121,10 @@ namespace TrueFluentPro.Services
                 if (stage == AudioLifecycleStage.PodcastAudio)
                     continue;
 
+                // 跳过 Translated（翻译阶段暂不支持队列化执行）
+                if (stage == AudioLifecycleStage.Translated)
+                    continue;
+
                 // 先检查去重
                 var existingActive = _taskRepo.FindActiveTask(audioItemId, stageStr);
                 if (existingActive != null)

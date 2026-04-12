@@ -47,6 +47,9 @@ namespace TrueFluentPro.Services
         private readonly Dictionary<string, CancellationTokenSource> _runningCts = new();
         private readonly object _ctsLock = new();
 
+        /// <summary>调度循环单次批量查询上限（= maxConcurrency + 缓冲余量，用于跳过依赖未就绪的任务后仍有足够候选）。</summary>
+        private const int BatchLookaheadBuffer = 20;
+
         public AudioTaskExecutor(
             IAudioTaskRepository taskRepo,
             IAudioLifecycleRepository lifecycleRepo,
@@ -92,27 +95,39 @@ namespace TrueFluentPro.Services
                     break;
                 }
 
-                // 尝试调度所有可执行的任务
-                await TryScheduleTasksAsync(appShutdown);
+                // 尝试调度所有可执行的任务（异常不终止循环）
+                try
+                {
+                    await TryScheduleTasksAsync(appShutdown);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"[AudioTaskExecutor] 调度异常（将在下轮重试）: {ex.Message}");
+                }
             }
         }
 
         private async Task TryScheduleTasksAsync(CancellationToken appShutdown)
         {
-            while (!appShutdown.IsCancellationRequested)
+            // 批量获取所有 Pending 任务，逐个检查依赖，跳过不满足的
+            var pendingTasks = _taskRepo.GetPendingTasks(_maxConcurrency + BatchLookaheadBuffer);
+
+            foreach (var task in pendingTasks)
             {
+                if (appShutdown.IsCancellationRequested)
+                    return;
+
                 // 等待并发槽位
                 if (_concurrencySlot.CurrentCount == 0)
                     return;
 
-                // 从 DB 取下一个 Pending 任务
-                var task = _taskRepo.GetNextPendingTask();
-                if (task == null)
-                    return;
-
-                // DAG 依赖检查
+                // DAG 依赖检查 — 不满足则跳过，继续检查后续任务
                 if (!AreDependenciesSatisfied(task))
-                    return; // 依赖未满足，等待下次调度
+                    continue;
 
                 // 占用并发槽
                 if (!await _concurrencySlot.WaitAsync(0, appShutdown))
