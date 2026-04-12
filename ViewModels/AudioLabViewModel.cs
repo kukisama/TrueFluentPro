@@ -1343,10 +1343,7 @@ namespace TrueFluentPro.ViewModels
         {
             // 仅处理与当前音频相关的事件
             if (_currentAudioItemId == null || e.AudioItemId != _currentAudioItemId)
-            {
-                // 仅刷新阶段状态标记（不刷新内容）
                 return;
-            }
 
             var session = _activeSession;
             if (session == null) return;

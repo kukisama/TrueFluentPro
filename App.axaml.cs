@@ -5,6 +5,7 @@ using Avalonia.Markup.Xaml;
 using Microsoft.Extensions.DependencyInjection;
 using System;
 using System.Diagnostics;
+using System.Threading;
 using System.Threading.Tasks;
 using TrueFluentPro.Services;
 using TrueFluentPro.Services.EndpointProfiles;
@@ -17,6 +18,7 @@ namespace TrueFluentPro;
 public partial class App : Application
 {
     public static IServiceProvider Services { get; private set; } = null!;
+    private static readonly CancellationTokenSource _appShutdownCts = new();
 
     public override void Initialize()
     {
@@ -32,6 +34,7 @@ public partial class App : Application
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             desktop.ShutdownMode = ShutdownMode.OnMainWindowClose;
+            desktop.ShutdownRequested += (_, _) => _appShutdownCts.Cancel();
             var mainWindow = new MainWindow();
             var configService = Services.GetRequiredService<ConfigurationService>();
             var startupShellPreferencesTask = Task.Run(configService.LoadShellStartupPreferences);
@@ -136,7 +139,7 @@ public partial class App : Application
                 concreteQueue.NewTaskEnqueued += () => executor.NotifyNewTask();
             }
 
-            _ = Task.Run(() => executor.StartAsync(default));
+            _ = Task.Run(() => executor.StartAsync(_appShutdownCts.Token));
         }
         catch (Exception ex)
         {
