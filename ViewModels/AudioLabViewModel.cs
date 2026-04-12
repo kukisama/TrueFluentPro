@@ -1134,11 +1134,11 @@ namespace TrueFluentPro.ViewModels
             if (session == null) return;
             await GenerateAiContentSessionAsync(session, "顿悟",
                 "你是一个深度思考专家。根据音频转录内容，提供深层洞察和顿悟。\n请从以下角度分析：\n1. **隐含假设**：说话者可能不自知的假设\n2. **潜在矛盾**：观点之间的冲突\n3. **深层模式**：反复出现的主题或思维模式\n4. **未说出的内容**：重要但被忽略的方面\n5. **关联启发**：与其他领域的联系\n\n以 Markdown 格式输出，标注时间戳 [HH:MM:SS]。",
-                (s, text) =>
+                (s, result) =>
                 {
-                    s.InsightMarkdown = text;
+                    s.InsightMarkdown = result;
                     var audioItemId = _pipeline.EnsureAudioItem(s.FilePath);
-                    _pipeline.SaveStageContent(audioItemId, AudioLifecycleStage.Insight, text);
+                    _pipeline.SaveStageContent(audioItemId, AudioLifecycleStage.Insight, result);
                     ControlPanel.RefreshLifecycleStatus();
                 },
                 text => InsightMarkdown = text);
@@ -1152,16 +1152,16 @@ namespace TrueFluentPro.ViewModels
             if (session == null) return;
             await GenerateAiContentSessionAsync(session, "播客",
                 "你是一个播客脚本编写专家。根据音频转录内容，生成一段适合播客的对话内容改写。\n\n严格使用以下格式，每行一句：\n发言人 A：[主持人台词]\n发言人 B：[嘉宾台词]\n\n要求：\n1. 对话总轮次控制在 40 轮以内（A 和 B 各约 20 轮）\n2. 每轮发言控制在 200 字以内\n3. 口语化、自然过渡\n4. 不要加 Markdown 格式、括号注释或舞台指导\n5. 第一行必须是发言人 A 的开场白\n6. 突出有趣的细节和故事",
-                (s, text) =>
+                (s, result) =>
                 {
-                    s.PodcastMarkdown = text;
-                    // 保存到生命周期数据库
+                    s.PodcastMarkdown = result;
+                    // 台本完整生成后才保存到生命周期数据库
                     var audioItemId = _pipeline.EnsureAudioItem(s.FilePath);
-                    _pipeline.SaveStageContent(audioItemId, AudioLifecycleStage.PodcastScript, text);
+                    _pipeline.SaveStageContent(audioItemId, AudioLifecycleStage.PodcastScript, result);
                     ControlPanel.RefreshLifecycleStatus();
-                    // 台本就绪后自动合成播客音频（如定义了语音）
+                    // 台本完整就绪后才触发 TTS 合成（不在流式期间触发）
                     if (ControlPanel.VoicesLoaded && ControlPanel.SpeakerProfiles.Any(p => p.Voice != null))
-                        _ = ControlPanel.SynthesizePodcastAsync(text);
+                        _ = ControlPanel.SynthesizePodcastAsync(result);
                 },
                 text => PodcastMarkdown = text);
         }
@@ -1311,7 +1311,7 @@ namespace TrueFluentPro.ViewModels
 
         private async Task GenerateAiContentSessionAsync(
             AudioFileSession session, string label, string systemPrompt,
-            Action<AudioFileSession, string> sessionSetter, Action<string> uiSetter)
+            Action<AudioFileSession, string> onComplete, Action<string> uiSetter)
         {
             if (session.Segments.Count == 0) return;
 
@@ -1326,7 +1326,6 @@ namespace TrueFluentPro.ViewModels
             var token = session.ResetCts();
 
             session.IsGenerating = true;
-            sessionSetter(session, "");
             session.StatusMessage = $"正在生成{label}...";
             await InvokeIfActiveAsync(session, () =>
             {
@@ -1349,13 +1348,14 @@ namespace TrueFluentPro.ViewModels
                     {
                         sb.Append(chunk);
                         var text = sb.ToString();
-                        sessionSetter(session, text);
+                        // 流式期间仅更新内存和 UI，不做持久化/下游触发
                         PostIfActive(session, () => uiSetter(text));
                     },
                     token, AiChatProfile.Quick);
 
                 var result = sb.ToString();
-                sessionSetter(session, result);
+                // 生成完成后执行完整回调（持久化 + 下游触发）
+                onComplete(session, result);
                 session.StatusMessage = $"{label}生成完成";
                 await InvokeIfActiveAsync(session, () =>
                 {

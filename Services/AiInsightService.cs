@@ -179,6 +179,26 @@ namespace TrueFluentPro.Services
             }
         }
 
+        /// <summary>
+        /// 非流式调用 — 收集所有 SSE 块后一次性返回完整文本结果。
+        /// 适用于后台队列任务等不需要逐块 UI 更新的场景。
+        /// </summary>
+        public async Task<string> ChatAsync(
+            AiChatRequestConfig request,
+            string systemPrompt,
+            string userContent,
+            CancellationToken cancellationToken,
+            AiChatProfile profile = AiChatProfile.Quick,
+            bool enableReasoning = false)
+        {
+            var sb = new StringBuilder();
+            await StreamChatAsync(
+                request, systemPrompt, userContent,
+                chunk => sb.Append(chunk),
+                cancellationToken, profile, enableReasoning);
+            return sb.ToString();
+        }
+
         private async Task<(HttpResponseMessage Response, AiRequestTrace Trace)> SendRequestAsync(
             AiChatRequestConfig request,
             string systemPrompt,

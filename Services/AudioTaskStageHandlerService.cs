@@ -147,20 +147,12 @@ namespace TrueFluentPro.Services
             const string systemPrompt = "你是一个专业的音频内容分析助手。请根据转录文本生成简洁的 Markdown 总结。\n\n## 概要\n用一段话概括核心内容（50-100字），标注关键时间范围。\n\n## 关键要点\n提炼 3-5 个最重要的发现或观点，每条一句话，标注 [MM:SS]。\n\n## 行动建议\n如果有值得跟进的建议或结论，列出 2-3 条。\n\n## 关键词\n提取 3-5 个关键词。\n\n注意：时间戳格式统一用 [MM:SS]，内容要简洁，不要重复。";
             var userContent = $"以下是音频转录内容：\n\n{transcript}";
 
-            reportProgress("AI 生成总结中...");
-            var sb = new StringBuilder();
-            var firstChunk = true;
-            await aiService.StreamChatAsync(
+            reportProgress("AI 生成总结中（等待完整返回）...");
+            var result = await aiService.ChatAsync(
                 runtimeRequest, systemPrompt, userContent,
-                chunk =>
-                {
-                    if (firstChunk) { reportProgress("AI 已返回首字节，正在流式生成总结..."); firstChunk = false; }
-                    sb.Append(chunk);
-                },
                 ct, AiChatProfile.Summary,
                 enableReasoning: runtimeRequest.SummaryEnableReasoning);
 
-            var result = sb.ToString();
             if (string.IsNullOrWhiteSpace(result))
                 throw new InvalidOperationException("总结生成为空。");
 
@@ -187,19 +179,12 @@ namespace TrueFluentPro.Services
             const string systemPrompt = "你是一个结构化分析专家。根据音频转录文本生成思维导图的 JSON 结构。\n你必须严格输出有效 JSON，不要输出任何其他内容（不要 markdown 代码块标记）。\n格式：\n{\"label\":\"主题\",\"children\":[{\"label\":\"分支1\",\"children\":[{\"label\":\"要点1\"},{\"label\":\"要点2\"}]}]}\n层级不超过 3 层，每个分支不超过 5 个子节点。";
             var userContent = $"请根据以下转录内容生成思维导图结构：\n\n{transcript}";
 
-            reportProgress("AI 生成思维导图中...");
-            var sb = new StringBuilder();
-            var firstChunk = true;
-            await aiService.StreamChatAsync(
+            reportProgress("AI 生成思维导图中（等待完整返回）...");
+            var json = await aiService.ChatAsync(
                 runtimeRequest, systemPrompt, userContent,
-                chunk =>
-                {
-                    if (firstChunk) { reportProgress("AI 已返回首字节，正在流式生成思维导图..."); firstChunk = false; }
-                    sb.Append(chunk);
-                },
                 ct, AiChatProfile.Quick);
 
-            var json = sb.ToString().Trim();
+            json = json.Trim();
             if (json.StartsWith("```"))
             {
                 var firstNewline = json.IndexOf('\n');
@@ -231,19 +216,11 @@ namespace TrueFluentPro.Services
             const string systemPrompt = "你是一个深度思考专家。根据音频转录内容，提供深层洞察和顿悟。\n请从以下角度分析：\n1. **隐含假设**：说话者可能不自知的假设\n2. **潜在矛盾**：观点之间的冲突\n3. **深层模式**：反复出现的主题或思维模式\n4. **未说出的内容**：重要但被忽略的方面\n5. **关联启发**：与其他领域的联系\n\n以 Markdown 格式输出，标注时间戳 [HH:MM:SS]。";
             var userContent = $"以下是音频转录内容：\n\n{transcript}";
 
-            reportProgress("AI 生成顿悟分析中...");
-            var sb = new StringBuilder();
-            var firstChunk = true;
-            await aiService.StreamChatAsync(
+            reportProgress("AI 生成顿悟分析中（等待完整返回）...");
+            var result = await aiService.ChatAsync(
                 runtimeRequest, systemPrompt, userContent,
-                chunk =>
-                {
-                    if (firstChunk) { reportProgress("AI 已返回首字节，正在流式生成顿悟分析..."); firstChunk = false; }
-                    sb.Append(chunk);
-                },
                 ct, AiChatProfile.Quick);
 
-            var result = sb.ToString();
             reportProgress("保存顿悟分析结果...");
             _pipeline.SaveStageContent(audioItemId, AudioLifecycleStage.Insight, result);
         }
@@ -267,19 +244,11 @@ namespace TrueFluentPro.Services
             const string systemPrompt = "你是一个播客脚本编写专家。根据音频转录内容，生成一段适合播客的对话内容改写。\n\n严格使用以下格式，每行一句：\n发言人 A：[主持人台词]\n发言人 B：[嘉宾台词]\n\n要求：\n1. 对话总轮次控制在 40 轮以内（A 和 B 各约 20 轮）\n2. 每轮发言控制在 200 字以内\n3. 口语化、自然过渡\n4. 不要加 Markdown 格式、括号注释或舞台指导\n5. 第一行必须是发言人 A 的开场白\n6. 突出有趣的细节和故事";
             var userContent = $"以下是音频转录内容：\n\n{transcript}";
 
-            reportProgress("AI 生成播客台本中...");
-            var sb = new StringBuilder();
-            var firstChunk = true;
-            await aiService.StreamChatAsync(
+            reportProgress("AI 生成播客台本中（等待完整返回）...");
+            var result = await aiService.ChatAsync(
                 runtimeRequest, systemPrompt, userContent,
-                chunk =>
-                {
-                    if (firstChunk) { reportProgress("AI 已返回首字节，正在流式生成播客台本..."); firstChunk = false; }
-                    sb.Append(chunk);
-                },
                 ct, AiChatProfile.Quick);
 
-            var result = sb.ToString();
             reportProgress("保存播客台本结果...");
             _pipeline.SaveStageContent(audioItemId, AudioLifecycleStage.PodcastScript, result);
         }
@@ -301,21 +270,14 @@ namespace TrueFluentPro.Services
             var aiService = await CreateAuthenticatedInsightServiceAsync(runtimeRequest, endpoint, ct);
 
             // Phase 1: 生成研究课题
-            reportProgress("Phase 1/2：AI 规划研究课题中...");
-            var planSb = new StringBuilder();
-            var firstChunkPhase1 = true;
-            await aiService.StreamChatAsync(
+            reportProgress("Phase 1/2：AI 规划研究课题中（等待完整返回）...");
+            var planResult = await aiService.ChatAsync(
                 runtimeRequest,
                 "你是一个学术研究规划专家。根据音频转录内容，提出 3-5 个值得深入研究的课题。每个课题一行，格式为纯文本标题。不要编号，不要其他格式。",
                 $"请根据以下内容提出研究课题：\n\n{transcript}",
-                chunk =>
-                {
-                    if (firstChunkPhase1) { reportProgress("Phase 1/2：AI 已返回首字节，正在生成研究课题..."); firstChunkPhase1 = false; }
-                    planSb.Append(chunk);
-                },
                 ct, AiChatProfile.Quick);
 
-            var topicLines = planSb.ToString()
+            var topicLines = planResult
                 .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
                 .Where(l => !string.IsNullOrWhiteSpace(l) && l.Length > 2)
                 .Take(5)
@@ -324,23 +286,15 @@ namespace TrueFluentPro.Services
             reportProgress($"Phase 1/2 完成：已规划 {topicLines.Count} 个研究课题");
 
             // Phase 2: 生成研究报告
-            reportProgress("Phase 2/2：AI 生成深度研究报告中...");
+            reportProgress("Phase 2/2：AI 生成深度研究报告中（等待完整返回）...");
             var selectedTopics = string.Join("\n", topicLines);
-            var reportSb = new StringBuilder();
-            var firstChunkPhase2 = true;
-            await aiService.StreamChatAsync(
+            var result = await aiService.ChatAsync(
                 runtimeRequest,
                 "你是一个深度研究分析师。用户提供了音频转录内容和研究课题列表。请针对每个课题展开深度分析，包括核心论点和支撑证据、不同视角和反驳、与现有知识体系的关联、进一步研究建议。以 Markdown 格式输出，使用标题分隔各课题。引用时标注 [HH:MM:SS]。",
                 $"研究课题：\n{selectedTopics}\n\n音频转录内容：\n{transcript}",
-                chunk =>
-                {
-                    if (firstChunkPhase2) { reportProgress("Phase 2/2：AI 已返回首字节，正在生成研究报告..."); firstChunkPhase2 = false; }
-                    reportSb.Append(chunk);
-                },
                 ct, AiChatProfile.Summary,
                 enableReasoning: runtimeRequest.SummaryEnableReasoning);
 
-            var result = reportSb.ToString();
             reportProgress("保存研究报告结果...");
             _pipeline.SaveStageContent(audioItemId, AudioLifecycleStage.Research, result);
         }
