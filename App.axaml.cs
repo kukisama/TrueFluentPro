@@ -99,6 +99,7 @@ public partial class App : Application
         // --- 音频任务队列 ---
         services.AddSingleton<IAudioTaskRepository, AudioTaskRepository>();
         services.AddSingleton<ITaskEventBus, TaskEventBus>();
+        services.AddSingleton<AudioTaskStageHandlerService>();
         services.AddSingleton<IAudioTaskQueueService, AudioTaskQueueService>();
         services.AddSingleton<IAudioTaskExecutor, AudioTaskExecutor>();
 

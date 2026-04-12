@@ -41,6 +41,7 @@ namespace TrueFluentPro.Services
         private readonly IAudioTaskRepository _taskRepo;
         private readonly IAudioLifecycleRepository _lifecycleRepo;
         private readonly ITaskEventBus _eventBus;
+        private readonly AudioTaskStageHandlerService _stageHandler;
         private readonly SemaphoreSlim _concurrencySlot;
         private readonly SemaphoreSlim _wakeSignal = new(0, int.MaxValue);
         private readonly Dictionary<string, CancellationTokenSource> _runningCts = new();
@@ -50,12 +51,14 @@ namespace TrueFluentPro.Services
             IAudioTaskRepository taskRepo,
             IAudioLifecycleRepository lifecycleRepo,
             ITaskEventBus eventBus,
+            AudioTaskStageHandlerService stageHandler,
             int maxConcurrency = 0,
             int stallThresholdMinutes = 0)
         {
             _taskRepo = taskRepo;
             _lifecycleRepo = lifecycleRepo;
             _eventBus = eventBus;
+            _stageHandler = stageHandler;
             _maxConcurrency = maxConcurrency > 0 ? maxConcurrency : DefaultMaxConcurrency;
             _stallThresholdMinutes = stallThresholdMinutes > 0 ? stallThresholdMinutes : DefaultStallThresholdMinutes;
             _concurrencySlot = new SemaphoreSlim(_maxConcurrency, _maxConcurrency);
@@ -165,10 +168,8 @@ namespace TrueFluentPro.Services
 
             try
             {
-                // ── 任务执行占位 ──
-                // Phase 3 将在此处填充具体的生成逻辑（转录/总结/脑图/顿悟/播客/研究）。
-                // 当前版本只做状态流转验证，确保队列调度框架正确工作。
-                await Task.Delay(100, ct);
+                // 调用阶段处理器执行实际的生成逻辑
+                await _stageHandler.ExecuteStageAsync(task.AudioItemId, stage, ct);
 
                 // 标记完成
                 _taskRepo.MarkCompleted(task.TaskId);
