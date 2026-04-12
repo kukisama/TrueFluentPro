@@ -415,9 +415,9 @@ CREATE TABLE IF NOT EXISTS audio_task_queue (
             {
                 Exec(conn, "ALTER TABLE audio_task_queue ADD COLUMN progress_message TEXT;");
             }
-            catch
+            catch (SqliteException)
             {
-                // 列可能已存在（例如新建的数据库已包含该列）
+                // 列可能已存在（例如新建的数据库已包含该列），忽略 duplicate column 错误
             }
             SqliteDebugLogger.LogLifecycle("已迁移到 schema v4: audio_task_queue 增加 progress_message 列");
         }
