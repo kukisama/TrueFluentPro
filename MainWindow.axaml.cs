@@ -298,7 +298,9 @@ public partial class MainWindow : Window
                         configProvider,
                         configService,
                         pipeline,
-                        controlPanelVm);
+                        controlPanelVm,
+                        App.Services.GetRequiredService<IAudioTaskQueueService>(),
+                        App.Services.GetRequiredService<ITaskEventBus>());
                 }
             }, DispatcherPriority.Background);
         }
