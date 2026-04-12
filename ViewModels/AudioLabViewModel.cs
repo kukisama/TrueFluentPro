@@ -1515,7 +1515,7 @@ namespace TrueFluentPro.ViewModels
 
                 StatusMessage = parts.Count > 0
                     ? $"队列处理中：{string.Join("、", parts)}..."
-                    : "处理中...";
+                    : "处理中..."; // IsGenerating（前台直接模式）正在执行
             }
             else
             {
