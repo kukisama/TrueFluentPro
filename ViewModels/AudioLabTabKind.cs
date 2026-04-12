@@ -7,7 +7,9 @@ namespace TrueFluentPro.ViewModels
         MindMap,
         Insight,
         Research,
-        Podcast
+        Podcast,
+        Translation,
+        Custom   // 自定义阶段（由 CustomStageKey 决定具体是哪个）
     }
 
     public enum ResearchPhase

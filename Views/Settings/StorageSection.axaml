@@ -71,12 +71,12 @@
             <StackPanel Orientation="Horizontal" Spacing="10">
                 <TextBlock Text="每句最大字数" VerticalAlignment="Center"/>
                 <NumericUpDown Value="{Binding BatchMaxChars, Mode=TwoWay}"
-                               Minimum="6" Maximum="80" Width="120" FormatString="F0"/>
+                               Minimum="6" Maximum="999" Width="120" FormatString="F0"/>
             </StackPanel>
             <StackPanel Orientation="Horizontal" Spacing="10">
                 <TextBlock Text="每句最长时长(秒)" VerticalAlignment="Center"/>
                 <NumericUpDown Value="{Binding BatchMaxDuration, Mode=TwoWay}"
-                               Minimum="1" Maximum="15" Width="120" FormatString="F1"/>
+                               Minimum="1" Maximum="99" Width="120" FormatString="F1"/>
             </StackPanel>
             <StackPanel Orientation="Horizontal" Spacing="10">
                 <TextBlock Text="停顿断句阈值(ms)" VerticalAlignment="Center"/>

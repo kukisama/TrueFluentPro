@@ -47,6 +47,21 @@ namespace TrueFluentPro.ViewModels
         [ObservableProperty] private bool _hasTranslation;
         [ObservableProperty] private bool _hasResearch;
 
+        // ── 阶段可见性（跟随配置预设） ──────────────
+
+        private bool _isSummaryStageVisible = true;
+        public bool IsSummaryStageVisible { get => _isSummaryStageVisible; private set => SetProperty(ref _isSummaryStageVisible, value); }
+        private bool _isMindMapStageVisible = true;
+        public bool IsMindMapStageVisible { get => _isMindMapStageVisible; private set => SetProperty(ref _isMindMapStageVisible, value); }
+        private bool _isInsightStageVisible = true;
+        public bool IsInsightStageVisible { get => _isInsightStageVisible; private set => SetProperty(ref _isInsightStageVisible, value); }
+        private bool _isResearchStageVisible = true;
+        public bool IsResearchStageVisible { get => _isResearchStageVisible; private set => SetProperty(ref _isResearchStageVisible, value); }
+        private bool _isPodcastStageVisible = true;
+        public bool IsPodcastStageVisible { get => _isPodcastStageVisible; private set => SetProperty(ref _isPodcastStageVisible, value); }
+        private bool _isTranslationStageVisible = true;
+        public bool IsTranslationStageVisible { get => _isTranslationStageVisible; private set => SetProperty(ref _isTranslationStageVisible, value); }
+
         // ── TTS 配置 ──────────────────────────────────
 
         public ObservableCollection<SpeakerProfile> SpeakerProfiles { get; } = new();
@@ -119,6 +134,8 @@ namespace TrueFluentPro.ViewModels
             SynthesizePodcastCommand = new RelayCommand(_ => _ = SynthesizePodcastAsync(), _ => !IsBusy && HasPodcastScript && VoicesLoaded);
             AutoFillMissingCommand = new RelayCommand(_ => _ = AutoFillMissingAsync(), _ => !IsBusy && HasTranscription);
             CancelCommand = new RelayCommand(_ => _cts?.Cancel(), _ => IsBusy);
+
+            RefreshStageVisibility();
         }
 
         /// <summary>切换到新的音频文件时调用，刷新生命周期状态。</summary>
@@ -152,9 +169,21 @@ namespace TrueFluentPro.ViewModels
             RaiseCommandsCanExecuteChanged();
         }
 
+        /// <summary>根据配置预设刷新各阶段在控制面板中的可见性。</summary>
+        public void RefreshStageVisibility()
+        {
+            var presets = _configProvider().AudioLabStagePresets;
+            IsSummaryStageVisible = AudioLabStagePresetDefaults.ShouldShowTab(presets, "Summarized");
+            IsMindMapStageVisible = AudioLabStagePresetDefaults.ShouldShowTab(presets, "MindMap");
+            IsInsightStageVisible = AudioLabStagePresetDefaults.ShouldShowTab(presets, "Insight");
+            IsResearchStageVisible = AudioLabStagePresetDefaults.ShouldShowTab(presets, "Research");
+            IsPodcastStageVisible = AudioLabStagePresetDefaults.ShouldShowTab(presets, "PodcastScript");
+            IsTranslationStageVisible = AudioLabStagePresetDefaults.ShouldShowTab(presets, "Translated");
+        }
+
         // ── 加载语音列表 ──────────────────────────────
 
-        private async Task LoadVoicesAsync()
+        public async Task LoadVoicesAsync()
         {
             if (IsBusy) return;
             IsBusy = true;
@@ -213,7 +242,12 @@ namespace TrueFluentPro.ViewModels
         /// </summary>
         public async Task SynthesizePodcastAsync(string? podcastScript = null)
         {
-            if (IsBusy || string.IsNullOrWhiteSpace(CurrentAudioItemId)) return;
+            if (string.IsNullOrWhiteSpace(CurrentAudioItemId)) return;
+            if (IsBusy)
+            {
+                StatusMessage = "控制面板正忙，无法自动合成播客音频。请稍后手动点击「合成音频」。";
+                return;
+            }
 
             // 如果没传入脚本，尝试从缓存读
             podcastScript ??= _pipeline.TryLoadCachedContent(CurrentAudioItemId, AudioLifecycleStage.PodcastScript);

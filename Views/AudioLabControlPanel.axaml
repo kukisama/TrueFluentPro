@@ -45,23 +45,33 @@
           <Border Classes="stage-badge" Classes.done="{Binding HasTranscription}" Classes.pending="{Binding !HasTranscription}">
             <TextBlock Text="① 转录" FontSize="12"/>
           </Border>
-          <Border Classes="stage-badge" Classes.done="{Binding HasSummary}" Classes.pending="{Binding !HasSummary}">
+          <Border Classes="stage-badge" Classes.done="{Binding HasSummary}" Classes.pending="{Binding !HasSummary}"
+                  IsVisible="{Binding IsSummaryStageVisible}">
             <TextBlock Text="② AI 总结" FontSize="12"/>
           </Border>
-          <Border Classes="stage-badge" Classes.done="{Binding HasMindMap}" Classes.pending="{Binding !HasMindMap}">
+          <Border Classes="stage-badge" Classes.done="{Binding HasMindMap}" Classes.pending="{Binding !HasMindMap}"
+                  IsVisible="{Binding IsMindMapStageVisible}">
             <TextBlock Text="③ 思维导图" FontSize="12"/>
           </Border>
-          <Border Classes="stage-badge" Classes.done="{Binding HasInsight}" Classes.pending="{Binding !HasInsight}">
+          <Border Classes="stage-badge" Classes.done="{Binding HasInsight}" Classes.pending="{Binding !HasInsight}"
+                  IsVisible="{Binding IsInsightStageVisible}">
             <TextBlock Text="④ 顿悟分析" FontSize="12"/>
           </Border>
-          <Border Classes="stage-badge" Classes.done="{Binding HasResearch}" Classes.pending="{Binding !HasResearch}">
+          <Border Classes="stage-badge" Classes.done="{Binding HasResearch}" Classes.pending="{Binding !HasResearch}"
+                  IsVisible="{Binding IsResearchStageVisible}">
             <TextBlock Text="⑤ 深度研究" FontSize="12"/>
           </Border>
-          <Border Classes="stage-badge" Classes.done="{Binding HasPodcastScript}" Classes.pending="{Binding !HasPodcastScript}">
+          <Border Classes="stage-badge" Classes.done="{Binding HasPodcastScript}" Classes.pending="{Binding !HasPodcastScript}"
+                  IsVisible="{Binding IsPodcastStageVisible}">
             <TextBlock Text="⑥ 播客台本" FontSize="12"/>
           </Border>
-          <Border Classes="stage-badge" Classes.done="{Binding HasPodcastAudio}" Classes.pending="{Binding !HasPodcastAudio}">
-            <TextBlock Text="⑦ 播客音频 (TTS)" FontSize="12"/>
+          <Border Classes="stage-badge" Classes.done="{Binding HasTranslation}" Classes.pending="{Binding !HasTranslation}"
+                  IsVisible="{Binding IsTranslationStageVisible}">
+            <TextBlock Text="⑦ 翻译" FontSize="12"/>
+          </Border>
+          <Border Classes="stage-badge" Classes.done="{Binding HasPodcastAudio}" Classes.pending="{Binding !HasPodcastAudio}"
+                  IsVisible="{Binding IsPodcastStageVisible}">
+            <TextBlock Text="⑧ 播客音频 (TTS)" FontSize="12"/>
           </Border>
 
           <Button Content="自动补齐缺失"

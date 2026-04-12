@@ -4,14 +4,17 @@ using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Shapes;
+using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.VisualTree;
 using TrueFluentPro.Models;
 
 namespace TrueFluentPro.Controls;
 
 /// <summary>
 /// 可视化思维导图控件 — 从 MindMapNode 树生成左→右放射状布局。
+/// 支持鼠标滚轮缩放、左键拖拽平移、双击复位。
 /// </summary>
 public class MindMapCanvas : Canvas
 {
@@ -28,6 +31,14 @@ public class MindMapCanvas : Canvas
     {
         RootProperty.Changed.AddClassHandler<MindMapCanvas>((c, _) => c.Rebuild());
     }
+
+    // ═══ 缩放平移状态 ═══
+    private double _scale = 1.0;
+    private double _offsetX, _offsetY;
+    private Point _panOrigin;
+    private bool _isPanning;
+    private const double MinScale = 0.25;
+    private const double MaxScale = 4.0;
 
     private const double NodePadH = 14;
     private const double NodePadV = 7;
@@ -61,6 +72,7 @@ public class MindMapCanvas : Canvas
         Children.Clear();
         Width = 0;
         Height = 0;
+        ResetViewTransform();
 
         if (Root == null || string.IsNullOrWhiteSpace(Root.Title)) return;
 
@@ -78,7 +90,16 @@ public class MindMapCanvas : Canvas
 
         Width = totalW;
         Height = totalH;
+
+        // 订阅双击事件（仅一次）
+        if (!_doubleTapSubscribed)
+        {
+            _doubleTapSubscribed = true;
+            DoubleTapped += (_, e) => { ResetViewTransform(); e.Handled = true; };
+        }
     }
+
+    private bool _doubleTapSubscribed;
 
     private static NodeLayout Build(MindMapNode n, int depth)
     {
@@ -197,4 +218,85 @@ public class MindMapCanvas : Canvas
 
     private static string Truncate(string s) =>
         s.Length > MaxTextLen ? s[..(MaxTextLen - 1)] + "\u2026" : s;
+
+    // ═══ 缩放平移交互 ═══
+
+    private void ApplyViewTransform()
+    {
+        RenderTransformOrigin = new RelativePoint(0, 0, RelativeUnit.Absolute);
+        RenderTransform = new TransformGroup
+        {
+            Children =
+            {
+                new ScaleTransform(_scale, _scale),
+                new TranslateTransform(_offsetX, _offsetY)
+            }
+        };
+    }
+
+    private void ResetViewTransform()
+    {
+        _scale = 1.0;
+        _offsetX = 0;
+        _offsetY = 0;
+        ApplyViewTransform();
+    }
+
+    protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
+    {
+        base.OnPointerWheelChanged(e);
+
+        var factor = e.Delta.Y > 0 ? 1.15 : 1.0 / 1.15;
+        var newScale = _scale * factor;
+        if (newScale < MinScale || newScale > MaxScale) return;
+
+        // 在鼠标位置处缩放（父坐标系）
+        var pos = e.GetPosition(this.GetVisualParent() as Visual ?? this);
+        _offsetX = pos.X - (pos.X - _offsetX) * factor;
+        _offsetY = pos.Y - (pos.Y - _offsetY) * factor;
+        _scale = newScale;
+
+        ApplyViewTransform();
+        e.Handled = true;
+    }
+
+    protected override void OnPointerPressed(PointerPressedEventArgs e)
+    {
+        base.OnPointerPressed(e);
+        var props = e.GetCurrentPoint(this).Properties;
+        if (props.IsLeftButtonPressed)
+        {
+            _isPanning = true;
+            _panOrigin = e.GetPosition(this.GetVisualParent() as Visual ?? this);
+            e.Pointer.Capture(this);
+            Cursor = new Cursor(StandardCursorType.Hand);
+            e.Handled = true;
+        }
+    }
+
+    protected override void OnPointerMoved(PointerEventArgs e)
+    {
+        base.OnPointerMoved(e);
+        if (!_isPanning) return;
+
+        var current = e.GetPosition(this.GetVisualParent() as Visual ?? this);
+        _offsetX += current.X - _panOrigin.X;
+        _offsetY += current.Y - _panOrigin.Y;
+        _panOrigin = current;
+
+        ApplyViewTransform();
+        e.Handled = true;
+    }
+
+    protected override void OnPointerReleased(PointerReleasedEventArgs e)
+    {
+        base.OnPointerReleased(e);
+        if (_isPanning)
+        {
+            _isPanning = false;
+            e.Pointer.Capture(null);
+            Cursor = Cursor.Default;
+            e.Handled = true;
+        }
+    }
 }

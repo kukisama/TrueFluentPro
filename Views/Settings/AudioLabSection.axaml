@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:TrueFluentPro.ViewModels.Settings"
              xmlns:models="using:TrueFluentPro.Models"
+             xmlns:controls="clr-namespace:TrueFluentPro.Controls"
              x:Class="TrueFluentPro.Views.Settings.AudioLabSection"
              x:Name="AudioLabSectionRoot"
              x:DataType="vm:AudioLabSectionVM"
@@ -209,6 +210,22 @@
                           MinWidth="280" HorizontalAlignment="Left"/>
                 <TextBlock Classes="hint-text" Text="合成的播客音频输出格式，默认为 MP3 24kHz。"/>
             </StackPanel>
+
+            <Separator Margin="0,8"/>
+
+            <!-- ═══ 听析阶段预设 ═══ -->
+            <TextBlock Text="听析阶段预设" FontWeight="Bold"/>
+            <TextBlock Classes="field-note" TextWrapping="Wrap"
+                       Text="配置每个阶段的名称、提示词、展示模式、是否显示和是否参与批处理。可添加自定义阶段。"/>
+            <controls:StagePresetsEditor Name="StagePresetsEditorControl"
+                                         Items="{Binding StagePresets}"/>
+
+            <Separator Margin="0,8"/>
+
+            <!-- ═══ 调试 ═══ -->
+            <CheckBox IsChecked="{Binding DebugMode}" Content="调试模式"/>
+            <TextBlock Classes="hint-text" Text="开启后，任务监控中可查看每次 AI 调用的完整提示词和响应原文。"
+                       TextWrapping="Wrap"/>
         </StackPanel>
     </Border>
 </UserControl>

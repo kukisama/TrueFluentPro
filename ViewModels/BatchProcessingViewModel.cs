@@ -3602,8 +3602,8 @@ namespace TrueFluentPro.ViewModels
             {
                 EnableSentenceSplit = config.EnableBatchSubtitleSentenceSplit,
                 SplitOnComma = config.BatchSubtitleSplitOnComma,
-                MaxChars = Math.Clamp(config.BatchSubtitleMaxChars, 6, 80),
-                MaxDurationSeconds = Math.Clamp(config.BatchSubtitleMaxDurationSeconds, 1, 15),
+                MaxChars = Math.Clamp(config.BatchSubtitleMaxChars, 6, 999),
+                MaxDurationSeconds = Math.Clamp(config.BatchSubtitleMaxDurationSeconds, 1, 99),
                 PauseSplitMs = Math.Clamp(config.BatchSubtitlePauseSplitMs, 100, 2000)
             };
         }

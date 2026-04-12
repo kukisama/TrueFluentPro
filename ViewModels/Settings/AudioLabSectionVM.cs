@@ -50,9 +50,24 @@ namespace TrueFluentPro.ViewModels.Settings
         private string _voiceLoadStatus = "";
         private VoiceLanguageOption? _selectedVoiceLanguage;
 
+        // ── 听析阶段预设 ──
+        private ObservableCollection<AudioLabStagePreset> _stagePresets = new();
+
+        // ── 调试模式 ──
+        private bool _debugMode;
+        public bool DebugMode { get => _debugMode; set { if (SetProperty(ref _debugMode, value)) OnChanged(); } }
+
         public ObservableCollection<VoiceInfo> AvailableVoices { get; } = new();
         public ObservableCollection<VoiceLanguageOption> AvailableLanguages { get; } = new();
         public ObservableCollection<SpeakerProfile> SpeakerProfiles { get; } = new();
+
+        public ObservableCollection<AudioLabStagePreset> StagePresets { get => _stagePresets; set => SetProperty(ref _stagePresets, value); }
+
+        public void NotifyStagePresetsChanged()
+        {
+            OnPropertyChanged(nameof(StagePresets));
+            OnChanged();
+        }
 
         public bool VoicesLoaded { get => _voicesLoaded; set => SetProperty(ref _voicesLoaded, value); }
         public bool IsLoadingVoices { get => _isLoadingVoices; set => SetProperty(ref _isLoadingVoices, value); }
@@ -201,6 +216,25 @@ namespace TrueFluentPro.ViewModels.Settings
             _selectedPodcastOutputFormat = PodcastOutputFormatOptions.FirstOrDefault(f => f.HeaderValue == PodcastOutputFormat)
                 ?? PodcastOutputFormatOptions.FirstOrDefault();
             OnPropertyChanged(nameof(SelectedPodcastOutputFormat));
+
+            // 听析阶段预设
+            var merged = AudioLabStagePresetDefaults.MergeWithDefaults(config.AudioLabStagePresets);
+            _stagePresets = new ObservableCollection<AudioLabStagePreset>(
+                merged
+                .Where(p => !string.Equals(p.Stage, nameof(AudioLifecycleStage.PodcastAudio), StringComparison.Ordinal))
+                .Select(p => new AudioLabStagePreset
+                {
+                    Stage = p.Stage,
+                    DisplayName = p.DisplayName,
+                    SystemPrompt = p.SystemPrompt,
+                    ShowInTab = p.ShowInTab,
+                    IncludeInBatch = p.IncludeInBatch,
+                    IsEnabled = p.IsEnabled,
+                    DisplayMode = p.DisplayMode,
+                }));
+            OnPropertyChanged(nameof(StagePresets));
+
+            DebugMode = config.AudioLabDebugMode;
         }
 
         public override void ApplyTo(AzureSpeechConfig config)
@@ -217,6 +251,31 @@ namespace TrueFluentPro.ViewModels.Settings
             config.AudioLabPodcastSpeakerCVoice = PodcastSpeakerCVoice;
             config.AudioLabPodcastLanguage = PodcastLanguage;
             config.AudioLabPodcastOutputFormat = PodcastOutputFormat;
+
+            config.AudioLabDebugMode = DebugMode;
+
+            // 听析阶段预设 —— 仅持久化与内置默认有差异的提示词
+            var builtinDefaults = AudioLabStagePresetDefaults.CreateDefaults()
+                .ToDictionary(d => d.Stage, d => d.SystemPrompt ?? "");
+            config.AudioLabStagePresets = StagePresets
+                .Where(p => !string.IsNullOrWhiteSpace(p.Stage))
+                .Select(p =>
+                {
+                    var prompt = p.SystemPrompt?.Trim() ?? "";
+                    // 若提示词与内置默认相同，存空串 → 下次加载时自动获取最新默认
+                    if (builtinDefaults.TryGetValue(p.Stage, out var defaultPrompt) && prompt == defaultPrompt)
+                        prompt = "";
+                    return new AudioLabStagePreset
+                    {
+                        Stage = p.Stage.Trim(),
+                        DisplayName = p.DisplayName?.Trim() ?? "",
+                        SystemPrompt = prompt,
+                        ShowInTab = p.ShowInTab,
+                        IncludeInBatch = p.IncludeInBatch,
+                        IsEnabled = p.IsEnabled,
+                        DisplayMode = p.DisplayMode,
+                    };
+                }).ToList();
         }
 
         public void SelectModels(AzureSpeechConfig config, List<ModelOption> textModels)

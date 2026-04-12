@@ -6,7 +6,7 @@ namespace TrueFluentPro.Services.Storage
 {
     public sealed class SqliteDbService : ISqliteDbService
     {
-        private const int CurrentSchemaVersion = 4;
+        private const int CurrentSchemaVersion = 6;
         private readonly string _connectionString;
         private readonly object _initLock = new();
         private bool _initialized;
@@ -303,6 +303,28 @@ CREATE TABLE IF NOT EXISTS audio_task_queue (
     submitted_by    TEXT,
     FOREIGN KEY (audio_item_id) REFERENCES audio_library_items(id)
 );");
+
+            Exec(conn, @"
+CREATE TABLE IF NOT EXISTS task_executions (
+    execution_id    TEXT    NOT NULL PRIMARY KEY,
+    task_id         TEXT    NOT NULL,
+    audio_item_id   TEXT    NOT NULL,
+    stage           TEXT    NOT NULL,
+    status          TEXT    NOT NULL DEFAULT 'Running',
+    billable        INTEGER NOT NULL DEFAULT 0,
+    cancel_reason   TEXT,
+    model_name      TEXT,
+    tokens_in       INTEGER,
+    tokens_out      INTEGER,
+    duration_ms     INTEGER,
+    error_message   TEXT,
+    started_at      TEXT    NOT NULL,
+    finished_at     TEXT,
+    debug_prompt    TEXT,
+    debug_response  TEXT,
+    FOREIGN KEY (task_id) REFERENCES audio_task_queue(task_id),
+    FOREIGN KEY (audio_item_id) REFERENCES audio_library_items(id)
+);");
         }
 
         private static void CreateAllIndexes(SqliteConnection conn)
@@ -322,6 +344,9 @@ CREATE TABLE IF NOT EXISTS audio_task_queue (
             Exec(conn, "CREATE INDEX IF NOT EXISTS idx_lifecycle_audio ON audio_lifecycle(audio_item_id);");
             Exec(conn, "CREATE INDEX IF NOT EXISTS idx_task_queue_status ON audio_task_queue(status);");
             Exec(conn, "CREATE INDEX IF NOT EXISTS idx_task_queue_audio_stage ON audio_task_queue(audio_item_id, stage, status);");
+            Exec(conn, "CREATE INDEX IF NOT EXISTS idx_executions_task ON task_executions(task_id);");
+            Exec(conn, "CREATE INDEX IF NOT EXISTS idx_executions_audio ON task_executions(audio_item_id);");
+            Exec(conn, "CREATE INDEX IF NOT EXISTS idx_executions_status ON task_executions(status, billable);");
         }
 
         private void EnsureSchemaVersion(SqliteConnection conn)
@@ -357,6 +382,8 @@ CREATE TABLE IF NOT EXISTS audio_task_queue (
             if (fromVersion < 2) MigrateToV2(conn);
             if (fromVersion < 3) MigrateToV3(conn);
             if (fromVersion < 4) MigrateToV4(conn);
+            if (fromVersion < 5) MigrateToV5(conn);
+            if (fromVersion < 6) MigrateToV6(conn);
 
             using var cmd = conn.CreateCommand();
             cmd.CommandText = "INSERT INTO _schema_version (version, applied_at) VALUES (@v, @t);";
@@ -420,6 +447,42 @@ CREATE TABLE IF NOT EXISTS audio_task_queue (
                 // 列可能已存在（例如新建的数据库已包含该列），忽略 duplicate column 错误
             }
             SqliteDebugLogger.LogLifecycle("已迁移到 schema v4: audio_task_queue 增加 progress_message 列");
+        }
+
+        private static void MigrateToV5(SqliteConnection conn)
+        {
+            Exec(conn, @"
+CREATE TABLE IF NOT EXISTS task_executions (
+    execution_id    TEXT    NOT NULL PRIMARY KEY,
+    task_id         TEXT    NOT NULL,
+    audio_item_id   TEXT    NOT NULL,
+    stage           TEXT    NOT NULL,
+    status          TEXT    NOT NULL DEFAULT 'Running',
+    billable        INTEGER NOT NULL DEFAULT 0,
+    cancel_reason   TEXT,
+    model_name      TEXT,
+    tokens_in       INTEGER,
+    tokens_out      INTEGER,
+    duration_ms     INTEGER,
+    error_message   TEXT,
+    started_at      TEXT    NOT NULL,
+    finished_at     TEXT,
+    FOREIGN KEY (task_id) REFERENCES audio_task_queue(task_id),
+    FOREIGN KEY (audio_item_id) REFERENCES audio_library_items(id)
+);");
+            Exec(conn, "CREATE INDEX IF NOT EXISTS idx_executions_task ON task_executions(task_id);");
+            Exec(conn, "CREATE INDEX IF NOT EXISTS idx_executions_audio ON task_executions(audio_item_id);");
+            Exec(conn, "CREATE INDEX IF NOT EXISTS idx_executions_status ON task_executions(status, billable);");
+            SqliteDebugLogger.LogLifecycle("已迁移到 schema v5: task_executions 表");
+        }
+
+        private static void MigrateToV6(SqliteConnection conn)
+        {
+            try { Exec(conn, "ALTER TABLE task_executions ADD COLUMN debug_prompt TEXT;"); }
+            catch (SqliteException) { }
+            try { Exec(conn, "ALTER TABLE task_executions ADD COLUMN debug_response TEXT;"); }
+            catch (SqliteException) { }
+            SqliteDebugLogger.LogLifecycle("已迁移到 schema v6: task_executions 增加 debug 列");
         }
 
         public string? GetMeta(string key)

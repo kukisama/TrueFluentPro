@@ -42,7 +42,16 @@ namespace TrueFluentPro.Services
         /// </summary>
         public string? TryLoadCachedContent(string audioItemId, AudioLifecycleStage stage)
         {
-            var record = _lifecycleRepo.Get(audioItemId, stage.ToString());
+            return TryLoadCachedContent(audioItemId, stage.ToString());
+        }
+
+        /// <summary>
+        /// 尝试从数据库加载指定阶段（字符串键）的缓存内容。
+        /// 支持自定义阶段名称。
+        /// </summary>
+        public string? TryLoadCachedContent(string audioItemId, string stageKey)
+        {
+            var record = _lifecycleRepo.Get(audioItemId, stageKey);
             if (record == null || record.IsStale) return null;
             return record.ContentJson;
         }
@@ -76,13 +85,18 @@ namespace TrueFluentPro.Services
 
         /// <summary>保存文本类阶段结果到数据库。</summary>
         public void SaveStageContent(string audioItemId, AudioLifecycleStage stage, string contentJson)
+            => SaveStageContent(audioItemId, stage.ToString(), contentJson);
+
+        /// <summary>保存文本类阶段结果到数据库（支持自定义阶段字符串标识）。</summary>
+        public void SaveStageContent(string audioItemId, string stage, string contentJson)
         {
+            contentJson = StripMarkdownCodeFence(contentJson);
             var now = DateTime.Now;
             _lifecycleRepo.Upsert(new AudioLifecycleRecord
             {
                 Id = Guid.NewGuid().ToString("N"),
                 AudioItemId = audioItemId,
-                Stage = stage.ToString(),
+                Stage = stage,
                 ContentJson = contentJson,
                 IsStale = false,
                 GeneratedAt = now,
@@ -105,6 +119,15 @@ namespace TrueFluentPro.Services
                 GeneratedAt = now,
                 UpdatedAt = now,
             });
+        }
+
+        /// <summary>
+        /// 将指定阶段自身的 lifecycle 标记为 stale。
+        /// 用于重新生成前确保下游依赖检查不会通过旧数据。
+        /// </summary>
+        public void MarkStageStale(string audioItemId, AudioLifecycleStage stage)
+        {
+            _lifecycleRepo.MarkStale(audioItemId, stage.ToString());
         }
 
         /// <summary>
@@ -212,6 +235,26 @@ namespace TrueFluentPro.Services
                 UpdatedAt = DateTime.Now,
             });
             return id;
+        }
+
+        /// <summary>剥离 AI 输出偶尔包裹的 ```markdown / ``` 代码围栏。</summary>
+        private static string StripMarkdownCodeFence(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return text;
+            var s = text.AsSpan().Trim();
+            // 匹配 ```markdown 或 ``` 开头
+            if (s.StartsWith("```"))
+            {
+                // 跳过 ``` 及同行标签 (markdown / md / …)
+                int firstNewline = s.IndexOf('\n');
+                if (firstNewline < 0) return text; // 无换行，原样返回
+                s = s.Slice(firstNewline + 1);
+                // 去掉末尾 ```
+                if (s.EndsWith("```"))
+                    s = s.Slice(0, s.Length - 3);
+                return s.Trim().ToString();
+            }
+            return text;
         }
     }
 }

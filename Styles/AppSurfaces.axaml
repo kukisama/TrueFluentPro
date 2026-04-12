@@ -197,6 +197,14 @@
         <Setter Property="VerticalAlignment" Value="Center"/>
     </Style>
 
+    <Style Selector="Border.sidebar-nav-badge.danger">
+        <Setter Property="Background" Value="#FFDC3545"/>
+    </Style>
+    <Style Selector="Border.sidebar-nav-badge.danger TextBlock.sidebar-nav-badge-text">
+        <Setter Property="Foreground" Value="White"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+
     <Style Selector="Ellipse.sidebar-nav-dot">
         <Setter Property="Width" Value="8"/>
         <Setter Property="Height" Value="8"/>

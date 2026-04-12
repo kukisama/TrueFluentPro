@@ -1,0 +1,105 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:models="using:TrueFluentPro.Models"
+             x:Class="TrueFluentPro.Controls.StagePresetsEditor">
+    <UserControl.Styles>
+        <Style Selector="TextBox.stage-prompt">
+            <Setter Property="MinHeight" Value="28"/>
+            <Setter Property="MaxHeight" Value="28"/>
+            <Setter Property="AcceptsReturn" Value="False"/>
+            <Setter Property="TextWrapping" Value="NoWrap"/>
+        </Style>
+        <Style Selector="TextBox.stage-prompt:focus">
+            <Setter Property="MaxHeight" Value="120"/>
+            <Setter Property="AcceptsReturn" Value="True"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+        </Style>
+    </UserControl.Styles>
+    <Border BorderBrush="#FFE2E8F0" BorderThickness="0,1,0,0" Padding="0,12,0,0">
+        <StackPanel Spacing="8">
+            <TextBlock Text="听析阶段配置" FontSize="14" FontWeight="SemiBold"/>
+            <TextBlock Text="配置各阶段名称、展示模式、是否显示 Tab、是否参与批处理和自定义提示词" FontSize="11" Foreground="Gray"/>
+            <ItemsControl x:Name="StagePresetsItemsControl">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:CompileBindings="False">
+                        <StackPanel Spacing="2" Margin="0,4">
+                            <Grid ColumnDefinitions="Auto,Auto,110,Auto,80,Auto,55,Auto,55,Auto,90,Auto"
+                                  Margin="0,0">
+                                <!-- 启用开关 -->
+                                <ToggleSwitch Grid.Column="0" IsChecked="{Binding IsEnabled, Mode=TwoWay}"
+                                              OnContent="" OffContent=""
+                                              Checked="Field_Changed"
+                                              Unchecked="Field_Changed"
+                                              VerticalAlignment="Center" Margin="0,0,4,0"
+                                              MinWidth="0" Padding="0"
+                                              ToolTip.Tip="启用/禁用此阶段"/>
+                                <!-- 名称 -->
+                                <TextBlock Grid.Column="1" Text="名称:" FontSize="11"
+                                           VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                <TextBox Grid.Column="2" Text="{Binding DisplayName, Mode=TwoWay}"
+                                         LostFocus="Field_Changed"
+                                         IsEnabled="{Binding IsEnabled}"
+                                         Padding="4,3" VerticalAlignment="Center"/>
+                                <!-- 标记 -->
+                                <TextBlock Grid.Column="3" Text="标记:" FontSize="11"
+                                           VerticalAlignment="Center" Margin="10,0,6,0"/>
+                                <TextBox Grid.Column="4" Text="{Binding Stage, Mode=TwoWay}"
+                                         LostFocus="Field_Changed"
+                                         IsEnabled="{Binding IsEnabled}"
+                                         Padding="4,3" VerticalAlignment="Center"/>
+                                <!-- 显示Tab -->
+                                <TextBlock Grid.Column="5" Text="显示:" FontSize="11"
+                                           VerticalAlignment="Center" Margin="10,0,4,0"/>
+                                <CheckBox Grid.Column="6" IsChecked="{Binding ShowInTab, Mode=TwoWay}"
+                                          Checked="Field_Changed"
+                                          Unchecked="Field_Changed"
+                                          IsEnabled="{Binding IsEnabled}"
+                                          VerticalAlignment="Center"/>
+                                <!-- 批处理 -->
+                                <TextBlock Grid.Column="7" Text="批处理:" FontSize="11"
+                                           VerticalAlignment="Center" Margin="10,0,4,0"/>
+                                <CheckBox Grid.Column="8" IsChecked="{Binding IncludeInBatch, Mode=TwoWay}"
+                                          Checked="Field_Changed"
+                                          Unchecked="Field_Changed"
+                                          IsEnabled="{Binding IsEnabled}"
+                                          VerticalAlignment="Center"/>
+                                <!-- 展示模式 -->
+                                <TextBlock Grid.Column="9" Text="模式:" FontSize="11"
+                                           VerticalAlignment="Center" Margin="10,0,4,0"/>
+                                <ComboBox Grid.Column="10"
+                                          SelectedIndex="{Binding DisplayModeIndex, Mode=TwoWay}"
+                                          SelectionChanged="Field_Changed"
+                                          IsEnabled="{Binding IsEnabled}"
+                                          MinWidth="90"
+                                          Padding="4,3" VerticalAlignment="Center"
+                                          ToolTip.Tip="Markdown / 导图">
+                                    <ComboBoxItem Content="Markdown"/>
+                                    <ComboBoxItem Content="导图"/>
+                                </ComboBox>
+                                <!-- 删除 -->
+                                <Button Grid.Column="11" Content="删除" Margin="6,0,0,0" Padding="6,2"
+                                        FontSize="11" Click="RemovePreset_Click"
+                                        Tag="{Binding}" VerticalAlignment="Center"/>
+                            </Grid>
+                            <!-- 提示词（启用时展开） -->
+                            <Grid ColumnDefinitions="52,*" Margin="0,2,0,4"
+                                  IsVisible="{Binding IsEnabled}">
+                                <TextBlock Grid.Column="0" Text="提示词:" FontSize="11"
+                                           Opacity="0.6" VerticalAlignment="Top" Margin="0,4,6,0"/>
+                                <TextBox Grid.Column="1"
+                                         Text="{Binding SystemPrompt, Mode=TwoWay}"
+                                         Classes="stage-prompt"
+                                         LostFocus="Field_Changed"
+                                         Watermark="留空使用内置默认提示词"
+                                         Padding="4,3" VerticalAlignment="Top"/>
+                            </Grid>
+                        </StackPanel>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <Button Content="+ 添加自定义阶段" Padding="8,4"
+                    FontSize="11" HorizontalAlignment="Left"
+                    Click="AddPreset_Click"/>
+        </StackPanel>
+    </Border>
+</UserControl>

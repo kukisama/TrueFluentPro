@@ -15,5 +15,8 @@ namespace TrueFluentPro.Models
 
         [ObservableProperty]
         private int _count;
+
+        /// <summary>Key == "failed" — 供 XAML Classes.danger 绑定</summary>
+        public bool IsDanger => string.Equals(Key, "failed", System.StringComparison.Ordinal);
     }
 }

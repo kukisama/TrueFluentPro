@@ -27,6 +27,7 @@ namespace TrueFluentPro.Services
         private readonly AudioLifecyclePipelineService _pipeline;
         private readonly ConfigurationService _configService;
         private readonly IAudioLibraryRepository _audioRepo;
+        private readonly Speech.SpeechSynthesisService _ttsService;
 
         public AudioTaskStageHandlerService(
             IAiInsightService aiInsightService,
@@ -36,7 +37,8 @@ namespace TrueFluentPro.Services
             IAiAudioTranscriptionService aiAudioTranscriptionService,
             AudioLifecyclePipelineService pipeline,
             ConfigurationService configService,
-            IAudioLibraryRepository audioRepo)
+            IAudioLibraryRepository audioRepo,
+            Speech.SpeechSynthesisService ttsService)
         {
             _aiInsightService = aiInsightService;
             _azureTokenProviderStore = azureTokenProviderStore;
@@ -46,10 +48,11 @@ namespace TrueFluentPro.Services
             _pipeline = pipeline;
             _configService = configService;
             _audioRepo = audioRepo;
+            _ttsService = ttsService;
         }
 
-        /// <summary>根据阶段分派到对应的处理方法。</summary>
-        public async Task ExecuteStageAsync(string audioItemId, AudioLifecycleStage stage, CancellationToken ct, Action<string>? reportProgress = null)
+        /// <summary>根据阶段分派到对应的处理方法。返回 AI 调用的 token 用量（非 AI 阶段返回 null）。</summary>
+        public async Task<AiRequestOutcome?> ExecuteStageAsync(string audioItemId, AudioLifecycleStage stage, CancellationToken ct, Action<string>? reportProgress = null)
         {
             // 提供空操作的默认值，避免每处都判断 null
             reportProgress ??= _ => { };
@@ -58,25 +61,76 @@ namespace TrueFluentPro.Services
             {
                 case AudioLifecycleStage.Transcribed:
                     await ExecuteTranscribeAsync(audioItemId, ct, reportProgress);
-                    break;
+                    return null; // 转录是语音服务，不产生 token
                 case AudioLifecycleStage.Summarized:
-                    await ExecuteSummarizeAsync(audioItemId, ct, reportProgress);
-                    break;
+                    return await ExecuteSummarizeAsync(audioItemId, ct, reportProgress);
                 case AudioLifecycleStage.MindMap:
-                    await ExecuteMindMapAsync(audioItemId, ct, reportProgress);
-                    break;
+                    return await ExecuteMindMapAsync(audioItemId, ct, reportProgress);
                 case AudioLifecycleStage.Insight:
-                    await ExecuteInsightAsync(audioItemId, ct, reportProgress);
-                    break;
+                    return await ExecuteInsightAsync(audioItemId, ct, reportProgress);
                 case AudioLifecycleStage.PodcastScript:
-                    await ExecutePodcastScriptAsync(audioItemId, ct, reportProgress);
-                    break;
+                    return await ExecutePodcastScriptAsync(audioItemId, ct, reportProgress);
+                case AudioLifecycleStage.PodcastAudio:
+                    await ExecutePodcastAudioAsync(audioItemId, ct, reportProgress);
+                    return null; // TTS 合成，不产生 AI token
                 case AudioLifecycleStage.Research:
-                    await ExecuteResearchAsync(audioItemId, ct, reportProgress);
-                    break;
+                    return await ExecuteResearchAsync(audioItemId, ct, reportProgress);
+                case AudioLifecycleStage.Translated:
+                    return await ExecuteTranslatedAsync(audioItemId, ct, reportProgress);
                 default:
                     throw new NotSupportedException($"阶段 {stage} 暂不支持队列化执行。");
             }
+        }
+
+        /// <summary>执行自定义阶段（非内置枚举值）：使用阶段预设的提示词调用 AI。</summary>
+        public async Task<AiRequestOutcome?> ExecuteCustomStageAsync(string audioItemId, string stageKey, CancellationToken ct, Action<string>? reportProgress = null)
+        {
+            reportProgress ??= _ => { };
+            reportProgress("加载转录数据...");
+            var transcript = LoadTranscriptTextOrThrow(audioItemId);
+
+            reportProgress("加载 AI 配置...");
+            var config = await _configService.LoadConfigAsync();
+
+            if (!TryBuildTextRuntimeConfig(config, out var runtimeRequest, out var endpoint, out var errorMessage))
+                throw new InvalidOperationException($"自定义阶段未启动：{errorMessage}");
+
+            var preset = AudioLabStagePresetDefaults.MergeWithDefaults(config.AudioLabStagePresets)
+                .FirstOrDefault(p => p.Stage == stageKey);
+            if (preset == null || string.IsNullOrWhiteSpace(preset.SystemPrompt))
+                throw new InvalidOperationException($"自定义阶段 {stageKey} 的提示词为空，无法执行。");
+
+            reportProgress("认证 AI 服务...");
+            var aiService = await CreateAuthenticatedInsightServiceAsync(runtimeRequest, endpoint, ct);
+
+            var systemPrompt = preset.SystemPrompt;
+            var userContent = $"以下是音频转录内容：\n\n{transcript}";
+
+            reportProgress($"AI 生成 {preset.DisplayName} 中（等待完整返回）...");
+            var (result, outcome) = await aiService.ChatWithUsageAsync(
+                runtimeRequest, systemPrompt, userContent, ct, AiChatProfile.Quick);
+
+            if (config.AudioLabDebugMode) AttachDebug(outcome, systemPrompt, userContent, result);
+
+            if (string.IsNullOrWhiteSpace(result))
+                throw new InvalidOperationException($"自定义阶段 {preset.DisplayName} 生成结果为空。");
+
+            // 导图模式：剥除 Markdown 代码块包裹
+            if (preset.DisplayMode == StageDisplayMode.MindMap)
+            {
+                result = result.Trim();
+                if (result.StartsWith("```"))
+                {
+                    var firstNewline = result.IndexOf('\n');
+                    if (firstNewline > 0) result = result[(firstNewline + 1)..];
+                    if (result.EndsWith("```")) result = result[..^3];
+                    result = result.Trim();
+                }
+            }
+
+            reportProgress("保存结果...");
+            _pipeline.SaveStageContent(audioItemId, stageKey, result);
+            return outcome;
         }
 
         // ── 转录 ──────────────────────────────────────────────
@@ -130,7 +184,7 @@ namespace TrueFluentPro.Services
 
         // ── 总结 ──────────────────────────────────────────────
 
-        private async Task ExecuteSummarizeAsync(string audioItemId, CancellationToken ct, Action<string> reportProgress)
+        private async Task<AiRequestOutcome?> ExecuteSummarizeAsync(string audioItemId, CancellationToken ct, Action<string> reportProgress)
         {
             reportProgress("加载转录数据...");
             var transcript = LoadTranscriptTextOrThrow(audioItemId);
@@ -144,25 +198,28 @@ namespace TrueFluentPro.Services
             reportProgress("认证 AI 服务...");
             var aiService = await CreateAuthenticatedInsightServiceAsync(runtimeRequest, endpoint, ct);
 
-            const string systemPrompt = "你是一个专业的音频内容分析助手。请根据转录文本生成简洁的 Markdown 总结。\n\n## 概要\n用一段话概括核心内容（50-100字），标注关键时间范围。\n\n## 关键要点\n提炼 3-5 个最重要的发现或观点，每条一句话，标注 [MM:SS]。\n\n## 行动建议\n如果有值得跟进的建议或结论，列出 2-3 条。\n\n## 关键词\n提取 3-5 个关键词。\n\n注意：时间戳格式统一用 [MM:SS]，内容要简洁，不要重复。";
+            var systemPrompt = AudioLabStagePresetDefaults.GetCustomPrompt(config.AudioLabStagePresets, "Summarized");
             var userContent = $"以下是音频转录内容：\n\n{transcript}";
 
             reportProgress("AI 生成总结中（等待完整返回）...");
-            var result = await aiService.ChatAsync(
+            var (result, outcome) = await aiService.ChatWithUsageAsync(
                 runtimeRequest, systemPrompt, userContent,
                 ct, AiChatProfile.Summary,
                 enableReasoning: runtimeRequest.SummaryEnableReasoning);
+
+            if (config.AudioLabDebugMode) AttachDebug(outcome, systemPrompt, userContent, result);
 
             if (string.IsNullOrWhiteSpace(result))
                 throw new InvalidOperationException("总结生成为空。");
 
             reportProgress("保存总结结果...");
             _pipeline.SaveStageContent(audioItemId, AudioLifecycleStage.Summarized, result);
+            return outcome;
         }
 
         // ── 思维导图 ──────────────────────────────────────────
 
-        private async Task ExecuteMindMapAsync(string audioItemId, CancellationToken ct, Action<string> reportProgress)
+        private async Task<AiRequestOutcome?> ExecuteMindMapAsync(string audioItemId, CancellationToken ct, Action<string> reportProgress)
         {
             reportProgress("加载转录数据...");
             var transcript = LoadTranscriptTextOrThrow(audioItemId);
@@ -171,18 +228,20 @@ namespace TrueFluentPro.Services
             var config = await _configService.LoadConfigAsync();
 
             if (!TryBuildTextRuntimeConfig(config, out var runtimeRequest, out var endpoint, out _))
-                return; // 思维导图失败不阻塞
+                return null; // 思维导图失败不阻塞
 
             reportProgress("认证 AI 服务...");
             var aiService = await CreateAuthenticatedInsightServiceAsync(runtimeRequest, endpoint, ct);
 
-            const string systemPrompt = "你是一个结构化分析专家。根据音频转录文本生成思维导图的 JSON 结构。\n你必须严格输出有效 JSON，不要输出任何其他内容（不要 markdown 代码块标记）。\n格式：\n{\"label\":\"主题\",\"children\":[{\"label\":\"分支1\",\"children\":[{\"label\":\"要点1\"},{\"label\":\"要点2\"}]}]}\n层级不超过 3 层，每个分支不超过 5 个子节点。";
+            var systemPrompt = AudioLabStagePresetDefaults.GetCustomPrompt(config.AudioLabStagePresets, "MindMap");
             var userContent = $"请根据以下转录内容生成思维导图结构：\n\n{transcript}";
 
             reportProgress("AI 生成思维导图中（等待完整返回）...");
-            var json = await aiService.ChatAsync(
+            var (json, outcome) = await aiService.ChatWithUsageAsync(
                 runtimeRequest, systemPrompt, userContent,
                 ct, AiChatProfile.Quick);
+
+            if (config.AudioLabDebugMode) AttachDebug(outcome, systemPrompt, userContent, json);
 
             json = json.Trim();
             if (json.StartsWith("```"))
@@ -195,11 +254,12 @@ namespace TrueFluentPro.Services
 
             reportProgress("保存思维导图结果...");
             _pipeline.SaveStageContent(audioItemId, AudioLifecycleStage.MindMap, json);
+            return outcome;
         }
 
         // ── 顿悟 ──────────────────────────────────────────────
 
-        private async Task ExecuteInsightAsync(string audioItemId, CancellationToken ct, Action<string> reportProgress)
+        private async Task<AiRequestOutcome?> ExecuteInsightAsync(string audioItemId, CancellationToken ct, Action<string> reportProgress)
         {
             reportProgress("加载转录数据...");
             var transcript = LoadTranscriptTextOrThrow(audioItemId);
@@ -213,21 +273,24 @@ namespace TrueFluentPro.Services
             reportProgress("认证 AI 服务...");
             var aiService = await CreateAuthenticatedInsightServiceAsync(runtimeRequest, endpoint, ct);
 
-            const string systemPrompt = "你是一个深度思考专家。根据音频转录内容，提供深层洞察和顿悟。\n请从以下角度分析：\n1. **隐含假设**：说话者可能不自知的假设\n2. **潜在矛盾**：观点之间的冲突\n3. **深层模式**：反复出现的主题或思维模式\n4. **未说出的内容**：重要但被忽略的方面\n5. **关联启发**：与其他领域的联系\n\n以 Markdown 格式输出，标注时间戳 [HH:MM:SS]。";
+            var systemPrompt = AudioLabStagePresetDefaults.GetCustomPrompt(config.AudioLabStagePresets, "Insight");
             var userContent = $"以下是音频转录内容：\n\n{transcript}";
 
             reportProgress("AI 生成顿悟分析中（等待完整返回）...");
-            var result = await aiService.ChatAsync(
+            var (result, outcome) = await aiService.ChatWithUsageAsync(
                 runtimeRequest, systemPrompt, userContent,
                 ct, AiChatProfile.Quick);
 
+            if (config.AudioLabDebugMode) AttachDebug(outcome, systemPrompt, userContent, result);
+
             reportProgress("保存顿悟分析结果...");
             _pipeline.SaveStageContent(audioItemId, AudioLifecycleStage.Insight, result);
+            return outcome;
         }
 
         // ── 播客台本 ──────────────────────────────────────────
 
-        private async Task ExecutePodcastScriptAsync(string audioItemId, CancellationToken ct, Action<string> reportProgress)
+        private async Task<AiRequestOutcome?> ExecutePodcastScriptAsync(string audioItemId, CancellationToken ct, Action<string> reportProgress)
         {
             reportProgress("加载转录数据...");
             var transcript = LoadTranscriptTextOrThrow(audioItemId);
@@ -241,21 +304,186 @@ namespace TrueFluentPro.Services
             reportProgress("认证 AI 服务...");
             var aiService = await CreateAuthenticatedInsightServiceAsync(runtimeRequest, endpoint, ct);
 
-            const string systemPrompt = "你是一个播客脚本编写专家。根据音频转录内容，生成一段适合播客的对话内容改写。\n\n严格使用以下格式，每行一句：\n发言人 A：[主持人台词]\n发言人 B：[嘉宾台词]\n\n要求：\n1. 对话总轮次控制在 40 轮以内（A 和 B 各约 20 轮）\n2. 每轮发言控制在 200 字以内\n3. 口语化、自然过渡\n4. 不要加 Markdown 格式、括号注释或舞台指导\n5. 第一行必须是发言人 A 的开场白\n6. 突出有趣的细节和故事";
+            var systemPrompt = AudioLabStagePresetDefaults.GetCustomPrompt(config.AudioLabStagePresets, "PodcastScript");
             var userContent = $"以下是音频转录内容：\n\n{transcript}";
 
             reportProgress("AI 生成播客台本中（等待完整返回）...");
-            var result = await aiService.ChatAsync(
+            var (result, outcome) = await aiService.ChatWithUsageAsync(
                 runtimeRequest, systemPrompt, userContent,
                 ct, AiChatProfile.Quick);
 
+            if (config.AudioLabDebugMode) AttachDebug(outcome, systemPrompt, userContent, result);
+
             reportProgress("保存播客台本结果...");
             _pipeline.SaveStageContent(audioItemId, AudioLifecycleStage.PodcastScript, result);
+
+            // 台本变更 → 下游播客音频标记为 stale，队列才会重新提交
+            _pipeline.InvalidateDownstreamStages(audioItemId, AudioLifecycleStage.PodcastScript);
+            return outcome;
+        }
+
+        // ── 播客音频 TTS ──────────────────────────────────────
+
+        private async Task ExecutePodcastAudioAsync(string audioItemId, CancellationToken ct, Action<string> reportProgress)
+        {
+            reportProgress("加载播客台本...");
+            var podcastScript = _pipeline.TryLoadCachedContent(audioItemId, AudioLifecycleStage.PodcastScript);
+            if (string.IsNullOrWhiteSpace(podcastScript))
+                throw new InvalidOperationException("播客台本不存在，无法合成音频。请先生成播客台本。");
+
+            reportProgress("加载配置...");
+            var config = await _configService.LoadConfigAsync();
+
+            reportProgress("建立 TTS 认证...");
+            var ttsAuth = BuildTtsAuthContext(config);
+
+            reportProgress("加载语音列表...");
+            var voices = await _ttsService.ListVoicesAsync(ttsAuth, forceRefresh: false, ct);
+
+            reportProgress("匹配发言人语音...");
+            var profiles = BuildSpeakerProfilesFromConfig(config, voices);
+            if (profiles.Count == 0)
+                throw new InvalidOperationException("未能为任何发言人匹配到语音。请在设置中配置播客发言人语音。");
+
+            var outputFormat = !string.IsNullOrWhiteSpace(config.AudioLabPodcastOutputFormat)
+                ? config.AudioLabPodcastOutputFormat
+                : "audio-24khz-96kbitrate-mono-mp3";
+            var outputDir = Path.Combine(PathManager.Instance.AppDataPath, "podcast-audio");
+
+            reportProgress("正在合成播客音频...");
+            await _pipeline.SynthesizePodcastAsync(
+                ttsAuth, audioItemId, podcastScript, profiles,
+                outputFormat, outputDir, ct);
+
+            reportProgress("播客音频合成完成");
+        }
+
+        /// <summary>
+        /// 从配置构建 TTS 认证上下文（AAD 或 API Key）。
+        /// 逻辑与 ControlPanel.BuildTtsAuthContext 对齐。
+        /// </summary>
+        private Speech.SpeechSynthesisService.TtsAuthContext BuildTtsAuthContext(AzureSpeechConfig config)
+        {
+            // AAD 模式
+            if (config.AudioLabSpeechMode == 0)
+            {
+                var provider = _azureTokenProviderStore.GetProvider("ai");
+                if (provider != null && provider.IsLoggedIn)
+                {
+                    var token = provider.GetTokenAsync(CancellationToken.None).GetAwaiter().GetResult();
+                    var speechRes = FindSpeechResource(config, SpeechCapability.TextToSpeech);
+                    if (speechRes != null && !string.IsNullOrWhiteSpace(speechRes.Endpoint))
+                    {
+                        var endpoint = speechRes.Endpoint.TrimEnd('/');
+                        var isCustomDomain = endpoint.Contains(".cognitiveservices.azure.", StringComparison.OrdinalIgnoreCase);
+                        return new Speech.SpeechSynthesisService.TtsAuthContext
+                        {
+                            AadBearerValue = $"aad#{speechRes.Id}#{token}",
+                            BaseUrl = endpoint,
+                            IsCustomDomainEndpoint = isCustomDomain,
+                        };
+                    }
+                }
+            }
+
+            // 传统 API Key 模式
+            {
+                var speechRes = FindSpeechResource(config, SpeechCapability.TextToSpeech);
+                if (speechRes != null && !string.IsNullOrWhiteSpace(speechRes.SubscriptionKey))
+                {
+                    var region = speechRes.ServiceRegion;
+                    return new Speech.SpeechSynthesisService.TtsAuthContext
+                    {
+                        SubscriptionKey = speechRes.SubscriptionKey,
+                        BaseUrl = $"https://{region}.tts.speech.microsoft.com",
+                        IsCustomDomainEndpoint = false,
+                    };
+                }
+            }
+
+            throw new InvalidOperationException("无法建立 TTS 认证。请在设置中配置语音资源（AAD 或 API Key）。");
+        }
+
+        private static SpeechResource? FindSpeechResource(AzureSpeechConfig config, SpeechCapability capability)
+        {
+            var exact = config.SpeechResources?
+                .FirstOrDefault(r => r.IsEnabled && r.Capabilities.HasFlag(capability));
+            if (exact != null) return exact;
+            return config.SpeechResources?
+                .FirstOrDefault(r => r.IsEnabled
+                    && r.Vendor == SpeechVendorType.Microsoft
+                    && !string.IsNullOrWhiteSpace(r.SubscriptionKey));
+        }
+
+        /// <summary>
+        /// 根据配置中的发言人语音关键字 + 语音列表，构建后端可用的 SpeakerProfile 字典。
+        /// </summary>
+        private static Dictionary<string, SpeakerProfile> BuildSpeakerProfilesFromConfig(
+            AzureSpeechConfig config, List<VoiceInfo> voices)
+        {
+            var presets = new (string Tag, string Pattern)[]
+            {
+                ("A", config.AudioLabPodcastSpeakerAVoice ?? "XiaochenMultilingual"),
+                ("B", config.AudioLabPodcastSpeakerBVoice ?? "Yunfeng"),
+                ("C", config.AudioLabPodcastSpeakerCVoice ?? "Xiaoshuang"),
+            };
+
+            var profiles = new Dictionary<string, SpeakerProfile>();
+            foreach (var (tag, pattern) in presets)
+            {
+                var match = voices.FirstOrDefault(v =>
+                    v.ShortName.Contains(pattern, StringComparison.OrdinalIgnoreCase));
+                if (match != null)
+                {
+                    var sp = new SpeakerProfile(tag, $"发言人 {tag}") { Voice = match };
+                    profiles[tag] = sp;
+                }
+            }
+            return profiles;
+        }
+
+        // ── 翻译 ──────────────────────────────────────────────
+
+        private async Task<AiRequestOutcome?> ExecuteTranslatedAsync(string audioItemId, CancellationToken ct, Action<string> reportProgress)
+        {
+            reportProgress("加载转录数据...");
+            var transcript = LoadTranscriptTextOrThrow(audioItemId);
+
+            reportProgress("加载配置...");
+            var config = await _configService.LoadConfigAsync();
+
+            if (!TryBuildTextRuntimeConfig(config, out var runtimeRequest, out var endpoint, out var errorMessage))
+                throw new InvalidOperationException($"翻译未启动：{errorMessage}");
+
+            var targetLang = config.TargetLanguage;
+            if (string.IsNullOrWhiteSpace(targetLang))
+                targetLang = "zh-Hans";
+
+            reportProgress("认证 AI 服务...");
+            var aiService = await CreateAuthenticatedInsightServiceAsync(runtimeRequest, endpoint, ct);
+
+            var systemPrompt = AudioLabStagePresetDefaults.GetCustomPrompt(config.AudioLabStagePresets, "Translated")
+                .Replace("{targetLang}", targetLang);
+            var userContent = $"以下是需要翻译的音频转录内容：\n\n{transcript}";
+
+            reportProgress("AI 翻译中（等待完整返回）...");
+            var (result, outcome) = await aiService.ChatWithUsageAsync(
+                runtimeRequest, systemPrompt, userContent,
+                ct, AiChatProfile.Summary);
+
+            if (config.AudioLabDebugMode) AttachDebug(outcome, systemPrompt, userContent, result);
+
+            if (string.IsNullOrWhiteSpace(result))
+                throw new InvalidOperationException("翻译结果为空。");
+
+            reportProgress("保存翻译结果...");
+            _pipeline.SaveStageContent(audioItemId, AudioLifecycleStage.Translated, result);
+            return outcome;
         }
 
         // ── 深度研究 ──────────────────────────────────────────
 
-        private async Task ExecuteResearchAsync(string audioItemId, CancellationToken ct, Action<string> reportProgress)
+        private async Task<AiRequestOutcome?> ExecuteResearchAsync(string audioItemId, CancellationToken ct, Action<string> reportProgress)
         {
             reportProgress("加载转录数据...");
             var transcript = LoadTranscriptTextOrThrow(audioItemId);
@@ -271,7 +499,7 @@ namespace TrueFluentPro.Services
 
             // Phase 1: 生成研究课题
             reportProgress("Phase 1/2：AI 规划研究课题中（等待完整返回）...");
-            var planResult = await aiService.ChatAsync(
+            var (planResult, outcome1) = await aiService.ChatWithUsageAsync(
                 runtimeRequest,
                 "你是一个学术研究规划专家。根据音频转录内容，提出 3-5 个值得深入研究的课题。每个课题一行，格式为纯文本标题。不要编号，不要其他格式。",
                 $"请根据以下内容提出研究课题：\n\n{transcript}",
@@ -288,15 +516,54 @@ namespace TrueFluentPro.Services
             // Phase 2: 生成研究报告
             reportProgress("Phase 2/2：AI 生成深度研究报告中（等待完整返回）...");
             var selectedTopics = string.Join("\n", topicLines);
-            var result = await aiService.ChatAsync(
+            var researchPrompt = AudioLabStagePresetDefaults.GetCustomPrompt(config.AudioLabStagePresets, "Research");
+            var (result, outcome2) = await aiService.ChatWithUsageAsync(
                 runtimeRequest,
-                "你是一个深度研究分析师。用户提供了音频转录内容和研究课题列表。请针对每个课题展开深度分析，包括核心论点和支撑证据、不同视角和反驳、与现有知识体系的关联、进一步研究建议。以 Markdown 格式输出，使用标题分隔各课题。引用时标注 [HH:MM:SS]。",
+                researchPrompt,
                 $"研究课题：\n{selectedTopics}\n\n音频转录内容：\n{transcript}",
                 ct, AiChatProfile.Summary,
                 enableReasoning: runtimeRequest.SummaryEnableReasoning);
 
             reportProgress("保存研究报告结果...");
             _pipeline.SaveStageContent(audioItemId, AudioLifecycleStage.Research, result);
+
+            // 合并两次调用的 token 用量
+            var merged = MergeOutcomes(outcome1, outcome2);
+            if (config.AudioLabDebugMode && merged != null)
+            {
+                var phase1Sys = "你是一个学术研究规划专家。根据音频转录内容，提出 3-5 个值得深入研究的课题。每个课题一行，格式为纯文本标题。不要编号，不要其他格式。";
+                var phase1User = $"请根据以下内容提出研究课题：\n\n{transcript}";
+                var phase2User = $"研究课题：\n{selectedTopics}\n\n音频转录内容：\n{transcript}";
+                merged.DebugPrompt = $"=== Phase 1 ===\n[System]\n{phase1Sys}\n\n[User]\n{phase1User}\n\n=== Phase 2 ===\n[System]\n{researchPrompt}\n\n[User]\n{phase2User}";
+                merged.DebugResponse = $"=== Phase 1 (课题) ===\n{planResult}\n\n=== Phase 2 (报告) ===\n{result}";
+            }
+            return merged;
+        }
+
+        /// <summary>合并多次 AI 调用的 token 用量。取最后一个 ModelName，累加 token 数。</summary>
+        private static AiRequestOutcome? MergeOutcomes(AiRequestOutcome? a, AiRequestOutcome? b)
+        {
+            if (a == null) return b;
+            if (b == null) return a;
+            return new AiRequestOutcome
+            {
+                // 两个都为 null 时保持 null（表示"未知"），而非 0（表示"确认为零"）
+                PromptTokens = a.PromptTokens == null && b.PromptTokens == null
+                    ? null : (a.PromptTokens ?? 0) + (b.PromptTokens ?? 0),
+                CompletionTokens = a.CompletionTokens == null && b.CompletionTokens == null
+                    ? null : (a.CompletionTokens ?? 0) + (b.CompletionTokens ?? 0),
+                ModelName = b.ModelName ?? a.ModelName,
+                UsedReasoning = a.UsedReasoning || b.UsedReasoning,
+                UsedFallback = a.UsedFallback || b.UsedFallback
+            };
+        }
+
+        /// <summary>调试模式下将提示词和响应附加到 outcome。</summary>
+        private static void AttachDebug(AiRequestOutcome? outcome, string systemPrompt, string userContent, string response)
+        {
+            if (outcome == null) return;
+            outcome.DebugPrompt = $"[System]\n{systemPrompt}\n\n[User]\n{userContent}";
+            outcome.DebugResponse = response;
         }
 
         // ── 私有辅助方法 ──────────────────────────────────────

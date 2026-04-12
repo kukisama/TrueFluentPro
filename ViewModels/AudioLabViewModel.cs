@@ -57,6 +57,7 @@ namespace TrueFluentPro.ViewModels
             public string SummaryMarkdown { get; set; } = "";
             public string InsightMarkdown { get; set; } = "";
             public string PodcastMarkdown { get; set; } = "";
+            public string TranslationMarkdown { get; set; } = "";
             public MindMapNode? MindMapRoot { get; set; }
             public List<ResearchTopic> ResearchTopics { get; set; } = new();
             public string ResearchReportMarkdown { get; set; } = "";
@@ -100,6 +101,7 @@ namespace TrueFluentPro.ViewModels
             SummaryMarkdown = s.SummaryMarkdown;
             InsightMarkdown = s.InsightMarkdown;
             PodcastMarkdown = s.PodcastMarkdown;
+            TranslationMarkdown = s.TranslationMarkdown;
             MindMapRoot = s.MindMapRoot;
             ResearchReportMarkdown = s.ResearchReportMarkdown;
             CurrentResearchPhase = s.CurrentResearchPhase;
@@ -125,6 +127,7 @@ namespace TrueFluentPro.ViewModels
             s.SummaryMarkdown = SummaryMarkdown;
             s.InsightMarkdown = InsightMarkdown;
             s.PodcastMarkdown = PodcastMarkdown;
+            s.TranslationMarkdown = TranslationMarkdown;
             s.MindMapRoot = MindMapRoot;
             s.ResearchReportMarkdown = ResearchReportMarkdown;
             s.CurrentResearchPhase = CurrentResearchPhase;
@@ -185,6 +188,10 @@ namespace TrueFluentPro.ViewModels
         [ObservableProperty]
         private string _podcastMarkdown = "";
 
+        // ── 翻译 ──────────────────────────────────────────────
+        [ObservableProperty]
+        private string _translationMarkdown = "";
+
         // ── 播客音频播放 ──────────────────────────────────────
         public AudioLabPlaybackViewModel PodcastPlayback { get; }
 
@@ -198,7 +205,13 @@ namespace TrueFluentPro.ViewModels
         public bool ShowPodcastPlayback => HasPodcastAudioFile && SelectedTab == AudioLabTabKind.Podcast;
 
         partial void OnHasPodcastAudioFileChanged(bool value) => OnPropertyChanged(nameof(ShowPodcastPlayback));
-        partial void OnSelectedTabChanged(AudioLabTabKind value) => OnPropertyChanged(nameof(ShowPodcastPlayback));
+        partial void OnSelectedTabChanged(AudioLabTabKind value)
+        {
+            OnPropertyChanged(nameof(ShowPodcastPlayback));
+            OnPropertyChanged(nameof(IsCustomStageSelected));
+            if (value == AudioLabTabKind.Custom)
+                OnPropertyChanged(nameof(CustomStageContent));
+        }
 
         // ── 深度研究 ──────────────────────────────────────────
         public ObservableCollection<ResearchTopic> ResearchTopics { get; } = new();
@@ -240,6 +253,9 @@ namespace TrueFluentPro.ViewModels
         [ObservableProperty]
         private StageContentState _researchState = StageContentState.Empty;
 
+        [ObservableProperty]
+        private StageContentState _translationState = StageContentState.Empty;
+
         // ── 各阶段 Processing 计算属性（供 XAML 绑定） ─────────
         public bool IsTranscribeProcessing => TranscribeState == StageContentState.Processing;
         public bool IsSummaryProcessing => SummaryState == StageContentState.Processing;
@@ -247,6 +263,7 @@ namespace TrueFluentPro.ViewModels
         public bool IsInsightProcessing => InsightState == StageContentState.Processing;
         public bool IsPodcastProcessing => PodcastState == StageContentState.Processing;
         public bool IsResearchProcessing => ResearchState == StageContentState.Processing;
+        public bool IsTranslationProcessing => TranslationState == StageContentState.Processing;
 
         /// <summary>转录已完成（供 XAML 区分空状态提示文案）。</summary>
         public bool IsTranscribeReady => TranscribeState == StageContentState.Ready;
@@ -255,50 +272,141 @@ namespace TrueFluentPro.ViewModels
         {
             OnPropertyChanged(nameof(IsTranscribeProcessing));
             OnPropertyChanged(nameof(IsTranscribeReady));
-            OnPropertyChanged(nameof(HasActiveProcessing));
         }
 
         partial void OnSummaryStateChanged(StageContentState value)
-        {
-            OnPropertyChanged(nameof(IsSummaryProcessing));
-            OnPropertyChanged(nameof(HasActiveProcessing));
-        }
+            => OnPropertyChanged(nameof(IsSummaryProcessing));
 
         partial void OnMindMapStateChanged(StageContentState value)
-        {
-            OnPropertyChanged(nameof(IsMindMapProcessing));
-            OnPropertyChanged(nameof(HasActiveProcessing));
-        }
+            => OnPropertyChanged(nameof(IsMindMapProcessing));
 
         partial void OnInsightStateChanged(StageContentState value)
-        {
-            OnPropertyChanged(nameof(IsInsightProcessing));
-            OnPropertyChanged(nameof(HasActiveProcessing));
-        }
+            => OnPropertyChanged(nameof(IsInsightProcessing));
 
         partial void OnPodcastStateChanged(StageContentState value)
-        {
-            OnPropertyChanged(nameof(IsPodcastProcessing));
-            OnPropertyChanged(nameof(HasActiveProcessing));
-        }
+            => OnPropertyChanged(nameof(IsPodcastProcessing));
 
         partial void OnResearchStateChanged(StageContentState value)
-        {
-            OnPropertyChanged(nameof(IsResearchProcessing));
-            OnPropertyChanged(nameof(HasActiveProcessing));
-        }
+            => OnPropertyChanged(nameof(IsResearchProcessing));
+
+        partial void OnTranslationStateChanged(StageContentState value)
+            => OnPropertyChanged(nameof(IsTranslationProcessing));
 
         /// <summary>
-        /// 是否有任何阶段正在处理。
-        /// IsGenerating 为前台直接生成模式；IsXxxProcessing 为后台任务队列模式
-        /// （来自 StageContentState.Processing，即有 Pending/Running 的队列任务）。
+        /// 是否有任何阶段正在处理（通用：前台直接生成 OR 后台队列中有活跃任务）。
+        /// 对所有阶段（内置 + 自定义）统一生效，新增阶段无需额外修改。
         /// </summary>
-        public bool HasActiveProcessing => IsGenerating
-            || IsTranscribeProcessing || IsSummaryProcessing || IsMindMapProcessing
-            || IsInsightProcessing || IsPodcastProcessing || IsResearchProcessing;
+        public bool HasActiveProcessing => IsGenerating || HasActiveQueueTasks;
+
+        /// <summary>当前音频是否有队列中的活跃任务（Pending 或 Running）。</summary>
+        private bool _hasActiveQueueTasks;
+        public bool HasActiveQueueTasks
+        {
+            get => _hasActiveQueueTasks;
+            private set
+            {
+                if (SetProperty(ref _hasActiveQueueTasks, value))
+                    OnPropertyChanged(nameof(HasActiveProcessing));
+            }
+        }
 
         /// <summary>当前音频的 audio_item_id（DB 主键），LoadAudioFile 后设置。</summary>
         private string? _currentAudioItemId;
+
+        // ── 阶段预设可见性 ────────────────────────────────────
+        private List<AudioLabStagePreset> _mergedPresets = AudioLabStagePresetDefaults.CreateDefaults();
+
+        public bool IsSummaryTabVisible => IsStageTabVisible("Summarized");
+        public bool IsMindMapTabVisible => IsStageTabVisible("MindMap");
+        public bool IsInsightTabVisible => IsStageTabVisible("Insight");
+        public bool IsResearchTabVisible => IsStageTabVisible("Research");
+        public bool IsPodcastTabVisible => IsStageTabVisible("PodcastScript");
+        public bool IsTranslationTabVisible => IsStageTabVisible("Translated");
+
+        /// <summary>用户自定义的可见阶段（非内置 6 个），用于动态生成 Tab 按钮。</summary>
+        public List<AudioLabStagePreset> CustomVisibleStages { get; private set; } = new();
+
+        /// <summary>当前激活的自定义阶段 Stage 标识（SelectedTab == Custom 时有效）。</summary>
+        private string _customStageKey = "";
+        public string CustomStageKey
+        {
+            get => _customStageKey;
+            set
+            {
+                if (!SetProperty(ref _customStageKey, value)) return;
+                OnPropertyChanged(nameof(CustomStageContent));
+                OnPropertyChanged(nameof(IsCustomStageSelected));
+                OnPropertyChanged(nameof(IsCustomStageMindMap));
+                RefreshCustomStageMindMap();
+            }
+        }
+
+        /// <summary>自定义阶段是否被选中。</summary>
+        public bool IsCustomStageSelected => SelectedTab == AudioLabTabKind.Custom;
+
+        /// <summary>当前自定义阶段是否为导图模式。</summary>
+        public bool IsCustomStageMindMap
+        {
+            get
+            {
+                if (string.IsNullOrEmpty(_customStageKey)) return false;
+                var preset = _mergedPresets.FirstOrDefault(p => p.Stage == _customStageKey);
+                return preset?.DisplayMode == StageDisplayMode.MindMap;
+            }
+        }
+
+        /// <summary>当前自定义阶段的 MindMap 根节点（导图模式时使用）。</summary>
+        [ObservableProperty]
+        private MindMapNode? _customStageMindMapRoot;
+
+        /// <summary>当前自定义阶段的内容（从 lifecycle 加载）。</summary>
+        public string CustomStageContent
+        {
+            get
+            {
+                if (string.IsNullOrEmpty(_customStageKey) || _currentAudioItemId == null)
+                    return "";
+                var content = _pipeline.TryLoadCachedContent(_currentAudioItemId, _customStageKey);
+                return content ?? "";
+            }
+        }
+
+        private static readonly HashSet<string> KnownStages = new()
+        {
+            "Summarized", "MindMap", "Insight", "Research", "PodcastScript", "Translated"
+        };
+
+        private bool IsStageTabVisible(string stage)
+        {
+            var preset = _mergedPresets.FirstOrDefault(p => p.Stage == stage);
+            return preset != null && preset.IsEnabled && preset.ShowInTab;
+        }
+
+        /// <summary>从配置刷新阶段预设可见性。配置变更或初始化时调用。</summary>
+        public void RefreshStagePresetVisibility()
+        {
+            _mergedPresets = AudioLabStagePresetDefaults.MergeWithDefaults(_configProvider().AudioLabStagePresets);
+            CustomVisibleStages = _mergedPresets
+                .Where(p => !KnownStages.Contains(p.Stage) && p.IsEnabled && p.ShowInTab)
+                .ToList();
+
+            OnPropertyChanged(nameof(IsSummaryTabVisible));
+            OnPropertyChanged(nameof(IsMindMapTabVisible));
+            OnPropertyChanged(nameof(IsInsightTabVisible));
+            OnPropertyChanged(nameof(IsResearchTabVisible));
+            OnPropertyChanged(nameof(IsPodcastTabVisible));
+            OnPropertyChanged(nameof(IsTranslationTabVisible));
+            OnPropertyChanged(nameof(CustomVisibleStages));
+
+            // 同步刷新右侧控制面板的阶段可见性
+            ControlPanel.RefreshStageVisibility();
+
+            // 同步队列：取消已禁用阶段的 Pending 任务 + 补提交新启用阶段
+            if (_queueService != null && _currentAudioItemId != null)
+            {
+                _queueService.SyncWithPresets(_currentAudioItemId, _configProvider().AudioLabStagePresets);
+            }
+        }
 
         // ── 播放器 ────────────────────────────────────────────
         public AudioLabPlaybackViewModel Playback { get; }
@@ -334,9 +442,11 @@ namespace TrueFluentPro.ViewModels
         public ICommand RefreshAudioFilesCommand { get; }
         public ICommand TranscribeCommand { get; }
         public ICommand GenerateSummaryCommand { get; }
+        public ICommand GenerateMindMapCommand { get; }
         public ICommand GenerateInsightCommand { get; }
         public ICommand GenerateResearchCommand { get; }
         public ICommand GeneratePodcastCommand { get; }
+        public ICommand GenerateTranslationCommand { get; }
         public ICommand StopGenerationCommand { get; }
 
         /// <summary>控制面板 ViewModel — 管理生命周期和 TTS 配置。</summary>
@@ -406,11 +516,13 @@ namespace TrueFluentPro.ViewModels
             });
 
             RefreshAudioFilesCommand = new RelayCommand(_ => _ = RefreshAudioFilesAsync());
-            TranscribeCommand = new RelayCommand(_ => _ = TranscribeAsync(), _ => !IsGenerating && !string.IsNullOrWhiteSpace(CurrentFilePath));
-            GenerateSummaryCommand = new RelayCommand(_ => _ = GenerateSummaryAsync(), _ => !IsGenerating && Segments.Count > 0);
-            GenerateInsightCommand = new RelayCommand(_ => _ = GenerateInsightAsync(), _ => !IsGenerating && Segments.Count > 0);
-            GenerateResearchCommand = new RelayCommand(_ => _ = GenerateResearchAsync(), _ => !IsGenerating && Segments.Count > 0);
-            GeneratePodcastCommand = new RelayCommand(_ => _ = GeneratePodcastAsync(), _ => !IsGenerating && Segments.Count > 0);
+            TranscribeCommand = new RelayCommand(_ => _ = TranscribeAsync(), _ => !IsGenerating && !IsTranscribeProcessing && !string.IsNullOrWhiteSpace(CurrentFilePath));
+            GenerateSummaryCommand = new RelayCommand(_ => _ = GenerateSummaryAsync(), _ => !IsGenerating && !IsSummaryProcessing && Segments.Count > 0);
+            GenerateMindMapCommand = new RelayCommand(_ => _ = GenerateMindMapAsync(), _ => !IsGenerating && !IsMindMapProcessing && Segments.Count > 0);
+            GenerateInsightCommand = new RelayCommand(_ => _ = GenerateInsightAsync(), _ => !IsGenerating && !IsInsightProcessing && Segments.Count > 0);
+            GenerateResearchCommand = new RelayCommand(_ => _ = GenerateResearchAsync(), _ => !IsGenerating && !IsResearchProcessing && Segments.Count > 0);
+            GeneratePodcastCommand = new RelayCommand(_ => _ = GeneratePodcastAsync(), _ => !IsGenerating && !IsPodcastProcessing && Segments.Count > 0);
+            GenerateTranslationCommand = new RelayCommand(_ => _ = GenerateTranslationAsync(), _ => !IsGenerating && !IsTranslationProcessing && Segments.Count > 0);
             StopGenerationCommand = new RelayCommand(_ => _activeSession?.Cts?.Cancel(), _ => IsGenerating);
 
             // 订阅任务事件总线（队列化模式下，任务完成后自动刷新 UI）
@@ -419,6 +531,9 @@ namespace TrueFluentPro.ViewModels
                 _eventBus.TaskStatusChanged += OnTaskStatusChanged;
                 _eventBus.TaskProgressUpdated += OnTaskProgressUpdated;
             }
+
+            // 加载阶段预设可见性
+            RefreshStagePresetVisibility();
         }
 
         partial void OnSelectedAudioFileChanged(MediaFileItem? value)
@@ -480,18 +595,19 @@ namespace TrueFluentPro.ViewModels
             // 全新会话（无转录、无生成中、数据库无转录记录）才自动开始转录
             var hasDbTranscription = _pipeline.GetCompletedStages(audioItemId)
                 .Contains(AudioLifecycleStage.Transcribed);
+            var stagePresets = _configProvider().AudioLabStagePresets;
             if (session.Segments.Count == 0 && !session.IsGenerating && !hasDbTranscription)
             {
                 // 优先通过队列提交（后台执行），回退到直接执行
                 if (_queueService != null)
-                    _queueService.SubmitAll(audioItemId);
+                    _queueService.SubmitAll(audioItemId, stagePresets);
                 else
                     _ = TranscribeSessionAsync(session);
             }
             else if (hasDbTranscription && _queueService != null)
             {
                 // 转录已完成时，自动提交缺失的下游阶段任务（去重机制避免重复提交）
-                _queueService.SubmitAll(audioItemId);
+                _queueService.SubmitAll(audioItemId, stagePresets);
             }
 
             // 刷新各阶段状态
@@ -728,6 +844,8 @@ namespace TrueFluentPro.ViewModels
 
         private Task TranscribeAsync()
         {
+            if (TrySubmitToQueue(AudioLifecycleStage.Transcribed, "转录"))
+                return Task.CompletedTask;
             var session = _activeSession;
             return session != null ? TranscribeSessionAsync(session) : Task.CompletedTask;
         }
@@ -934,6 +1052,8 @@ namespace TrueFluentPro.ViewModels
 
         private Task GenerateSummaryAsync()
         {
+            if (TrySubmitToQueue(AudioLifecycleStage.Summarized, "总结"))
+                return Task.CompletedTask;
             var session = _activeSession;
             return session != null ? GenerateSummarySessionAsync(session) : Task.CompletedTask;
         }
@@ -1028,6 +1148,7 @@ namespace TrueFluentPro.ViewModels
 
         private Task GenerateMindMapAsync()
         {
+            if (TrySubmitToQueue(AudioLifecycleStage.MindMap, "思维导图")) return Task.CompletedTask;
             var session = _activeSession;
             return session != null ? GenerateMindMapSessionAsync(session) : Task.CompletedTask;
         }
@@ -1105,6 +1226,17 @@ namespace TrueFluentPro.ViewModels
             }
         }
 
+        private void RefreshCustomStageMindMap()
+        {
+            if (!IsCustomStageMindMap || string.IsNullOrEmpty(_customStageKey) || _currentAudioItemId == null)
+            {
+                CustomStageMindMapRoot = null;
+                return;
+            }
+            var content = _pipeline.TryLoadCachedContent(_currentAudioItemId, _customStageKey);
+            CustomStageMindMapRoot = !string.IsNullOrWhiteSpace(content) ? ParseMindMapJson(content) : null;
+        }
+
         private static MindMapNode? ParseMindMapJson(string json)
         {
             try
@@ -1139,6 +1271,7 @@ namespace TrueFluentPro.ViewModels
 
         private async Task GenerateInsightAsync()
         {
+            if (TrySubmitToQueue(AudioLifecycleStage.Insight, "顿悟")) return;
             var session = _activeSession;
             if (session == null) return;
             await GenerateAiContentSessionAsync(session, "顿悟",
@@ -1157,6 +1290,7 @@ namespace TrueFluentPro.ViewModels
 
         private async Task GeneratePodcastAsync()
         {
+            if (TrySubmitToQueue(AudioLifecycleStage.PodcastScript, "播客")) return;
             var session = _activeSession;
             if (session == null) return;
             await GenerateAiContentSessionAsync(session, "播客",
@@ -1168,17 +1302,67 @@ namespace TrueFluentPro.ViewModels
                     var audioItemId = _pipeline.EnsureAudioItem(s.FilePath);
                     _pipeline.SaveStageContent(audioItemId, AudioLifecycleStage.PodcastScript, result);
                     ControlPanel.RefreshLifecycleStatus();
-                    // 台本完整就绪后才触发 TTS 合成（不在流式期间触发）
-                    if (ControlPanel.VoicesLoaded && ControlPanel.SpeakerProfiles.Any(p => p.Voice != null))
-                        _ = ControlPanel.SynthesizePodcastAsync(result);
+                    // 台本完整就绪后自动触发 TTS 合成（自动加载语音、检查配置、提示失败原因）
+                    _ = AutoTriggerPodcastTtsAsync(result);
                 },
                 text => PodcastMarkdown = text);
+        }
+
+        // ── 播客 TTS 自动触发 ──────────────────────────────────
+
+        /// <summary>
+        /// 台本完成后自动触发 TTS 合成。自动加载语音（如尚未加载）、
+        /// 检查发言人配置、合成音频，每个失败路径均有明确状态提示。
+        /// </summary>
+        private async Task AutoTriggerPodcastTtsAsync(string podcastScript)
+        {
+            // 1. 确保语音列表已加载
+            if (!ControlPanel.VoicesLoaded)
+            {
+                StatusMessage = "正在自动加载语音列表以合成播客音频...";
+                try { await ControlPanel.LoadVoicesAsync(); }
+                catch (Exception ex)
+                {
+                    StatusMessage = $"播客台本已生成，但语音加载失败：{ex.Message}。请手动加载语音后点击「合成音频」。";
+                    return;
+                }
+                if (!ControlPanel.VoicesLoaded)
+                {
+                    StatusMessage = "播客台本已生成，但语音加载失败。请手动加载语音后点击「合成音频」。";
+                    return;
+                }
+            }
+
+            // 2. 检查发言人是否配置了语音
+            if (!ControlPanel.SpeakerProfiles.Any(p => p.Voice != null))
+            {
+                StatusMessage = "播客台本已生成。请为发言人配置语音后点击「合成音频」。";
+                return;
+            }
+
+            // 3. 控制面板是否忙碌
+            if (ControlPanel.IsBusy)
+            {
+                StatusMessage = "播客台本已生成，控制面板正忙。请稍后手动点击「合成音频」。";
+                return;
+            }
+
+            // 4. 执行合成
+            try
+            {
+                await ControlPanel.SynthesizePodcastAsync(podcastScript);
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"播客音频合成失败：{ex.Message}";
+            }
         }
 
         // ── 深度研究生成 ──────────────────────────────────────
 
         private async Task GenerateResearchAsync()
         {
+            if (TrySubmitToQueue(AudioLifecycleStage.Research, "研究")) return;
             var session = _activeSession;
             if (session == null) return;
             await GenerateResearchSessionAsync(session);
@@ -1316,6 +1500,43 @@ namespace TrueFluentPro.ViewModels
             }
         }
 
+        // ── 翻译生成 ──────────────────────────────────────────
+
+        private Task GenerateTranslationAsync()
+        {
+            if (_currentAudioItemId == null || _queueService == null) return Task.CompletedTask;
+            _queueService.Submit(_currentAudioItemId, AudioLifecycleStage.Translated);
+            TranslationState = StageContentState.Processing;
+            OnPropertyChanged(nameof(IsTranslationProcessing));
+            StatusMessage = "翻译任务已提交到队列...";
+            return Task.CompletedTask;
+        }
+
+        // ── 队列化重新生成辅助 ────────────────────────────────
+
+        /// <summary>
+        /// 尝试将单阶段重新生成提交到任务队列。
+        /// 当队列服务可用且当前有活动音频项时返回 true（已提交）。
+        /// </summary>
+        private bool TrySubmitToQueue(AudioLifecycleStage stage, string label)
+        {
+            if (_queueService == null || _currentAudioItemId == null)
+                return false;
+
+            // 先将本阶段自身的 lifecycle 标记为 stale，确保下游依赖检查不会通过旧数据
+            _pipeline?.MarkStageStale(_currentAudioItemId, stage);
+            // 再将下游标记为 stale
+            _pipeline?.InvalidateDownstreamStages(_currentAudioItemId, stage);
+
+            _queueService.Submit(_currentAudioItemId, stage);
+            foreach (var downstream in AudioTaskDependencies.GetDownstreamStages(stage))
+                _queueService.Submit(_currentAudioItemId, downstream);
+
+            StatusMessage = $"{label}任务已提交到队列...";
+            RefreshStageStates(_currentAudioItemId);
+            return true;
+        }
+
         // ── 通用 AI 内容生成 ──────────────────────────────────
 
         private async Task GenerateAiContentSessionAsync(
@@ -1397,9 +1618,11 @@ namespace TrueFluentPro.ViewModels
         {
             ((RelayCommand)TranscribeCommand).RaiseCanExecuteChanged();
             ((RelayCommand)GenerateSummaryCommand).RaiseCanExecuteChanged();
+            ((RelayCommand)GenerateMindMapCommand).RaiseCanExecuteChanged();
             ((RelayCommand)GenerateInsightCommand).RaiseCanExecuteChanged();
             ((RelayCommand)GenerateResearchCommand).RaiseCanExecuteChanged();
             ((RelayCommand)GeneratePodcastCommand).RaiseCanExecuteChanged();
+            ((RelayCommand)GenerateTranslationCommand).RaiseCanExecuteChanged();
             ((RelayCommand)StopGenerationCommand).RaiseCanExecuteChanged();
         }
 
@@ -1425,6 +1648,9 @@ namespace TrueFluentPro.ViewModels
             if (e.NewStatus == AudioTaskStatus.Completed)
             {
                 RefreshStageContentFromDb(session, e.AudioItemId, e.Stage);
+                // 自定义阶段内容也可能更新（事件用占位 Stage，需主动刷新自定义内容）
+                OnPropertyChanged(nameof(CustomStageContent));
+                RefreshCustomStageMindMap();
             }
             else if (e.NewStatus == AudioTaskStatus.Failed)
             {
@@ -1480,9 +1706,16 @@ namespace TrueFluentPro.ViewModels
             InsightState = GetStageState(AudioLifecycleStage.Insight, completedStages, activeStages);
             PodcastState = GetStageState(AudioLifecycleStage.PodcastScript, completedStages, activeStages);
             ResearchState = GetStageState(AudioLifecycleStage.Research, completedStages, activeStages);
+            TranslationState = GetStageState(AudioLifecycleStage.Translated, completedStages, activeStages);
+
+            // 通用：是否有任何活跃队列任务（覆盖内置 + 自定义阶段）
+            HasActiveQueueTasks = activeStages.Count > 0;
 
             // 根据实际阶段状态同步 StatusMessage
             UpdateStatusMessageFromStages();
+
+            // 刷新所有命令的可用状态（CanExecute 依赖 HasActiveProcessing）
+            RaiseAllCommandsCanExecuteChanged();
         }
 
         private static StageContentState GetStageState(
@@ -1512,6 +1745,7 @@ namespace TrueFluentPro.ViewModels
                 if (IsInsightProcessing) parts.Add("顿悟");
                 if (IsPodcastProcessing) parts.Add("播客");
                 if (IsResearchProcessing) parts.Add("研究");
+                if (IsTranslationProcessing) parts.Add("翻译");
 
                 StatusMessage = parts.Count > 0
                     ? $"队列处理中：{string.Join("、", parts)}..."
@@ -1519,13 +1753,18 @@ namespace TrueFluentPro.ViewModels
             }
             else
             {
-                // 根据完成度设置静态消息
+                // 根据完成度设置静态消息（禁用的阶段视为已满足）
+                bool IsStageOk(StageContentState state, string stageName)
+                    => state == StageContentState.Ready
+                    || !AudioLabStagePresetDefaults.ShouldIncludeInBatch(_configProvider().AudioLabStagePresets, stageName);
+
                 var allReady = TranscribeState == StageContentState.Ready
-                    && SummaryState == StageContentState.Ready
-                    && MindMapState == StageContentState.Ready
-                    && InsightState == StageContentState.Ready
-                    && PodcastState == StageContentState.Ready
-                    && ResearchState == StageContentState.Ready;
+                    && IsStageOk(SummaryState, "Summarized")
+                    && IsStageOk(MindMapState, "MindMap")
+                    && IsStageOk(InsightState, "Insight")
+                    && IsStageOk(PodcastState, "PodcastScript")
+                    && IsStageOk(ResearchState, "Research")
+                    && IsStageOk(TranslationState, "Translated");
 
                 if (allReady)
                     StatusMessage = "所有阶段已完成";
@@ -1610,6 +1849,18 @@ namespace TrueFluentPro.ViewModels
                     }
                     break;
 
+                case AudioLifecycleStage.PodcastAudio:
+                    var podcastAudioPath = _pipeline.TryLoadCachedFilePath(audioItemId, AudioLifecycleStage.PodcastAudio);
+                    if (!string.IsNullOrWhiteSpace(podcastAudioPath) && File.Exists(podcastAudioPath))
+                    {
+                        PodcastAudioPath = podcastAudioPath;
+                        HasPodcastAudioFile = true;
+                        PodcastPlayback.LoadAudio(podcastAudioPath);
+                        ControlPanel.HasPodcastAudio = true;
+                        StatusMessage = $"播客音频已生成：{Path.GetFileName(podcastAudioPath)}";
+                    }
+                    break;
+
                 case AudioLifecycleStage.Research:
                     var research = _pipeline.TryLoadCachedContent(audioItemId, AudioLifecycleStage.Research);
                     if (!string.IsNullOrWhiteSpace(research))
@@ -1619,6 +1870,16 @@ namespace TrueFluentPro.ViewModels
                         session.CurrentResearchPhase = ResearchPhase.ReportReady;
                         CurrentResearchPhase = ResearchPhase.ReportReady;
                         StatusMessage = "深度研究完成";
+                    }
+                    break;
+
+                case AudioLifecycleStage.Translated:
+                    var translation = _pipeline.TryLoadCachedContent(audioItemId, AudioLifecycleStage.Translated);
+                    if (!string.IsNullOrWhiteSpace(translation))
+                    {
+                        session.TranslationMarkdown = translation;
+                        TranslationMarkdown = translation;
+                        StatusMessage = "翻译完成";
                     }
                     break;
             }
@@ -1687,6 +1948,12 @@ namespace TrueFluentPro.ViewModels
                 var research = _pipeline.TryLoadCachedContent(audioItemId, AudioLifecycleStage.Research);
                 if (!string.IsNullOrWhiteSpace(research)) session.ResearchReportMarkdown = research;
             }
+
+            if (string.IsNullOrWhiteSpace(session.TranslationMarkdown))
+            {
+                var translation = _pipeline.TryLoadCachedContent(audioItemId, AudioLifecycleStage.Translated);
+                if (!string.IsNullOrWhiteSpace(translation)) session.TranslationMarkdown = translation;
+            }
         }
 
         /// <summary>
@@ -1738,13 +2005,16 @@ namespace TrueFluentPro.ViewModels
         {
             var audioItemId = _pipeline.EnsureAudioItem(session.FilePath);
             var completed = _pipeline.GetCompletedStages(audioItemId);
+            var presets = _configProvider().AudioLabStagePresets;
 
             // 阶段一：总结 + 思维导图（思维导图由总结自动链式触发）
-            if (!completed.Contains(AudioLifecycleStage.Summarized))
+            if (!completed.Contains(AudioLifecycleStage.Summarized)
+                && AudioLabStagePresetDefaults.ShouldIncludeInBatch(presets, "Summarized"))
             {
                 await GenerateSummarySessionAsync(session);
             }
-            else if (!completed.Contains(AudioLifecycleStage.MindMap))
+            else if (!completed.Contains(AudioLifecycleStage.MindMap)
+                && AudioLabStagePresetDefaults.ShouldIncludeInBatch(presets, "MindMap"))
             {
                 await GenerateMindMapSessionAsync(session);
             }
@@ -1755,13 +2025,16 @@ namespace TrueFluentPro.ViewModels
             // 阶段二：独立阶段并发执行
             var tasks = new List<Task>();
 
-            if (!completed.Contains(AudioLifecycleStage.Insight))
+            if (!completed.Contains(AudioLifecycleStage.Insight)
+                && AudioLabStagePresetDefaults.ShouldIncludeInBatch(presets, "Insight"))
                 tasks.Add(GenerateInsightAsync());
 
-            if (!completed.Contains(AudioLifecycleStage.Research))
+            if (!completed.Contains(AudioLifecycleStage.Research)
+                && AudioLabStagePresetDefaults.ShouldIncludeInBatch(presets, "Research"))
                 tasks.Add(GenerateResearchAsync());
 
-            if (!completed.Contains(AudioLifecycleStage.PodcastScript))
+            if (!completed.Contains(AudioLifecycleStage.PodcastScript)
+                && AudioLabStagePresetDefaults.ShouldIncludeInBatch(presets, "PodcastScript"))
                 tasks.Add(GeneratePodcastAsync());
 
             if (tasks.Count > 0)

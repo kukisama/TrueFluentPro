@@ -22,7 +22,7 @@ namespace TrueFluentPro.Services.Speech
     {
         public sealed record OutputFormatOption(string Label, string HeaderValue, bool Requires48KhzSupport = false);
 
-        private readonly HttpClient _httpClient = new();
+        private readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromMinutes(2) };
         private List<VoiceInfo>? _cachedVoices;
         private string? _cachedVoicesKey;
 

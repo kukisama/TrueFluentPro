@@ -313,7 +313,9 @@ public partial class MainWindow : Window
                 var queueService = App.Services.GetRequiredService<IAudioTaskQueueService>();
                 var eventBus = App.Services.GetRequiredService<ITaskEventBus>();
                 var audioRepo = App.Services.GetRequiredService<IAudioLibraryRepository>();
-                var vm = new TaskQueueMonitorViewModel(queueService, eventBus, audioRepo);
+                var executor = App.Services.GetRequiredService<IAudioTaskExecutor>();
+                var executionRepo = App.Services.GetRequiredService<ITaskExecutionRepository>();
+                var vm = new TaskQueueMonitorViewModel(queueService, eventBus, audioRepo, executor, executionRepo);
                 TaskMonitorViewPage!.DataContext = vm;
             }, DispatcherPriority.Background);
         }
@@ -390,6 +392,12 @@ public partial class MainWindow : Window
 
     private void OnSettingsConfigSaved(AzureSpeechConfig config)
     {
+        // 听析中心 Tab 可见性实时跟随配置变更
+        if (_audioLabInitialized)
+        {
+            (AudioLabViewPage?.DataContext as ViewModels.AudioLabViewModel)?.RefreshStagePresetVisibility();
+        }
+
         if (!_mediaStudioInitialized && !_mediaCenterV2Initialized)
         {
             return;

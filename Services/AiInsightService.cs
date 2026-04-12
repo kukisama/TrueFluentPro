@@ -67,6 +67,12 @@ namespace TrueFluentPro.Services
         public bool UsedFallback { get; set; }
         public int? PromptTokens { get; set; }
         public int? CompletionTokens { get; set; }
+        public string? ModelName { get; set; }
+
+        /// <summary>调试模式：完整提示词（system + user）。</summary>
+        public string? DebugPrompt { get; set; }
+        /// <summary>调试模式：AI 完整响应。</summary>
+        public string? DebugResponse { get; set; }
     }
 
     public sealed class AiRequestTrace
@@ -160,7 +166,8 @@ namespace TrueFluentPro.Services
                 {
                     UsedReasoning = enableReasoning
                                     && profile == AiChatProfile.Summary,
-                    UsedFallback = false
+                    UsedFallback = false,
+                    ModelName = request.IsAzureEndpoint ? request.DeploymentName : request.ModelName
                 });
 
                 var usage = await ConsumeResponseAsync(request, response, onChunk, onReasoningChunk, cancellationToken);
@@ -173,7 +180,8 @@ namespace TrueFluentPro.Services
                         UsedReasoning = enableReasoning && profile == AiChatProfile.Summary,
                         UsedFallback = false,
                         PromptTokens = usage.Value.PromptTokens,
-                        CompletionTokens = usage.Value.CompletionTokens
+                        CompletionTokens = usage.Value.CompletionTokens,
+                        ModelName = request.IsAzureEndpoint ? request.DeploymentName : request.ModelName
                     });
                 }
             }
@@ -191,12 +199,30 @@ namespace TrueFluentPro.Services
             AiChatProfile profile = AiChatProfile.Quick,
             bool enableReasoning = false)
         {
+            var (text, _) = await ChatWithUsageAsync(request, systemPrompt, userContent, cancellationToken, profile, enableReasoning);
+            return text;
+        }
+
+        /// <summary>
+        /// 非流式调用 — 返回完整文本 + Token 用量信息。
+        /// 适用于需要记录 token 消耗的后台队列任务。
+        /// </summary>
+        public async Task<(string Text, AiRequestOutcome? Outcome)> ChatWithUsageAsync(
+            AiChatRequestConfig request,
+            string systemPrompt,
+            string userContent,
+            CancellationToken cancellationToken,
+            AiChatProfile profile = AiChatProfile.Quick,
+            bool enableReasoning = false)
+        {
             var sb = new StringBuilder();
+            AiRequestOutcome? captured = null;
             await StreamChatAsync(
                 request, systemPrompt, userContent,
                 chunk => sb.Append(chunk),
-                cancellationToken, profile, enableReasoning);
-            return sb.ToString();
+                cancellationToken, profile, enableReasoning,
+                onOutcome: outcome => captured = outcome);
+            return (sb.ToString(), captured);
         }
 
         private async Task<(HttpResponseMessage Response, AiRequestTrace Trace)> SendRequestAsync(
@@ -342,11 +368,31 @@ namespace TrueFluentPro.Services
             using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
             using var reader = new StreamReader(stream);
 
+            bool firstDataReceived = false;
             while (!cancellationToken.IsCancellationRequested)
             {
-                var line = await reader.ReadLineAsync(cancellationToken);
+                // 首字节超时：第一条数据行必须在 2 分钟内到达
+                CancellationToken readToken;
+                CancellationTokenSource? firstByteCts = null;
+                if (!firstDataReceived)
+                {
+                    firstByteCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                    firstByteCts.CancelAfter(TimeSpan.FromMinutes(2));
+                    readToken = firstByteCts.Token;
+                }
+                else
+                {
+                    readToken = cancellationToken;
+                }
+
+                string? line;
+                try { line = await reader.ReadLineAsync(readToken); }
+                finally { firstByteCts?.Dispose(); }
+
                 if (line == null) break;
                 if (!line.StartsWith("data: ")) continue;
+
+                firstDataReceived = true;
 
                 var data = line.Substring(6);
                 if (data == "[DONE]") break;
@@ -543,11 +589,31 @@ namespace TrueFluentPro.Services
             using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
             using var reader = new StreamReader(stream);
 
+            bool firstDataReceived = false;
             while (!cancellationToken.IsCancellationRequested)
             {
-                var line = await reader.ReadLineAsync(cancellationToken);
+                // 首字节超时：第一条数据行必须在 2 分钟内到达
+                CancellationToken readToken;
+                CancellationTokenSource? firstByteCts = null;
+                if (!firstDataReceived)
+                {
+                    firstByteCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                    firstByteCts.CancelAfter(TimeSpan.FromMinutes(2));
+                    readToken = firstByteCts.Token;
+                }
+                else
+                {
+                    readToken = cancellationToken;
+                }
+
+                string? line;
+                try { line = await reader.ReadLineAsync(readToken); }
+                finally { firstByteCts?.Dispose(); }
+
                 if (line == null) break;
                 if (!line.StartsWith("data: ")) continue;
+
+                firstDataReceived = true;
 
                 var data = line.Substring(6);
                 if (data == "[DONE]") break;

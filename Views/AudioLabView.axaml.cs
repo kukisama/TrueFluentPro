@@ -1,9 +1,11 @@
 using System;
 using System.Linq;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using Avalonia.VisualTree;
 using TrueFluentPro.Models;
 using TrueFluentPro.Services;
 using TrueFluentPro.Services.Speech;
@@ -114,6 +116,18 @@ namespace TrueFluentPro.Views
             => SetTab(AudioLabTabKind.Research);
         private void Tab_Podcast_Click(object? sender, RoutedEventArgs e)
             => SetTab(AudioLabTabKind.Podcast);
+        private void Tab_Translation_Click(object? sender, RoutedEventArgs e)
+            => SetTab(AudioLabTabKind.Translation);
+
+        private void Tab_Custom_Click(object? sender, RoutedEventArgs e)
+        {
+            if (ViewModel == null) return;
+            if (sender is RadioButton rb && rb.Tag is string stageKey)
+            {
+                ViewModel.CustomStageKey = stageKey;
+                ViewModel.SelectedTab = AudioLabTabKind.Custom;
+            }
+        }
 
         private void SetTab(AudioLabTabKind tab)
         {
@@ -173,5 +187,61 @@ namespace TrueFluentPro.Views
             e.Handled = true;
         }
 #pragma warning restore CS0618
+
+        // ── 转录列表交互 ─────────────────────────────────────
+
+        private void TranscriptSegment_DoubleTapped(object? sender, TappedEventArgs e)
+        {
+            if (sender is ListBox lb && lb.SelectedItem is TranscriptSegment seg)
+            {
+                ViewModel?.Playback.SeekToTime(seg.StartTime);
+                ViewModel?.Playback.Play();
+            }
+        }
+
+        private void TranscriptSegment_PointerReleased(object? sender, PointerReleasedEventArgs e)
+        {
+            if (e.InitialPressMouseButton != MouseButton.Right) return;
+            if (sender is not ListBox listBox) return;
+
+            // 命中测试：选中右键点击的项
+            var hitItem = (e.Source as Control)?.FindAncestorOfType<ListBoxItem>()?.DataContext as TranscriptSegment;
+            if (hitItem != null && !ReferenceEquals(listBox.SelectedItem, hitItem))
+                listBox.SelectedItem = hitItem;
+
+            var segment = listBox.SelectedItem as TranscriptSegment;
+            if (segment == null) return;
+
+            var flyout = new MenuFlyout();
+
+            var playItem = new MenuItem { Header = "跳转并播放" };
+            playItem.Click += (_, _) =>
+            {
+                ViewModel?.Playback.SeekToTime(segment.StartTime);
+                ViewModel?.Playback.Play();
+            };
+            flyout.Items.Add(playItem);
+
+            var copyItem = new MenuItem { Header = "复制字幕文本" };
+            copyItem.Click += (_, _) =>
+            {
+                TopLevel.GetTopLevel(this)?.Clipboard?.SetTextAsync(segment.Text ?? "");
+            };
+            flyout.Items.Add(copyItem);
+
+            flyout.Items.Add(new Separator());
+
+            var askAiItem = new MenuItem { Header = "以此向AI提问" };
+            askAiItem.Click += (_, _) =>
+            {
+                // 将字幕文本复制到剪贴板，供用户粘贴到创作工坊
+                TopLevel.GetTopLevel(this)?.Clipboard?.SetTextAsync(
+                    $"[{segment.TimeText}] {segment.Speaker}: {segment.Text}");
+            };
+            flyout.Items.Add(askAiItem);
+
+            flyout.ShowAt(listBox, true);
+            e.Handled = true;
+        }
     }
 }

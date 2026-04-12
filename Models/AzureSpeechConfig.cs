@@ -283,6 +283,12 @@ namespace TrueFluentPro.Models
         /// <summary>播客输出音频格式 HeaderValue（空则使用默认 MP3 24kHz）</summary>
         public string AudioLabPodcastOutputFormat { get; set; } = "";
 
+        /// <summary>听析中心各阶段预设配置。为 null/空时使用内置默认。</summary>
+        public List<AudioLabStagePreset>? AudioLabStagePresets { get; set; }
+
+        /// <summary>听析中心调试模式：记录每次 AI 调用的完整提示词和响应。</summary>
+        public bool AudioLabDebugMode { get; set; }
+
         public AiConfig? AiConfig { get; set; }
 
         public bool IsAutoUpdateEnabled { get; set; } = true;

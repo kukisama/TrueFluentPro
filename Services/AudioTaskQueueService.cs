@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using TrueFluentPro.Helpers;
 using TrueFluentPro.Models;
@@ -18,6 +19,9 @@ namespace TrueFluentPro.Services
         /// <summary>为音频自动提交所有缺失阶段的任务（按 DAG 依赖）。</summary>
         List<string> SubmitAll(string audioItemId);
 
+        /// <summary>为音频自动提交所有缺失阶段的任务，尊重阶段预设配置。</summary>
+        List<string> SubmitAll(string audioItemId, List<AudioLabStagePreset>? stagePresets);
+
         /// <summary>取消指定任务。</summary>
         void Cancel(string taskId);
 
@@ -35,6 +39,9 @@ namespace TrueFluentPro.Services
 
         /// <summary>清理已完成/已取消的旧任务记录。</summary>
         int CleanupCompleted(TimeSpan olderThan);
+
+        /// <summary>配置变更后同步队列：取消已禁用阶段的 Pending 任务，补提交新启用阶段的缺失任务。</summary>
+        void SyncWithPresets(string audioItemId, List<AudioLabStagePreset>? stagePresets);
 
         /// <summary>有新任务入队时触发，供 Executor 订阅以唤醒调度循环。</summary>
         event Action? NewTaskEnqueued;
@@ -93,7 +100,9 @@ namespace TrueFluentPro.Services
             return taskId;
         }
 
-        public List<string> SubmitAll(string audioItemId)
+        public List<string> SubmitAll(string audioItemId) => SubmitAll(audioItemId, null);
+
+        public List<string> SubmitAll(string audioItemId, List<AudioLabStagePreset>? stagePresets)
         {
             var taskIds = new List<string>();
             var completedStages = _lifecycleRepo.GetAllStages(audioItemId);
@@ -117,12 +126,9 @@ namespace TrueFluentPro.Services
                 if (completedSet.Contains(stageStr))
                     continue;
 
-                // 跳过 PodcastAudio（TTS 生成，本次不队列化）
-                if (stage == AudioLifecycleStage.PodcastAudio)
-                    continue;
-
-                // 跳过 Translated（翻译阶段暂不支持队列化执行）
-                if (stage == AudioLifecycleStage.Translated)
+                // 根据阶段预设配置决定是否跳过（Transcribed 始终提交）
+                if (stage != AudioLifecycleStage.Transcribed
+                    && !AudioLabStagePresetDefaults.ShouldIncludeInBatch(stagePresets, stageStr))
                     continue;
 
                 // 先检查去重
@@ -163,6 +169,50 @@ namespace TrueFluentPro.Services
                     AudioTaskStatus.Pending, AudioTaskStatus.Pending));
             }
 
+            // 提交自定义阶段（非内置 enum 定义的阶段）
+            if (stagePresets != null)
+            {
+                var knownStages = new HashSet<string>(
+                    AudioTaskDependencies.Prerequisites.Keys.Select(k => k.ToString()),
+                    StringComparer.OrdinalIgnoreCase);
+
+                foreach (var preset in stagePresets.Where(p =>
+                    p.IsEnabled && p.IncludeInBatch &&
+                    !string.IsNullOrWhiteSpace(p.Stage) &&
+                    !knownStages.Contains(p.Stage)))
+                {
+                    var customStage = preset.Stage;
+
+                    if (completedSet.Contains(customStage))
+                        continue;
+
+                    var existingActive = _taskRepo.FindActiveTask(audioItemId, customStage);
+                    if (existingActive != null)
+                    {
+                        taskIds.Add(existingActive.TaskId);
+                        continue;
+                    }
+
+                    // 自定义阶段依赖 Transcribed
+                    var deps = new List<string>();
+                    if (taskIdMap.TryGetValue(AudioLifecycleStage.Transcribed, out var depId))
+                        deps.Add(depId);
+
+                    var customTaskId = UlidGenerator.NewUlid();
+                    _taskRepo.Insert(new AudioTaskRecord
+                    {
+                        TaskId = customTaskId,
+                        AudioItemId = audioItemId,
+                        Stage = customStage,
+                        Status = AudioTaskStatus.Pending,
+                        Priority = 0,
+                        DependsOn = deps.Count > 0 ? JsonSerializer.Serialize(deps) : null,
+                        SubmittedAt = DateTime.Now,
+                    });
+                    taskIds.Add(customTaskId);
+                }
+            }
+
             // 通知执行器
             if (taskIds.Count > 0)
                 NewTaskEnqueued?.Invoke();
@@ -196,6 +246,23 @@ namespace TrueFluentPro.Services
             {
                 Cancel(task.TaskId);
             }
+        }
+
+        public void SyncWithPresets(string audioItemId, List<AudioLabStagePreset>? stagePresets)
+        {
+            // 1. 取消已禁用阶段的 Pending 任务（不取消 Running，以免中断正在执行的工作）
+            var activeTasks = _taskRepo.GetActiveTasksForAudio(audioItemId);
+            foreach (var task in activeTasks)
+            {
+                if (task.Status != AudioTaskStatus.Pending) continue;
+                // Transcribed 始终保留
+                if (task.Stage == nameof(AudioLifecycleStage.Transcribed)) continue;
+                if (!AudioLabStagePresetDefaults.ShouldIncludeInBatch(stagePresets, task.Stage))
+                    Cancel(task.TaskId);
+            }
+
+            // 2. 补提交新启用阶段的缺失任务
+            SubmitAll(audioItemId, stagePresets);
         }
 
         public string Retry(string taskId)

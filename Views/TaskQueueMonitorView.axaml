@@ -3,6 +3,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="using:TrueFluentPro.ViewModels"
+             xmlns:models="using:TrueFluentPro.Models"
              xmlns:icons="https://github.com/projektanker/icons.avalonia"
              mc:Ignorable="d"
              d:DesignWidth="1200"
@@ -12,209 +13,255 @@
              x:DataType="vm:TaskQueueMonitorViewModel"
              x:CompileBindings="False">
 
-    <UserControl.Styles>
-        <Style Selector="Border.task-card">
-            <Setter Property="Background" Value="{DynamicResource CardBackgroundBrush}"/>
-            <Setter Property="BorderBrush" Value="{DynamicResource CardBorderBrush}"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="CornerRadius" Value="8"/>
-            <Setter Property="Padding" Value="16"/>
-        </Style>
-        <Style Selector="TextBlock.section-title">
-            <Setter Property="FontSize" Value="16"/>
-            <Setter Property="FontWeight" Value="SemiBold"/>
-        </Style>
-        <Style Selector="TextBlock.stat-value">
-            <Setter Property="FontSize" Value="20"/>
-            <Setter Property="FontWeight" Value="Bold"/>
-        </Style>
-        <Style Selector="TextBlock.stat-label">
-            <Setter Property="FontSize" Value="11"/>
-            <Setter Property="Foreground" Value="{DynamicResource TextSubtleBrush}"/>
-        </Style>
-    </UserControl.Styles>
-
-    <Grid Margin="16" RowDefinitions="Auto,*,Auto">
-
-        <!-- ═══ 顶部标题栏 ═══ -->
-        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,12">
-            <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
-                <icons:Icon Value="fa-solid fa-list-check" FontSize="20"/>
-                <TextBlock Text="任务监控" Classes="section-title"/>
-            </StackPanel>
-            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
-                <Button Content="刷新"
-                        Command="{Binding RefreshCommand}"
-                        Padding="12,6"/>
-                <Button Content="清理已完成"
-                        Command="{Binding CleanupCompletedCommand}"
-                        Padding="12,6"/>
-            </StackPanel>
-        </Grid>
-
-        <!-- ═══ 主区域：筛选面板 + 任务列表 ═══ -->
-        <Grid Grid.Row="1" ColumnDefinitions="180,*" ColumnSpacing="12">
-
-            <!-- 左侧筛选面板 -->
-            <Border Grid.Column="0" Classes="task-card">
-                <StackPanel Spacing="12">
-                    <TextBlock Text="状态筛选" FontWeight="SemiBold" Margin="0,0,0,4"/>
-                    <CheckBox Content="执行中" IsChecked="{Binding ShowRunning}"/>
-                    <CheckBox Content="排队中" IsChecked="{Binding ShowPending}"/>
-                    <CheckBox Content="已完成" IsChecked="{Binding ShowCompleted}"/>
-                    <CheckBox Content="失败" IsChecked="{Binding ShowFailed}"/>
-                    <CheckBox Content="已取消" IsChecked="{Binding ShowCancelled}"/>
-
-                    <Separator Margin="0,8"/>
-
-                    <!-- 统计信息 -->
-                    <TextBlock Text="队列统计" FontWeight="SemiBold" Margin="0,0,0,4"/>
-                    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="6">
-                        <TextBlock Grid.Row="0" Grid.Column="0" Text="排队" Classes="stat-label"/>
-                        <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding PendingCount}" Classes="stat-value"
-                                   Foreground="{DynamicResource TextSubtleBrush}"/>
-
-                        <TextBlock Grid.Row="1" Grid.Column="0" Text="执行中" Classes="stat-label"/>
-                        <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding RunningCount}" Classes="stat-value"
-                                   Foreground="{DynamicResource AccentBlueBrush}"/>
-
-                        <TextBlock Grid.Row="2" Grid.Column="0" Text="已完成" Classes="stat-label"/>
-                        <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding CompletedCount}" Classes="stat-value"
-                                   Foreground="#4CAF50"/>
-
-                        <TextBlock Grid.Row="3" Grid.Column="0" Text="失败" Classes="stat-label"/>
-                        <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding FailedCount}" Classes="stat-value"
-                                   Foreground="#F44336"/>
-                    </Grid>
-                </StackPanel>
-            </Border>
-
-            <!-- 右侧任务列表 + 详情 -->
-            <Grid Grid.Column="1" RowDefinitions="*,Auto">
-
-                <!-- 任务列表 -->
-                <Border Grid.Row="0" Classes="task-card">
-                    <Grid RowDefinitions="Auto,*">
-                        <!-- 列表表头 -->
-                        <Grid Grid.Row="0" ColumnDefinitions="100,*,80,200,70"
-                              Margin="0,0,0,8">
-                            <TextBlock Grid.Column="0" Text="任务ID" FontWeight="SemiBold" FontSize="11"
-                                       Foreground="{DynamicResource TextSubtleBrush}"/>
-                            <TextBlock Grid.Column="1" Text="音频" FontWeight="SemiBold" FontSize="11"
-                                       Foreground="{DynamicResource TextSubtleBrush}"/>
-                            <TextBlock Grid.Column="2" Text="阶段" FontWeight="SemiBold" FontSize="11"
-                                       Foreground="{DynamicResource TextSubtleBrush}"/>
-                            <TextBlock Grid.Column="3" Text="状态" FontWeight="SemiBold" FontSize="11"
-                                       Foreground="{DynamicResource TextSubtleBrush}"/>
-                            <TextBlock Grid.Column="4" Text="耗时" FontWeight="SemiBold" FontSize="11"
-                                       Foreground="{DynamicResource TextSubtleBrush}"
-                                       HorizontalAlignment="Right"/>
-                        </Grid>
-
-                        <!-- 列表内容 -->
-                        <ListBox Grid.Row="1"
-                                 ItemsSource="{Binding Tasks}"
-                                 SelectedItem="{Binding SelectedTask}"
-                                 Background="Transparent"
-                                 BorderThickness="0"
-                                 Padding="0">
-                            <ListBox.ItemTemplate>
-                                <DataTemplate x:CompileBindings="False">
-                                    <Grid ColumnDefinitions="100,*,80,200,70"
-                                          Margin="0,2">
-                                        <TextBlock Grid.Column="0"
-                                                   Text="{Binding ShortTaskId}"
-                                                   FontSize="11"
-                                                   FontFamily="Cascadia Code, Consolas, monospace"
-                                                   Foreground="{DynamicResource TextSubtleBrush}"
-                                                   VerticalAlignment="Center"/>
-                                        <TextBlock Grid.Column="1"
-                                                   Text="{Binding AudioFileName}"
-                                                   TextTrimming="CharacterEllipsis"
-                                                   VerticalAlignment="Center"/>
-                                        <TextBlock Grid.Column="2"
-                                                   Text="{Binding StageDisplayName}"
-                                                   VerticalAlignment="Center"/>
-                                        <TextBlock Grid.Column="3"
-                                                   Text="{Binding StatusDisplayName}"
-                                                   FontWeight="SemiBold"
-                                                   TextTrimming="CharacterEllipsis"
-                                                   ToolTip.Tip="{Binding StatusDisplayName}"
-                                                   VerticalAlignment="Center"/>
-                                        <TextBlock Grid.Column="4"
-                                                   Text="{Binding ElapsedTime}"
-                                                   HorizontalAlignment="Right"
-                                                   Foreground="{DynamicResource TextSubtleBrush}"
-                                                   VerticalAlignment="Center"/>
-                                    </Grid>
-                                </DataTemplate>
-                            </ListBox.ItemTemplate>
-                        </ListBox>
-                    </Grid>
-                </Border>
-
-                <!-- 选中任务详情 -->
-                <Border Grid.Row="1"
-                        Classes="task-card"
-                        Margin="0,12,0,0"
-                        IsVisible="{Binding HasSelectedTask}">
-                    <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto" ColumnDefinitions="Auto,*"
-                          RowSpacing="6" ColumnSpacing="16">
-                        <TextBlock Grid.Row="0" Grid.Column="0" Text="任务ID：" FontWeight="SemiBold"
-                                   Foreground="{DynamicResource TextSubtleBrush}"/>
-                        <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding SelectedTask.TaskId}"
-                                   FontFamily="Cascadia Code, Consolas, monospace" FontSize="11"/>
-
-                        <TextBlock Grid.Row="1" Grid.Column="0" Text="音频：" FontWeight="SemiBold"
-                                   Foreground="{DynamicResource TextSubtleBrush}"/>
-                        <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding SelectedTask.AudioFileName}"/>
-
-                        <TextBlock Grid.Row="2" Grid.Column="0" Text="阶段 / 状态：" FontWeight="SemiBold"
-                                   Foreground="{DynamicResource TextSubtleBrush}"/>
-                        <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" Spacing="12">
-                            <TextBlock Text="{Binding SelectedTask.StageDisplayName}"/>
-                            <TextBlock Text="{Binding SelectedTask.StatusDisplayName}" FontWeight="SemiBold"/>
-                            <TextBlock Text="{Binding SelectedTask.RetryCount, StringFormat='重试: {0}'}"
-                                       Foreground="{DynamicResource TextSubtleBrush}"/>
-                        </StackPanel>
-
-                        <TextBlock Grid.Row="3" Grid.Column="0" Text="时间：" FontWeight="SemiBold"
-                                   Foreground="{DynamicResource TextSubtleBrush}"/>
-                        <StackPanel Grid.Row="3" Grid.Column="1" Orientation="Horizontal" Spacing="16">
-                            <TextBlock Text="{Binding SelectedTask.SubmittedAt, StringFormat='提交: {0:HH:mm:ss}'}"
-                                       FontSize="11"/>
-                            <TextBlock Text="{Binding SelectedTask.StartedAt, StringFormat='开始: {0:HH:mm:ss}'}"
-                                       FontSize="11"/>
-                            <TextBlock Text="{Binding SelectedTask.ElapsedTime, StringFormat='耗时: {0}'}"
-                                       FontSize="11"/>
-                        </StackPanel>
-
-                        <TextBlock Grid.Row="4" Grid.Column="0" Text="错误信息：" FontWeight="SemiBold"
-                                   Foreground="{DynamicResource TextSubtleBrush}"
-                                   IsVisible="{Binding SelectedTask.ErrorMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
-                        <TextBlock Grid.Row="4" Grid.Column="1"
-                                   Text="{Binding SelectedTask.ErrorMessage}"
-                                   Foreground="#F44336"
-                                   TextWrapping="Wrap"
-                                   IsVisible="{Binding SelectedTask.ErrorMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
-                    </Grid>
+    <UserControl.Resources>
+        <DataTemplate x:Key="BucketTemplate" DataType="models:BatchBucketNavItem">
+            <Grid Classes="sidebar-nav-item-content" ColumnDefinitions="18,*,Auto" ColumnSpacing="10">
+                <icons:Icon Grid.Column="0" Value="{Binding IconValue}" FontSize="14"/>
+                <TextBlock Grid.Column="1" Classes="sidebar-nav-label" Text="{Binding Title}"/>
+                <Border Grid.Column="2" Classes="sidebar-nav-badge" Classes.danger="{Binding IsDanger}">
+                    <TextBlock Classes="sidebar-nav-badge-text" Text="{Binding Count}"/>
                 </Border>
             </Grid>
-        </Grid>
+        </DataTemplate>
+    </UserControl.Resources>
 
-        <!-- ═══ 底部操作栏 ═══ -->
-        <Grid Grid.Row="2" Margin="0,12,0,0" ColumnDefinitions="*,Auto">
-            <TextBlock Text="{Binding StatsText}"
-                       VerticalAlignment="Center"
-                       Foreground="{DynamicResource TextSubtleBrush}"/>
-            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
-                <Button Content="重试"
-                        Command="{Binding RetryTaskCommand}"
-                        Padding="16,6"/>
-                <Button Content="取消"
-                        Command="{Binding CancelTaskCommand}"
-                        Padding="16,6"/>
+    <Grid ColumnDefinitions="216,Auto,*">
+
+        <!-- left nav -->
+        <Border Grid.Column="0" Classes="nav-surface" Padding="12,16">
+            <StackPanel Spacing="12">
+                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+                    <TextBlock Text="任务分类" FontWeight="SemiBold" FontSize="16" VerticalAlignment="Center"/>
+                    <Button Grid.Column="1" Padding="6" Background="Transparent" BorderThickness="0"
+                            Command="{Binding RefreshCommand}" ToolTip.Tip="刷新">
+                        <icons:Icon Value="fa-solid fa-arrows-rotate" FontSize="14"/>
+                    </Button>
+                    <Button Grid.Column="2" Padding="6" Background="Transparent" BorderThickness="0"
+                            Command="{Binding CleanupCompletedCommand}" ToolTip.Tip="清理7天前已完成/取消任务">
+                        <icons:Icon Value="fa-regular fa-trash-can" FontSize="14"/>
+                    </Button>
+                </Grid>
+
+                <ListBox Classes="sidebar-nav-list"
+                         ItemsSource="{Binding Buckets}"
+                         SelectedItem="{Binding SelectedBucket}"
+                         ItemTemplate="{StaticResource BucketTemplate}"/>
+
+                <Separator Margin="0,4"/>
+
+                <TextBlock Text="并发设置" FontWeight="SemiBold" FontSize="12"
+                           Foreground="{DynamicResource TextSubtleBrush}" Margin="0,0,0,2"/>
+                <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto" RowSpacing="6" ColumnSpacing="8">
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="转录" FontSize="12"
+                               VerticalAlignment="Center" Foreground="{DynamicResource TextSubtleBrush}"/>
+                    <NumericUpDown Grid.Row="0" Grid.Column="1"
+                                   Value="{Binding MaxTranscriptionConcurrency}"
+                                   Minimum="1" Maximum="20" Increment="1"
+                                   FormatString="0" Height="28" FontSize="12"/>
+                    <TextBlock Grid.Row="1" Grid.Column="0" Text="AI" FontSize="12"
+                               VerticalAlignment="Center" Foreground="{DynamicResource TextSubtleBrush}"/>
+                    <NumericUpDown Grid.Row="1" Grid.Column="1"
+                                   Value="{Binding MaxAiConcurrency}"
+                                   Minimum="1" Maximum="20" Increment="1"
+                                   FormatString="0" Height="28" FontSize="12"/>
+                </Grid>
+
+                <Separator Margin="0,4"/>
+
+                <TextBlock Text="Token 用量" FontWeight="SemiBold" FontSize="12"
+                           Foreground="{DynamicResource TextSubtleBrush}" Margin="0,0,0,2"/>
+                <StackPanel Spacing="2">
+                    <TextBlock FontSize="11" Foreground="{DynamicResource TextSubtleBrush}">
+                        <TextBlock.Text>
+                            <MultiBinding StringFormat="执行 {0} 次 · 计费 {1} 次">
+                                <Binding Path="TotalExecutions"/>
+                                <Binding Path="BillableExecutions"/>
+                            </MultiBinding>
+                        </TextBlock.Text>
+                    </TextBlock>
+                    <TextBlock Text="{Binding TokensDisplayText}" FontSize="11"
+                               Foreground="{DynamicResource TextSubtleBrush}"/>
+                </StackPanel>
             </StackPanel>
+        </Border>
+
+        <GridSplitter Grid.Column="1" Width="1" ResizeBehavior="PreviousAndNext"
+                       Background="{DynamicResource BorderSubtleBrush}"/>
+
+        <!-- right content -->
+        <Grid Grid.Column="2" Margin="16,12" RowDefinitions="Auto,*,Auto">
+
+            <!-- sortable header -->
+            <Grid Grid.Row="0" ColumnDefinitions="110,*,90,200,70" Margin="8,0,8,8">
+                <Button Grid.Column="0" Padding="0" Background="Transparent" BorderThickness="0"
+                        HorizontalContentAlignment="Left"
+                        Command="{Binding SortByColumnCommand}" CommandParameter="TaskId">
+                    <TextBlock Text="任务ID" FontWeight="SemiBold" FontSize="11"
+                               Foreground="{DynamicResource TextSubtleBrush}"/>
+                </Button>
+                <Button Grid.Column="1" Padding="0" Background="Transparent" BorderThickness="0"
+                        HorizontalContentAlignment="Left"
+                        Command="{Binding SortByColumnCommand}" CommandParameter="AudioFileName">
+                    <TextBlock Text="音频" FontWeight="SemiBold" FontSize="11"
+                               Foreground="{DynamicResource TextSubtleBrush}"/>
+                </Button>
+                <Button Grid.Column="2" Padding="0" Background="Transparent" BorderThickness="0"
+                        HorizontalContentAlignment="Left"
+                        Command="{Binding SortByColumnCommand}" CommandParameter="Stage">
+                    <TextBlock Text="阶段" FontWeight="SemiBold" FontSize="11"
+                               Foreground="{DynamicResource TextSubtleBrush}"/>
+                </Button>
+                <TextBlock Grid.Column="3" Text="状态" FontWeight="SemiBold" FontSize="11"
+                           Foreground="{DynamicResource TextSubtleBrush}" VerticalAlignment="Center"/>
+                <Button Grid.Column="4" Padding="0" Background="Transparent" BorderThickness="0"
+                        HorizontalContentAlignment="Right"
+                        Command="{Binding SortByColumnCommand}" CommandParameter="SubmittedAt">
+                    <TextBlock Text="时间" FontWeight="SemiBold" FontSize="11"
+                               Foreground="{DynamicResource TextSubtleBrush}"/>
+                </Button>
+            </Grid>
+
+            <!-- task list -->
+            <ListBox Grid.Row="1"
+                     ItemsSource="{Binding CurrentBucketTasks}"
+                     SelectedItem="{Binding SelectedTask}"
+                     Background="Transparent" BorderThickness="0" Padding="0">
+                <ListBox.ItemTemplate>
+                    <DataTemplate x:CompileBindings="False">
+                        <Grid ColumnDefinitions="110,*,90,200,70"
+                              Margin="0,1" Height="32"
+                              PointerReleased="TaskRow_PointerReleased"
+                              Background="Transparent">
+                            <TextBlock Grid.Column="0" Text="{Binding ShortTaskId}"
+                                       FontSize="11" FontFamily="Cascadia Code, Consolas, monospace"
+                                       Foreground="{DynamicResource TextSubtleBrush}"
+                                       VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="1" Text="{Binding AudioFileName}"
+                                       TextTrimming="CharacterEllipsis" FontSize="13"
+                                       VerticalAlignment="Center"/>
+                            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6"
+                                        VerticalAlignment="Center">
+                                <Border Width="4" Height="14" CornerRadius="2">
+                                    <Border.Background>
+                                        <SolidColorBrush Color="{Binding StageColor}"/>
+                                    </Border.Background>
+                                </Border>
+                                <TextBlock Text="{Binding StageDisplayName}" FontSize="12"/>
+                            </StackPanel>
+                            <TextBlock Grid.Column="3" Text="{Binding StatusDisplayName}"
+                                       FontWeight="SemiBold" FontSize="12"
+                                       TextTrimming="CharacterEllipsis"
+                                       ToolTip.Tip="{Binding StatusDisplayName}"
+                                       VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="4" Text="{Binding ElapsedTime}"
+                                       HorizontalAlignment="Right" FontSize="11"
+                                       Foreground="{DynamicResource TextSubtleBrush}"
+                                       VerticalAlignment="Center"/>
+                        </Grid>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+
+            <!-- selected task detail -->
+            <Border Grid.Row="2" Classes="app-card" Padding="16" Margin="0,8,0,0"
+                    IsVisible="{Binding HasSelectedTask}">
+                <StackPanel Spacing="10">
+                    <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto" ColumnDefinitions="Auto,*"
+                          RowSpacing="5" ColumnSpacing="16">
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="任务ID：" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource TextSubtleBrush}" FontSize="12"/>
+                        <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding SelectedTask.TaskId}"
+                                   FontFamily="Cascadia Code, Consolas, monospace" FontSize="11"/>
+                        <TextBlock Grid.Row="1" Grid.Column="0" Text="音频：" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource TextSubtleBrush}" FontSize="12"/>
+                        <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding SelectedTask.AudioFileName}"
+                                   FontSize="12"/>
+                        <TextBlock Grid.Row="2" Grid.Column="0" Text="阶段 / 状态：" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource TextSubtleBrush}" FontSize="12"/>
+                        <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" Spacing="12">
+                            <TextBlock Text="{Binding SelectedTask.StageDisplayName}" FontSize="12"/>
+                            <TextBlock Text="{Binding SelectedTask.StatusDisplayName}" FontWeight="SemiBold" FontSize="12"/>
+                            <TextBlock Text="{Binding SelectedTask.RetryCount, StringFormat='重试: {0}'}"
+                                       FontSize="11" Foreground="{DynamicResource TextSubtleBrush}"/>
+                        </StackPanel>
+                        <TextBlock Grid.Row="3" Grid.Column="0" Text="时间：" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource TextSubtleBrush}" FontSize="12"/>
+                        <StackPanel Grid.Row="3" Grid.Column="1" Orientation="Horizontal" Spacing="16">
+                            <TextBlock Text="{Binding SelectedTask.SubmittedAt, StringFormat='提交: {0:HH:mm:ss}'}" FontSize="11"/>
+                            <TextBlock Text="{Binding SelectedTask.StartedAt, StringFormat='开始: {0:HH:mm:ss}'}" FontSize="11"/>
+                            <TextBlock Text="{Binding SelectedTask.ElapsedTime, StringFormat='耗时: {0}'}" FontSize="11"/>
+                        </StackPanel>
+                        <TextBlock Grid.Row="4" Grid.Column="0" Text="错误信息：" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource TextSubtleBrush}" FontSize="12"
+                                   IsVisible="{Binding SelectedTask.ErrorMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                        <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding SelectedTask.ErrorMessage}"
+                                   Foreground="#F44336" TextWrapping="Wrap" FontSize="12"
+                                   IsVisible="{Binding SelectedTask.ErrorMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                    </Grid>
+
+                    <!-- execution history -->
+                    <StackPanel IsVisible="{Binding HasExecutions}" Spacing="6">
+                        <Separator/>
+                        <TextBlock Text="执行历史" FontWeight="SemiBold" FontSize="12"
+                                   Foreground="{DynamicResource TextSubtleBrush}"/>
+                        <Grid ColumnDefinitions="70,70,120,80,80,*" Margin="0,2">
+                            <TextBlock Grid.Column="0" Text="状态" FontSize="11" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource TextSubtleBrush}"/>
+                            <TextBlock Grid.Column="1" Text="计费" FontSize="11" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource TextSubtleBrush}"/>
+                            <TextBlock Grid.Column="2" Text="Token" FontSize="11" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource TextSubtleBrush}"/>
+                            <TextBlock Grid.Column="3" Text="耗时" FontSize="11" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource TextSubtleBrush}"/>
+                            <TextBlock Grid.Column="4" Text="时间" FontSize="11" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource TextSubtleBrush}"/>
+                            <TextBlock Grid.Column="5" Text="模型" FontSize="11" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource TextSubtleBrush}"/>
+                        </Grid>
+                        <ItemsControl ItemsSource="{Binding Executions}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:CompileBindings="False">
+                                    <StackPanel Spacing="0">
+                                        <Grid ColumnDefinitions="70,70,120,80,80,*" Margin="0,1" Height="22">
+                                            <TextBlock Grid.Column="0" Text="{Binding StatusDisplayName}"
+                                                       FontSize="11" VerticalAlignment="Center"/>
+                                            <TextBlock Grid.Column="1" Text="{Binding BillableDisplay}"
+                                                       FontSize="11" VerticalAlignment="Center"
+                                                       Foreground="{DynamicResource TextSubtleBrush}"/>
+                                            <TextBlock Grid.Column="2" Text="{Binding TokensDisplay}"
+                                                       FontSize="11" VerticalAlignment="Center"
+                                                       FontFamily="Cascadia Code, Consolas, monospace"/>
+                                            <TextBlock Grid.Column="3" Text="{Binding DurationDisplay}"
+                                                       FontSize="11" VerticalAlignment="Center"
+                                                       Foreground="{DynamicResource TextSubtleBrush}"/>
+                                            <TextBlock Grid.Column="4" Text="{Binding TimeDisplay}"
+                                                       FontSize="11" VerticalAlignment="Center"
+                                                       Foreground="{DynamicResource TextSubtleBrush}"/>
+                                            <TextBlock Grid.Column="5" Text="{Binding ModelName}"
+                                                       FontSize="11" VerticalAlignment="Center"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       Foreground="{DynamicResource TextSubtleBrush}"/>
+                                        </Grid>
+                                        <!-- 调试按钮行 -->
+                                        <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,2,0,4"
+                                                    IsVisible="{Binding HasDebugData}">
+                                            <Button Content="查看提示词" FontSize="10" Padding="6,2"
+                                                    Tag="{Binding DebugPrompt}" Click="ShowDebugText_Click"/>
+                                            <Button Content="查看响应" FontSize="10" Padding="6,2"
+                                                    Tag="{Binding DebugResponse}" Click="ShowDebugText_Click"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+
+                    <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+                        <Button Content="重试" Padding="16,6" Command="{Binding RetryTaskCommand}"/>
+                        <Button Content="取消" Padding="16,6" Command="{Binding CancelTaskCommand}"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
         </Grid>
     </Grid>
 </UserControl>

@@ -240,6 +240,7 @@
                 <Border Grid.Row="0" Padding="16,4,16,8">
                     <StackPanel Orientation="Horizontal" Spacing="4">
                         <RadioButton Classes="tab-button" GroupName="AudioLabTab"
+                                     IsVisible="{Binding IsSummaryTabVisible}"
                                      IsChecked="{Binding SelectedTab, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static vm:AudioLabTabKind.Summary}}"
                                      Click="Tab_Summary_Click">
                             <StackPanel Orientation="Horizontal" Spacing="4">
@@ -256,6 +257,7 @@
                             </StackPanel>
                         </RadioButton>
                         <RadioButton Classes="tab-button" GroupName="AudioLabTab"
+                                     IsVisible="{Binding IsMindMapTabVisible}"
                                      IsChecked="{Binding SelectedTab, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static vm:AudioLabTabKind.MindMap}}"
                                      Click="Tab_MindMap_Click">
                             <StackPanel Orientation="Horizontal" Spacing="4">
@@ -264,6 +266,7 @@
                             </StackPanel>
                         </RadioButton>
                         <RadioButton Classes="tab-button" GroupName="AudioLabTab"
+                                     IsVisible="{Binding IsInsightTabVisible}"
                                      IsChecked="{Binding SelectedTab, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static vm:AudioLabTabKind.Insight}}"
                                      Click="Tab_Insight_Click">
                             <StackPanel Orientation="Horizontal" Spacing="4">
@@ -272,6 +275,7 @@
                             </StackPanel>
                         </RadioButton>
                         <RadioButton Classes="tab-button" GroupName="AudioLabTab"
+                                     IsVisible="{Binding IsResearchTabVisible}"
                                      IsChecked="{Binding SelectedTab, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static vm:AudioLabTabKind.Research}}"
                                      Click="Tab_Research_Click">
                             <StackPanel Orientation="Horizontal" Spacing="4">
@@ -280,6 +284,7 @@
                             </StackPanel>
                         </RadioButton>
                         <RadioButton Classes="tab-button" GroupName="AudioLabTab"
+                                     IsVisible="{Binding IsPodcastTabVisible}"
                                      IsChecked="{Binding SelectedTab, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static vm:AudioLabTabKind.Podcast}}"
                                      Click="Tab_Podcast_Click">
                             <StackPanel Orientation="Horizontal" Spacing="4">
@@ -287,6 +292,36 @@
                                 <TextBlock Text="播客"/>
                             </StackPanel>
                         </RadioButton>
+                        <RadioButton Classes="tab-button" GroupName="AudioLabTab"
+                                     IsVisible="{Binding IsTranslationTabVisible}"
+                                     IsChecked="{Binding SelectedTab, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static vm:AudioLabTabKind.Translation}}"
+                                     Click="Tab_Translation_Click">
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <TextBlock Text="🌐" FontSize="14"/>
+                                <TextBlock Text="翻译"/>
+                            </StackPanel>
+                        </RadioButton>
+
+                        <!-- 自定义阶段 Tab（动态生成） -->
+                        <ItemsControl ItemsSource="{Binding CustomVisibleStages}" x:Name="CustomTabsHost">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal" Spacing="4"/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:CompileBindings="False">
+                                    <RadioButton Classes="tab-button" GroupName="AudioLabTab"
+                                                 Tag="{Binding Stage}"
+                                                 Click="Tab_Custom_Click">
+                                        <StackPanel Orientation="Horizontal" Spacing="4">
+                                            <TextBlock Text="⚡" FontSize="14"/>
+                                            <TextBlock Text="{Binding DisplayName}"/>
+                                        </StackPanel>
+                                    </RadioButton>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
 
                         <!-- 分隔 + 打开文件按钮 + 生命周期按钮 -->
                         <Border Width="1" Height="20" Margin="8,0"
@@ -429,33 +464,33 @@
                             <ListBox Name="TranscriptListBox"
                                      ItemsSource="{Binding Segments}"
                                      SelectedItem="{Binding CurrentSegment}"
-                                     SelectionMode="Single">
+                                     SelectionMode="Single"
+                                     Background="Transparent"
+                                     DoubleTapped="TranscriptSegment_DoubleTapped"
+                                     PointerReleased="TranscriptSegment_PointerReleased">
+                            <ListBox.Styles>
+                                <Style Selector="ListBoxItem">
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                </Style>
+                            </ListBox.Styles>
                             <ListBox.ItemTemplate>
                                 <DataTemplate x:DataType="models:TranscriptSegment">
-                                    <Border Padding="12,10" Margin="0,2" CornerRadius="6">
-                                        <Grid ColumnDefinitions="Auto,*,Auto">
-                                            <!-- 说话人圆标 + 名称 -->
-                                            <StackPanel Grid.Column="0" Spacing="4" Width="80">
-                                                <TextBlock Text="{Binding Speaker}"
-                                                           FontSize="12" FontWeight="SemiBold"
-                                                           TextTrimming="CharacterEllipsis"/>
-                                                <TextBlock Text="{Binding TimeText}"
-                                                           FontSize="11" Opacity="0.5"
-                                                           Cursor="Hand"/>
-                                            </StackPanel>
-
-                                            <!-- 内容 -->
-                                            <TextBlock Grid.Column="1" Text="{Binding Text}"
-                                                       TextWrapping="Wrap" Margin="12,0,0,0"
-                                                       FontSize="13" LineHeight="20"/>
-
-                                            <!-- 播放指示 -->
-                                            <TextBlock Grid.Column="2" Text="🔊"
-                                                       FontSize="14" Margin="8,0,0,0"
-                                                       VerticalAlignment="Top"
-                                                       IsVisible="{Binding IsCurrent}"/>
-                                        </Grid>
-                                    </Border>
+                                    <Grid Margin="0,2" RowDefinitions="Auto,Auto" ColumnDefinitions="*">
+                                        <!-- 第一行：时间戳 + 发言人 -->
+                                        <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8">
+                                            <TextBlock Text="{Binding TimeText}" FontSize="10"
+                                                       Foreground="{DynamicResource TextSubtleBrush}"/>
+                                            <TextBlock Text="{Binding Speaker}" FontSize="10"
+                                                       Foreground="{DynamicResource TextSubtleBrush}"
+                                                       FontWeight="SemiBold"/>
+                                            <TextBlock Text="🔊" FontSize="10"
+                                                       IsVisible="{Binding IsCurrent}"
+                                                       VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                        <!-- 第二行：字幕文本 -->
+                                        <TextBlock Grid.Row="1" Text="{Binding Text}"
+                                                   TextWrapping="Wrap" FontSize="13" LineHeight="20"/>
+                                    </Grid>
                                 </DataTemplate>
                             </ListBox.ItemTemplate>
                         </ListBox>
@@ -464,24 +499,24 @@
                         <!-- Tab: 思维导图 -->
                         <Panel IsVisible="{Binding SelectedTab, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static vm:AudioLabTabKind.MindMap}}">
                             <!-- 有导图数据 -->
-                            <ScrollViewer IsVisible="{Binding MindMapRoot, Converter={x:Static ObjectConverters.IsNotNull}}"
-                                          HorizontalScrollBarVisibility="Auto"
-                                          VerticalScrollBarVisibility="Auto">
-                                <StackPanel Spacing="8" Margin="0,0,0,24">
-                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="4" Margin="0,0,0,8">
-                                        <Button Padding="8,4"
-                                                Command="{Binding GenerateSummaryCommand}"
-                                                Background="Transparent" BorderThickness="0"
-                                                ToolTip.Tip="重新生成导图（先重新总结）">
-                                            <StackPanel Orientation="Horizontal" Spacing="4">
-                                                <icons:Icon Value="fa-solid fa-arrows-rotate" FontSize="12"/>
-                                                <TextBlock FontSize="12" Text="重新生成"/>
-                                            </StackPanel>
-                                        </Button>
-                                    </StackPanel>
-                                    <controls:MindMapCanvas Root="{Binding MindMapRoot}"/>
+                            <DockPanel IsVisible="{Binding MindMapRoot, Converter={x:Static ObjectConverters.IsNotNull}}">
+                                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="4" Margin="0,0,0,8">
+                                    <TextBlock Text="滚轮缩放 · 拖拽平移 · 双击复位" FontSize="10" Opacity="0.35"
+                                               VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                    <Button Padding="8,4"
+                                            Command="{Binding GenerateMindMapCommand}"
+                                            Background="Transparent" BorderThickness="0"
+                                            ToolTip.Tip="重新生成思维导图">
+                                        <StackPanel Orientation="Horizontal" Spacing="4">
+                                            <icons:Icon Value="fa-solid fa-arrows-rotate" FontSize="12"/>
+                                            <TextBlock FontSize="12" Text="重新生成"/>
+                                        </StackPanel>
+                                    </Button>
                                 </StackPanel>
-                            </ScrollViewer>
+                                <Border ClipToBounds="True">
+                                    <controls:MindMapCanvas Root="{Binding MindMapRoot}"/>
+                                </Border>
+                            </DockPanel>
 
                             <!-- 空状态 -->
                             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
@@ -643,6 +678,79 @@
                                 </StackPanel>
                             </StackPanel>
                         </ScrollViewer>
+
+                        <!-- Tab: 翻译 -->
+                        <ScrollViewer IsVisible="{Binding SelectedTab, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static vm:AudioLabTabKind.Translation}}">
+                            <StackPanel Spacing="12" Margin="0,0,0,24">
+                                <Button Padding="8,4" HorizontalAlignment="Right"
+                                        Command="{Binding GenerateTranslationCommand}"
+                                        Background="Transparent" BorderThickness="0"
+                                        ToolTip.Tip="重新生成翻译">
+                                    <StackPanel Orientation="Horizontal" Spacing="4">
+                                        <icons:Icon Value="fa-solid fa-arrows-rotate" FontSize="12"/>
+                                        <TextBlock FontSize="12" Text="重新生成"/>
+                                    </StackPanel>
+                                </Button>
+                                <controls:ChatMarkdownBlock Markdown="{Binding TranslationMarkdown}"/>
+                                <!-- 空状态/处理中提示 -->
+                                <StackPanel HorizontalAlignment="Center" Spacing="8" Margin="0,40"
+                                            IsVisible="{Binding !TranslationMarkdown.Length}">
+                                    <StackPanel Spacing="8" HorizontalAlignment="Center"
+                                                IsVisible="{Binding IsTranslationProcessing}">
+                                        <ProgressBar IsIndeterminate="True" Width="120" Height="3"
+                                                     HorizontalAlignment="Center"/>
+                                        <TextBlock Text="正在翻译中，请稍后回来查看..."
+                                                   Opacity="0.5" FontSize="13"
+                                                   HorizontalAlignment="Center"/>
+                                    </StackPanel>
+                                    <StackPanel Spacing="4" HorizontalAlignment="Center"
+                                                IsVisible="{Binding !IsTranslationProcessing}">
+                                        <TextBlock Text="转录已完成，可点击「重新生成」生成翻译。"
+                                                   Opacity="0.4" FontSize="13"
+                                                   HorizontalAlignment="Center"
+                                                   IsVisible="{Binding IsTranscribeReady}"/>
+                                        <TextBlock Text="请先完成音频转录，转录完成后可点击生成翻译。"
+                                                   Opacity="0.4" FontSize="13"
+                                                   HorizontalAlignment="Center"
+                                                   IsVisible="{Binding !IsTranscribeReady}"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </StackPanel>
+                        </ScrollViewer>
+
+                        <!-- Tab: 自定义阶段（动态内容，支持 Markdown / 导图模式） -->
+                        <Panel IsVisible="{Binding IsCustomStageSelected}">
+                            <!-- Markdown 模式 -->
+                            <ScrollViewer IsVisible="{Binding !IsCustomStageMindMap}">
+                                <StackPanel Spacing="12" Margin="0,0,0,24">
+                                    <controls:ChatMarkdownBlock Markdown="{Binding CustomStageContent}"/>
+                                    <StackPanel HorizontalAlignment="Center" Spacing="4" Margin="0,40"
+                                                IsVisible="{Binding !CustomStageContent.Length}">
+                                        <TextBlock Text="此自定义阶段暂无内容。"
+                                                   Opacity="0.4" FontSize="13"
+                                                   HorizontalAlignment="Center"/>
+                                        <TextBlock Text="请先完成转录，然后通过任务队列执行对应阶段。"
+                                                   Opacity="0.3" FontSize="12"
+                                                   HorizontalAlignment="Center"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </ScrollViewer>
+                            <!-- 导图模式 -->
+                            <DockPanel IsVisible="{Binding IsCustomStageMindMap}">
+                                <TextBlock DockPanel.Dock="Top" Text="滚轮缩放 · 拖拽平移 · 双击复位"
+                                           FontSize="10" Opacity="0.35" HorizontalAlignment="Right" Margin="0,0,0,8"/>
+                                <Border ClipToBounds="True"
+                                        IsVisible="{Binding CustomStageMindMapRoot, Converter={x:Static ObjectConverters.IsNotNull}}">
+                                    <controls:MindMapCanvas Root="{Binding CustomStageMindMapRoot}"/>
+                                </Border>
+                                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="4" Margin="0,40"
+                                            IsVisible="{Binding CustomStageMindMapRoot, Converter={x:Static ObjectConverters.IsNull}}">
+                                    <TextBlock Text="🧠" FontSize="40" HorizontalAlignment="Center" Opacity="0.4"/>
+                                    <TextBlock Text="此导图阶段暂无内容，请等待队列执行或手动触发。"
+                                               Opacity="0.4" FontSize="13" HorizontalAlignment="Center"/>
+                                </StackPanel>
+                            </DockPanel>
+                        </Panel>
                     </Panel>
                 </Border>
             </Grid>
