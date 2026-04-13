@@ -26,8 +26,14 @@ namespace TrueFluentPro.Services
         /// <summary>AI 类最大并发数。</summary>
         int MaxAiConcurrency { get; }
 
+        /// <summary>转录任务超时（分钟）。</summary>
+        int TranscriptionTimeoutMinutes { get; }
+
         /// <summary>动态设置并发上限。</summary>
         void SetConcurrencyLimits(int maxTranscription, int maxAi);
+
+        /// <summary>动态设置转录任务超时（分钟），范围 1~60。</summary>
+        void SetTranscriptionTimeout(int minutes);
     }
 
     /// <summary>
@@ -47,8 +53,10 @@ namespace TrueFluentPro.Services
         /// <summary>调度循环轮询间隔（秒），兜底防止信号丢失。</summary>
         private const int PollIntervalSeconds = 5;
 
-        /// <summary>语音类任务（转录/TTS）超时。</summary>
-        private static readonly TimeSpan TranscriptionTaskTimeout = TimeSpan.FromMinutes(2);
+        /// <summary>转录类任务默认超时（分钟）。</summary>
+        public static readonly int DefaultTranscriptionTimeoutMinutes = 15;
+        /// <summary>语音类任务（转录/TTS）超时，可通过 SetTranscriptionTimeout 动态调整。</summary>
+        private volatile int _transcriptionTimeoutMinutes;
         /// <summary>AI 类任务总超时（含首字节 2 分钟 + 流式输出）。</summary>
         private static readonly TimeSpan AiTaskTimeout = TimeSpan.FromMinutes(5);
         /// <summary>超时后自动重试次数上限，超过则标记失败。</summary>
@@ -79,6 +87,7 @@ namespace TrueFluentPro.Services
 
         public int MaxTranscriptionConcurrency => _maxTranscriptionConcurrency;
         public int MaxAiConcurrency => _maxAiConcurrency;
+        public int TranscriptionTimeoutMinutes => _transcriptionTimeoutMinutes;
 
         public void SetConcurrencyLimits(int maxTranscription, int maxAi)
         {
@@ -86,6 +95,11 @@ namespace TrueFluentPro.Services
             if (maxAi > 0) _maxAiConcurrency = maxAi;
             // 唤醒调度循环，让新限制立即生效
             NotifyNewTask();
+        }
+
+        public void SetTranscriptionTimeout(int minutes)
+        {
+            _transcriptionTimeoutMinutes = Math.Clamp(minutes, 1, 60);
         }
 
         public AudioTaskExecutor(
@@ -108,6 +122,7 @@ namespace TrueFluentPro.Services
             _maxAiConcurrency = maxAiConcurrency > 0
                 ? maxAiConcurrency : DefaultMaxAiConcurrency;
             _stallThresholdMinutes = stallThresholdMinutes > 0 ? stallThresholdMinutes : DefaultStallThresholdMinutes;
+            _transcriptionTimeoutMinutes = DefaultTranscriptionTimeoutMinutes;
         }
 
         public void NotifyNewTask()
@@ -208,7 +223,9 @@ namespace TrueFluentPro.Services
                 }
 
                 // 创建独立的 CancellationToken（含任务级超时）
-                var taskTimeout = isTranscription ? TranscriptionTaskTimeout : AiTaskTimeout;
+                var taskTimeout = isTranscription
+                    ? TimeSpan.FromMinutes(_transcriptionTimeoutMinutes)
+                    : AiTaskTimeout;
                 var cts = CancellationTokenSource.CreateLinkedTokenSource(appShutdown);
                 cts.CancelAfter(taskTimeout);
                 lock (_ctsLock) { _runningCts[task.TaskId] = cts; }

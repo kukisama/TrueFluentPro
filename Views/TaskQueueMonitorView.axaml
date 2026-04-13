@@ -68,6 +68,19 @@
 
                 <Separator Margin="0,4"/>
 
+                <TextBlock Text="超时设置" FontWeight="SemiBold" FontSize="12"
+                           Foreground="{DynamicResource TextSubtleBrush}" Margin="0,0,0,2"/>
+                <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto" ColumnSpacing="8">
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="转录" FontSize="12"
+                               VerticalAlignment="Center" Foreground="{DynamicResource TextSubtleBrush}"/>
+                    <NumericUpDown Grid.Row="0" Grid.Column="1"
+                                   Value="{Binding TranscriptionTimeoutMinutes}"
+                                   Minimum="1" Maximum="60" Increment="1"
+                                   FormatString="0 分钟" Height="28" FontSize="12"/>
+                </Grid>
+
+                <Separator Margin="0,4"/>
+
                 <TextBlock Text="Token 用量" FontWeight="SemiBold" FontSize="12"
                            Foreground="{DynamicResource TextSubtleBrush}" Margin="0,0,0,2"/>
                 <StackPanel Spacing="2">
