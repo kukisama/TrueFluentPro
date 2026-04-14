@@ -27,6 +27,7 @@ namespace TrueFluentPro.ViewModels
 
         private int _maxTranscriptionConcurrency;
         private int _maxAiConcurrency;
+        private int _transcriptionTimeoutMinutes;
         private readonly DispatcherTimer _autoRefreshTimer;
 
         // 排序
@@ -54,6 +55,7 @@ namespace TrueFluentPro.ViewModels
 
             _maxTranscriptionConcurrency = _executor.MaxTranscriptionConcurrency;
             _maxAiConcurrency = _executor.MaxAiConcurrency;
+            _transcriptionTimeoutMinutes = _executor.TranscriptionTimeoutMinutes;
 
             // 初始化分类 buckets
             Buckets = new ObservableCollection<BatchBucketNavItem>
@@ -172,6 +174,19 @@ namespace TrueFluentPro.ViewModels
                 var clamped = Math.Clamp(value, 1, 20);
                 if (SetProperty(ref _maxAiConcurrency, clamped))
                     _executor.SetConcurrencyLimits(_maxTranscriptionConcurrency, clamped);
+            }
+        }
+
+        // ── 超时 ─────────────────────────────────────────────
+
+        public int TranscriptionTimeoutMinutes
+        {
+            get => _transcriptionTimeoutMinutes;
+            set
+            {
+                var clamped = Math.Clamp(value, 1, 60);
+                if (SetProperty(ref _transcriptionTimeoutMinutes, clamped))
+                    _executor.SetTranscriptionTimeout(clamped);
             }
         }
 
