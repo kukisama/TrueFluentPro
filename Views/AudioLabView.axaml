@@ -364,50 +364,51 @@
                         <!-- Tab: 总结 -->
                         <ScrollViewer IsVisible="{Binding SelectedTab, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static vm:AudioLabTabKind.Summary}}">
                             <StackPanel Spacing="12" Margin="0,0,0,24">
-                                <!-- 元数据区 -->
-                                <StackPanel Spacing="4">
-                                    <TextBlock Text="{Binding CurrentFileName}"
-                                               FontSize="20" FontWeight="SemiBold"/>
-                                    <TextBlock FontSize="12" Opacity="0.6"
-                                               Text="{Binding StatusMessage}"/>
-                                    <!-- AI 标签 -->
-                                    <ItemsControl ItemsSource="{Binding AutoTags}" Margin="0,4">
-                                        <ItemsControl.ItemsPanel>
-                                            <ItemsPanelTemplate>
-                                                <WrapPanel Orientation="Horizontal"/>
-                                            </ItemsPanelTemplate>
-                                        </ItemsControl.ItemsPanel>
-                                        <ItemsControl.ItemTemplate>
-                                            <DataTemplate x:DataType="x:String">
-                                                <Border CornerRadius="10" Padding="10,4" Margin="0,0,6,4"
-                                                        Background="{DynamicResource SystemAccentColorLight3}">
-                                                    <TextBlock Text="{Binding}" FontSize="11"/>
-                                                </Border>
-                                            </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
-                                </StackPanel>
-
-                                <!-- 操作栏：编辑 + 重新生成 -->
-                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="4">
-                                    <Button Padding="8,4"
-                                            Command="{Binding GenerateSummaryCommand}"
-                                            Background="Transparent" BorderThickness="0"
-                                            ToolTip.Tip="重新生成总结">
-                                        <StackPanel Orientation="Horizontal" Spacing="4">
-                                            <icons:Icon Value="fa-solid fa-arrows-rotate" FontSize="12"/>
-                                            <TextBlock FontSize="12" Text="重新生成"/>
-                                        </StackPanel>
-                                    </Button>
-                                    <Button Padding="8,4"
-                                            Command="{Binding ToggleEditModeCommand}"
-                                            Background="Transparent" BorderThickness="0">
-                                        <StackPanel Orientation="Horizontal" Spacing="4">
-                                            <icons:Icon Value="fa-solid fa-pen-to-square" FontSize="12"/>
-                                            <TextBlock FontSize="12" Text="编辑"/>
-                                        </StackPanel>
-                                    </Button>
-                                </StackPanel>
+                                <!-- 元数据区 + 操作按钮同行 -->
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <StackPanel Grid.Column="0" Spacing="4">
+                                        <TextBlock Text="{Binding CurrentFileName}"
+                                                   FontSize="20" FontWeight="SemiBold"/>
+                                        <TextBlock FontSize="12" Opacity="0.6"
+                                                   Text="{Binding StatusMessage}"/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal"
+                                                VerticalAlignment="Top" Spacing="4">
+                                        <Button Padding="8,4"
+                                                Command="{Binding GenerateSummaryCommand}"
+                                                Background="Transparent" BorderThickness="0"
+                                                ToolTip.Tip="重新生成总结">
+                                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                                <icons:Icon Value="fa-solid fa-arrows-rotate" FontSize="12"/>
+                                                <TextBlock FontSize="12" Text="重新生成"/>
+                                            </StackPanel>
+                                        </Button>
+                                        <Button Padding="8,4"
+                                                Command="{Binding ToggleEditModeCommand}"
+                                                Background="Transparent" BorderThickness="0">
+                                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                                <icons:Icon Value="fa-solid fa-pen-to-square" FontSize="12"/>
+                                                <TextBlock FontSize="12" Text="编辑"/>
+                                            </StackPanel>
+                                        </Button>
+                                    </StackPanel>
+                                </Grid>
+                                <!-- AI 标签 -->
+                                <ItemsControl ItemsSource="{Binding AutoTags}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <WrapPanel Orientation="Horizontal"/>
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="x:String">
+                                            <Border CornerRadius="10" Padding="10,4" Margin="0,0,6,4"
+                                                    Background="{DynamicResource SystemAccentColorLight3}">
+                                                <TextBlock Text="{Binding}" FontSize="11"/>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
 
                                 <!-- Markdown 渲染 / 编辑器 -->
                                 <controls:ChatMarkdownBlock Markdown="{Binding SummaryMarkdown}"
@@ -466,7 +467,7 @@
                                      SelectedItem="{Binding CurrentSegment}"
                                      SelectionMode="Single"
                                      Background="Transparent"
-                                     DoubleTapped="TranscriptSegment_DoubleTapped"
+                                     Tapped="TranscriptSegment_Tapped"
                                      PointerReleased="TranscriptSegment_PointerReleased">
                             <ListBox.Styles>
                                 <Style Selector="ListBoxItem">

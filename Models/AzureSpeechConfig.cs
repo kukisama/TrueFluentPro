@@ -45,6 +45,16 @@ namespace TrueFluentPro.Models
         Always
     }
 
+    /// <summary>转录 API 模式：Batch（异步轮询）或 Fast（同步直传）</summary>
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public enum TranscriptionApiMode
+    {
+        /// <summary>批量转录 API（v3.1，需要 Blob Storage，异步轮询）</summary>
+        Batch,
+        /// <summary>快速转录 API（同步，直接上传音频文件，≤2h/250MB）</summary>
+        Fast
+    }
+
     public class AzureSubscription
     {
         public string Name { get; set; } = "";
@@ -267,6 +277,12 @@ namespace TrueFluentPro.Models
         public string AudioLabSpeechEndpointId { get; set; } = "";
         public ModelReference? AudioLabTextModelRef { get; set; }
         public string AudioLabSourceLanguage { get; set; } = "auto";
+        /// <summary>转录 API 模式：Batch（批量异步）或 Fast（快速同步）</summary>
+        public TranscriptionApiMode AudioLabTranscriptionApiMode { get; set; } = TranscriptionApiMode.Fast;
+        /// <summary>是否启用 LLM Speech 增强模式（preview）：更流畅的转录质量，支持自动语言检测和自定义提示词</summary>
+        public bool AudioLabEnableLlmSpeech { get; set; }
+        /// <summary>LLM Speech 自定义提示词（可选，最长 4096 字符）</summary>
+        public string AudioLabLlmSpeechPrompt { get; set; } = "";
 
         /// <summary>听析中心文件面板是否展开</summary>
         public bool AudioLabFilePanelOpen { get; set; } = true;

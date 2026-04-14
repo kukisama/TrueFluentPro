@@ -72,6 +72,30 @@ namespace TrueFluentPro.Views
             ApplyFilePanelState(ViewModel?.IsFilePanelOpen ?? false);
         }
 
+        // ── 空格键 播放/暂停 ─────────────────────────────────
+        protected override void OnKeyDown(KeyEventArgs e)
+        {
+            if (e.Key == Key.Space)
+            {
+                // 焦点在文本输入控件时不拦截
+                var focused = TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement();
+                if (focused is TextBox || focused is AutoCompleteBox)
+                {
+                    base.OnKeyDown(e);
+                    return;
+                }
+
+                if (ViewModel?.Playback.TogglePlayPauseCommand is { } cmd && cmd.CanExecute(null))
+                {
+                    cmd.Execute(null);
+                    e.Handled = true;
+                    return;
+                }
+            }
+
+            base.OnKeyDown(e);
+        }
+
         // ── 文件面板展开/收起（与 MainWindow.ApplyMainNavPaneState 同模式） ──
         private void OnFilePanelStateChanged(bool isOpen)
         {
@@ -190,7 +214,7 @@ namespace TrueFluentPro.Views
 
         // ── 转录列表交互 ─────────────────────────────────────
 
-        private void TranscriptSegment_DoubleTapped(object? sender, TappedEventArgs e)
+        private void TranscriptSegment_Tapped(object? sender, TappedEventArgs e)
         {
             if (sender is ListBox lb && lb.SelectedItem is TranscriptSegment seg)
             {

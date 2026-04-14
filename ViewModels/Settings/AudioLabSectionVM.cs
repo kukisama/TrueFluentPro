@@ -25,6 +25,7 @@ namespace TrueFluentPro.ViewModels.Settings
 
         // ── 语音来源模式 ──
         private int _speechModeIndex;
+        private int _transcriptionApiModeIndex;
         private List<EndpointOption> _aadEndpoints = new();
         private List<EndpointOption> _speechEndpoints = new();
         private EndpointOption? _selectedAadEndpoint;
@@ -56,6 +57,12 @@ namespace TrueFluentPro.ViewModels.Settings
         // ── 调试模式 ──
         private bool _debugMode;
         public bool DebugMode { get => _debugMode; set { if (SetProperty(ref _debugMode, value)) OnChanged(); } }
+
+        // ── LLM Speech 增强模式 ──
+        private bool _enableLlmSpeech;
+        public bool EnableLlmSpeech { get => _enableLlmSpeech; set { if (SetProperty(ref _enableLlmSpeech, value)) OnChanged(); } }
+        private string _llmSpeechPrompt = "";
+        public string LlmSpeechPrompt { get => _llmSpeechPrompt; set { if (SetProperty(ref _llmSpeechPrompt, value)) OnChanged(); } }
 
         public ObservableCollection<VoiceInfo> AvailableVoices { get; } = new();
         public ObservableCollection<VoiceLanguageOption> AvailableLanguages { get; } = new();
@@ -135,6 +142,19 @@ namespace TrueFluentPro.ViewModels.Settings
         public bool IsAadMode => SpeechModeIndex == 0;
         public bool IsTraditionalMode => SpeechModeIndex == 1;
 
+        // ═══ 转录 API 模式 ═══
+        public int TranscriptionApiModeIndex
+        {
+            get => _transcriptionApiModeIndex;
+            set => Set(ref _transcriptionApiModeIndex, value, then: () =>
+            {
+                OnPropertyChanged(nameof(IsFastTranscription));
+                OnPropertyChanged(nameof(IsBatchTranscription));
+            });
+        }
+        public bool IsFastTranscription => TranscriptionApiModeIndex == 0;
+        public bool IsBatchTranscription => TranscriptionApiModeIndex == 1;
+
         // ═══ AAD 模式 ═══
         public List<EndpointOption> AadEndpoints { get => _aadEndpoints; set => SetProperty(ref _aadEndpoints, value); }
         public bool HasAadEndpoints => AadEndpoints.Count > 0;
@@ -204,6 +224,7 @@ namespace TrueFluentPro.ViewModels.Settings
         public override void LoadFrom(AzureSpeechConfig config)
         {
             SpeechModeIndex = config.AudioLabSpeechMode;
+            TranscriptionApiModeIndex = config.AudioLabTranscriptionApiMode == TranscriptionApiMode.Fast ? 0 : 1;
             SourceLanguage = config.AudioLabSourceLanguage ?? "auto";
 
             // 播客语音配置
@@ -235,11 +256,15 @@ namespace TrueFluentPro.ViewModels.Settings
             OnPropertyChanged(nameof(StagePresets));
 
             DebugMode = config.AudioLabDebugMode;
+            EnableLlmSpeech = config.AudioLabEnableLlmSpeech;
+            LlmSpeechPrompt = config.AudioLabLlmSpeechPrompt ?? "";
         }
 
         public override void ApplyTo(AzureSpeechConfig config)
         {
             config.AudioLabSpeechMode = SpeechModeIndex;
+            config.AudioLabTranscriptionApiMode = TranscriptionApiModeIndex == 0
+                ? TranscriptionApiMode.Fast : TranscriptionApiMode.Batch;
             config.AudioLabAadEndpointId = SelectedAadEndpoint?.EndpointId ?? "";
             config.AudioLabSpeechEndpointId = SelectedSpeechEndpoint?.EndpointId ?? "";
             config.AudioLabTextModelRef = SelectedTextModel?.Reference;
@@ -253,6 +278,8 @@ namespace TrueFluentPro.ViewModels.Settings
             config.AudioLabPodcastOutputFormat = PodcastOutputFormat;
 
             config.AudioLabDebugMode = DebugMode;
+            config.AudioLabEnableLlmSpeech = EnableLlmSpeech;
+            config.AudioLabLlmSpeechPrompt = LlmSpeechPrompt;
 
             // 听析阶段预设 —— 仅持久化与内置默认有差异的提示词
             var builtinDefaults = AudioLabStagePresetDefaults.CreateDefaults()

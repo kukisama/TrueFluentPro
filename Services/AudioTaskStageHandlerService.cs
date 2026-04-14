@@ -86,11 +86,12 @@ namespace TrueFluentPro.Services
         public async Task<AiRequestOutcome?> ExecuteCustomStageAsync(string audioItemId, string stageKey, CancellationToken ct, Action<string>? reportProgress = null)
         {
             reportProgress ??= _ => { };
-            reportProgress("加载转录数据...");
-            var transcript = LoadTranscriptTextOrThrow(audioItemId);
-
-            reportProgress("加载 AI 配置...");
+            reportProgress("加载配置...");
             var config = await _configService.LoadConfigAsync();
+            var splitOptions = BuildSplitOptions(config);
+
+            reportProgress("加载转录数据...");
+            var transcript = LoadTranscriptTextOrThrow(audioItemId, splitOptions);
 
             if (!TryBuildTextRuntimeConfig(config, out var runtimeRequest, out var endpoint, out var errorMessage))
                 throw new InvalidOperationException($"自定义阶段未启动：{errorMessage}");
@@ -147,22 +148,28 @@ namespace TrueFluentPro.Services
             reportProgress("加载配置...");
             var config = await _configService.LoadConfigAsync();
 
-            var splitOptions = new BatchSubtitleSplitOptions
-            {
-                EnableSentenceSplit = config.EnableBatchSubtitleSentenceSplit,
-                SplitOnComma = config.BatchSubtitleSplitOnComma,
-                MaxChars = config.BatchSubtitleMaxChars,
-                MaxDurationSeconds = config.BatchSubtitleMaxDurationSeconds,
-                PauseSplitMs = config.BatchSubtitlePauseSplitMs
-            };
+            var splitOptions = BuildSplitOptions(config);
             var locale = RealtimeSpeechTranscriber.GetTranscriptionSourceLanguage(
                 config.AudioLabSourceLanguage ?? config.SourceLanguage);
 
             List<SubtitleCue> cues;
+            string rawJson;
+            string apiType;
+            var useFast = config.AudioLabTranscriptionApiMode == TranscriptionApiMode.Fast;
             if (config.AudioLabSpeechMode == 0)
-                cues = await TranscribeWithAadAsync(filePath, config, locale, splitOptions, ct, reportProgress);
+            {
+                if (useFast)
+                { (cues, rawJson) = await FastTranscribeWithAadAsync(filePath, config, locale, splitOptions, ct, reportProgress); apiType = "fast"; }
+                else
+                { (cues, rawJson) = await TranscribeWithAadAsync(filePath, config, locale, splitOptions, ct, reportProgress); apiType = "batch"; }
+            }
             else
-                cues = await TranscribeWithTraditionalAsync(filePath, config, locale, splitOptions, ct, reportProgress);
+            {
+                if (useFast)
+                { (cues, rawJson) = await FastTranscribeWithTraditionalAsync(filePath, config, locale, splitOptions, ct, reportProgress); apiType = "fast"; }
+                else
+                { (cues, rawJson) = await TranscribeWithTraditionalAsync(filePath, config, locale, splitOptions, ct, reportProgress); apiType = "batch"; }
+            }
 
             reportProgress("解析转录结果...");
             var segments = BuildSegmentsFromCues(cues);
@@ -170,15 +177,14 @@ namespace TrueFluentPro.Services
                 throw new InvalidOperationException("转录完成，但未识别到任何内容。");
 
             reportProgress($"保存转录结果（{segments.Count} 个段落）...");
-            // 序列化段落并保存到 lifecycle
-            var segmentDtos = segments.Select(s => new TranscriptSegmentDto
+            // 保存原始 API 响应到 lifecycle（按需重新计算段落）
+            var rawData = new Models.RawTranscriptionData
             {
-                Speaker = s.Speaker,
-                SpeakerIndex = s.SpeakerIndex,
-                StartTimeTicks = s.StartTime.Ticks,
-                Text = s.Text,
-            }).ToList();
-            var json = JsonSerializer.Serialize(segmentDtos);
+                ApiType = apiType,
+                RawResponse = rawJson,
+                Locale = locale
+            };
+            var json = TranscriptionDataHelper.SerializeRawData(rawData);
             _pipeline.SaveStageContent(audioItemId, AudioLifecycleStage.Transcribed, json);
         }
 
@@ -186,11 +192,12 @@ namespace TrueFluentPro.Services
 
         private async Task<AiRequestOutcome?> ExecuteSummarizeAsync(string audioItemId, CancellationToken ct, Action<string> reportProgress)
         {
-            reportProgress("加载转录数据...");
-            var transcript = LoadTranscriptTextOrThrow(audioItemId);
-
-            reportProgress("加载 AI 配置...");
+            reportProgress("加载配置...");
             var config = await _configService.LoadConfigAsync();
+            var splitOptions = BuildSplitOptions(config);
+
+            reportProgress("加载转录数据...");
+            var transcript = LoadTranscriptTextOrThrow(audioItemId, splitOptions);
 
             if (!TryBuildTextRuntimeConfig(config, out var runtimeRequest, out var endpoint, out var errorMessage))
                 throw new InvalidOperationException($"总结未启动：{errorMessage}");
@@ -221,11 +228,12 @@ namespace TrueFluentPro.Services
 
         private async Task<AiRequestOutcome?> ExecuteMindMapAsync(string audioItemId, CancellationToken ct, Action<string> reportProgress)
         {
-            reportProgress("加载转录数据...");
-            var transcript = LoadTranscriptTextOrThrow(audioItemId);
-
-            reportProgress("加载 AI 配置...");
+            reportProgress("加载配置...");
             var config = await _configService.LoadConfigAsync();
+            var splitOptions = BuildSplitOptions(config);
+
+            reportProgress("加载转录数据...");
+            var transcript = LoadTranscriptTextOrThrow(audioItemId, splitOptions);
 
             if (!TryBuildTextRuntimeConfig(config, out var runtimeRequest, out var endpoint, out _))
                 return null; // 思维导图失败不阻塞
@@ -261,11 +269,12 @@ namespace TrueFluentPro.Services
 
         private async Task<AiRequestOutcome?> ExecuteInsightAsync(string audioItemId, CancellationToken ct, Action<string> reportProgress)
         {
-            reportProgress("加载转录数据...");
-            var transcript = LoadTranscriptTextOrThrow(audioItemId);
-
-            reportProgress("加载 AI 配置...");
+            reportProgress("加载配置...");
             var config = await _configService.LoadConfigAsync();
+            var splitOptions = BuildSplitOptions(config);
+
+            reportProgress("加载转录数据...");
+            var transcript = LoadTranscriptTextOrThrow(audioItemId, splitOptions);
 
             if (!TryBuildTextRuntimeConfig(config, out var runtimeRequest, out var endpoint, out var errorMessage))
                 throw new InvalidOperationException($"顿悟未启动：{errorMessage}");
@@ -292,11 +301,12 @@ namespace TrueFluentPro.Services
 
         private async Task<AiRequestOutcome?> ExecutePodcastScriptAsync(string audioItemId, CancellationToken ct, Action<string> reportProgress)
         {
-            reportProgress("加载转录数据...");
-            var transcript = LoadTranscriptTextOrThrow(audioItemId);
-
-            reportProgress("加载 AI 配置...");
+            reportProgress("加载配置...");
             var config = await _configService.LoadConfigAsync();
+            var splitOptions = BuildSplitOptions(config);
+
+            reportProgress("加载转录数据...");
+            var transcript = LoadTranscriptTextOrThrow(audioItemId, splitOptions);
 
             if (!TryBuildTextRuntimeConfig(config, out var runtimeRequest, out var endpoint, out var errorMessage))
                 throw new InvalidOperationException($"播客未启动：{errorMessage}");
@@ -446,11 +456,12 @@ namespace TrueFluentPro.Services
 
         private async Task<AiRequestOutcome?> ExecuteTranslatedAsync(string audioItemId, CancellationToken ct, Action<string> reportProgress)
         {
-            reportProgress("加载转录数据...");
-            var transcript = LoadTranscriptTextOrThrow(audioItemId);
-
             reportProgress("加载配置...");
             var config = await _configService.LoadConfigAsync();
+            var splitOptions = BuildSplitOptions(config);
+
+            reportProgress("加载转录数据...");
+            var transcript = LoadTranscriptTextOrThrow(audioItemId, splitOptions);
 
             if (!TryBuildTextRuntimeConfig(config, out var runtimeRequest, out var endpoint, out var errorMessage))
                 throw new InvalidOperationException($"翻译未启动：{errorMessage}");
@@ -485,11 +496,12 @@ namespace TrueFluentPro.Services
 
         private async Task<AiRequestOutcome?> ExecuteResearchAsync(string audioItemId, CancellationToken ct, Action<string> reportProgress)
         {
-            reportProgress("加载转录数据...");
-            var transcript = LoadTranscriptTextOrThrow(audioItemId);
-
-            reportProgress("加载 AI 配置...");
+            reportProgress("加载配置...");
             var config = await _configService.LoadConfigAsync();
+            var splitOptions = BuildSplitOptions(config);
+
+            reportProgress("加载转录数据...");
+            var transcript = LoadTranscriptTextOrThrow(audioItemId, splitOptions);
 
             if (!TryBuildTextRuntimeConfig(config, out var runtimeRequest, out var endpoint, out var errorMessage))
                 throw new InvalidOperationException($"研究未启动：{errorMessage}");
@@ -576,18 +588,41 @@ namespace TrueFluentPro.Services
             return item;
         }
 
-        private string LoadTranscriptTextOrThrow(string audioItemId)
+        private string LoadTranscriptTextOrThrow(string audioItemId, BatchSubtitleSplitOptions splitOptions)
         {
             var transcriptionJson = _pipeline.TryLoadCachedContent(audioItemId, AudioLifecycleStage.Transcribed);
             if (string.IsNullOrWhiteSpace(transcriptionJson))
                 throw new InvalidOperationException("无转录数据，请先完成转录。");
 
-            var segments = DeserializeTranscriptSegments(transcriptionJson);
-            if (segments.Count == 0)
-                throw new InvalidOperationException("转录段落为空。");
-
-            return FormatTranscriptForAi(segments);
+            // 兼容新旧格式
+            if (TranscriptionDataHelper.IsRawFormat(transcriptionJson))
+            {
+                var rawData = TranscriptionDataHelper.ParseRawData(transcriptionJson);
+                if (rawData == null || string.IsNullOrWhiteSpace(rawData.RawResponse))
+                    throw new InvalidOperationException("转录原始数据损坏。");
+                var text = TranscriptionDataHelper.ComputeTranscriptTextForAi(rawData, splitOptions);
+                if (text == "(暂无转录内容)")
+                    throw new InvalidOperationException("转录段落为空。");
+                return text;
+            }
+            else
+            {
+                // 旧格式：TranscriptSegmentDto[] 数组
+                var text = TranscriptionDataHelper.FormatLegacySegmentsForAi(transcriptionJson);
+                if (text == "(暂无转录内容)")
+                    throw new InvalidOperationException("转录段落为空。");
+                return text;
+            }
         }
+
+        private static BatchSubtitleSplitOptions BuildSplitOptions(AzureSpeechConfig config) => new()
+        {
+            EnableSentenceSplit = config.EnableBatchSubtitleSentenceSplit,
+            SplitOnComma = config.BatchSubtitleSplitOnComma,
+            MaxChars = config.BatchSubtitleMaxChars,
+            MaxDurationSeconds = config.BatchSubtitleMaxDurationSeconds,
+            PauseSplitMs = config.BatchSubtitlePauseSplitMs
+        };
 
         private static List<TranscriptSegmentDto> DeserializeTranscriptSegments(string json)
         {
@@ -668,7 +703,7 @@ namespace TrueFluentPro.Services
             return new AiInsightService(tokenProvider);
         }
 
-        private async Task<List<SubtitleCue>> TranscribeWithAadAsync(
+        private async Task<(List<SubtitleCue> Cues, string RawJson)> TranscribeWithAadAsync(
             string filePath, AzureSpeechConfig config, string locale,
             BatchSubtitleSplitOptions splitOptions, CancellationToken token, Action<string> reportProgress)
         {
@@ -712,7 +747,7 @@ namespace TrueFluentPro.Services
             var batchEndpoint = $"{cognitiveHost}/speechtotext/v3.1/transcriptions";
 
             reportProgress("转录：上传完成，提交批量转录任务...");
-            var (cues, _) = await SpeechBatchApiClient.BatchTranscribeSpeechToCuesAsync(
+            var (cues, rawJson) = await SpeechBatchApiClient.BatchTranscribeSpeechToCuesAsync(
                 contentUrl, locale, batchEndpoint,
                 async ct => await tokenProvider.GetTokenAsync(ct),
                 token,
@@ -720,10 +755,10 @@ namespace TrueFluentPro.Services
                 splitOptions);
 
             reportProgress("转录：服务器返回结果完成");
-            return cues;
+            return (cues, rawJson);
         }
 
-        private async Task<List<SubtitleCue>> TranscribeWithTraditionalAsync(
+        private async Task<(List<SubtitleCue> Cues, string RawJson)> TranscribeWithTraditionalAsync(
             string filePath, AzureSpeechConfig config, string locale,
             BatchSubtitleSplitOptions splitOptions, CancellationToken token, Action<string> reportProgress)
         {
@@ -778,13 +813,110 @@ namespace TrueFluentPro.Services
             var contentUrl = BlobStorageService.CreateBlobReadSasUri(uploadedBlob, TimeSpan.FromHours(24));
 
             reportProgress("转录：上传完成，提交批量转录任务...");
-            var (cues, _) = await SpeechBatchApiClient.BatchTranscribeSpeechToCuesAsync(
+            var (cues, rawJson) = await SpeechBatchApiClient.BatchTranscribeSpeechToCuesAsync(
                 contentUrl, locale, subscription, token,
                 status => reportProgress($"转录：{status}"),
                 splitOptions);
 
             reportProgress("转录：服务器返回结果完成");
-            return cues;
+            return (cues, rawJson);
+        }
+
+        // ── 快速转录（Fast API） ──────────────────────────────
+
+        private async Task<(List<SubtitleCue> Cues, string RawJson)> FastTranscribeWithAadAsync(
+            string filePath, AzureSpeechConfig config, string locale,
+            BatchSubtitleSplitOptions splitOptions, CancellationToken token, Action<string> reportProgress)
+        {
+            var endpointId = config.AudioLabAadEndpointId;
+            if (string.IsNullOrWhiteSpace(endpointId))
+                throw new InvalidOperationException("听析中心未选择 AAD 终结点。");
+
+            var endpoint = config.Endpoints.FirstOrDefault(e => e.Id == endpointId);
+            if (endpoint == null || !endpoint.IsEnabled)
+                throw new InvalidOperationException("听析中心选择的 AAD 终结点已不存在或已禁用。");
+
+            reportProgress("快速转录：AAD 认证中...");
+            var tokenProvider = await _azureTokenProviderStore.GetAuthenticatedProviderAsync(
+                GetEndpointProfileKey(endpoint),
+                endpoint.AzureTenantId,
+                endpoint.AzureClientId);
+
+            if (tokenProvider?.IsLoggedIn != true)
+                throw new InvalidOperationException("AAD 认证未登录。");
+
+            var subdomain = AudioLabSectionVM.ParseSubdomainFromFoundryUrl(endpoint.BaseUrl);
+            if (string.IsNullOrWhiteSpace(subdomain))
+                throw new InvalidOperationException($"无法从终结点「{endpoint.Name}」的 URL 解析子域名。");
+            var cognitiveHost = AudioLabSectionVM.IsAzureChinaUrl(endpoint.BaseUrl)
+                ? $"https://{subdomain}.cognitiveservices.azure.cn"
+                : $"https://{subdomain}.cognitiveservices.azure.com";
+            var fastEndpoint = $"{cognitiveHost}/speechtotext/transcriptions:transcribe?api-version=2025-10-15";
+
+            reportProgress(config.AudioLabEnableLlmSpeech ? "LLM Speech 增强转录：上传音频并等待结果..." : "快速转录：上传音频并等待结果...");
+            var (cues, rawJson) = await SpeechFastTranscriptionClient.FastTranscribeToCuesAsync(
+                filePath, locale, fastEndpoint,
+                async ct => await tokenProvider.GetTokenAsync(ct),
+                token,
+                status => reportProgress($"转录：{status}"),
+                splitOptions,
+                config.AudioLabEnableLlmSpeech,
+                config.AudioLabLlmSpeechPrompt);
+
+            reportProgress(config.AudioLabEnableLlmSpeech ? "LLM Speech 增强转录：完成" : "快速转录：完成");
+            return (cues, rawJson);
+        }
+
+        private async Task<(List<SubtitleCue> Cues, string RawJson)> FastTranscribeWithTraditionalAsync(
+            string filePath, AzureSpeechConfig config, string locale,
+            BatchSubtitleSplitOptions splitOptions, CancellationToken token, Action<string> reportProgress)
+        {
+            AzureSubscription? subscription = null;
+            var endpointId = config.AudioLabSpeechEndpointId;
+
+            if (!string.IsNullOrWhiteSpace(endpointId))
+            {
+                var ep = config.Endpoints.FirstOrDefault(e => e.Id == endpointId && e.IsSpeechEndpoint && e.IsEnabled);
+                if (ep != null)
+                {
+                    var region = !string.IsNullOrWhiteSpace(ep.SpeechRegion)
+                        ? ep.SpeechRegion
+                        : AzureSubscription.ParseRegionFromEndpoint(ep.SpeechEndpoint ?? "");
+                    subscription = new AzureSubscription
+                    {
+                        Name = ep.Name,
+                        SubscriptionKey = ep.SpeechSubscriptionKey,
+                        ServiceRegion = region ?? "",
+                        Endpoint = ep.SpeechEndpoint ?? ""
+                    };
+                }
+            }
+
+            if (subscription == null || !subscription.IsValid())
+            {
+                if (!_speechResourceRuntimeResolver.TryResolveActive(config, SpeechCapability.BatchSpeechToText, out var resolution, out var resolveError)
+                    || resolution == null)
+                {
+                    throw new InvalidOperationException(string.IsNullOrWhiteSpace(resolveError)
+                        ? "未配置语音转写资源。"
+                        : resolveError);
+                }
+                if (resolution.MicrosoftSubscription != null)
+                    subscription = resolution.MicrosoftSubscription;
+                else
+                    throw new InvalidOperationException("当前语音资源不支持转录。");
+            }
+
+            reportProgress(config.AudioLabEnableLlmSpeech ? "LLM Speech 增强转录：上传音频并等待结果..." : "快速转录：上传音频并等待结果...");
+            var (cues, rawJson) = await SpeechFastTranscriptionClient.FastTranscribeToCuesAsync(
+                filePath, locale, subscription, token,
+                status => reportProgress($"转录：{status}"),
+                splitOptions,
+                config.AudioLabEnableLlmSpeech,
+                config.AudioLabLlmSpeechPrompt);
+
+            reportProgress(config.AudioLabEnableLlmSpeech ? "LLM Speech 增强转录：完成" : "快速转录：完成");
+            return (cues, rawJson);
         }
 
         private static List<TranscriptSegment> BuildSegmentsFromCues(IList<SubtitleCue> cues)

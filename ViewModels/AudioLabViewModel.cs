@@ -211,6 +211,41 @@ namespace TrueFluentPro.ViewModels
             OnPropertyChanged(nameof(IsCustomStageSelected));
             if (value == AudioLabTabKind.Custom)
                 OnPropertyChanged(nameof(CustomStageContent));
+
+            // 切到转录 tab 时，用当前拆分配置从原始 JSON 重新计算段落
+            if (value == AudioLabTabKind.Transcript)
+                RecomputeTranscriptSegmentsIfNeeded();
+        }
+
+        /// <summary>
+        /// 从 lifecycle DB 读取原始转录 JSON，用当前拆分配置重新计算段落并刷新 UI。
+        /// 仅当存储格式为 v2（RawTranscriptionData）时生效；旧格式无法重算。
+        /// </summary>
+        private void RecomputeTranscriptSegmentsIfNeeded()
+        {
+            var session = _activeSession;
+            var audioItemId = _currentAudioItemId;
+            if (session == null || string.IsNullOrWhiteSpace(audioItemId))
+                return;
+
+            var json = _pipeline?.TryLoadCachedContent(audioItemId, AudioLifecycleStage.Transcribed);
+            if (string.IsNullOrWhiteSpace(json) || !Services.TranscriptionDataHelper.IsRawFormat(json))
+                return;
+
+            try
+            {
+                var segments = LoadSegmentsFromLifecycleJson(json);
+                if (segments.Count > 0)
+                {
+                    session.Segments = segments;
+                    SyncSegmentsFromSession(session);
+                    StatusMessage = $"转录段落已刷新：{segments.Count} 个段落";
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[AudioLab] RecomputeTranscriptSegments 失败: {ex.Message}");
+            }
         }
 
         // ── 深度研究 ──────────────────────────────────────────
@@ -812,6 +847,36 @@ namespace TrueFluentPro.ViewModels
             return sb.ToString();
         }
 
+        /// <summary>
+        /// 从 lifecycle DB 的 JSON 加载段落列表，自动兼容新旧格式。
+        /// 新格式（v2 RawTranscriptionData）: 使用当前拆分配置从原始 API 响应按需计算。
+        /// 旧格式（TranscriptSegmentDto[]）: 直接反序列化。
+        /// </summary>
+        private List<TranscriptSegment> LoadSegmentsFromLifecycleJson(string json)
+        {
+            if (Services.TranscriptionDataHelper.IsRawFormat(json))
+            {
+                var rawData = Services.TranscriptionDataHelper.ParseRawData(json);
+                if (rawData == null || string.IsNullOrWhiteSpace(rawData.RawResponse))
+                    return new();
+
+                var config = _configProvider();
+                var splitOptions = new BatchSubtitleSplitOptions
+                {
+                    EnableSentenceSplit = config.EnableBatchSubtitleSentenceSplit,
+                    SplitOnComma = config.BatchSubtitleSplitOnComma,
+                    MaxChars = config.BatchSubtitleMaxChars,
+                    MaxDurationSeconds = config.BatchSubtitleMaxDurationSeconds,
+                    PauseSplitMs = config.BatchSubtitlePauseSplitMs
+                };
+                return Services.TranscriptionDataHelper.ComputeSegments(rawData, splitOptions);
+            }
+            else
+            {
+                return Services.TranscriptionDataHelper.DeserializeLegacySegments(json);
+            }
+        }
+
         private static List<TranscriptSegment> BuildSegmentsFromCues(IList<SubtitleCue> cues)
         {
             var segments = new List<TranscriptSegment>();
@@ -844,6 +909,11 @@ namespace TrueFluentPro.ViewModels
 
         private Task TranscribeAsync()
         {
+            // 立即清空旧转录内容，避免后续失败时残留旧数据误导用户
+            Segments.Clear();
+            if (_activeSession != null)
+                _activeSession.Segments = new List<TranscriptSegment>();
+
             if (TrySubmitToQueue(AudioLifecycleStage.Transcribed, "转录"))
                 return Task.CompletedTask;
             var session = _activeSession;
@@ -881,11 +951,24 @@ namespace TrueFluentPro.ViewModels
                     config.AudioLabSourceLanguage ?? config.SourceLanguage);
 
                 List<SubtitleCue> cues;
+                string rawJson;
+                string apiType;
 
+                var useFast = config.AudioLabTranscriptionApiMode == TranscriptionApiMode.Fast;
                 if (config.AudioLabSpeechMode == 0)
-                    cues = await TranscribeWithAadAsync(session, config, locale, splitOptions, token);
+                {
+                    if (useFast)
+                    { (cues, rawJson) = await FastTranscribeWithAadAsync(session, config, locale, splitOptions, token); apiType = "fast"; }
+                    else
+                    { (cues, rawJson) = await TranscribeWithAadAsync(session, config, locale, splitOptions, token); apiType = "batch"; }
+                }
                 else
-                    cues = await TranscribeWithTraditionalAsync(session, config, locale, splitOptions, token);
+                {
+                    if (useFast)
+                    { (cues, rawJson) = await FastTranscribeWithTraditionalAsync(session, config, locale, splitOptions, token); apiType = "fast"; }
+                    else
+                    { (cues, rawJson) = await TranscribeWithTraditionalAsync(session, config, locale, splitOptions, token); apiType = "batch"; }
+                }
 
                 // 将结果写入会话
                 session.Segments = BuildSegmentsFromCues(cues);
@@ -905,8 +988,8 @@ namespace TrueFluentPro.ViewModels
                     RaiseAllCommandsCanExecuteChanged();
                 });
 
-                // 保存转录到生命周期数据库
-                SaveTranscriptionToLifecycle(session);
+                // 保存原始 API 响应到生命周期数据库
+                SaveTranscriptionToLifecycle(rawJson, apiType, locale, session);
 
                 // 转录完成后并发填充所有下游内容
                 await AutoFillDownstreamAsync(session);
@@ -932,7 +1015,7 @@ namespace TrueFluentPro.ViewModels
             }
         }
 
-        private async Task<List<SubtitleCue>> TranscribeWithAadAsync(
+        private async Task<(List<SubtitleCue> Cues, string RawJson)> TranscribeWithAadAsync(
             AudioFileSession session, AzureSpeechConfig config, string locale,
             BatchSubtitleSplitOptions splitOptions, CancellationToken token)
         {
@@ -975,17 +1058,17 @@ namespace TrueFluentPro.ViewModels
 
             session.StatusMessage = "转录：提交批量任务...";
             await InvokeIfActiveAsync(session, () => StatusMessage = session.StatusMessage);
-            var (cues, _) = await SpeechBatchApiClient.BatchTranscribeSpeechToCuesAsync(
+            var (cues, rawJson) = await SpeechBatchApiClient.BatchTranscribeSpeechToCuesAsync(
                 contentUrl, locale, batchEndpoint,
                 async ct => await tokenProvider.GetTokenAsync(ct),
                 token,
                 status => { session.StatusMessage = status; PostIfActive(session, () => StatusMessage = status); },
                 splitOptions);
 
-            return cues;
+            return (cues, rawJson);
         }
 
-        private async Task<List<SubtitleCue>> TranscribeWithTraditionalAsync(
+        private async Task<(List<SubtitleCue> Cues, string RawJson)> TranscribeWithTraditionalAsync(
             AudioFileSession session, AzureSpeechConfig config, string locale,
             BatchSubtitleSplitOptions splitOptions, CancellationToken token)
         {
@@ -1040,12 +1123,108 @@ namespace TrueFluentPro.ViewModels
 
             session.StatusMessage = "转录：提交批量任务...";
             await InvokeIfActiveAsync(session, () => StatusMessage = session.StatusMessage);
-            var (cues, _) = await SpeechBatchApiClient.BatchTranscribeSpeechToCuesAsync(
+            var (cues, rawJson) = await SpeechBatchApiClient.BatchTranscribeSpeechToCuesAsync(
                 contentUrl, locale, subscription, token,
                 status => { session.StatusMessage = status; PostIfActive(session, () => StatusMessage = status); },
                 splitOptions);
 
-            return cues;
+            return (cues, rawJson);
+        }
+
+        // ── 快速转录（Fast API） ──────────────────────────────
+
+        private async Task<(List<SubtitleCue> Cues, string RawJson)> FastTranscribeWithAadAsync(
+            AudioFileSession session, AzureSpeechConfig config, string locale,
+            BatchSubtitleSplitOptions splitOptions, CancellationToken token)
+        {
+            var endpointId = config.AudioLabAadEndpointId;
+            if (string.IsNullOrWhiteSpace(endpointId))
+                throw new InvalidOperationException("听析中心未选择 AAD 终结点，请在「设置 → 听析中心」中选择 Foundry 终结点。");
+
+            var endpoint = config.Endpoints.FirstOrDefault(e => e.Id == endpointId);
+            if (endpoint == null || !endpoint.IsEnabled)
+                throw new InvalidOperationException("听析中心选择的 AAD 终结点已不存在或已禁用，请重新配置。");
+
+            var tokenProvider = await _azureTokenProviderStore.GetAuthenticatedProviderAsync(
+                GetEndpointProfileKey(endpoint),
+                endpoint.AzureTenantId,
+                endpoint.AzureClientId);
+
+            if (tokenProvider?.IsLoggedIn != true)
+                throw new InvalidOperationException("AAD 认证未登录。请先在终结点设置中完成 AAD 登录。");
+
+            var subdomain = AudioLabSectionVM.ParseSubdomainFromFoundryUrl(endpoint.BaseUrl);
+            if (string.IsNullOrWhiteSpace(subdomain))
+                throw new InvalidOperationException($"无法从终结点「{endpoint.Name}」的 URL 解析子域名。");
+            var cognitiveHost = AudioLabSectionVM.IsAzureChinaUrl(endpoint.BaseUrl)
+                ? $"https://{subdomain}.cognitiveservices.azure.cn"
+                : $"https://{subdomain}.cognitiveservices.azure.com";
+            var fastEndpoint = $"{cognitiveHost}/speechtotext/transcriptions:transcribe?api-version=2025-10-15";
+
+            session.StatusMessage = config.AudioLabEnableLlmSpeech ? "LLM Speech 增强转录：准备中..." : "快速转录：准备中...";
+            await InvokeIfActiveAsync(session, () => StatusMessage = session.StatusMessage);
+            var (cues, rawJson) = await SpeechFastTranscriptionClient.FastTranscribeToCuesAsync(
+                session.FilePath, locale, fastEndpoint,
+                async ct => await tokenProvider.GetTokenAsync(ct),
+                token,
+                status => { session.StatusMessage = status; PostIfActive(session, () => StatusMessage = status); },
+                splitOptions,
+                config.AudioLabEnableLlmSpeech,
+                config.AudioLabLlmSpeechPrompt);
+
+            return (cues, rawJson);
+        }
+
+        private async Task<(List<SubtitleCue> Cues, string RawJson)> FastTranscribeWithTraditionalAsync(
+            AudioFileSession session, AzureSpeechConfig config, string locale,
+            BatchSubtitleSplitOptions splitOptions, CancellationToken token)
+        {
+            AzureSubscription? subscription = null;
+            var endpointId = config.AudioLabSpeechEndpointId;
+
+            if (!string.IsNullOrWhiteSpace(endpointId))
+            {
+                var ep = config.Endpoints.FirstOrDefault(e => e.Id == endpointId && e.IsSpeechEndpoint && e.IsEnabled);
+                if (ep != null)
+                {
+                    var region = !string.IsNullOrWhiteSpace(ep.SpeechRegion)
+                        ? ep.SpeechRegion
+                        : AzureSubscription.ParseRegionFromEndpoint(ep.SpeechEndpoint ?? "");
+                    subscription = new AzureSubscription
+                    {
+                        Name = ep.Name,
+                        SubscriptionKey = ep.SpeechSubscriptionKey,
+                        ServiceRegion = region ?? "",
+                        Endpoint = ep.SpeechEndpoint ?? ""
+                    };
+                }
+            }
+
+            if (subscription == null || !subscription.IsValid())
+            {
+                if (!_speechResourceRuntimeResolver.TryResolveActive(config, SpeechCapability.BatchSpeechToText, out var resolution, out var resolveError)
+                    || resolution == null)
+                {
+                    throw new InvalidOperationException(string.IsNullOrWhiteSpace(resolveError)
+                        ? "未配置语音转写资源，请在「设置 → 听析中心」中选择语音终结点。"
+                        : resolveError);
+                }
+                if (resolution.MicrosoftSubscription != null)
+                    subscription = resolution.MicrosoftSubscription;
+                else
+                    throw new InvalidOperationException("当前语音资源不支持转录。请在「设置 → 听析中心」中选择传统语音终结点或切换到 AAD 模式。");
+            }
+
+            session.StatusMessage = config.AudioLabEnableLlmSpeech ? "LLM Speech 增强转录：准备中..." : "快速转录：准备中...";
+            await InvokeIfActiveAsync(session, () => StatusMessage = session.StatusMessage);
+            var (cues, rawJson) = await SpeechFastTranscriptionClient.FastTranscribeToCuesAsync(
+                session.FilePath, locale, subscription, token,
+                status => { session.StatusMessage = status; PostIfActive(session, () => StatusMessage = status); },
+                splitOptions,
+                config.AudioLabEnableLlmSpeech,
+                config.AudioLabLlmSpeechPrompt);
+
+            return (cues, rawJson);
         }
 
         // ── 总结生成 ──────────────────────────────────────────
@@ -1528,9 +1707,12 @@ namespace TrueFluentPro.ViewModels
             // 再将下游标记为 stale
             _pipeline?.InvalidateDownstreamStages(_currentAudioItemId, stage);
 
-            _queueService.Submit(_currentAudioItemId, stage);
-            foreach (var downstream in AudioTaskDependencies.GetDownstreamStages(stage))
-                _queueService.Submit(_currentAudioItemId, downstream);
+            // 使用 SubmitAll 按 DAG 智能提交：
+            // - 被标记 stale 的阶段会被视为未完成，自动重新提交
+            // - 尊重阶段预设配置（IncludeInBatch）
+            // - 内置去重，不会重复提交正在执行的任务
+            var stagePresets = _configProvider().AudioLabStagePresets;
+            _queueService.SubmitAll(_currentAudioItemId, stagePresets);
 
             StatusMessage = $"{label}任务已提交到队列...";
             RefreshStageStates(_currentAudioItemId);
@@ -1636,10 +1818,19 @@ namespace TrueFluentPro.ViewModels
         {
             // 仅处理与当前音频相关的事件
             if (_currentAudioItemId == null || e.AudioItemId != _currentAudioItemId)
+            {
+                System.Diagnostics.Debug.WriteLine($"[AudioLab] 忽略事件：stage={e.Stage} status={e.NewStatus} (audioId 不匹配: 当前={_currentAudioItemId}, 事件={e.AudioItemId})");
                 return;
+            }
 
             var session = _activeSession;
-            if (session == null) return;
+            if (session == null)
+            {
+                System.Diagnostics.Debug.WriteLine($"[AudioLab] 忽略事件：stage={e.Stage} status={e.NewStatus} (activeSession 为 null)");
+                return;
+            }
+
+            System.Diagnostics.Debug.WriteLine($"[AudioLab] 收到事件：stage={e.Stage} status={e.OldStatus}->{e.NewStatus} taskId={e.TaskId}");
 
             // 刷新阶段状态
             RefreshStageStates(e.AudioItemId);
@@ -1786,26 +1977,31 @@ namespace TrueFluentPro.ViewModels
             {
                 case AudioLifecycleStage.Transcribed:
                     var transcriptionJson = _pipeline.TryLoadCachedContent(audioItemId, AudioLifecycleStage.Transcribed);
+                    System.Diagnostics.Debug.WriteLine($"[AudioLab] RefreshStageContentFromDb(Transcribed): json长度={transcriptionJson?.Length ?? -1}");
                     if (!string.IsNullOrWhiteSpace(transcriptionJson))
                     {
                         try
                         {
-                            var dtos = System.Text.Json.JsonSerializer.Deserialize<List<TranscriptSegmentDto>>(transcriptionJson);
-                            if (dtos != null && dtos.Count > 0)
+                            var segments = LoadSegmentsFromLifecycleJson(transcriptionJson);
+                            System.Diagnostics.Debug.WriteLine($"[AudioLab] 解析段落: {segments.Count} 个");
+                            if (segments.Count > 0)
                             {
-                                session.Segments = dtos.Select(d => new TranscriptSegment
-                                {
-                                    Speaker = d.Speaker ?? "",
-                                    SpeakerIndex = d.SpeakerIndex,
-                                    StartTime = new TimeSpan(d.StartTimeTicks),
-                                    Text = d.Text ?? "",
-                                }).ToList();
+                                session.Segments = segments;
                                 SyncSegmentsFromSession(session);
+                                System.Diagnostics.Debug.WriteLine($"[AudioLab] SyncSegmentsFromSession 完成: Segments.Count={Segments.Count}");
                                 StatusMessage = $"转录完成：{session.Segments.Count} 个段落";
                                 RaiseAllCommandsCanExecuteChanged();
                             }
                         }
-                        catch { /* 兼容旧格式 */ }
+                        catch (Exception ex)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"[AudioLab] 转录数据反序列化失败: {ex.Message}");
+                            StatusMessage = $"转录数据加载失败：{ex.Message}";
+                        }
+                    }
+                    else
+                    {
+                        System.Diagnostics.Debug.WriteLine("[AudioLab] RefreshStageContentFromDb(Transcribed): TryLoadCachedContent 返回空");
                     }
                     break;
 
@@ -1903,19 +2099,14 @@ namespace TrueFluentPro.ViewModels
                 {
                     try
                     {
-                        var dtos = System.Text.Json.JsonSerializer.Deserialize<List<TranscriptSegmentDto>>(transcriptionJson);
-                        if (dtos != null && dtos.Count > 0)
-                        {
-                            session.Segments = dtos.Select(d => new TranscriptSegment
-                            {
-                                Speaker = d.Speaker ?? "",
-                                SpeakerIndex = d.SpeakerIndex,
-                                StartTime = new TimeSpan(d.StartTimeTicks),
-                                Text = d.Text ?? "",
-                            }).ToList();
-                        }
+                        var segments = LoadSegmentsFromLifecycleJson(transcriptionJson);
+                        if (segments.Count > 0)
+                            session.Segments = segments;
                     }
-                    catch { /* 兼容旧格式 */ }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[AudioLab] 恢复转录缓存反序列化失败: {ex.Message}");
+                    }
                 }
             }
 
@@ -1969,20 +2160,18 @@ namespace TrueFluentPro.ViewModels
         }
 
         /// <summary>
-        /// 将转录完成事件通知到生命周期系统。
+        /// 将原始 API 响应保存到生命周期数据库（新 v2 格式）。
         /// </summary>
-        private void SaveTranscriptionToLifecycle(AudioFileSession session)
+        private void SaveTranscriptionToLifecycle(string rawJson, string apiType, string locale, AudioFileSession session)
         {
             var audioItemId = _pipeline.EnsureAudioItem(session.FilePath);
-            // 保存完整转录段落到生命周期数据库（JSON 序列化）
-            var segmentDtos = session.Segments.Select(s => new
+            var rawData = new Models.RawTranscriptionData
             {
-                s.Speaker,
-                s.SpeakerIndex,
-                StartTimeTicks = s.StartTime.Ticks,
-                s.Text,
-            }).ToList();
-            var json = System.Text.Json.JsonSerializer.Serialize(segmentDtos);
+                ApiType = apiType,
+                RawResponse = rawJson,
+                Locale = locale
+            };
+            var json = Services.TranscriptionDataHelper.SerializeRawData(rawData);
             _pipeline.SaveStageContent(audioItemId, AudioLifecycleStage.Transcribed, json);
             ControlPanel.RefreshLifecycleStatus();
         }

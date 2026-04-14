@@ -438,6 +438,9 @@ namespace TrueFluentPro.ViewModels
         public DateTime? StartedAt { get; }
         public DateTime? CompletedAt { get; }
 
+        /// <summary>列表中显示的发起时间（完整日期时间）。</summary>
+        public string SubmittedAtDisplay => SubmittedAt.ToString("MM-dd HH:mm");
+
         public string StageDisplayName => Stage switch
         {
             "Transcribed" => "转录",

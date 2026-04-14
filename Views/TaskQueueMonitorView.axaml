@@ -105,7 +105,7 @@
         <Grid Grid.Column="2" Margin="16,12" RowDefinitions="Auto,*,Auto">
 
             <!-- sortable header -->
-            <Grid Grid.Row="0" ColumnDefinitions="110,*,90,200,70" Margin="8,0,8,8">
+            <Grid Grid.Row="0" ColumnDefinitions="110,*,90,170,120,70" Margin="8,0,8,8">
                 <Button Grid.Column="0" Padding="0" Background="Transparent" BorderThickness="0"
                         HorizontalContentAlignment="Left"
                         Command="{Binding SortByColumnCommand}" CommandParameter="TaskId">
@@ -127,11 +127,14 @@
                 <TextBlock Grid.Column="3" Text="状态" FontWeight="SemiBold" FontSize="11"
                            Foreground="{DynamicResource TextSubtleBrush}" VerticalAlignment="Center"/>
                 <Button Grid.Column="4" Padding="0" Background="Transparent" BorderThickness="0"
-                        HorizontalContentAlignment="Right"
+                        HorizontalContentAlignment="Left"
                         Command="{Binding SortByColumnCommand}" CommandParameter="SubmittedAt">
-                    <TextBlock Text="时间" FontWeight="SemiBold" FontSize="11"
+                    <TextBlock Text="发起时间" FontWeight="SemiBold" FontSize="11"
                                Foreground="{DynamicResource TextSubtleBrush}"/>
                 </Button>
+                <TextBlock Grid.Column="5" Text="耗时" FontWeight="SemiBold" FontSize="11"
+                           HorizontalAlignment="Right"
+                           Foreground="{DynamicResource TextSubtleBrush}" VerticalAlignment="Center"/>
             </Grid>
 
             <!-- task list -->
@@ -141,7 +144,7 @@
                      Background="Transparent" BorderThickness="0" Padding="0">
                 <ListBox.ItemTemplate>
                     <DataTemplate x:CompileBindings="False">
-                        <Grid ColumnDefinitions="110,*,90,200,70"
+                        <Grid ColumnDefinitions="110,*,90,170,120,70"
                               Margin="0,1" Height="32"
                               PointerReleased="TaskRow_PointerReleased"
                               Background="Transparent">
@@ -166,7 +169,11 @@
                                        TextTrimming="CharacterEllipsis"
                                        ToolTip.Tip="{Binding StatusDisplayName}"
                                        VerticalAlignment="Center"/>
-                            <TextBlock Grid.Column="4" Text="{Binding ElapsedTime}"
+                            <TextBlock Grid.Column="4" Text="{Binding SubmittedAtDisplay}"
+                                       FontSize="11"
+                                       Foreground="{DynamicResource TextSubtleBrush}"
+                                       VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="5" Text="{Binding ElapsedTime}"
                                        HorizontalAlignment="Right" FontSize="11"
                                        Foreground="{DynamicResource TextSubtleBrush}"
                                        VerticalAlignment="Center"/>
@@ -200,8 +207,8 @@
                         <TextBlock Grid.Row="3" Grid.Column="0" Text="时间：" FontWeight="SemiBold"
                                    Foreground="{DynamicResource TextSubtleBrush}" FontSize="12"/>
                         <StackPanel Grid.Row="3" Grid.Column="1" Orientation="Horizontal" Spacing="16">
-                            <TextBlock Text="{Binding SelectedTask.SubmittedAt, StringFormat='提交: {0:HH:mm:ss}'}" FontSize="11"/>
-                            <TextBlock Text="{Binding SelectedTask.StartedAt, StringFormat='开始: {0:HH:mm:ss}'}" FontSize="11"/>
+                            <TextBlock Text="{Binding SelectedTask.SubmittedAt, StringFormat='提交: {0:MM-dd HH:mm:ss}'}" FontSize="11"/>
+                            <TextBlock Text="{Binding SelectedTask.StartedAt, StringFormat='开始: {0:MM-dd HH:mm:ss}'}" FontSize="11"/>
                             <TextBlock Text="{Binding SelectedTask.ElapsedTime, StringFormat='耗时: {0}'}" FontSize="11"/>
                         </StackPanel>
                         <TextBlock Grid.Row="4" Grid.Column="0" Text="错误信息：" FontWeight="SemiBold"

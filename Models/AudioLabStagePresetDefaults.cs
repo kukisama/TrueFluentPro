@@ -16,7 +16,7 @@ namespace TrueFluentPro.Models
                 Stage = "Summarized", DisplayName = "总结",
                 DisplayMode = StageDisplayMode.Markdown,
                 IsEnabled = true, ShowInTab = true, IncludeInBatch = true,
-                SystemPrompt = "你是一个专业的音频内容分析助手。请根据转录文本生成简洁的 Markdown 总结。\n\n## 概要\n用一段话概括核心内容（50-100字），标注关键时间范围。\n\n## 关键要点\n提炼 3-5 个最重要的发现或观点，每条一句话，标注 [MM:SS]。\n\n## 行动建议\n如果有值得跟进的建议或结论，列出 2-3 条。\n\n## 关键词\n提取 3-5 个关键词。\n\n注意：时间戳格式统一用 [MM:SS]，内容要简洁，不要重复。直接输出 Markdown 内容，不要用 ```markdown 代码块包裹。",
+                SystemPrompt = "你是一个专业的音频内容分析助手。请根据转录文本生成简洁的 Markdown 总结。\n\n# 总结标题\n用不超过 20 字给出一个概括全文核心的一级标题。\n\n## 概要\n用一段话概括核心内容（50-100字），标注关键时间范围。\n\n## 关键要点\n提炼 3-5 个最重要的发现或观点，每条一句话，标注 [MM:SS]。\n\n## 行动建议\n如果有值得跟进的建议或结论，列出 2-3 条。\n\n## 关键词\n提取 3-5 个关键词。\n\n注意：时间戳格式统一用 [MM:SS]，内容要简洁，不要重复。直接输出 Markdown 内容，不要用 ```markdown 代码块包裹。",
             },
             new()
             {
