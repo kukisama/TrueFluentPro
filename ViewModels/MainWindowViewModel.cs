@@ -3,6 +3,7 @@ using System.Collections.ObjectModel;
 using System.Windows.Input;
 using TrueFluentPro.Models;
 using TrueFluentPro.Services;
+using TrueFluentPro.Services.Cloud;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
@@ -319,6 +320,9 @@ namespace TrueFluentPro.ViewModels
             SyncThemeModeFromConfig();
             SyncMainNavPaneStateFromConfig();
 
+            // 初始化 Cloud SaaS 模式设置（解耦，仅当配置中有 CloudSettings 时生效）
+            InitializeCloudSettings(config);
+
             BatchProcessing.NormalizeSpeechSubtitleOption();
             BatchProcessing.RefreshCommandStates();
             BatchProcessing.RebuildReviewSheets();
@@ -352,6 +356,9 @@ namespace TrueFluentPro.ViewModels
             ((RelayCommand)ToggleTranslationCommand).RaiseCanExecuteChanged();
 
             _ = AiInsight.TrySilentLoginForAiAsync();
+
+            // 同步 Cloud 设置
+            InitializeCloudSettings(config);
         }
 
         private void OnSettingsConfigSaved(AzureSpeechConfig config)
@@ -369,6 +376,9 @@ namespace TrueFluentPro.ViewModels
 
             ((RelayCommand)StartTranslationCommand).RaiseCanExecuteChanged();
             ((RelayCommand)ToggleTranslationCommand).RaiseCanExecuteChanged();
+
+            // 同步 Cloud 设置
+            InitializeCloudSettings(config);
         }
 
         private async Task WarmUpReferencedAadTokensOnStartupAsync(IAzureTokenProviderStore azureTokenProviderStore)
@@ -562,6 +572,41 @@ namespace TrueFluentPro.ViewModels
         private void QueueUpdateTranslationConfig(AzureSpeechConfig config)
         {
             _ = UpdateTranslationConfigAsync(config);
+        }
+
+        /// <summary>
+        /// 从配置中加载 Cloud SaaS 设置并初始化相关服务。
+        /// 完全解耦：如果 CloudSettings 为默认值（SelfHosted），不做任何事。
+        /// </summary>
+        private static void InitializeCloudSettings(AzureSpeechConfig config)
+        {
+            try
+            {
+                var cloudSettings = config.CloudSettings;
+                var modeManager = App.Services.GetService(typeof(IServiceModeManager)) as IServiceModeManager;
+                var authService = App.Services.GetService(typeof(ICloudAuthService)) as ICloudAuthService;
+
+                if (modeManager == null || authService == null)
+                {
+                    return;
+                }
+
+                modeManager.ApplySettings(cloudSettings);
+
+                // 如果配置了 AAD 参数，初始化 MSAL 客户端
+                if (!string.IsNullOrWhiteSpace(cloudSettings.AadTenantId) &&
+                    !string.IsNullOrWhiteSpace(cloudSettings.AadClientId))
+                {
+                    authService.Reconfigure(
+                        cloudSettings.AadTenantId,
+                        cloudSettings.AadClientId,
+                        cloudSettings.AadScope);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[Cloud] InitializeCloudSettings error: {ex.Message}");
+            }
         }
     }
 }

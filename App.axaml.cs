@@ -8,6 +8,7 @@ using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using TrueFluentPro.Services;
+using TrueFluentPro.Services.Cloud;
 using TrueFluentPro.Services.EndpointProfiles;
 using TrueFluentPro.Services.EndpointTesting;
 using TrueFluentPro.Services.Storage;
@@ -106,6 +107,11 @@ public partial class App : Application
         services.AddSingleton<AudioTaskStageHandlerService>();
         services.AddSingleton<IAudioTaskQueueService, AudioTaskQueueService>();
         services.AddSingleton<IAudioTaskExecutor, AudioTaskExecutor>();
+
+        // --- Cloud SaaS 模式 (解耦, 不影响现有功能) ---
+        services.AddSingleton<IServiceModeManager, ServiceModeManager>();
+        services.AddSingleton<ICloudAuthService, CloudAuthService>();
+        services.AddSingleton<ICloudApiClient, CloudApiClient>();
 
         // --- ViewModel ---
         services.AddSingleton<SettingsViewModel>();
