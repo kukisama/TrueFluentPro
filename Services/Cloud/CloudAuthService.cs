@@ -33,7 +33,9 @@ namespace TrueFluentPro.Services.Cloud
 
             _tenantId = tenantId.Trim();
             _clientId = clientId.Trim();
-            _scope = string.IsNullOrWhiteSpace(scope) ? $"api://{_clientId}/access" : scope.Trim();
+            _scope = string.IsNullOrWhiteSpace(scope)
+                ? $"api://{_clientId}/access"  // Standard Azure AD app scope format: api://{clientId}/access
+                : scope.Trim();
 
             _msalApp = PublicClientApplicationBuilder
                 .Create(_clientId)

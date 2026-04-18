@@ -16,6 +16,8 @@ namespace TrueFluentPro.ViewModels.Settings
         private readonly ICloudAuthService _authService;
         private readonly IServiceModeManager _modeManager;
         private readonly ICloudApiClient _apiClient;
+        private readonly RelayCommand _loginCommand;
+        private readonly RelayCommand _logoutCommand;
 
         private int _serviceModeIndex;
         private string _backendUrl = "";
@@ -37,9 +39,12 @@ namespace TrueFluentPro.ViewModels.Settings
             _modeManager = modeManager;
             _apiClient = apiClient;
 
-            LoginCommand = new RelayCommand(async _ => await LoginAsync(), _ => !IsLoggedIn);
-            LogoutCommand = new RelayCommand(async _ => await LogoutAsync(), _ => IsLoggedIn);
+            _loginCommand = new RelayCommand(async _ => await LoginAsync(), _ => !IsLoggedIn);
+            _logoutCommand = new RelayCommand(async _ => await LogoutAsync(), _ => IsLoggedIn);
             CheckHealthCommand = new RelayCommand(async _ => await CheckHealthAsync());
+
+            LoginCommand = _loginCommand;
+            LogoutCommand = _logoutCommand;
         }
 
         // ═══ 绑定属性 ═══
@@ -82,8 +87,8 @@ namespace TrueFluentPro.ViewModels.Settings
             {
                 if (SetProperty(ref _isLoggedIn, value))
                 {
-                    ((RelayCommand)LoginCommand).RaiseCanExecuteChanged();
-                    ((RelayCommand)LogoutCommand).RaiseCanExecuteChanged();
+                    _loginCommand.RaiseCanExecuteChanged();
+                    _logoutCommand.RaiseCanExecuteChanged();
                 }
             }
         }
@@ -91,25 +96,25 @@ namespace TrueFluentPro.ViewModels.Settings
         public string LoginStatus
         {
             get => _loginStatus;
-            set => SetProperty(ref _loginStatus, value);
+            set => Set(ref _loginStatus, value, dirty: false);
         }
 
         public string UserDisplayName
         {
             get => _userDisplayName;
-            set => SetProperty(ref _userDisplayName, value);
+            set => Set(ref _userDisplayName, value, dirty: false);
         }
 
         public string HealthStatus
         {
             get => _healthStatus;
-            set => SetProperty(ref _healthStatus, value);
+            set => Set(ref _healthStatus, value, dirty: false);
         }
 
         public bool IsHealthy
         {
             get => _isHealthy;
-            set => SetProperty(ref _isHealthy, value);
+            set => Set(ref _isHealthy, value, dirty: false);
         }
 
         // ═══ 命令 ═══
