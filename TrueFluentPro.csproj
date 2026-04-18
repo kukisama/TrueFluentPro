@@ -62,6 +62,7 @@
 
   <ItemGroup>
     <Compile Remove="tools\**\*.cs" />
+    <Compile Remove="backend\**\*.cs" />
     <AvaloniaXaml Remove="tools\**\*.axaml" />
     <AvaloniaResource Remove="tools\**\*.axaml" />
     <None Include="tools\**\*" />
