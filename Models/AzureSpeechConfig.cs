@@ -331,6 +331,9 @@ namespace TrueFluentPro.Models
         /// <summary>标记旧 Subscriptions 是否已迁移到 Endpoints（AzureSpeech 类型）</summary>
         public bool SpeechSubscriptionsMigratedToEndpoints { get; set; }
 
+        /// <summary>Cloud SaaS 模式设置（AAD 登录 + 后端代理）。默认 SelfHosted 不影响现有功能。</summary>
+        public Cloud.CloudSettings CloudSettings { get; set; } = new();
+
         [JsonIgnore]
         public string SessionDirectory => string.IsNullOrWhiteSpace(SessionDirectoryOverride)
             ? PathManager.Instance.SessionsPath

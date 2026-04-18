@@ -9,6 +9,7 @@ using System.Windows.Input;
 using Avalonia.Threading;
 using TrueFluentPro.Models;
 using TrueFluentPro.Services;
+using TrueFluentPro.Services.Cloud;
 using TrueFluentPro.Services.EndpointTesting;
 using TrueFluentPro.Services.Speech;
 using TrueFluentPro.ViewModels.Settings;
@@ -30,6 +31,7 @@ namespace TrueFluentPro.ViewModels
         private readonly Lazy<TransferSectionVM> _transferVm;
         private readonly Lazy<AboutSectionVM> _aboutVm;
         private readonly Lazy<WebSearchSectionVM> _webSearchVm;
+        private readonly Lazy<CloudSectionVM> _cloudVm;
 
         private AzureSpeechConfig _config = new();
         private Timer? _debounceTimer;
@@ -56,6 +58,7 @@ namespace TrueFluentPro.ViewModels
         public TransferSectionVM TransferVM => _transferVm.Value;
         public AboutSectionVM AboutVM => _aboutVm.Value;
         public WebSearchSectionVM WebSearchVM => _webSearchVm.Value;
+        public CloudSectionVM CloudVM => _cloudVm.Value;
 
         public SettingsViewModel(
             ConfigurationService configService,
@@ -86,6 +89,16 @@ namespace TrueFluentPro.ViewModels
             _videoGenVm = CreateLazySection(() => new VideoGenSectionVM(), ConfigureVideoGenSection);
             _aboutVm = CreateLazySection(() => new AboutSectionVM(aboutSectionService, ReportStatus), ConfigureAboutSection);
             _webSearchVm = CreateLazySection(() => new WebSearchSectionVM(), ConfigureWebSearchSection);
+            _cloudVm = CreateLazySection(() =>
+            {
+                var authService = App.Services.GetService(typeof(ICloudAuthService)) as ICloudAuthService
+                    ?? new CloudAuthService();
+                var modeManager = App.Services.GetService(typeof(IServiceModeManager)) as IServiceModeManager
+                    ?? new ServiceModeManager();
+                var apiClient = App.Services.GetService(typeof(ICloudApiClient)) as ICloudApiClient
+                    ?? new CloudApiClient(authService, modeManager);
+                return new CloudSectionVM(authService, modeManager, apiClient);
+            }, ConfigureCloudSection);
             _transferVm = new Lazy<TransferSectionVM>(() => new TransferSectionVM(
                 settingsTransferFileService,
                 CreateExportPackage,
@@ -310,6 +323,11 @@ namespace TrueFluentPro.ViewModels
                 ConfigureWebSearchSection(_webSearchVm.Value);
             }
 
+            if (_cloudVm.IsValueCreated)
+            {
+                ConfigureCloudSection(_cloudVm.Value);
+            }
+
             _ = RefreshAiAuthStatusAsync();
         }
 
@@ -441,6 +459,11 @@ namespace TrueFluentPro.ViewModels
         }
 
         private void ConfigureWebSearchSection(WebSearchSectionVM section)
+        {
+            section.LoadFrom(_config);
+        }
+
+        private void ConfigureCloudSection(CloudSectionVM section)
         {
             section.LoadFrom(_config);
         }
@@ -621,6 +644,11 @@ namespace TrueFluentPro.ViewModels
             if (_webSearchVm.IsValueCreated)
             {
                 _webSearchVm.Value.ApplyTo(_config);
+            }
+
+            if (_cloudVm.IsValueCreated)
+            {
+                _cloudVm.Value.ApplyTo(_config);
             }
 
             EndpointsVM.SyncEndpointsToConfig();
