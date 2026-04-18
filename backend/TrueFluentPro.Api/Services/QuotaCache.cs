@@ -16,6 +16,7 @@ public sealed class InMemoryQuotaCache : IQuotaCache
     private readonly ConcurrentDictionary<string, long> _cache = new();
     private readonly IApiDbService _db;
     private readonly ILogger<InMemoryQuotaCache> _logger;
+    private readonly Lock _monthLock = new();
     private string _currentYearMonth = DateTime.UtcNow.ToString("yyyy-MM");
 
     public InMemoryQuotaCache(IApiDbService db, ILogger<InMemoryQuotaCache> logger)
@@ -74,13 +75,15 @@ public sealed class InMemoryQuotaCache : IQuotaCache
         var now = DateTime.UtcNow.ToString("yyyy-MM");
         if (now != _currentYearMonth)
         {
-            _currentYearMonth = now;
-            _cache.Clear();
+            lock (_monthLock)
+            {
+                // Double-check inside lock
+                if (now != _currentYearMonth)
+                {
+                    _currentYearMonth = now;
+                    _cache.Clear();
+                }
+            }
         }
     }
-}
-
-file static class ConcurrentDictionaryAlias
-{
-    // Using System.Collections.Concurrent already imported via ImplicitUsings
 }

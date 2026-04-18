@@ -464,7 +464,9 @@ public sealed class SqliteApiDbService : IApiDbService, IDisposable
     private byte[] Encrypt(string plainText)
     {
         if (_encryptionKey == null || _encryptionKey.Length < 16)
-            return Encoding.UTF8.GetBytes(plainText); // Fallback: no encryption
+            throw new InvalidOperationException(
+                "ENCRYPTION_KEY environment variable must be set (base64, ≥16 bytes) to store encrypted credentials. " +
+                "Generate with: openssl rand -base64 32");
 
         using var aes = Aes.Create();
         aes.Key = _encryptionKey.Length >= 32 ? _encryptionKey[..32] : PadKey(_encryptionKey, 32);
@@ -484,7 +486,10 @@ public sealed class SqliteApiDbService : IApiDbService, IDisposable
     private string? Decrypt(byte[] encrypted)
     {
         if (_encryptionKey == null || _encryptionKey.Length < 16)
-            return Encoding.UTF8.GetString(encrypted); // Fallback: stored as plain text
+        {
+            _logger.LogWarning("Cannot decrypt credential: ENCRYPTION_KEY not configured");
+            return null;
+        }
 
         using var aes = Aes.Create();
         aes.Key = _encryptionKey.Length >= 32 ? _encryptionKey[..32] : PadKey(_encryptionKey, 32);

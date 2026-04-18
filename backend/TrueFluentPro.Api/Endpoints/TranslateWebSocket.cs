@@ -54,6 +54,10 @@ public static class TranslateWebSocket
         var fromLang = context.Request.Query["from"].FirstOrDefault() ?? "zh-CN";
         var toLang = context.Request.Query["to"].FirstOrDefault() ?? "en";
 
+        // Sanitize user-provided language params for safe logging
+        var safeFromLang = SanitizeForLog(fromLang);
+        var safeToLang = SanitizeForLog(toLang);
+
         // Accept client WebSocket
         using var clientWs = await context.WebSockets.AcceptWebSocketAsync();
         var startTime = DateTime.UtcNow;
@@ -72,7 +76,7 @@ public static class TranslateWebSocket
             using var connectCts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
             await azureWs.ConnectAsync(new Uri(azureWsUrl), connectCts.Token);
 
-            logger.LogInformation("WebSocket bridge established for user {UserId}: {From} → {To}", userId, fromLang, toLang);
+            logger.LogInformation("WebSocket bridge established for user {UserId}: {From} → {To}", userId, safeFromLang, safeToLang);
 
             // Bidirectional pipe
             using var bridgeCts = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
@@ -171,4 +175,10 @@ public static class TranslateWebSocket
             logger.LogDebug(ex, "WebSocket close failed (expected if already closed)");
         }
     }
+
+    /// <summary>
+    /// Sanitize user-provided values for safe logging to prevent log forging.
+    /// </summary>
+    private static string SanitizeForLog(string value)
+        => new(value.Where(c => char.IsLetterOrDigit(c) || c == '-' || c == '_').Take(20).ToArray());
 }
