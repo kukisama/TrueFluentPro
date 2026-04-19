@@ -68,6 +68,6 @@ ENV GATEWAY_STORAGE__DATA_DIR="/app/data"
 EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD ["/app/gateway", "--health-check"] || exit 1
+    CMD ["/app/gateway", "--health-check"]
 
 ENTRYPOINT ["/app/gateway"]
