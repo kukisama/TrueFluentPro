@@ -111,7 +111,17 @@ pub struct SubscriptionPlan {
     pub is_active: bool,
 }
 
-// ═══ Capability Status (user-facing) ═══
+// ═══ Usage Record ═══
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UsageRecord {
+    pub id: String,
+    pub user_id: String,
+    pub capability_id: String,
+    pub resource_type: String,
+    pub amount: i64,
+    pub recorded_at: DateTime<Utc>,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserCapabilityStatus {

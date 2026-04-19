@@ -8,6 +8,7 @@ pub mod admin;
 pub mod chat;
 pub mod images;
 pub mod tts;
+pub mod translate;
 
 use crate::state::AppState;
 use crate::middleware;
@@ -28,6 +29,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .merge(chat::routes())
         .merge(images::routes())
         .merge(tts::routes())
+        .merge(translate::routes())
         .layer(axum_mw::from_fn_with_state(
             state.clone(),
             middleware::auth::require_auth,

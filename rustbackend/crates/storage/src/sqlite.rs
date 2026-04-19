@@ -350,6 +350,70 @@ impl StorageBackend for SqliteBackend {
         .await?;
         Ok(())
     }
+
+    // ─── Usage Tracking ───
+
+    async fn record_usage(&self, user_id: &str, capability_id: &str, resource_type: &str, amount: i64) -> StorageResult<()> {
+        let now = chrono::Utc::now().to_rfc3339();
+        let year_month = chrono::Utc::now().format("%Y-%m").to_string();
+
+        // Insert usage event
+        sqlx::query(
+            "INSERT INTO usage_events (user_id, capability_id, resource_type, amount, created_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+        )
+        .bind(user_id)
+        .bind(capability_id)
+        .bind(resource_type)
+        .bind(amount)
+        .bind(&now)
+        .execute(&self.pool)
+        .await?;
+
+        // Update monthly summary
+        sqlx::query(
+            "INSERT INTO monthly_usage (user_id, resource_type, year_month, total_amount, updated_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5) \
+             ON CONFLICT(user_id, resource_type, year_month) \
+             DO UPDATE SET total_amount = total_amount + excluded.total_amount, updated_at = excluded.updated_at",
+        )
+        .bind(user_id)
+        .bind(resource_type)
+        .bind(&year_month)
+        .bind(amount)
+        .bind(&now)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    async fn get_usage_total(&self, user_id: &str, resource_type: &str, since: chrono::DateTime<chrono::Utc>) -> StorageResult<i64> {
+        let since_str = since.to_rfc3339();
+        let row: Option<(i64,)> = sqlx::query_as(
+            "SELECT COALESCE(SUM(amount), 0) FROM usage_events \
+             WHERE user_id = ?1 AND resource_type = ?2 AND created_at >= ?3",
+        )
+        .bind(user_id)
+        .bind(resource_type)
+        .bind(&since_str)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row.map(|r| r.0).unwrap_or(0))
+    }
+
+    async fn get_usage_records(&self, user_id: &str, offset: i64, limit: i64) -> StorageResult<Vec<domain::models::UsageRecord>> {
+        let rows: Vec<UsageRow> = sqlx::query_as(
+            "SELECT id, user_id, capability_id, resource_type, amount, created_at \
+             FROM usage_events WHERE user_id = ?1 ORDER BY created_at DESC LIMIT ?2 OFFSET ?3",
+        )
+        .bind(user_id)
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows.into_iter().map(Into::into).collect())
+    }
 }
 
 // ═══ Row types for sqlx ═══
@@ -492,6 +556,31 @@ impl From<CredMetaRow> for CredentialMeta {
             credential_key: r.credential_key,
             version: r.version,
             is_active: r.is_active,
+        }
+    }
+}
+
+#[derive(sqlx::FromRow)]
+struct UsageRow {
+    id: i64,
+    user_id: String,
+    capability_id: String,
+    resource_type: String,
+    amount: i64,
+    created_at: String,
+}
+
+impl From<UsageRow> for domain::models::UsageRecord {
+    fn from(r: UsageRow) -> Self {
+        Self {
+            id: r.id.to_string(),
+            user_id: r.user_id,
+            capability_id: r.capability_id,
+            resource_type: r.resource_type,
+            amount: r.amount,
+            recorded_at: chrono::DateTime::parse_from_rfc3339(&r.created_at)
+                .map(|d| d.with_timezone(&chrono::Utc))
+                .unwrap_or_else(|_| chrono::Utc::now()),
         }
     }
 }

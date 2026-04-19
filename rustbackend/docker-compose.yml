@@ -1,0 +1,80 @@
+# ═══ TrueFluentPro Gateway — Docker Compose ═══
+#
+# Usage:
+#   docker compose up -d                  # SQLite only (default)
+#   docker compose --profile db up -d     # With PostgreSQL
+#   docker compose --profile cache up -d  # With Redis
+#   docker compose --profile full up -d   # PostgreSQL + Redis
+#
+# First run: POST http://localhost:8080/v1/setup/init to create admin.
+
+services:
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "${GATEWAY_PORT:-8080}:8080"
+    volumes:
+      - gateway-data:/app/data
+    env_file:
+      - .env
+    environment:
+      - GATEWAY_SERVER__BIND=0.0.0.0:8080
+      - GATEWAY_STORAGE__DATA_DIR=/app/data
+      - GATEWAY_OBSERVABILITY__LOG_FORMAT=json
+      - GATEWAY_OBSERVABILITY__LOG_LEVEL=${LOG_LEVEL:-info}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+        required: false
+      redis:
+        condition: service_healthy
+        required: false
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # ─── PostgreSQL (optional — activate with --profile db or --profile full) ───
+  postgres:
+    image: postgres:16-alpine
+    profiles: ["db", "full"]
+    environment:
+      POSTGRES_DB: truefluentpro
+      POSTGRES_USER: gateway
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gateway -d truefluentpro"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ─── Redis (optional — activate with --profile cache or --profile full) ───
+  redis:
+    image: redis:7-alpine
+    profiles: ["cache", "full"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  gateway-data:
+  pg-data:
+  redis-data:

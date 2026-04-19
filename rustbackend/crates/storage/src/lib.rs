@@ -50,6 +50,11 @@ pub trait StorageBackend: Send + Sync {
     // ─── Password hash (local auth) ───
     async fn get_password_hash(&self, user_id: &str) -> StorageResult<Option<String>>;
     async fn set_password_hash(&self, user_id: &str, hash: &str) -> StorageResult<()>;
+
+    // ─── Usage Tracking (billing) ───
+    async fn record_usage(&self, user_id: &str, capability_id: &str, resource_type: &str, amount: i64) -> StorageResult<()>;
+    async fn get_usage_total(&self, user_id: &str, resource_type: &str, since: chrono::DateTime<chrono::Utc>) -> StorageResult<i64>;
+    async fn get_usage_records(&self, user_id: &str, offset: i64, limit: i64) -> StorageResult<Vec<domain::models::UsageRecord>>;
 }
 
 /// Encrypted credential stored in DB.

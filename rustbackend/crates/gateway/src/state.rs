@@ -5,7 +5,7 @@ use storage::StorageBackend;
 use storage::sqlite::SqliteBackend;
 use cache::CacheBackend;
 use cache::memory::InMemoryCache;
-use billing::{BillingEngine, DisabledBillingEngine};
+use billing::{BillingEngine, DisabledBillingEngine, ActiveBillingEngine};
 use credential_broker::CredentialBroker;
 use providers::registry::ProviderRegistry;
 use std::sync::Arc;
@@ -52,9 +52,8 @@ impl AppState {
 
         // ─── Billing ───
         let billing: Arc<dyn BillingEngine> = if config.billing.enabled {
-            // Future: ActiveBillingEngine
-            info!("Billing: enabled (using disabled stub for now)");
-            Arc::new(DisabledBillingEngine)
+            info!("Billing: enabled (ActiveBillingEngine with plan-based quotas)");
+            Arc::new(ActiveBillingEngine::new(storage.clone()))
         } else {
             info!("Billing: disabled");
             Arc::new(DisabledBillingEngine)
@@ -84,6 +83,7 @@ impl AppState {
             chat = registry.chat_count(),
             image = registry.image_count(),
             tts = registry.tts_count(),
+            translate = registry.translate_count(),
             "Provider registry initialized"
         );
         let providers = Arc::new(RwLock::new(registry));
@@ -109,6 +109,7 @@ impl AppState {
             chat = reg.chat_count(),
             image = reg.image_count(),
             tts = reg.tts_count(),
+            translate = reg.translate_count(),
             "Provider registry reloaded"
         );
         Ok(())
