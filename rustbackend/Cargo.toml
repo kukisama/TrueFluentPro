@@ -65,6 +65,9 @@ rand = "0.8"
 base64 = "0.22"
 dashmap = "6"
 bytes = "1"
+tokio-tungstenite = { version = "0.26", features = ["rustls-tls-native-roots"] }
+url = "2"
+http = "1"
 
 # Internal crates
 domain = { path = "crates/domain" }

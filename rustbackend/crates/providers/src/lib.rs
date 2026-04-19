@@ -138,3 +138,40 @@ pub trait ImageProvider: Send + Sync {
     fn id(&self) -> &'static str;
     async fn generate(&self, req: ImageGenRequest) -> Result<ImageGenResponse, ProviderError>;
 }
+
+// ═══ Live Speech Translation Provider ═══
+
+/// Credentials and connection info resolved for a live speech translation session.
+#[derive(Debug, Clone)]
+pub struct LiveTranslateSessionConfig {
+    /// The upstream WebSocket URL to connect to (fully assembled with query params).
+    pub upstream_url: String,
+    /// Headers to include on the upstream WebSocket handshake (auth, etc.).
+    pub auth_headers: Vec<(String, String)>,
+    /// The Azure region (used for constructing speech.config messages).
+    pub region: String,
+}
+
+/// Configuration parameters for starting a live translation session.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LiveTranslateRequest {
+    /// Source language BCP-47 locale (e.g. "en-US"). Empty = auto-detect.
+    pub source_lang: String,
+    /// Target language(s) — ISO 639-1 codes (e.g. ["es", "fr"]).
+    pub target_langs: Vec<String>,
+    /// Auto-detect candidate languages (BCP-47 locales). Used when source_lang is empty.
+    #[serde(default)]
+    pub auto_detect_languages: Vec<String>,
+}
+
+/// Trait for providers that can establish a live speech translation WebSocket session.
+#[async_trait]
+pub trait LiveSpeechTranslator: Send + Sync {
+    fn id(&self) -> &'static str;
+
+    /// Resolve credentials and build the upstream WebSocket URL + auth headers.
+    async fn build_session_config(
+        &self,
+        req: &LiveTranslateRequest,
+    ) -> Result<LiveTranslateSessionConfig, ProviderError>;
+}

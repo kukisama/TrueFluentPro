@@ -4,3 +4,4 @@ pub mod chat;
 pub mod image;
 pub mod tts;
 pub mod translate;
+pub mod speech_translate;

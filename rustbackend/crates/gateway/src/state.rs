@@ -84,6 +84,7 @@ impl AppState {
             image = registry.image_count(),
             tts = registry.tts_count(),
             translate = registry.translate_count(),
+            live_translate = registry.live_translate_count(),
             "Provider registry initialized"
         );
         let providers = Arc::new(RwLock::new(registry));
@@ -110,6 +111,7 @@ impl AppState {
             image = reg.image_count(),
             tts = reg.tts_count(),
             translate = reg.translate_count(),
+            live_translate = reg.live_translate_count(),
             "Provider registry reloaded"
         );
         Ok(())

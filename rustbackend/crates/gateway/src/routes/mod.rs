@@ -9,6 +9,7 @@ pub mod chat;
 pub mod images;
 pub mod tts;
 pub mod translate;
+pub mod ws_translate;
 
 use crate::state::AppState;
 use crate::middleware;
@@ -35,6 +36,10 @@ pub fn build_router(state: Arc<AppState>) -> Router {
             middleware::auth::require_auth,
         ));
 
+    // WebSocket routes (auth handled inside the handler via query param)
+    let websocket = Router::new()
+        .merge(ws_translate::routes());
+
     // Admin routes (require admin role)
     let admin = Router::new()
         .merge(admin::routes())
@@ -46,6 +51,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
     Router::new()
         .merge(public)
         .merge(protected)
+        .merge(websocket)
         .merge(admin)
         .layer(TraceLayer::new_for_http())
         .with_state(state)

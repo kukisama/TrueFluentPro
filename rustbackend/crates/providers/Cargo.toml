@@ -16,4 +16,7 @@ anyhow = { workspace = true }
 tracing = { workspace = true }
 secrecy = { workspace = true }
 bytes = { workspace = true }
+tokio-tungstenite = { workspace = true }
+url = { workspace = true }
+http = { workspace = true }
 async-trait = "0.1.89"

@@ -1,10 +1,11 @@
 //! Provider registry — dynamic dispatch for capability → provider routing.
 
-use crate::{ChatProvider, ImageProvider, TtsProvider, TextTranslator, ProviderError};
+use crate::{ChatProvider, ImageProvider, TtsProvider, TextTranslator, LiveSpeechTranslator, ProviderError};
 use crate::azure::chat::AzureOpenAiChat;
 use crate::azure::image::AzureOpenAiImage;
 use crate::azure::tts::AzureSpeechTts;
 use crate::azure::translate::AzureTranslator;
+use crate::azure::speech_translate::AzureSpeechTranslation;
 use credential_broker::CredentialBroker;
 use domain::models::ProviderInfo;
 use std::sync::Arc;
@@ -16,6 +17,7 @@ pub struct ProviderRegistry {
     image_providers: Vec<(String, Arc<dyn ImageProvider>)>,
     tts_providers: Vec<(String, Arc<dyn TtsProvider>)>,
     translate_providers: Vec<(String, Arc<dyn TextTranslator>)>,
+    live_translate_providers: Vec<(String, Arc<dyn LiveSpeechTranslator>)>,
 }
 
 impl ProviderRegistry {
@@ -28,6 +30,7 @@ impl ProviderRegistry {
         let mut image_providers: Vec<(String, Arc<dyn ImageProvider>)> = Vec::new();
         let mut tts_providers: Vec<(String, Arc<dyn TtsProvider>)> = Vec::new();
         let mut translate_providers: Vec<(String, Arc<dyn TextTranslator>)> = Vec::new();
+        let mut live_translate_providers: Vec<(String, Arc<dyn LiveSpeechTranslator>)> = Vec::new();
 
         for p in providers {
             if !p.is_enabled {
@@ -43,9 +46,11 @@ impl ProviderRegistry {
                     image_providers.push((p.id.clone(), image));
                 }
                 "azure_speech" => {
-                    info!(provider = %p.id, vendor = %p.vendor, "Registering Azure Speech TTS adapter");
+                    info!(provider = %p.id, vendor = %p.vendor, "Registering Azure Speech adapters (TTS + live translation)");
                     let tts = Arc::new(AzureSpeechTts::new(credentials.clone(), &p.id));
+                    let live = Arc::new(AzureSpeechTranslation::new(credentials.clone(), &p.id));
                     tts_providers.push((p.id.clone(), tts));
+                    live_translate_providers.push((p.id.clone(), live));
                 }
                 "azure_translator" => {
                     info!(provider = %p.id, vendor = %p.vendor, "Registering Azure Translator adapter");
@@ -58,7 +63,7 @@ impl ProviderRegistry {
             }
         }
 
-        Self { chat_providers, image_providers, tts_providers, translate_providers }
+        Self { chat_providers, image_providers, tts_providers, translate_providers, live_translate_providers }
     }
 
     /// Rebuild registry (called when admin changes providers).
@@ -72,6 +77,7 @@ impl ProviderRegistry {
         self.image_providers = new.image_providers;
         self.tts_providers = new.tts_providers;
         self.translate_providers = new.translate_providers;
+        self.live_translate_providers = new.live_translate_providers;
     }
 
     /// Get the first enabled ChatProvider (or specific by provider_id).
@@ -130,8 +136,23 @@ impl ProviderRegistry {
         }
     }
 
+    /// Get the first enabled LiveSpeechTranslator.
+    pub fn get_live_translator(&self, provider_id: Option<&str>) -> Result<Arc<dyn LiveSpeechTranslator>, ProviderError> {
+        if let Some(id) = provider_id {
+            self.live_translate_providers.iter()
+                .find(|(pid, _)| pid == id)
+                .map(|(_, p)| p.clone())
+                .ok_or_else(|| ProviderError::ProviderNotFound(id.to_string()))
+        } else {
+            self.live_translate_providers.first()
+                .map(|(_, p)| p.clone())
+                .ok_or(ProviderError::UnsupportedCapability)
+        }
+    }
+
     pub fn chat_count(&self) -> usize { self.chat_providers.len() }
     pub fn image_count(&self) -> usize { self.image_providers.len() }
     pub fn tts_count(&self) -> usize { self.tts_providers.len() }
     pub fn translate_count(&self) -> usize { self.translate_providers.len() }
+    pub fn live_translate_count(&self) -> usize { self.live_translate_providers.len() }
 }
