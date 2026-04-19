@@ -21,6 +21,8 @@ pub enum ProviderError {
     BadCredential,
     #[error("unsupported capability")]
     UnsupportedCapability,
+    #[error("provider not found: {0}")]
+    ProviderNotFound(String),
     #[error("network: {0}")]
     Network(String),
 }

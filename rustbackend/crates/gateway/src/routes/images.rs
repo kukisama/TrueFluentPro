@@ -71,6 +71,7 @@ fn map_provider_error(e: providers::ProviderError) -> ApiError {
         providers::ProviderError::RateLimited => ApiError::TooManyRequests("Provider rate limited".into()),
         providers::ProviderError::BadCredential => ApiError::Internal("Provider credentials not configured".into()),
         providers::ProviderError::UnsupportedCapability => ApiError::BadRequest("No provider available for this capability".into()),
+        providers::ProviderError::ProviderNotFound(id) => ApiError::NotFound(format!("Provider '{id}' not found or not enabled")),
         providers::ProviderError::Network(m) => ApiError::Internal(format!("Network error: {m}")),
         providers::ProviderError::Upstream(m) => ApiError::Internal(format!("Upstream error: {m}")),
     }

@@ -82,8 +82,9 @@ async fn upsert_provider(
     provider.id = id;
     state.storage.upsert_provider(&provider).await
         .map_err(|e| ApiError::Internal(e.to_string()))?;
-    // Reload provider registry
-    let _ = state.reload_providers().await;
+    if let Err(e) = state.reload_providers().await {
+        tracing::warn!(error = %e, "Failed to reload provider registry after upsert");
+    }
     Ok(Json(json!({ "provider": provider })))
 }
 
@@ -106,8 +107,9 @@ async fn toggle_provider(
     provider.is_enabled = req.is_enabled;
     state.storage.upsert_provider(&provider).await
         .map_err(|e| ApiError::Internal(e.to_string()))?;
-    // Reload provider registry
-    let _ = state.reload_providers().await;
+    if let Err(e) = state.reload_providers().await {
+        tracing::warn!(error = %e, "Failed to reload provider registry after toggle");
+    }
     Ok(Json(json!({ "provider": provider })))
 }
 

@@ -102,7 +102,7 @@ impl AppState {
     /// Reload provider registry from DB (call after admin changes providers).
     pub async fn reload_providers(&self) -> anyhow::Result<()> {
         let db_providers = self.storage.get_providers().await
-            .map_err(|e| anyhow::anyhow!("{e}"))?;
+            .map_err(|e| anyhow::anyhow!("failed to load providers for registry reload: {e}"))?;
         let mut reg = self.providers.write().await;
         reg.rebuild(&db_providers, self.credentials.clone());
         info!(

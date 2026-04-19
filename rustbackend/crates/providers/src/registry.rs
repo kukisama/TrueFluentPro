@@ -71,7 +71,7 @@ impl ProviderRegistry {
             self.chat_providers.iter()
                 .find(|(pid, _)| pid == id)
                 .map(|(_, p)| p.clone())
-                .ok_or(ProviderError::UnsupportedCapability)
+                .ok_or_else(|| ProviderError::ProviderNotFound(id.to_string()))
         } else {
             self.chat_providers.first()
                 .map(|(_, p)| p.clone())
@@ -85,7 +85,7 @@ impl ProviderRegistry {
             self.image_providers.iter()
                 .find(|(pid, _)| pid == id)
                 .map(|(_, p)| p.clone())
-                .ok_or(ProviderError::UnsupportedCapability)
+                .ok_or_else(|| ProviderError::ProviderNotFound(id.to_string()))
         } else {
             self.image_providers.first()
                 .map(|(_, p)| p.clone())
@@ -99,7 +99,7 @@ impl ProviderRegistry {
             self.tts_providers.iter()
                 .find(|(pid, _)| pid == id)
                 .map(|(_, p)| p.clone())
-                .ok_or(ProviderError::UnsupportedCapability)
+                .ok_or_else(|| ProviderError::ProviderNotFound(id.to_string()))
         } else {
             self.tts_providers.first()
                 .map(|(_, p)| p.clone())
