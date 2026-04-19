@@ -1,0 +1,79 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/gateway",
+    "crates/domain",
+    "crates/storage",
+    "crates/providers",
+    "crates/credential-broker",
+    "crates/cache",
+    "crates/billing",
+    "crates/observability",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+
+[workspace.dependencies]
+# Async
+tokio = { version = "1", features = ["full"] }
+futures = "0.3"
+
+# Web
+axum = { version = "0.8", features = ["macros", "ws"] }
+tower = { version = "0.5", features = ["timeout"] }
+tower-http = { version = "0.6", features = ["trace", "cors", "request-id", "compression-gzip"] }
+
+# HTTP client
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Auth
+jsonwebtoken = "9"
+
+# Crypto / secrets
+aes-gcm = "0.10"
+argon2 = "0.5"
+secrecy = { version = "0.10", features = ["serde"] }
+
+# Storage
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "sqlite", "macros", "chrono"] }
+
+# Config
+figment = { version = "0.10", features = ["env", "toml"] }
+dotenvy = "0.15"
+
+# Observability
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Errors
+thiserror = "2"
+anyhow = "1"
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Misc
+uuid = { version = "1", features = ["v4", "serde"] }
+rand = "0.8"
+base64 = "0.22"
+dashmap = "6"
+bytes = "1"
+tokio-tungstenite = { version = "0.26", features = ["rustls-tls-native-roots"] }
+url = "2"
+http = "1"
+
+# Internal crates
+domain = { path = "crates/domain" }
+storage = { path = "crates/storage" }
+providers = { path = "crates/providers" }
+credential-broker = { path = "crates/credential-broker" }
+cache = { path = "crates/cache" }
+billing = { path = "crates/billing" }
+observability = { path = "crates/observability" }

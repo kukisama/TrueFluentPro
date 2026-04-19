@@ -1,0 +1,23 @@
+[package]
+name = "providers"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+domain = { workspace = true }
+credential-broker = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+reqwest = { workspace = true }
+futures = { workspace = true }
+tokio = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+secrecy = { workspace = true }
+bytes = { workspace = true }
+tokio-tungstenite = { workspace = true }
+url = { workspace = true }
+http = { workspace = true }
+async-trait = "0.1.89"
+urlencoding = "2"
