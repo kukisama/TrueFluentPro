@@ -127,7 +127,7 @@ async fn ensure_user_exists(state: &AppState, ctx: &UserContext) -> Result<(), A
     let existing = state.storage.get_user(&ctx.user_id).await
         .map_err(|e| ApiError::Internal(e.to_string()))?;
 
-    if let Some(_) = existing {
+    if existing.is_some() {
         // Update last_seen
         let _ = state.storage.update_user_last_seen(&ctx.user_id).await;
     } else {

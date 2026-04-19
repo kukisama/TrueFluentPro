@@ -64,7 +64,7 @@ impl CacheBackend for InMemoryCache {
     }
 
     async fn get_counter(&self, key: &str) -> anyhow::Result<i64> {
-        Ok(*self.counters.get(key).map(|v| *v).get_or_insert(0))
+        Ok(self.counters.get(key).map(|v| *v).unwrap_or(0))
     }
 
     async fn health_check(&self) -> anyhow::Result<()> {
