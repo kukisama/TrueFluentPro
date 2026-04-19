@@ -6,6 +6,7 @@ artifacts/
 
 # Rust build output
 **/target/
+rustbackend/data/
 Docs/
 .github/copilot-instructions.md
 

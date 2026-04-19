@@ -1,0 +1,49 @@
+# TrueFluentPro Gateway — Default Configuration
+# All values can be overridden via environment variables (GATEWAY_ prefix)
+# e.g. auth.mode → GATEWAY_AUTH_MODE
+
+[server]
+bind = "0.0.0.0:8080"
+
+[auth]
+# "local" — local username/password + self-signed JWT
+# "aad"   — Azure AD JWT verification
+mode = "local"
+
+[auth.aad]
+tenant_id = ""
+client_id = ""
+audience = "api://truefluentpro"
+
+[auth.local]
+jwt_secret = ""              # empty = auto-generate on startup
+jwt_expiry_hours = 24
+allow_registration = false
+
+[database]
+url = ""                     # empty = SQLite; "postgres://..." = PostgreSQL
+max_connections = 10
+
+[cache]
+# "none"   — no caching
+# "memory" — in-process DashMap
+# "redis"  — Redis (requires GATEWAY_CACHE_REDIS_URL)
+mode = "memory"
+
+[billing]
+enabled = false
+
+[rate_limit]
+enabled = true
+requests_per_minute = 60
+
+[credentials]
+master_key_base64 = ""       # AES-256 master key for DB credential encryption
+keyvault_url = ""            # Azure Key Vault URL (optional)
+
+[observability]
+log_level = "info"
+log_format = "pretty"        # "json" for production
+
+[storage]
+data_dir = "./data"
