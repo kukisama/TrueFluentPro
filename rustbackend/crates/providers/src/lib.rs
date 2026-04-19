@@ -79,6 +79,25 @@ pub struct TextTranslateRequest {
     pub source_lang: String,
     pub target_lang: String,
     pub tenant_id: String,
+    /// Text type: "plain" (default) or "html".
+    #[serde(default)]
+    pub text_type: Option<String>,
+    /// Profanity handling: "NoAction" (default), "Marked", or "Deleted".
+    /// See: https://learn.microsoft.com/en-us/azure/ai-services/translator/reference/v3-0-translate
+    #[serde(default)]
+    pub profanity_action: Option<String>,
+    /// Profanity marker type: "Asterisk" (default) or "Tag". Only used when profanity_action is "Marked".
+    #[serde(default)]
+    pub profanity_marker: Option<String>,
+    /// Category (custom translation model). E.g. "general" or a custom category ID.
+    #[serde(default)]
+    pub category: Option<String>,
+    /// Include alignment information in the response.
+    #[serde(default)]
+    pub include_alignment: Option<bool>,
+    /// Include sentence boundaries in the response.
+    #[serde(default)]
+    pub include_sentence_length: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -104,6 +123,69 @@ pub struct TtsRequest {
     pub voice_id: String,
     pub output_format: Option<String>,
     pub speed: Option<f32>,
+    /// Speech style (e.g. "cheerful", "sad", "angry", "excited", "friendly", etc.)
+    #[serde(default)]
+    pub style: Option<String>,
+    /// Style intensity degree (0.01–2.0, default 1.0).
+    #[serde(default)]
+    pub style_degree: Option<f32>,
+    /// Voice role play (e.g. "Girl", "Boy", "YoungAdultFemale", etc.)
+    #[serde(default)]
+    pub role: Option<String>,
+    /// Pitch adjustment (e.g. "+5%", "-10%", "high", "low", "+2st", "200Hz").
+    #[serde(default)]
+    pub pitch: Option<String>,
+    /// Volume (e.g. "+10%", "loud", "soft", "x-loud", "50").
+    #[serde(default)]
+    pub volume: Option<String>,
+    /// Language override for multilingual voices (e.g. "en-US", "zh-CN").
+    #[serde(default)]
+    pub language: Option<String>,
+    /// Voice effect (e.g. "eq_car", "eq_telecomhp8k").
+    #[serde(default)]
+    pub effect: Option<String>,
+    /// Prosody range (e.g. "+10%", "high").
+    #[serde(default)]
+    pub range: Option<String>,
+    /// Prosody contour (e.g. "(0%,+20Hz)(10%,-10Hz)(100%,+5Hz)").
+    #[serde(default)]
+    pub contour: Option<String>,
+    /// If true, the `text` field is treated as raw SSML body content (user builds own SSML).
+    #[serde(default)]
+    pub raw_ssml: Option<bool>,
+    /// Break strength before text (e.g. "strong", "medium", "x-weak").
+    #[serde(default)]
+    pub break_strength: Option<String>,
+    /// Break time before text (e.g. "500ms", "1s").
+    #[serde(default)]
+    pub break_time: Option<String>,
+    /// Silence tag type ("Sentenceboundary", "Tailing", "Leading-exact", "Tailing-exact")
+    #[serde(default)]
+    pub silence_type: Option<String>,
+    /// Silence duration (e.g. "200ms", "1s").
+    #[serde(default)]
+    pub silence_value: Option<String>,
+    /// Emphasis level ("strong", "moderate", "reduced", "none").
+    #[serde(default)]
+    pub emphasis: Option<String>,
+    /// Phoneme alphabet ("ipa" or "sapi").
+    #[serde(default)]
+    pub phoneme_alphabet: Option<String>,
+    /// Phoneme value.
+    #[serde(default)]
+    pub phoneme_value: Option<String>,
+    /// Say-as interpret-as (e.g. "date", "number", "telephone", "characters", etc.)
+    #[serde(default)]
+    pub say_as_interpret_as: Option<String>,
+    /// Say-as format (e.g. "mdy", "dmy", etc.)
+    #[serde(default)]
+    pub say_as_format: Option<String>,
+    /// Say-as detail attribute.
+    #[serde(default)]
+    pub say_as_detail: Option<String>,
+    /// Sub alias — substitute pronunciation for displayed text.
+    #[serde(default)]
+    pub sub_alias: Option<String>,
 }
 
 #[async_trait]
@@ -162,6 +244,23 @@ pub struct LiveTranslateRequest {
     /// Auto-detect candidate languages (BCP-47 locales). Used when source_lang is empty.
     #[serde(default)]
     pub auto_detect_languages: Vec<String>,
+    /// Profanity handling: "Raw" (default), "Masked", or "Removed".
+    /// Maps to SpeechServiceResponse_ProfanityOption.
+    #[serde(default)]
+    pub profanity_option: Option<String>,
+    /// Enable TrueText post-processing (filters disfluencies, normalizes text).
+    /// Maps to SpeechServiceResponse_PostProcessingOption = "TrueText".
+    #[serde(default)]
+    pub enable_true_text: Option<bool>,
+    /// Initial silence timeout in milliseconds (how long to wait before giving up).
+    #[serde(default)]
+    pub initial_silence_timeout_ms: Option<u32>,
+    /// End silence timeout in milliseconds (how long to wait after speech ends).
+    #[serde(default)]
+    pub end_silence_timeout_ms: Option<u32>,
+    /// Enable word-level timing information.
+    #[serde(default)]
+    pub enable_word_level_timestamps: Option<bool>,
 }
 
 /// Trait for providers that can establish a live speech translation WebSocket session.

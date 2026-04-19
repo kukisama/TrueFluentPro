@@ -20,3 +20,4 @@ tokio-tungstenite = { workspace = true }
 url = { workspace = true }
 http = { workspace = true }
 async-trait = "0.1.89"
+urlencoding = "2"

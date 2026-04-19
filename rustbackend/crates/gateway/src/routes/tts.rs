@@ -30,6 +30,69 @@ struct SynthesizeRequest {
     output_format: Option<String>,
     #[serde(default)]
     speed: Option<f32>,
+    /// Speech style (e.g. "cheerful", "sad", "angry", "excited").
+    #[serde(default)]
+    style: Option<String>,
+    /// Style intensity (0.01–2.0).
+    #[serde(default)]
+    style_degree: Option<f32>,
+    /// Role play (e.g. "Girl", "Boy", "YoungAdultFemale").
+    #[serde(default)]
+    role: Option<String>,
+    /// Pitch (e.g. "+5%", "-10%", "high", "low").
+    #[serde(default)]
+    pitch: Option<String>,
+    /// Volume (e.g. "+10%", "loud", "soft").
+    #[serde(default)]
+    volume: Option<String>,
+    /// Language override for multilingual voices (e.g. "en-US").
+    #[serde(default)]
+    language: Option<String>,
+    /// Voice effect (e.g. "eq_car").
+    #[serde(default)]
+    effect: Option<String>,
+    /// Prosody range.
+    #[serde(default)]
+    range: Option<String>,
+    /// Prosody contour.
+    #[serde(default)]
+    contour: Option<String>,
+    /// If true, `text` is treated as raw SSML.
+    #[serde(default)]
+    raw_ssml: Option<bool>,
+    /// Break strength before text.
+    #[serde(default)]
+    break_strength: Option<String>,
+    /// Break time before text.
+    #[serde(default)]
+    break_time: Option<String>,
+    /// Silence tag type.
+    #[serde(default)]
+    silence_type: Option<String>,
+    /// Silence duration.
+    #[serde(default)]
+    silence_value: Option<String>,
+    /// Emphasis level.
+    #[serde(default)]
+    emphasis: Option<String>,
+    /// Phoneme alphabet.
+    #[serde(default)]
+    phoneme_alphabet: Option<String>,
+    /// Phoneme value.
+    #[serde(default)]
+    phoneme_value: Option<String>,
+    /// Say-as interpret-as.
+    #[serde(default)]
+    say_as_interpret_as: Option<String>,
+    /// Say-as format.
+    #[serde(default)]
+    say_as_format: Option<String>,
+    /// Say-as detail.
+    #[serde(default)]
+    say_as_detail: Option<String>,
+    /// Sub alias.
+    #[serde(default)]
+    sub_alias: Option<String>,
     /// Optional: specify which provider to use.
     #[serde(default)]
     provider_id: Option<String>,
@@ -55,6 +118,27 @@ async fn synthesize(
         voice_id: req.voice_id,
         output_format: req.output_format.clone(),
         speed: req.speed,
+        style: req.style,
+        style_degree: req.style_degree,
+        role: req.role,
+        pitch: req.pitch,
+        volume: req.volume,
+        language: req.language,
+        effect: req.effect,
+        range: req.range,
+        contour: req.contour,
+        raw_ssml: req.raw_ssml,
+        break_strength: req.break_strength,
+        break_time: req.break_time,
+        silence_type: req.silence_type,
+        silence_value: req.silence_value,
+        emphasis: req.emphasis,
+        phoneme_alphabet: req.phoneme_alphabet,
+        phoneme_value: req.phoneme_value,
+        say_as_interpret_as: req.say_as_interpret_as,
+        say_as_format: req.say_as_format,
+        say_as_detail: req.say_as_detail,
+        sub_alias: req.sub_alias,
     };
 
     let audio_bytes = provider.synthesize(tts_req).await

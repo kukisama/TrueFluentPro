@@ -53,9 +53,47 @@ impl TextTranslator for AzureTranslator {
             .unwrap_or_else(|| "https://api.cognitive.microsofttranslator.com".to_string());
 
         // Build URL with query params
-        let mut url = format!("{endpoint}/translate?api-version=3.0&to={}", req.target_lang);
+        let mut url = format!("{endpoint}/translate?api-version=3.0&to={}", urlencoding::encode(&req.target_lang));
         if !req.source_lang.is_empty() {
-            url.push_str(&format!("&from={}", req.source_lang));
+            url.push_str(&format!("&from={}", urlencoding::encode(&req.source_lang)));
+        }
+        // textType: "plain" (default) or "html"
+        if let Some(ref tt) = req.text_type {
+            if tt == "html" {
+                url.push_str("&textType=html");
+            }
+        }
+        // profanityAction: validate against known values
+        if let Some(ref pa) = req.profanity_action {
+            match pa.as_str() {
+                "NoAction" | "Marked" | "Deleted" => {
+                    url.push_str(&format!("&profanityAction={pa}"));
+                }
+                _ => {} // ignore unknown values
+            }
+        }
+        // profanityMarker: validate against known values
+        if let Some(ref pm) = req.profanity_marker {
+            match pm.as_str() {
+                "Asterisk" | "Tag" => {
+                    url.push_str(&format!("&profanityMarker={pm}"));
+                }
+                _ => {} // ignore unknown values
+            }
+        }
+        // category (custom translation model) — URL-encode user input
+        if let Some(ref cat) = req.category {
+            if !cat.is_empty() {
+                url.push_str(&format!("&category={}", urlencoding::encode(cat)));
+            }
+        }
+        // includeAlignment
+        if req.include_alignment == Some(true) {
+            url.push_str("&includeAlignment=true");
+        }
+        // includeSentenceLength
+        if req.include_sentence_length == Some(true) {
+            url.push_str("&includeSentenceLength=true");
         }
 
         debug!(url = %url, source = %req.source_lang, target = %req.target_lang, "Azure Translator request");

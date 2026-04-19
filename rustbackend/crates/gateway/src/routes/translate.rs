@@ -21,6 +21,24 @@ struct TranslateRequestBody {
     #[serde(default)]
     source_lang: Option<String>,
     target_lang: String,
+    /// Text type: "plain" (default) or "html".
+    #[serde(default)]
+    text_type: Option<String>,
+    /// Profanity handling: "NoAction", "Marked", or "Deleted".
+    #[serde(default)]
+    profanity_action: Option<String>,
+    /// Profanity marker: "Asterisk" or "Tag".
+    #[serde(default)]
+    profanity_marker: Option<String>,
+    /// Custom translation category.
+    #[serde(default)]
+    category: Option<String>,
+    /// Include alignment info.
+    #[serde(default)]
+    include_alignment: Option<bool>,
+    /// Include sentence length info.
+    #[serde(default)]
+    include_sentence_length: Option<bool>,
     /// Optional: specify which provider to use.
     #[serde(default)]
     provider_id: Option<String>,
@@ -48,6 +66,12 @@ async fn translate(
         source_lang: req.source_lang.unwrap_or_default(),
         target_lang: req.target_lang,
         tenant_id: ctx.tenant_id.clone(),
+        text_type: req.text_type,
+        profanity_action: req.profanity_action,
+        profanity_marker: req.profanity_marker,
+        category: req.category,
+        include_alignment: req.include_alignment,
+        include_sentence_length: req.include_sentence_length,
     };
 
     let result = provider.translate(translate_req).await

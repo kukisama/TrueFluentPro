@@ -52,6 +52,21 @@ struct WsTranslateQuery {
     /// Optional provider ID.
     #[serde(default)]
     provider_id: Option<String>,
+    /// Profanity option: "Raw" (default), "Masked", or "Removed".
+    #[serde(default)]
+    profanity: Option<String>,
+    /// Enable TrueText post-processing (filters disfluencies).
+    #[serde(default)]
+    true_text: Option<bool>,
+    /// Initial silence timeout in milliseconds.
+    #[serde(default)]
+    initial_silence_timeout_ms: Option<u32>,
+    /// End silence timeout in milliseconds.
+    #[serde(default)]
+    end_silence_timeout_ms: Option<u32>,
+    /// Enable word-level timestamps.
+    #[serde(default)]
+    word_timestamps: Option<bool>,
 }
 
 /// HTTP GET → WebSocket upgrade handler.
@@ -87,6 +102,11 @@ async fn ws_translate_upgrade(
         source_lang: params.from.unwrap_or_default(),
         target_langs,
         auto_detect_languages,
+        profanity_option: params.profanity,
+        enable_true_text: params.true_text,
+        initial_silence_timeout_ms: params.initial_silence_timeout_ms,
+        end_silence_timeout_ms: params.end_silence_timeout_ms,
+        enable_word_level_timestamps: params.word_timestamps,
     };
 
     let provider_id = params.provider_id;
@@ -335,6 +355,9 @@ fn build_speech_config(request_id: &str) -> String {
 
 /// Build `speech.context` text message.
 fn build_speech_context(request_id: &str, req: &LiveTranslateRequest) -> String {
+    // Determine profanity mode — maps to Azure's SpeechServiceResponse_ProfanityOption
+    let profanity_mode = req.profanity_option.as_deref().unwrap_or("Raw");
+
     let mut context = json!({
         "phraseDetection": {
             "mode": "CONVERSATION",
@@ -359,8 +382,44 @@ fn build_speech_context(request_id: &str, req: &LiveTranslateRequest) -> String 
             "interimResults": { "resultType": "None" },
             "phraseResults": { "resultType": "None" }
         },
-        "audio": { "streams": { "1": serde_json::Value::Null } }
+        "audio": { "streams": { "1": serde_json::Value::Null } },
+        "profanity": {
+            "mode": profanity_mode
+        }
     });
+
+    // Add TrueText post-processing if enabled
+    // Maps to SpeechServiceResponse_PostProcessingOption = "TrueText"
+    if req.enable_true_text == Some(true) {
+        if let Some(obj) = context.as_object_mut() {
+            obj.insert("postProcessing".to_string(), json!({
+                "option": "TrueText"
+            }));
+        }
+    }
+
+    // Add silence timeout settings if specified
+    if req.initial_silence_timeout_ms.is_some() || req.end_silence_timeout_ms.is_some() {
+        if let Some(phrase_detection) = context.get_mut("phraseDetection") {
+            if let Some(pd_obj) = phrase_detection.as_object_mut() {
+                if let Some(ms) = req.initial_silence_timeout_ms {
+                    pd_obj.insert("initialSilenceTimeoutMs".to_string(), json!(ms));
+                }
+                if let Some(ms) = req.end_silence_timeout_ms {
+                    pd_obj.insert("endSilenceTimeoutMs".to_string(), json!(ms));
+                }
+            }
+        }
+    }
+
+    // Add word-level timestamps if enabled
+    if req.enable_word_level_timestamps == Some(true) {
+        if let Some(phrase_output) = context.get_mut("phraseOutput") {
+            if let Some(po_obj) = phrase_output.as_object_mut() {
+                po_obj.insert("wordLevelTimestamps".to_string(), json!(true));
+            }
+        }
+    }
 
     // Add language auto-detection if no source language specified
     if req.source_lang.is_empty() && !req.auto_detect_languages.is_empty() {
