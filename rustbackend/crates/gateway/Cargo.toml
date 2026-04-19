@@ -44,3 +44,4 @@ tracing = { workspace = true }
 anyhow = { workspace = true }
 rand = { workspace = true }
 base64 = { workspace = true }
+bytes = { workspace = true }

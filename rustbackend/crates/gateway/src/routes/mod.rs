@@ -5,6 +5,9 @@ pub mod setup;
 pub mod auth_routes;
 pub mod user;
 pub mod admin;
+pub mod chat;
+pub mod images;
+pub mod tts;
 
 use crate::state::AppState;
 use crate::middleware;
@@ -22,6 +25,9 @@ pub fn build_router(state: Arc<AppState>) -> Router {
     // Protected routes (require auth)
     let protected = Router::new()
         .merge(user::routes())
+        .merge(chat::routes())
+        .merge(images::routes())
+        .merge(tts::routes())
         .layer(axum_mw::from_fn_with_state(
             state.clone(),
             middleware::auth::require_auth,

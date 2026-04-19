@@ -64,6 +64,7 @@ uuid = { version = "1", features = ["v4", "serde"] }
 rand = "0.8"
 base64 = "0.22"
 dashmap = "6"
+bytes = "1"
 
 # Internal crates
 domain = { path = "crates/domain" }

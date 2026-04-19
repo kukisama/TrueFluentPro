@@ -3,6 +3,9 @@
 //! Each provider trait defines the contract for a specific capability type.
 //! Implementations (adapters) live in submodules per vendor.
 
+pub mod azure;
+pub mod registry;
+
 use serde::{Deserialize, Serialize};
 use futures::stream::BoxStream;
 

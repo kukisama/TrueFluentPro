@@ -7,7 +7,9 @@ use cache::CacheBackend;
 use cache::memory::InMemoryCache;
 use billing::{BillingEngine, DisabledBillingEngine};
 use credential_broker::CredentialBroker;
+use providers::registry::ProviderRegistry;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 use tracing::info;
 
 pub struct AppState {
@@ -16,6 +18,7 @@ pub struct AppState {
     pub cache: Arc<dyn CacheBackend>,
     pub billing: Arc<dyn BillingEngine>,
     pub credentials: Arc<CredentialBroker>,
+    pub providers: Arc<RwLock<ProviderRegistry>>,
     pub jwt_secret: String,
 }
 
@@ -73,14 +76,42 @@ impl AppState {
             config.auth.local.jwt_secret.clone()
         };
 
+        // ─── Provider Registry ───
+        let db_providers = storage.get_providers().await
+            .map_err(|e| anyhow::anyhow!("failed to load providers: {e}"))?;
+        let registry = ProviderRegistry::build(&db_providers, credentials.clone());
+        info!(
+            chat = registry.chat_count(),
+            image = registry.image_count(),
+            tts = registry.tts_count(),
+            "Provider registry initialized"
+        );
+        let providers = Arc::new(RwLock::new(registry));
+
         Ok(Self {
             config,
             storage,
             cache,
             billing,
             credentials,
+            providers,
             jwt_secret,
         })
+    }
+
+    /// Reload provider registry from DB (call after admin changes providers).
+    pub async fn reload_providers(&self) -> anyhow::Result<()> {
+        let db_providers = self.storage.get_providers().await
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        let mut reg = self.providers.write().await;
+        reg.rebuild(&db_providers, self.credentials.clone());
+        info!(
+            chat = reg.chat_count(),
+            image = reg.image_count(),
+            tts = reg.tts_count(),
+            "Provider registry reloaded"
+        );
+        Ok(())
     }
 }
 
