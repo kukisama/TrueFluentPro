@@ -24,13 +24,17 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .merge(setup::routes())
         .merge(auth_routes::routes());
 
-    // Protected routes (require auth)
+    // Protected routes (require auth + rate limiting)
     let protected = Router::new()
         .merge(user::routes())
         .merge(chat::routes())
         .merge(images::routes())
         .merge(tts::routes())
         .merge(translate::routes())
+        .layer(axum_mw::from_fn_with_state(
+            state.clone(),
+            middleware::rate_limit::rate_limit,
+        ))
         .layer(axum_mw::from_fn_with_state(
             state.clone(),
             middleware::auth::require_auth,

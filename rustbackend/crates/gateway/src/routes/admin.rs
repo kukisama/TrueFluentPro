@@ -2,9 +2,10 @@
 
 use crate::state::AppState;
 use crate::error::ApiError;
+use domain::auth::UserContext;
 use domain::models::*;
 use std::sync::Arc;
-use axum::{Router, routing::{get, put}, extract::{State, Path, Json}};
+use axum::{Router, routing::{get, put}, extract::{State, Path, Json}, Extension};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -46,6 +47,7 @@ struct UpdateUserRequest {
 
 async fn update_user(
     State(state): State<Arc<AppState>>,
+    Extension(ctx): Extension<UserContext>,
     Path(id): Path<String>,
     Json(req): Json<UpdateUserRequest>,
 ) -> Result<Json<Value>, ApiError> {
@@ -60,6 +62,8 @@ async fn update_user(
 
     state.storage.upsert_user(&user).await
         .map_err(|e| ApiError::Internal(e.to_string()))?;
+
+    let _ = state.storage.write_audit_log(&ctx.user_id, "admin.update_user", Some(&id), None).await;
 
     Ok(Json(json!({ "user": user })))
 }
@@ -76,15 +80,19 @@ async fn list_providers(
 
 async fn upsert_provider(
     State(state): State<Arc<AppState>>,
+    Extension(ctx): Extension<UserContext>,
     Path(id): Path<String>,
     Json(mut provider): Json<ProviderInfo>,
 ) -> Result<Json<Value>, ApiError> {
-    provider.id = id;
+    provider.id = id.clone();
     state.storage.upsert_provider(&provider).await
         .map_err(|e| ApiError::Internal(e.to_string()))?;
     if let Err(e) = state.reload_providers().await {
         tracing::warn!(error = %e, "Failed to reload provider registry after upsert");
     }
+
+    let _ = state.storage.write_audit_log(&ctx.user_id, "admin.upsert_provider", Some(&id), None).await;
+
     Ok(Json(json!({ "provider": provider })))
 }
 
@@ -95,6 +103,7 @@ struct ToggleRequest {
 
 async fn toggle_provider(
     State(state): State<Arc<AppState>>,
+    Extension(ctx): Extension<UserContext>,
     Path(id): Path<String>,
     Json(req): Json<ToggleRequest>,
 ) -> Result<Json<Value>, ApiError> {
@@ -110,6 +119,9 @@ async fn toggle_provider(
     if let Err(e) = state.reload_providers().await {
         tracing::warn!(error = %e, "Failed to reload provider registry after toggle");
     }
+
+    let _ = state.storage.write_audit_log(&ctx.user_id, "admin.toggle_provider", Some(&id), None).await;
+
     Ok(Json(json!({ "provider": provider })))
 }
 
@@ -125,12 +137,16 @@ async fn list_capabilities(
 
 async fn upsert_capability(
     State(state): State<Arc<AppState>>,
+    Extension(ctx): Extension<UserContext>,
     Path(id): Path<String>,
     Json(mut cap): Json<Capability>,
 ) -> Result<Json<Value>, ApiError> {
-    cap.id = id;
+    cap.id = id.clone();
     state.storage.upsert_capability(&cap).await
         .map_err(|e| ApiError::Internal(e.to_string()))?;
+
+    let _ = state.storage.write_audit_log(&ctx.user_id, "admin.upsert_capability", Some(&id), None).await;
+
     Ok(Json(json!({ "capability": cap })))
 }
 
@@ -152,11 +168,16 @@ struct StoreCredentialRequest {
 
 async fn store_credential(
     State(state): State<Arc<AppState>>,
+    Extension(ctx): Extension<UserContext>,
     Path((provider_id, key)): Path<(String, String)>,
     Json(req): Json<StoreCredentialRequest>,
 ) -> Result<Json<Value>, ApiError> {
     state.credentials.store(&provider_id, &key, &req.value).await
         .map_err(|e| ApiError::Internal(e.to_string()))?;
+
+    let detail = format!("{}/{}", provider_id, key);
+    let _ = state.storage.write_audit_log(&ctx.user_id, "admin.store_credential", Some(&detail), None).await;
+
     Ok(Json(json!({ "status": "stored", "provider_id": provider_id, "key": key })))
 }
 
@@ -172,12 +193,16 @@ async fn list_plans(
 
 async fn upsert_plan(
     State(state): State<Arc<AppState>>,
+    Extension(ctx): Extension<UserContext>,
     Path(id): Path<String>,
     Json(mut plan): Json<SubscriptionPlan>,
 ) -> Result<Json<Value>, ApiError> {
-    plan.id = id;
+    plan.id = id.clone();
     state.storage.upsert_plan(&plan).await
         .map_err(|e| ApiError::Internal(e.to_string()))?;
+
+    let _ = state.storage.write_audit_log(&ctx.user_id, "admin.upsert_plan", Some(&id), None).await;
+
     Ok(Json(json!({ "plan": plan })))
 }
 
@@ -226,10 +251,13 @@ struct BillingConfigRequest {
 
 async fn set_billing_config(
     State(state): State<Arc<AppState>>,
+    Extension(ctx): Extension<UserContext>,
     Json(req): Json<BillingConfigRequest>,
 ) -> Result<Json<Value>, ApiError> {
     state.storage.set_config("billing.enabled", if req.enabled { "true" } else { "false" }).await
         .map_err(|e| ApiError::Internal(e.to_string()))?;
+
+    let _ = state.storage.write_audit_log(&ctx.user_id, "admin.set_billing_config", Some(if req.enabled { "enabled" } else { "disabled" }), None).await;
 
     Ok(Json(json!({ "billing": { "enabled": req.enabled } })))
 }

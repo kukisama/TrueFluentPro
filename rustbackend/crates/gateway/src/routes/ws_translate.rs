@@ -31,6 +31,7 @@ use serde::Deserialize;
 use serde_json::json;
 use tokio_tungstenite::tungstenite;
 use tracing::{info, warn, error, debug};
+use billing;
 
 pub fn routes() -> Router<Arc<AppState>> {
     Router::new()
@@ -84,6 +85,29 @@ async fn ws_translate_upgrade(
         to = %params.to,
         "WebSocket translate upgrade"
     );
+
+    // Check billing quotas (WS uses both translate and speech minutes)
+    if state.billing.is_enabled() {
+        match state.billing.check_quota(&user_ctx.user_id, "translate_minute").await {
+            Ok(billing::QuotaStatus::Exceeded { used, limit }) => {
+                return Err(ApiError::TooManyRequests(format!("Translation quota exceeded: used {used}/{limit} minutes this month")));
+            }
+            Err(e) => { tracing::warn!(error = %e, "Billing check failed, allowing request"); }
+            _ => {}
+        }
+        match state.billing.check_quota(&user_ctx.user_id, "speech_minute").await {
+            Ok(billing::QuotaStatus::Exceeded { used, limit }) => {
+                return Err(ApiError::TooManyRequests(format!("Speech quota exceeded: used {used}/{limit} minutes this month")));
+            }
+            Err(e) => { tracing::warn!(error = %e, "Billing check failed, allowing request"); }
+            _ => {}
+        }
+    }
+
+    // Record usage and audit log for the WS session
+    let _ = state.billing.record_usage(&user_ctx.user_id, "ws.translate", "translate_minute", 1).await;
+    let _ = state.billing.record_usage(&user_ctx.user_id, "ws.translate", "speech_minute", 1).await;
+    let _ = state.storage.write_audit_log(&user_ctx.user_id, "ws.translate", None, None).await;
 
     let target_langs: Vec<String> = params.to.split(',')
         .map(|s| s.trim().to_string())

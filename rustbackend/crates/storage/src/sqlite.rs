@@ -414,6 +414,18 @@ impl StorageBackend for SqliteBackend {
         .await?;
         Ok(rows.into_iter().map(Into::into).collect())
     }
+
+    async fn write_audit_log(&self, user_id: &str, action: &str, detail: Option<&str>, ip_address: Option<&str>) -> StorageResult<()> {
+        sqlx::query("INSERT INTO audit_log (user_id, action, detail, ip_address) VALUES (?, ?, ?, ?)")
+            .bind(user_id)
+            .bind(action)
+            .bind(detail)
+            .bind(ip_address)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| StorageError::Internal(format!("audit_log write failed: {e}")))?;
+        Ok(())
+    }
 }
 
 // ═══ Row types for sqlx ═══
