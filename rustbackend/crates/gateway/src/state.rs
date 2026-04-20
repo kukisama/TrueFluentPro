@@ -43,7 +43,13 @@ impl AppState {
         // ─── Cache ───
         let cache: Arc<dyn CacheBackend> = match config.cache.mode.as_str() {
             "redis" => {
-                anyhow::bail!("Redis cache not yet implemented — use 'memory' mode");
+                let redis_url = std::env::var("GATEWAY_CACHE__REDIS_URL")
+                    .or_else(|_| std::env::var("REDIS_URL"))
+                    .unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string());
+                info!("Using Redis cache: {redis_url}");
+                let redis_cache = cache::redis_backend::RedisCache::new(&redis_url).await
+                    .map_err(|e| anyhow::anyhow!("Redis initialization failed: {e}"))?;
+                Arc::new(redis_cache)
             }
             _ => {
                 info!("Using in-memory cache");

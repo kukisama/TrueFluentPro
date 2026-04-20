@@ -16,9 +16,13 @@ use crate::state::AppState;
 use crate::middleware;
 use std::sync::Arc;
 use axum::{Router, middleware as axum_mw};
+use axum::http::HeaderName;
 use tower_http::trace::TraceLayer;
+use tower_http::request_id::{MakeRequestUuid, SetRequestIdLayer, PropagateRequestIdLayer};
 
 pub fn build_router(state: Arc<AppState>) -> Router {
+    let x_request_id = HeaderName::from_static("x-request-id");
+
     // Public routes (no auth)
     let public = Router::new()
         .merge(health::routes())
@@ -60,5 +64,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .merge(websocket)
         .merge(admin)
         .layer(TraceLayer::new_for_http())
+        .layer(PropagateRequestIdLayer::new(x_request_id.clone()))
+        .layer(SetRequestIdLayer::new(x_request_id, MakeRequestUuid))
         .with_state(state)
 }
