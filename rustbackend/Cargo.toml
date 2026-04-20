@@ -42,7 +42,7 @@ argon2 = "0.5"
 secrecy = { version = "0.10", features = ["serde"] }
 
 # Storage
-sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "sqlite", "macros", "chrono"] }
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "sqlite", "postgres", "macros", "chrono"] }
 
 # Config
 figment = { version = "0.10", features = ["env", "toml"] }

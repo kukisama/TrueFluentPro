@@ -3,6 +3,7 @@
 use domain::config::GatewayConfig;
 use storage::StorageBackend;
 use storage::sqlite::SqliteBackend;
+use storage::postgres::PostgresBackend;
 use cache::CacheBackend;
 use cache::memory::InMemoryCache;
 use billing::{BillingEngine, DisabledBillingEngine, ActiveBillingEngine};
@@ -31,9 +32,13 @@ impl AppState {
             info!("Using SQLite database: {db_path}");
             let backend = SqliteBackend::new(&db_path).await?;
             Arc::new(backend)
+        } else if config.database.url.starts_with("postgres://") || config.database.url.starts_with("postgresql://") {
+            info!("Using PostgreSQL database (max_connections={})", config.database.max_connections);
+            let backend = PostgresBackend::new(&config.database.url, config.database.max_connections).await
+                .map_err(|e| anyhow::anyhow!("PostgreSQL initialization failed: {e}"))?;
+            Arc::new(backend)
         } else {
-            // Future: PostgreSQL support
-            anyhow::bail!("PostgreSQL not yet implemented — leave DATABASE_URL empty for SQLite");
+            anyhow::bail!("Unsupported database URL scheme — use empty (SQLite) or postgres://");
         };
 
         // Initialize database (run migrations)

@@ -1,6 +1,7 @@
-//! Storage crate — database abstraction layer with SQLite implementation.
+//! Storage crate — database abstraction layer with SQLite and PostgreSQL implementations.
 
 pub mod sqlite;
+pub mod postgres;
 pub mod error;
 
 use domain::models::*;
