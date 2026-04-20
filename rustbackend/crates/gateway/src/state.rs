@@ -70,7 +70,7 @@ impl AppState {
         let credentials = Arc::new(CredentialBroker::new(
             storage.clone(),
             &config.credentials.master_key_base64,
-        ));
+        ).with_keyvault(&config.credentials.keyvault_url));
 
         // ─── JWT Secret ───
         let jwt_secret = if config.auth.local.jwt_secret.is_empty() {
@@ -107,6 +107,7 @@ impl AppState {
             stt = registry.stt_count(),
             translate = registry.translate_count(),
             live_translate = registry.live_translate_count(),
+            video = registry.video_count(),
             "Provider registry initialized"
         );
         let providers = Arc::new(RwLock::new(registry));
@@ -136,6 +137,7 @@ impl AppState {
             stt = reg.stt_count(),
             translate = reg.translate_count(),
             live_translate = reg.live_translate_count(),
+            video = reg.video_count(),
             "Provider registry reloaded"
         );
         Ok(())

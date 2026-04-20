@@ -5,6 +5,8 @@
 
 pub mod azure;
 pub mod generic;
+pub mod tencent;
+pub mod alibaba;
 pub mod registry;
 
 use serde::{Deserialize, Serialize};
@@ -242,6 +244,50 @@ pub struct ImageData {
 pub trait ImageProvider: Send + Sync {
     fn id(&self) -> &'static str;
     async fn generate(&self, req: ImageGenRequest) -> Result<ImageGenResponse, ProviderError>;
+}
+
+// ═══ Video Generation Provider ═══
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VideoGenRequest {
+    /// Text prompt describing the desired video.
+    pub prompt: String,
+    /// Resolution (e.g. "1280x720", "1920x1080").
+    #[serde(default)]
+    pub resolution: Option<String>,
+    /// Duration in seconds (e.g. 4, 8, 16).
+    #[serde(default)]
+    pub duration_seconds: Option<u32>,
+    /// Number of frames per second.
+    #[serde(default)]
+    pub fps: Option<u32>,
+    /// Optional negative prompt.
+    #[serde(default)]
+    pub negative_prompt: Option<String>,
+    /// Optional: source image URL for image-to-video generation.
+    #[serde(default)]
+    pub source_image_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct VideoGenResponse {
+    /// Task ID for polling status (async generation).
+    pub task_id: Option<String>,
+    /// Video URL (available when generation is complete).
+    pub video_url: Option<String>,
+    /// Generation status: "pending", "processing", "completed", "failed".
+    pub status: String,
+}
+
+#[async_trait]
+pub trait VideoProvider: Send + Sync {
+    fn id(&self) -> &'static str;
+
+    /// Submit a video generation task. Most providers are async — returns a task_id.
+    async fn generate(&self, req: VideoGenRequest) -> Result<VideoGenResponse, ProviderError>;
+
+    /// Query the status of a video generation task.
+    async fn query_task(&self, task_id: &str) -> Result<VideoGenResponse, ProviderError>;
 }
 
 // ═══ Live Speech Translation Provider ═══

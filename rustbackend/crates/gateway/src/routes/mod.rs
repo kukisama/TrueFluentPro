@@ -11,6 +11,7 @@ pub mod tts;
 pub mod stt;
 pub mod translate;
 pub mod ws_translate;
+pub mod video;
 
 use crate::state::AppState;
 use crate::middleware;
@@ -37,6 +38,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .merge(tts::routes())
         .merge(stt::routes())
         .merge(translate::routes())
+        .merge(video::routes())
         .layer(axum_mw::from_fn_with_state(
             state.clone(),
             middleware::rate_limit::rate_limit,

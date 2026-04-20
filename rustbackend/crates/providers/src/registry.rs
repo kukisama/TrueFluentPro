@@ -1,13 +1,19 @@
 //! Provider registry — dynamic dispatch for capability → provider routing.
 
-use crate::{ChatProvider, ImageProvider, TtsProvider, TextTranslator, LiveSpeechTranslator, SttProvider, ProviderError};
+use crate::{ChatProvider, ImageProvider, TtsProvider, TextTranslator, LiveSpeechTranslator, SttProvider, VideoProvider, ProviderError};
 use crate::azure::chat::AzureOpenAiChat;
 use crate::azure::image::AzureOpenAiImage;
 use crate::azure::tts::AzureSpeechTts;
 use crate::azure::translate::AzureTranslator;
 use crate::azure::speech_translate::AzureSpeechTranslation;
 use crate::azure::stt::AzureSpeechStt;
+use crate::azure::video::AzureOpenAiVideo;
 use crate::generic::openai_chat::GenericOpenAiChat;
+use crate::tencent::translate::TencentTranslator;
+use crate::tencent::tts::TencentTts;
+use crate::tencent::chat::TencentHunyuanChat;
+use crate::alibaba::translate::AliTranslator;
+use crate::alibaba::tts::AliTts;
 use credential_broker::CredentialBroker;
 use domain::models::ProviderInfo;
 use std::sync::Arc;
@@ -21,6 +27,7 @@ pub struct ProviderRegistry {
     translate_providers: Vec<(String, Arc<dyn TextTranslator>)>,
     live_translate_providers: Vec<(String, Arc<dyn LiveSpeechTranslator>)>,
     stt_providers: Vec<(String, Arc<dyn SttProvider>)>,
+    video_providers: Vec<(String, Arc<dyn VideoProvider>)>,
 }
 
 impl ProviderRegistry {
@@ -35,6 +42,7 @@ impl ProviderRegistry {
         let mut translate_providers: Vec<(String, Arc<dyn TextTranslator>)> = Vec::new();
         let mut live_translate_providers: Vec<(String, Arc<dyn LiveSpeechTranslator>)> = Vec::new();
         let mut stt_providers: Vec<(String, Arc<dyn SttProvider>)> = Vec::new();
+        let mut video_providers: Vec<(String, Arc<dyn VideoProvider>)> = Vec::new();
 
         for p in providers {
             if !p.is_enabled {
@@ -43,11 +51,13 @@ impl ProviderRegistry {
 
             match p.vendor.as_str() {
                 "azure_openai" | "azure" => {
-                    info!(provider = %p.id, vendor = %p.vendor, "Registering Azure OpenAI adapters");
+                    info!(provider = %p.id, vendor = %p.vendor, "Registering Azure OpenAI adapters (chat + image + video)");
                     let chat = Arc::new(AzureOpenAiChat::new(credentials.clone(), &p.id));
                     let image = Arc::new(AzureOpenAiImage::new(credentials.clone(), &p.id));
+                    let video = Arc::new(AzureOpenAiVideo::new(credentials.clone(), &p.id));
                     chat_providers.push((p.id.clone(), chat));
                     image_providers.push((p.id.clone(), image));
+                    video_providers.push((p.id.clone(), video));
                 }
                 "azure_speech" => {
                     info!(provider = %p.id, vendor = %p.vendor, "Registering Azure Speech adapters (TTS + STT + live translation)");
@@ -63,7 +73,27 @@ impl ProviderRegistry {
                     let translator = Arc::new(AzureTranslator::new(credentials.clone(), &p.id));
                     translate_providers.push((p.id.clone(), translator));
                 }
-                "generic_openai" | "openai" | "ollama" | "vllm" | "deepseek" | "lm_studio" => {
+                "tencent" | "tencent_cloud" => {
+                    info!(provider = %p.id, vendor = %p.vendor, "Registering Tencent Cloud adapters (translate + TTS)");
+                    let translator = Arc::new(TencentTranslator::new(credentials.clone(), &p.id));
+                    let tts = Arc::new(TencentTts::new(credentials.clone(), &p.id));
+                    translate_providers.push((p.id.clone(), translator));
+                    tts_providers.push((p.id.clone(), tts));
+                }
+                "tencent_hunyuan" | "hunyuan" => {
+                    info!(provider = %p.id, vendor = %p.vendor, "Registering Tencent Hunyuan chat adapter");
+                    let chat = Arc::new(TencentHunyuanChat::new(credentials.clone(), &p.id));
+                    chat_providers.push((p.id.clone(), chat));
+                }
+                "alibaba" | "aliyun" | "alibaba_cloud" => {
+                    info!(provider = %p.id, vendor = %p.vendor, "Registering Alibaba Cloud adapters (translate + TTS)");
+                    let translator = Arc::new(AliTranslator::new(credentials.clone(), &p.id));
+                    let tts = Arc::new(AliTts::new(credentials.clone(), &p.id));
+                    translate_providers.push((p.id.clone(), translator));
+                    tts_providers.push((p.id.clone(), tts));
+                }
+                "generic_openai" | "openai" | "ollama" | "vllm" | "deepseek" | "lm_studio"
+                | "dashscope" | "qwen" => {
                     info!(provider = %p.id, vendor = %p.vendor, "Registering generic OpenAI-compatible chat adapter");
                     let chat = Arc::new(GenericOpenAiChat::new(credentials.clone(), &p.id));
                     chat_providers.push((p.id.clone(), chat));
@@ -74,7 +104,7 @@ impl ProviderRegistry {
             }
         }
 
-        Self { chat_providers, image_providers, tts_providers, translate_providers, live_translate_providers, stt_providers }
+        Self { chat_providers, image_providers, tts_providers, translate_providers, live_translate_providers, stt_providers, video_providers }
     }
 
     /// Rebuild registry (called when admin changes providers).
@@ -90,76 +120,42 @@ impl ProviderRegistry {
         self.translate_providers = new.translate_providers;
         self.live_translate_providers = new.live_translate_providers;
         self.stt_providers = new.stt_providers;
+        self.video_providers = new.video_providers;
     }
 
     /// Get the first enabled ChatProvider (or specific by provider_id).
     pub fn get_chat(&self, provider_id: Option<&str>) -> Result<Arc<dyn ChatProvider>, ProviderError> {
-        if let Some(id) = provider_id {
-            self.chat_providers.iter()
-                .find(|(pid, _)| pid == id)
-                .map(|(_, p)| p.clone())
-                .ok_or_else(|| ProviderError::ProviderNotFound(id.to_string()))
-        } else {
-            self.chat_providers.first()
-                .map(|(_, p)| p.clone())
-                .ok_or(ProviderError::UnsupportedCapability)
-        }
+        get_provider(&self.chat_providers, provider_id)
     }
 
     /// Get the first enabled ImageProvider.
     pub fn get_image(&self, provider_id: Option<&str>) -> Result<Arc<dyn ImageProvider>, ProviderError> {
-        if let Some(id) = provider_id {
-            self.image_providers.iter()
-                .find(|(pid, _)| pid == id)
-                .map(|(_, p)| p.clone())
-                .ok_or_else(|| ProviderError::ProviderNotFound(id.to_string()))
-        } else {
-            self.image_providers.first()
-                .map(|(_, p)| p.clone())
-                .ok_or(ProviderError::UnsupportedCapability)
-        }
+        get_provider(&self.image_providers, provider_id)
     }
 
     /// Get the first enabled TtsProvider.
     pub fn get_tts(&self, provider_id: Option<&str>) -> Result<Arc<dyn TtsProvider>, ProviderError> {
-        if let Some(id) = provider_id {
-            self.tts_providers.iter()
-                .find(|(pid, _)| pid == id)
-                .map(|(_, p)| p.clone())
-                .ok_or_else(|| ProviderError::ProviderNotFound(id.to_string()))
-        } else {
-            self.tts_providers.first()
-                .map(|(_, p)| p.clone())
-                .ok_or(ProviderError::UnsupportedCapability)
-        }
+        get_provider(&self.tts_providers, provider_id)
     }
 
     /// Get the first enabled TextTranslator.
     pub fn get_translator(&self, provider_id: Option<&str>) -> Result<Arc<dyn TextTranslator>, ProviderError> {
-        if let Some(id) = provider_id {
-            self.translate_providers.iter()
-                .find(|(pid, _)| pid == id)
-                .map(|(_, p)| p.clone())
-                .ok_or_else(|| ProviderError::ProviderNotFound(id.to_string()))
-        } else {
-            self.translate_providers.first()
-                .map(|(_, p)| p.clone())
-                .ok_or(ProviderError::UnsupportedCapability)
-        }
+        get_provider(&self.translate_providers, provider_id)
     }
 
     /// Get the first enabled LiveSpeechTranslator.
     pub fn get_live_translator(&self, provider_id: Option<&str>) -> Result<Arc<dyn LiveSpeechTranslator>, ProviderError> {
-        if let Some(id) = provider_id {
-            self.live_translate_providers.iter()
-                .find(|(pid, _)| pid == id)
-                .map(|(_, p)| p.clone())
-                .ok_or_else(|| ProviderError::ProviderNotFound(id.to_string()))
-        } else {
-            self.live_translate_providers.first()
-                .map(|(_, p)| p.clone())
-                .ok_or(ProviderError::UnsupportedCapability)
-        }
+        get_provider(&self.live_translate_providers, provider_id)
+    }
+
+    /// Get the first enabled SttProvider.
+    pub fn get_stt(&self, provider_id: Option<&str>) -> Result<Arc<dyn SttProvider>, ProviderError> {
+        get_provider(&self.stt_providers, provider_id)
+    }
+
+    /// Get the first enabled VideoProvider.
+    pub fn get_video(&self, provider_id: Option<&str>) -> Result<Arc<dyn VideoProvider>, ProviderError> {
+        get_provider(&self.video_providers, provider_id)
     }
 
     pub fn chat_count(&self) -> usize { self.chat_providers.len() }
@@ -168,18 +164,22 @@ impl ProviderRegistry {
     pub fn translate_count(&self) -> usize { self.translate_providers.len() }
     pub fn live_translate_count(&self) -> usize { self.live_translate_providers.len() }
     pub fn stt_count(&self) -> usize { self.stt_providers.len() }
+    pub fn video_count(&self) -> usize { self.video_providers.len() }
+}
 
-    /// Get the first enabled SttProvider.
-    pub fn get_stt(&self, provider_id: Option<&str>) -> Result<Arc<dyn SttProvider>, ProviderError> {
-        if let Some(id) = provider_id {
-            self.stt_providers.iter()
-                .find(|(pid, _)| pid == id)
-                .map(|(_, p)| p.clone())
-                .ok_or_else(|| ProviderError::ProviderNotFound(id.to_string()))
-        } else {
-            self.stt_providers.first()
-                .map(|(_, p)| p.clone())
-                .ok_or(ProviderError::UnsupportedCapability)
-        }
+/// Generic provider lookup — by id or first available.
+fn get_provider<T: ?Sized>(
+    providers: &[(String, Arc<T>)],
+    provider_id: Option<&str>,
+) -> Result<Arc<T>, ProviderError> {
+    if let Some(id) = provider_id {
+        providers.iter()
+            .find(|(pid, _)| pid == id)
+            .map(|(_, p)| p.clone())
+            .ok_or_else(|| ProviderError::ProviderNotFound(id.to_string()))
+    } else {
+        providers.first()
+            .map(|(_, p)| p.clone())
+            .ok_or(ProviderError::UnsupportedCapability)
     }
 }

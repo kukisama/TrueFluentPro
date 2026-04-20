@@ -1,16 +1,20 @@
 //! Credential broker — three-level secret chain: env → DB(AES-256-GCM) → KeyVault.
 
+pub mod keyvault;
+
+use keyvault::KeyVaultClient;
 use secrecy::{ExposeSecret, SecretString};
 use storage::StorageBackend;
 use std::sync::Arc;
 use aes_gcm::{Aes256Gcm, KeyInit, Nonce};
 use aes_gcm::aead::Aead;
-use tracing::warn;
+use tracing::{debug, warn};
 
 /// Credential broker that chains multiple secret sources.
 pub struct CredentialBroker {
     storage: Arc<dyn StorageBackend>,
     master_key: Option<[u8; 32]>,
+    keyvault: Option<KeyVaultClient>,
 }
 
 impl CredentialBroker {
@@ -28,10 +32,18 @@ impl CredentialBroker {
                     Some(arr)
                 })
         };
-        Self { storage, master_key }
+        Self { storage, master_key, keyvault: None }
     }
 
-    /// Get a secret by key. Checks: 1) env var  2) DB (AES decrypted)  3) returns None.
+    /// Enable Key Vault as the third credential level.
+    pub fn with_keyvault(mut self, vault_url: &str) -> Self {
+        if !vault_url.is_empty() {
+            self.keyvault = Some(KeyVaultClient::new(vault_url));
+        }
+        self
+    }
+
+    /// Get a secret by key. Checks: 1) env var  2) DB (AES decrypted)  3) Key Vault.
     pub async fn get(&self, provider_id: &str, key: &str) -> anyhow::Result<Option<SecretString>> {
         // Level 1: environment variable (e.g. AZURE_OPENAI_API_KEY)
         let env_key = format!("{}_{}", provider_id, key).to_uppercase().replace('.', "_");
@@ -56,7 +68,20 @@ impl CredentialBroker {
             }
         }
 
-        // Level 3: KeyVault (future)
+        // Level 3: Azure Key Vault
+        if let Some(kv) = &self.keyvault {
+            // Key Vault secret names use hyphens, not dots/underscores
+            let kv_name = format!("{}-{}", provider_id, key).replace('_', "-").replace('.', "-");
+            debug!(kv_name = %kv_name, "Checking Key Vault");
+            match kv.get_secret(&kv_name).await {
+                Ok(Some(secret)) => return Ok(Some(secret)),
+                Ok(None) => {}
+                Err(e) => {
+                    warn!(error = %e, kv_name = %kv_name, "Key Vault lookup failed");
+                }
+            }
+        }
+
         Ok(None)
     }
 
