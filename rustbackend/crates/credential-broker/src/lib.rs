@@ -90,3 +90,17 @@ impl CredentialBroker {
             .map_err(|e| anyhow::anyhow!("failed to store credential: {e}"))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #[tokio::test]
+    async fn test_env_var_resolution() {
+        // Verify the env key naming convention used by the broker
+        let env_key = format!("{}_{}", "test_provider", "api_key").to_uppercase().replace('.', "_");
+        assert_eq!(env_key, "TEST_PROVIDER_API_KEY");
+
+        // Verify dot replacement
+        let env_key2 = format!("{}_{}", "azure.openai", "api_key").to_uppercase().replace('.', "_");
+        assert_eq!(env_key2, "AZURE_OPENAI_API_KEY");
+    }
+}

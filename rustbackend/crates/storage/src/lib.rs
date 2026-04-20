@@ -58,6 +58,7 @@ pub trait StorageBackend: Send + Sync {
 
     // ─── Audit Log ───
     async fn write_audit_log(&self, user_id: &str, action: &str, detail: Option<&str>, ip_address: Option<&str>) -> StorageResult<()>;
+    async fn list_audit_logs(&self, offset: i64, limit: i64) -> StorageResult<Vec<domain::models::AuditLogEntry>>;
 }
 
 /// Encrypted credential stored in DB.

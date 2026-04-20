@@ -5,9 +5,19 @@ use crate::error::ApiError;
 use domain::auth::UserContext;
 use domain::models::*;
 use std::sync::Arc;
-use axum::{Router, routing::{get, put}, extract::{State, Path, Json}, Extension};
+use axum::{Router, routing::{get, put}, extract::{State, Path, Json, Query}, Extension};
 use serde::Deserialize;
 use serde_json::{json, Value};
+
+#[derive(Debug, Deserialize)]
+struct PaginationQuery {
+    #[serde(default)]
+    offset: Option<i64>,
+    #[serde(default)]
+    limit: Option<i64>,
+    #[serde(default)]
+    search: Option<String>,
+}
 
 pub fn routes() -> Router<Arc<AppState>> {
     Router::new()
@@ -25,16 +35,30 @@ pub fn routes() -> Router<Arc<AppState>> {
         .route("/v1/admin/stats", get(system_stats))
         .route("/v1/admin/billing/config", get(get_billing_config))
         .route("/v1/admin/billing/config", put(set_billing_config))
+        .route("/v1/admin/usage/{user_id}", get(get_user_usage))
+        .route("/v1/admin/audit", get(list_audit_logs))
 }
 
 // ─── Users ───
 
 async fn list_users(
     State(state): State<Arc<AppState>>,
+    Query(params): Query<PaginationQuery>,
 ) -> Result<Json<Value>, ApiError> {
-    let users = state.storage.list_users(0, 100).await
+    let offset = params.offset.unwrap_or(0);
+    let limit = params.limit.unwrap_or(50).min(100);
+    let total = state.storage.count_users().await
         .map_err(|e| ApiError::Internal(e.to_string()))?;
-    Ok(Json(json!({ "users": users })))
+    let users = state.storage.list_users(offset, limit).await
+        .map_err(|e| ApiError::Internal(e.to_string()))?;
+    Ok(Json(json!({
+        "users": users,
+        "pagination": {
+            "offset": offset,
+            "limit": limit,
+            "total": total,
+        }
+    })))
 }
 
 #[derive(Debug, Deserialize)]
@@ -75,7 +99,11 @@ async fn list_providers(
 ) -> Result<Json<Value>, ApiError> {
     let providers = state.storage.get_providers().await
         .map_err(|e| ApiError::Internal(e.to_string()))?;
-    Ok(Json(json!({ "providers": providers })))
+    let total = providers.len();
+    Ok(Json(json!({
+        "providers": providers,
+        "total": total,
+    })))
 }
 
 async fn upsert_provider(
@@ -260,4 +288,38 @@ async fn set_billing_config(
     let _ = state.storage.write_audit_log(&ctx.user_id, "admin.set_billing_config", Some(if req.enabled { "enabled" } else { "disabled" }), None).await;
 
     Ok(Json(json!({ "billing": { "enabled": req.enabled } })))
+}
+
+// ─── Usage ───
+
+async fn get_user_usage(
+    State(state): State<Arc<AppState>>,
+    Path(user_id): Path<String>,
+    Query(params): Query<PaginationQuery>,
+) -> Result<Json<Value>, ApiError> {
+    let offset = params.offset.unwrap_or(0);
+    let limit = params.limit.unwrap_or(50).min(100);
+    let records = state.storage.get_usage_records(&user_id, offset, limit).await
+        .map_err(|e| ApiError::Internal(e.to_string()))?;
+    Ok(Json(json!({
+        "user_id": user_id,
+        "usage": records,
+        "pagination": { "offset": offset, "limit": limit },
+    })))
+}
+
+// ─── Audit Logs ───
+
+async fn list_audit_logs(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<PaginationQuery>,
+) -> Result<Json<Value>, ApiError> {
+    let offset = params.offset.unwrap_or(0);
+    let limit = params.limit.unwrap_or(50).min(100);
+    let logs = state.storage.list_audit_logs(offset, limit).await
+        .map_err(|e| ApiError::Internal(e.to_string()))?;
+    Ok(Json(json!({
+        "audit_logs": logs,
+        "pagination": { "offset": offset, "limit": limit },
+    })))
 }

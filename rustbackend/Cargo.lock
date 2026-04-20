@@ -248,6 +248,7 @@ dependencies = [
  "serde_json",
  "storage",
  "thiserror",
+ "tokio",
  "tracing",
 ]
 
