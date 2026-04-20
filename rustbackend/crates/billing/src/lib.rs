@@ -109,3 +109,24 @@ impl BillingEngine for ActiveBillingEngine {
             .map_err(|e| anyhow::anyhow!("{e}"))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_disabled_engine_always_unlimited() {
+        let engine = DisabledBillingEngine;
+        assert!(!engine.is_enabled());
+        match engine.check_quota("user1", "chat_token").await.unwrap() {
+            QuotaStatus::Unlimited => {}
+            other => panic!("Expected Unlimited, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_disabled_engine_record_usage_noop() {
+        let engine = DisabledBillingEngine;
+        assert!(engine.record_usage("user1", "chat", "chat_token", 100).await.is_ok());
+    }
+}

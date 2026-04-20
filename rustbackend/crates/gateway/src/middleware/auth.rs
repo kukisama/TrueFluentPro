@@ -21,7 +21,7 @@ pub async fn require_auth(
     next: Next,
 ) -> Result<Response, ApiError> {
     let token = extract_bearer_token(&req)?;
-    let user_ctx = validate_token(&state, &token)?;
+    let user_ctx = validate_token(&state, &token).await?;
 
     // JIT: ensure user exists in DB, update last_seen
     ensure_user_exists(&state, &user_ctx).await?;
@@ -37,7 +37,7 @@ pub async fn require_admin(
     next: Next,
 ) -> Result<Response, ApiError> {
     let token = extract_bearer_token(&req)?;
-    let user_ctx = validate_token(&state, &token)?;
+    let user_ctx = validate_token(&state, &token).await?;
 
     if user_ctx.role != UserRole::Admin {
         return Err(ApiError::Forbidden("admin role required".into()));
@@ -58,12 +58,18 @@ fn extract_bearer_token(req: &Request) -> Result<String, ApiError> {
         .ok_or_else(|| ApiError::Unauthorized("missing or invalid Authorization header".into()))
 }
 
-fn validate_token(state: &AppState, token: &str) -> Result<UserContext, ApiError> {
+async fn validate_token(state: &AppState, token: &str) -> Result<UserContext, ApiError> {
     match state.config.auth.mode.as_str() {
         "local" => validate_local_token(state, token),
-        "aad" => validate_aad_token(state, token),
+        "aad" => validate_aad_token(state, token).await,
         other => Err(ApiError::Internal(format!("unknown auth mode: {other}"))),
     }
+}
+
+/// Validate a token from a WebSocket query parameter.
+/// Exported for use by ws_translate.
+pub async fn validate_ws_auth(state: &AppState, token: &str) -> Result<UserContext, ApiError> {
+    validate_token(state, token).await
 }
 
 fn validate_local_token(state: &AppState, token: &str) -> Result<UserContext, ApiError> {
@@ -85,9 +91,21 @@ fn validate_local_token(state: &AppState, token: &str) -> Result<UserContext, Ap
     })
 }
 
-fn validate_aad_token(state: &AppState, token: &str) -> Result<UserContext, ApiError> {
-    // For AAD, we decode without full JWKS verification for now (MVP).
-    // Production should use jwks-client-rs for proper RS256 verification.
+async fn validate_aad_token(state: &AppState, token: &str) -> Result<UserContext, ApiError> {
+    let jwks = state.jwks.as_ref()
+        .ok_or_else(|| ApiError::Internal("AAD JWKS not initialized — check tenant_id configuration".into()))?;
+
+    // Decode header to get kid
+    let header = jsonwebtoken::decode_header(token)
+        .map_err(|e| ApiError::Unauthorized(format!("invalid token header: {e}")))?;
+
+    let kid = header.kid
+        .ok_or_else(|| ApiError::Unauthorized("AAD token missing 'kid' header".into()))?;
+
+    // Get the decoding key from JWKS
+    let key = jwks.get_key(&kid).await
+        .ok_or_else(|| ApiError::Unauthorized(format!("Unknown signing key: {kid}")))?;
+
     let mut validation = Validation::new(Algorithm::RS256);
     validation.validate_exp = true;
     validation.leeway = 30;
@@ -96,11 +114,14 @@ fn validate_aad_token(state: &AppState, token: &str) -> Result<UserContext, ApiE
         validation.set_audience(&[&state.config.auth.aad.audience]);
     }
 
-    // MVP: decode header to get kid, but we skip signature verification for now
-    // TODO: implement proper JWKS-based RS256 validation
-    validation.insecure_disable_signature_validation();
+    // Validate issuer if tenant_id is set
+    if !state.config.auth.aad.tenant_id.is_empty() {
+        validation.set_issuer(&[
+            &format!("https://login.microsoftonline.com/{}/v2.0", state.config.auth.aad.tenant_id),
+            &format!("https://sts.windows.net/{}/", state.config.auth.aad.tenant_id),
+        ]);
+    }
 
-    let key = DecodingKey::from_secret(&[]);
     let data = decode::<AadClaims>(token, &key, &validation)
         .map_err(|e| ApiError::Unauthorized(format!("invalid AAD token: {e}")))?;
 

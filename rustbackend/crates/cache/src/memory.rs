@@ -71,3 +71,70 @@ impl CacheBackend for InMemoryCache {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[tokio::test]
+    async fn test_set_and_get() {
+        let cache = InMemoryCache::new();
+        cache.set("key1", "value1", Duration::from_secs(60)).await.unwrap();
+        assert_eq!(cache.get("key1").await, Some("value1".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_get_missing_key() {
+        let cache = InMemoryCache::new();
+        assert_eq!(cache.get("nonexistent").await, None);
+    }
+
+    #[tokio::test]
+    async fn test_ttl_expiry() {
+        let cache = InMemoryCache::new();
+        cache.set("key1", "value1", Duration::from_millis(50)).await.unwrap();
+        assert_eq!(cache.get("key1").await, Some("value1".to_string()));
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert_eq!(cache.get("key1").await, None);
+    }
+
+    #[tokio::test]
+    async fn test_delete() {
+        let cache = InMemoryCache::new();
+        cache.set("key1", "value1", Duration::from_secs(60)).await.unwrap();
+        cache.delete("key1").await.unwrap();
+        assert_eq!(cache.get("key1").await, None);
+    }
+
+    #[tokio::test]
+    async fn test_increment() {
+        let cache = InMemoryCache::new();
+        let val = cache.increment("counter1", 1).await.unwrap();
+        assert_eq!(val, 1);
+        let val = cache.increment("counter1", 5).await.unwrap();
+        assert_eq!(val, 6);
+    }
+
+    #[tokio::test]
+    async fn test_get_counter() {
+        let cache = InMemoryCache::new();
+        assert_eq!(cache.get_counter("c1").await.unwrap(), 0);
+        cache.increment("c1", 3).await.unwrap();
+        assert_eq!(cache.get_counter("c1").await.unwrap(), 3);
+    }
+
+    #[tokio::test]
+    async fn test_health_check() {
+        let cache = InMemoryCache::new();
+        assert!(cache.health_check().await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_overwrite() {
+        let cache = InMemoryCache::new();
+        cache.set("key1", "v1", Duration::from_secs(60)).await.unwrap();
+        cache.set("key1", "v2", Duration::from_secs(60)).await.unwrap();
+        assert_eq!(cache.get("key1").await, Some("v2".to_string()));
+    }
+}

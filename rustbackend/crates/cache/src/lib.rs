@@ -1,6 +1,7 @@
 //! Cache crate — cache abstraction with in-memory implementation.
 
 pub mod memory;
+pub mod redis_backend;
 
 use std::time::Duration;
 use async_trait::async_trait;

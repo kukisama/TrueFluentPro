@@ -1,6 +1,7 @@
-//! Storage crate — database abstraction layer with SQLite implementation.
+//! Storage crate — database abstraction layer with SQLite and PostgreSQL implementations.
 
 pub mod sqlite;
+pub mod postgres;
 pub mod error;
 
 use domain::models::*;
@@ -55,6 +56,10 @@ pub trait StorageBackend: Send + Sync {
     async fn record_usage(&self, user_id: &str, capability_id: &str, resource_type: &str, amount: i64) -> StorageResult<()>;
     async fn get_usage_total(&self, user_id: &str, resource_type: &str, since: chrono::DateTime<chrono::Utc>) -> StorageResult<i64>;
     async fn get_usage_records(&self, user_id: &str, offset: i64, limit: i64) -> StorageResult<Vec<domain::models::UsageRecord>>;
+
+    // ─── Audit Log ───
+    async fn write_audit_log(&self, user_id: &str, action: &str, detail: Option<&str>, ip_address: Option<&str>) -> StorageResult<()>;
+    async fn list_audit_logs(&self, offset: i64, limit: i64) -> StorageResult<Vec<domain::models::AuditLogEntry>>;
 }
 
 /// Encrypted credential stored in DB.

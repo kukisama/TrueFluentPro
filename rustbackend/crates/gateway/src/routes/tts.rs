@@ -15,6 +15,7 @@ use axum::{
 };
 use serde::Deserialize;
 use tracing::info;
+use billing;
 
 pub fn routes() -> Router<Arc<AppState>> {
     Router::new()
@@ -111,7 +112,20 @@ async fn synthesize(
     let provider = registry.get_tts(req.provider_id.as_deref())
         .map_err(|_| ApiError::BadRequest("No TTS provider configured. Ask admin to set up a provider.".into()))?;
 
-    info!(user = %ctx.user_id, voice = %req.voice_id, text_len = req.text.len(), "TTS request");
+    // Check billing quota
+    if state.billing.is_enabled() {
+        match state.billing.check_quota(&ctx.user_id, "tts_character").await {
+            Ok(billing::QuotaStatus::Exceeded { used, limit }) => {
+                return Err(ApiError::TooManyRequests(format!("TTS quota exceeded: used {used}/{limit} characters this month")));
+            }
+            Err(e) => { tracing::warn!(error = %e, "Billing check failed, allowing request"); }
+            _ => {}
+        }
+    }
+
+    let text_len = req.text.len();
+
+    info!(user = %ctx.user_id, voice = %req.voice_id, text_len = text_len, "TTS request");
 
     let tts_req = TtsRequest {
         text: req.text,
@@ -143,6 +157,10 @@ async fn synthesize(
 
     let audio_bytes = provider.synthesize(tts_req).await
         .map_err(|e| map_provider_error(e))?;
+
+    // Record usage and audit log after successful synthesis
+    let _ = state.billing.record_usage(&ctx.user_id, "speech.tts", "tts_character", text_len as i64).await;
+    let _ = state.storage.write_audit_log(&ctx.user_id, "speech.synthesize", None, None).await;
 
     // Determine content type from format
     let content_type = match req.output_format.as_deref() {

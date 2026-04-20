@@ -2,11 +2,22 @@
 
 use crate::state::AppState;
 use crate::error::ApiError;
+use domain::auth::UserContext;
 use domain::models::*;
 use std::sync::Arc;
-use axum::{Router, routing::{get, put}, extract::{State, Path, Json}};
+use axum::{Router, routing::{get, put}, extract::{State, Path, Json, Query}, Extension};
 use serde::Deserialize;
 use serde_json::{json, Value};
+
+#[derive(Debug, Deserialize)]
+struct PaginationQuery {
+    #[serde(default)]
+    offset: Option<i64>,
+    #[serde(default)]
+    limit: Option<i64>,
+    #[serde(default)]
+    search: Option<String>,
+}
 
 pub fn routes() -> Router<Arc<AppState>> {
     Router::new()
@@ -24,16 +35,30 @@ pub fn routes() -> Router<Arc<AppState>> {
         .route("/v1/admin/stats", get(system_stats))
         .route("/v1/admin/billing/config", get(get_billing_config))
         .route("/v1/admin/billing/config", put(set_billing_config))
+        .route("/v1/admin/usage/{user_id}", get(get_user_usage))
+        .route("/v1/admin/audit", get(list_audit_logs))
 }
 
 // ─── Users ───
 
 async fn list_users(
     State(state): State<Arc<AppState>>,
+    Query(params): Query<PaginationQuery>,
 ) -> Result<Json<Value>, ApiError> {
-    let users = state.storage.list_users(0, 100).await
+    let offset = params.offset.unwrap_or(0);
+    let limit = params.limit.unwrap_or(50).min(100);
+    let total = state.storage.count_users().await
         .map_err(|e| ApiError::Internal(e.to_string()))?;
-    Ok(Json(json!({ "users": users })))
+    let users = state.storage.list_users(offset, limit).await
+        .map_err(|e| ApiError::Internal(e.to_string()))?;
+    Ok(Json(json!({
+        "users": users,
+        "pagination": {
+            "offset": offset,
+            "limit": limit,
+            "total": total,
+        }
+    })))
 }
 
 #[derive(Debug, Deserialize)]
@@ -46,6 +71,7 @@ struct UpdateUserRequest {
 
 async fn update_user(
     State(state): State<Arc<AppState>>,
+    Extension(ctx): Extension<UserContext>,
     Path(id): Path<String>,
     Json(req): Json<UpdateUserRequest>,
 ) -> Result<Json<Value>, ApiError> {
@@ -61,6 +87,8 @@ async fn update_user(
     state.storage.upsert_user(&user).await
         .map_err(|e| ApiError::Internal(e.to_string()))?;
 
+    let _ = state.storage.write_audit_log(&ctx.user_id, "admin.update_user", Some(&id), None).await;
+
     Ok(Json(json!({ "user": user })))
 }
 
@@ -71,20 +99,28 @@ async fn list_providers(
 ) -> Result<Json<Value>, ApiError> {
     let providers = state.storage.get_providers().await
         .map_err(|e| ApiError::Internal(e.to_string()))?;
-    Ok(Json(json!({ "providers": providers })))
+    let total = providers.len();
+    Ok(Json(json!({
+        "providers": providers,
+        "total": total,
+    })))
 }
 
 async fn upsert_provider(
     State(state): State<Arc<AppState>>,
+    Extension(ctx): Extension<UserContext>,
     Path(id): Path<String>,
     Json(mut provider): Json<ProviderInfo>,
 ) -> Result<Json<Value>, ApiError> {
-    provider.id = id;
+    provider.id = id.clone();
     state.storage.upsert_provider(&provider).await
         .map_err(|e| ApiError::Internal(e.to_string()))?;
     if let Err(e) = state.reload_providers().await {
         tracing::warn!(error = %e, "Failed to reload provider registry after upsert");
     }
+
+    let _ = state.storage.write_audit_log(&ctx.user_id, "admin.upsert_provider", Some(&id), None).await;
+
     Ok(Json(json!({ "provider": provider })))
 }
 
@@ -95,6 +131,7 @@ struct ToggleRequest {
 
 async fn toggle_provider(
     State(state): State<Arc<AppState>>,
+    Extension(ctx): Extension<UserContext>,
     Path(id): Path<String>,
     Json(req): Json<ToggleRequest>,
 ) -> Result<Json<Value>, ApiError> {
@@ -110,6 +147,9 @@ async fn toggle_provider(
     if let Err(e) = state.reload_providers().await {
         tracing::warn!(error = %e, "Failed to reload provider registry after toggle");
     }
+
+    let _ = state.storage.write_audit_log(&ctx.user_id, "admin.toggle_provider", Some(&id), None).await;
+
     Ok(Json(json!({ "provider": provider })))
 }
 
@@ -125,12 +165,16 @@ async fn list_capabilities(
 
 async fn upsert_capability(
     State(state): State<Arc<AppState>>,
+    Extension(ctx): Extension<UserContext>,
     Path(id): Path<String>,
     Json(mut cap): Json<Capability>,
 ) -> Result<Json<Value>, ApiError> {
-    cap.id = id;
+    cap.id = id.clone();
     state.storage.upsert_capability(&cap).await
         .map_err(|e| ApiError::Internal(e.to_string()))?;
+
+    let _ = state.storage.write_audit_log(&ctx.user_id, "admin.upsert_capability", Some(&id), None).await;
+
     Ok(Json(json!({ "capability": cap })))
 }
 
@@ -152,11 +196,16 @@ struct StoreCredentialRequest {
 
 async fn store_credential(
     State(state): State<Arc<AppState>>,
+    Extension(ctx): Extension<UserContext>,
     Path((provider_id, key)): Path<(String, String)>,
     Json(req): Json<StoreCredentialRequest>,
 ) -> Result<Json<Value>, ApiError> {
     state.credentials.store(&provider_id, &key, &req.value).await
         .map_err(|e| ApiError::Internal(e.to_string()))?;
+
+    let detail = format!("{}/{}", provider_id, key);
+    let _ = state.storage.write_audit_log(&ctx.user_id, "admin.store_credential", Some(&detail), None).await;
+
     Ok(Json(json!({ "status": "stored", "provider_id": provider_id, "key": key })))
 }
 
@@ -172,12 +221,16 @@ async fn list_plans(
 
 async fn upsert_plan(
     State(state): State<Arc<AppState>>,
+    Extension(ctx): Extension<UserContext>,
     Path(id): Path<String>,
     Json(mut plan): Json<SubscriptionPlan>,
 ) -> Result<Json<Value>, ApiError> {
-    plan.id = id;
+    plan.id = id.clone();
     state.storage.upsert_plan(&plan).await
         .map_err(|e| ApiError::Internal(e.to_string()))?;
+
+    let _ = state.storage.write_audit_log(&ctx.user_id, "admin.upsert_plan", Some(&id), None).await;
+
     Ok(Json(json!({ "plan": plan })))
 }
 
@@ -226,10 +279,47 @@ struct BillingConfigRequest {
 
 async fn set_billing_config(
     State(state): State<Arc<AppState>>,
+    Extension(ctx): Extension<UserContext>,
     Json(req): Json<BillingConfigRequest>,
 ) -> Result<Json<Value>, ApiError> {
     state.storage.set_config("billing.enabled", if req.enabled { "true" } else { "false" }).await
         .map_err(|e| ApiError::Internal(e.to_string()))?;
 
+    let _ = state.storage.write_audit_log(&ctx.user_id, "admin.set_billing_config", Some(if req.enabled { "enabled" } else { "disabled" }), None).await;
+
     Ok(Json(json!({ "billing": { "enabled": req.enabled } })))
+}
+
+// ─── Usage ───
+
+async fn get_user_usage(
+    State(state): State<Arc<AppState>>,
+    Path(user_id): Path<String>,
+    Query(params): Query<PaginationQuery>,
+) -> Result<Json<Value>, ApiError> {
+    let offset = params.offset.unwrap_or(0);
+    let limit = params.limit.unwrap_or(50).min(100);
+    let records = state.storage.get_usage_records(&user_id, offset, limit).await
+        .map_err(|e| ApiError::Internal(e.to_string()))?;
+    Ok(Json(json!({
+        "user_id": user_id,
+        "usage": records,
+        "pagination": { "offset": offset, "limit": limit },
+    })))
+}
+
+// ─── Audit Logs ───
+
+async fn list_audit_logs(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<PaginationQuery>,
+) -> Result<Json<Value>, ApiError> {
+    let offset = params.offset.unwrap_or(0);
+    let limit = params.limit.unwrap_or(50).min(100);
+    let logs = state.storage.list_audit_logs(offset, limit).await
+        .map_err(|e| ApiError::Internal(e.to_string()))?;
+    Ok(Json(json!({
+        "audit_logs": logs,
+        "pagination": { "offset": offset, "limit": limit },
+    })))
 }

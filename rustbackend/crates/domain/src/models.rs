@@ -67,6 +67,12 @@ impl AuthProvider {
     }
 }
 
+impl std::fmt::Display for AuthProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 impl std::str::FromStr for AuthProvider {
     type Err = String;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -148,4 +154,47 @@ pub struct QuotaInfo {
     pub limit: i64,
     pub unit: String,
     pub resets_at: DateTime<Utc>,
+}
+
+// ═══ Audit Log Entry ═══
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuditLogEntry {
+    pub id: i64,
+    pub user_id: Option<String>,
+    pub action: String,
+    pub detail: Option<String>,
+    pub ip_address: Option<String>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_user_role_from_str() {
+        assert_eq!("admin".parse::<UserRole>().unwrap(), UserRole::Admin);
+        assert_eq!("user".parse::<UserRole>().unwrap(), UserRole::User);
+        assert!("invalid".parse::<UserRole>().is_err());
+    }
+
+    #[test]
+    fn test_auth_provider_display() {
+        assert_eq!(format!("{}", AuthProvider::Local), "local");
+        assert_eq!(format!("{}", AuthProvider::Aad), "aad");
+    }
+
+    #[test]
+    fn test_auth_provider_from_str() {
+        assert_eq!("local".parse::<AuthProvider>().unwrap(), AuthProvider::Local);
+        assert_eq!("aad".parse::<AuthProvider>().unwrap(), AuthProvider::Aad);
+        assert!("invalid".parse::<AuthProvider>().is_err());
+    }
+
+    #[test]
+    fn test_user_role_display() {
+        assert_eq!(format!("{}", UserRole::User), "user");
+        assert_eq!(format!("{}", UserRole::Admin), "admin");
+    }
 }
