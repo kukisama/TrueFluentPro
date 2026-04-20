@@ -37,6 +37,9 @@ argon2 = { workspace = true }
 figment = { workspace = true }
 dotenvy = "0.15"
 
+# HTTP client (JWKS fetching)
+reqwest = { workspace = true }
+
 # Misc
 chrono = { workspace = true }
 uuid = { workspace = true }

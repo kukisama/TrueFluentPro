@@ -18,7 +18,6 @@
 use crate::state::AppState;
 use crate::error::ApiError;
 use domain::auth::UserContext;
-use domain::models::UserRole;
 use providers::LiveTranslateRequest;
 use std::sync::Arc;
 use axum::{
@@ -77,7 +76,7 @@ async fn ws_translate_upgrade(
     ws: WebSocketUpgrade,
 ) -> Result<Response, ApiError> {
     // Authenticate via token query param
-    let user_ctx = validate_ws_token(&state, &params.token)?;
+    let user_ctx = validate_ws_token(&state, &params.token).await?;
 
     info!(
         user = %user_ctx.user_id,
@@ -589,58 +588,6 @@ fn parse_upstream_text(raw: &str) -> Option<String> {
 }
 
 /// Validate a JWT token from query parameter (same logic as middleware but standalone).
-fn validate_ws_token(state: &AppState, token: &str) -> Result<UserContext, ApiError> {
-    use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
-    use domain::auth::LocalClaims;
-
-    match state.config.auth.mode.as_str() {
-        "local" => {
-            let key = DecodingKey::from_secret(state.jwt_secret.as_bytes());
-            let mut validation = Validation::new(Algorithm::HS256);
-            validation.validate_exp = true;
-            validation.leeway = 30;
-
-            let data = decode::<LocalClaims>(token, &key, &validation)
-                .map_err(|e| ApiError::Unauthorized(format!("invalid token: {e}")))?;
-
-            let claims = data.claims;
-            Ok(UserContext {
-                user_id: claims.sub,
-                tenant_id: "default".into(),
-                role: claims.role.parse().unwrap_or(UserRole::User),
-                display_name: claims.display_name,
-                email: None,
-            })
-        }
-        "aad" => {
-            use domain::auth::AadClaims;
-
-            let mut validation = Validation::new(Algorithm::RS256);
-            validation.validate_exp = true;
-            validation.leeway = 30;
-            if !state.config.auth.aad.audience.is_empty() {
-                validation.set_audience(&[&state.config.auth.aad.audience]);
-            }
-            validation.insecure_disable_signature_validation();
-
-            let key = DecodingKey::from_secret(&[]);
-            let data = decode::<AadClaims>(token, &key, &validation)
-                .map_err(|e| ApiError::Unauthorized(format!("invalid AAD token: {e}")))?;
-
-            let claims = data.claims;
-            let role = claims.roles.as_ref()
-                .and_then(|roles| roles.iter().find(|r| *r == "admin"))
-                .map(|_| UserRole::Admin)
-                .unwrap_or(UserRole::User);
-
-            Ok(UserContext {
-                user_id: claims.oid,
-                tenant_id: claims.tid.unwrap_or_else(|| "default".into()),
-                role,
-                display_name: claims.name,
-                email: claims.email.or(claims.preferred_username),
-            })
-        }
-        other => Err(ApiError::Internal(format!("unknown auth mode: {other}"))),
-    }
+async fn validate_ws_token(state: &AppState, token: &str) -> Result<UserContext, ApiError> {
+    crate::middleware::auth::validate_ws_auth(state, token).await
 }

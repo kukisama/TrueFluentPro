@@ -3,6 +3,7 @@
 mod config;
 mod state;
 mod error;
+mod jwks;
 mod middleware;
 mod routes;
 

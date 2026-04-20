@@ -10,7 +10,7 @@ use credential_broker::CredentialBroker;
 use providers::registry::ProviderRegistry;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::info;
+use tracing::{info, warn};
 
 pub struct AppState {
     pub config: GatewayConfig,
@@ -20,6 +20,7 @@ pub struct AppState {
     pub credentials: Arc<CredentialBroker>,
     pub providers: Arc<RwLock<ProviderRegistry>>,
     pub jwt_secret: String,
+    pub jwks: Option<Arc<crate::jwks::JwksKeyStore>>,
 }
 
 impl AppState {
@@ -75,6 +76,20 @@ impl AppState {
             config.auth.local.jwt_secret.clone()
         };
 
+        // ─── JWKS (for AAD mode) ───
+        let jwks = if config.auth.mode == "aad" && !config.auth.aad.tenant_id.is_empty() {
+            info!("Initializing JWKS key store for AAD tenant: {}", config.auth.aad.tenant_id);
+            match crate::jwks::JwksKeyStore::new(&config.auth.aad.tenant_id).await {
+                Ok(store) => Some(Arc::new(store)),
+                Err(e) => {
+                    warn!("JWKS initialization failed: {e} — AAD tokens will be rejected");
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
         // ─── Provider Registry ───
         let db_providers = storage.get_providers().await
             .map_err(|e| anyhow::anyhow!("failed to load providers: {e}"))?;
@@ -97,6 +112,7 @@ impl AppState {
             credentials,
             providers,
             jwt_secret,
+            jwks,
         })
     }
 
