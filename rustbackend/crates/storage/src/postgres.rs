@@ -454,15 +454,23 @@ struct PgUserRow {
 
 impl From<PgUserRow> for User {
     fn from(r: PgUserRow) -> Self {
+        let role = r.role.parse().unwrap_or_else(|e| {
+            tracing::warn!(raw = %r.role, error = %e, "unknown role in DB — defaulting to User");
+            UserRole::User
+        });
+        let auth_provider = r.auth_provider.parse().unwrap_or_else(|e| {
+            tracing::warn!(raw = %r.auth_provider, error = %e, "unknown auth_provider in DB — defaulting to Local");
+            AuthProvider::Local
+        });
         Self {
             id: r.id,
             username: r.username,
             display_name: r.display_name,
             email: r.email,
-            role: r.role.parse().unwrap_or(UserRole::User),
+            role,
             plan_id: r.plan_id,
             is_active: r.is_active,
-            auth_provider: r.auth_provider.parse().unwrap_or(AuthProvider::Local),
+            auth_provider,
             tenant_id: r.tenant_id,
             first_seen_at: r.first_seen_at,
             last_seen_at: r.last_seen_at,
@@ -523,11 +531,15 @@ struct PgPlanRow {
 
 impl From<PgPlanRow> for SubscriptionPlan {
     fn from(r: PgPlanRow) -> Self {
+        let limits_json = serde_json::from_str(&r.limits_json).unwrap_or_else(|e| {
+            tracing::warn!(plan_id = %r.id, error = %e, "invalid limits_json in DB — defaulting to empty");
+            serde_json::json!({})
+        });
         Self {
             id: r.id,
             display_name: r.display_name,
             price_monthly: r.price_monthly,
-            limits_json: serde_json::from_str(&r.limits_json).unwrap_or(serde_json::json!({})),
+            limits_json,
             is_active: r.is_active,
         }
     }
