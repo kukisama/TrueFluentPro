@@ -66,10 +66,10 @@ impl TtsProvider for TencentTts {
         // Map volume: Tencent accepts 0–10, default 5
         let volume = 5;
 
-        // Codec: 1=WAV, 0=PCM
+        // Codec: Tencent accepts string values: "wav", "pcm", "mp3"
         let codec = match req.output_format.as_deref() {
             Some(f) if f.contains("wav") => "wav",
-            Some(f) if f.contains("mp3") => "mp3",
+            Some(f) if f.contains("pcm") => "pcm",
             _ => "mp3",
         };
 

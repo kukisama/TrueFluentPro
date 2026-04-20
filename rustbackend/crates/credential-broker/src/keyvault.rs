@@ -15,6 +15,9 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, warn};
 
+/// Azure Key Vault REST API version.
+const KV_API_VERSION: &str = "7.4";
+
 /// Cached AAD access token.
 struct CachedToken {
     token: String,
@@ -45,8 +48,8 @@ impl KeyVaultClient {
         let token = self.get_access_token().await?;
 
         let url = format!(
-            "{}/secrets/{}?api-version=7.4",
-            self.vault_url, name
+            "{}/secrets/{}?api-version={}",
+            self.vault_url, name, KV_API_VERSION
         );
 
         debug!(url = %url, "Key Vault GET secret");
