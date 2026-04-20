@@ -8,6 +8,7 @@ pub mod admin;
 pub mod chat;
 pub mod images;
 pub mod tts;
+pub mod stt;
 pub mod translate;
 pub mod ws_translate;
 
@@ -30,6 +31,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .merge(chat::routes())
         .merge(images::routes())
         .merge(tts::routes())
+        .merge(stt::routes())
         .merge(translate::routes())
         .layer(axum_mw::from_fn_with_state(
             state.clone(),

@@ -1,11 +1,13 @@
 //! Provider registry — dynamic dispatch for capability → provider routing.
 
-use crate::{ChatProvider, ImageProvider, TtsProvider, TextTranslator, LiveSpeechTranslator, ProviderError};
+use crate::{ChatProvider, ImageProvider, TtsProvider, TextTranslator, LiveSpeechTranslator, SttProvider, ProviderError};
 use crate::azure::chat::AzureOpenAiChat;
 use crate::azure::image::AzureOpenAiImage;
 use crate::azure::tts::AzureSpeechTts;
 use crate::azure::translate::AzureTranslator;
 use crate::azure::speech_translate::AzureSpeechTranslation;
+use crate::azure::stt::AzureSpeechStt;
+use crate::generic::openai_chat::GenericOpenAiChat;
 use credential_broker::CredentialBroker;
 use domain::models::ProviderInfo;
 use std::sync::Arc;
@@ -18,6 +20,7 @@ pub struct ProviderRegistry {
     tts_providers: Vec<(String, Arc<dyn TtsProvider>)>,
     translate_providers: Vec<(String, Arc<dyn TextTranslator>)>,
     live_translate_providers: Vec<(String, Arc<dyn LiveSpeechTranslator>)>,
+    stt_providers: Vec<(String, Arc<dyn SttProvider>)>,
 }
 
 impl ProviderRegistry {
@@ -31,6 +34,7 @@ impl ProviderRegistry {
         let mut tts_providers: Vec<(String, Arc<dyn TtsProvider>)> = Vec::new();
         let mut translate_providers: Vec<(String, Arc<dyn TextTranslator>)> = Vec::new();
         let mut live_translate_providers: Vec<(String, Arc<dyn LiveSpeechTranslator>)> = Vec::new();
+        let mut stt_providers: Vec<(String, Arc<dyn SttProvider>)> = Vec::new();
 
         for p in providers {
             if !p.is_enabled {
@@ -46,16 +50,23 @@ impl ProviderRegistry {
                     image_providers.push((p.id.clone(), image));
                 }
                 "azure_speech" => {
-                    info!(provider = %p.id, vendor = %p.vendor, "Registering Azure Speech adapters (TTS + live translation)");
+                    info!(provider = %p.id, vendor = %p.vendor, "Registering Azure Speech adapters (TTS + STT + live translation)");
                     let tts = Arc::new(AzureSpeechTts::new(credentials.clone(), &p.id));
                     let live = Arc::new(AzureSpeechTranslation::new(credentials.clone(), &p.id));
+                    let stt = Arc::new(AzureSpeechStt::new(credentials.clone(), &p.id));
                     tts_providers.push((p.id.clone(), tts));
                     live_translate_providers.push((p.id.clone(), live));
+                    stt_providers.push((p.id.clone(), stt));
                 }
                 "azure_translator" => {
                     info!(provider = %p.id, vendor = %p.vendor, "Registering Azure Translator adapter");
                     let translator = Arc::new(AzureTranslator::new(credentials.clone(), &p.id));
                     translate_providers.push((p.id.clone(), translator));
+                }
+                "generic_openai" | "openai" | "ollama" | "vllm" | "deepseek" | "lm_studio" => {
+                    info!(provider = %p.id, vendor = %p.vendor, "Registering generic OpenAI-compatible chat adapter");
+                    let chat = Arc::new(GenericOpenAiChat::new(credentials.clone(), &p.id));
+                    chat_providers.push((p.id.clone(), chat));
                 }
                 other => {
                     info!(provider = %p.id, vendor = %other, "Unknown vendor — skipping");
@@ -63,7 +74,7 @@ impl ProviderRegistry {
             }
         }
 
-        Self { chat_providers, image_providers, tts_providers, translate_providers, live_translate_providers }
+        Self { chat_providers, image_providers, tts_providers, translate_providers, live_translate_providers, stt_providers }
     }
 
     /// Rebuild registry (called when admin changes providers).
@@ -78,6 +89,7 @@ impl ProviderRegistry {
         self.tts_providers = new.tts_providers;
         self.translate_providers = new.translate_providers;
         self.live_translate_providers = new.live_translate_providers;
+        self.stt_providers = new.stt_providers;
     }
 
     /// Get the first enabled ChatProvider (or specific by provider_id).
@@ -155,4 +167,19 @@ impl ProviderRegistry {
     pub fn tts_count(&self) -> usize { self.tts_providers.len() }
     pub fn translate_count(&self) -> usize { self.translate_providers.len() }
     pub fn live_translate_count(&self) -> usize { self.live_translate_providers.len() }
+    pub fn stt_count(&self) -> usize { self.stt_providers.len() }
+
+    /// Get the first enabled SttProvider.
+    pub fn get_stt(&self, provider_id: Option<&str>) -> Result<Arc<dyn SttProvider>, ProviderError> {
+        if let Some(id) = provider_id {
+            self.stt_providers.iter()
+                .find(|(pid, _)| pid == id)
+                .map(|(_, p)| p.clone())
+                .ok_or_else(|| ProviderError::ProviderNotFound(id.to_string()))
+        } else {
+            self.stt_providers.first()
+                .map(|(_, p)| p.clone())
+                .ok_or(ProviderError::UnsupportedCapability)
+        }
+    }
 }

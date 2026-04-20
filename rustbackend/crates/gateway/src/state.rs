@@ -98,6 +98,7 @@ impl AppState {
             chat = registry.chat_count(),
             image = registry.image_count(),
             tts = registry.tts_count(),
+            stt = registry.stt_count(),
             translate = registry.translate_count(),
             live_translate = registry.live_translate_count(),
             "Provider registry initialized"
@@ -126,6 +127,7 @@ impl AppState {
             chat = reg.chat_count(),
             image = reg.image_count(),
             tts = reg.tts_count(),
+            stt = reg.stt_count(),
             translate = reg.translate_count(),
             live_translate = reg.live_translate_count(),
             "Provider registry reloaded"

@@ -4,6 +4,7 @@
 //! Implementations (adapters) live in submodules per vendor.
 
 pub mod azure;
+pub mod generic;
 pub mod registry;
 
 use serde::{Deserialize, Serialize};
@@ -192,6 +193,28 @@ pub struct TtsRequest {
 pub trait TtsProvider: Send + Sync {
     fn id(&self) -> &'static str;
     async fn synthesize(&self, req: TtsRequest) -> Result<Vec<u8>, ProviderError>;
+}
+
+// ═══ STT (Speech-to-Text) Provider ═══
+
+#[derive(Debug, Clone)]
+pub struct SttRequest {
+    pub audio_data: Vec<u8>,
+    pub language: String,
+    pub profanity_filter: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SttResponse {
+    pub text: String,
+    pub language: String,
+    pub duration_ms: u64,
+}
+
+#[async_trait]
+pub trait SttProvider: Send + Sync {
+    fn id(&self) -> &'static str;
+    async fn transcribe(&self, req: SttRequest) -> Result<SttResponse, ProviderError>;
 }
 
 // ═══ Image Provider ═══
