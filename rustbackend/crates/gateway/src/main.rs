@@ -3,6 +3,7 @@
 mod config;
 mod state;
 mod error;
+mod jwks;
 mod middleware;
 mod routes;
 
@@ -42,8 +43,27 @@ async fn main() -> anyhow::Result<()> {
 }
 
 async fn shutdown_signal() {
-    tokio::signal::ctrl_c()
-        .await
-        .expect("failed to install CTRL+C handler");
-    info!("Shutdown signal received");
+    let ctrl_c = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("failed to install CTRL+C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("failed to install SIGTERM handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => info!("Received CTRL+C"),
+        _ = terminate => info!("Received SIGTERM"),
+    }
+
+    info!("Starting graceful shutdown...");
 }

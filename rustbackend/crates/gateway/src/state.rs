@@ -3,6 +3,7 @@
 use domain::config::GatewayConfig;
 use storage::StorageBackend;
 use storage::sqlite::SqliteBackend;
+use storage::postgres::PostgresBackend;
 use cache::CacheBackend;
 use cache::memory::InMemoryCache;
 use billing::{BillingEngine, DisabledBillingEngine, ActiveBillingEngine};
@@ -10,7 +11,7 @@ use credential_broker::CredentialBroker;
 use providers::registry::ProviderRegistry;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::info;
+use tracing::{info, warn};
 
 pub struct AppState {
     pub config: GatewayConfig,
@@ -20,6 +21,7 @@ pub struct AppState {
     pub credentials: Arc<CredentialBroker>,
     pub providers: Arc<RwLock<ProviderRegistry>>,
     pub jwt_secret: String,
+    pub jwks: Option<Arc<crate::jwks::JwksKeyStore>>,
 }
 
 impl AppState {
@@ -30,9 +32,13 @@ impl AppState {
             info!("Using SQLite database: {db_path}");
             let backend = SqliteBackend::new(&db_path).await?;
             Arc::new(backend)
+        } else if config.database.url.starts_with("postgres://") || config.database.url.starts_with("postgresql://") {
+            info!("Using PostgreSQL database (max_connections={})", config.database.max_connections);
+            let backend = PostgresBackend::new(&config.database.url, config.database.max_connections).await
+                .map_err(|e| anyhow::anyhow!("PostgreSQL initialization failed: {e}"))?;
+            Arc::new(backend)
         } else {
-            // Future: PostgreSQL support
-            anyhow::bail!("PostgreSQL not yet implemented — leave DATABASE_URL empty for SQLite");
+            anyhow::bail!("Unsupported database URL scheme — use empty (SQLite) or postgres://");
         };
 
         // Initialize database (run migrations)
@@ -42,7 +48,13 @@ impl AppState {
         // ─── Cache ───
         let cache: Arc<dyn CacheBackend> = match config.cache.mode.as_str() {
             "redis" => {
-                anyhow::bail!("Redis cache not yet implemented — use 'memory' mode");
+                let redis_url = std::env::var("GATEWAY_CACHE__REDIS_URL")
+                    .or_else(|_| std::env::var("REDIS_URL"))
+                    .unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string());
+                info!("Using Redis cache: {redis_url}");
+                let redis_cache = cache::redis_backend::RedisCache::new(&redis_url).await
+                    .map_err(|e| anyhow::anyhow!("Redis initialization failed: {e}"))?;
+                Arc::new(redis_cache)
             }
             _ => {
                 info!("Using in-memory cache");
@@ -63,7 +75,7 @@ impl AppState {
         let credentials = Arc::new(CredentialBroker::new(
             storage.clone(),
             &config.credentials.master_key_base64,
-        ));
+        ).with_keyvault(&config.credentials.keyvault_url));
 
         // ─── JWT Secret ───
         let jwt_secret = if config.auth.local.jwt_secret.is_empty() {
@@ -75,6 +87,20 @@ impl AppState {
             config.auth.local.jwt_secret.clone()
         };
 
+        // ─── JWKS (for AAD mode) ───
+        let jwks = if config.auth.mode == "aad" && !config.auth.aad.tenant_id.is_empty() {
+            info!("Initializing JWKS key store for AAD tenant: {}", config.auth.aad.tenant_id);
+            match crate::jwks::JwksKeyStore::new(&config.auth.aad.tenant_id).await {
+                Ok(store) => Some(Arc::new(store)),
+                Err(e) => {
+                    warn!("JWKS initialization failed: {e} — AAD tokens will be rejected");
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
         // ─── Provider Registry ───
         let db_providers = storage.get_providers().await
             .map_err(|e| anyhow::anyhow!("failed to load providers: {e}"))?;
@@ -83,8 +109,10 @@ impl AppState {
             chat = registry.chat_count(),
             image = registry.image_count(),
             tts = registry.tts_count(),
+            stt = registry.stt_count(),
             translate = registry.translate_count(),
             live_translate = registry.live_translate_count(),
+            video = registry.video_count(),
             "Provider registry initialized"
         );
         let providers = Arc::new(RwLock::new(registry));
@@ -97,6 +125,7 @@ impl AppState {
             credentials,
             providers,
             jwt_secret,
+            jwks,
         })
     }
 
@@ -110,8 +139,10 @@ impl AppState {
             chat = reg.chat_count(),
             image = reg.image_count(),
             tts = reg.tts_count(),
+            stt = reg.stt_count(),
             translate = reg.translate_count(),
             live_translate = reg.live_translate_count(),
+            video = reg.video_count(),
             "Provider registry reloaded"
         );
         Ok(())

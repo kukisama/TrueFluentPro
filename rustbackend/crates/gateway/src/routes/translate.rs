@@ -9,6 +9,7 @@ use axum::{Router, routing::post, extract::State, Extension, Json};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use tracing::info;
+use billing;
 
 pub fn routes() -> Router<Arc<AppState>> {
     Router::new()
@@ -53,6 +54,17 @@ async fn translate(
     let provider = registry.get_translator(req.provider_id.as_deref())
         .map_err(|_| ApiError::BadRequest("No translator provider configured. Ask admin to set up a provider.".into()))?;
 
+    // Check billing quota
+    if state.billing.is_enabled() {
+        match state.billing.check_quota(&ctx.user_id, "translate_minute").await {
+            Ok(billing::QuotaStatus::Exceeded { used, limit }) => {
+                return Err(ApiError::TooManyRequests(format!("Translation quota exceeded: used {used}/{limit} minutes this month")));
+            }
+            Err(e) => { tracing::warn!(error = %e, "Billing check failed, allowing request"); }
+            _ => {}
+        }
+    }
+
     info!(
         user = %ctx.user_id,
         source = %req.source_lang.as_deref().unwrap_or("auto"),
@@ -76,6 +88,10 @@ async fn translate(
 
     let result = provider.translate(translate_req).await
         .map_err(|e| map_provider_error(e))?;
+
+    // Record usage and audit log after successful translation
+    let _ = state.billing.record_usage(&ctx.user_id, "text.translate", "translate_minute", 1).await;
+    let _ = state.storage.write_audit_log(&ctx.user_id, "text.translate", None, None).await;
 
     Ok(Json(json!({
         "translation": result.translation,

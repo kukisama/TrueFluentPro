@@ -9,3 +9,4 @@ thiserror = { workspace = true }
 anyhow = { workspace = true }
 tokio = { workspace = true }
 async-trait = "0.1.89"
+redis = { workspace = true }

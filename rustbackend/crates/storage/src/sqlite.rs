@@ -414,6 +414,40 @@ impl StorageBackend for SqliteBackend {
         .await?;
         Ok(rows.into_iter().map(Into::into).collect())
     }
+
+    async fn write_audit_log(&self, user_id: &str, action: &str, detail: Option<&str>, ip_address: Option<&str>) -> StorageResult<()> {
+        sqlx::query("INSERT INTO audit_log (user_id, action, detail, ip_address) VALUES (?, ?, ?, ?)")
+            .bind(user_id)
+            .bind(action)
+            .bind(detail)
+            .bind(ip_address)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| StorageError::Internal(format!("audit_log write failed: {e}")))?;
+        Ok(())
+    }
+
+    async fn list_audit_logs(&self, offset: i64, limit: i64) -> StorageResult<Vec<domain::models::AuditLogEntry>> {
+        let rows: Vec<AuditLogRow> = sqlx::query_as(
+            "SELECT id, user_id, action, detail, ip_address, created_at \
+             FROM audit_log ORDER BY created_at DESC LIMIT ?1 OFFSET ?2",
+        )
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.into_iter().map(|r| domain::models::AuditLogEntry {
+            id: r.id,
+            user_id: r.user_id,
+            action: r.action,
+            detail: r.detail,
+            ip_address: r.ip_address,
+            created_at: chrono::DateTime::parse_from_rfc3339(&r.created_at)
+                .map(|dt| dt.with_timezone(&chrono::Utc))
+                .unwrap_or_else(|_| chrono::Utc::now()),
+        }).collect())
+    }
 }
 
 // ═══ Row types for sqlx ═══
@@ -582,5 +616,203 @@ impl From<UsageRow> for domain::models::UsageRecord {
                 .map(|d| d.with_timezone(&chrono::Utc))
                 .unwrap_or_else(|_| chrono::Utc::now()),
         }
+    }
+}
+
+#[derive(sqlx::FromRow)]
+struct AuditLogRow {
+    id: i64,
+    user_id: Option<String>,
+    action: String,
+    detail: Option<String>,
+    ip_address: Option<String>,
+    created_at: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use domain::models::*;
+
+    async fn setup_test_db() -> SqliteBackend {
+        let backend = SqliteBackend::new(":memory:").await.unwrap();
+        backend.initialize().await.unwrap();
+        backend
+    }
+
+    #[tokio::test]
+    async fn test_initialize() {
+        let db = setup_test_db().await;
+        assert!(db.is_initialized().await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_config_set_get() {
+        let db = setup_test_db().await;
+        db.set_config("test.key", "test.value").await.unwrap();
+        let val = db.get_config("test.key").await.unwrap();
+        assert_eq!(val, Some("test.value".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_config_get_missing() {
+        let db = setup_test_db().await;
+        let val = db.get_config("nonexistent").await.unwrap();
+        assert_eq!(val, None);
+    }
+
+    #[tokio::test]
+    async fn test_user_upsert_and_get() {
+        let db = setup_test_db().await;
+        let user = User {
+            id: "u1".into(),
+            username: Some("testuser".into()),
+            display_name: "Test User".into(),
+            email: Some("test@example.com".into()),
+            role: UserRole::User,
+            plan_id: "free".into(),
+            is_active: true,
+            auth_provider: AuthProvider::Local,
+            tenant_id: "default".into(),
+            first_seen_at: chrono::Utc::now(),
+            last_seen_at: chrono::Utc::now(),
+        };
+        db.upsert_user(&user).await.unwrap();
+        let fetched = db.get_user("u1").await.unwrap().unwrap();
+        assert_eq!(fetched.display_name, "Test User");
+        assert_eq!(fetched.username, Some("testuser".into()));
+    }
+
+    #[tokio::test]
+    async fn test_user_by_username() {
+        let db = setup_test_db().await;
+        let user = User {
+            id: "u2".into(),
+            username: Some("alice".into()),
+            display_name: "Alice".into(),
+            email: None,
+            role: UserRole::Admin,
+            plan_id: "pro".into(),
+            is_active: true,
+            auth_provider: AuthProvider::Local,
+            tenant_id: "default".into(),
+            first_seen_at: chrono::Utc::now(),
+            last_seen_at: chrono::Utc::now(),
+        };
+        db.upsert_user(&user).await.unwrap();
+        let fetched = db.get_user_by_username("alice").await.unwrap().unwrap();
+        assert_eq!(fetched.id, "u2");
+    }
+
+    #[tokio::test]
+    async fn test_list_users() {
+        let db = setup_test_db().await;
+        for i in 0..5 {
+            let user = User {
+                id: format!("u{i}"),
+                username: Some(format!("user{i}")),
+                display_name: format!("User {i}"),
+                email: None,
+                role: UserRole::User,
+                plan_id: "free".into(),
+                is_active: true,
+                auth_provider: AuthProvider::Local,
+                tenant_id: "default".into(),
+                first_seen_at: chrono::Utc::now(),
+                last_seen_at: chrono::Utc::now(),
+            };
+            db.upsert_user(&user).await.unwrap();
+        }
+        let users = db.list_users(0, 3).await.unwrap();
+        assert_eq!(users.len(), 3);
+        let users = db.list_users(3, 10).await.unwrap();
+        assert_eq!(users.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_count_users() {
+        let db = setup_test_db().await;
+        assert_eq!(db.count_users().await.unwrap(), 0);
+        let user = User {
+            id: "u1".into(),
+            username: None,
+            display_name: "Test".into(),
+            email: None,
+            role: UserRole::User,
+            plan_id: "free".into(),
+            is_active: true,
+            auth_provider: AuthProvider::Local,
+            tenant_id: "default".into(),
+            first_seen_at: chrono::Utc::now(),
+            last_seen_at: chrono::Utc::now(),
+        };
+        db.upsert_user(&user).await.unwrap();
+        assert_eq!(db.count_users().await.unwrap(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_capabilities_default() {
+        let db = setup_test_db().await;
+        let caps = db.get_capabilities().await.unwrap();
+        assert!(caps.len() >= 7);
+    }
+
+    #[tokio::test]
+    async fn test_plans_default() {
+        let db = setup_test_db().await;
+        let plans = db.list_plans().await.unwrap();
+        assert_eq!(plans.len(), 4);
+    }
+
+    #[tokio::test]
+    async fn test_plan_get() {
+        let db = setup_test_db().await;
+        let plan = db.get_plan("free").await.unwrap().unwrap();
+        assert_eq!(plan.display_name, "Free");
+    }
+
+    #[tokio::test]
+    async fn test_health_check() {
+        let db = setup_test_db().await;
+        assert!(db.health_check().await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_password_hash() {
+        let db = setup_test_db().await;
+        let user = User {
+            id: "u1".into(),
+            username: Some("testuser".into()),
+            display_name: "Test".into(),
+            email: None,
+            role: UserRole::User,
+            plan_id: "free".into(),
+            is_active: true,
+            auth_provider: AuthProvider::Local,
+            tenant_id: "default".into(),
+            first_seen_at: chrono::Utc::now(),
+            last_seen_at: chrono::Utc::now(),
+        };
+        db.upsert_user(&user).await.unwrap();
+        db.set_password_hash("u1", "$argon2id$hash123").await.unwrap();
+        let hash = db.get_password_hash("u1").await.unwrap().unwrap();
+        assert_eq!(hash, "$argon2id$hash123");
+    }
+
+    #[tokio::test]
+    async fn test_audit_log() {
+        let db = setup_test_db().await;
+        assert!(db.write_audit_log("u1", "test.action", Some("detail"), Some("127.0.0.1")).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_list_audit_logs() {
+        let db = setup_test_db().await;
+        db.write_audit_log("u1", "action1", Some("detail1"), Some("127.0.0.1")).await.unwrap();
+        db.write_audit_log("u2", "action2", None, None).await.unwrap();
+        let logs = db.list_audit_logs(0, 10).await.unwrap();
+        assert_eq!(logs.len(), 2);
+        let logs = db.list_audit_logs(0, 1).await.unwrap();
+        assert_eq!(logs.len(), 1);
     }
 }

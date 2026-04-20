@@ -18,7 +18,6 @@
 use crate::state::AppState;
 use crate::error::ApiError;
 use domain::auth::UserContext;
-use domain::models::UserRole;
 use providers::LiveTranslateRequest;
 use std::sync::Arc;
 use axum::{
@@ -31,6 +30,7 @@ use serde::Deserialize;
 use serde_json::json;
 use tokio_tungstenite::tungstenite;
 use tracing::{info, warn, error, debug};
+use billing;
 
 pub fn routes() -> Router<Arc<AppState>> {
     Router::new()
@@ -76,7 +76,7 @@ async fn ws_translate_upgrade(
     ws: WebSocketUpgrade,
 ) -> Result<Response, ApiError> {
     // Authenticate via token query param
-    let user_ctx = validate_ws_token(&state, &params.token)?;
+    let user_ctx = validate_ws_token(&state, &params.token).await?;
 
     info!(
         user = %user_ctx.user_id,
@@ -84,6 +84,29 @@ async fn ws_translate_upgrade(
         to = %params.to,
         "WebSocket translate upgrade"
     );
+
+    // Check billing quotas (WS uses both translate and speech minutes)
+    if state.billing.is_enabled() {
+        match state.billing.check_quota(&user_ctx.user_id, "translate_minute").await {
+            Ok(billing::QuotaStatus::Exceeded { used, limit }) => {
+                return Err(ApiError::TooManyRequests(format!("Translation quota exceeded: used {used}/{limit} minutes this month")));
+            }
+            Err(e) => { tracing::warn!(error = %e, "Billing check failed, allowing request"); }
+            _ => {}
+        }
+        match state.billing.check_quota(&user_ctx.user_id, "speech_minute").await {
+            Ok(billing::QuotaStatus::Exceeded { used, limit }) => {
+                return Err(ApiError::TooManyRequests(format!("Speech quota exceeded: used {used}/{limit} minutes this month")));
+            }
+            Err(e) => { tracing::warn!(error = %e, "Billing check failed, allowing request"); }
+            _ => {}
+        }
+    }
+
+    // Record usage and audit log for the WS session
+    let _ = state.billing.record_usage(&user_ctx.user_id, "ws.translate", "translate_minute", 1).await;
+    let _ = state.billing.record_usage(&user_ctx.user_id, "ws.translate", "speech_minute", 1).await;
+    let _ = state.storage.write_audit_log(&user_ctx.user_id, "ws.translate", None, None).await;
 
     let target_langs: Vec<String> = params.to.split(',')
         .map(|s| s.trim().to_string())
@@ -565,58 +588,6 @@ fn parse_upstream_text(raw: &str) -> Option<String> {
 }
 
 /// Validate a JWT token from query parameter (same logic as middleware but standalone).
-fn validate_ws_token(state: &AppState, token: &str) -> Result<UserContext, ApiError> {
-    use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
-    use domain::auth::LocalClaims;
-
-    match state.config.auth.mode.as_str() {
-        "local" => {
-            let key = DecodingKey::from_secret(state.jwt_secret.as_bytes());
-            let mut validation = Validation::new(Algorithm::HS256);
-            validation.validate_exp = true;
-            validation.leeway = 30;
-
-            let data = decode::<LocalClaims>(token, &key, &validation)
-                .map_err(|e| ApiError::Unauthorized(format!("invalid token: {e}")))?;
-
-            let claims = data.claims;
-            Ok(UserContext {
-                user_id: claims.sub,
-                tenant_id: "default".into(),
-                role: claims.role.parse().unwrap_or(UserRole::User),
-                display_name: claims.display_name,
-                email: None,
-            })
-        }
-        "aad" => {
-            use domain::auth::AadClaims;
-
-            let mut validation = Validation::new(Algorithm::RS256);
-            validation.validate_exp = true;
-            validation.leeway = 30;
-            if !state.config.auth.aad.audience.is_empty() {
-                validation.set_audience(&[&state.config.auth.aad.audience]);
-            }
-            validation.insecure_disable_signature_validation();
-
-            let key = DecodingKey::from_secret(&[]);
-            let data = decode::<AadClaims>(token, &key, &validation)
-                .map_err(|e| ApiError::Unauthorized(format!("invalid AAD token: {e}")))?;
-
-            let claims = data.claims;
-            let role = claims.roles.as_ref()
-                .and_then(|roles| roles.iter().find(|r| *r == "admin"))
-                .map(|_| UserRole::Admin)
-                .unwrap_or(UserRole::User);
-
-            Ok(UserContext {
-                user_id: claims.oid,
-                tenant_id: claims.tid.unwrap_or_else(|| "default".into()),
-                role,
-                display_name: claims.name,
-                email: claims.email.or(claims.preferred_username),
-            })
-        }
-        other => Err(ApiError::Internal(format!("unknown auth mode: {other}"))),
-    }
+async fn validate_ws_token(state: &AppState, token: &str) -> Result<UserContext, ApiError> {
+    crate::middleware::auth::validate_ws_auth(state, token).await
 }

@@ -16,6 +16,7 @@ use serde::Deserialize;
 use serde_json::json;
 use std::convert::Infallible;
 use tracing::info;
+use billing;
 
 pub fn routes() -> Router<Arc<AppState>> {
     Router::new()
@@ -60,6 +61,19 @@ async fn chat_completions(
     let provider = registry.get_chat(req.provider_id.as_deref())
         .map_err(|_| ApiError::BadRequest("No chat provider configured. Ask admin to set up a provider.".into()))?;
 
+    // Check billing quota
+    if state.billing.is_enabled() {
+        match state.billing.check_quota(&ctx.user_id, "chat_token").await {
+            Ok(billing::QuotaStatus::Exceeded { used, limit }) => {
+                return Err(ApiError::TooManyRequests(format!("Chat quota exceeded: used {used}/{limit} tokens this month")));
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "Billing check failed, allowing request");
+            }
+            _ => {}
+        }
+    }
+
     let chat_req = ChatRequest {
         messages: req.messages.into_iter().map(|m| ChatMessage {
             role: m.role,
@@ -79,9 +93,24 @@ async fn chat_completions(
         let chunk_stream = provider.chat_stream(chat_req).await
             .map_err(|e| map_provider_error(e))?;
 
-        let sse_stream = chunk_stream.map(|result| {
+        let user_id = ctx.user_id.clone();
+        let billing = state.billing.clone();
+        let storage = state.storage.clone();
+
+        let sse_stream = chunk_stream.map(move |result| {
             match result {
                 Ok(chunk) => {
+                    // Record usage for chunks with usage info
+                    if let Some(ref usage) = chunk.usage {
+                        let total_tokens = usage.prompt + usage.completion;
+                        let billing = billing.clone();
+                        let storage = storage.clone();
+                        let user_id = user_id.clone();
+                        tokio::spawn(async move {
+                            let _ = billing.record_usage(&user_id, "chat.completions", "chat_token", total_tokens as i64).await;
+                            let _ = storage.write_audit_log(&user_id, "chat.completions", None, None).await;
+                        });
+                    }
                     let data = json!({
                         "choices": [{
                             "delta": { "content": chunk.delta },
@@ -123,6 +152,11 @@ async fn chat_completions(
                 Err(e) => return Err(map_provider_error(e)),
             }
         }
+
+        // Record usage after successful completion
+        let total_tokens = final_usage.as_ref().map(|u| (u.prompt + u.completion) as i64).unwrap_or(full_content.len() as i64 / 4);
+        let _ = state.billing.record_usage(&ctx.user_id, "chat.completions", "chat_token", total_tokens).await;
+        let _ = state.storage.write_audit_log(&ctx.user_id, "chat.completions", None, None).await;
 
         let resp = json!({
             "choices": [{

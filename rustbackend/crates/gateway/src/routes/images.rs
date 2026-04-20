@@ -9,6 +9,7 @@ use axum::{Router, routing::post, extract::State, Extension, Json};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use tracing::info;
+use billing;
 
 pub fn routes() -> Router<Arc<AppState>> {
     Router::new()
@@ -38,6 +39,19 @@ async fn generate_image(
     let provider = registry.get_image(req.provider_id.as_deref())
         .map_err(|_| ApiError::BadRequest("No image provider configured. Ask admin to set up a provider.".into()))?;
 
+    // Check billing quota
+    if state.billing.is_enabled() {
+        match state.billing.check_quota(&ctx.user_id, "image").await {
+            Ok(billing::QuotaStatus::Exceeded { used, limit }) => {
+                return Err(ApiError::TooManyRequests(format!("Image quota exceeded: used {used}/{limit} images this month")));
+            }
+            Err(e) => { tracing::warn!(error = %e, "Billing check failed, allowing request"); }
+            _ => {}
+        }
+    }
+
+    let req_n = req.n.unwrap_or(1);
+
     info!(user = %ctx.user_id, prompt_len = req.prompt.len(), "Image generation request");
 
     let gen_req = ImageGenRequest {
@@ -49,6 +63,10 @@ async fn generate_image(
 
     let result = provider.generate(gen_req).await
         .map_err(|e| map_provider_error(e))?;
+
+    // Record usage and audit log after successful generation
+    let _ = state.billing.record_usage(&ctx.user_id, "image.generate", "image", req_n as i64).await;
+    let _ = state.storage.write_audit_log(&ctx.user_id, "image.generate", None, None).await;
 
     let images: Vec<Value> = result.images.into_iter().map(|img| {
         let mut obj = json!({});
