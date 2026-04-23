@@ -246,6 +246,82 @@ public static class EndpointProfileUrlBuilder
             configuredMode,
             apiVersion);
 
+    public static IReadOnlyList<string> BuildFileUploadUrlCandidates(
+        string baseUrl,
+        string? profileId,
+        EndpointApiType endpointType,
+        string? apiVersion)
+    {
+        var normalizedBaseUrl = NormalizeBaseUrl(baseUrl);
+        if (string.IsNullOrWhiteSpace(normalizedBaseUrl))
+            return Array.Empty<string>();
+
+        var effectiveApiVersion = GetEffectiveEndpointApiVersion(profileId, endpointType, apiVersion);
+        var profile = EndpointProfileRuntimeResolver.Resolve(profileId, endpointType);
+
+        // 厂商包可通过 Overrides.Routes.Image.FileUploadPrimaryUrl 覆盖
+        if (profile is not null
+            && !string.IsNullOrWhiteSpace(profile.Overrides.Routes.Image.FileUploadPrimaryUrl))
+        {
+            return BuildConfiguredUrls(
+                normalizedBaseUrl,
+                new[] { profile.Overrides.Routes.Image.FileUploadPrimaryUrl },
+                effectiveApiVersion);
+        }
+
+        // 回退到平台默认策略
+        var platformPolicy = TryGetPlatformDefaultPolicy(endpointType);
+        if (platformPolicy is not null && !string.IsNullOrWhiteSpace(platformPolicy.Image.FileUploadPrimaryUrl))
+        {
+            return BuildConfiguredUrls(
+                normalizedBaseUrl,
+                new[] { platformPolicy.Image.FileUploadPrimaryUrl },
+                effectiveApiVersion);
+        }
+
+        return Array.Empty<string>();
+    }
+
+    /// <summary>
+    /// 构建 Responses API URL 候选（用于图片编辑 V2 模式）。
+    /// 优先使用厂商包覆盖 → 平台默认策略 image.responsesPrimaryUrl。
+    /// </summary>
+    public static IReadOnlyList<string> BuildImageResponsesUrlCandidates(
+        string baseUrl,
+        string? profileId,
+        EndpointApiType endpointType,
+        string? apiVersion)
+    {
+        var normalizedBaseUrl = NormalizeBaseUrl(baseUrl);
+        if (string.IsNullOrWhiteSpace(normalizedBaseUrl))
+            return Array.Empty<string>();
+
+        var effectiveApiVersion = GetEffectiveEndpointApiVersion(profileId, endpointType, apiVersion);
+        var profile = EndpointProfileRuntimeResolver.Resolve(profileId, endpointType);
+
+        // 厂商包可通过 Overrides.Routes.Image.ResponsesPrimaryUrl 覆盖
+        if (profile is not null
+            && !string.IsNullOrWhiteSpace(profile.Overrides.Routes.Image.ResponsesPrimaryUrl))
+        {
+            return BuildConfiguredUrls(
+                normalizedBaseUrl,
+                new[] { profile.Overrides.Routes.Image.ResponsesPrimaryUrl },
+                effectiveApiVersion);
+        }
+
+        // 回退到平台默认策略
+        var platformPolicy = TryGetPlatformDefaultPolicy(endpointType);
+        if (platformPolicy is not null && !string.IsNullOrWhiteSpace(platformPolicy.Image.ResponsesPrimaryUrl))
+        {
+            return BuildConfiguredUrls(
+                normalizedBaseUrl,
+                new[] { platformPolicy.Image.ResponsesPrimaryUrl },
+                effectiveApiVersion);
+        }
+
+        return Array.Empty<string>();
+    }
+
     public static IReadOnlyList<string> BuildConfiguredImageGenerateUrlCandidates(
         string baseUrl,
         string? profileId,

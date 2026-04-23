@@ -51,6 +51,19 @@ namespace TrueFluentPro.Models
         ImagesRaw
     }
 
+    /// <summary>
+    /// 图片编辑请求模式。
+    /// V1Multipart = 传统 multipart/form-data 直传二进制；
+    /// V2ResponsesApi = 通过 Responses API（/responses 端点 + image_generation 工具）编辑图片。
+    /// </summary>
+    public enum ImageEditMode
+    {
+        /// <summary>v1: multipart/form-data 直传二进制到 /images/edits</summary>
+        V1Multipart,
+        /// <summary>v2: 通过 Responses API + image_generation tool 编辑图片（推荐，Azure/APIM/OpenAI 均支持）</summary>
+        V2ResponsesApi
+    }
+
     public class InsightPresetButton
     {
         public string Name { get; set; } = "";

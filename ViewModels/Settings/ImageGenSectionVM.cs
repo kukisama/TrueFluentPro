@@ -14,6 +14,7 @@ namespace TrueFluentPro.ViewModels.Settings
         private string _imageQuality = "medium";
         private string _imageFormat = "png";
         private int _imageCount = 1;
+        private ImageEditMode _imageEditMode = ImageEditMode.V2ResponsesApi;
 
         public List<ModelOption> ImageModels { get => _imageModels; set => SetProperty(ref _imageModels, value); }
         public ModelOption? SelectedImageModel { get => _selectedImageModel; set => Set(ref _selectedImageModel, value); }
@@ -22,11 +23,13 @@ namespace TrueFluentPro.ViewModels.Settings
         public List<string> ImageQualityOptions { get; } = ["low", "medium", "high"];
         public List<string> ImageFormatOptions { get; } = ["png", "jpeg"];
         public List<int> ImageCountOptions { get; } = [1, 2, 3, 4, 5];
+        public List<ImageEditMode> ImageEditModeOptions { get; } = [ImageEditMode.V2ResponsesApi, ImageEditMode.V1Multipart];
 
         public string ImageSize { get => _imageSize; set => Set(ref _imageSize, value); }
         public string ImageQuality { get => _imageQuality; set => Set(ref _imageQuality, value); }
         public string ImageFormat { get => _imageFormat; set => Set(ref _imageFormat, value); }
         public int ImageCount { get => _imageCount; set => Set(ref _imageCount, value); }
+        public ImageEditMode ImageEditMode { get => _imageEditMode; set => Set(ref _imageEditMode, value); }
 
         public override void LoadFrom(AzureSpeechConfig config)
         {
@@ -37,11 +40,13 @@ namespace TrueFluentPro.ViewModels.Settings
             _imageQuality = string.IsNullOrWhiteSpace(media.ImageQuality) ? "medium" : media.ImageQuality;
             _imageFormat = string.IsNullOrWhiteSpace(media.ImageFormat) ? "png" : media.ImageFormat;
             _imageCount = media.ImageCount <= 0 ? 1 : media.ImageCount;
+            _imageEditMode = media.ImageEditMode;
 
             OnPropertyChanged(nameof(ImageSize));
             OnPropertyChanged(nameof(ImageQuality));
             OnPropertyChanged(nameof(ImageFormat));
             OnPropertyChanged(nameof(ImageCount));
+            OnPropertyChanged(nameof(ImageEditMode));
         }
 
         public override void ApplyTo(AzureSpeechConfig config)
@@ -51,6 +56,7 @@ namespace TrueFluentPro.ViewModels.Settings
             media.ImageQuality = string.IsNullOrWhiteSpace(_imageQuality) ? "medium" : _imageQuality;
             media.ImageFormat = string.IsNullOrWhiteSpace(_imageFormat) ? "png" : _imageFormat;
             media.ImageCount = Math.Clamp(_imageCount, 1, 10);
+            media.ImageEditMode = _imageEditMode;
             media.ImageModelRef = SelectedImageModel?.Reference;
         }
 

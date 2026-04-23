@@ -17,6 +17,7 @@ namespace TrueFluentPro.Models
         public string ImageQuality { get; set; } = "medium";
         public string ImageFormat { get; set; } = "png";
         public int ImageCount { get; set; } = 1;
+        public ImageEditMode ImageEditMode { get; set; } = ImageEditMode.V2ResponsesApi;
 
         // --- 视频默认参数 ---
         public string VideoModel { get; set; } = "sora-2";

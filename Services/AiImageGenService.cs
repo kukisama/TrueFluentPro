@@ -128,14 +128,23 @@ namespace TrueFluentPro.Services
 
             if (validReferenceImages.Count > 0)
             {
-                // ── 有参考图：优先尝试 /images/edits + multipart/form-data（Azure OpenAI 官方方式） ──
+                // ── 有参考图：根据 ImageEditMode 选择 v1（multipart）或 v2（Responses API）──
                 var authModeText = DescribeMediaAuthStrategy(config);
                 var imageNames = validReferenceImages
                     .Select(Path.GetFileName)
                     .Where(n => !string.IsNullOrWhiteSpace(n))
                     .Select(n => n!)
                     .ToList();
-                var editAttempt = await SendImageEditRequestAsync(config, prompt, genConfig, validReferenceImages, authModeText, imageNames, ct);
+
+                ImageAttemptResult editAttempt;
+                if (genConfig.ImageEditMode == ImageEditMode.V2ResponsesApi)
+                {
+                    editAttempt = await SendImageEditV2RequestAsync(config, prompt, genConfig, validReferenceImages, authModeText, imageNames, ct);
+                }
+                else
+                {
+                    editAttempt = await SendImageEditRequestAsync(config, prompt, genConfig, validReferenceImages, authModeText, imageNames, ct);
+                }
                 response = editAttempt.Response;
                 requestUrl = editAttempt.Url;
                 attemptedUrls = editAttempt.AttemptedUrls;
@@ -276,6 +285,23 @@ namespace TrueFluentPro.Services
                         {
                             var imageBytes = await _httpClient.GetByteArrayAsync(imageUrl, ct);
                             results.Add(imageBytes);
+                        }
+                    }
+                }
+            }
+            // Responses API 格式：output[] 中 type=image_generation_call 的 result 字段为 base64
+            else if (root.TryGetProperty("output", out var outputArray))
+            {
+                foreach (var item in outputArray.EnumerateArray())
+                {
+                    if (item.TryGetProperty("type", out var typeElem)
+                        && typeElem.GetString() == "image_generation_call"
+                        && item.TryGetProperty("result", out var resultElem))
+                    {
+                        var b64 = resultElem.GetString();
+                        if (!string.IsNullOrEmpty(b64))
+                        {
+                            results.Add(Convert.FromBase64String(b64));
                         }
                     }
                 }
@@ -547,7 +573,8 @@ namespace TrueFluentPro.Services
             string jsonBody,
             string authModeText,
             CancellationToken ct,
-            string logPrefix)
+            string logPrefix,
+            IReadOnlyDictionary<string, string>? additionalHeaders = null)
         {
             using var request = new HttpRequestMessage(HttpMethod.Post, url);
             request.Content = new StringContent(jsonBody, Encoding.UTF8, "application/json");
@@ -555,6 +582,12 @@ namespace TrueFluentPro.Services
             await SetAuthHeadersAsync(request, config, ct);
             request.Headers.Accept.ParseAdd("application/json");
             request.Headers.ExpectContinue = false;
+
+            if (additionalHeaders is not null)
+            {
+                foreach (var (key, value) in additionalHeaders)
+                    request.Headers.TryAddWithoutValidation(key, value);
+            }
 
             await AppLogService.Instance.LogHttpDebugAsync(
                 "image",
@@ -642,6 +675,134 @@ namespace TrueFluentPro.Services
 
         private static bool ShouldTryNextImageCandidate(HttpResponseMessage response)
             => (int)response.StatusCode is 404 or 405;
+
+        // ── V2: 通过 Responses API（/responses 端点 + image_generation 工具）编辑图片 ──
+
+        /// <summary>
+        /// V2 编辑：通过 Responses API 将参考图以 base64 内联方式发送，
+        /// 使用 image_generation 工具让模型编辑/生成图片。
+        /// </summary>
+        private async Task<ImageAttemptResult> SendImageEditV2RequestAsync(
+            AiConfig config,
+            string prompt,
+            MediaGenConfig genConfig,
+            IReadOnlyList<string> validReferenceImages,
+            string authModeText,
+            IReadOnlyList<string> imageNames,
+            CancellationToken ct)
+        {
+            // 1) 构建 Responses API URL 候选
+            var responsesUrls = BuildImageResponsesCandidateUrls(config);
+            if (responsesUrls.Count == 0)
+                throw new HttpRequestException("图片编辑(V2-ResponsesApi)失败: 无法构建 Responses API URL，请检查终结点配置");
+
+            // 2) 构建 input content：文本提示 + 参考图（base64 data URL 内联）
+            var contentItems = new List<object>();
+            contentItems.Add(new Dictionary<string, object>
+            {
+                ["type"] = "input_text",
+                ["text"] = prompt
+            });
+
+            foreach (var imagePath in validReferenceImages)
+            {
+                var dataUrl = BuildImageDataUrl(imagePath);
+                if (dataUrl is null) continue;
+
+                contentItems.Add(new Dictionary<string, object>
+                {
+                    ["type"] = "input_image",
+                    ["image_url"] = dataUrl
+                });
+            }
+
+            // 3) 构建 Responses API JSON body
+            //    model 必须是文本模型（如 gpt-5.4），图片模型通过 HTTP 头传递
+            var bodyObj = new Dictionary<string, object>
+            {
+                ["model"] = config.ModelName,
+                ["input"] = new[]
+                {
+                    new Dictionary<string, object>
+                    {
+                        ["role"] = "user",
+                        ["content"] = contentItems
+                    }
+                },
+                ["tools"] = new[]
+                {
+                    new Dictionary<string, object>
+                    {
+                        ["type"] = "image_generation"
+                    }
+                }
+            };
+            var jsonBody = JsonSerializer.Serialize(bodyObj);
+
+            // Azure OpenAI 需通过 x-ms-oai-image-generation-deployment 头指定图片模型部署名
+            var responsesHeaders = new Dictionary<string, string>
+            {
+                ["x-ms-oai-image-generation-deployment"] = genConfig.ImageModel
+            };
+
+            await AppLogService.Instance.LogHttpDebugAsync(
+                "image",
+                "ImageEditV2-ResponsesApi.Build",
+                $"TextModel={config.ModelName}\n" +
+                $"ImageDeployment={genConfig.ImageModel}\n" +
+                $"ReferenceImageCount={validReferenceImages.Count}\n" +
+                $"ImageFiles={string.Join(",", imageNames)}",
+                ct);
+
+            // 4) 遍历 Responses API URL candidates 发送请求
+            ImageAttemptResult? lastAttempt = null;
+            var attemptedUrls = new List<string>();
+
+            foreach (var url in responsesUrls)
+            {
+                attemptedUrls.Add(url);
+                var response = await SendJsonImageRequestAsync(
+                    config, url, jsonBody, authModeText, ct, "ImageEditV2-ResponsesApi", responsesHeaders);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    return new ImageAttemptResult { Response = response, Url = url, AttemptedUrls = attemptedUrls.ToList() };
+                }
+
+                var errorText = await response.Content.ReadAsStringAsync(ct);
+
+                if (IsMissingApimSubscriptionKeyResponse(config, response, errorText))
+                {
+                    response.Dispose();
+                    var queryUrl = BuildApimSubscriptionKeyQueryUrl(url, config.ApiKey);
+                    attemptedUrls.Add(queryUrl);
+                    response = await SendJsonImageRequestAsync(
+                        config, queryUrl, jsonBody, authModeText, ct, "ImageEditV2-ResponsesApi-ApimQueryRetry", responsesHeaders);
+
+                    if (response.IsSuccessStatusCode)
+                    {
+                        return new ImageAttemptResult { Response = response, Url = queryUrl, AttemptedUrls = attemptedUrls.ToList() };
+                    }
+
+                    errorText = await response.Content.ReadAsStringAsync(ct);
+                    lastAttempt = new ImageAttemptResult { Response = response, Url = queryUrl, ErrorText = errorText, AttemptedUrls = attemptedUrls.ToList() };
+
+                    if (ShouldTryNextImageCandidate(response))
+                        continue;
+
+                    return lastAttempt;
+                }
+
+                lastAttempt = new ImageAttemptResult { Response = response, Url = url, ErrorText = errorText, AttemptedUrls = attemptedUrls.ToList() };
+
+                if (ShouldTryNextImageCandidate(response))
+                    continue;
+
+                return lastAttempt;
+            }
+
+            return lastAttempt ?? throw new HttpRequestException("图片编辑(V2-ResponsesApi)失败: 未发送请求");
+        }
 
         /// <summary>
         /// 生成图片并保存到指定目录，返回文件路径列表及耗时信息

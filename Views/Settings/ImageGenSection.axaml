@@ -16,7 +16,7 @@
 
             <Separator Margin="0,8,0,8"/>
             <TextBlock Text="默认参数" FontWeight="Bold"/>
-            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="6" ColumnSpacing="8">
+            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="6" ColumnSpacing="8">
                 <TextBlock Grid.Row="0" Grid.Column="0" Text="尺寸:" VerticalAlignment="Center"/>
                 <ComboBox Grid.Row="0" Grid.Column="1" MinWidth="180"
                           ItemsSource="{Binding ImageSizeOptions}"
@@ -36,6 +36,13 @@
                 <ComboBox Grid.Row="3" Grid.Column="1" MinWidth="120"
                           ItemsSource="{Binding ImageCountOptions}"
                           SelectedItem="{Binding ImageCount, Mode=TwoWay}"/>
+
+                <TextBlock Grid.Row="4" Grid.Column="0" Text="改图模式:" VerticalAlignment="Center"
+                           ToolTip.Tip="V1Multipart: 传统 multipart 直传到 /images/edits；V2ResponsesApi: 通过 Responses API + image_generation 工具编辑（推荐，兼容 Azure/APIM/OpenAI）。"/>
+                <ComboBox Grid.Row="4" Grid.Column="1" MinWidth="180"
+                          ItemsSource="{Binding ImageEditModeOptions}"
+                          SelectedItem="{Binding ImageEditMode, Mode=TwoWay}"
+                          ToolTip.Tip="V1Multipart: 传统 multipart 直传到 /images/edits；V2ResponsesApi: 通过 Responses API（/responses 端点 + image_generation 工具）编辑图片，图片以 base64 内联传递，推荐使用。"/>
             </Grid>
         </StackPanel>
     </Border>

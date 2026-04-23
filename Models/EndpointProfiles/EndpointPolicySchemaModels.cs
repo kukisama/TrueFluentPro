@@ -80,7 +80,9 @@ public sealed class EndpointPlatformDefaultImageSettings
 {
     public string GeneratePrimaryUrl { get; set; } = "";
     public string EditPrimaryUrl { get; set; } = "";
+    public string FileUploadPrimaryUrl { get; set; } = "";
     public string DeploymentGeneratePrimaryUrl { get; set; } = "";
+    public string ResponsesPrimaryUrl { get; set; } = "";
 }
 
 public sealed class EndpointPlatformDefaultVideoSettings

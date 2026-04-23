@@ -203,6 +203,20 @@ namespace TrueFluentPro.Services
                 config.ImageApiRouteMode,
                 config.ApiVersion);
 
+        protected static IReadOnlyList<string> BuildFileUploadCandidateUrls(AiConfig config)
+            => EndpointProfileUrlBuilder.BuildFileUploadUrlCandidates(
+                config.ApiEndpoint,
+                config.ProfileId,
+                config.EndpointType,
+                config.ApiVersion);
+
+        protected static IReadOnlyList<string> BuildImageResponsesCandidateUrls(AiConfig config)
+            => EndpointProfileUrlBuilder.BuildImageResponsesUrlCandidates(
+                config.ApiEndpoint,
+                config.ProfileId,
+                config.EndpointType,
+                config.ApiVersion);
+
         private static EndpointProfileDefinition? ResolveProfile(AiConfig config)
             => EndpointProfileRuntimeResolver.Resolve(config.ProfileId, config.EndpointType);
 
