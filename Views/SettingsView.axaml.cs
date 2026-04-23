@@ -30,7 +30,8 @@ public partial class SettingsView : UserControl
         ["Section_Recognition"] = () => new RecognitionSection(),
         ["Section_Text"] = () => new TextSection(),
         ["Section_Transfer"] = () => new TransferSection(),
-        ["Section_About"] = () => new AboutSection()
+        ["Section_About"] = () => new AboutSection(),
+        ["Section_Cloud"] = () => new CloudSection()
     };
     private static readonly IReadOnlyDictionary<string, Func<MainWindowViewModel, object>> SectionDataContextResolvers
         = new Dictionary<string, Func<MainWindowViewModel, object>>(StringComparer.Ordinal)
@@ -48,7 +49,8 @@ public partial class SettingsView : UserControl
         ["Section_Recognition"] = vm => vm.Settings.RecognitionVM,
         ["Section_Text"] = vm => vm.Settings.TextVM,
         ["Section_Transfer"] = vm => vm.Settings.TransferVM,
-        ["Section_About"] = vm => vm.Settings.AboutVM
+        ["Section_About"] = vm => vm.Settings.AboutVM,
+        ["Section_Cloud"] = vm => vm.Settings.CloudVM
     };
 
     private readonly Dictionary<string, Control> _createdSections = new(StringComparer.Ordinal);

@@ -1,0 +1,91 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:TrueFluentPro.ViewModels.Settings"
+             xmlns:icons="https://github.com/projektanker/icons.avalonia"
+             x:Class="TrueFluentPro.Views.Settings.CloudSection"
+             x:DataType="vm:CloudSectionVM"
+             x:CompileBindings="False">
+    <Border Classes="app-card"
+            BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+            BorderThickness="1" CornerRadius="8" Padding="20">
+        <StackPanel Spacing="12">
+            <TextBlock Text="Cloud SaaS 模式" Theme="{StaticResource SubtitleTextBlockStyle}"/>
+            <TextBlock Classes="hint-text"
+                       Text="启用 Cloud 模式后，所有 AI 服务请求将通过 SaaS 后端代理转发。现有的 Self-Hosted 模式（自带 Key 直连 Azure）不受影响。"
+                       TextWrapping="Wrap"/>
+            <Separator/>
+
+            <!-- 服务模式选择 -->
+            <TextBlock Text="服务模式" FontWeight="Bold"/>
+            <ComboBox MinWidth="220"
+                      SelectedIndex="{Binding ServiceModeIndex, Mode=TwoWay}">
+                <ComboBoxItem Content="🔧 Self-Hosted（自带 Key，直连 Azure）"/>
+                <ComboBoxItem Content="☁️ Cloud（通过 SaaS 后端代理）"/>
+            </ComboBox>
+
+            <Separator Margin="0,8,0,8"/>
+
+            <!-- 后端地址 -->
+            <TextBlock Text="后端 API 地址" FontWeight="Bold"/>
+            <TextBlock Classes="hint-text" Text="SaaS 后端的访问地址，如 https://api.yourdomain.com"/>
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <TextBox Width="360"
+                         Text="{Binding BackendUrl, Mode=TwoWay}"
+                         Watermark="https://api.example.com"/>
+                <Button Command="{Binding CheckHealthCommand}"
+                        ToolTip.Tip="检查后端健康状态">
+                    <icons:Icon Value="fa-solid fa-heart-pulse" FontSize="14"/>
+                </Button>
+                <TextBlock Text="{Binding HealthStatus}"
+                           VerticalAlignment="Center"
+                           Margin="4,0,0,0"/>
+            </StackPanel>
+
+            <Separator Margin="0,8,0,8"/>
+
+            <!-- AAD 登录配置 -->
+            <TextBlock Text="AAD 登录配置" FontWeight="Bold"/>
+            <TextBlock Classes="hint-text"
+                       Text="Azure Active Directory (Entra ID) 应用注册信息，用于登录获取 JWT Token。"
+                       TextWrapping="Wrap"/>
+
+            <StackPanel Spacing="8">
+                <StackPanel Spacing="4">
+                    <TextBlock Text="Tenant ID (租户 ID)"/>
+                    <TextBox Width="360"
+                             Text="{Binding AadTenantId, Mode=TwoWay}"
+                             Watermark="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"/>
+                </StackPanel>
+
+                <StackPanel Spacing="4">
+                    <TextBlock Text="Client ID (客户端应用 ID)"/>
+                    <TextBox Width="360"
+                             Text="{Binding AadClientId, Mode=TwoWay}"
+                             Watermark="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"/>
+                </StackPanel>
+
+                <StackPanel Spacing="4">
+                    <TextBlock Text="API Scope"/>
+                    <TextBox Width="360"
+                             Text="{Binding AadScope, Mode=TwoWay}"
+                             Watermark="api://truefluentpro/access（留空使用默认值）"/>
+                </StackPanel>
+            </StackPanel>
+
+            <Separator Margin="0,8,0,8"/>
+
+            <!-- 登录状态 -->
+            <TextBlock Text="账号" FontWeight="Bold"/>
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button Content="登录"
+                        Command="{Binding LoginCommand}"
+                        Classes="accent"/>
+                <Button Content="登出"
+                        Command="{Binding LogoutCommand}"/>
+                <TextBlock Text="{Binding LoginStatus}"
+                           VerticalAlignment="Center"
+                           Margin="8,0,0,0"/>
+            </StackPanel>
+        </StackPanel>
+    </Border>
+</UserControl>

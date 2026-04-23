@@ -153,6 +153,12 @@
                             <TextBlock Grid.Column="1" Text="关于" VerticalAlignment="Center"/>
                         </Grid>
                     </ListBoxItem>
+                    <ListBoxItem Tag="Section_Cloud">
+                        <Grid Classes="sidebar-nav-item-content" ColumnDefinitions="18,*" ColumnSpacing="10">
+                            <icons:Icon Grid.Column="0" Value="fa-solid fa-cloud" FontSize="14"/>
+                            <TextBlock Grid.Column="1" Text="Cloud 模式" VerticalAlignment="Center"/>
+                        </Grid>
+                    </ListBoxItem>
                 </ListBox>
             </Grid>
         </Border>

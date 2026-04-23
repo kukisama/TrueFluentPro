@@ -1,0 +1,101 @@
+# docker-compose.yml
+# Usage:
+#   Minimal (API + SQLite):           docker compose up api -d
+#   Standard (API + PostgreSQL):      docker compose --profile db up -d
+#   Full (API + PG + Redis):          docker compose --profile db --profile cache up -d
+
+services:
+  api:
+    image: truefluentpro/api:latest
+    container_name: ${INSTANCE_NAME:-tfp}-api
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    ports:
+      - "${API_PORT:-5000}:8080"
+      - "${API_HTTPS_PORT:-5001}:8443"
+    environment:
+      # ─── Database ───
+      # Leave empty for SQLite fallback
+      - DATABASE_URL=${DATABASE_URL:-}
+
+      # ─── Redis (optional) ───
+      - REDIS_URL=${REDIS_URL:-}
+
+      # ─── Azure credentials ───
+      - AOAI_ENDPOINT=${AOAI_ENDPOINT}
+      - AOAI_KEY=${AOAI_KEY:-}
+      - SPEECH_KEY=${SPEECH_KEY:-}
+      - SPEECH_REGION=${SPEECH_REGION:-}
+      - BLOB_CONNECTION_STRING=${BLOB_CONNECTION_STRING:-}
+
+      # ─── Credential encryption ───
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+
+      # ─── AAD auth ───
+      - AAD_TENANT_ID=${AAD_TENANT_ID}
+      - AAD_CLIENT_ID=${AAD_CLIENT_ID}
+      - AAD_AUDIENCE=${AAD_AUDIENCE}
+
+      # ─── TLS ───
+      - TLS_CERT_PATH=/certs/cert.pem
+      - TLS_KEY_PATH=/certs/key.pem
+
+      # ─── Other ───
+      - ASPNETCORE_ENVIRONMENT=${ASPNETCORE_ENVIRONMENT:-Production}
+    volumes:
+      - ${DATA_DIR:-./data}/sqlite:/app/data          # SQLite data (minimal mode)
+      - ${DATA_DIR:-./data}/certs:/certs:ro            # TLS certificates
+      - ${DATA_DIR:-./data}/logs:/app/logs             # Logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+        required: false
+      redis:
+        condition: service_healthy
+        required: false
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  postgres:
+    image: postgres:17-alpine
+    container_name: ${INSTANCE_NAME:-tfp}-postgres
+    profiles: ["db"]
+    ports:
+      - "${PG_PORT:-5432}:5432"
+    environment:
+      - POSTGRES_DB=truefluentpro
+      - POSTGRES_USER=tfp
+      - POSTGRES_PASSWORD=${PG_PASSWORD}
+    volumes:
+      - ${DATA_DIR:-./data}/postgres:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tfp -d truefluentpro"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: ${INSTANCE_NAME:-tfp}-redis
+    profiles: ["cache"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    command: >
+      redis-server
+      --maxmemory 128mb
+      --maxmemory-policy allkeys-lru
+      --requirepass ${REDIS_PASSWORD:-}
+    volumes:
+      - ${DATA_DIR:-./data}/redis:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
