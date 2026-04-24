@@ -56,7 +56,8 @@ namespace TrueFluentPro.ViewModels.Settings
             media.ImageQuality = string.IsNullOrWhiteSpace(_imageQuality) ? "medium" : _imageQuality;
             media.ImageFormat = string.IsNullOrWhiteSpace(_imageFormat) ? "png" : _imageFormat;
             media.ImageCount = Math.Clamp(_imageCount, 1, 10);
-            media.ImageEditMode = _imageEditMode;
+            // 改图模式固定为 V2ResponsesApi（file_id + Responses API），不再由用户选择
+            media.ImageEditMode = ImageEditMode.V2ResponsesApi;
             media.ImageModelRef = SelectedImageModel?.Reference;
         }
 

@@ -33,6 +33,20 @@
             </StackPanel>
 
             <Separator Margin="0,8,0,8"/>
+            <TextBlock Text="创作工坊默认值" FontWeight="SemiBold"/>
+            <StackPanel Spacing="6">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Text="默认对话轮数:" VerticalAlignment="Center"/>
+                    <Slider Minimum="1" Maximum="100"
+                            Value="{Binding DefaultMaxConversationTurns, Mode=TwoWay}"
+                            Width="200" VerticalAlignment="Center"/>
+                    <TextBlock Text="{Binding DefaultMaxConversationTurns}"
+                               FontWeight="SemiBold" VerticalAlignment="Center" Width="30"/>
+                </StackPanel>
+                <TextBlock Classes="caption-text" Text="新建会话时携带的最大历史对话轮数（会话内可单独调整）"/>
+            </StackPanel>
+
+            <Separator Margin="0,8,0,8"/>
             <controls:PresetButtonsEditor Name="PresetButtonsEditorControl"
                                           Items="{Binding PresetButtons}"/>
         </StackPanel>

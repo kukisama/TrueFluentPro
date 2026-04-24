@@ -791,6 +791,51 @@
                                     </Grid>
                                 </Button>
 
+                            <!-- 对话轮数按钮（仅文本模式） -->
+                            <Button Padding="5,3"
+                                    IsVisible="{Binding IsTextMode}"
+                                    ToolTip.Tip="调整每次请求携带的历史对话轮数">
+                                <Button.Flyout>
+                                    <Flyout Placement="Bottom" ShowMode="TransientWithDismissOnPointerMoveAway">
+                                        <StackPanel Width="220" Spacing="8" Margin="4">
+                                            <TextBlock FontWeight="SemiBold" FontSize="13" Text="对话历史轮数"/>
+                                            <TextBlock FontSize="11" Foreground="{DynamicResource TextMutedBrush}"
+                                                       Text="控制每次请求携带多少轮历史消息。轮数越大上下文越完整，但 token 消耗更高。"/>
+                                            <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
+                                                <Slider Grid.Column="0"
+                                                        Minimum="1" Maximum="100"
+                                                        Value="{Binding MaxConversationTurns}"
+                                                        TickFrequency="10" IsSnapToTickEnabled="False"/>
+                                                <TextBlock Grid.Column="1" Width="32"
+                                                           TextAlignment="Center"
+                                                           VerticalAlignment="Center"
+                                                           FontWeight="SemiBold" FontSize="13"
+                                                           Text="{Binding MaxConversationTurns}"/>
+                                            </Grid>
+                                        </StackPanel>
+                                    </Flyout>
+                                </Button.Flyout>
+                                <Grid Width="22" Height="22">
+                                    <icons:Icon Value="fa-solid fa-layer-group"
+                                                FontSize="14"
+                                                HorizontalAlignment="Center"
+                                                VerticalAlignment="Center"/>
+                                    <Border Background="{DynamicResource AccentBlueBrush}"
+                                            CornerRadius="6"
+                                            Padding="3,0"
+                                            MinWidth="14" Height="14"
+                                            HorizontalAlignment="Right"
+                                            VerticalAlignment="Top"
+                                            Margin="0,-3,-5,0">
+                                        <TextBlock Text="{Binding MaxConversationTurns}"
+                                                   FontSize="9" FontWeight="Bold"
+                                                   Foreground="White"
+                                                   HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center"/>
+                                    </Border>
+                                </Grid>
+                            </Button>
+
                             <!-- 图片参数 -->
                             <StackPanel Orientation="Horizontal" Spacing="6"
                                         IsVisible="{Binding IsImageMode}">

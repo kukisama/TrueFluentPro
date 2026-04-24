@@ -323,6 +323,7 @@ namespace TrueFluentPro.ViewModels
             target.VideoPollIntervalMs = source.VideoPollIntervalMs;
             target.DefaultEnableStudioReasoning = source.DefaultEnableStudioReasoning;
             target.DefaultEnableStudioWebSearch = source.DefaultEnableStudioWebSearch;
+            target.DefaultMaxConversationTurns = source.DefaultMaxConversationTurns;
             target.MaxLoadedSessionsInMemory = source.MaxLoadedSessionsInMemory;
             target.OutputDirectory = source.OutputDirectory;
         }

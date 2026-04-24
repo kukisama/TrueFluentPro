@@ -58,6 +58,7 @@ namespace TrueFluentPro.ViewModels
         private int _videoVariants = 1;
         private bool _imageParamsActivated;
         private bool _videoParamsActivated;
+        private int _maxConversationTurns;
 
         public string SessionId { get; }
 
@@ -407,6 +408,13 @@ namespace TrueFluentPro.ViewModels
             set => SetProperty(ref _enableReasoning, value);
         }
 
+        /// <summary>会话级最大对话轮数（控制多轮上下文窗口大小）</summary>
+        public int MaxConversationTurns
+        {
+            get => _maxConversationTurns;
+            set => SetProperty(ref _maxConversationTurns, Math.Clamp(value, 1, 100));
+        }
+
         private bool _enableWebSearch;
         private bool _webSearchEnableIntentAnalysis = true;
         private bool _webSearchEnableResultCompression;
@@ -581,6 +589,7 @@ namespace TrueFluentPro.ViewModels
             _pathResolver = pathResolver;
             _enableReasoning = _genConfig.DefaultEnableStudioReasoning;
             _enableWebSearch = _genConfig.DefaultEnableStudioWebSearch;
+            _maxConversationTurns = _genConfig.DefaultMaxConversationTurns;
 
             // 会话参数延迟注入：在会话首次被选中 / 首次切到视频模式时，
             // 从全局 genConfig 快照最新值，避免使用创建时的过期配置。
@@ -2376,6 +2385,48 @@ namespace TrueFluentPro.ViewModels
                 return;
             }
 
+            // 聊天模式图片生成：如果配置了图片模型且启用了视觉能力，注入 image_generation tool
+            if (_genConfig.EnableChatImageGeneration && TryResolveImageRuntime(out var chatImageRuntime, out _) && chatImageRuntime != null)
+            {
+                runtimeRequest.EnableChatImageGeneration = true;
+                runtimeRequest.ImageModelDeployment = chatImageRuntime.ModelId;
+            }
+
+            // Vision 输入：将图片附件上传到 Files API，获取 file_id 供 Responses API 引用
+            var imageAttachments = attachments.Where(a => a.Type == "image" && File.Exists(a.FilePath)).ToList();
+            if (imageAttachments.Count > 0)
+            {
+                try
+                {
+                    var uploadConfig = new AiConfig
+                    {
+                        ProfileId = runtimeRequest.ProfileId,
+                        EndpointType = runtimeRequest.EndpointType,
+                        ProviderType = runtimeRequest.ProviderType,
+                        ApiEndpoint = runtimeRequest.ApiEndpoint,
+                        ApiKey = runtimeRequest.ApiKey,
+                        ApiVersion = runtimeRequest.ApiVersion,
+                        AzureAuthMode = runtimeRequest.AzureAuthMode,
+                        ApiKeyHeaderMode = runtimeRequest.ApiKeyHeaderMode,
+                        AzureTenantId = runtimeRequest.AzureTenantId,
+                        AzureClientId = runtimeRequest.AzureClientId,
+                    };
+
+                    var fileIds = new List<string>();
+                    foreach (var img in imageAttachments)
+                    {
+                        var fileId = await _imageService.UploadImageFileAsync(uploadConfig, img.FilePath, CancellationToken.None);
+                        fileIds.Add(fileId);
+                    }
+                    runtimeRequest.ImageFileIds = fileIds;
+                }
+                catch (Exception ex)
+                {
+                    // 图片上传失败时退化为文本标注模式，不阻断聊天
+                    AppLogService.Instance.LogAudit("chat", $"Vision 图片上传失败，退化为文本模式: {ex.Message}", isSuccess: false);
+                }
+            }
+
             // AAD 令牌
             AzureTokenProvider? tokenProvider = null;
             if (runtimeRequest.AzureAuthMode == AzureAuthMode.AAD)
@@ -2425,6 +2476,7 @@ namespace TrueFluentPro.ViewModels
             var runtimeService = new AiInsightService(tokenProvider);
             var sb = new StringBuilder();
             var reasoningSb = new StringBuilder();
+            var chatImageResults = new List<byte[]>(); // 聊天模式图片生成结果收集
             _chatFlushThrottle.Restart();
 
             // 字符级平滑流式动画器：AI token 进入队列，按帧节奏追加到 UI
@@ -2480,7 +2532,32 @@ namespace TrueFluentPro.ViewModels
                     {
                         reasoningSb.Append(reasoningChunk);
                         ThrottledFlushReasoning(aiMessage, reasoningSb);
+                    },
+                    onImageResult: imageBytes =>
+                    {
+                        chatImageResults.Add(imageBytes);
                     });
+
+                // 如果聊天中产生了图片，保存到磁盘并挂载到消息
+                if (chatImageResults.Count > 0)
+                {
+                    var outputDir = _pathResolver?.GetNewResourceDirectory("image") ?? SessionDirectory;
+                    Directory.CreateDirectory(outputDir);
+                    var savedPaths = new List<string>();
+                    for (var i = 0; i < chatImageResults.Count; i++)
+                    {
+                        var randomId = Guid.NewGuid().ToString("N")[..8];
+                        var filePath = Path.Combine(outputDir, $"chat_img_{i + 1:D3}_{randomId}.png");
+                        await File.WriteAllBytesAsync(filePath, chatImageResults[i], ct);
+                        savedPaths.Add(filePath);
+                    }
+
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        foreach (var path in savedPaths)
+                            aiMessage.MediaPaths.Add(path);
+                    });
+                }
 
                 // 最终刷新：停止动画器，直接设置完整文本
                 _streamAnimator?.EndStream();
@@ -2584,10 +2661,12 @@ namespace TrueFluentPro.ViewModels
                     }
                     catch { /* 静默跳过无法读取的文件 */ }
                 }
-                // 图片附件暂时在 prompt 中标注（未来可扩展为 vision API 的 image_url part）
+                // 图片附件通过 Vision API（file_id 上传）直接发送给模型，
+                // 不再在 prompt 中添加文本标注
                 else if (att.Type == "image")
                 {
-                    sb.AppendLine($"[附件图片: {att.FileName}]");
+                    // 仅保留文件名提示，帮助模型理解上下文
+                    sb.AppendLine($"[用户附加了图片: {att.FileName}]");
                     sb.AppendLine();
                 }
             }
@@ -2602,7 +2681,7 @@ namespace TrueFluentPro.ViewModels
         {
             var textMessages = _allMessages
                 .Where(m => m.IsTextContent && !string.IsNullOrWhiteSpace(m.Text))
-                .TakeLast(20)
+                .TakeLast(_maxConversationTurns)
                 .ToList();
 
             // 排除刚刚加入的用户消息（已在 textMessages 里）和占位 AI 消息

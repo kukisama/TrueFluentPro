@@ -21,6 +21,7 @@ namespace TrueFluentPro.ViewModels.Settings
         private bool _autoInsightBufferOutput = true;
         private bool _summaryEnableReasoning;
         private bool _studioDefaultEnableReasoning;
+        private int _defaultMaxConversationTurns = 20;
         private ObservableCollection<InsightPresetButton> _presetButtons = new();
 
         private ModelOption? _selectedInsightModel;
@@ -47,6 +48,7 @@ namespace TrueFluentPro.ViewModels.Settings
         public bool AutoInsightBufferOutput { get => _autoInsightBufferOutput; set => Set(ref _autoInsightBufferOutput, value); }
         public bool SummaryEnableReasoning { get => _summaryEnableReasoning; set => Set(ref _summaryEnableReasoning, value); }
         public bool StudioDefaultEnableReasoning { get => _studioDefaultEnableReasoning; set => Set(ref _studioDefaultEnableReasoning, value); }
+        public int DefaultMaxConversationTurns { get => _defaultMaxConversationTurns; set => Set(ref _defaultMaxConversationTurns, value); }
         public ObservableCollection<InsightPresetButton> PresetButtons { get => _presetButtons; set => SetProperty(ref _presetButtons, value); }
 
         public List<ModelOption> TextModels { get => _textModels; set => SetProperty(ref _textModels, value); }
@@ -83,6 +85,7 @@ namespace TrueFluentPro.ViewModels.Settings
             var ai = config.AiConfig ?? new AiConfig();
             SummaryEnableReasoning = ai.SummaryEnableReasoning;
             StudioDefaultEnableReasoning = config.MediaGenConfig.DefaultEnableStudioReasoning;
+            DefaultMaxConversationTurns = config.MediaGenConfig.DefaultMaxConversationTurns;
             InsightSystemPrompt = ai.InsightSystemPrompt;
             InsightUserContentTemplate = ai.InsightUserContentTemplate;
             AutoInsightBufferOutput = ai.AutoInsightBufferOutput;
@@ -100,6 +103,7 @@ namespace TrueFluentPro.ViewModels.Settings
             ai.PresetButtons = PresetButtons.Where(b => !string.IsNullOrWhiteSpace(b.Name)).ToList();
 
             config.MediaGenConfig.DefaultEnableStudioReasoning = StudioDefaultEnableReasoning;
+            config.MediaGenConfig.DefaultMaxConversationTurns = DefaultMaxConversationTurns;
 
             ai.InsightModelRef = SelectedInsightModel?.Reference;
             ai.SummaryModelRef = SelectedSummaryModel?.Reference;

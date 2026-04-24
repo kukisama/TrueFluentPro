@@ -24,6 +24,8 @@ namespace TrueFluentPro.Services
         public double DownloadSeconds { get; set; }
         public string RequestUrl { get; set; } = "";
         public IReadOnlyList<string> AttemptedUrls { get; set; } = Array.Empty<string>();
+        /// <summary>Responses API 返回的 response id，可用于 previous_response_id 多轮改图</summary>
+        public string? ResponseId { get; set; }
     }
 
     /// <summary>
@@ -49,6 +51,8 @@ namespace TrueFluentPro.Services
         public List<string> FilePaths { get; set; } = new();
         public double GenerateSeconds { get; set; }
         public double DownloadSeconds { get; set; }
+        /// <summary>Responses API 返回的 response id，可用于 previous_response_id 多轮改图</summary>
+        public string? ResponseId { get; set; }
     }
 
     /// <summary>
@@ -307,6 +311,13 @@ namespace TrueFluentPro.Services
                 }
             }
 
+            // 提取 Responses API 的 response id（用于 previous_response_id 多轮改图）
+            string? responseId = null;
+            if (root.TryGetProperty("id", out var idElem) && idElem.ValueKind == JsonValueKind.String)
+            {
+                responseId = idElem.GetString();
+            }
+
                 onProgress?.Invoke(100);
                 return new ImageGenerationResult
                 {
@@ -314,7 +325,8 @@ namespace TrueFluentPro.Services
                     GenerateSeconds = generateSeconds,
                     DownloadSeconds = downloadSeconds,
                     RequestUrl = requestUrl,
-                    AttemptedUrls = attemptedUrls
+                    AttemptedUrls = attemptedUrls,
+                    ResponseId = responseId
                 };
             }
         }
@@ -679,8 +691,94 @@ namespace TrueFluentPro.Services
         // ── V2: 通过 Responses API（/responses 端点 + image_generation 工具）编辑图片 ──
 
         /// <summary>
-        /// V2 编辑：通过 Responses API 将参考图以 base64 内联方式发送，
-        /// 使用 image_generation 工具让模型编辑/生成图片。
+        /// 上传文件到 /openai/v1/files，返回 file_id。
+        /// 固定使用 purpose=assistants（当前 APIM 下唯一可用值）。
+        /// </summary>
+        /// <summary>
+        /// 上传图片文件到 /openai/v1/files（purpose=assistants），返回 file_id。
+        /// 可用于 vision 输入或图片编辑的参考图上传。
+        /// </summary>
+        public async Task<string> UploadImageFileAsync(
+            AiConfig config,
+            string filePath,
+            CancellationToken ct)
+        {
+            return await UploadFileAsync(config, filePath, config.AzureAuthMode.ToString(), ct);
+        }
+
+        private async Task<string> UploadFileAsync(
+            AiConfig config,
+            string filePath,
+            string authModeText,
+            CancellationToken ct)
+        {
+            var uploadUrls = BuildFileUploadCandidateUrls(config);
+            if (uploadUrls.Count == 0)
+                throw new HttpRequestException("文件上传失败: 无法构建 Files API URL，请检查终结点配置");
+
+            var imageBytes = await File.ReadAllBytesAsync(filePath, ct);
+            var ext = Path.GetExtension(filePath).ToLowerInvariant();
+            var mimeType = ext switch
+            {
+                ".jpg" or ".jpeg" => "image/jpeg",
+                ".webp" => "image/webp",
+                ".gif" => "image/gif",
+                ".bmp" => "image/bmp",
+                _ => "image/png"
+            };
+            var fileName = Path.GetFileName(filePath);
+
+            foreach (var url in uploadUrls)
+            {
+                using var form = new MultipartFormDataContent();
+                var fileContent = new ByteArrayContent(imageBytes);
+                fileContent.Headers.ContentType = new MediaTypeHeaderValue(mimeType);
+                form.Add(fileContent, "file", fileName);
+                form.Add(new StringContent("assistants"), "purpose");
+
+                using var request = new HttpRequestMessage(HttpMethod.Post, url);
+                request.Content = form;
+                await SetAuthHeadersAsync(request, config, ct);
+
+                await AppLogService.Instance.LogHttpDebugAsync(
+                    "image", "FileUpload.Request",
+                    $"URL={url}\nAuthMode={authModeText}\nFile={fileName}", ct);
+
+                using var response = await _httpClient.SendAsync(request, ct);
+
+                await AppLogService.Instance.LogHttpDebugAsync(
+                    "image", "FileUpload.Response",
+                    $"URL={url}\nHTTP={(int)response.StatusCode} {response.ReasonPhrase}", ct);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    var errorText = await response.Content.ReadAsStringAsync(ct);
+                    if (ShouldTryNextImageCandidate(response)) continue;
+                    throw new HttpRequestException($"文件上传失败: {(int)response.StatusCode} {response.ReasonPhrase}. {errorText}");
+                }
+
+                var body = await response.Content.ReadAsStringAsync(ct);
+                using var doc = JsonDocument.Parse(body);
+                if (doc.RootElement.TryGetProperty("id", out var idElem))
+                {
+                    var fileId = idElem.GetString();
+                    if (!string.IsNullOrEmpty(fileId))
+                    {
+                        await AppLogService.Instance.LogHttpDebugAsync(
+                            "image", "FileUpload.Success", $"FileId={fileId}", ct);
+                        return fileId;
+                    }
+                }
+
+                throw new HttpRequestException($"文件上传成功但未返回 file_id: {body}");
+            }
+
+            throw new HttpRequestException("文件上传失败: 所有候选 URL 均失败");
+        }
+
+        /// <summary>
+        /// V2 编辑：先上传参考图到 /openai/v1/files 拿 file_id，
+        /// 再通过 Responses API + file_id 引用 + image_generation 工具编辑图片。
         /// </summary>
         private async Task<ImageAttemptResult> SendImageEditV2RequestAsync(
             AiConfig config,
@@ -696,7 +794,15 @@ namespace TrueFluentPro.Services
             if (responsesUrls.Count == 0)
                 throw new HttpRequestException("图片编辑(V2-ResponsesApi)失败: 无法构建 Responses API URL，请检查终结点配置");
 
-            // 2) 构建 input content：文本提示 + 参考图（base64 data URL 内联）
+            // 2) 上传参考图，收集 file_id
+            var fileIds = new List<string>();
+            foreach (var imagePath in validReferenceImages)
+            {
+                var fileId = await UploadFileAsync(config, imagePath, authModeText, ct);
+                fileIds.Add(fileId);
+            }
+
+            // 3) 构建 input content：文本提示 + 参考图（file_id 引用）
             var contentItems = new List<object>();
             contentItems.Add(new Dictionary<string, object>
             {
@@ -704,19 +810,16 @@ namespace TrueFluentPro.Services
                 ["text"] = prompt
             });
 
-            foreach (var imagePath in validReferenceImages)
+            foreach (var fileId in fileIds)
             {
-                var dataUrl = BuildImageDataUrl(imagePath);
-                if (dataUrl is null) continue;
-
                 contentItems.Add(new Dictionary<string, object>
                 {
                     ["type"] = "input_image",
-                    ["image_url"] = dataUrl
+                    ["file_id"] = fileId
                 });
             }
 
-            // 3) 构建 Responses API JSON body
+            // 4) 构建 Responses API JSON body
             //    model 必须是文本模型（如 gpt-5.4），图片模型通过 HTTP 头传递
             var bodyObj = new Dictionary<string, object>
             {
@@ -751,10 +854,11 @@ namespace TrueFluentPro.Services
                 $"TextModel={config.ModelName}\n" +
                 $"ImageDeployment={genConfig.ImageModel}\n" +
                 $"ReferenceImageCount={validReferenceImages.Count}\n" +
+                $"FileIds={string.Join(",", fileIds)}\n" +
                 $"ImageFiles={string.Join(",", imageNames)}",
                 ct);
 
-            // 4) 遍历 Responses API URL candidates 发送请求
+            // 5) 遍历 Responses API URL candidates 发送请求
             ImageAttemptResult? lastAttempt = null;
             var attemptedUrls = new List<string>();
 
@@ -837,7 +941,8 @@ namespace TrueFluentPro.Services
             {
                 FilePaths = filePaths,
                 GenerateSeconds = genResult.GenerateSeconds,
-                DownloadSeconds = genResult.DownloadSeconds
+                DownloadSeconds = genResult.DownloadSeconds,
+                ResponseId = genResult.ResponseId
             };
         }
 

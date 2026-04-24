@@ -31,6 +31,13 @@ namespace TrueFluentPro.Services
         public string DeploymentName { get; init; } = "";
         public bool SummaryEnableReasoning { get; init; }
 
+        /// <summary>聊天模式下是否注入 image_generation tool（模型需要视觉能力）</summary>
+        public bool EnableChatImageGeneration { get; set; }
+        /// <summary>图片模型部署名（如 gpt-image-2），用于 x-ms-oai-image-generation-deployment 头</summary>
+        public string ImageModelDeployment { get; set; } = "";
+        /// <summary>Vision 输入：已上传的图片 file_id 列表（通过 Files API 上传后获得）</summary>
+        public List<string>? ImageFileIds { get; set; }
+
         public bool IsValid => !string.IsNullOrWhiteSpace(ApiEndpoint)
                             && (AzureAuthMode == AzureAuthMode.AAD || !string.IsNullOrWhiteSpace(ApiKey))
                             && (IsAzureEndpoint
@@ -140,7 +147,8 @@ namespace TrueFluentPro.Services
             Action<AiRequestTrace>? onTrace = null,
             IReadOnlyList<string>? urlCandidatesOverride = null,
             bool allowNextUrlRetry = true,
-            bool allowApimSubscriptionKeyQueryRetry = true)
+            bool allowApimSubscriptionKeyQueryRetry = true,
+            Action<byte[]>? onImageResult = null)
         {
             var (response, trace) = await SendRequestAsync(
                 request,
@@ -170,7 +178,7 @@ namespace TrueFluentPro.Services
                     ModelName = request.IsAzureEndpoint ? request.DeploymentName : request.ModelName
                 });
 
-                var usage = await ConsumeResponseAsync(request, response, onChunk, onReasoningChunk, cancellationToken);
+                var usage = await ConsumeResponseAsync(request, response, onChunk, onReasoningChunk, cancellationToken, onImageResult);
 
                 // 回填 Token 用量到 outcome
                 if (usage.HasValue)
@@ -314,6 +322,12 @@ namespace TrueFluentPro.Services
                 ApplyApiKeyAuthHeader(httpRequest, request);
             }
 
+            // 聊天模式启用图片生成时，附加图片模型部署头
+            if (request.EnableChatImageGeneration && !string.IsNullOrWhiteSpace(request.ImageModelDeployment))
+            {
+                httpRequest.Headers.TryAddWithoutValidation("x-ms-oai-image-generation-deployment", request.ImageModelDeployment);
+            }
+
             return await _httpClient.SendAsync(
                 httpRequest,
                 HttpCompletionOption.ResponseHeadersRead,
@@ -342,12 +356,13 @@ namespace TrueFluentPro.Services
             HttpResponseMessage response,
             Action<string> onChunk,
             Action<string>? onReasoningChunk,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            Action<byte[]>? onImageResult = null)
         {
             var protocol = GetEffectiveTextApiProtocol(request);
             if (protocol == TextApiProtocolMode.Responses)
             {
-                return await StreamResponsesApiAsync(response, onChunk, onReasoningChunk, cancellationToken);
+                return await StreamResponsesApiAsync(response, onChunk, onReasoningChunk, cancellationToken, onImageResult);
             }
 
             return await StreamResponseAsync(response, onChunk, onReasoningChunk, cancellationToken);
@@ -355,12 +370,14 @@ namespace TrueFluentPro.Services
 
         /// <summary>
         /// Responses API 流式 SSE 解析：逐行读取 data: 事件，提取 output_text.delta 和 reasoning_summary_text.delta。
+        /// 同时在 response.completed 中提取 image_generation_call 结果。
         /// </summary>
         private static async Task<(int PromptTokens, int CompletionTokens)?> StreamResponsesApiAsync(
             HttpResponseMessage response,
             Action<string> onChunk,
             Action<string>? onReasoningChunk,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            Action<byte[]>? onImageResult = null)
         {
             int? promptTokens = null;
             int? completionTokens = null;
@@ -431,14 +448,37 @@ namespace TrueFluentPro.Services
                     // response.completed 事件包含完整 usage
                     else if (eventType == "response.completed")
                     {
-                        if (root.TryGetProperty("response", out var respElem)
-                            && respElem.TryGetProperty("usage", out var usageElem)
-                            && usageElem.ValueKind == JsonValueKind.Object)
+                        if (root.TryGetProperty("response", out var respElem))
                         {
-                            if (usageElem.TryGetProperty("input_tokens", out var it))
-                                promptTokens = it.GetInt32();
-                            if (usageElem.TryGetProperty("output_tokens", out var ot))
-                                completionTokens = ot.GetInt32();
+                            if (respElem.TryGetProperty("usage", out var usageElem)
+                                && usageElem.ValueKind == JsonValueKind.Object)
+                            {
+                                if (usageElem.TryGetProperty("input_tokens", out var it))
+                                    promptTokens = it.GetInt32();
+                                if (usageElem.TryGetProperty("output_tokens", out var ot))
+                                    completionTokens = ot.GetInt32();
+                            }
+
+                            // 提取 image_generation_call 结果（聊天模式图片生成）
+                            if (onImageResult != null
+                                && respElem.TryGetProperty("output", out var outputArr)
+                                && outputArr.ValueKind == JsonValueKind.Array)
+                            {
+                                foreach (var item in outputArr.EnumerateArray())
+                                {
+                                    if (item.TryGetProperty("type", out var itemType)
+                                        && itemType.GetString() == "image_generation_call"
+                                        && item.TryGetProperty("result", out var resultElem))
+                                    {
+                                        var b64 = resultElem.GetString();
+                                        if (!string.IsNullOrEmpty(b64))
+                                        {
+                                            try { onImageResult(Convert.FromBase64String(b64)); }
+                                            catch { /* base64 decode failure, skip */ }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -733,6 +773,20 @@ namespace TrueFluentPro.Services
 
             if (protocol == TextApiProtocolMode.Responses)
             {
+                // 构建 user content：纯文本 + 可选的 vision 图片（file_id 引用）
+                var userContentParts = new List<object>
+                {
+                    new { type = "input_text", text = userContent }
+                };
+
+                if (request.ImageFileIds is { Count: > 0 })
+                {
+                    foreach (var fileId in request.ImageFileIds)
+                    {
+                        userContentParts.Add(new { type = "input_image", file_id = fileId });
+                    }
+                }
+
                 var input = new List<object>
                 {
                     new
@@ -743,7 +797,7 @@ namespace TrueFluentPro.Services
                     new
                     {
                         role = "user",
-                        content = new[] { new { type = "input_text", text = userContent } }
+                        content = userContentParts.ToArray()
                     }
                 };
 
@@ -757,6 +811,12 @@ namespace TrueFluentPro.Services
                 if (enableReasoning)
                 {
                     responsesBody["reasoning"] = new { effort = "medium", summary = "auto" };
+                }
+
+                // 聊天模式下注入 image_generation tool，让 AI 自主决定是否生成图片
+                if (request.EnableChatImageGeneration && !string.IsNullOrWhiteSpace(request.ImageModelDeployment))
+                {
+                    responsesBody["tools"] = new[] { new Dictionary<string, object> { ["type"] = "image_generation" } };
                 }
 
                 return responsesBody;

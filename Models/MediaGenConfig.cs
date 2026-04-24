@@ -19,6 +19,13 @@ namespace TrueFluentPro.Models
         public int ImageCount { get; set; } = 1;
         public ImageEditMode ImageEditMode { get; set; } = ImageEditMode.V2ResponsesApi;
 
+        /// <summary>
+        /// 聊天模式下是否启用图片生成工具（image_generation tool）。
+        /// 启用后，聊天中 AI 可自主判断是否需要生成/编辑图片。
+        /// 需要模型具有视觉能力（如 gpt-4o/gpt-5.4），且需配置 ImageModel。
+        /// </summary>
+        public bool EnableChatImageGeneration { get; set; } = true;
+
         // --- 视频默认参数 ---
         public string VideoModel { get; set; } = "sora-2";
         public VideoApiMode VideoApiMode { get; set; } = VideoApiMode.Videos;
@@ -33,6 +40,10 @@ namespace TrueFluentPro.Models
         // --- 创作工坊文本会话默认值 ---
         public bool DefaultEnableStudioReasoning { get; set; } = false;
         public bool DefaultEnableStudioWebSearch { get; set; } = false;
+
+        // --- 会话上下文 ---
+        /// <summary>聊天模式：每次请求携带的最大历史轮数（全局默认值，会话级可覆盖）</summary>
+        public int DefaultMaxConversationTurns { get; set; } = 20;
 
         // --- 性能与缓存 ---
         public int MaxLoadedSessionsInMemory { get; set; } = 8;

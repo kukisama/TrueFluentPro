@@ -10,6 +10,12 @@ namespace TrueFluentPro.Services
     {
         void SetTokenProvider(AzureTokenProvider? provider);
 
+        /// <summary>
+        /// 上传图片文件到 /openai/v1/files（purpose=assistants），返回 file_id。
+        /// 可用于 vision 输入或图片编辑的参考图上传。
+        /// </summary>
+        Task<string> UploadImageFileAsync(AiConfig config, string filePath, CancellationToken ct);
+
         Task<ImageGenerationResult> GenerateImagesAsync(
             AiConfig config,
             string prompt,

@@ -36,6 +36,7 @@ namespace TrueFluentPro.Services
             Action<AiRequestTrace>? onTrace = null,
             IReadOnlyList<string>? urlCandidatesOverride = null,
             bool allowNextUrlRetry = true,
-            bool allowApimSubscriptionKeyQueryRetry = true);
+            bool allowApimSubscriptionKeyQueryRetry = true,
+            Action<byte[]>? onImageResult = null);
     }
 }
