@@ -25,15 +25,6 @@
 
             <Separator Margin="0,8,0,8"/>
 
-            <TextBlock Text="搜索触发模式" FontWeight="Bold"/>
-            <ComboBox ItemsSource="{Binding TriggerModeOptions}"
-                      SelectedItem="{Binding SelectedTriggerMode, Mode=TwoWay}"
-                      MinWidth="200"/>
-            <TextBlock Classes="caption-text"
-                       Text="自动判断：沿用 Cherry 风格提示词，由 AI 先判断要不要搜索；始终搜索：跳过 not_needed 判断，只要你打开联网搜索就直接搜索。"/>
-
-            <Separator Margin="0,8,0,8"/>
-
             <TextBlock Text="最大结果数" FontWeight="Bold"/>
             <StackPanel Orientation="Horizontal" Spacing="8">
                 <NumericUpDown Value="{Binding MaxResults, Mode=TwoWay}"
@@ -47,11 +38,6 @@
             <Separator Margin="0,8,0,8"/>
             <TextBlock Text="智能编排" FontWeight="Bold"/>
 
-            <CheckBox Content="启用搜索意图分析"
-                      IsEnabled="{Binding IsAutoTriggerMode}"
-                      IsChecked="{Binding EnableIntentAnalysis, Mode=TwoWay}"/>
-            <TextBlock Classes="caption-text" Margin="28,0,0,0"
-                       Text="仅在“自动判断”模式下生效：发送前由 AI 自动判断是否需要搜索并提取关键词；关闭后会直接用原始问题搜索，可减少一次 AI 调用。"/>
 
             <CheckBox Content="启用结果压缩"
                       IsChecked="{Binding EnableResultCompression, Mode=TwoWay}"/>

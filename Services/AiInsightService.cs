@@ -39,6 +39,8 @@ namespace TrueFluentPro.Services
         public string ImageSize { get; set; } = "1024x1024";
         /// <summary>聊天模式图片生成质量（low/medium/high/auto）</summary>
         public string ImageQuality { get; set; } = "medium";
+        /// <summary>聊天模式输出格式（png/jpeg/webp）</summary>
+        public string ImageFormat { get; set; } = "png";
         /// <summary>Vision 输入：已上传的图片 file_id 列表（通过 Files API 上传后获得）</summary>
         public List<string>? ImageFileIds { get; set; }
 
@@ -834,10 +836,16 @@ namespace TrueFluentPro.Services
                 if (request.EnableChatImageGeneration && !string.IsNullOrWhiteSpace(request.ImageModelDeployment))
                 {
                     var imageTool = new Dictionary<string, object> { ["type"] = "image_generation" };
-                    if (!string.IsNullOrWhiteSpace(request.ImageSize) && request.ImageSize != "auto")
+                    // image_generation tool 只允许 1024x1024, 1024x1536, 1536x1024, auto
+                    // 其他自定义尺寸（如参考图对齐后的 960x688）会导致 400 错误
+                    var allowedSizes = new HashSet<string> { "1024x1024", "1024x1536", "1536x1024" };
+                    if (!string.IsNullOrWhiteSpace(request.ImageSize) && request.ImageSize != "auto"
+                        && allowedSizes.Contains(request.ImageSize))
                         imageTool["size"] = request.ImageSize;
                     if (!string.IsNullOrWhiteSpace(request.ImageQuality) && request.ImageQuality != "auto")
                         imageTool["quality"] = request.ImageQuality;
+                    if (!string.IsNullOrWhiteSpace(request.ImageFormat) && request.ImageFormat != "png")
+                        imageTool["output_format"] = request.ImageFormat;
                     responsesBody["tools"] = new[] { imageTool };
                 }
 

@@ -56,7 +56,7 @@
                     </StackPanel>
 
                     <Grid ColumnDefinitions="Auto,*"
-                          RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
+                          RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
                           RowSpacing="8"
                           ColumnSpacing="8">
                         <TextBlock Grid.Row="0"
@@ -164,6 +164,16 @@
                                   FontSize="11"
                                   IsChecked="{Binding SummaryEnableReasoning, Mode=TwoWay}"
                                   ToolTip.Tip="当前这一个开关会同时影响复盘与总结相关链路；若模型或接口不支持，运行时会自动降级为非思考模式。"/>
+
+                        <CheckBox Grid.Row="9"
+                                  Grid.Column="0"
+                                  Grid.ColumnSpan="2"
+                                  Margin="0,4,0,0"
+                                  Content="会话中启用图像意图分析"
+                                  FontSize="11"
+                                  IsChecked="{Binding EnableChatImageGeneration, Mode=TwoWay}"
+                                  IsEnabled="{Binding HasImageModel}"
+                                  ToolTip.Tip="开启后，创作工坊聊天时 AI 会判断是否需要生成图片；需要先选择图片模型。关闭时聊天不会触发图片生成。"/>
                     </Grid>
                 </StackPanel>
             </Border>

@@ -253,12 +253,14 @@ namespace TrueFluentPro.Models
         public string ModelId { get; set; } = "";
     }
 
-    /// <summary>下拉框中的模型选项，显示 "终结点名 / 模型名"</summary>
+    /// <summary>下拉框/卡片中的模型选项，显示 "终结点名 / 模型名"</summary>
     public class ModelOption
     {
         public ModelReference Reference { get; init; } = new();
         public string EndpointName { get; init; } = "";
         public string ModelDisplayName { get; init; } = "";
+        public EndpointApiType EndpointType { get; init; } = EndpointApiType.OpenAiCompatible;
+        public string ToolTipText => $"模型: {ModelDisplayName}\n终结点: {EndpointName}";
         public override string ToString() => $"{EndpointName} / {ModelDisplayName}";
     }
 }

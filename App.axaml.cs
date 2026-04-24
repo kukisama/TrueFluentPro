@@ -12,6 +12,7 @@ using TrueFluentPro.Services.Cloud;
 using TrueFluentPro.Services.EndpointProfiles;
 using TrueFluentPro.Services.EndpointTesting;
 using TrueFluentPro.Services.Storage;
+using TrueFluentPro.Services.WebSearch;
 using TrueFluentPro.ViewModels;
 
 namespace TrueFluentPro;
@@ -35,7 +36,11 @@ public partial class App : Application
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             desktop.ShutdownMode = ShutdownMode.OnMainWindowClose;
-            desktop.ShutdownRequested += (_, _) => _appShutdownCts.Cancel();
+            desktop.ShutdownRequested += (_, _) =>
+            {
+                _appShutdownCts.Cancel();
+                _ = EdgeHeadlessBrowser.ShutdownAsync();
+            };
             var mainWindow = new MainWindow();
             var configService = Services.GetRequiredService<ConfigurationService>();
             var startupShellPreferencesTask = Task.Run(configService.LoadShellStartupPreferences);

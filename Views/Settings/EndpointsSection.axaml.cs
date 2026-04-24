@@ -3,6 +3,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
@@ -12,6 +13,7 @@ using TrueFluentPro.Services.EndpointProfiles;
 using TrueFluentPro.ViewModels.EndpointTesting;
 using TrueFluentPro.Views;
 using TrueFluentPro.Views.EndpointTesting;
+using FaIcon = Projektanker.Icons.Avalonia.Icon;
 using TrueFluentPro.ViewModels.Settings;
 
 namespace TrueFluentPro.Views.Settings;
@@ -151,41 +153,121 @@ public partial class EndpointsSection : UserControl
         }
     }
 
-    private void ModelCapabilityCombo_Loaded(object? sender, RoutedEventArgs e)
+    private void CapTogglePanel_Loaded(object? sender, RoutedEventArgs e)
     {
-        if (sender is not ComboBox combo) return;
-        if (combo.Tag is not AiModelEntry model) return;
-        RefreshCapabilityComboState(combo, model, syncModel: true);
+        if (sender is not StackPanel panel) return;
+        if (panel.Tag is not AiModelEntry model) return;
+        RefreshCapToggleState(panel, model);
+        UpdateHeaderCapIcon(panel, model);
     }
 
-    private void ModelCapability_SelectionChanged(object? sender, SelectionChangedEventArgs e)
+    private void CapToggle_Checked(object? sender, RoutedEventArgs e)
     {
-        if (sender is not ComboBox combo) return;
-        if (combo.Tag is not AiModelEntry model) return;
-        if (combo.SelectedItem is not ComboBoxItem selected) return;
-        var tag = selected.Tag?.ToString();
-        model.Capabilities = tag switch
+        if (sender is not ToggleButton toggle) return;
+        var panel = toggle.Parent as StackPanel;
+        if (panel?.Tag is not AiModelEntry model) return;
+
+        // 单选：取消其他 toggle
+        foreach (var other in panel.Children.OfType<ToggleButton>())
         {
-            "None" => ModelCapability.None,
-            "Text" => ModelCapability.Text,
-            "Image" => ModelCapability.Image,
-            "Video" => ModelCapability.Video,
-            "SpeechToText" => ModelCapability.SpeechToText,
-            "TextToSpeech" => ModelCapability.TextToSpeech,
-            _ => ModelCapability.None,
-        };
+            if (other != toggle) other.IsChecked = false;
+        }
+
+        var tag = toggle.Tag?.ToString();
+        var capability = ParseCapability(tag);
 
         if (DataContext is EndpointsSectionVM { SelectedEndpoint: { } endpoint }
-            && model.Capabilities != ModelCapability.None
-            && !EndpointCapabilityPolicyResolver.IsCapabilityAllowed(endpoint.ProfileId, endpoint.EndpointType, model.Capabilities))
+            && capability != ModelCapability.None
+            && !EndpointCapabilityPolicyResolver.IsCapabilityAllowed(endpoint.ProfileId, endpoint.EndpointType, capability))
         {
-            model.Capabilities = ModelCapability.None;
-            combo.SelectedIndex = 0;
+            toggle.IsChecked = false;
+            capability = ModelCapability.None;
         }
+
+        model.Capabilities = capability;
+        UpdateHeaderCapIcon(panel, model);
 
         if (DataContext is EndpointsSectionVM vm)
             vm.NotifyModelChanged();
     }
+
+    private void CapToggle_Unchecked(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not ToggleButton toggle) return;
+        var panel = toggle.Parent as StackPanel;
+        if (panel?.Tag is not AiModelEntry model) return;
+
+        // 如果全部取消选中，设为 None
+        var anyChecked = panel.Children.OfType<ToggleButton>().Any(t => t.IsChecked == true);
+        if (!anyChecked)
+        {
+            model.Capabilities = ModelCapability.None;
+            UpdateHeaderCapIcon(panel, model);
+            if (DataContext is EndpointsSectionVM vm)
+                vm.NotifyModelChanged();
+        }
+    }
+
+    private void RefreshCapToggleState(StackPanel panel, AiModelEntry model)
+    {
+        if (DataContext is not EndpointsSectionVM { SelectedEndpoint: { } endpoint })
+            return;
+
+        var allowed = EndpointCapabilityPolicyResolver.GetAllowedCapabilities(endpoint.ProfileId, endpoint.EndpointType)
+            .ToHashSet();
+
+        foreach (var toggle in panel.Children.OfType<ToggleButton>())
+        {
+            var tag = toggle.Tag?.ToString() ?? "";
+            var cap = ParseCapability(tag);
+            toggle.IsEnabled = cap == ModelCapability.None || allowed.Contains(cap);
+            toggle.IsChecked = model.Capabilities == cap && cap != ModelCapability.None;
+        }
+
+        if (model.Capabilities != ModelCapability.None && !allowed.Contains(model.Capabilities))
+        {
+            model.Capabilities = ModelCapability.None;
+            if (DataContext is EndpointsSectionVM vm)
+                vm.NotifyModelChanged();
+        }
+    }
+
+    private void UpdateHeaderCapIcon(StackPanel capPanel, AiModelEntry model)
+    {
+        // CapTogglePanel → Grid → ModelDetailPanel → StackPanel → Border(ModelItemRoot)
+        var modelRoot = capPanel.Parent?.Parent?.Parent?.Parent as Border;
+        if (modelRoot == null) return;
+        var headerBorder = modelRoot.GetVisualDescendants().OfType<Border>()
+            .FirstOrDefault(b => b.Name == "ModelHeaderBorder");
+        var icon = headerBorder?.GetVisualDescendants().OfType<FaIcon>()
+            .FirstOrDefault(i => i.Name == "ModelCapIcon");
+        if (icon == null) return;
+
+        var (value, color) = model.Capabilities switch
+        {
+            ModelCapability.Text => ("fa-solid fa-font", "#8AADA0"),
+            ModelCapability.Image => ("fa-solid fa-image", "#B09AAC"),
+            ModelCapability.Video => ("fa-solid fa-video", "#8FA4B8"),
+            ModelCapability.SpeechToText => ("fa-solid fa-microphone", "#B5A88A"),
+            ModelCapability.TextToSpeech => ("fa-solid fa-volume-high", "#9A92AD"),
+            _ => ("fa-solid fa-caret-right", "")
+        };
+
+        icon.Value = value;
+        icon.Foreground = string.IsNullOrEmpty(color)
+            ? new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#888888"))
+            : new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse(color));
+    }
+
+    private static ModelCapability ParseCapability(string? tag) => tag switch
+    {
+        "Text" => ModelCapability.Text,
+        "Image" => ModelCapability.Image,
+        "Video" => ModelCapability.Video,
+        "SpeechToText" => ModelCapability.SpeechToText,
+        "TextToSpeech" => ModelCapability.TextToSpeech,
+        _ => ModelCapability.None,
+    };
 
     // ═══ 模型手风琴（同一时间仅展开一个） ═══
 
@@ -313,13 +395,16 @@ public partial class EndpointsSection : UserControl
 
     private static void SetExpandIcon(Border header, bool expanded)
     {
-        if (header.Child is Grid grid)
-        {
-            var icon = grid.Children.OfType<TextBlock>()
-                .FirstOrDefault(t => t.Name == "ModelExpandIcon");
-            if (icon != null)
-                icon.Text = expanded ? "▼" : "▶";
-        }
+        if (header.Child is not Grid grid) return;
+        var icon = grid.Children.OfType<FaIcon>()
+            .FirstOrDefault(i => i.Name == "ModelCapIcon");
+        if (icon == null) return;
+
+        // 如果当前显示的是能力图标（有颜色），保持不变
+        if (header.Tag is AiModelEntry model && model.Capabilities != ModelCapability.None)
+            return;
+
+        icon.Value = expanded ? "fa-solid fa-caret-down" : "fa-solid fa-caret-right";
     }
 
     private void WireHandlers(EndpointsSectionVM vm)
@@ -358,56 +443,14 @@ public partial class EndpointsSection : UserControl
 
     private void RefreshVisibleCapabilityCombos()
     {
-        foreach (var combo in this.GetVisualDescendants().OfType<ComboBox>())
+        foreach (var panel in this.GetVisualDescendants().OfType<StackPanel>().Where(p => p.Name == "CapTogglePanel"))
         {
-            if (combo.Tag is AiModelEntry model)
+            if (panel.Tag is AiModelEntry model)
             {
-                RefreshCapabilityComboState(combo, model, syncModel: true);
+                RefreshCapToggleState(panel, model);
+                UpdateHeaderCapIcon(panel, model);
             }
         }
-    }
-
-    private void RefreshCapabilityComboState(ComboBox combo, AiModelEntry model, bool syncModel)
-    {
-        if (DataContext is not EndpointsSectionVM { SelectedEndpoint: { } endpoint } vm)
-            return;
-
-        var allowed = EndpointCapabilityPolicyResolver.GetAllowedCapabilities(endpoint.ProfileId, endpoint.EndpointType)
-            .ToHashSet();
-
-        foreach (var item in combo.Items.OfType<ComboBoxItem>())
-        {
-            var tag = item.Tag?.ToString() ?? string.Empty;
-            if (string.Equals(tag, "None", StringComparison.OrdinalIgnoreCase))
-            {
-                item.IsEnabled = true;
-                continue;
-            }
-
-            item.IsEnabled = Enum.TryParse<ModelCapability>(tag, ignoreCase: true, out var capability)
-                             && allowed.Contains(capability);
-        }
-
-        var effectiveCapability = model.Capabilities;
-        if (effectiveCapability != ModelCapability.None && !allowed.Contains(effectiveCapability))
-        {
-            effectiveCapability = ModelCapability.None;
-            if (syncModel)
-            {
-                model.Capabilities = ModelCapability.None;
-                vm.NotifyModelChanged();
-            }
-        }
-
-        combo.SelectedIndex = effectiveCapability switch
-        {
-            ModelCapability.Text => 1,
-            ModelCapability.Image => 2,
-            ModelCapability.Video => 3,
-            ModelCapability.SpeechToText => 4,
-            ModelCapability.TextToSpeech => 5,
-            _ => 0,
-        };
     }
 
     private void EndpointAadLoginPanel_LoginCompleted()

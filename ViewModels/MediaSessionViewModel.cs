@@ -461,13 +461,9 @@ namespace TrueFluentPro.ViewModels
             .FirstOrDefault(p => string.Equals(p.Id, _webSearchProviderId, StringComparison.OrdinalIgnoreCase)).DisplayName
             ?? "Bing 国际版";
 
-        public string WebSearchTriggerModeDisplayName => _webSearchTriggerMode == WebSearchTriggerMode.Always
-            ? "始终搜索"
-            : "自动判断";
-
         public string WebSearchButtonToolTip => EnableWebSearch
-            ? $"联网搜索已开启（当前：{WebSearchProviderDisplayName}，模式：{WebSearchTriggerModeDisplayName}，点击切换）"
-            : $"联网搜索已关闭（当前引擎：{WebSearchProviderDisplayName}，模式：{WebSearchTriggerModeDisplayName}，点击选择并开启）";
+            ? $"联网搜索已开启（当前：{WebSearchProviderDisplayName}，点击切换）"
+            : $"联网搜索已关闭（当前引擎：{WebSearchProviderDisplayName}，点击选择并开启）";
 
         /// <summary>从全局配置同步网页搜索引擎设置</summary>
         public void UpdateWebSearchConfig(string providerId, WebSearchTriggerMode triggerMode, int maxResults,
@@ -485,7 +481,6 @@ namespace TrueFluentPro.ViewModels
             _webSearchMcpApiKey = mcpApiKey;
             _webSearchDebugMode = debugMode;
             OnPropertyChanged(nameof(WebSearchProviderDisplayName));
-            OnPropertyChanged(nameof(WebSearchTriggerModeDisplayName));
             OnPropertyChanged(nameof(WebSearchButtonToolTip));
         }
 
@@ -1033,16 +1028,37 @@ namespace TrueFluentPro.ViewModels
             var prompt = PromptText.Trim();
             PromptText = "";
 
-            // 快照并清空待提交附件
-            var attachments = PendingAttachments.ToList();
-            PendingAttachments.Clear();
-
-            // 统一走文字聊天通道（图片生成/编辑由 AI 通过 image_generation tool 自主决策）
-            SendTextChatAsync(prompt, attachments);
+            // 按媒体类型分发到专用通道
+            switch (SelectedType)
+            {
+                case MediaGenType.Image:
+                    PendingAttachments.Clear();
+                    GenerateImage(prompt);
+                    break;
+                case MediaGenType.Video:
+                    PendingAttachments.Clear();
+                    GenerateVideo(prompt);
+                    break;
+                default:
+                    // 文字聊天需要附件；Image/Video 有独立的参考图面板
+                    var attachments = PendingAttachments.ToList();
+                    PendingAttachments.Clear();
+                    SendTextChatAsync(prompt, attachments);
+                    break;
+            }
         }
 
         private void GenerateImage(string prompt)
         {
+            // 记录用户提示词消息（与 SendTextChatAsync 一致，确保 DB 持久化）
+            AppendMessage(new ChatMessageViewModel(new MediaChatMessage
+            {
+                Role = "user",
+                Text = prompt,
+                ContentType = "text",
+                Timestamp = DateTime.Now
+            }));
+
             var task = new MediaGenTask
             {
                 Type = MediaGenType.Image,
@@ -1240,6 +1256,15 @@ namespace TrueFluentPro.ViewModels
                     : ReferenceImageValidationHint;
                 return;
             }
+
+            // 记录用户提示词消息（与 SendTextChatAsync 一致，确保 DB 持久化）
+            AppendMessage(new ChatMessageViewModel(new MediaChatMessage
+            {
+                Role = "user",
+                Text = prompt,
+                ContentType = "text",
+                Timestamp = DateTime.Now
+            }));
 
             var task = new MediaGenTask
             {
@@ -2248,12 +2273,12 @@ namespace TrueFluentPro.ViewModels
                 };
 
                 var agent = new Services.WebSearch.SearchAgentService();
-                var shouldUseIntentAnalysis = _webSearchTriggerMode == WebSearchTriggerMode.Auto
-                    && _webSearchEnableIntentAnalysis;
+                // 统一意图分析已决定需要搜索，SearchAgentService 的意图分析仅做关键词提取
+                // （仍启用，因为它负责把"生化危机9好不好玩"拆成搜索关键词）
                 var agentResult = await agent.RunAsync(
                     prompt, chatHistory, provider,
                     runtimeRequest, tokenProvider, ct,
-                    enableIntentAnalysis: shouldUseIntentAnalysis,
+                    enableIntentAnalysis: true,
                     maxResults: _webSearchMaxResults,
                     progress: searchProgress,
                     intentAiConfig: TryBuildIntentRuntimeConfig());
@@ -2400,14 +2425,12 @@ namespace TrueFluentPro.ViewModels
                 return;
             }
 
-            // 聊天模式图片生成：如果配置了图片模型且启用了视觉能力，注入 image_generation tool
-            if (_genConfig.EnableChatImageGeneration && TryResolveImageRuntime(out var chatImageRuntime, out _) && chatImageRuntime != null)
-            {
-                runtimeRequest.EnableChatImageGeneration = true;
-                runtimeRequest.ImageModelDeployment = chatImageRuntime.ModelId;
-                runtimeRequest.ImageSize = _genConfig.ImageSize;
-                runtimeRequest.ImageQuality = _genConfig.ImageQuality;
-            }
+            // 图像意图能力就绪检查（配置了图像模型 + 启用了图像意图分析）
+            ModelRuntimeResolution? chatImageRuntime = null;
+            var imageIntentReady = _genConfig.EnableChatImageGeneration
+                && TryResolveImageRuntime(out chatImageRuntime, out _)
+                && chatImageRuntime != null;
+            // 注意：image_generation tool 不再无条件注入，而是等统一意图分析结果决定
 
             // Vision 输入：将图片附件上传到 Files API，获取 file_id 供 Responses API 引用
             var imageAttachments = attachments.Where(a => a.Type == "image" && File.Exists(a.FilePath)).ToList();
@@ -2494,19 +2517,62 @@ namespace TrueFluentPro.ViewModels
             var ct = _chatCts.Token;
             IsChatStreaming = true;
 
-            // Web 搜索增强（Cherry 风格：分阶段显示搜索进度）
-            if (_enableWebSearch)
-                aiMessage.Text = _webSearchTriggerMode == WebSearchTriggerMode.Always
-                    ? "🔍 已设为始终搜索，正在检索网页..."
-                    : _webSearchEnableIntentAnalysis
-                    ? "🔍 正在分析搜索意图..."
-                    : "🔍 正在搜索网页...";
-            var webSearch = await ExecuteWebSearchAsync(prompt, searchIntentHistory, runtimeRequest, tokenProvider, ct, aiMessage);
-            if (_enableWebSearch && webSearch.RawResults.Count > 0)
+            // ══════════════════════════════════════════════
+            //  统一意图分析：根据启用的能力判断意图
+            // ══════════════════════════════════════════════
+            var needsIntentAnalysis = _enableWebSearch || imageIntentReady;
+            var intentResult = new Services.WebSearch.IntentAnalysisService.IntentResult(
+                Services.WebSearch.IntentAnalysisService.IntentType.Chat);
+
+            if (needsIntentAnalysis)
             {
-                aiMessage.Text = $"✅ 找到 {webSearch.RawResults.Count} 条结果，生成中...";
-                // 提前挂载引用，用户可在流式过程中查看来源
-                AttachSearchResults(aiMessage, webSearch);
+                aiMessage.Text = "🧠 正在分析意图...";
+                try
+                {
+                    var intentService = new Services.WebSearch.IntentAnalysisService();
+                    var intentConfig = TryBuildIntentRuntimeConfig() ?? runtimeRequest;
+                    intentResult = await intentService.AnalyzeAsync(
+                        prompt, searchIntentHistory,
+                        searchEnabled: _enableWebSearch,
+                        imageIntentEnabled: imageIntentReady,
+                        intentConfig, tokenProvider, ct);
+                }
+                catch
+                {
+                    // 意图分析失败：搜索开了就搜，否则直接聊
+                    intentResult = _enableWebSearch
+                        ? new Services.WebSearch.IntentAnalysisService.IntentResult(
+                            Services.WebSearch.IntentAnalysisService.IntentType.Search, "意图分析异常，回退搜索")
+                        : new Services.WebSearch.IntentAnalysisService.IntentResult(
+                            Services.WebSearch.IntentAnalysisService.IntentType.Chat, "意图分析异常，回退对话");
+                }
+            }
+
+            // ── 根据意图结果分发 ──
+            var webSearch = new WebSearchContext("", [], "", "");
+
+            // 意图=搜索 → 执行搜索流程（跳过 SearchAgentService 的内部意图分析，直接搜）
+            if (intentResult.Intent == Services.WebSearch.IntentAnalysisService.IntentType.Search)
+            {
+                aiMessage.Text = "🔍 正在搜索网页...";
+                webSearch = await ExecuteWebSearchAsync(prompt, searchIntentHistory, runtimeRequest, tokenProvider, ct, aiMessage);
+                if (webSearch.RawResults.Count > 0)
+                {
+                    aiMessage.Text = $"✅ 找到 {webSearch.RawResults.Count} 条结果，生成中...";
+                    AttachSearchResults(aiMessage, webSearch);
+                }
+            }
+
+            // 意图=图片 → 注入 image_generation tool
+            if (intentResult.Intent == Services.WebSearch.IntentAnalysisService.IntentType.Image && imageIntentReady)
+            {
+                runtimeRequest.EnableChatImageGeneration = true;
+                runtimeRequest.ImageModelDeployment = chatImageRuntime!.ModelId;
+                // image_generation tool 只允许 1024x1024, 1024x1536, 1536x1024, auto
+                var allowedSizes = new HashSet<string> { "1024x1024", "1024x1536", "1536x1024", "auto" };
+                runtimeRequest.ImageSize = allowedSizes.Contains(_genConfig.ImageSize) ? _genConfig.ImageSize : "auto";
+                runtimeRequest.ImageQuality = _genConfig.ImageQuality;
+                runtimeRequest.ImageFormat = _genConfig.ImageFormat;
             }
 
             var runtimeService = new AiInsightService(tokenProvider);
@@ -3172,18 +3238,61 @@ namespace TrueFluentPro.ViewModels
                 aiMessage.Text = displayedText;
             });
 
-            // Web 搜索增强（Cherry 风格：分阶段显示搜索进度）
-            if (_enableWebSearch)
-                aiMessage.Text = _webSearchTriggerMode == WebSearchTriggerMode.Always
-                    ? "🔍 已设为始终搜索，正在检索网页..."
-                    : _webSearchEnableIntentAnalysis
-                    ? "🔍 正在分析搜索意图..."
-                    : "🔍 正在搜索网页...";
-            var webSearch = await ExecuteWebSearchAsync(prompt, searchIntentHistory, runtimeRequest, tokenProvider, ct, aiMessage);
-            if (_enableWebSearch && webSearch.RawResults.Count > 0)
+            // ══════════════════════════════════════════════
+            //  统一意图分析（重发场景）
+            // ══════════════════════════════════════════════
+            ModelRuntimeResolution? resendImageRuntime = null;
+            var resendImageReady = _genConfig.EnableChatImageGeneration
+                && TryResolveImageRuntime(out resendImageRuntime, out _)
+                && resendImageRuntime != null;
+
+            var resendNeedsIntent = _enableWebSearch || resendImageReady;
+            var resendIntentResult = new Services.WebSearch.IntentAnalysisService.IntentResult(
+                Services.WebSearch.IntentAnalysisService.IntentType.Chat);
+
+            if (resendNeedsIntent)
             {
-                aiMessage.Text = $"✅ 找到 {webSearch.RawResults.Count} 条结果，生成中...";
-                AttachSearchResults(aiMessage, webSearch);
+                aiMessage.Text = "🧠 正在分析意图...";
+                try
+                {
+                    var intentService = new Services.WebSearch.IntentAnalysisService();
+                    var intentConfig = TryBuildIntentRuntimeConfig() ?? runtimeRequest;
+                    resendIntentResult = await intentService.AnalyzeAsync(
+                        prompt, searchIntentHistory,
+                        searchEnabled: _enableWebSearch,
+                        imageIntentEnabled: resendImageReady,
+                        intentConfig, tokenProvider, ct);
+                }
+                catch
+                {
+                    resendIntentResult = _enableWebSearch
+                        ? new Services.WebSearch.IntentAnalysisService.IntentResult(
+                            Services.WebSearch.IntentAnalysisService.IntentType.Search, "意图分析异常，回退搜索")
+                        : new Services.WebSearch.IntentAnalysisService.IntentResult(
+                            Services.WebSearch.IntentAnalysisService.IntentType.Chat, "意图分析异常，回退对话");
+                }
+            }
+
+            var webSearch = new WebSearchContext("", [], "", "");
+            if (resendIntentResult.Intent == Services.WebSearch.IntentAnalysisService.IntentType.Search)
+            {
+                aiMessage.Text = "🔍 正在搜索网页...";
+                webSearch = await ExecuteWebSearchAsync(prompt, searchIntentHistory, runtimeRequest, tokenProvider, ct, aiMessage);
+                if (webSearch.RawResults.Count > 0)
+                {
+                    aiMessage.Text = $"✅ 找到 {webSearch.RawResults.Count} 条结果，生成中...";
+                    AttachSearchResults(aiMessage, webSearch);
+                }
+            }
+
+            if (resendIntentResult.Intent == Services.WebSearch.IntentAnalysisService.IntentType.Image && resendImageReady)
+            {
+                runtimeRequest.EnableChatImageGeneration = true;
+                runtimeRequest.ImageModelDeployment = resendImageRuntime!.ModelId;
+                var allowedSizes = new HashSet<string> { "1024x1024", "1024x1536", "1536x1024", "auto" };
+                runtimeRequest.ImageSize = allowedSizes.Contains(_genConfig.ImageSize) ? _genConfig.ImageSize : "auto";
+                runtimeRequest.ImageQuality = _genConfig.ImageQuality;
+                runtimeRequest.ImageFormat = _genConfig.ImageFormat;
             }
 
             var contextContent = BuildMultiTurnContent(prompt);
@@ -3694,6 +3803,9 @@ namespace TrueFluentPro.ViewModels
             Role = message.Role;
             _text = message.Text;
             _reasoningText = message.ReasoningText ?? "";
+            // 历史消息恢复推理状态（避免 tooltip 显示"未记录状态"）
+            if (message.Role == "assistant")
+                _reasoningStatusText = string.IsNullOrEmpty(_reasoningText) ? "" : "✅ 思考：已收到推理内容";
             ContentType = InferContentType(message);
             MediaPaths = new ObservableCollection<string>(message.MediaPaths);
             Timestamp = message.Timestamp;

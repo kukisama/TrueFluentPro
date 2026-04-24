@@ -107,8 +107,8 @@
                                              VerticalAlignment="Center"/>
                                 </Border>
                                 <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
-                                    <TextBlock Text="{Binding SelectedEndpoint.EndpointTypeDisplayName}" FontWeight="Bold"/>
-                                    <TextBlock Classes="field-note" Text="右键左侧列表可编辑分类或删除终结点"/>
+                                    <TextBlock Text="{Binding SelectedEndpoint.EndpointTypeDisplayName}" FontWeight="Bold"
+                                               ToolTip.Tip="右键左侧列表可编辑分类或删除终结点"/>
                                     <TextBlock Text="当前终结点已停用" FontSize="11" Foreground="{DynamicResource TextMutedBrush}"
                                                IsVisible="{Binding !SelectedEndpoint.IsEnabled}"/>
                                 </StackPanel>
@@ -143,14 +143,13 @@
                     <!-- ═══ Azure Speech 专属面板 ═══ -->
                     <StackPanel Spacing="8" IsVisible="{Binding IsSelectedEndpointSpeech}">
                         <StackPanel Spacing="5">
-                            <TextBlock Text="Speech 终结点"/>
+                            <TextBlock Text="Speech 终结点"
+                                       ToolTip.Tip="{Binding SelectedEndpoint.SpeechRegionHint}"/>
                             <TextBox Text="{Binding SelectedEndpoint.SpeechEndpoint, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                      Watermark="例如: https://eastasia.api.cognitive.microsoft.com"
                                      Width="420"
                                      MaxWidth="420"
                                      HorizontalAlignment="Left"/>
-                            <TextBlock Classes="field-note" Text="{Binding SelectedEndpoint.SpeechRegionHint}"
-                                       IsVisible="{Binding SelectedEndpoint.SpeechRegionHint, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                         </StackPanel>
                         <StackPanel Spacing="5">
                             <TextBlock Text="订阅密钥"/>
@@ -185,18 +184,13 @@
                                  HorizontalAlignment="Left"/>
                     </StackPanel>
                     <StackPanel Spacing="5">
-                        <TextBlock Text="API 版本（可选）"/>
+                        <TextBlock Text="API 版本（可选）"
+                                   ToolTip.Tip="{Binding SelectedEndpointApiVersionNote}"/>
                         <TextBox Text="{Binding SelectedEndpoint.ApiVersion, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
                                  Watermark="{Binding SelectedEndpointApiVersionWatermark}"
                                  Width="420"
                                  MaxWidth="420"
                                  HorizontalAlignment="Left"/>
-                        <TextBlock Classes="field-note" Text="{Binding SelectedEndpointApiVersionNote}"
-                                   TextWrapping="Wrap"
-                                   Width="420"
-                                   MaxWidth="420"
-                                   HorizontalAlignment="Left"
-                                   IsVisible="{Binding SelectedEndpointApiVersionNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                     </StackPanel>
 
                     <StackPanel Spacing="5" IsVisible="{Binding CanSelectedEndpointUseAad}">
@@ -245,8 +239,8 @@
                     </StackPanel>
 
                     <Separator Margin="0,6,0,6"/>
-                    <TextBlock Text="模型列表" FontWeight="Bold"/>
-                    <TextBlock Text="点击模型条目展开编辑；新建后会直接展开并把光标放到模型 ID。" Classes="field-note"/>
+                    <TextBlock Text="模型列表" FontWeight="Bold"
+                               ToolTip.Tip="点击模型条目展开编辑；新建后会直接展开并把光标放到模型 ID"/>
                     <ItemsControl ItemsSource="{Binding SelectedEndpointModels}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate DataType="models:AiModelEntry">
@@ -259,9 +253,9 @@
                                                 Tag="{Binding}"
                                                 Background="Transparent">
                                             <Grid ColumnDefinitions="Auto,*,Auto">
-                                                <TextBlock Grid.Column="0" Text="▶" FontSize="10"
-                                                           VerticalAlignment="Center" Margin="0,0,6,0"
-                                                           Name="ModelExpandIcon"/>
+                                                <icons:Icon Grid.Column="0" Name="ModelCapIcon" FontSize="12"
+                                                            Value="fa-solid fa-caret-right"
+                                                            VerticalAlignment="Center" Margin="0,0,6,0"/>
                                                 <TextBlock Grid.Column="1" Text="{Binding DisplayTitle}" FontSize="11" VerticalAlignment="Center"/>
                                                 <Button Grid.Column="2" Padding="4,2" FontSize="10"
                                                         VerticalAlignment="Center"
@@ -288,19 +282,41 @@
                                             </Grid>
                                             <Grid ColumnDefinitions="80,*" ColumnSpacing="6">
                                                 <TextBlock Grid.Column="0" Text="能力:" FontSize="11" VerticalAlignment="Center"/>
-                                                <ComboBox Grid.Column="1" MinWidth="120" FontSize="11" Padding="4,2"
-                                                          Tag="{Binding}"
-                                                          Loaded="ModelCapabilityCombo_Loaded"
-                                                          SelectionChanged="ModelCapability_SelectionChanged">
-                                                    <ComboBox.Items>
-                                                        <ComboBoxItem Content="未选择" Tag="None"/>
-                                                        <ComboBoxItem Content="文字" Tag="Text"/>
-                                                        <ComboBoxItem Content="图片" Tag="Image"/>
-                                                        <ComboBoxItem Content="视频" Tag="Video"/>
-                                                        <ComboBoxItem Content="语音转文字" Tag="SpeechToText"/>
-                                                        <ComboBoxItem Content="文字转语音" Tag="TextToSpeech"/>
-                                                    </ComboBox.Items>
-                                                </ComboBox>
+                                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4"
+                                                            Name="CapTogglePanel"
+                                                            Tag="{Binding}"
+                                                            Loaded="CapTogglePanel_Loaded">
+                                                    <ToggleButton Classes="cap-toggle cap-text"
+                                                                  Tag="Text"
+                                                                  ToolTip.Tip="文字对话：洞察、复盘、快问、会话"
+                                                                  Checked="CapToggle_Checked" Unchecked="CapToggle_Unchecked">
+                                                        <icons:Icon Value="fa-solid fa-font" FontSize="13" Foreground="#8AADA0"/>
+                                                    </ToggleButton>
+                                                    <ToggleButton Classes="cap-toggle cap-image"
+                                                                  Tag="Image"
+                                                                  ToolTip.Tip="图片生成：AI 绘图、图片编辑"
+                                                                  Checked="CapToggle_Checked" Unchecked="CapToggle_Unchecked">
+                                                        <icons:Icon Value="fa-solid fa-image" FontSize="13" Foreground="#B09AAC"/>
+                                                    </ToggleButton>
+                                                    <ToggleButton Classes="cap-toggle cap-video"
+                                                                  Tag="Video"
+                                                                  ToolTip.Tip="视频生成：AI 视频创作"
+                                                                  Checked="CapToggle_Checked" Unchecked="CapToggle_Unchecked">
+                                                        <icons:Icon Value="fa-solid fa-video" FontSize="13" Foreground="#8FA4B8"/>
+                                                    </ToggleButton>
+                                                    <ToggleButton Classes="cap-toggle cap-stt"
+                                                                  Tag="SpeechToText"
+                                                                  ToolTip.Tip="语音转文字：音频转写、实时听写"
+                                                                  Checked="CapToggle_Checked" Unchecked="CapToggle_Unchecked">
+                                                        <icons:Icon Value="fa-solid fa-microphone" FontSize="13" Foreground="#B5A88A"/>
+                                                    </ToggleButton>
+                                                    <ToggleButton Classes="cap-toggle cap-tts"
+                                                                  Tag="TextToSpeech"
+                                                                  ToolTip.Tip="文字转语音：语音合成、朗读"
+                                                                  Checked="CapToggle_Checked" Unchecked="CapToggle_Unchecked">
+                                                        <icons:Icon Value="fa-solid fa-volume-high" FontSize="13" Foreground="#9A92AD"/>
+                                                    </ToggleButton>
+                                                </StackPanel>
                                             </Grid>
                                         </StackPanel>
                                     </StackPanel>

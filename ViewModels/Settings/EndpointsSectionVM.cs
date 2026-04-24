@@ -331,7 +331,7 @@ namespace TrueFluentPro.ViewModels.Settings
         }
 
         public AiModelEntry? AddBlankModelToSelectedEndpoint()
-            => AddModelToSelectedEndpoint("", "", "", "", ModelCapability.None);
+            => AddModelToSelectedEndpoint("", "", "", "", ModelCapability.Text);
 
         public AiModelEntry? AddDiscoveredModelToSelectedEndpoint(string modelId)
         {
@@ -348,7 +348,7 @@ namespace TrueFluentPro.ViewModels.Settings
                 "",
                 "",
                 "",
-                ModelCapability.None);
+                ModelCapability.Text);
         }
 
         public void RemoveModelFromSelectedEndpoint(AiModelEntry model)

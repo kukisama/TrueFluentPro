@@ -227,6 +227,8 @@ namespace TrueFluentPro.ViewModels
         // — ImageGen —
         public List<ModelOption> ImageModels { get => ImageGenVM.ImageModels; set => ImageGenVM.ImageModels = value; }
         public ModelOption? SelectedImageModel { get => ImageGenVM.SelectedImageModel; set => ImageGenVM.SelectedImageModel = value; }
+        public bool EnableChatImageGeneration { get => ImageGenVM.EnableChatImageGeneration; set => ImageGenVM.EnableChatImageGeneration = value; }
+        public bool HasImageModel => ImageGenVM.HasImageModel;
         public ObservableCollection<string> ImageSizeOptions => ImageGenVM.ImageSizeOptions;
         public List<string> ImageQualityOptions => ImageGenVM.ImageQualityOptions;
         public List<string> ImageFormatOptions => ImageGenVM.ImageFormatOptions;
@@ -376,7 +378,8 @@ namespace TrueFluentPro.ViewModels
                     EndpointName = pair.Endpoint.Name,
                     ModelDisplayName = string.IsNullOrWhiteSpace(pair.Model.DisplayName)
                         ? pair.Model.ModelId
-                        : pair.Model.DisplayName
+                        : pair.Model.DisplayName,
+                    EndpointType = pair.Endpoint.EndpointType
                 })
                 .ToList();
         }

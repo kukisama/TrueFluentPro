@@ -10,6 +10,7 @@ namespace TrueFluentPro.ViewModels.Settings
     {
         private ModelOption? _selectedImageModel;
         private List<ModelOption> _imageModels = new();
+        private bool _enableChatImageGeneration = true;
 
         private string _imageSize = "1024x1024";
         private string _imageQuality = "medium";
@@ -18,7 +19,21 @@ namespace TrueFluentPro.ViewModels.Settings
         private ImageEditMode _imageEditMode = ImageEditMode.V2ResponsesApi;
 
         public List<ModelOption> ImageModels { get => _imageModels; set => SetProperty(ref _imageModels, value); }
-        public ModelOption? SelectedImageModel { get => _selectedImageModel; set => Set(ref _selectedImageModel, value); }
+        public ModelOption? SelectedImageModel
+        {
+            get => _selectedImageModel;
+            set
+            {
+                if (Set(ref _selectedImageModel, value))
+                    OnPropertyChanged(nameof(HasImageModel));
+            }
+        }
+
+        /// <summary>是否已选择图片模型（控制「图像意图分析」复选框是否可用）</summary>
+        public bool HasImageModel => _selectedImageModel != null;
+
+        /// <summary>会话聊天中启用图像意图分析</summary>
+        public bool EnableChatImageGeneration { get => _enableChatImageGeneration; set => Set(ref _enableChatImageGeneration, value); }
 
         public ObservableCollection<string> ImageSizeOptions { get; } = new(Helpers.ImageSizeCalculator.Presets);
         public List<string> ImageQualityOptions { get; } = ["auto", "low", "medium", "high"];
@@ -64,12 +79,14 @@ namespace TrueFluentPro.ViewModels.Settings
             _imageFormat = string.IsNullOrWhiteSpace(media.ImageFormat) ? "png" : media.ImageFormat;
             _imageCount = media.ImageCount <= 0 ? 1 : media.ImageCount;
             _imageEditMode = media.ImageEditMode;
+            _enableChatImageGeneration = media.EnableChatImageGeneration;
 
             OnPropertyChanged(nameof(ImageSize));
             OnPropertyChanged(nameof(ImageQuality));
             OnPropertyChanged(nameof(ImageFormat));
             OnPropertyChanged(nameof(ImageCount));
             OnPropertyChanged(nameof(ImageEditMode));
+            OnPropertyChanged(nameof(EnableChatImageGeneration));
         }
 
         public override void ApplyTo(AzureSpeechConfig config)
@@ -82,6 +99,7 @@ namespace TrueFluentPro.ViewModels.Settings
             // 改图模式固定为 V2ResponsesApi（file_id + Responses API），不再由用户选择
             media.ImageEditMode = ImageEditMode.V2ResponsesApi;
             media.ImageModelRef = SelectedImageModel?.Reference;
+            media.EnableChatImageGeneration = _enableChatImageGeneration;
         }
 
         public void SelectModels(ModelReference? imageModelRef, List<ModelOption> imageModels)
