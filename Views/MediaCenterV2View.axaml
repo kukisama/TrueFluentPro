@@ -96,6 +96,11 @@
                 </Animation>
             </Style.Animations>
         </Style>
+        <Style Selector="Border.failed-placeholder">
+            <Setter Property="Background" Value="#18F44336"/>
+            <Setter Property="BorderBrush" Value="#40F44336"/>
+            <Setter Property="BorderThickness" Value="1"/>
+        </Style>
     </UserControl.Styles>
 
     <Grid Background="{DynamicResource PageBackgroundBrush}"
@@ -156,12 +161,23 @@
                             </Grid>
 
                             <StackPanel Spacing="8" IsVisible="{Binding IsImageKind}">
-                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="8">
+                                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="8">
                                     <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Text="尺寸"/>
                                     <ComboBox Grid.Row="0" Grid.Column="1"
                                               ItemsSource="{Binding WorkspaceSession.ImageSizeOptions}"
                                               SelectedItem="{Binding WorkspaceSession.ImageSize}"
                                               Padding="8,5"/>
+                                    <Button Grid.Row="0" Grid.Column="2" Padding="6,4"
+                                            ToolTip.Tip="画布尺寸选择器">
+                                        <icons:Icon Value="fa-solid fa-expand" FontSize="12"/>
+                                        <Button.Flyout>
+                                            <Flyout Placement="BottomEdgeAlignedRight">
+                                                <controls:ImageSizeCanvasSelector
+                                                    SelectedSize="{Binding WorkspaceSession.ImageSize, Mode=TwoWay}"
+                                                    SelectedQuality="{Binding WorkspaceSession.ImageQuality, Mode=OneWay}"/>
+                                            </Flyout>
+                                        </Button.Flyout>
+                                    </Button>
                                     <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Text="质量"/>
                                     <ComboBox Grid.Row="1" Grid.Column="1"
                                               ItemsSource="{Binding WorkspaceSession.ImageQualityOptions}"
@@ -345,16 +361,82 @@
                         BorderThickness="1.5"
                     CornerRadius="18">
                     <Grid>
+                        <!-- 空状态占位（非 pending） -->
                         <StackPanel VerticalAlignment="Center"
                                     HorizontalAlignment="Center"
                                     Spacing="10"
                                     IsVisible="{Binding HasNoCanvasPreview}">
-                            <icons:Icon Value="fa-regular fa-images" FontSize="52" Foreground="{DynamicResource TextPlaceholderBrush}"/>
-                            <TextBlock FontSize="18" Foreground="{DynamicResource TextPlaceholderBrush}" Text="{Binding CanvasPlaceholderTitle}"/>
+                            <icons:Icon Value="fa-regular fa-images" FontSize="52" Foreground="{DynamicResource TextPlaceholderBrush}"
+                                        IsVisible="{Binding IsCanvasEmptyPlaceholderVisible}"/>
+                            <TextBlock FontSize="18" Foreground="{DynamicResource TextPlaceholderBrush}" Text="{Binding CanvasPlaceholderTitle}"
+                                       IsVisible="{Binding IsCanvasEmptyPlaceholderVisible}"/>
                             <TextBlock Classes="panel-note"
                                        Width="320"
                                        TextAlignment="Center"
-                                       Text="{Binding CanvasPlaceholderDescription}"/>
+                                       Text="{Binding CanvasPlaceholderDescription}"
+                                       IsVisible="{Binding IsCanvasEmptyPlaceholderVisible}"/>
+
+                            <!-- pending 进度浮层 -->
+                            <StackPanel IsVisible="{Binding IsSelectedAssetPending}"
+                                        Spacing="14"
+                                        HorizontalAlignment="Center"
+                                        VerticalAlignment="Center"
+                                        Width="320">
+                                <Border Classes="pending-placeholder"
+                                        Width="64" Height="64" CornerRadius="32"
+                                        HorizontalAlignment="Center">
+                                    <icons:Icon Value="fa-solid fa-wand-magic-sparkles" FontSize="24"
+                                                Foreground="{DynamicResource PendingPlaceholderIconBrush}"
+                                                HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                                <TextBlock FontSize="16" FontWeight="SemiBold"
+                                           HorizontalAlignment="Center"
+                                           Foreground="{DynamicResource TextPlaceholderBrush}"
+                                           Text="{Binding SelectedAssetPendingPhase}"/>
+                                <TextBlock FontSize="20" FontWeight="Bold"
+                                           HorizontalAlignment="Center"
+                                           Foreground="{DynamicResource AccentBlueBrush}"
+                                           Text="{Binding SelectedAssetPendingElapsed}"/>
+                                <ProgressBar Minimum="0" Maximum="100"
+                                             Value="{Binding SelectedAssetPendingProgress}"
+                                             Height="6"
+                                             CornerRadius="3"
+                                             IsIndeterminate="{Binding !SelectedAssetPendingProgress}"
+                                             IsVisible="{Binding IsSelectedAssetPending}"/>
+                                <TextBlock Classes="panel-note"
+                                           TextAlignment="Center"
+                                           TextWrapping="Wrap"
+                                           Text="{Binding CanvasPlaceholderDescription}"/>
+                            </StackPanel>
+
+                            <!-- failed 错误浮层 -->
+                            <StackPanel IsVisible="{Binding IsSelectedAssetFailed}"
+                                        Spacing="14"
+                                        HorizontalAlignment="Center"
+                                        VerticalAlignment="Center"
+                                        Width="360">
+                                <Border Classes="failed-placeholder"
+                                        Width="64" Height="64" CornerRadius="32"
+                                        HorizontalAlignment="Center">
+                                    <icons:Icon Value="fa-solid fa-circle-exclamation" FontSize="26"
+                                                Foreground="#F44336"
+                                                HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                                <TextBlock FontSize="16" FontWeight="SemiBold"
+                                           HorizontalAlignment="Center"
+                                           Foreground="#F44336"
+                                           Text="{Binding SelectedAssetFailedTitle}"/>
+                                <TextBlock FontSize="13"
+                                           HorizontalAlignment="Center"
+                                           TextAlignment="Center"
+                                           TextWrapping="Wrap"
+                                           Foreground="{DynamicResource TextPlaceholderBrush}"
+                                           Text="{Binding SelectedAssetFailedError}"/>
+                                <TextBlock Classes="panel-note"
+                                           TextAlignment="Center"
+                                           TextWrapping="Wrap"
+                                           Text="可尝试修改提示词后重新提交，或等待片刻后再试。"/>
+                            </StackPanel>
                         </StackPanel>
 
                         <!-- 资产预览：适应画布高度等比缩放 -->
@@ -477,6 +559,21 @@
                                                                    FontWeight="SemiBold"
                                                                    Foreground="{DynamicResource PendingPlaceholderTextBrush}"
                                                                    Text="{Binding PendingStatusText}"
+                                                                   TextAlignment="Center"/>
+                                                    </StackPanel>
+                                                </Border>
+                                                <Border Classes="failed-placeholder"
+                                                        CornerRadius="10"
+                                                        Margin="0"
+                                                        IsVisible="{Binding IsFailed}">
+                                                    <StackPanel VerticalAlignment="Center"
+                                                                HorizontalAlignment="Center"
+                                                                Spacing="4">
+                                                        <icons:Icon Value="fa-solid fa-circle-exclamation" FontSize="15" Foreground="#F44336" HorizontalAlignment="Center"/>
+                                                        <TextBlock FontSize="9"
+                                                                   FontWeight="SemiBold"
+                                                                   Foreground="#F44336"
+                                                                   Text="失败"
                                                                    TextAlignment="Center"/>
                                                     </StackPanel>
                                                 </Border>

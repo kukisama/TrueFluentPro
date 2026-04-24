@@ -35,6 +35,10 @@ namespace TrueFluentPro.Services
         public bool EnableChatImageGeneration { get; set; }
         /// <summary>图片模型部署名（如 gpt-image-2），用于 x-ms-oai-image-generation-deployment 头</summary>
         public string ImageModelDeployment { get; set; } = "";
+        /// <summary>聊天模式图片生成尺寸（如 "1024x1024"），传给 image_generation tool</summary>
+        public string ImageSize { get; set; } = "1024x1024";
+        /// <summary>聊天模式图片生成质量（low/medium/high/auto）</summary>
+        public string ImageQuality { get; set; } = "medium";
         /// <summary>Vision 输入：已上传的图片 file_id 列表（通过 Files API 上传后获得）</summary>
         public List<string>? ImageFileIds { get; set; }
 
@@ -148,7 +152,8 @@ namespace TrueFluentPro.Services
             IReadOnlyList<string>? urlCandidatesOverride = null,
             bool allowNextUrlRetry = true,
             bool allowApimSubscriptionKeyQueryRetry = true,
-            Action<byte[]>? onImageResult = null)
+            Action<byte[]>? onImageResult = null,
+            Action? onImageGenerating = null)
         {
             var (response, trace) = await SendRequestAsync(
                 request,
@@ -178,7 +183,7 @@ namespace TrueFluentPro.Services
                     ModelName = request.IsAzureEndpoint ? request.DeploymentName : request.ModelName
                 });
 
-                var usage = await ConsumeResponseAsync(request, response, onChunk, onReasoningChunk, cancellationToken, onImageResult);
+                var usage = await ConsumeResponseAsync(request, response, onChunk, onReasoningChunk, cancellationToken, onImageResult, onImageGenerating);
 
                 // 回填 Token 用量到 outcome
                 if (usage.HasValue)
@@ -357,12 +362,13 @@ namespace TrueFluentPro.Services
             Action<string> onChunk,
             Action<string>? onReasoningChunk,
             CancellationToken cancellationToken,
-            Action<byte[]>? onImageResult = null)
+            Action<byte[]>? onImageResult = null,
+            Action? onImageGenerating = null)
         {
             var protocol = GetEffectiveTextApiProtocol(request);
             if (protocol == TextApiProtocolMode.Responses)
             {
-                return await StreamResponsesApiAsync(response, onChunk, onReasoningChunk, cancellationToken, onImageResult);
+                return await StreamResponsesApiAsync(response, onChunk, onReasoningChunk, cancellationToken, onImageResult, onImageGenerating);
             }
 
             return await StreamResponseAsync(response, onChunk, onReasoningChunk, cancellationToken);
@@ -377,7 +383,8 @@ namespace TrueFluentPro.Services
             Action<string> onChunk,
             Action<string>? onReasoningChunk,
             CancellationToken cancellationToken,
-            Action<byte[]>? onImageResult = null)
+            Action<byte[]>? onImageResult = null,
+            Action? onImageGenerating = null)
         {
             int? promptTokens = null;
             int? completionTokens = null;
@@ -422,6 +429,16 @@ namespace TrueFluentPro.Services
                     var eventType = root.TryGetProperty("type", out var typeElem)
                         ? typeElem.GetString() ?? ""
                         : "";
+
+                    // 检测 image_generation_call 开始（AI 触发了图片生成 tool）
+                    if (onImageGenerating != null
+                        && eventType == "response.output_item.added"
+                        && root.TryGetProperty("item", out var itemElem)
+                        && itemElem.TryGetProperty("type", out var itemTypeElem)
+                        && itemTypeElem.GetString() == "image_generation_call")
+                    {
+                        onImageGenerating();
+                    }
 
                     // 正文文本增量
                     if (eventType == "response.output_text.delta")
@@ -816,7 +833,12 @@ namespace TrueFluentPro.Services
                 // 聊天模式下注入 image_generation tool，让 AI 自主决定是否生成图片
                 if (request.EnableChatImageGeneration && !string.IsNullOrWhiteSpace(request.ImageModelDeployment))
                 {
-                    responsesBody["tools"] = new[] { new Dictionary<string, object> { ["type"] = "image_generation" } };
+                    var imageTool = new Dictionary<string, object> { ["type"] = "image_generation" };
+                    if (!string.IsNullOrWhiteSpace(request.ImageSize) && request.ImageSize != "auto")
+                        imageTool["size"] = request.ImageSize;
+                    if (!string.IsNullOrWhiteSpace(request.ImageQuality) && request.ImageQuality != "auto")
+                        imageTool["quality"] = request.ImageQuality;
+                    responsesBody["tools"] = new[] { imageTool };
                 }
 
                 return responsesBody;

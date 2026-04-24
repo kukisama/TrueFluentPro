@@ -227,7 +227,7 @@ namespace TrueFluentPro.ViewModels
         // — ImageGen —
         public List<ModelOption> ImageModels { get => ImageGenVM.ImageModels; set => ImageGenVM.ImageModels = value; }
         public ModelOption? SelectedImageModel { get => ImageGenVM.SelectedImageModel; set => ImageGenVM.SelectedImageModel = value; }
-        public List<string> ImageSizeOptions => ImageGenVM.ImageSizeOptions;
+        public ObservableCollection<string> ImageSizeOptions => ImageGenVM.ImageSizeOptions;
         public List<string> ImageQualityOptions => ImageGenVM.ImageQualityOptions;
         public List<string> ImageFormatOptions => ImageGenVM.ImageFormatOptions;
         public List<int> ImageCountOptions => ImageGenVM.ImageCountOptions;

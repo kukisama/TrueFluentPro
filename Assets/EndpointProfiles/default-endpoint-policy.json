@@ -192,11 +192,12 @@
         "defaultApiVersion": "2025-04-01-preview"
       },
       "image": {
-        "generatePrimaryUrl": "{baseUrl}/v1/images/generations?api-version={apiVersion}",
-        "editPrimaryUrl": "{baseUrl}/v1/images/edits?api-version={apiVersion}",
-        "fileUploadPrimaryUrl": "{baseUrl}/v1/files?api-version={apiVersion}",
+        "generatePrimaryUrl": "{baseUrl}/v1/images/generations",
+        "editPrimaryUrl": "{baseUrl}/v1/images/edits",
+        "fileUploadPrimaryUrl": "{baseUrl}/v1/files",
         "deploymentGeneratePrimaryUrl": "{baseUrl}/deployments/{deployment}/images/generations?api-version={apiVersion}",
-        "responsesPrimaryUrl": "{baseUrl}/responses?api-version={apiVersion}"
+        "responsesPrimaryUrl": "{baseUrl}/responses?api-version={apiVersion}",
+        "defaultApiVersion": "2025-04-01-preview"
       },
       "video": {
         "defaultMode": "Videos",

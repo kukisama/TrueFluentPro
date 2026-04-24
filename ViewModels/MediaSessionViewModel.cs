@@ -223,9 +223,17 @@ namespace TrueFluentPro.ViewModels
             }
         }
 
-        // --- 待提交附件（文字模式） ---
+        // --- 待提交附件 ---
         public ObservableCollection<ChatAttachmentInfo> PendingAttachments { get; } = new();
         public bool HasPendingAttachments => PendingAttachments.Count > 0;
+
+        // --- 携带历史图片开关（默认开启，自动将最近一张图附带到每轮请求） ---
+        private bool _enableRecentImageCarry = true;
+        public bool EnableRecentImageCarry
+        {
+            get => _enableRecentImageCarry;
+            set => SetProperty(ref _enableRecentImageCarry, value);
+        }
         public ICommand RemoveAttachmentCommand { get; }
 
         private static readonly HashSet<string> ImageExtensions = new(StringComparer.OrdinalIgnoreCase)
@@ -309,7 +317,25 @@ namespace TrueFluentPro.ViewModels
         public string ImageSize
         {
             get => _imageSize;
-            set => SetProperty(ref _imageSize, value);
+            set
+            {
+                if (string.Equals(_imageSize, value)) return;
+                // 先确保值在列表中（单自定义槽位），再触发 PropertyChanged
+                EnsureSizeInList(value);
+                SetProperty(ref _imageSize, value);
+            }
+        }
+
+        private string? _customSizeItem;
+        /// <summary>保证值在 ImageSizeOptions 中，非预设值只保留一个自定义槽位</summary>
+        private void EnsureSizeInList(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value) || Helpers.ImageSizeCalculator.PresetSet.Contains(value))
+                return;
+            if (_customSizeItem != null)
+                ImageSizeOptions.Remove(_customSizeItem);
+            _customSizeItem = value;
+            ImageSizeOptions.Add(value);
         }
         public string ImageQuality
         {
@@ -519,14 +545,11 @@ namespace TrueFluentPro.ViewModels
         });
 
         // --- 参数选项 ---
-        public List<string> ImageSizeOptions { get; } = new()
-        {
-            "1024x1024", "1024x1536", "1536x1024"
-        };
+        public ObservableCollection<string> ImageSizeOptions { get; } = new(Helpers.ImageSizeCalculator.Presets);
 
         public List<string> ImageQualityOptions { get; } = new()
         {
-            "low", "medium", "high"
+            "auto", "low", "medium", "high"
         };
 
         public List<string> ImageFormatOptions { get; } = new()
@@ -687,21 +710,8 @@ namespace TrueFluentPro.ViewModels
 
         private bool CanGenerateNow()
         {
-            // 文字模式：有文本或有附件即可发送
-            if (IsTextMode)
-                return !IsChatStreaming && (!string.IsNullOrWhiteSpace(PromptText) || PendingAttachments.Count > 0);
-
-            if (string.IsNullOrWhiteSpace(PromptText))
-                return false;
-
-            if (IsGenerating)
-                return false;
-
-            if (IsVideoMode && ReferenceImagePaths.Count > 1)
-                return false;
-
-            if (IsVideoMode && HasReferenceImage && !IsReferenceImageSizeValid)
-                return false;
+            // 统一文字聊天模式：有文本或有附件即可发送
+            return !IsChatStreaming && (!string.IsNullOrWhiteSpace(PromptText) || PendingAttachments.Count > 0);
 
             return true;
         }
@@ -1027,35 +1037,8 @@ namespace TrueFluentPro.ViewModels
             var attachments = PendingAttachments.ToList();
             PendingAttachments.Clear();
 
-            if (SelectedType == MediaGenType.Text)
-            {
-                SendTextChatAsync(prompt, attachments);
-                return;
-            }
-
-            if (IsGenerating)
-            {
-                StatusText = "当前会话已有生成中，请先新建一个会话再继续。";
-                return;
-            }
-
-            // 添加用户消息
-            AppendMessage(new ChatMessageViewModel(new MediaChatMessage
-            {
-                Role = "user",
-                Text = prompt,
-                ContentType = SelectedType == MediaGenType.Image ? "image" : "video",
-                Timestamp = DateTime.Now
-            }));
-
-            if (SelectedType == MediaGenType.Image)
-            {
-                GenerateImage(prompt);
-            }
-            else
-            {
-                GenerateVideo(prompt);
-            }
+            // 统一走文字聊天通道（图片生成/编辑由 AI 通过 image_generation tool 自主决策）
+            SendTextChatAsync(prompt, attachments);
         }
 
         private void GenerateImage(string prompt)
@@ -1083,15 +1066,22 @@ namespace TrueFluentPro.ViewModels
             AppendMessage(loadingMessage);
 
             var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-            // 启动计时器显示
+            // 定时器仅更新 task.ElapsedSeconds，不直接写 loadingMessage.Text（避免与 onProgress 冲突闪烁）
             var timer = new System.Threading.Timer(_ =>
             {
                 Dispatcher.UIThread.Post(() =>
                 {
                     if (loadingMessage.IsLoading)
                     {
-                        var elapsed = stopwatch.Elapsed;
-                        loadingMessage.Text = $"生成中... 已耗时 {elapsed.TotalSeconds:F0} 秒";
+                        task.ElapsedSeconds = stopwatch.Elapsed.TotalSeconds;
+                        // 尚未收到首次 onProgress 时显示计时
+                        if (task.Progress == 0)
+                        {
+                            var phaseText = $"⏳ 等待服务端生成... {task.ElapsedSeconds:F0}s";
+                            task.PhaseText = phaseText;
+                            loadingMessage.Text = phaseText;
+                            StatusText = phaseText;
+                        }
                     }
                 });
             }, null, 1000, 1000);
@@ -1121,6 +1111,25 @@ namespace TrueFluentPro.ViewModels
                 ImageCount = ImageCount
             };
 
+            // 有参考图时：读取原图尺寸 → 16px 对齐 → 覆盖 ImageSize
+            if (HasReferenceImage && ImageSize != "auto")
+            {
+                var primaryRef = ReferenceImagePath;
+                if (!string.IsNullOrWhiteSpace(primaryRef)
+                    && ImageCropService.TryGetImageSize(primaryRef, out var refW, out var refH))
+                {
+                    var aligned = Helpers.ImageSizeCalculator.AlignToGrid(refW, refH);
+                    effectiveConfig.ImageSize = aligned.ToSizeString();
+                }
+            }
+
+            // V2 图片编辑（Responses API）需要文本模型作为 model 字段
+            // 从聊天/对话模型配置中获取
+            if (TryBuildChatRuntimeConfig(out var chatRuntimeForImage, out _, out _))
+            {
+                effectiveConfig.TextModelForResponses = chatRuntimeForImage.ModelName;
+            }
+
             var imageConfig = imageRuntime.CreateRequestConfig();
 
             var ct = _cts.Token;
@@ -1138,15 +1147,21 @@ namespace TrueFluentPro.ViewModels
                         {
                             task.Progress = p;
                             var elapsed = stopwatch.Elapsed.TotalSeconds;
+                            task.ElapsedSeconds = elapsed;
+
+                            // 记录生成阶段耗时（首次进入下载阶段时锁定）
+                            if (p >= 50 && !task.GenerateSeconds.HasValue)
+                                task.GenerateSeconds = elapsed;
+
                             var phaseText = p switch
                             {
-                                < 50 => $"等待服务端生成... 已耗时 {elapsed:F0}s",
-                                < 96 => $"下载图片数据中... {p}%  已耗时 {elapsed:F0}s",
-                                < 100 => $"解析并保存中... 已耗时 {elapsed:F0}s",
-                                _ => "图片生成完成"
+                                < 50 => $"⏳ 等待服务端生成... {elapsed:F0}s",
+                                < 96 => $"📥 下载中 {p}% · {(elapsed - (task.GenerateSeconds ?? 0)):F0}s",
+                                < 100 => "💾 保存中...",
+                                _ => "✅ 图片生成完成"
                             };
+                            task.PhaseText = phaseText;
                             StatusText = phaseText;
-                            // 同步到聊天气泡
                             if (loadingMessage.IsLoading)
                                 loadingMessage.Text = phaseText;
                         }));
@@ -2390,10 +2405,31 @@ namespace TrueFluentPro.ViewModels
             {
                 runtimeRequest.EnableChatImageGeneration = true;
                 runtimeRequest.ImageModelDeployment = chatImageRuntime.ModelId;
+                runtimeRequest.ImageSize = _genConfig.ImageSize;
+                runtimeRequest.ImageQuality = _genConfig.ImageQuality;
             }
 
             // Vision 输入：将图片附件上传到 Files API，获取 file_id 供 Responses API 引用
             var imageAttachments = attachments.Where(a => a.Type == "image" && File.Exists(a.FilePath)).ToList();
+
+            // 跨轮图片记忆：开关开启时，用户本轮未附加图片 → 自动携带最近一张历史图
+            if (imageAttachments.Count == 0 && _enableRecentImageCarry)
+            {
+                var recentImagePath = FindRecentImageFromHistory();
+                if (recentImagePath != null)
+                {
+                    imageAttachments.Add(new ChatAttachmentInfo
+                    {
+                        Type = "image",
+                        FilePath = recentImagePath,
+                        FileName = Path.GetFileName(recentImagePath)
+                    });
+                    expandedPrompt = $"[系统自动附加了用户历史中最近的图片: {Path.GetFileName(recentImagePath)}]\n{expandedPrompt}";
+                    AppLogService.Instance.LogAudit("chat",
+                        $"跨轮图片记忆：自动重传历史图片 {Path.GetFileName(recentImagePath)}", isSuccess: true);
+                }
+            }
+
             if (imageAttachments.Count > 0)
             {
                 try
@@ -2477,6 +2513,9 @@ namespace TrueFluentPro.ViewModels
             var sb = new StringBuilder();
             var reasoningSb = new StringBuilder();
             var chatImageResults = new List<byte[]>(); // 聊天模式图片生成结果收集
+            var chatImageStopwatch = (System.Diagnostics.Stopwatch?)null; // 图片生成计时
+            var chatImageTimer = (System.Threading.Timer?)null;
+            double? chatGenerateSeconds = null; // 生成阶段耗时（API 生成图片）
             _chatFlushThrottle.Restart();
 
             // 字符级平滑流式动画器：AI token 进入队列，按帧节奏追加到 UI
@@ -2536,14 +2575,48 @@ namespace TrueFluentPro.ViewModels
                     onImageResult: imageBytes =>
                     {
                         chatImageResults.Add(imageBytes);
+                        // 收到图片 base64 = 生成阶段结束，记录生成耗时
+                        if (chatImageStopwatch != null)
+                            chatGenerateSeconds = chatImageStopwatch.Elapsed.TotalSeconds;
+                    },
+                    onImageGenerating: () =>
+                    {
+                        // AI 触发了 image_generation tool，开始计时并显示提示
+                        if (chatImageStopwatch == null)
+                        {
+                            chatImageStopwatch = System.Diagnostics.Stopwatch.StartNew();
+                            // 暂停文字流动画器，切到图片等待状态
+                            _streamAnimator?.EndStream();
+                            Dispatcher.UIThread.Post(() =>
+                            {
+                                aiMessage.Text = sb.ToString() + "\n\n🎨 AI 正在生成图片...";
+                            });
+                            // 每秒刷新计时
+                            chatImageTimer = new System.Threading.Timer(_ =>
+                            {
+                                if (chatImageStopwatch == null) return;
+                                var secs = chatImageStopwatch.Elapsed.TotalSeconds;
+                                Dispatcher.UIThread.Post(() =>
+                                {
+                                    aiMessage.Text = sb.ToString() + $"\n\n🎨 AI 正在生成图片... 已等待 {secs:F0}s";
+                                });
+                            }, null, 1000, 1000);
+                        }
                     });
 
-                // 如果聊天中产生了图片，保存到磁盘并挂载到消息
+                // 停止图片生成计时
+                chatImageTimer?.Dispose();
+                chatImageTimer = null;
+                chatImageStopwatch?.Stop();
+
+                // 如果聊天中产生了图片，保存到磁盘（计时保存阶段）
+                List<string>? savedPaths = null;
+                var saveStopwatch = System.Diagnostics.Stopwatch.StartNew();
                 if (chatImageResults.Count > 0)
                 {
                     var outputDir = _pathResolver?.GetNewResourceDirectory("image") ?? SessionDirectory;
                     Directory.CreateDirectory(outputDir);
-                    var savedPaths = new List<string>();
+                    savedPaths = new List<string>();
                     for (var i = 0; i < chatImageResults.Count; i++)
                     {
                         var randomId = Guid.NewGuid().ToString("N")[..8];
@@ -2551,24 +2624,35 @@ namespace TrueFluentPro.ViewModels
                         await File.WriteAllBytesAsync(filePath, chatImageResults[i], ct);
                         savedPaths.Add(filePath);
                     }
+                }
+                var chatSaveSeconds = saveStopwatch.Elapsed.TotalSeconds;
+                saveStopwatch.Stop();
 
-                    Dispatcher.UIThread.Post(() =>
+                // 最终刷新：停止动画器，在同一个 UI Post 中完成所有属性设置
+                _streamAnimator?.EndStream();
+                var finalText = sb.ToString();
+                // 如果有图片生成，附加耗时信息（生成 + 保存 = 总计）
+                if (chatGenerateSeconds.HasValue && chatImageResults.Count > 0)
+                {
+                    var totalSec = chatGenerateSeconds.Value + chatSaveSeconds;
+                    finalText += $"\n\n🎨 已生成 {chatImageResults.Count} 张图片 (生成 {chatGenerateSeconds.Value:F1}s + 保存 {chatSaveSeconds:F1}s = 总计 {totalSec:F1}s)";
+                }
+                var finalReasoning = reasoningSb.ToString();
+                Dispatcher.UIThread.Post(() =>
+                {
+                    // 先挂载图片路径，确保后续保存能写入 MediaPaths
+                    if (savedPaths != null)
                     {
                         foreach (var path in savedPaths)
                             aiMessage.MediaPaths.Add(path);
-                    });
-                }
+                    }
 
-                // 最终刷新：停止动画器，直接设置完整文本
-                _streamAnimator?.EndStream();
-                Dispatcher.UIThread.Post(() =>
-                {
-                    aiMessage.Text = sb.ToString();
-                    aiMessage.ReasoningText = reasoningSb.ToString();
+                    aiMessage.Text = finalText;
+                    aiMessage.ReasoningText = finalReasoning;
                     aiMessage.IsLoading = false;
                     aiMessage.IsStreamingDone = true;
                     aiMessage.ReasoningStatusText = BuildReasoningStatusText(
-                        reasoningRequested, reasoningSb.Length > 0);
+                        reasoningRequested, finalReasoning.Length > 0);
                     // 流式完成后自动收起思考区，让用户聚焦答案
                     if (aiMessage.HasReasoning)
                         aiMessage.IsReasoningExpanded = false;
@@ -2607,7 +2691,9 @@ namespace TrueFluentPro.ViewModels
                 _chatFlushThrottle.Stop();
                 _streamAnimator?.Dispose();
                 _streamAnimator = null;
-                _onRequestSave?.Invoke(this);
+                chatImageTimer?.Dispose();
+                // 通过 Post 排队，确保在前面的 MediaPaths.Add / Text 赋值之后再触发持久化
+                Dispatcher.UIThread.Post(() => _onRequestSave?.Invoke(this));
             }
         }
 
@@ -2715,6 +2801,88 @@ namespace TrueFluentPro.ViewModels
         {
             if (text.Length <= maxChars) return text;
             return text[..maxChars] + "\n\n[...后续内容已省略]";
+        }
+
+        /// <summary>
+        /// 从最近的聊天历史中查找最近一张图片的本地路径。
+        /// 来源：用户附件中的图片 + AI 消息中生成的图片（MediaPaths）。
+        /// </summary>
+        private string? FindRecentImageFromHistory()
+        {
+            var imageExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                { ".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp" };
+
+            // 从最新到最旧遍历，返回第一张找到且文件存在的图片
+            foreach (var msg in _allMessages.AsEnumerable().Reverse())
+            {
+                // 用户附件中的图片
+                if (msg.IsUser && msg.Attachments is { Count: > 0 })
+                {
+                    var imgAtt = msg.Attachments
+                        .LastOrDefault(a => a.Type == "image" && File.Exists(a.FilePath));
+                    if (imgAtt != null) return imgAtt.FilePath;
+                }
+
+                // 消息中携带的图片（AI 生成的、或用户上传后挂载的）
+                if (msg.MediaPaths.Count > 0)
+                {
+                    var imgPath = msg.MediaPaths
+                        .LastOrDefault(p => imageExtensions.Contains(Path.GetExtension(p)) && File.Exists(p));
+                    if (imgPath != null) return imgPath;
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// 启发式检测用户 prompt 是否在引用之前的图片。
+        /// 覆盖场景：图片问答（看图/描述/分析）、图片编辑（改图/变成/替换）、代词回指。
+        /// </summary>
+        private static bool DetectImageReferenceIntent(string prompt)
+        {
+            if (string.IsNullOrWhiteSpace(prompt)) return false;
+
+            // 显式图片引用
+            ReadOnlySpan<string> imageReferenceKeywords =
+            [
+                "这张图", "那张图", "这个图", "那个图",
+                "这幅图", "那幅图", "图片", "图中", "图里",
+                "上面的图", "之前的图", "前面的图", "刚才的图",
+                "上一张", "那一张", "这一张",
+                "the image", "the picture", "the photo", "that image"
+            ];
+
+            // 图片编辑意图
+            ReadOnlySpan<string> editKeywords =
+            [
+                "变成", "改成", "换成", "替换成",
+                "修改", "改一下", "改图", "编辑",
+                "去掉", "删掉", "移除", "加上", "添加",
+                "把它", "让它", "把他", "让他", "把她", "让她",
+                "重新生成", "再画一张", "重画",
+                "make it", "change it", "turn it", "replace"
+            ];
+
+            // 图片问答意图
+            ReadOnlySpan<string> visionKeywords =
+            [
+                "看看", "看一下", "分析", "描述",
+                "识别", "是什么", "有什么", "什么内容",
+                "帮我看", "能看到", "图上", "画面",
+                "what is", "what's in", "describe", "analyze"
+            ];
+
+            foreach (var kw in imageReferenceKeywords)
+                if (prompt.Contains(kw, StringComparison.OrdinalIgnoreCase)) return true;
+
+            foreach (var kw in editKeywords)
+                if (prompt.Contains(kw, StringComparison.OrdinalIgnoreCase)) return true;
+
+            foreach (var kw in visionKeywords)
+                if (prompt.Contains(kw, StringComparison.OrdinalIgnoreCase)) return true;
+
+            return false;
         }
 
         private bool TryBuildChatRuntimeConfig(

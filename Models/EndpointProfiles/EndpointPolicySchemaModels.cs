@@ -83,6 +83,7 @@ public sealed class EndpointPlatformDefaultImageSettings
     public string FileUploadPrimaryUrl { get; set; } = "";
     public string DeploymentGeneratePrimaryUrl { get; set; } = "";
     public string ResponsesPrimaryUrl { get; set; } = "";
+    public string DefaultApiVersion { get; set; } = "";
 }
 
 public sealed class EndpointPlatformDefaultVideoSettings

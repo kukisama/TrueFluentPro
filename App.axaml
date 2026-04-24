@@ -144,6 +144,7 @@
         <sty:FluentAvaloniaTheme />
         <StyleInclude Source="avares://TrueFluentPro/Styles/AppSurfaces.axaml" />
         <StyleInclude Source="avares://TrueFluentPro/Styles/AppTypography.axaml" />
+        <StyleInclude Source="avares://TrueFluentPro/Styles/ImageSizeCanvasSelector.axaml" />
 
         <!-- 全局文本选中样式：蓝底白字（类似 CMD 终端） -->
         <Style Selector="TextBox">

@@ -88,6 +88,22 @@ namespace TrueFluentPro.Models
         /// <summary>实际下载成功的完整 URL（用于排查和恢复）</summary>
         public string? RemoteDownloadUrl { get; set; }
 
+        private string _phaseText = "";
+        /// <summary>实时阶段描述（如 "等待服务端生成..."），由 ViewModel 的进度回调写入。</summary>
+        public string PhaseText
+        {
+            get => _phaseText;
+            set { _phaseText = value; OnPropertyChanged(); }
+        }
+
+        private double _elapsedSeconds;
+        /// <summary>从任务开始至今的实时秒数，由定时器更新。</summary>
+        public double ElapsedSeconds
+        {
+            get => _elapsedSeconds;
+            set { _elapsedSeconds = value; OnPropertyChanged(); }
+        }
+
         public event PropertyChangedEventHandler? PropertyChanged;
         protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)
         {

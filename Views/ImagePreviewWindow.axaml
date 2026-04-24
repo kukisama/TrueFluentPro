@@ -25,30 +25,121 @@
         <Style Selector="Button.toolbar-btn:disabled">
             <Setter Property="Opacity" Value="0.4"/>
         </Style>
+        <!-- 信息面板标签 -->
+        <Style Selector="TextBlock.meta-label">
+            <Setter Property="Foreground" Value="#FF888888"/>
+            <Setter Property="FontSize" Value="11"/>
+        </Style>
+        <Style Selector="TextBlock.meta-value">
+            <Setter Property="Foreground" Value="#FF333333"/>
+            <Setter Property="FontSize" Value="11"/>
+        </Style>
     </Window.Styles>
 
-    <Grid RowDefinitions="Auto,*">
+    <Grid RowDefinitions="Auto,*,Auto">
         <!-- 顶部工具栏 -->
         <Border Grid.Row="0" Background="#FFF0F0F0" BorderBrush="#FFDCDCDC" BorderThickness="0,0,0,1" Padding="10,6">
-            <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto,Auto" ColumnSpacing="8">
+            <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,*,Auto,Auto,Auto,Auto" ColumnSpacing="6">
                 <Button x:Name="PrevButton" Content="◀ 上一张" Classes="toolbar-btn"/>
                 <Button x:Name="NextButton" Content="下一张 ▶" Classes="toolbar-btn" Grid.Column="1"/>
-                <TextBlock x:Name="FileInfoTextBlock" Foreground="#FF555555" FontSize="12"
-                           VerticalAlignment="Center" Grid.Column="2" HorizontalAlignment="Center"
-                           TextTrimming="CharacterEllipsis"/>
-                <Button x:Name="DownloadButton" Content="💾 下载" Classes="toolbar-btn" Grid.Column="3"/>
-                <Button x:Name="OpenLocationButton" Content="📂 位置" Classes="toolbar-btn" Grid.Column="4"/>
-                <Button x:Name="CopyButton" Content="📋 复制" Classes="toolbar-btn" Grid.Column="5"/>
+
+                <!-- 分隔 -->
+                <Border Grid.Column="2" Width="1" Background="#FFDCDCDC" Margin="4,2"/>
+
+                <!-- 缩放控制 -->
+                <Button x:Name="FitButton" Content="⊞ 适应" Classes="toolbar-btn" Grid.Column="3"
+                        ToolTip.Tip="适应窗口 (Ctrl+0)"/>
+                <Button x:Name="ActualSizeButton" Content="🔍 100%" Classes="toolbar-btn" Grid.Column="4"
+                        ToolTip.Tip="实际大小 (Ctrl+1)"/>
+
+                <!-- 文件信息 + 缩放比例 -->
+                <StackPanel Grid.Column="5" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8">
+                    <TextBlock x:Name="FileInfoTextBlock" Foreground="#FF555555" FontSize="12"
+                               TextTrimming="CharacterEllipsis"/>
+                    <Border Background="#FFE0E0E0" CornerRadius="3" Padding="6,2">
+                        <TextBlock x:Name="ZoomTextBlock" Foreground="#FF0078D4" FontSize="12" FontWeight="SemiBold"/>
+                    </Border>
+                </StackPanel>
+
+                <!-- 元信息切换 -->
+                <Button x:Name="InfoButton" Content="ℹ️ 信息" Classes="toolbar-btn" Grid.Column="6"
+                        ToolTip.Tip="显示/隐藏图片信息"/>
+                <Button x:Name="DownloadButton" Content="💾 下载" Classes="toolbar-btn" Grid.Column="7"/>
+                <Button x:Name="OpenLocationButton" Content="📂 位置" Classes="toolbar-btn" Grid.Column="8"/>
+                <Button x:Name="CopyButton" Content="📋 复制" Classes="toolbar-btn" Grid.Column="9"/>
             </Grid>
         </Border>
 
-        <!-- 图片主区域（等比缩放） -->
-        <Border Grid.Row="1" Background="#FFFFFFFF" ClipToBounds="True">
-            <Image x:Name="PreviewImage"
-                   Stretch="Uniform"
-                   Margin="8"
-                   VerticalAlignment="Center"
-                   HorizontalAlignment="Center"/>
+        <!-- 图片主区域 -->
+        <Grid Grid.Row="1">
+            <!-- 棋盘格背景（透明图显示用） -->
+            <Border x:Name="ViewportBorder" ClipToBounds="True">
+                <Border.Background>
+                    <DrawingBrush TileMode="Tile" DestinationRect="0,0,16,16"
+                                  SourceRect="0,0,16,16">
+                        <DrawingBrush.Drawing>
+                            <DrawingGroup>
+                                <GeometryDrawing Brush="#FFFFFFFF">
+                                    <GeometryDrawing.Geometry>
+                                        <RectangleGeometry Rect="0,0,16,16"/>
+                                    </GeometryDrawing.Geometry>
+                                </GeometryDrawing>
+                                <GeometryDrawing Brush="#FFE8E8E8">
+                                    <GeometryDrawing.Geometry>
+                                        <GeometryGroup>
+                                            <RectangleGeometry Rect="0,0,8,8"/>
+                                            <RectangleGeometry Rect="8,8,8,8"/>
+                                        </GeometryGroup>
+                                    </GeometryDrawing.Geometry>
+                                </GeometryDrawing>
+                            </DrawingGroup>
+                        </DrawingBrush.Drawing>
+                    </DrawingBrush>
+                </Border.Background>
+
+                <Image x:Name="PreviewImage"
+                       Stretch="None"
+                       RenderTransformOrigin="0%,0%"
+                       VerticalAlignment="Top"
+                       HorizontalAlignment="Left"/>
+            </Border>
+
+            <!-- Mini-map 缩略导航图（右下角） -->
+            <Border x:Name="MiniMapBorder"
+                    HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                    Margin="12" Width="140" Height="105"
+                    Background="#CC222222" CornerRadius="4"
+                    BorderBrush="#66FFFFFF" BorderThickness="1"
+                    IsVisible="False" ClipToBounds="True">
+                <Grid>
+                    <Image x:Name="MiniMapImage" Stretch="Uniform" Margin="3" Opacity="0.8"/>
+                    <Border x:Name="MiniMapViewRect"
+                            BorderBrush="#FF00A2FF" BorderThickness="1.5"
+                            Background="#2200A2FF"
+                            HorizontalAlignment="Left" VerticalAlignment="Top"/>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- 底部信息面板 -->
+        <Border x:Name="InfoPanel" Grid.Row="2" Background="#FFF5F5F5" BorderBrush="#FFDCDCDC"
+                BorderThickness="0,1,0,0" Padding="12,6" IsVisible="False">
+            <Grid ColumnDefinitions="Auto,*,Auto,*,Auto,*,Auto,*" ColumnSpacing="6" RowDefinitions="Auto,Auto" RowSpacing="3">
+                <TextBlock Text="尺寸:" Classes="meta-label"/>
+                <TextBlock x:Name="MetaSizeText" Classes="meta-value" Grid.Column="1"/>
+                <TextBlock Text="格式:" Classes="meta-label" Grid.Column="2"/>
+                <TextBlock x:Name="MetaFormatText" Classes="meta-value" Grid.Column="3"/>
+                <TextBlock Text="大小:" Classes="meta-label" Grid.Column="4"/>
+                <TextBlock x:Name="MetaFileSizeText" Classes="meta-value" Grid.Column="5"/>
+                <TextBlock Text="DPI:" Classes="meta-label" Grid.Column="6"/>
+                <TextBlock x:Name="MetaDpiText" Classes="meta-value" Grid.Column="7"/>
+
+                <TextBlock Text="路径:" Classes="meta-label" Grid.Row="1"/>
+                <TextBlock x:Name="MetaPathText" Classes="meta-value" Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="5"
+                           TextTrimming="CharacterEllipsis"/>
+                <TextBlock Text="修改:" Classes="meta-label" Grid.Row="1" Grid.Column="6"/>
+                <TextBlock x:Name="MetaDateText" Classes="meta-value" Grid.Row="1" Grid.Column="7"/>
+            </Grid>
         </Border>
     </Grid>
 </Window>

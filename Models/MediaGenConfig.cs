@@ -45,6 +45,14 @@ namespace TrueFluentPro.Models
         /// <summary>聊天模式：每次请求携带的最大历史轮数（全局默认值，会话级可覆盖）</summary>
         public int DefaultMaxConversationTurns { get; set; } = 20;
 
+        // --- 运行时注入（不持久化）---
+        /// <summary>
+        /// V2 图片编辑 Responses API 使用的文本模型名（如 gpt-4o / gpt-5.4）。
+        /// 由 ViewModel 在调用前从聊天模型运行时注入，不写入 config.json。
+        /// </summary>
+        [System.Text.Json.Serialization.JsonIgnore]
+        public string? TextModelForResponses { get; set; }
+
         // --- 性能与缓存 ---
         public int MaxLoadedSessionsInMemory { get; set; } = 8;
 

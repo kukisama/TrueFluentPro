@@ -126,27 +126,55 @@
             <Setter Property="Background" Value="{DynamicResource SubtleFillColorSecondaryBrush}"/>
             <Setter Property="Foreground" Value="{DynamicResource AccentTextFillColorPrimaryBrush}"/>
         </Style>
-        <Style Selector="Button.web-search-btn">
+        <!-- 统一工具栏图标按钮样式（Button + ToggleButton 共用） -->
+        <Style Selector="Button.toolbar-icon-btn">
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderBrush" Value="{DynamicResource ControlStrokeColorDefaultBrush}"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="CornerRadius" Value="6"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Width" Value="30"/>
+            <Setter Property="Height" Value="30"/>
             <Setter Property="Foreground" Value="{DynamicResource TextSubtleBrush}"/>
-            <Setter Property="Width" Value="28"/>
-            <Setter Property="Height" Value="28"/>
+            <Setter Property="Cursor" Value="Hand"/>
         </Style>
-        <Style Selector="Button.web-search-btn:pointerover">
+        <Style Selector="Button.toolbar-icon-btn:pointerover">
             <Setter Property="Background" Value="{DynamicResource SurfaceHoverBrush}"/>
             <Setter Property="Foreground" Value="{DynamicResource AccentTextFillColorPrimaryBrush}"/>
             <Setter Property="BorderBrush" Value="{DynamicResource AccentBlueBrush}"/>
         </Style>
-        <Style Selector="Button.web-search-btn.web-search-active">
+        <Style Selector="Button.toolbar-icon-btn.toolbar-active">
             <Setter Property="Background" Value="{DynamicResource ShellNavSelectedBrush}"/>
             <Setter Property="BorderBrush" Value="{DynamicResource AccentBlueBrush}"/>
-            <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Foreground" Value="{DynamicResource AccentBlueBrush}"/>
         </Style>
-        <Style Selector="Button.web-search-btn.web-search-active:pointerover">
+        <Style Selector="Button.toolbar-icon-btn.toolbar-active:pointerover">
+            <Setter Property="Background" Value="{DynamicResource SurfaceHoverBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentBlueBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource AccentBlueBrush}"/>
+        </Style>
+        <Style Selector="ToggleButton.toolbar-icon-btn">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource ControlStrokeColorDefaultBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="6"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Width" Value="30"/>
+            <Setter Property="Height" Value="30"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextSubtleBrush}"/>
+            <Setter Property="Cursor" Value="Hand"/>
+        </Style>
+        <Style Selector="ToggleButton.toolbar-icon-btn:pointerover">
+            <Setter Property="Background" Value="{DynamicResource SurfaceHoverBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource AccentTextFillColorPrimaryBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentBlueBrush}"/>
+        </Style>
+        <Style Selector="ToggleButton.toolbar-icon-btn:checked">
+            <Setter Property="Background" Value="{DynamicResource ShellNavSelectedBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentBlueBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource AccentBlueBrush}"/>
+        </Style>
+        <Style Selector="ToggleButton.toolbar-icon-btn:checked:pointerover">
             <Setter Property="Background" Value="{DynamicResource SurfaceHoverBrush}"/>
             <Setter Property="BorderBrush" Value="{DynamicResource AccentBlueBrush}"/>
             <Setter Property="Foreground" Value="{DynamicResource AccentBlueBrush}"/>
@@ -736,64 +764,48 @@
                         </Border>
                         <!-- 参数行 -->
                         <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="10" Margin="0,0,0,6">
-                            <!-- 模式切换（三选一） -->
-                            <StackPanel Orientation="Horizontal" Spacing="4">
-                                <ToggleButton IsChecked="{Binding IsTextMode}"
-                                              Padding="8,4"
-                                              ToolTip.Tip="文字">
-                                    <icons:Icon Value="fa-regular fa-message" FontSize="14"/>
-                                </ToggleButton>
-                                <ToggleButton IsChecked="{Binding IsImageMode}"
-                                              Padding="8,4"
-                                              ToolTip.Tip="图片">
-                                    <icons:Icon Value="fa-regular fa-image" FontSize="14"/>
-                                </ToggleButton>
-                                <ToggleButton IsChecked="{Binding IsVideoMode}"
-                                              Padding="8,4"
-                                              ToolTip.Tip="视频">
-                                    <icons:Icon Value="fa-solid fa-video" FontSize="14"/>
-                                </ToggleButton>
-                            </StackPanel>
 
-                            <Border Width="1" Background="{DynamicResource BorderMediumBrush}" Margin="4,0"/>
-
-                            <!-- 思考开关（仅文本模式） -->
-                            <ToggleButton IsChecked="{Binding EnableReasoning}"
-                                          IsVisible="{Binding IsTextMode}"
-                                          Padding="5,3"
+                            <!-- 思考开关 -->
+                            <ToggleButton Classes="toolbar-icon-btn"
+                                          IsChecked="{Binding EnableReasoning}"
                                           ToolTip.Tip="启用模型推理/思考过程">
-                                <icons:Icon Value="fa-regular fa-circle-question" FontSize="14"/>
-                            </ToggleButton>
-
-                                <!-- Web 搜索入口（仅文本模式） -->
-                                <Button Classes="web-search-btn"
-                                    Classes.web-search-active="{Binding EnableWebSearch}"
-                                    IsVisible="{Binding IsTextMode}"
-                                    Padding="0"
-                                    Click="WebSearchSelector_Click"
-                                    ToolTip.Tip="{Binding WebSearchButtonToolTip}">
-                                    <Grid Width="22" Height="22">
-                                        <icons:Icon Value="fa-solid fa-globe"
-                                                    FontSize="14"
-                                                    HorizontalAlignment="Center"
-                                                    VerticalAlignment="Center"
-                                                    Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
-                                        <Border Width="8"
-                                                Height="8"
-                                                CornerRadius="4"
+                                <Grid Width="22" Height="22">
+                                    <icons:Icon Value="fa-solid fa-brain"
+                                                FontSize="14"
+                                                HorizontalAlignment="Center"
+                                                VerticalAlignment="Center"/>
+                                    <Border Width="8" Height="8" CornerRadius="4"
                                             Background="{DynamicResource IndicatorGreenBrush}"
                                             BorderBrush="{DynamicResource CardBackgroundBrush}"
-                                                BorderThickness="1"
-                                                HorizontalAlignment="Right"
-                                                VerticalAlignment="Top"
-                                                Margin="0,-1,-1,0"
-                                                IsVisible="{Binding EnableWebSearch}"/>
-                                    </Grid>
-                                </Button>
+                                            BorderThickness="1"
+                                            HorizontalAlignment="Right" VerticalAlignment="Top"
+                                            Margin="0,-1,-1,0"
+                                            IsVisible="{Binding EnableReasoning}"/>
+                                </Grid>
+                            </ToggleButton>
 
-                            <!-- 对话轮数按钮（仅文本模式） -->
-                            <Button Padding="5,3"
-                                    IsVisible="{Binding IsTextMode}"
+                            <!-- Web 搜索入口 -->
+                            <Button Classes="toolbar-icon-btn"
+                                    Classes.toolbar-active="{Binding EnableWebSearch}"
+                                    Click="WebSearchSelector_Click"
+                                    ToolTip.Tip="{Binding WebSearchButtonToolTip}">
+                                <Grid Width="22" Height="22">
+                                    <icons:Icon Value="fa-solid fa-globe"
+                                                FontSize="14"
+                                                HorizontalAlignment="Center"
+                                                VerticalAlignment="Center"/>
+                                    <Border Width="8" Height="8" CornerRadius="4"
+                                            Background="{DynamicResource IndicatorGreenBrush}"
+                                            BorderBrush="{DynamicResource CardBackgroundBrush}"
+                                            BorderThickness="1"
+                                            HorizontalAlignment="Right" VerticalAlignment="Top"
+                                            Margin="0,-1,-1,0"
+                                            IsVisible="{Binding EnableWebSearch}"/>
+                                </Grid>
+                            </Button>
+
+                            <!-- 对话轮数按钮 -->
+                            <Button Classes="toolbar-icon-btn"
                                     ToolTip.Tip="调整每次请求携带的历史对话轮数">
                                 <Button.Flyout>
                                     <Flyout Placement="Bottom" ShowMode="TransientWithDismissOnPointerMoveAway">
@@ -824,8 +836,7 @@
                                             CornerRadius="6"
                                             Padding="3,0"
                                             MinWidth="14" Height="14"
-                                            HorizontalAlignment="Right"
-                                            VerticalAlignment="Top"
+                                            HorizontalAlignment="Right" VerticalAlignment="Top"
                                             Margin="0,-3,-5,0">
                                         <TextBlock Text="{Binding MaxConversationTurns}"
                                                    FontSize="9" FontWeight="Bold"
@@ -836,47 +847,28 @@
                                 </Grid>
                             </Button>
 
-                            <!-- 图片参数 -->
-                            <StackPanel Orientation="Horizontal" Spacing="6"
-                                        IsVisible="{Binding IsImageMode}">
-                                <TextBlock Classes="param-label" Text="尺寸:"/>
-                                <ComboBox ItemsSource="{Binding ImageSizeOptions}"
-                                          SelectedItem="{Binding ImageSize}"
-                                          Width="120" Padding="4,2" FontSize="12"/>
-                                <TextBlock Classes="param-label" Text="质量:"/>
-                                <ComboBox ItemsSource="{Binding ImageQualityOptions}"
-                                          SelectedItem="{Binding ImageQuality}"
-                                          Width="80" Padding="4,2" FontSize="12"/>
-                                <TextBlock Classes="param-label" Text="格式:"/>
-                                <ComboBox ItemsSource="{Binding ImageFormatOptions}"
-                                      SelectedItem="{Binding ImageFormat}"
-                                      Width="80" Padding="4,2" FontSize="12"/>
-                                <TextBlock Classes="param-label" Text="数量:"/>
-                                <ComboBox ItemsSource="{Binding ImageCountOptions}"
-                                      SelectedItem="{Binding ImageCount}"
-                                      Width="70" Padding="4,2" FontSize="12"/>
-                            </StackPanel>
+                            <!-- 携带历史图开关 -->
+                            <ToggleButton Classes="toolbar-icon-btn"
+                                          IsChecked="{Binding EnableRecentImageCarry}"
+                                          ToolTip.Tip="开启后，每轮请求自动携带最近一张历史图片（支持跨轮视觉问答与改图）">
+                                <Grid Width="22" Height="22">
+                                    <icons:Icon Value="fa-solid fa-image"
+                                                FontSize="14"
+                                                HorizontalAlignment="Center"
+                                                VerticalAlignment="Center"/>
+                                    <Border Width="8" Height="8" CornerRadius="4"
+                                            Background="{DynamicResource IndicatorGreenBrush}"
+                                            BorderBrush="{DynamicResource CardBackgroundBrush}"
+                                            BorderThickness="1"
+                                            HorizontalAlignment="Right" VerticalAlignment="Top"
+                                            Margin="0,-1,-1,0"
+                                            IsVisible="{Binding EnableRecentImageCarry}"/>
+                                </Grid>
+                            </ToggleButton>
 
-                            <!-- 视频参数 -->
-                            <StackPanel Orientation="Horizontal" Spacing="6"
-                                        IsVisible="{Binding IsVideoMode}">
-                                <TextBlock Classes="param-label" Text="比例:"/>
-                                <ComboBox ItemsSource="{Binding VideoAspectRatioOptions}"
-                                      SelectedItem="{Binding VideoAspectRatio}"
-                                      Width="70" Padding="4,2" FontSize="12"/>
-                                <TextBlock Classes="param-label" Text="分辨率:"/>
-                                <ComboBox ItemsSource="{Binding VideoResolutionOptions}"
-                                      SelectedItem="{Binding VideoResolution}"
-                                      Width="80" Padding="4,2" FontSize="12"/>
-                                <TextBlock Classes="param-label" Text="时长:"/>
-                                <ComboBox ItemsSource="{Binding VideoDurationOptions}"
-                                      SelectedItem="{Binding VideoSeconds}"
-                                      Width="70" Padding="4,2" FontSize="12"/>
-                                <TextBlock Classes="param-label" Text="数量:"/>
-                                <ComboBox ItemsSource="{Binding VideoCountOptions}"
-                                      SelectedItem="{Binding VideoVariants}"
-                                      Width="60" Padding="4,2" FontSize="12"/>
-                            </StackPanel>
+                            <!-- 图片参数 —— 移至媒体中心，聊天窗不再展示 -->
+
+                            <!-- 视频参数 —— 移至媒体中心，聊天窗不再展示 -->
                         </StackPanel>
 
                         <!-- 输入行 -->
@@ -888,7 +880,7 @@
                                         CornerRadius="6"
                                         Padding="6"
                                         Margin="0,0,0,6"
-                                        IsVisible="{Binding HasReferenceImage}">
+                                        IsVisible="False">
                                     <ScrollViewer HorizontalScrollBarVisibility="Auto"
                                                   VerticalScrollBarVisibility="Disabled">
                                         <StackPanel Orientation="Horizontal" Spacing="6">
@@ -979,22 +971,13 @@
                             </Grid>
                             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" Margin="8,0,0,0"
                                         VerticalAlignment="Bottom">
-                                <!-- 文本模式：发送/停止 -->
+                                <!-- 发送/停止 -->
                                 <Button Classes="pressable" Content="发送" Command="{Binding GenerateCommand}"
-                                        IsVisible="{Binding IsTextMode}"
                                         Padding="16,8" FontWeight="SemiBold"
                                         Background="{DynamicResource AccentBlueBrush}" Foreground="White"/>
                                 <Button Content="停止" Command="{Binding StopChatCommand}"
                                         IsVisible="{Binding IsChatStreaming}"
                                         Padding="10,8"/>
-                                <!-- 媒体模式：生成/取消 -->
-                                <Button Classes="pressable" Content="生成" Command="{Binding GenerateCommand}"
-                                        IsVisible="{Binding !IsTextMode}"
-                                        Padding="16,8" FontWeight="SemiBold"
-                                        Background="{DynamicResource AccentBlueBrush}" Foreground="White"/>
-                                <Button Content="取消" Command="{Binding CancelCommand}"
-                                        Padding="10,8"
-                                        IsVisible="{Binding IsGenerating}"/>
                             </StackPanel>
                         </Grid>
 

@@ -596,7 +596,7 @@ namespace TrueFluentPro.Views
             }
         }
 
-        /// <summary>统一附件按钮：文字模式打开图片+文本选择器；图片/视频模式走现有参考图逻辑。</summary>
+        /// <summary>附件按钮：打开图片+文本选择器，添加到附件列表。</summary>
         private async void AttachFileOrImage_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
         {
             var session = _viewModel?.CurrentSession;
@@ -605,75 +605,59 @@ namespace TrueFluentPro.Views
             var provider = TopLevel.GetTopLevel(this)?.StorageProvider;
             if (provider == null) return;
 
-            if (session.IsTextMode)
+            var files = await provider.OpenFilePickerAsync(new FilePickerOpenOptions
             {
-                // 文字模式：支持图片 + 文本文件
-                var files = await provider.OpenFilePickerAsync(new FilePickerOpenOptions
+                Title = "添加附件（图片或文本文件）",
+                AllowMultiple = true,
+                FileTypeFilter = new[]
                 {
-                    Title = "添加附件（图片或文本文件）",
-                    AllowMultiple = true,
-                    FileTypeFilter = new[]
+                    new FilePickerFileType("图片")
                     {
-                        new FilePickerFileType("图片")
-                        {
-                            Patterns = new[] { "*.png", "*.jpg", "*.jpeg", "*.webp", "*.bmp", "*.gif" }
-                        },
-                        new FilePickerFileType("文本文件")
-                        {
-                            Patterns = new[] { "*.txt", "*.md", "*.json", "*.xml", "*.csv", "*.log", "*.yaml", "*.yml", "*.html", "*.css", "*.js", "*.ts", "*.py", "*.cs" }
-                        },
-                        new FilePickerFileType("所有文件")
-                        {
-                            Patterns = new[] { "*.*" }
-                        }
+                        Patterns = new[] { "*.png", "*.jpg", "*.jpeg", "*.webp", "*.bmp", "*.gif" }
+                    },
+                    new FilePickerFileType("文本文件")
+                    {
+                        Patterns = new[] { "*.txt", "*.md", "*.json", "*.xml", "*.csv", "*.log", "*.yaml", "*.yml", "*.html", "*.css", "*.js", "*.ts", "*.py", "*.cs" }
+                    },
+                    new FilePickerFileType("所有文件")
+                    {
+                        Patterns = new[] { "*.*" }
                     }
-                });
-
-                if (files == null || files.Count == 0) return;
-
-                foreach (var file in files)
-                {
-                    var localPath = file.TryGetLocalPath();
-                    if (string.IsNullOrWhiteSpace(localPath)) continue;
-                    if (session.IsAllowedAttachmentFile(localPath))
-                        session.AddAttachmentFile(localPath);
                 }
-            }
-            else
+            });
+
+            if (files == null || files.Count == 0) return;
+
+            foreach (var file in files)
             {
-                // 图片/视频模式：走现有参考图逻辑
-                AttachReferenceImage_Click(sender, e);
+                var localPath = file.TryGetLocalPath();
+                if (string.IsNullOrWhiteSpace(localPath)) continue;
+                if (session.IsAllowedAttachmentFile(localPath))
+                    session.AddAttachmentFile(localPath);
             }
         }
 
-        /// <summary>Ctrl+V 统一粘贴：文字模式走附件系统，其他模式走参考图。</summary>
+        /// <summary>Ctrl+V 粘贴：剪贴板图片→附件系统。</summary>
         private async Task<bool> TryAttachFromClipboardAsync()
         {
             var session = _viewModel?.CurrentSession;
             if (session == null) return false;
 
-            if (session.IsTextMode)
+            var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+            if (clipboard == null) return false;
+
+            using (var bitmap = await clipboard.TryGetBitmapAsync())
             {
-                // 文字模式：剪贴板图片→附件
-                var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
-                if (clipboard == null) return false;
-
-                using (var bitmap = await clipboard.TryGetBitmapAsync())
+                if (bitmap != null)
                 {
-                    if (bitmap != null)
-                    {
-                        var tempPngPath = Path.Combine(Path.GetTempPath(), $"attclip_{Guid.NewGuid():N}.png");
-                        bitmap.Save(tempPngPath, 100);
-                        session.AddAttachmentFile(tempPngPath);
-                        return true;
-                    }
+                    var tempPngPath = Path.Combine(Path.GetTempPath(), $"attclip_{Guid.NewGuid():N}.png");
+                    bitmap.Save(tempPngPath, 100);
+                    session.AddAttachmentFile(tempPngPath);
+                    return true;
                 }
-
-                return false; // 非图片粘贴不拦截，让 TextBox 自行处理
             }
 
-            // 图片/视频模式：走现有参考图粘贴
-            return await TryAttachReferenceImageFromClipboardAsync();
+            return false; // 非图片粘贴不拦截，让 TextBox 自行处理
         }
 
         private async Task<bool> TryAttachReferenceImageFromClipboardAsync()
@@ -1578,20 +1562,9 @@ namespace TrueFluentPro.Views
                         var path = item.Path?.LocalPath;
                         if (string.IsNullOrEmpty(path)) continue;
 
-                        var ext = Path.GetExtension(path).ToLowerInvariant();
-                        var isImage = ext is ".png" or ".jpg" or ".jpeg" or ".bmp" or ".webp" or ".gif";
-
-                        if (session.IsTextMode)
-                        {
-                            // 文字模式：图片和文本都走附件系统
-                            if (session.IsAllowedAttachmentFile(path))
-                                session.AddAttachmentFile(path);
-                        }
-                        else if (isImage)
-                        {
-                            // 图片/视频模式：图片走参考图
-                            await session.SetReferenceImageFromFileAsync(path);
-                        }
+                        // 统一走附件系统
+                        if (session.IsAllowedAttachmentFile(path))
+                            session.AddAttachmentFile(path);
                     }
                 }
             }

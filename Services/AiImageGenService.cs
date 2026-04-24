@@ -655,6 +655,10 @@ namespace TrueFluentPro.Services
 
             formContent.Add(new StringContent(prompt), "prompt");
             formContent.Add(new StringContent(genConfig.ImageModel), "model");
+            if (!string.IsNullOrWhiteSpace(genConfig.ImageSize) && genConfig.ImageSize != "auto")
+                formContent.Add(new StringContent(genConfig.ImageSize), "size");
+            if (!string.IsNullOrWhiteSpace(genConfig.ImageQuality))
+                formContent.Add(new StringContent(genConfig.ImageQuality), "quality");
 
             using var request = new HttpRequestMessage(HttpMethod.Post, url);
             request.Content = formContent;
@@ -820,10 +824,14 @@ namespace TrueFluentPro.Services
             }
 
             // 4) 构建 Responses API JSON body
-            //    model 必须是文本模型（如 gpt-5.4），图片模型通过 HTTP 头传递
+            //    model 必须是文本模型（如 gpt-4o / gpt-5.4），图片模型通过 HTTP 头传递
+            //    优先使用 genConfig.TextModelForResponses（由 ViewModel 从聊天模型注入）
+            var textModel = !string.IsNullOrWhiteSpace(genConfig.TextModelForResponses)
+                ? genConfig.TextModelForResponses
+                : config.ModelName;
             var bodyObj = new Dictionary<string, object>
             {
-                ["model"] = config.ModelName,
+                ["model"] = textModel,
                 ["input"] = new[]
                 {
                     new Dictionary<string, object>
@@ -834,10 +842,7 @@ namespace TrueFluentPro.Services
                 },
                 ["tools"] = new[]
                 {
-                    new Dictionary<string, object>
-                    {
-                        ["type"] = "image_generation"
-                    }
+                    BuildImageGenerationToolDefinition(genConfig)
                 }
             };
             var jsonBody = JsonSerializer.Serialize(bodyObj);
@@ -851,7 +856,7 @@ namespace TrueFluentPro.Services
             await AppLogService.Instance.LogHttpDebugAsync(
                 "image",
                 "ImageEditV2-ResponsesApi.Build",
-                $"TextModel={config.ModelName}\n" +
+                $"TextModel={textModel}\n" +
                 $"ImageDeployment={genConfig.ImageModel}\n" +
                 $"ReferenceImageCount={validReferenceImages.Count}\n" +
                 $"FileIds={string.Join(",", fileIds)}\n" +
@@ -944,6 +949,20 @@ namespace TrueFluentPro.Services
                 DownloadSeconds = genResult.DownloadSeconds,
                 ResponseId = genResult.ResponseId
             };
+        }
+
+        /// <summary>
+        /// 构建 image_generation tool 定义。
+        /// Azure OpenAI Responses API 的改图路径只接受固定 size（1024x1024/1024x1536/1536x1024/auto），
+        /// 自定义分辨率会返回 400，因此 size 始终不传（等同于 auto）。
+        /// </summary>
+        private static Dictionary<string, object> BuildImageGenerationToolDefinition(MediaGenConfig genConfig)
+        {
+            var tool = new Dictionary<string, object> { ["type"] = "image_generation" };
+            // size 不传 — Azure Responses API 不支持自定义分辨率，留给服务端自动决策
+            if (!string.IsNullOrWhiteSpace(genConfig.ImageQuality) && genConfig.ImageQuality != "auto")
+                tool["quality"] = genConfig.ImageQuality;
+            return tool;
         }
 
         private static string? BuildImageDataUrl(string? imagePath)

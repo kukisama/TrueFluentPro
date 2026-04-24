@@ -285,6 +285,7 @@ public static class EndpointProfileUrlBuilder
     /// <summary>
     /// 构建 Responses API URL 候选（用于图片编辑 V2 模式）。
     /// 优先使用厂商包覆盖 → 平台默认策略 image.responsesPrimaryUrl。
+    /// API 版本使用图片能力特定的 defaultApiVersion（与 audio/speech 一致的机制）。
     /// </summary>
     public static IReadOnlyList<string> BuildImageResponsesUrlCandidates(
         string baseUrl,
@@ -296,8 +297,17 @@ public static class EndpointProfileUrlBuilder
         if (string.IsNullOrWhiteSpace(normalizedBaseUrl))
             return Array.Empty<string>();
 
-        var effectiveApiVersion = GetEffectiveEndpointApiVersion(profileId, endpointType, apiVersion);
         var profile = EndpointProfileRuntimeResolver.Resolve(profileId, endpointType);
+        var platformPolicy = TryGetPlatformDefaultPolicy(endpointType);
+
+        // 图片能力特定 API 版本：厂商覆盖 → 平台默认 → 端点通用
+        var imageCapabilityApiVersion =
+            !string.IsNullOrWhiteSpace(profile?.Overrides.Routes.Image.DefaultApiVersion)
+                ? profile!.Overrides.Routes.Image.DefaultApiVersion
+                : platformPolicy?.Image.DefaultApiVersion;
+
+        var effectiveApiVersion = GetEffectiveCapabilityApiVersion(
+            profileId, endpointType, apiVersion, imageCapabilityApiVersion);
 
         // 厂商包可通过 Overrides.Routes.Image.ResponsesPrimaryUrl 覆盖
         if (profile is not null
@@ -310,7 +320,6 @@ public static class EndpointProfileUrlBuilder
         }
 
         // 回退到平台默认策略
-        var platformPolicy = TryGetPlatformDefaultPolicy(endpointType);
         if (platformPolicy is not null && !string.IsNullOrWhiteSpace(platformPolicy.Image.ResponsesPrimaryUrl))
         {
             return BuildConfiguredUrls(

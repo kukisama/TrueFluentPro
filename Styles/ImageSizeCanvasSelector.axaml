@@ -1,0 +1,69 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ctrl="using:TrueFluentPro.Controls">
+
+    <!-- ImageSizeCanvasSelector 默认模板 -->
+    <Style Selector="ctrl|ImageSizeCanvasSelector">
+        <Setter Property="Template">
+            <ControlTemplate>
+                <StackPanel Spacing="8">
+                    <!-- 画布区域：深色背景 + 网格线 -->
+                    <Panel x:Name="PART_CanvasArea"
+                           Width="240" Height="240"
+                           Background="{DynamicResource CardBackgroundFillColorSecondaryBrush}"
+                           Cursor="Cross"
+                           ClipToBounds="True">
+
+                        <!-- 网格线提示（装饰性，16px 对齐可视化） -->
+                        <Border Width="240" Height="240" Opacity="0.08"
+                                BorderBrush="{DynamicResource TextFillColorSecondaryBrush}"
+                                BorderThickness="0">
+                            <Grid ColumnDefinitions="60,60,60,60" RowDefinitions="60,60,60,60">
+                                <Border Grid.Column="0" Grid.RowSpan="4" BorderBrush="{DynamicResource TextFillColorSecondaryBrush}" BorderThickness="0,0,1,0"/>
+                                <Border Grid.Column="1" Grid.RowSpan="4" BorderBrush="{DynamicResource TextFillColorSecondaryBrush}" BorderThickness="0,0,1,0"/>
+                                <Border Grid.Column="2" Grid.RowSpan="4" BorderBrush="{DynamicResource TextFillColorSecondaryBrush}" BorderThickness="0,0,1,0"/>
+                                <Border Grid.Row="0" Grid.ColumnSpan="4" BorderBrush="{DynamicResource TextFillColorSecondaryBrush}" BorderThickness="0,0,0,1"/>
+                                <Border Grid.Row="1" Grid.ColumnSpan="4" BorderBrush="{DynamicResource TextFillColorSecondaryBrush}" BorderThickness="0,0,0,1"/>
+                                <Border Grid.Row="2" Grid.ColumnSpan="4" BorderBrush="{DynamicResource TextFillColorSecondaryBrush}" BorderThickness="0,0,0,1"/>
+                            </Grid>
+                        </Border>
+
+                        <!-- 尺寸矩形（可视化当前选择区域） -->
+                        <Border x:Name="PART_SizeRect"
+                                HorizontalAlignment="Left" VerticalAlignment="Top"
+                                Background="#183B82F6"
+                                BorderBrush="{DynamicResource AccentFillColorDefaultBrush}"
+                                BorderThickness="2"
+                                CornerRadius="2">
+
+                            <!-- 尺寸标签居中 -->
+                            <TextBlock x:Name="PART_DimensionLabel"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       FontSize="11" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource AccentFillColorDefaultBrush}"
+                                       Text="1024 × 1024"/>
+                        </Border>
+
+                        <!-- 拖拽手柄（右下角） -->
+                        <Border x:Name="PART_DragHandle"
+                                Width="14" Height="14"
+                                CornerRadius="7"
+                                Background="{DynamicResource AccentFillColorDefaultBrush}"
+                                HorizontalAlignment="Left" VerticalAlignment="Top"
+                                Cursor="BottomRightCorner"
+                                Margin="0">
+                            <!-- 位置由代码控制，初始在矩形右下角 -->
+                        </Border>
+                    </Panel>
+
+                    <!-- 信息面板 -->
+                    <TextBlock x:Name="PART_InfoText"
+                               Text="{TemplateBinding SizeInfoText}"
+                               FontSize="11"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                               TextWrapping="Wrap"/>
+                </StackPanel>
+            </ControlTemplate>
+        </Setter>
+    </Style>
+</Styles>

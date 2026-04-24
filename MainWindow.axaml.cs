@@ -102,6 +102,11 @@ public partial class MainWindow : Window
         {
             ShowPage(_viewModel?.SelectedNavTag ?? MainWindowViewModel.NavTagLive);
             _viewModel?.NotifyMainWindowShown();
+
+            // 首次启动：确保主窗口置于最前
+            Activate();
+            Topmost = true;
+            Dispatcher.UIThread.Post(() => Topmost = false, DispatcherPriority.Background);
         }, DispatcherPriority.Loaded);
     }
 

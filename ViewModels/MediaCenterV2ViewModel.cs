@@ -216,6 +216,14 @@ namespace TrueFluentPro.ViewModels
                     OnPropertyChanged(nameof(CanvasPreviewMetaText));
                     OnPropertyChanged(nameof(CanvasPlaceholderTitle));
                     OnPropertyChanged(nameof(CanvasPlaceholderDescription));
+                    OnPropertyChanged(nameof(IsSelectedAssetPending));
+                    OnPropertyChanged(nameof(SelectedAssetPendingPhase));
+                    OnPropertyChanged(nameof(SelectedAssetPendingElapsed));
+                    OnPropertyChanged(nameof(SelectedAssetPendingProgress));
+                    OnPropertyChanged(nameof(IsSelectedAssetFailed));
+                    OnPropertyChanged(nameof(SelectedAssetFailedTitle));
+                    OnPropertyChanged(nameof(SelectedAssetFailedError));
+                    OnPropertyChanged(nameof(IsCanvasEmptyPlaceholderVisible));
                     (SelectPreviousAssetCommand as RelayCommand)?.RaiseCanExecuteChanged();
                     (SelectNextAssetCommand as RelayCommand)?.RaiseCanExecuteChanged();
                     (OpenSelectedAssetCommand as RelayCommand)?.RaiseCanExecuteChanged();
@@ -462,6 +470,74 @@ namespace TrueFluentPro.ViewModels
         public string SelectedGroupWorkflowText => SelectedGroup?.WorkflowDisplayText ?? CurrentModeBadgeText;
         public string SelectedAssetMetaText => SelectedAsset?.MetaSummaryText ?? "选中图片或视频后，这里会告诉你它来自哪一组结果。";
         public string SelectedAssetPromptText => SelectedAsset?.PromptSummaryText ?? CurrentCanvasDescription;
+
+        // ── 画布空白占位可见性（非 pending 且非 failed 时才显示空白提示） ──
+        public bool IsCanvasEmptyPlaceholderVisible => !IsSelectedAssetPending && !IsSelectedAssetFailed;
+
+        // ── 画布 pending 进度 overlay ──
+        public bool IsSelectedAssetPending => SelectedAsset?.IsPending == true;
+        public string SelectedAssetPendingPhase => SelectedAsset?.PendingStatusText ?? "";
+        public int SelectedAssetPendingProgress => _selectedAssetPendingProgress;
+        private int _selectedAssetPendingProgress;
+        public string SelectedAssetPendingElapsed
+        {
+            get
+            {
+                if (SelectedAsset == null || !SelectedAsset.IsPending) return "";
+                // 从关联的 running task 读取 ElapsedSeconds
+                var task = FindRunningTaskForAsset(SelectedAsset);
+                return task != null ? $"⏱ 已等待 {task.ElapsedSeconds:F0}s" : "";
+            }
+        }
+
+        // ── 画布 failed 错误 overlay ──
+        public bool IsSelectedAssetFailed => SelectedAsset?.IsFailed == true;
+        public string SelectedAssetFailedTitle => SelectedAsset?.PendingStatusText ?? "❌ 生成失败";
+        public string SelectedAssetFailedError
+        {
+            get
+            {
+                var raw = SelectedAsset?.FailedErrorMessage ?? "";
+                // 提取用户友好的错误摘要
+                return ExtractFriendlyError(raw);
+            }
+        }
+
+        private static string ExtractFriendlyError(string rawError)
+        {
+            if (string.IsNullOrWhiteSpace(rawError)) return "未知错误";
+            // 服务器 500 错误 → 友好提示
+            if (rawError.Contains("server_error", StringComparison.OrdinalIgnoreCase)
+                || rawError.Contains("500", StringComparison.Ordinal)
+                || rawError.Contains("Sorry about that", StringComparison.OrdinalIgnoreCase))
+                return "Azure 服务器暂时出错（500），请稍后重试";
+            // 尺寸错误
+            if (rawError.Contains("Invalid size", StringComparison.OrdinalIgnoreCase))
+                return "图片尺寸不受支持，请更换尺寸后重试";
+            // 内容安全
+            if (rawError.Contains("content_policy", StringComparison.OrdinalIgnoreCase)
+                || rawError.Contains("safety", StringComparison.OrdinalIgnoreCase))
+                return "内容被安全策略拦截，请修改提示词";
+            // 速率限制
+            if (rawError.Contains("rate_limit", StringComparison.OrdinalIgnoreCase)
+                || rawError.Contains("429", StringComparison.Ordinal))
+                return "请求频率过高，请等待片刻后重试";
+            // 超时
+            if (rawError.Contains("timeout", StringComparison.OrdinalIgnoreCase)
+                || rawError.Contains("timed out", StringComparison.OrdinalIgnoreCase))
+                return "请求超时，请稍后重试";
+            // 取第一行作为摘要
+            var firstLine = rawError.Split('\n', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? rawError;
+            return firstLine.Length > 120 ? firstLine[..120] + "..." : firstLine;
+        }
+
+        private MediaGenTask? FindRunningTaskForAsset(MediaCreatorResultAsset? asset)
+        {
+            if (asset == null || WorkspaceSession == null) return null;
+            var taskId = asset.AssetId?.Replace("pending_asset_", "").Replace("failed_asset_", "");
+            return WorkspaceSession.TaskHistory.FirstOrDefault(t =>
+                t.Id == taskId && t.Status is MediaGenStatus.Running or MediaGenStatus.Queued);
+        }
 
         public string SelectedAssetCounterText
         {
@@ -934,6 +1010,14 @@ namespace TrueFluentPro.ViewModels
                 OnPropertyChanged(nameof(CanvasPreviewMetaText));
                 OnPropertyChanged(nameof(CanvasPlaceholderTitle));
                 OnPropertyChanged(nameof(CanvasPlaceholderDescription));
+                OnPropertyChanged(nameof(IsSelectedAssetPending));
+                OnPropertyChanged(nameof(SelectedAssetPendingPhase));
+                OnPropertyChanged(nameof(SelectedAssetPendingElapsed));
+                OnPropertyChanged(nameof(SelectedAssetPendingProgress));
+                OnPropertyChanged(nameof(IsSelectedAssetFailed));
+                OnPropertyChanged(nameof(SelectedAssetFailedTitle));
+                OnPropertyChanged(nameof(SelectedAssetFailedError));
+                OnPropertyChanged(nameof(IsCanvasEmptyPlaceholderVisible));
                 ApplyWorkflowToWorkspace();
             }
         }
@@ -992,7 +1076,8 @@ namespace TrueFluentPro.ViewModels
 
             PropertyChangedEventHandler handler = (_, args) =>
             {
-                if (args.PropertyName is nameof(MediaGenTask.Status) or nameof(MediaGenTask.Progress) or nameof(MediaGenTask.ErrorMessage))
+                if (args.PropertyName is nameof(MediaGenTask.Status) or nameof(MediaGenTask.Progress)
+                    or nameof(MediaGenTask.ErrorMessage) or nameof(MediaGenTask.PhaseText) or nameof(MediaGenTask.ElapsedSeconds))
                 {
                     RebuildResultCollections(selectLatest: false);
                 }
@@ -1210,6 +1295,21 @@ namespace TrueFluentPro.ViewModels
 
             targetAsset ??= assets.FirstOrDefault();
             SelectAsset(targetAsset);
+
+            // 更新选中资产的 pending 进度（从关联任务读取）
+            var runningTask = FindRunningTaskForAsset(SelectedAsset);
+            var newProgress = runningTask?.Progress ?? 0;
+            if (_selectedAssetPendingProgress != newProgress)
+            {
+                _selectedAssetPendingProgress = newProgress;
+                OnPropertyChanged(nameof(SelectedAssetPendingProgress));
+            }
+            OnPropertyChanged(nameof(SelectedAssetPendingPhase));
+            OnPropertyChanged(nameof(SelectedAssetPendingElapsed));
+            OnPropertyChanged(nameof(IsSelectedAssetFailed));
+            OnPropertyChanged(nameof(SelectedAssetFailedTitle));
+            OnPropertyChanged(nameof(SelectedAssetFailedError));
+            OnPropertyChanged(nameof(IsCanvasEmptyPlaceholderVisible));
         }
 
         private IEnumerable<MediaCreatorResultGroup> ExtractResultGroups(MediaSessionViewModel session)
@@ -1262,34 +1362,40 @@ namespace TrueFluentPro.ViewModels
             }
 
             foreach (var task in session.TaskHistory
-                         .Where(t => t.Status is MediaGenStatus.Running or MediaGenStatus.Queued)
+                         .Where(t => t.Status is MediaGenStatus.Running or MediaGenStatus.Queued or MediaGenStatus.Failed)
                          .OrderByDescending(t => t.CreatedAt))
             {
                 var taskKind = task.Type == MediaGenType.Video ? CreatorAssetKind.Video : CreatorAssetKind.Image;
+                var isFailed = task.Status == MediaGenStatus.Failed;
+                var statusText = isFailed ? BuildFailedStatusText(task) : BuildPendingStatusText(task);
                 var pendingGroup = new MediaCreatorResultGroup
                 {
-                    GroupId = $"pending_{task.Id}",
+                    GroupId = isFailed ? $"failed_{task.Id}" : $"pending_{task.Id}",
                     PromptText = task.Prompt,
                     CreatedAt = task.CreatedAt,
                     SessionName = session.SessionName,
                     Kind = taskKind,
                     Workflow = task.HasReferenceInput ? CreatorWorkflowKind.Edit : CreatorWorkflowKind.Create,
-                    IsPending = true,
-                    PendingStatusText = BuildPendingStatusText(task)
+                    IsPending = !isFailed,
+                    IsFailed = isFailed,
+                    FailedErrorMessage = isFailed ? (task.ErrorMessage ?? "未知错误") : string.Empty,
+                    PendingStatusText = statusText
                 };
 
                 ApplySessionLineage(session, pendingGroup);
 
                 var pendingAsset = new MediaCreatorResultAsset
                 {
-                    AssetId = $"pending_asset_{task.Id}",
+                    AssetId = isFailed ? $"failed_asset_{task.Id}" : $"pending_asset_{task.Id}",
                     Group = pendingGroup,
                     Kind = taskKind,
                     SessionName = session.SessionName,
                     ModifiedAt = task.CreatedAt,
-                    FileName = pendingGroup.PendingStatusText,
-                    IsPending = true,
-                    PendingStatusText = pendingGroup.PendingStatusText,
+                    FileName = statusText,
+                    IsPending = !isFailed,
+                    IsFailed = isFailed,
+                    FailedErrorMessage = pendingGroup.FailedErrorMessage,
+                    PendingStatusText = statusText,
                     PromptText = task.Prompt
                 };
 
@@ -1313,9 +1419,21 @@ namespace TrueFluentPro.ViewModels
 
         private static string BuildPendingStatusText(MediaGenTask task)
         {
+            // 优先使用实时阶段描述
+            if (!string.IsNullOrEmpty(task.PhaseText))
+                return task.PhaseText;
+
             var mediaText = task.Type == MediaGenType.Video ? "视频" : "图片";
             var workflowText = task.HasReferenceInput ? "修改" : "生成";
-            return $"正在{mediaText}{workflowText}";
+            var elapsed = task.ElapsedSeconds > 0 ? $" {task.ElapsedSeconds:F0}s" : "";
+            return $"⏳ 正在{mediaText}{workflowText}{elapsed}";
+        }
+
+        private static string BuildFailedStatusText(MediaGenTask task)
+        {
+            var mediaText = task.Type == MediaGenType.Video ? "视频" : "图片";
+            var workflowText = task.HasReferenceInput ? "修改" : "生成";
+            return $"❌ {mediaText}{workflowText}失败";
         }
 
         private void SyncCanvasModeWithReferenceState()
@@ -2573,6 +2691,8 @@ namespace TrueFluentPro.ViewModels
         public CreatorAssetKind Kind { get; set; }
         public CreatorWorkflowKind Workflow { get; set; }
         public bool IsPending { get; set; }
+        public bool IsFailed { get; set; }
+        public string FailedErrorMessage { get; set; } = string.Empty;
         public string PendingStatusText { get; set; } = string.Empty;
         public string SourceSessionName { get; set; } = string.Empty;
         public string SourceAssetFileName { get; set; } = string.Empty;
@@ -2594,18 +2714,24 @@ namespace TrueFluentPro.ViewModels
             : Compact(PromptText, 220);
 
         public string WorkflowBadgeText => Workflow == CreatorWorkflowKind.Edit ? "修改" : "创建";
-        public string WorkflowDisplayText => IsPending ? PendingStatusText : WorkflowBadgeText;
+        public string WorkflowDisplayText => IsFailed ? PendingStatusText : IsPending ? PendingStatusText : WorkflowBadgeText;
         public bool HasLineage => !string.IsNullOrWhiteSpace(SourceSessionName) || !string.IsNullOrWhiteSpace(SourceAssetFileName);
         public string LineageText => BuildLineageText(SourceSessionName, SourceAssetFileName, SourceReferenceRole);
-        public string SecondaryText => IsPending
+        public string SecondaryText => IsFailed
+            ? AppendLineage($"{PendingStatusText} · {SessionName} · {CreatedAt:yyyy-MM-dd HH:mm}")
+            : IsPending
             ? AppendLineage($"{PendingStatusText} · {SessionName} · {CreatedAt:yyyy-MM-dd HH:mm}")
             : AppendLineage($"{WorkflowBadgeText} · {SessionName} · {CreatedAt:yyyy-MM-dd HH:mm}");
-        public string ResultSummaryText => IsPending
+        public string ResultSummaryText => IsFailed
+            ? $"生成失败：{FailedErrorMessage}"
+            : IsPending
             ? "结果仍在写入中，期间你可以继续提交新的创作请求。"
             : Kind == CreatorAssetKind.Video
                 ? $"{Items.Count(i => i.Kind == CreatorAssetKind.Video && !i.IsPending)} 个视频结果"
                 : $"{Items.Count(i => i.Kind == CreatorAssetKind.Image && !i.IsPending)} 张图片结果";
-        public string SuggestedNextStepText => IsPending
+        public string SuggestedNextStepText => IsFailed
+            ? "可尝试修改提示词后重新提交，或等待片刻后再试。"
+            : IsPending
             ? "这一项还在生成中。你可以继续切换模式、补提示词或再开新任务，不用等它跑完。"
             : Kind == CreatorAssetKind.Video
                 ? "更像导演台：看镜头、改动作、继续迭代视频版本。"
@@ -2651,6 +2777,8 @@ namespace TrueFluentPro.ViewModels
         public DateTime ModifiedAt { get; set; }
         public string SessionName { get; set; } = string.Empty;
         public bool IsPending { get; set; }
+        public bool IsFailed { get; set; }
+        public string FailedErrorMessage { get; set; } = string.Empty;
         public string PendingStatusText { get; set; } = string.Empty;
         public string PromptText { get; set; } = string.Empty;
         public string DerivedFromSessionId { get; set; } = string.Empty;
@@ -2668,10 +2796,10 @@ namespace TrueFluentPro.ViewModels
 
         public bool IsImage => Kind == CreatorAssetKind.Image;
         public bool IsVideo => Kind == CreatorAssetKind.Video;
-        public bool HasPreview => !IsPending && !string.IsNullOrWhiteSpace(PreviewPath);
+        public bool HasPreview => !IsPending && !IsFailed && !string.IsNullOrWhiteSpace(PreviewPath);
         public bool HasNoPreview => !HasPreview;
         public string KindText => IsVideo ? "视频" : "图片";
-        public string KindBadgeText => IsPending ? "进行中" : KindText;
+        public string KindBadgeText => IsFailed ? "失败" : IsPending ? "进行中" : KindText;
         public string RailCaptionText => IsPending ? PendingStatusText : Group?.PromptPreviewText ?? FileName;
         public string PreviewLabel => IsVideo ? "视频首帧" : "图片预览";
         public string TimestampText => ModifiedAt.ToString("yyyy-MM-dd HH:mm");

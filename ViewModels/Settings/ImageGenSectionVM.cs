@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Linq;
 using TrueFluentPro.Models;
 
@@ -19,13 +20,35 @@ namespace TrueFluentPro.ViewModels.Settings
         public List<ModelOption> ImageModels { get => _imageModels; set => SetProperty(ref _imageModels, value); }
         public ModelOption? SelectedImageModel { get => _selectedImageModel; set => Set(ref _selectedImageModel, value); }
 
-        public List<string> ImageSizeOptions { get; } = ["1024x1024", "1024x1536", "1536x1024"];
-        public List<string> ImageQualityOptions { get; } = ["low", "medium", "high"];
+        public ObservableCollection<string> ImageSizeOptions { get; } = new(Helpers.ImageSizeCalculator.Presets);
+        public List<string> ImageQualityOptions { get; } = ["auto", "low", "medium", "high"];
         public List<string> ImageFormatOptions { get; } = ["png", "jpeg"];
         public List<int> ImageCountOptions { get; } = [1, 2, 3, 4, 5];
         public List<ImageEditMode> ImageEditModeOptions { get; } = [ImageEditMode.V2ResponsesApi, ImageEditMode.V1Multipart];
 
-        public string ImageSize { get => _imageSize; set => Set(ref _imageSize, value); }
+        public string ImageSize
+        {
+            get => _imageSize;
+            set
+            {
+                if (string.Equals(_imageSize, value)) return;
+                // 先确保值在列表中（单自定义槽位），再触发 PropertyChanged
+                EnsureSizeInList(value);
+                Set(ref _imageSize, value);
+            }
+        }
+
+        private string? _customSizeItem;
+        /// <summary>保证值在 ImageSizeOptions 中，非预设值只保留一个自定义槽位</summary>
+        private void EnsureSizeInList(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value) || Helpers.ImageSizeCalculator.PresetSet.Contains(value))
+                return;
+            if (_customSizeItem != null)
+                ImageSizeOptions.Remove(_customSizeItem);
+            _customSizeItem = value;
+            ImageSizeOptions.Add(value);
+        }
         public string ImageQuality { get => _imageQuality; set => Set(ref _imageQuality, value); }
         public string ImageFormat { get => _imageFormat; set => Set(ref _imageFormat, value); }
         public int ImageCount { get => _imageCount; set => Set(ref _imageCount, value); }

@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:TrueFluentPro.ViewModels.Settings"
+             xmlns:ctrl="using:TrueFluentPro.Controls"
              x:Class="TrueFluentPro.Views.Settings.ImageGenSection"
              x:DataType="vm:ImageGenSectionVM"
              x:CompileBindings="False">
@@ -39,6 +40,15 @@
 
                 <!-- 改图模式已固定为 V2ResponsesApi（file_id + Responses API），不再向用户暴露选项 -->
             </Grid>
+
+            <Separator Margin="0,8,0,8"/>
+            <TextBlock Text="画布尺寸选择器" FontWeight="Bold"/>
+            <TextBlock Classes="field-note" TextWrapping="Wrap"
+                       Text="拖拽右下角手柄或点击画布自由选择图片尺寸（自动对齐 16px 网格）。选择结果会同步到上方尺寸下拉框。"/>
+            <ctrl:ImageSizeCanvasSelector
+                SelectedSize="{Binding ImageSize, Mode=TwoWay}"
+                SelectedQuality="{Binding ImageQuality, Mode=OneWay}"
+                Margin="0,4,0,0"/>
         </StackPanel>
     </Border>
 </UserControl>

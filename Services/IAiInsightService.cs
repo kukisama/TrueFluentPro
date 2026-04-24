@@ -37,6 +37,7 @@ namespace TrueFluentPro.Services
             IReadOnlyList<string>? urlCandidatesOverride = null,
             bool allowNextUrlRetry = true,
             bool allowApimSubscriptionKeyQueryRetry = true,
-            Action<byte[]>? onImageResult = null);
+            Action<byte[]>? onImageResult = null,
+            Action? onImageGenerating = null);
     }
 }
