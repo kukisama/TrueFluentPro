@@ -126,12 +126,7 @@ namespace TrueFluentPro.Views
 
             var vw = ViewportBorder.Bounds.Width;
             var vh = ViewportBorder.Bounds.Height;
-            if (vw <= 0 || vh <= 0)
-            {
-                // 窗口还没布局完成，延迟到 LayoutUpdated
-                ViewportBorder.LayoutUpdated += OnFirstLayout;
-                return;
-            }
+            if (vw <= 0 || vh <= 0) return; // 尚未布局，ViewportBorder.SizeChanged 会再次调用
 
             var iw = (double)_bitmap.PixelSize.Width;
             var ih = (double)_bitmap.PixelSize.Height;
@@ -143,12 +138,6 @@ namespace TrueFluentPro.Views
             _translateX = (vw - iw * _scale) / 2;
             _translateY = (vh - ih * _scale) / 2;
             ApplyTransform();
-        }
-
-        private void OnFirstLayout(object? s, EventArgs e)
-        {
-            ViewportBorder.LayoutUpdated -= OnFirstLayout;
-            FitToWindow();
         }
 
         private void SetActualSize()
@@ -278,6 +267,9 @@ namespace TrueFluentPro.Views
 
             // 双击：切换 适应/100%
             ViewportBorder.DoubleTapped += OnViewportDoubleTapped;
+
+            // ViewportBorder 获得/变更实际尺寸时自动适应（覆盖初始布局 + 窗口缩放）
+            ViewportBorder.SizeChanged += OnViewportSizeChanged;
         }
 
         private void OnViewportWheelChanged(object? sender, PointerWheelEventArgs e)
@@ -359,14 +351,16 @@ namespace TrueFluentPro.Views
             NextButton.IsEnabled = _currentIndex < _filePaths.Count - 1;
         }
 
+        private void OnViewportSizeChanged(object? sender, SizeChangedEventArgs e)
+        {
+            if (_bitmap != null && !_isDragging)
+                FitToWindow();
+        }
+
         private void OnWindowSizeChanged(object? sender, SizeChangedEventArgs e)
         {
             if (Width < 480) Width = 480;
             if (Height < 200) Height = 200;
-
-            // 窗口大小变化时重新适应
-            if (_bitmap != null && !_isDragging)
-                FitToWindow();
         }
 
         // ============================== 快捷键 ==============================

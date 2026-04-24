@@ -73,35 +73,12 @@
         <!-- 图片主区域 -->
         <Grid Grid.Row="1">
             <!-- 棋盘格背景（透明图显示用） -->
-            <Border x:Name="ViewportBorder" ClipToBounds="True">
-                <Border.Background>
-                    <DrawingBrush TileMode="Tile" DestinationRect="0,0,16,16"
-                                  SourceRect="0,0,16,16">
-                        <DrawingBrush.Drawing>
-                            <DrawingGroup>
-                                <GeometryDrawing Brush="#FFFFFFFF">
-                                    <GeometryDrawing.Geometry>
-                                        <RectangleGeometry Rect="0,0,16,16"/>
-                                    </GeometryDrawing.Geometry>
-                                </GeometryDrawing>
-                                <GeometryDrawing Brush="#FFE8E8E8">
-                                    <GeometryDrawing.Geometry>
-                                        <GeometryGroup>
-                                            <RectangleGeometry Rect="0,0,8,8"/>
-                                            <RectangleGeometry Rect="8,8,8,8"/>
-                                        </GeometryGroup>
-                                    </GeometryDrawing.Geometry>
-                                </GeometryDrawing>
-                            </DrawingGroup>
-                        </DrawingBrush.Drawing>
-                    </DrawingBrush>
-                </Border.Background>
-
-                <Image x:Name="PreviewImage"
-                       Stretch="None"
-                       RenderTransformOrigin="0%,0%"
-                       VerticalAlignment="Top"
-                       HorizontalAlignment="Left"/>
+            <Border x:Name="ViewportBorder" ClipToBounds="True" Background="#FFFFFFFF">
+                <Canvas>
+                    <Image x:Name="PreviewImage"
+                           Stretch="None"
+                           RenderTransformOrigin="0%,0%"/>
+                </Canvas>
             </Border>
 
             <!-- Mini-map 缩略导航图（右下角） -->
