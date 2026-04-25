@@ -29,7 +29,7 @@ namespace TrueFluentPro.ViewModels
         private readonly ConfigurationService _configurationService;
         private readonly Func<AzureSpeechConfig> _configProvider;
         private readonly Action<AzureSpeechConfig>? _onGlobalConfigUpdated;
-        private readonly AiImageGenService _imageService = new();
+        private readonly AiImageGenService _imageService = new(App.Services.GetRequiredService<FileIdCache>());
         private readonly AiVideoGenService _videoService = new();
 
         // 网页搜索配置
@@ -118,6 +118,82 @@ namespace TrueFluentPro.ViewModels
             .FirstOrDefault(p => string.Equals(p.Id, _webSearchProviderId, StringComparison.OrdinalIgnoreCase)).DisplayName
             ?? "Bing 国际版";
 
+        // --- 文本模型选择（与设置面板同步） ---
+        private List<ModelOption> _availableTextModels = new();
+        public List<ModelOption> AvailableTextModels
+        {
+            get => _availableTextModels;
+            private set => SetProperty(ref _availableTextModels, value);
+        }
+
+        private ModelOption? _selectedConversationModel;
+        public ModelOption? SelectedConversationModel
+        {
+            get => _selectedConversationModel;
+            set
+            {
+                if (SetProperty(ref _selectedConversationModel, value) && value != null)
+                {
+                    _ = ChangeConversationModelAsync(value);
+                }
+            }
+        }
+
+        /// <summary>从全局配置构建可用文本模型列表，并选中当前 ConversationModelRef。</summary>
+        public void RefreshAvailableTextModels()
+        {
+            var config = _configProvider();
+            var models = config.GetAvailableModels(ModelCapability.Text)
+                .Select(pair => new ModelOption
+                {
+                    Reference = new ModelReference
+                    {
+                        EndpointId = pair.Endpoint.Id,
+                        ModelId = pair.Model.ModelId
+                    },
+                    EndpointName = pair.Endpoint.Name,
+                    ModelDisplayName = string.IsNullOrWhiteSpace(pair.Model.DisplayName)
+                        ? pair.Model.ModelId
+                        : pair.Model.DisplayName,
+                    EndpointType = pair.Endpoint.EndpointType
+                })
+                .ToList();
+
+            AvailableTextModels = models;
+
+            var currentRef = _aiConfig.ConversationModelRef;
+            _selectedConversationModel = currentRef == null ? null
+                : models.FirstOrDefault(m => m.Reference.EndpointId == currentRef.EndpointId
+                    && m.Reference.ModelId == currentRef.ModelId);
+            OnPropertyChanged(nameof(SelectedConversationModel));
+        }
+
+        private async Task ChangeConversationModelAsync(ModelOption model)
+        {
+            _aiConfig.ConversationModelRef = new ModelReference
+            {
+                EndpointId = model.Reference.EndpointId,
+                ModelId = model.Reference.ModelId
+            };
+
+            // 通知所有会话刷新模型显示
+            foreach (var session in Sessions)
+                session.NotifyModelChanged();
+
+            // 持久化到全局配置
+            var config = _configProvider();
+            config.AiConfig ??= new AiConfig();
+            config.AiConfig.ConversationModelRef = new ModelReference
+            {
+                EndpointId = model.Reference.EndpointId,
+                ModelId = model.Reference.ModelId
+            };
+            await _configurationService.SaveConfigAsync(config);
+            _onGlobalConfigUpdated?.Invoke(config);
+
+            StatusText = $"已切换对话模型：{model.ModelDisplayName}";
+        }
+
         // --- 命令 ---
         public ICommand NewSessionCommand { get; }
         public ICommand DeleteSessionCommand { get; }
@@ -171,6 +247,9 @@ namespace TrueFluentPro.ViewModels
                 _ => { },  // 由 View 处理弹窗逻辑
                 _ => CurrentSession != null);
 
+            // 初始化可用模型列表
+            RefreshAvailableTextModels();
+
             // 加载现有会话（磁盘 I/O 移到后台线程）
             _ = LoadSessionsAsync();
 
@@ -208,6 +287,11 @@ namespace TrueFluentPro.ViewModels
 
             OnPropertyChanged(nameof(CurrentWebSearchProviderId));
             OnPropertyChanged(nameof(CurrentWebSearchProviderDisplayName));
+
+            // 刷新可用模型（终结点可能变化）
+            RefreshAvailableTextModels();
+            foreach (var session in Sessions)
+                session.NotifyModelChanged();
 
             _ = TrySilentLoginForMediaAsync();
         }
@@ -340,6 +424,15 @@ namespace TrueFluentPro.ViewModels
             };
         }
 
+        /// <summary>为会话注入模型选择器的读写委托，使会话内可直接切换全局对话模型。</summary>
+        private void WireSessionModelAccess(MediaSessionViewModel session)
+        {
+            session.SetParentModelAccess(
+                () => AvailableTextModels,
+                () => SelectedConversationModel,
+                model => SelectedConversationModel = model);
+        }
+
         private async Task TrySilentLoginForMediaAsync()
         {
             var runtimeConfig = BuildRuntimeConfig();
@@ -397,6 +490,7 @@ namespace TrueFluentPro.ViewModels
                 _webSearchEnableIntentAnalysis, _webSearchEnableResultCompression,
                 _webSearchMcpEndpoint, _webSearchMcpToolName, _webSearchMcpApiKey,
                 _webSearchDebugMode);
+            WireSessionModelAccess(session);
             session.IsContentLoaded = true;
             session.ForkRequested += HandleForkRequested;
 
@@ -429,6 +523,7 @@ namespace TrueFluentPro.ViewModels
                 _webSearchEnableIntentAnalysis, _webSearchEnableResultCompression,
                 _webSearchMcpEndpoint, _webSearchMcpToolName, _webSearchMcpApiKey,
                 _webSearchDebugMode);
+            WireSessionModelAccess(newSession);
             newSession.EnableReasoning = sourceSession.EnableReasoning;
             newSession.EnableWebSearch = sourceSession.EnableWebSearch;
             newSession.IsContentLoaded = true;
@@ -622,6 +717,7 @@ namespace TrueFluentPro.ViewModels
                         _webSearchEnableIntentAnalysis, _webSearchEnableResultCompression,
                         _webSearchMcpEndpoint, _webSearchMcpToolName, _webSearchMcpApiKey,
                         _webSearchDebugMode);
+                    WireSessionModelAccess(session);
                     session.IsContentLoaded = false;
                     session.ForkRequested += HandleForkRequested;
                     Sessions.Add(session);

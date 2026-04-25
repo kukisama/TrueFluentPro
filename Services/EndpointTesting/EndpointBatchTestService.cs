@@ -10,6 +10,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.DependencyInjection;
 using TrueFluentPro.Models;
 using TrueFluentPro.Services.EndpointProfiles;
 
@@ -385,7 +386,7 @@ public sealed class EndpointBatchTestService : IEndpointBatchTestService
         timeoutCts.CancelAfter(TimeSpan.FromSeconds(45));
 
         var tokenProvider = await CreateTokenProviderAsync(runtime, timeoutCts.Token);
-        var service = new AiImageGenService();
+        var service = new AiImageGenService(App.Services.GetRequiredService<FileIdCache>());
         service.SetTokenProvider(tokenProvider);
 
         var requestConfig = runtime.CreateRequestConfig();

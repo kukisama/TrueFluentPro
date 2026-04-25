@@ -163,27 +163,76 @@ namespace TrueFluentPro.Helpers
 
         /// <summary>
         /// 估算输出 token 数（用于费用预览）。
-        /// 基于 OpenAI 文档 gpt-image-2 计算器 1024×1024 low=196 的已知数据点，
-        /// 按像素面积线性比例估算。
+        /// 按模型分流：gpt-image-2 和 gpt-image-1.5 使用各自的官方数据点查表，
+        /// 自定义尺寸按最近标准档位的像素比例估算。
         /// </summary>
-        public static int EstimateOutputTokens(int width, int height, string quality)
+        public static int EstimateOutputTokens(int width, int height, string quality, string? modelId = null)
         {
-            var totalPx = (long)width * height;
+            var q = NormalizeQuality(quality);
+            var sizeKey = $"{width}x{height}";
 
-            // 基准: 1024x1024 (1,048,576 px)
-            const double basePx = 1_048_576.0;
-            const int baseLow = 196;
-            const int baseMedium = 1056;
-            const int baseHigh = 4160;
-
-            int baseTokens = quality.ToLowerInvariant() switch
+            if (modelId != null && modelId.StartsWith("gpt-image-1", StringComparison.OrdinalIgnoreCase))
             {
-                "low" => baseLow,
-                "high" => baseHigh,
-                _ => baseMedium,
-            };
+                // gpt-image-1.5 / gpt-image-1: 固定阶梯表（官方精确值）
+                if (GptImage15FixedTokens.TryGetValue((q, sizeKey), out var exact15))
+                    return exact15;
+                // 1.5 只支持固定尺寸，理论上不走这里
+                return q switch { "low" => 272, "high" => 4160, _ => 1056 };
+            }
 
+            // gpt-image-2 或未知模型: 使用 gpt-image-2 数据点
+            if (GptImage2KnownTokens.TryGetValue((q, sizeKey), out var exact2))
+                return exact2;
+
+            // 自定义尺寸 fallback: 基于 1024×1024 数据点的像素比例估算
+            var totalPx = (long)width * height;
+            const double basePx = 1_048_576.0;
+            int baseTokens = q switch { "low" => 200, "high" => 7_033, _ => 1_767 };
             return Math.Max(1, (int)(baseTokens * totalPx / basePx));
         }
+
+        /// <summary>
+        /// 向后兼容：不传 modelId 时默认按 gpt-image-2 估算。
+        /// </summary>
+        public static int EstimateOutputTokens(int width, int height, string quality)
+            => EstimateOutputTokens(width, height, quality, null);
+
+        private static string NormalizeQuality(string quality)
+        {
+            var q = quality.ToLowerInvariant();
+            return q is "low" or "medium" or "high" ? q : "medium";
+        }
+
+        /// <summary>
+        /// gpt-image-2 已知数据点（从 OpenAI 定价表 @ $30/M output tokens 反推）。
+        /// </summary>
+        private static readonly Dictionary<(string quality, string size), int> GptImage2KnownTokens = new()
+        {
+            [("low",    "1024x1024")] = 200,
+            [("low",    "1536x1024")] = 167,
+            [("low",    "1024x1536")] = 167,
+            [("medium", "1024x1024")] = 1_767,
+            [("medium", "1536x1024")] = 1_367,
+            [("medium", "1024x1536")] = 1_367,
+            [("high",   "1024x1024")] = 7_033,
+            [("high",   "1536x1024")] = 5_500,
+            [("high",   "1024x1536")] = 5_500,
+        };
+
+        /// <summary>
+        /// gpt-image-1.5 / gpt-image-1 固定 token 阶梯（OpenAI 官方精确值）。
+        /// </summary>
+        private static readonly Dictionary<(string quality, string size), int> GptImage15FixedTokens = new()
+        {
+            [("low",    "1024x1024")] = 272,
+            [("low",    "1536x1024")] = 408,
+            [("low",    "1024x1536")] = 400,
+            [("medium", "1024x1024")] = 1_056,
+            [("medium", "1536x1024")] = 1_584,
+            [("medium", "1024x1536")] = 1_568,
+            [("high",   "1024x1024")] = 4_160,
+            [("high",   "1536x1024")] = 6_240,
+            [("high",   "1024x1536")] = 6_208,
+        };
     }
 }

@@ -17,7 +17,7 @@
 
             <Separator Margin="0,8,0,8"/>
             <TextBlock Text="默认参数" FontWeight="Bold"/>
-            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="6" ColumnSpacing="8">
+            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="6" ColumnSpacing="8">
                 <TextBlock Grid.Row="0" Grid.Column="0" Text="尺寸:" VerticalAlignment="Center"/>
                 <ComboBox Grid.Row="0" Grid.Column="1" MinWidth="180"
                           ItemsSource="{Binding ImageSizeOptions}"
@@ -37,6 +37,16 @@
                 <ComboBox Grid.Row="3" Grid.Column="1" MinWidth="120"
                           ItemsSource="{Binding ImageCountOptions}"
                           SelectedItem="{Binding ImageCount, Mode=TwoWay}"/>
+
+                <TextBlock Grid.Row="4" Grid.Column="0" Text="背景:" VerticalAlignment="Center"/>
+                <ComboBox Grid.Row="4" Grid.Column="1" MinWidth="180"
+                          ItemsSource="{Binding ImageBackgroundOptions}"
+                          SelectedItem="{Binding ImageBackground, Mode=TwoWay}"/>
+
+                <TextBlock Grid.Row="5" Grid.Column="0" Text="保真度:" VerticalAlignment="Center"/>
+                <ComboBox Grid.Row="5" Grid.Column="1" MinWidth="180"
+                          ItemsSource="{Binding InputFidelityOptions}"
+                          SelectedItem="{Binding InputFidelity, Mode=TwoWay}"/>
 
                 <!-- 改图模式已固定为 V2ResponsesApi（file_id + Responses API），不再向用户暴露选项 -->
             </Grid>

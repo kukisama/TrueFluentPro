@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using TrueFluentPro.Models;
@@ -50,6 +51,17 @@ namespace TrueFluentPro.Services
             MediaGenConfig genConfig,
             string routeLabel,
             IReadOnlyList<string> candidateUrls,
+            CancellationToken ct);
+
+        /// <summary>获取 Responses API 候选 URL 列表（Pipeline 步骤使用）。</summary>
+        IReadOnlyList<string> GetResponsesApiCandidateUrls(AiConfig config);
+
+        /// <summary>发送带认证的 JSON POST 请求（Pipeline 步骤使用）。</summary>
+        Task<HttpResponseMessage> SendAuthenticatedJsonAsync(
+            AiConfig config,
+            string url,
+            string jsonBody,
+            IReadOnlyDictionary<string, string>? additionalHeaders,
             CancellationToken ct);
     }
 }

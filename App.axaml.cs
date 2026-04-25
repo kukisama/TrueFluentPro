@@ -101,6 +101,15 @@ public partial class App : Application
         services.AddSingleton<IAiImageGenService, AiImageGenService>();
         services.AddSingleton<IAiVideoGenService, AiVideoGenService>();
 
+        // --- 图片计费与模型能力 ---
+        services.AddSingleton<BillingTiersService>();
+        services.AddSingleton<ImageModelCatalogService>();
+        services.AddSingleton<FileIdCache>();
+        services.AddSingleton<Services.Storage.BillingLedgerWriter>();
+        services.AddSingleton<Services.Storage.TaskStagingWriter>();
+        services.AddSingleton<ImageBillingHelper>();
+        services.AddSingleton<StartupCleanupService>();
+
         // --- 音频生命周期 TTS 服务 ---
         services.AddSingleton<Services.Speech.SpeechSynthesisService>();
         services.AddSingleton<AudioLifecyclePipelineService>();
@@ -137,7 +146,14 @@ public partial class App : Application
             var importService = Services.GetRequiredService<ILegacyImportService>();
             importService.ImportAll();
 
-            // 3. 标记 SQLite 就绪 —— 所有读写进入 SQLite 主路径
+            // 3. 加载图片计费与模型能力配置
+            Services.GetRequiredService<BillingTiersService>().Load();
+            Services.GetRequiredService<ImageModelCatalogService>().Load();
+
+            // 4. 启动清理：清理 .tmp 残留、修正中断的 staging 任务
+            Services.GetRequiredService<StartupCleanupService>().RunAll();
+
+            // 5. 标记 SQLite 就绪 —— 所有读写进入 SQLite 主路径
             var switches = Services.GetRequiredService<SqliteFeatureSwitches>();
             switches.IsReady = true;
 

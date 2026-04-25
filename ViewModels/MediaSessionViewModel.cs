@@ -10,6 +10,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using Avalonia.Threading;
+using Microsoft.Extensions.DependencyInjection;
 using TrueFluentPro.Models;
 using TrueFluentPro.Services;
 using TrueFluentPro.Services.Storage;
@@ -46,12 +47,16 @@ namespace TrueFluentPro.ViewModels
         private readonly SemaphoreSlim _videoFrameBackfillLock = new(1, 1);
         private const int MaxReferenceImageCount = 8;
         private readonly List<ChatMessageViewModel> _allMessages = new();
+        private ImageBillingHelper? _billingHelper;
 
         // ── 会话级参数（仅内存，不回写配置文件）──
         private string _imageSize = "1024x1024";
         private string _imageQuality = "medium";
         private string _imageFormat = "png";
         private int _imageCount = 1;
+        private string _imageBackground = "auto";
+        private string _inputFidelity = "auto";
+        private ImageModelCapabilities? _currentImageModelCaps;
         private string _videoAspectRatio = "16:9";
         private string _videoResolution = "720p";
         private int _videoSeconds = 5;
@@ -59,6 +64,7 @@ namespace TrueFluentPro.ViewModels
         private bool _imageParamsActivated;
         private bool _videoParamsActivated;
         private int _maxConversationTurns;
+        private string? _lastImageResponseId;
 
         public string SessionId { get; }
 
@@ -219,7 +225,10 @@ namespace TrueFluentPro.ViewModels
             set
             {
                 if (SetProperty(ref _promptText, value))
+                {
                     ((RelayCommand)GenerateCommand).RaiseCanExecuteChanged();
+                    ((RelayCommand)OptimizePromptCommand).RaiseCanExecuteChanged();
+                }
             }
         }
 
@@ -234,6 +243,76 @@ namespace TrueFluentPro.ViewModels
             get => _enableRecentImageCarry;
             set => SetProperty(ref _enableRecentImageCarry, value);
         }
+
+        // --- 当前模型显示名 ---
+        /// <summary>当前生效的模型显示名（读取共享 _aiConfig/_genConfig 中的 ModelRef）</summary>
+        public string CurrentModelDisplayName
+        {
+            get
+            {
+                if (IsImageMode)
+                {
+                    var imgRef = _genConfig.ImageModelRef;
+                    if (imgRef != null && !string.IsNullOrWhiteSpace(imgRef.ModelId))
+                        return imgRef.ModelId;
+                    return string.IsNullOrWhiteSpace(_genConfig.ImageModel) ? "未配置" : _genConfig.ImageModel;
+                }
+                if (IsVideoMode)
+                {
+                    var vidRef = _genConfig.VideoModelRef;
+                    if (vidRef != null && !string.IsNullOrWhiteSpace(vidRef.ModelId))
+                        return vidRef.ModelId;
+                    return string.IsNullOrWhiteSpace(_genConfig.VideoModel) ? "未配置" : _genConfig.VideoModel;
+                }
+                var chatRef = _aiConfig.ConversationModelRef;
+                if (chatRef != null && !string.IsNullOrWhiteSpace(chatRef.ModelId))
+                    return chatRef.ModelId;
+                return "未配置";
+            }
+        }
+
+        /// <summary>外部通知模型配置已变更，刷新显示。</summary>
+        public void NotifyModelChanged()
+        {
+            OnPropertyChanged(nameof(CurrentModelDisplayName));
+            OnPropertyChanged(nameof(AvailableTextModels));
+            OnPropertyChanged(nameof(SelectedConversationModel));
+            RefreshImageModelCapabilities();
+        }
+
+        // --- 模型选择器（委托到父级 MediaStudioViewModel）---
+        private Func<List<ModelOption>>? _getAvailableModels;
+        private Func<ModelOption?>? _getSelectedModel;
+        private Action<ModelOption?>? _setSelectedModel;
+
+        /// <summary>由父级注入模型选择器的读写委托。</summary>
+        public void SetParentModelAccess(
+            Func<List<ModelOption>> getModels,
+            Func<ModelOption?> getSelected,
+            Action<ModelOption?> setSelected)
+        {
+            _getAvailableModels = getModels;
+            _getSelectedModel = getSelected;
+            _setSelectedModel = setSelected;
+        }
+
+        public List<ModelOption> AvailableTextModels => _getAvailableModels?.Invoke() ?? new();
+        public ModelOption? SelectedConversationModel
+        {
+            get => _getSelectedModel?.Invoke();
+            set => _setSelectedModel?.Invoke(value);
+        }
+
+        // --- 优化提示词 ---
+        private bool _isOptimizingPrompt;
+        public bool IsOptimizingPrompt
+        {
+            get => _isOptimizingPrompt;
+            set => SetProperty(ref _isOptimizingPrompt, value);
+        }
+
+        public ICommand OptimizePromptCommand { get; }
+
         public ICommand RemoveAttachmentCommand { get; }
 
         private static readonly HashSet<string> ImageExtensions = new(StringComparer.OrdinalIgnoreCase)
@@ -283,6 +362,7 @@ namespace TrueFluentPro.ViewModels
                     OnPropertyChanged(nameof(IsImageMode));
                     OnPropertyChanged(nameof(IsVideoMode));
                     OnPropertyChanged(nameof(IsTextMode));
+                    OnPropertyChanged(nameof(CurrentModelDisplayName));
                     OnPropertyChanged(nameof(IsVideoReferenceLimitExceeded));
                     OnPropertyChanged(nameof(VideoReferenceLimitHint));
                     OnPropertyChanged(nameof(IsReferenceImageSizeMismatch));
@@ -352,6 +432,116 @@ namespace TrueFluentPro.ViewModels
             get => _imageCount;
             set => SetProperty(ref _imageCount, value);
         }
+
+        public string ImageBackground
+        {
+            get => _imageBackground;
+            set => SetProperty(ref _imageBackground, value);
+        }
+
+        public string InputFidelity
+        {
+            get => _inputFidelity;
+            set => SetProperty(ref _inputFidelity, value);
+        }
+
+        // ── 模型能力驱动的动态选项 ──
+        public bool IsTransparentBackgroundSupported => _currentImageModelCaps?.SupportsTransparentBackground ?? false;
+        public bool IsInputFidelitySupported => _currentImageModelCaps?.SupportsInputFidelity ?? false;
+        public bool IsCanvasSelectorAvailable => _currentImageModelCaps?.ResolutionMode == ResolutionMode.FreeForm;
+
+        public List<string> ImageBackgroundOptions { get; private set; } = new() { "auto", "opaque", "transparent" };
+        public List<string> InputFidelityOptions { get; private set; } = new() { "auto", "low", "high" };
+
+        /// <summary>
+        /// 根据当前图片模型刷新能力驱动的 UI 属性。
+        /// 由外部在模型变化 / 会话切换时调用。
+        /// </summary>
+        public void RefreshImageModelCapabilities()
+        {
+            var catalog = App.Services?.GetService<ImageModelCatalogService>();
+            if (catalog == null) return;
+
+            // 解析当前图片模型 ID
+            string? modelId = null;
+            if (TryResolveImageRuntime(out var runtime, out _) && runtime != null)
+                modelId = runtime.ModelId;
+            modelId ??= _genConfig.ImageModel;
+
+            _currentImageModelCaps = catalog.GetCapabilities(modelId);
+            var caps = _currentImageModelCaps;
+
+            // 按能力调整选项列表
+            if (caps != null)
+            {
+                // 背景选项：不支持透明时只保留 auto + opaque
+                ImageBackgroundOptions = caps.SupportsTransparentBackground
+                    ? new List<string> { "auto", "opaque", "transparent" }
+                    : new List<string> { "auto", "opaque" };
+
+                // 输入保真度选项
+                InputFidelityOptions = caps.SupportsInputFidelity
+                    ? new List<string> { "auto", "low", "high" }
+                    : new List<string> { "high" };
+
+                // 分辨率：Fixed 模式只保留固定尺寸
+                if (caps.ResolutionMode == ResolutionMode.Fixed && caps.FixedSizes.Count > 0)
+                {
+                    ImageSizeOptions.Clear();
+                    foreach (var s in caps.FixedSizes)
+                        ImageSizeOptions.Add(s);
+                }
+                else
+                {
+                    // FreeForm 恢复预设列表
+                    var presets = Helpers.ImageSizeCalculator.Presets;
+                    if (ImageSizeOptions.Count != presets.Count || !ImageSizeOptions.SequenceEqual(presets))
+                    {
+                        ImageSizeOptions.Clear();
+                        foreach (var s in presets)
+                            ImageSizeOptions.Add(s);
+                    }
+                }
+
+                // 自动修正当前值（不支持时重置）
+                if (!caps.SupportsTransparentBackground && _imageBackground == "transparent")
+                    ImageBackground = "auto";
+                if (!caps.SupportsInputFidelity)
+                    InputFidelity = caps.DefaultInputFidelity;
+                if (!ImageSizeOptions.Contains(_imageSize) && ImageSizeOptions.Count > 0)
+                    ImageSize = ImageSizeOptions[0];
+            }
+
+            OnPropertyChanged(nameof(IsTransparentBackgroundSupported));
+            OnPropertyChanged(nameof(IsInputFidelitySupported));
+            OnPropertyChanged(nameof(IsCanvasSelectorAvailable));
+            OnPropertyChanged(nameof(ImageBackgroundOptions));
+            OnPropertyChanged(nameof(InputFidelityOptions));
+        }
+
+        // ── 比例选择器（AskGo 风格底部工具栏）──
+        public IReadOnlyList<AspectRatioPreset> AspectRatioPresets { get; } = AspectRatioPreset.DefaultPresets;
+
+        private AspectRatioPreset? _selectedAspectRatio;
+        public AspectRatioPreset? SelectedAspectRatio
+        {
+            get => _selectedAspectRatio;
+            set
+            {
+                if (SetProperty(ref _selectedAspectRatio, value) && value != null)
+                {
+                    ImageSize = value.Size;
+                    OnPropertyChanged(nameof(SelectedRatioDisplayText));
+                }
+            }
+        }
+
+        /// <summary>当前选中比例的简短显示文本，如 "⊡ 1:1"</summary>
+        public string SelectedRatioDisplayText =>
+            _selectedAspectRatio != null
+                ? $"{_selectedAspectRatio.Icon} {_selectedAspectRatio.Ratio}"
+                : "⊡ 比例";
+
         public string VideoAspectRatio
         {
             get => _videoAspectRatio;
@@ -645,6 +835,10 @@ namespace TrueFluentPro.ViewModels
                 _ => StopChatStreaming(),
                 _ => IsChatStreaming);
 
+            OptimizePromptCommand = new RelayCommand(
+                _ => _ = OptimizePromptAsync(),
+                _ => !string.IsNullOrWhiteSpace(PromptText) && !IsOptimizingPrompt && !IsChatStreaming);
+
             // --- 对话功能增强命令 ---
             EditMessageCommand = new RelayCommand(
                 param => EditMessage(param as ChatMessageViewModel),
@@ -736,7 +930,7 @@ namespace TrueFluentPro.ViewModels
 
         private async System.Threading.Tasks.Task<AiImageGenService> CreateScopedImageServiceAsync(ModelRuntimeResolution runtime, CancellationToken ct)
         {
-            var service = new AiImageGenService();
+            var service = new AiImageGenService(App.Services.GetRequiredService<FileIdCache>());
             await ConfigureScopedServiceAuthAsync(service, runtime, ct);
             return service;
         }
@@ -1048,6 +1242,14 @@ namespace TrueFluentPro.ViewModels
             }
         }
 
+        private ImageBillingHelper? GetBillingHelper()
+        {
+            if (_billingHelper != null) return _billingHelper;
+            try { _billingHelper = App.Services.GetService<ImageBillingHelper>(); }
+            catch { /* DI 未注册时静默忽略 */ }
+            return _billingHelper;
+        }
+
         private void GenerateImage(string prompt)
         {
             // 记录用户提示词消息（与 SendTextChatAsync 一致，确保 DB 持久化）
@@ -1071,6 +1273,9 @@ namespace TrueFluentPro.ViewModels
             TaskHistory.Add(task);
             IsGenerating = true;
             StatusText = "生成图片中...";
+
+            // task_staging: 记录任务创建（Pending）
+            GetBillingHelper()?.StagingInsert(task.Id, SessionId, "image", prompt);
 
             var loadingMessage = new ChatMessageViewModel(new MediaChatMessage
             {
@@ -1124,7 +1329,10 @@ namespace TrueFluentPro.ViewModels
                 ImageSize = ImageSize,
                 ImageQuality = ImageQuality,
                 ImageFormat = ImageFormat,
-                ImageCount = ImageCount
+                ImageCount = ImageCount,
+                ImageBackground = ImageBackground,
+                InputFidelity = InputFidelity,
+                PreviousResponseId = _lastImageResponseId
             };
 
             // 有参考图时：读取原图尺寸 → 16px 对齐 → 覆盖 ImageSize
@@ -1154,6 +1362,9 @@ namespace TrueFluentPro.ViewModels
             {
                 try
                 {
+                    // task_staging: 任务开始执行
+                    GetBillingHelper()?.StagingRunning(task.Id);
+
                     var imageService = await CreateScopedImageServiceAsync(imageRuntime, ct);
                     var outputDir = _pathResolver?.GetNewResourceDirectory("image") ?? SessionDirectory;
                     var result = await imageService.GenerateAndSaveImagesAsync(
@@ -1186,6 +1397,39 @@ namespace TrueFluentPro.ViewModels
                     stopwatch.Stop();
                     timer.Dispose();
 
+                    // billing + staging: 记录成功
+                    var billing = GetBillingHelper();
+                    var totalBytes = result.FilePaths
+                        .Where(File.Exists)
+                        .Sum(f => new FileInfo(f).Length);
+                    billing?.RecordImageBilling(
+                        SessionId, task.Id,
+                        effectiveConfig.ImageModel,
+                        imageConfig.ApiEndpoint ?? "",
+                        effectiveConfig.ImageQuality,
+                        effectiveConfig.ImageSize,
+                        effectiveConfig.ImageCount,
+                        effectiveConfig.ImageFormat,
+                        task.HasReferenceInput,
+                        result.FilePaths.Count,
+                        totalBytes,
+                        result.GenerateSeconds,
+                        actualInputTokens: result.ActualInputTokens,
+                        actualOutputTokens: result.ActualOutputTokens,
+                        actualImageInputTokens: result.ActualImageInputTokens,
+                        actualImageOutputTokens: result.ActualImageOutputTokens,
+                        actualCachedTokens: result.ActualCachedTokens,
+                        actualWidth: result.ActualWidth,
+                        actualHeight: result.ActualHeight);
+                    billing?.StagingLanded(task.Id,
+                        resultFilePath: result.FilePaths.FirstOrDefault(),
+                        fileSize: totalBytes);
+                    billing?.StagingCommitted(task.Id);
+
+                    // 保存 ResponseId 供下次请求用作 multi-turn 改图
+                    if (!string.IsNullOrWhiteSpace(result.ResponseId))
+                        _lastImageResponseId = result.ResponseId;
+
                     Dispatcher.UIThread.Post(() =>
                     {
                         task.Status = MediaGenStatus.Completed;
@@ -1213,6 +1457,7 @@ namespace TrueFluentPro.ViewModels
                 {
                     stopwatch.Stop();
                     timer.Dispose();
+                    GetBillingHelper()?.StagingCancelled(task.Id);
                     Dispatcher.UIThread.Post(() =>
                     {
                         task.Status = MediaGenStatus.Cancelled;
@@ -1230,6 +1475,17 @@ namespace TrueFluentPro.ViewModels
                     timer.Dispose();
                     var elapsedSec = stopwatch.Elapsed.TotalSeconds;
                     var logPath = PathManager.Instance.GetLogFile("image_http_debug.log");
+                    var errorCode = ImageErrorCodes.Classify(0, ex.Message);
+                    GetBillingHelper()?.StagingFailed(task.Id, ex.Message, errorCode);
+                    GetBillingHelper()?.RecordImageBillingError(
+                        SessionId, task.Id,
+                        effectiveConfig.ImageModel,
+                        imageConfig.ApiEndpoint ?? "",
+                        effectiveConfig.ImageQuality,
+                        effectiveConfig.ImageSize,
+                        effectiveConfig.ImageCount,
+                        task.HasReferenceInput,
+                        0, errorCode);
                     Dispatcher.UIThread.Post(() =>
                     {
                         task.Status = MediaGenStatus.Failed;
@@ -3044,6 +3300,63 @@ namespace TrueFluentPro.ViewModels
         private void StopChatStreaming()
         {
             _chatCts?.Cancel();
+        }
+
+        /// <summary>调用文本模型优化当前提示词。</summary>
+        private async System.Threading.Tasks.Task OptimizePromptAsync()
+        {
+            var original = PromptText?.Trim();
+            if (string.IsNullOrWhiteSpace(original)) return;
+
+            if (!TryBuildChatRuntimeConfig(out var runtimeRequest, out var endpoint, out var error))
+            {
+                StatusText = $"无法优化提示词：{error}";
+                return;
+            }
+
+            IsOptimizingPrompt = true;
+            ((RelayCommand)OptimizePromptCommand).RaiseCanExecuteChanged();
+            StatusText = "正在优化提示词…";
+
+            try
+            {
+                var systemPrompt = IsTextMode
+                    ? "你是提示词优化助手。请改写用户提供的提示词，使其更清晰、具体、有效。只输出改写后的提示词，不要解释。保持原始语言。"
+                    : "你是 AI 绘画提示词优化助手。请将用户的描述改写为更适合图片生成模型的详细提示词，补充构图、光影、风格等细节。只输出改写后的提示词，不要解释。保持原始语言。";
+
+                AzureTokenProvider? tokenProvider = null;
+                if (runtimeRequest.AzureAuthMode == AzureAuthMode.AAD && endpoint != null)
+                {
+                    tokenProvider = await _azureTokenProviderStore.GetAuthenticatedProviderAsync(
+                        $"endpoint_{endpoint.Id}",
+                        runtimeRequest.AzureTenantId,
+                        runtimeRequest.AzureClientId);
+                }
+
+                var service = new AiInsightService(tokenProvider);
+                var result = await service.ChatAsync(
+                    runtimeRequest, systemPrompt, original,
+                    CancellationToken.None, AiChatProfile.Quick);
+
+                if (!string.IsNullOrWhiteSpace(result))
+                {
+                    PromptText = result.Trim();
+                    StatusText = "提示词已优化";
+                }
+                else
+                {
+                    StatusText = "优化返回为空，保留原始提示词";
+                }
+            }
+            catch (Exception ex)
+            {
+                StatusText = $"优化提示词失败：{ex.Message}";
+            }
+            finally
+            {
+                IsOptimizingPrompt = false;
+                ((RelayCommand)OptimizePromptCommand).RaiseCanExecuteChanged();
+            }
         }
 
         private bool TryResolveImageRuntime(out ModelRuntimeResolution? runtime, out string errorMessage)

@@ -6,7 +6,7 @@ namespace TrueFluentPro.Services.Storage
 {
     public sealed class SqliteDbService : ISqliteDbService
     {
-        private const int CurrentSchemaVersion = 6;
+        private const int CurrentSchemaVersion = 7;
         private readonly string _connectionString;
         private readonly object _initLock = new();
         private bool _initialized;
@@ -325,6 +325,80 @@ CREATE TABLE IF NOT EXISTS task_executions (
     FOREIGN KEY (task_id) REFERENCES audio_task_queue(task_id),
     FOREIGN KEY (audio_item_id) REFERENCES audio_library_items(id)
 );");
+
+            // ── billing_ledger + task_staging（v7 新增，但全新 DB 也需要）──
+            Exec(conn, @"
+CREATE TABLE IF NOT EXISTS billing_ledger (
+    ledger_id               TEXT    PRIMARY KEY,
+    session_id              TEXT    NOT NULL,
+    task_id                 TEXT,
+    message_id              TEXT,
+    event_time              TEXT    NOT NULL,
+    response_time           TEXT,
+    recorded_at             TEXT    NOT NULL,
+    event_type              TEXT    NOT NULL,
+    model_id                TEXT    NOT NULL,
+    model_snapshot          TEXT,
+    api_endpoint            TEXT    NOT NULL,
+    endpoint_profile        TEXT,
+    request_quality         TEXT,
+    request_size            TEXT,
+    request_n               INTEGER NOT NULL DEFAULT 1,
+    request_format          TEXT,
+    has_reference_input     INTEGER NOT NULL DEFAULT 0,
+    has_mask                INTEGER NOT NULL DEFAULT 0,
+    partial_images          INTEGER NOT NULL DEFAULT 0,
+    prompt_fingerprint      TEXT,
+    video_duration_seconds  REAL,
+    video_resolution        TEXT,
+    estimated_output_tokens INTEGER,
+    actual_input_tokens     INTEGER,
+    actual_output_tokens    INTEGER,
+    actual_image_input_tokens  INTEGER,
+    actual_image_output_tokens INTEGER,
+    actual_cached_tokens    INTEGER,
+    actual_width            INTEGER,
+    actual_height           INTEGER,
+    actual_pixel_area       INTEGER,
+    billing_tier_width      INTEGER,
+    billing_tier_height     INTEGER,
+    billing_tier_tokens     INTEGER,
+    billing_unit_cost_usd   REAL,
+    unit_price_input_per_m  REAL,
+    unit_price_output_per_m REAL,
+    calculated_cost_usd     REAL,
+    multiplier              REAL,
+    base_unit_price         REAL,
+    multiplier_cost         REAL,
+    result_count            INTEGER NOT NULL DEFAULT 0,
+    result_total_bytes      INTEGER,
+    http_status             INTEGER,
+    error_code              TEXT,
+    billing_config_version  TEXT,
+    record_checksum         TEXT    NOT NULL
+);");
+
+            Exec(conn, @"
+CREATE TABLE IF NOT EXISTS task_staging (
+    task_id                 TEXT    PRIMARY KEY,
+    session_id              TEXT    NOT NULL,
+    task_type               TEXT    NOT NULL,
+    status                  INTEGER NOT NULL DEFAULT 0,
+    prompt                  TEXT    NOT NULL,
+    error_code              TEXT,
+    error_message           TEXT,
+    error_detail            TEXT,
+    input_tokens            INTEGER,
+    output_tokens           INTEGER,
+    estimated_cost_usd      REAL,
+    created_at              TEXT    NOT NULL,
+    started_at              TEXT,
+    finished_at             TEXT,
+    result_file_path        TEXT,
+    file_size               INTEGER,
+    remote_video_id         TEXT,
+    remote_generation_id    TEXT
+);");
         }
 
         private static void CreateAllIndexes(SqliteConnection conn)
@@ -347,6 +421,17 @@ CREATE TABLE IF NOT EXISTS task_executions (
             Exec(conn, "CREATE INDEX IF NOT EXISTS idx_executions_task ON task_executions(task_id);");
             Exec(conn, "CREATE INDEX IF NOT EXISTS idx_executions_audio ON task_executions(audio_item_id);");
             Exec(conn, "CREATE INDEX IF NOT EXISTS idx_executions_status ON task_executions(status, billable);");
+
+            // billing_ledger 索引
+            Exec(conn, "CREATE INDEX IF NOT EXISTS idx_ledger_session_time ON billing_ledger(session_id, event_time);");
+            Exec(conn, "CREATE INDEX IF NOT EXISTS idx_ledger_event_type_time ON billing_ledger(event_type, event_time);");
+            Exec(conn, "CREATE INDEX IF NOT EXISTS idx_ledger_model_time ON billing_ledger(model_id, event_time);");
+            Exec(conn, "CREATE INDEX IF NOT EXISTS idx_ledger_time ON billing_ledger(event_time);");
+            Exec(conn, "CREATE INDEX IF NOT EXISTS idx_ledger_month ON billing_ledger(substr(event_time, 1, 7), event_type);");
+
+            // task_staging 索引
+            Exec(conn, "CREATE INDEX IF NOT EXISTS idx_staging_session ON task_staging(session_id, created_at DESC);");
+            Exec(conn, "CREATE INDEX IF NOT EXISTS idx_staging_status ON task_staging(status);");
         }
 
         private void EnsureSchemaVersion(SqliteConnection conn)
@@ -384,6 +469,7 @@ CREATE TABLE IF NOT EXISTS task_executions (
             if (fromVersion < 4) MigrateToV4(conn);
             if (fromVersion < 5) MigrateToV5(conn);
             if (fromVersion < 6) MigrateToV6(conn);
+            if (fromVersion < 7) MigrateToV7(conn);
 
             using var cmd = conn.CreateCommand();
             cmd.CommandText = "INSERT INTO _schema_version (version, applied_at) VALUES (@v, @t);";
@@ -483,6 +569,93 @@ CREATE TABLE IF NOT EXISTS task_executions (
             try { Exec(conn, "ALTER TABLE task_executions ADD COLUMN debug_response TEXT;"); }
             catch (SqliteException) { }
             SqliteDebugLogger.LogLifecycle("已迁移到 schema v6: task_executions 增加 debug 列");
+        }
+
+        private static void MigrateToV7(SqliteConnection conn)
+        {
+            // ── billing_ledger: 计费审计流水表（WORM: 仅 INSERT）──
+            Exec(conn, @"
+CREATE TABLE IF NOT EXISTS billing_ledger (
+    ledger_id               TEXT    PRIMARY KEY,
+    session_id              TEXT    NOT NULL,
+    task_id                 TEXT,
+    message_id              TEXT,
+    event_time              TEXT    NOT NULL,
+    response_time           TEXT,
+    recorded_at             TEXT    NOT NULL,
+    event_type              TEXT    NOT NULL,
+    model_id                TEXT    NOT NULL,
+    model_snapshot          TEXT,
+    api_endpoint            TEXT    NOT NULL,
+    endpoint_profile        TEXT,
+    request_quality         TEXT,
+    request_size            TEXT,
+    request_n               INTEGER NOT NULL DEFAULT 1,
+    request_format          TEXT,
+    has_reference_input     INTEGER NOT NULL DEFAULT 0,
+    has_mask                INTEGER NOT NULL DEFAULT 0,
+    partial_images          INTEGER NOT NULL DEFAULT 0,
+    prompt_fingerprint      TEXT,
+    video_duration_seconds  REAL,
+    video_resolution        TEXT,
+    estimated_output_tokens INTEGER,
+    actual_input_tokens     INTEGER,
+    actual_output_tokens    INTEGER,
+    actual_image_input_tokens  INTEGER,
+    actual_image_output_tokens INTEGER,
+    actual_cached_tokens    INTEGER,
+    actual_width            INTEGER,
+    actual_height           INTEGER,
+    actual_pixel_area       INTEGER,
+    billing_tier_width      INTEGER,
+    billing_tier_height     INTEGER,
+    billing_tier_tokens     INTEGER,
+    billing_unit_cost_usd   REAL,
+    unit_price_input_per_m  REAL,
+    unit_price_output_per_m REAL,
+    calculated_cost_usd     REAL,
+    multiplier              REAL,
+    base_unit_price         REAL,
+    multiplier_cost         REAL,
+    result_count            INTEGER NOT NULL DEFAULT 0,
+    result_total_bytes      INTEGER,
+    http_status             INTEGER,
+    error_code              TEXT,
+    billing_config_version  TEXT,
+    record_checksum         TEXT    NOT NULL
+);");
+            Exec(conn, "CREATE INDEX IF NOT EXISTS idx_ledger_session_time ON billing_ledger(session_id, event_time);");
+            Exec(conn, "CREATE INDEX IF NOT EXISTS idx_ledger_event_type_time ON billing_ledger(event_type, event_time);");
+            Exec(conn, "CREATE INDEX IF NOT EXISTS idx_ledger_model_time ON billing_ledger(model_id, event_time);");
+            Exec(conn, "CREATE INDEX IF NOT EXISTS idx_ledger_time ON billing_ledger(event_time);");
+            Exec(conn, "CREATE INDEX IF NOT EXISTS idx_ledger_month ON billing_ledger(substr(event_time, 1, 7), event_type);");
+
+            // ── task_staging: 任务全生命周期追踪表（含失败/取消）──
+            Exec(conn, @"
+CREATE TABLE IF NOT EXISTS task_staging (
+    task_id                 TEXT    PRIMARY KEY,
+    session_id              TEXT    NOT NULL,
+    task_type               TEXT    NOT NULL,
+    status                  INTEGER NOT NULL DEFAULT 0,
+    prompt                  TEXT    NOT NULL,
+    error_code              TEXT,
+    error_message           TEXT,
+    error_detail            TEXT,
+    input_tokens            INTEGER,
+    output_tokens           INTEGER,
+    estimated_cost_usd      REAL,
+    created_at              TEXT    NOT NULL,
+    started_at              TEXT,
+    finished_at             TEXT,
+    result_file_path        TEXT,
+    file_size               INTEGER,
+    remote_video_id         TEXT,
+    remote_generation_id    TEXT
+);");
+            Exec(conn, "CREATE INDEX IF NOT EXISTS idx_staging_session ON task_staging(session_id, created_at DESC);");
+            Exec(conn, "CREATE INDEX IF NOT EXISTS idx_staging_status ON task_staging(status);");
+
+            SqliteDebugLogger.LogLifecycle("已迁移到 schema v7: billing_ledger + task_staging 表");
         }
 
         public string? GetMeta(string key)

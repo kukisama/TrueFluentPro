@@ -179,6 +179,44 @@
             <Setter Property="BorderBrush" Value="{DynamicResource AccentBlueBrush}"/>
             <Setter Property="Foreground" Value="{DynamicResource AccentBlueBrush}"/>
         </Style>
+
+        <!-- 底部工具栏药丸按钮（AskGo 风格） -->
+        <Style Selector="Button.toolbar-pill-btn">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource ControlStrokeColorDefaultBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="14"/>
+            <Setter Property="Height" Value="30"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextSubtleBrush}"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Cursor" Value="Hand"/>
+        </Style>
+        <Style Selector="Button.toolbar-pill-btn:pointerover">
+            <Setter Property="Background" Value="{DynamicResource SurfaceHoverBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource AccentTextFillColorPrimaryBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentBlueBrush}"/>
+        </Style>
+        <Style Selector="Button.toolbar-pill-btn:pressed">
+            <Setter Property="Background" Value="{DynamicResource ShellNavSelectedBrush}"/>
+        </Style>
+
+        <!-- 比例选择器 Flyout 列表样式 -->
+        <Style Selector="ListBox.ratio-flyout-list">
+            <Setter Property="Padding" Value="0"/>
+        </Style>
+        <Style Selector="ListBox.ratio-flyout-list ListBoxItem">
+            <Setter Property="Padding" Value="6,4"/>
+            <Setter Property="CornerRadius" Value="6"/>
+            <Setter Property="Margin" Value="0,1"/>
+            <Setter Property="Cursor" Value="Hand"/>
+        </Style>
+        <Style Selector="ListBox.ratio-flyout-list ListBoxItem:selected">
+            <Setter Property="Background" Value="{DynamicResource ShellNavSelectedBrush}"/>
+        </Style>
+        <Style Selector="ListBox.ratio-flyout-list ListBoxItem:pointerover">
+            <Setter Property="Background" Value="{DynamicResource SurfaceHoverBrush}"/>
+        </Style>
+
         <Style Selector="ListBox.chat-message-list">
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderThickness" Value="0"/>
@@ -763,117 +801,251 @@
                             </ScrollViewer>
                         </Border>
                         <!-- 参数行 -->
-                        <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="10" Margin="0,0,0,6">
+                        <!-- Row 1: 工具栏（所有功能按钮统一在一行） -->
+                        <ScrollViewer Grid.Row="1"
+                                      HorizontalScrollBarVisibility="Auto"
+                                      VerticalScrollBarVisibility="Disabled"
+                                      Margin="0,0,0,4">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
 
-                            <!-- 思考开关 -->
-                            <ToggleButton Classes="toolbar-icon-btn"
-                                          IsChecked="{Binding EnableReasoning}"
-                                          ToolTip.Tip="启用模型推理/思考过程">
-                                <Grid Width="22" Height="22">
-                                    <icons:Icon Value="fa-solid fa-brain"
-                                                FontSize="14"
-                                                HorizontalAlignment="Center"
-                                                VerticalAlignment="Center"/>
-                                    <Border Width="8" Height="8" CornerRadius="4"
-                                            Background="{DynamicResource IndicatorGreenBrush}"
-                                            BorderBrush="{DynamicResource CardBackgroundBrush}"
-                                            BorderThickness="1"
-                                            HorizontalAlignment="Right" VerticalAlignment="Top"
-                                            Margin="0,-1,-1,0"
-                                            IsVisible="{Binding EnableReasoning}"/>
-                                </Grid>
-                            </ToggleButton>
+                                <!-- 📎 附件 -->
+                                <Button Classes="toolbar-pill-btn"
+                                        Padding="8,5"
+                                        Click="AttachFileOrImage_Click"
+                                        ToolTip.Tip="添加附件（图片或文本文件）">
+                                    <icons:Icon Value="fa-solid fa-paperclip" FontSize="13"/>
+                                </Button>
 
-                            <!-- Web 搜索入口 -->
-                            <Button Classes="toolbar-icon-btn"
-                                    Classes.toolbar-active="{Binding EnableWebSearch}"
-                                    Click="WebSearchSelector_Click"
-                                    ToolTip.Tip="{Binding WebSearchButtonToolTip}">
-                                <Grid Width="22" Height="22">
-                                    <icons:Icon Value="fa-solid fa-globe"
-                                                FontSize="14"
-                                                HorizontalAlignment="Center"
-                                                VerticalAlignment="Center"/>
-                                    <Border Width="8" Height="8" CornerRadius="4"
-                                            Background="{DynamicResource IndicatorGreenBrush}"
-                                            BorderBrush="{DynamicResource CardBackgroundBrush}"
-                                            BorderThickness="1"
-                                            HorizontalAlignment="Right" VerticalAlignment="Top"
-                                            Margin="0,-1,-1,0"
-                                            IsVisible="{Binding EnableWebSearch}"/>
-                                </Grid>
-                            </Button>
-
-                            <!-- 对话轮数按钮 -->
-                            <Button Classes="toolbar-icon-btn"
-                                    ToolTip.Tip="调整每次请求携带的历史对话轮数">
-                                <Button.Flyout>
-                                    <Flyout Placement="Bottom" ShowMode="TransientWithDismissOnPointerMoveAway">
-                                        <StackPanel Width="220" Spacing="8" Margin="4">
-                                            <TextBlock FontWeight="SemiBold" FontSize="13" Text="对话历史轮数"/>
-                                            <TextBlock FontSize="11" Foreground="{DynamicResource TextMutedBrush}"
-                                                       Text="控制每次请求携带多少轮历史消息。轮数越大上下文越完整，但 token 消耗更高。"/>
-                                            <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
-                                                <Slider Grid.Column="0"
-                                                        Minimum="1" Maximum="100"
-                                                        Value="{Binding MaxConversationTurns}"
-                                                        TickFrequency="10" IsSnapToTickEnabled="False"/>
-                                                <TextBlock Grid.Column="1" Width="32"
-                                                           TextAlignment="Center"
-                                                           VerticalAlignment="Center"
-                                                           FontWeight="SemiBold" FontSize="13"
-                                                           Text="{Binding MaxConversationTurns}"/>
-                                            </Grid>
-                                        </StackPanel>
-                                    </Flyout>
-                                </Button.Flyout>
-                                <Grid Width="22" Height="22">
-                                    <icons:Icon Value="fa-solid fa-layer-group"
-                                                FontSize="14"
-                                                HorizontalAlignment="Center"
-                                                VerticalAlignment="Center"/>
-                                    <Border Background="{DynamicResource AccentBlueBrush}"
-                                            CornerRadius="6"
-                                            Padding="3,0"
-                                            MinWidth="14" Height="14"
-                                            HorizontalAlignment="Right" VerticalAlignment="Top"
-                                            Margin="0,-3,-5,0">
-                                        <TextBlock Text="{Binding MaxConversationTurns}"
-                                                   FontSize="9" FontWeight="Bold"
-                                                   Foreground="White"
-                                                   HorizontalAlignment="Center"
+                                <!-- ⊡ 比例选择器 -->
+                                <Button x:Name="RatioFlyoutButton" Classes="toolbar-pill-btn"
+                                        Padding="8,5"
+                                        ToolTip.Tip="选择图片比例">
+                                    <StackPanel Orientation="Horizontal" Spacing="4">
+                                        <icons:Icon Value="fa-solid fa-crop-simple" FontSize="13"/>
+                                        <TextBlock Text="{Binding SelectedRatioDisplayText}"
+                                                   FontSize="12"
                                                    VerticalAlignment="Center"/>
-                                    </Border>
-                                </Grid>
-                            </Button>
+                                    </StackPanel>
+                                    <Button.Flyout>
+                                        <Flyout Placement="TopEdgeAlignedLeft">
+                                            <Border MinWidth="220" MaxWidth="280" Padding="4">
+                                                <ListBox ItemsSource="{Binding AspectRatioPresets}"
+                                                         SelectedItem="{Binding SelectedAspectRatio}"
+                                                         Classes="ratio-flyout-list"
+                                                         Background="Transparent"
+                                                         BorderThickness="0"
+                                                         Padding="0"
+                                                         SelectionChanged="RatioList_SelectionChanged">
+                                                    <ListBox.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <Grid ColumnDefinitions="28,Auto,*,Auto" Margin="4,3">
+                                                                <TextBlock Grid.Column="0"
+                                                                           Text="{Binding Icon}"
+                                                                           FontSize="15"
+                                                                           VerticalAlignment="Center"
+                                                                           HorizontalAlignment="Center"
+                                                                           Foreground="{DynamicResource TextSubtleBrush}"/>
+                                                                <TextBlock Grid.Column="1"
+                                                                           Text="{Binding Ratio}"
+                                                                           FontSize="13"
+                                                                           FontWeight="SemiBold"
+                                                                           VerticalAlignment="Center"
+                                                                           Margin="4,0,0,0"/>
+                                                                <TextBlock Grid.Column="2"
+                                                                           Text="{Binding Description}"
+                                                                           FontSize="12"
+                                                                           Foreground="{DynamicResource TextMutedBrush}"
+                                                                           VerticalAlignment="Center"
+                                                                           Margin="8,0,0,0"/>
+                                                            </Grid>
+                                                        </DataTemplate>
+                                                    </ListBox.ItemTemplate>
+                                                </ListBox>
+                                            </Border>
+                                        </Flyout>
+                                    </Button.Flyout>
+                                </Button>
 
-                            <!-- 携带历史图开关 -->
-                            <ToggleButton Classes="toolbar-icon-btn"
-                                          IsChecked="{Binding EnableRecentImageCarry}"
-                                          ToolTip.Tip="开启后，每轮请求自动携带最近一张历史图片（支持跨轮视觉问答与改图）">
-                                <Grid Width="22" Height="22">
-                                    <icons:Icon Value="fa-solid fa-image"
-                                                FontSize="14"
-                                                HorizontalAlignment="Center"
-                                                VerticalAlignment="Center"/>
-                                    <Border Width="8" Height="8" CornerRadius="4"
-                                            Background="{DynamicResource IndicatorGreenBrush}"
-                                            BorderBrush="{DynamicResource CardBackgroundBrush}"
-                                            BorderThickness="1"
-                                            HorizontalAlignment="Right" VerticalAlignment="Top"
-                                            Margin="0,-1,-1,0"
-                                            IsVisible="{Binding EnableRecentImageCarry}"/>
-                                </Grid>
-                            </ToggleButton>
+                                <!-- 🤖 模型选择器 -->
+                                <Button Classes="toolbar-pill-btn"
+                                        Padding="8,5"
+                                        ToolTip.Tip="切换对话模型（同步到全局设置）">
+                                    <StackPanel Orientation="Horizontal" Spacing="4">
+                                        <icons:Icon Value="fa-solid fa-microchip" FontSize="13"/>
+                                        <TextBlock Text="{Binding CurrentModelDisplayName}"
+                                                   FontSize="12"
+                                                   VerticalAlignment="Center"
+                                                   MaxWidth="140"
+                                                   TextTrimming="CharacterEllipsis"/>
+                                    </StackPanel>
+                                    <Button.Flyout>
+                                        <Flyout Placement="TopEdgeAlignedLeft">
+                                            <Border MinWidth="240" MaxWidth="360" Padding="4">
+                                                <StackPanel Spacing="4">
+                                                    <TextBlock FontWeight="SemiBold" FontSize="13" Text="对话模型" Margin="4,2,0,4"/>
+                                                    <ListBox ItemsSource="{Binding AvailableTextModels}"
+                                                             SelectedItem="{Binding SelectedConversationModel}"
+                                                             Classes="ratio-flyout-list"
+                                                             Background="Transparent"
+                                                             BorderThickness="0"
+                                                             Padding="0"
+                                                             MaxHeight="320"
+                                                             SelectionChanged="ModelList_SelectionChanged">
+                                                        <ListBox.ItemTemplate>
+                                                            <DataTemplate>
+                                                                <Grid ColumnDefinitions="Auto,*" Margin="4,3">
+                                                                    <icons:Icon Grid.Column="0"
+                                                                                Value="fa-solid fa-cube"
+                                                                                FontSize="13"
+                                                                                VerticalAlignment="Center"
+                                                                                Foreground="{DynamicResource TextSubtleBrush}"
+                                                                                Margin="0,0,8,0"/>
+                                                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                                        <TextBlock Text="{Binding ModelDisplayName}"
+                                                                                   FontSize="13"
+                                                                                   TextTrimming="CharacterEllipsis"/>
+                                                                        <TextBlock Text="{Binding EndpointName}"
+                                                                                   FontSize="11"
+                                                                                   Foreground="{DynamicResource TextMutedBrush}"
+                                                                                   TextTrimming="CharacterEllipsis"/>
+                                                                    </StackPanel>
+                                                                </Grid>
+                                                            </DataTemplate>
+                                                        </ListBox.ItemTemplate>
+                                                    </ListBox>
+                                                </StackPanel>
+                                            </Border>
+                                        </Flyout>
+                                    </Button.Flyout>
+                                </Button>
 
-                            <!-- 图片参数 —— 移至媒体中心，聊天窗不再展示 -->
+                                <!-- 分隔线 -->
+                                <Border Width="1" Height="18" Background="{DynamicResource ControlStrokeColorDefaultBrush}"
+                                        VerticalAlignment="Center" Margin="2,0"/>
 
-                            <!-- 视频参数 —— 移至媒体中心，聊天窗不再展示 -->
-                        </StackPanel>
+                                <!-- 🧠 思考开关 -->
+                                <ToggleButton Classes="toolbar-icon-btn"
+                                              IsChecked="{Binding EnableReasoning}"
+                                              ToolTip.Tip="启用模型推理/思考过程">
+                                    <Grid Width="22" Height="22">
+                                        <icons:Icon Value="fa-solid fa-brain"
+                                                    FontSize="14"
+                                                    HorizontalAlignment="Center"
+                                                    VerticalAlignment="Center"/>
+                                        <Border Width="8" Height="8" CornerRadius="4"
+                                                Background="{DynamicResource IndicatorGreenBrush}"
+                                                BorderBrush="{DynamicResource CardBackgroundBrush}"
+                                                BorderThickness="1"
+                                                HorizontalAlignment="Right" VerticalAlignment="Top"
+                                                Margin="0,-1,-1,0"
+                                                IsVisible="{Binding EnableReasoning}"/>
+                                    </Grid>
+                                </ToggleButton>
 
-                        <!-- 输入行 -->
-                        <Grid Grid.Row="2" ColumnDefinitions="*,Auto">
-                            <Grid Grid.Column="0" RowDefinitions="Auto,Auto">
+                                <!-- 🌐 Web 搜索 -->
+                                <Button Classes="toolbar-icon-btn"
+                                        Classes.toolbar-active="{Binding EnableWebSearch}"
+                                        Click="WebSearchSelector_Click"
+                                        ToolTip.Tip="{Binding WebSearchButtonToolTip}">
+                                    <Grid Width="22" Height="22">
+                                        <icons:Icon Value="fa-solid fa-globe"
+                                                    FontSize="14"
+                                                    HorizontalAlignment="Center"
+                                                    VerticalAlignment="Center"/>
+                                        <Border Width="8" Height="8" CornerRadius="4"
+                                                Background="{DynamicResource IndicatorGreenBrush}"
+                                                BorderBrush="{DynamicResource CardBackgroundBrush}"
+                                                BorderThickness="1"
+                                                HorizontalAlignment="Right" VerticalAlignment="Top"
+                                                Margin="0,-1,-1,0"
+                                                IsVisible="{Binding EnableWebSearch}"/>
+                                    </Grid>
+                                </Button>
+
+                                <!-- 📚 对话轮数 -->
+                                <Button Classes="toolbar-icon-btn"
+                                        ToolTip.Tip="调整每次请求携带的历史对话轮数">
+                                    <Button.Flyout>
+                                        <Flyout Placement="Bottom" ShowMode="TransientWithDismissOnPointerMoveAway">
+                                            <StackPanel Width="220" Spacing="8" Margin="4">
+                                                <TextBlock FontWeight="SemiBold" FontSize="13" Text="对话历史轮数"/>
+                                                <TextBlock FontSize="11" Foreground="{DynamicResource TextMutedBrush}"
+                                                           Text="控制每次请求携带多少轮历史消息。轮数越大上下文越完整，但 token 消耗更高。"/>
+                                                <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
+                                                    <Slider Grid.Column="0"
+                                                            Minimum="1" Maximum="100"
+                                                            Value="{Binding MaxConversationTurns}"
+                                                            TickFrequency="10" IsSnapToTickEnabled="False"/>
+                                                    <TextBlock Grid.Column="1" Width="32"
+                                                               TextAlignment="Center"
+                                                               VerticalAlignment="Center"
+                                                               FontWeight="SemiBold" FontSize="13"
+                                                               Text="{Binding MaxConversationTurns}"/>
+                                                </Grid>
+                                            </StackPanel>
+                                        </Flyout>
+                                    </Button.Flyout>
+                                    <Grid Width="22" Height="22">
+                                        <icons:Icon Value="fa-solid fa-layer-group"
+                                                    FontSize="14"
+                                                    HorizontalAlignment="Center"
+                                                    VerticalAlignment="Center"/>
+                                        <Border Background="{DynamicResource AccentBlueBrush}"
+                                                CornerRadius="6"
+                                                Padding="3,0"
+                                                MinWidth="14" Height="14"
+                                                HorizontalAlignment="Right" VerticalAlignment="Top"
+                                                Margin="0,-3,-5,0">
+                                            <TextBlock Text="{Binding MaxConversationTurns}"
+                                                       FontSize="9" FontWeight="Bold"
+                                                       Foreground="White"
+                                                       HorizontalAlignment="Center"
+                                                       VerticalAlignment="Center"/>
+                                        </Border>
+                                    </Grid>
+                                </Button>
+
+                                <!-- 🖼 携带历史图 -->
+                                <ToggleButton Classes="toolbar-icon-btn"
+                                              IsChecked="{Binding EnableRecentImageCarry}"
+                                              ToolTip.Tip="开启后，每轮请求自动携带最近一张历史图片（支持跨轮视觉问答与改图）">
+                                    <Grid Width="22" Height="22">
+                                        <icons:Icon Value="fa-solid fa-image"
+                                                    FontSize="14"
+                                                    HorizontalAlignment="Center"
+                                                    VerticalAlignment="Center"/>
+                                        <Border Width="8" Height="8" CornerRadius="4"
+                                                Background="{DynamicResource IndicatorGreenBrush}"
+                                                BorderBrush="{DynamicResource CardBackgroundBrush}"
+                                                BorderThickness="1"
+                                                HorizontalAlignment="Right" VerticalAlignment="Top"
+                                                Margin="0,-1,-1,0"
+                                                IsVisible="{Binding EnableRecentImageCarry}"/>
+                                    </Grid>
+                                </ToggleButton>
+
+                                <!-- 分隔线 -->
+                                <Border Width="1" Height="18" Background="{DynamicResource ControlStrokeColorDefaultBrush}"
+                                        VerticalAlignment="Center" Margin="2,0"/>
+
+                                <!-- ✨ 优化提示词 -->
+                                <Button Classes="toolbar-pill-btn"
+                                        Padding="8,5"
+                                        Command="{Binding OptimizePromptCommand}"
+                                        ToolTip.Tip="用 AI 优化当前提示词，使其更具表现力">
+                                    <StackPanel Orientation="Horizontal" Spacing="4">
+                                        <icons:Icon Value="fa-solid fa-wand-magic-sparkles" FontSize="13"/>
+                                        <TextBlock Text="优化" FontSize="12" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Button>
+
+                            </StackPanel>
+                        </ScrollViewer>
+
+                        <!-- Row 2: 输入区 -->
+                        <Grid Grid.Row="2">
+                            <Grid RowDefinitions="Auto,Auto">
+                                <!-- Row 0: 参考图预览 -->
                                 <Border Grid.Row="0" Classes="sub-card"
                                         BorderBrush="{DynamicResource InputBorderBrush}"
                                         BorderThickness="1"
@@ -946,20 +1118,11 @@
                                     </ScrollViewer>
                                 </Border>
 
-                                <Grid Grid.Row="1" ColumnDefinitions="Auto,*" ColumnSpacing="6">
-                                    <Button Grid.Column="0"
-                                            Classes="ref-add"
-                                            Width="36"
-                                            Height="38"
-                                            Padding="0"
-                                            FontSize="16"
-                                            Click="AttachFileOrImage_Click"
-                                            ToolTip.Tip="添加附件（图片或文本文件）">
-                                        <icons:Icon Value="fa-solid fa-paperclip" FontSize="16"/>
-                                    </Button>
-
+                                <!-- Row 1: 输入框 + 发送/停止 -->
+                                <Grid Grid.Row="1" ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                                    <!-- 输入框 -->
                                     <TextBox x:Name="PromptTextBox"
-                                             Grid.Column="1"
+                                             Grid.Column="0"
                                              Text="{Binding PromptText}"
                                              Watermark="请输入内容... (Ctrl+Enter 发送)"
                                              AcceptsReturn="True"
@@ -967,21 +1130,22 @@
                                              MaxHeight="80"
                                              MinHeight="38"
                                              Padding="8,6"/>
+
+                                    <!-- 右侧：发送 / 停止 -->
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6"
+                                                VerticalAlignment="Bottom">
+                                        <Button Classes="pressable" Content="发送" Command="{Binding GenerateCommand}"
+                                                Padding="16,8" FontWeight="SemiBold"
+                                                Background="{DynamicResource AccentBlueBrush}" Foreground="White"/>
+                                        <Button Content="停止" Command="{Binding StopChatCommand}"
+                                                IsVisible="{Binding IsChatStreaming}"
+                                                Padding="10,8"/>
+                                    </StackPanel>
                                 </Grid>
                             </Grid>
-                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" Margin="8,0,0,0"
-                                        VerticalAlignment="Bottom">
-                                <!-- 发送/停止 -->
-                                <Button Classes="pressable" Content="发送" Command="{Binding GenerateCommand}"
-                                        Padding="16,8" FontWeight="SemiBold"
-                                        Background="{DynamicResource AccentBlueBrush}" Foreground="White"/>
-                                <Button Content="停止" Command="{Binding StopChatCommand}"
-                                        IsVisible="{Binding IsChatStreaming}"
-                                        Padding="10,8"/>
-                            </StackPanel>
                         </Grid>
 
-                        <StackPanel Grid.Row="3" Margin="42,4,0,0" Spacing="2">
+                        <StackPanel Grid.Row="3" Margin="0,4,0,0" Spacing="2">
                             <TextBlock FontSize="12"
                                        Foreground="{DynamicResource WarningBrush}"
                                        IsVisible="{Binding IsVideoReferenceLimitExceeded}"

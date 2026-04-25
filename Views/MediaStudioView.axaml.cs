@@ -596,6 +596,43 @@ namespace TrueFluentPro.Views
             }
         }
 
+        /// <summary>比例选择后自动关闭 Flyout。</summary>
+        private void RatioList_SelectionChanged(object? sender, Avalonia.Controls.SelectionChangedEventArgs e)
+        {
+            if (e.AddedItems.Count > 0 && sender is Avalonia.Controls.ListBox listBox)
+            {
+                // 从 ListBox 向上找到包含 Flyout 的 Button 并关闭
+                var parent = listBox.Parent;
+                while (parent != null)
+                {
+                    if (parent is Avalonia.Controls.Button btn && btn.Flyout != null)
+                    {
+                        btn.Flyout.Hide();
+                        return;
+                    }
+                    parent = (parent as Avalonia.Controls.Control)?.Parent;
+                }
+            }
+        }
+
+        /// <summary>模型选择后自动关闭 Flyout。</summary>
+        private void ModelList_SelectionChanged(object? sender, Avalonia.Controls.SelectionChangedEventArgs e)
+        {
+            if (e.AddedItems.Count > 0 && sender is Avalonia.Controls.ListBox listBox)
+            {
+                var parent = listBox.Parent;
+                while (parent != null)
+                {
+                    if (parent is Avalonia.Controls.Button btn && btn.Flyout != null)
+                    {
+                        btn.Flyout.Hide();
+                        return;
+                    }
+                    parent = (parent as Avalonia.Controls.Control)?.Parent;
+                }
+            }
+        }
+
         /// <summary>附件按钮：打开图片+文本选择器，添加到附件列表。</summary>
         private async void AttachFileOrImage_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
         {

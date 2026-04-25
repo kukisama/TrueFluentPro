@@ -20,6 +20,18 @@ namespace TrueFluentPro.Models
         public ImageEditMode ImageEditMode { get; set; } = ImageEditMode.V2ResponsesApi;
 
         /// <summary>
+        /// 图片背景模式：auto（默认）、opaque、transparent。
+        /// transparent 需配合 png 格式，gpt-image-2 实测有 RGBA 返回。
+        /// </summary>
+        public string ImageBackground { get; set; } = "auto";
+
+        /// <summary>
+        /// 输入保真度：auto（默认）、low、high。
+        /// gpt-image-1.5 可调（低保真省 input tokens），gpt-image-2 强制 high 不可调。
+        /// </summary>
+        public string InputFidelity { get; set; } = "auto";
+
+        /// <summary>
         /// 聊天模式下是否启用图片生成工具（image_generation tool）。
         /// 启用后，聊天中 AI 可自主判断是否需要生成/编辑图片。
         /// 需要模型具有视觉能力（如 gpt-4o/gpt-5.4），且需配置 ImageModel。
@@ -52,6 +64,13 @@ namespace TrueFluentPro.Models
         /// </summary>
         [System.Text.Json.Serialization.JsonIgnore]
         public string? TextModelForResponses { get; set; }
+
+        /// <summary>
+        /// Responses API 返回的 response id，用于 previous_response_id 多轮改图。
+        /// 由 ViewModel 在调用前注入上一次生成的 ResponseId，不写入 config.json。
+        /// </summary>
+        [System.Text.Json.Serialization.JsonIgnore]
+        public string? PreviousResponseId { get; set; }
 
         // --- 性能与缓存 ---
         public int MaxLoadedSessionsInMemory { get; set; } = 8;

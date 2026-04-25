@@ -27,7 +27,7 @@ namespace TrueFluentPro.ViewModels
         private readonly List<AiEndpoint> _endpoints = new();
         private readonly IModelRuntimeResolver _modelRuntimeResolver;
         private readonly IAzureTokenProviderStore _azureTokenProviderStore;
-        private readonly AiImageGenService _imageService = new();
+        private readonly AiImageGenService _imageService = new(App.Services.GetRequiredService<FileIdCache>());
         private readonly AiVideoGenService _videoService = new();
         private readonly string _workspaceRootDirectory;
 
@@ -947,6 +947,7 @@ namespace TrueFluentPro.ViewModels
             WorkspaceSession = tab.Session;
             ApplySelectedWorkspaceState(tab);
             SyncCanvasModeWithReferenceState();
+            WorkspaceSession.RefreshImageModelCapabilities();
             WorkspaceSession.PropertyChanged += WorkspaceSession_PropertyChanged;
             WorkspaceSession.Messages.CollectionChanged += WorkspaceMessages_CollectionChanged;
             WorkspaceSession.RunningTasks.CollectionChanged += WorkspaceRunningTasks_CollectionChanged;

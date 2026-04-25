@@ -17,6 +17,8 @@ namespace TrueFluentPro.ViewModels.Settings
         private string _imageFormat = "png";
         private int _imageCount = 1;
         private ImageEditMode _imageEditMode = ImageEditMode.V2ResponsesApi;
+        private string _imageBackground = "auto";
+        private string _inputFidelity = "auto";
 
         public List<ModelOption> ImageModels { get => _imageModels; set => SetProperty(ref _imageModels, value); }
         public ModelOption? SelectedImageModel
@@ -69,6 +71,11 @@ namespace TrueFluentPro.ViewModels.Settings
         public int ImageCount { get => _imageCount; set => Set(ref _imageCount, value); }
         public ImageEditMode ImageEditMode { get => _imageEditMode; set => Set(ref _imageEditMode, value); }
 
+        public List<string> ImageBackgroundOptions { get; } = ["auto", "opaque", "transparent"];
+        public List<string> InputFidelityOptions { get; } = ["auto", "low", "high"];
+        public string ImageBackground { get => _imageBackground; set => Set(ref _imageBackground, value); }
+        public string InputFidelity { get => _inputFidelity; set => Set(ref _inputFidelity, value); }
+
         public override void LoadFrom(AzureSpeechConfig config)
         {
             config.MediaGenConfig ??= new MediaGenConfig();
@@ -80,6 +87,8 @@ namespace TrueFluentPro.ViewModels.Settings
             _imageCount = media.ImageCount <= 0 ? 1 : media.ImageCount;
             _imageEditMode = media.ImageEditMode;
             _enableChatImageGeneration = media.EnableChatImageGeneration;
+            _imageBackground = string.IsNullOrWhiteSpace(media.ImageBackground) ? "auto" : media.ImageBackground;
+            _inputFidelity = string.IsNullOrWhiteSpace(media.InputFidelity) ? "auto" : media.InputFidelity;
 
             OnPropertyChanged(nameof(ImageSize));
             OnPropertyChanged(nameof(ImageQuality));
@@ -87,6 +96,8 @@ namespace TrueFluentPro.ViewModels.Settings
             OnPropertyChanged(nameof(ImageCount));
             OnPropertyChanged(nameof(ImageEditMode));
             OnPropertyChanged(nameof(EnableChatImageGeneration));
+            OnPropertyChanged(nameof(ImageBackground));
+            OnPropertyChanged(nameof(InputFidelity));
         }
 
         public override void ApplyTo(AzureSpeechConfig config)
@@ -100,6 +111,8 @@ namespace TrueFluentPro.ViewModels.Settings
             media.ImageEditMode = ImageEditMode.V2ResponsesApi;
             media.ImageModelRef = SelectedImageModel?.Reference;
             media.EnableChatImageGeneration = _enableChatImageGeneration;
+            media.ImageBackground = string.IsNullOrWhiteSpace(_imageBackground) ? "auto" : _imageBackground;
+            media.InputFidelity = string.IsNullOrWhiteSpace(_inputFidelity) ? "auto" : _inputFidelity;
         }
 
         public void SelectModels(ModelReference? imageModelRef, List<ModelOption> imageModels)

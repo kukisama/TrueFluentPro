@@ -71,6 +71,8 @@
 
   <ItemGroup>
     <AvaloniaResource Include="Assets\**" />
+    <EmbeddedResource Include="Assets\billing-tiers.json" LogicalName="TrueFluentPro.Assets.billing-tiers.json" />
+    <EmbeddedResource Include="Assets\image-models.json" LogicalName="TrueFluentPro.Assets.image-models.json" />
   </ItemGroup>
 
   <ItemGroup>

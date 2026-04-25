@@ -26,6 +26,13 @@ namespace TrueFluentPro.Services
         public IReadOnlyList<string> AttemptedUrls { get; set; } = Array.Empty<string>();
         /// <summary>Responses API 返回的 response id，可用于 previous_response_id 多轮改图</summary>
         public string? ResponseId { get; set; }
+
+        // ─── API response.usage 实际 token ───
+        public int? ActualInputTokens { get; set; }
+        public int? ActualOutputTokens { get; set; }
+        public int? ActualImageInputTokens { get; set; }
+        public int? ActualImageOutputTokens { get; set; }
+        public int? ActualCachedTokens { get; set; }
     }
 
     /// <summary>
@@ -53,6 +60,17 @@ namespace TrueFluentPro.Services
         public double DownloadSeconds { get; set; }
         /// <summary>Responses API 返回的 response id，可用于 previous_response_id 多轮改图</summary>
         public string? ResponseId { get; set; }
+
+        // ─── 实际生成图片尺寸 ───
+        public int? ActualWidth { get; set; }
+        public int? ActualHeight { get; set; }
+
+        // ─── API response.usage 实际 token ───
+        public int? ActualInputTokens { get; set; }
+        public int? ActualOutputTokens { get; set; }
+        public int? ActualImageInputTokens { get; set; }
+        public int? ActualImageOutputTokens { get; set; }
+        public int? ActualCachedTokens { get; set; }
     }
 
     /// <summary>
@@ -60,6 +78,13 @@ namespace TrueFluentPro.Services
     /// </summary>
     public class AiImageGenService : AiMediaServiceBase, IAiImageGenService
     {
+        private readonly FileIdCache _fileIdCache;
+
+        public AiImageGenService(FileIdCache fileIdCache)
+        {
+            _fileIdCache = fileIdCache;
+        }
+
         private sealed class ImageAttemptResult
         {
             public required HttpResponseMessage Response { get; init; }
@@ -132,7 +157,8 @@ namespace TrueFluentPro.Services
 
             if (validReferenceImages.Count > 0)
             {
-                // ── 有参考图：根据 ImageEditMode 选择 v1（multipart）或 v2（Responses API）──
+                // ── 有参考图：自动路由 ──
+                // 优先 Responses API（需要 TextModelForResponses），否则 fallback 到 V1 multipart
                 var authModeText = DescribeMediaAuthStrategy(config);
                 var imageNames = validReferenceImages
                     .Select(Path.GetFileName)
@@ -141,7 +167,7 @@ namespace TrueFluentPro.Services
                     .ToList();
 
                 ImageAttemptResult editAttempt;
-                if (genConfig.ImageEditMode == ImageEditMode.V2ResponsesApi)
+                if (ShouldUseResponsesApi(genConfig))
                 {
                     editAttempt = await SendImageEditV2RequestAsync(config, prompt, genConfig, validReferenceImages, authModeText, imageNames, ct);
                 }
@@ -185,45 +211,69 @@ namespace TrueFluentPro.Services
             }
             else
             {
-                // ── 无参考图：使用 /images/generations 终结点 + JSON ──
-                var bodyObj = new Dictionary<string, object>
+                // ── 无参考图 ──
+                // 自动路由：TextModelForResponses 可用时走 Responses API，否则 fallback /images/generations
+                if (ShouldUseResponsesApi(genConfig))
                 {
-                    ["prompt"] = prompt,
-                    ["model"] = genConfig.ImageModel,
-                    ["n"] = genConfig.ImageCount,
-                    ["size"] = genConfig.ImageSize,
-                    ["quality"] = genConfig.ImageQuality,
-                    ["output_format"] = genConfig.ImageFormat
-                };
-                var authModeText = DescribeMediaAuthStrategy(config);
-                var generateAttempt = await SendImageGenerateRequestAsync(config, bodyObj, authModeText, ct);
-                response = generateAttempt.Response;
-                requestUrl = generateAttempt.Url;
-                attemptedUrls = generateAttempt.AttemptedUrls;
+                    var authModeText = DescribeMediaAuthStrategy(config);
+                    var responsesAttempt = await SendPureTextGenV2RequestAsync(config, prompt, genConfig, authModeText, ct);
+                    response = responsesAttempt.Response;
+                    requestUrl = responsesAttempt.Url;
+                    attemptedUrls = responsesAttempt.AttemptedUrls;
 
-                if (!response.IsSuccessStatusCode)
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        var errorText = responsesAttempt.ErrorText ?? await response.Content.ReadAsStringAsync(ct);
+                        var sc = response.StatusCode; var rp = response.ReasonPhrase;
+                        await AppLogService.Instance.LogHttpDebugAsync(
+                            "image", "ImageGenerateV2-ResponsesApi.Error",
+                            $"HTTP={(int)sc} {rp}\nURL={responsesAttempt.Url}\nBody={errorText}", ct);
+                        response.Dispose();
+                        throw new HttpRequestException($"图片生成失败(Responses API): {(int)sc} {rp}. {errorText}");
+                    }
+                }
+                else
                 {
-                    var errorText = generateAttempt.ErrorText ?? await response.Content.ReadAsStringAsync(ct);
-                    var statusCode = response.StatusCode;
-                    var reasonPhrase = response.ReasonPhrase;
-                    var oneapiRequestId = response.Headers.TryGetValues("X-Oneapi-Request-Id", out var ridVals)
-                        ? string.Join(",", ridVals)
-                        : string.Empty;
-                    await AppLogService.Instance.LogHttpDebugAsync(
-                        "image",
-                        "ImageGenerate.Error",
-                        $"HTTP={(int)statusCode} {reasonPhrase}\n" +
-                        $"URL={generateAttempt.Url}\n" +
-                        $"Headers:\n{FormatResponseHeaders(response)}\n" +
-                        $"Body={errorText}",
-                        ct);
-                    response.Dispose();
-                    throw new HttpRequestException(
-                        $"图片生成失败: {(int)statusCode} {reasonPhrase}. " +
-                        (string.IsNullOrWhiteSpace(oneapiRequestId)
-                            ? string.Empty
-                            : $"[X-Oneapi-Request-Id: {oneapiRequestId}] ") +
-                        $"{errorText}");
+                    // /images/generations 备选路径
+                    var bodyObj = new Dictionary<string, object>
+                    {
+                        ["prompt"] = prompt,
+                        ["model"] = genConfig.ImageModel,
+                        ["n"] = genConfig.ImageCount,
+                        ["size"] = genConfig.ImageSize,
+                        ["quality"] = genConfig.ImageQuality,
+                        ["output_format"] = genConfig.ImageFormat
+                    };
+                    var authModeText = DescribeMediaAuthStrategy(config);
+                    var generateAttempt = await SendImageGenerateRequestAsync(config, bodyObj, authModeText, ct);
+                    response = generateAttempt.Response;
+                    requestUrl = generateAttempt.Url;
+                    attemptedUrls = generateAttempt.AttemptedUrls;
+
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        var errorText = generateAttempt.ErrorText ?? await response.Content.ReadAsStringAsync(ct);
+                        var statusCode = response.StatusCode;
+                        var reasonPhrase = response.ReasonPhrase;
+                        var oneapiRequestId = response.Headers.TryGetValues("X-Oneapi-Request-Id", out var ridVals)
+                            ? string.Join(",", ridVals)
+                            : string.Empty;
+                        await AppLogService.Instance.LogHttpDebugAsync(
+                            "image",
+                            "ImageGenerate.Error",
+                            $"HTTP={(int)statusCode} {reasonPhrase}\n" +
+                            $"URL={generateAttempt.Url}\n" +
+                            $"Headers:\n{FormatResponseHeaders(response)}\n" +
+                            $"Body={errorText}",
+                            ct);
+                        response.Dispose();
+                        throw new HttpRequestException(
+                            $"图片生成失败: {(int)statusCode} {reasonPhrase}. " +
+                            (string.IsNullOrWhiteSpace(oneapiRequestId)
+                                ? string.Empty
+                                : $"[X-Oneapi-Request-Id: {oneapiRequestId}] ") +
+                            $"{errorText}");
+                    }
                 }
             }
             using (response)
@@ -318,6 +368,25 @@ namespace TrueFluentPro.Services
                 responseId = idElem.GetString();
             }
 
+            // 解析 response.usage 实际 token（Responses API 和 Images API 均可能返回）
+            int? actualInputTokens = null, actualOutputTokens = null;
+            int? actualImageInputTokens = null, actualImageOutputTokens = null, actualCachedTokens = null;
+            if (root.TryGetProperty("usage", out var usageElem) && usageElem.ValueKind == JsonValueKind.Object)
+            {
+                if (usageElem.TryGetProperty("input_tokens", out var it)) actualInputTokens = it.GetInt32();
+                if (usageElem.TryGetProperty("output_tokens", out var ot)) actualOutputTokens = ot.GetInt32();
+                // Responses API 图片专用细分
+                if (usageElem.TryGetProperty("input_tokens_details", out var itd) && itd.ValueKind == JsonValueKind.Object)
+                {
+                    if (itd.TryGetProperty("image_tokens", out var iit)) actualImageInputTokens = iit.GetInt32();
+                    if (itd.TryGetProperty("cached_tokens", out var ct2)) actualCachedTokens = ct2.GetInt32();
+                }
+                if (usageElem.TryGetProperty("output_tokens_details", out var otd) && otd.ValueKind == JsonValueKind.Object)
+                {
+                    if (otd.TryGetProperty("image_tokens", out var oit)) actualImageOutputTokens = oit.GetInt32();
+                }
+            }
+
                 onProgress?.Invoke(100);
                 return new ImageGenerationResult
                 {
@@ -326,7 +395,12 @@ namespace TrueFluentPro.Services
                     DownloadSeconds = downloadSeconds,
                     RequestUrl = requestUrl,
                     AttemptedUrls = attemptedUrls,
-                    ResponseId = responseId
+                    ResponseId = responseId,
+                    ActualInputTokens = actualInputTokens,
+                    ActualOutputTokens = actualOutputTokens,
+                    ActualImageInputTokens = actualImageInputTokens,
+                    ActualImageOutputTokens = actualImageOutputTokens,
+                    ActualCachedTokens = actualCachedTokens
                 };
             }
         }
@@ -716,6 +790,16 @@ namespace TrueFluentPro.Services
             string authModeText,
             CancellationToken ct)
         {
+            // FileIdCache: 命中缓存则跳过上传
+            var endpointUrl = config.ApiEndpoint ?? "";
+            var cachedFileId = _fileIdCache.TryGet(endpointUrl, filePath);
+            if (cachedFileId != null)
+            {
+                await AppLogService.Instance.LogHttpDebugAsync(
+                    "image", "FileUpload.CacheHit", $"FileId={cachedFileId}\nFile={filePath}", ct);
+                return cachedFileId;
+            }
+
             var uploadUrls = BuildFileUploadCandidateUrls(config);
             if (uploadUrls.Count == 0)
                 throw new HttpRequestException("文件上传失败: 无法构建 Files API URL，请检查终结点配置");
@@ -770,6 +854,7 @@ namespace TrueFluentPro.Services
                     {
                         await AppLogService.Instance.LogHttpDebugAsync(
                             "image", "FileUpload.Success", $"FileId={fileId}", ct);
+                        _fileIdCache.Set(endpointUrl, filePath, fileId);
                         return fileId;
                     }
                 }
@@ -842,9 +927,14 @@ namespace TrueFluentPro.Services
                 },
                 ["tools"] = new[]
                 {
-                    BuildImageGenerationToolDefinition(genConfig)
+                    BuildImageGenerationToolDefinition(genConfig, hasReferenceInput: true)
                 }
             };
+
+            // 多轮改图：传递 previous_response_id
+            if (!string.IsNullOrWhiteSpace(genConfig.PreviousResponseId))
+                bodyObj["previous_response_id"] = genConfig.PreviousResponseId;
+
             var jsonBody = JsonSerializer.Serialize(bodyObj);
 
             // Azure OpenAI 需通过 x-ms-oai-image-generation-deployment 头指定图片模型部署名
@@ -860,7 +950,8 @@ namespace TrueFluentPro.Services
                 $"ImageDeployment={genConfig.ImageModel}\n" +
                 $"ReferenceImageCount={validReferenceImages.Count}\n" +
                 $"FileIds={string.Join(",", fileIds)}\n" +
-                $"ImageFiles={string.Join(",", imageNames)}",
+                $"ImageFiles={string.Join(",", imageNames)}\n" +
+                $"PreviousResponseId={genConfig.PreviousResponseId ?? "(none)"}",
                 ct);
 
             // 5) 遍历 Responses API URL candidates 发送请求
@@ -936,8 +1027,19 @@ namespace TrueFluentPro.Services
                 var ext = genConfig.ImageFormat;
                 var fileName = $"img_{seq:D3}_{randomId}.{ext}";
                 var filePath = Path.Combine(outputDirectory, fileName);
+                var tmpPath = filePath + ".tmp";
 
-                await File.WriteAllBytesAsync(filePath, data, ct);
+                try
+                {
+                    await File.WriteAllBytesAsync(tmpPath, data, ct);
+                    File.Move(tmpPath, filePath, overwrite: true);
+                }
+                finally
+                {
+                    // 异常时清理 .tmp 残留
+                    try { if (File.Exists(tmpPath)) File.Delete(tmpPath); } catch { }
+                }
+
                 filePaths.Add(filePath);
                 seq++;
             }
@@ -947,22 +1049,190 @@ namespace TrueFluentPro.Services
                 FilePaths = filePaths,
                 GenerateSeconds = genResult.GenerateSeconds,
                 DownloadSeconds = genResult.DownloadSeconds,
-                ResponseId = genResult.ResponseId
+                ResponseId = genResult.ResponseId,
+                ActualWidth = ReadImageWidth(genResult.Images.FirstOrDefault()),
+                ActualHeight = ReadImageHeight(genResult.Images.FirstOrDefault()),
+                ActualInputTokens = genResult.ActualInputTokens,
+                ActualOutputTokens = genResult.ActualOutputTokens,
+                ActualImageInputTokens = genResult.ActualImageInputTokens,
+                ActualImageOutputTokens = genResult.ActualImageOutputTokens,
+                ActualCachedTokens = genResult.ActualCachedTokens
             };
+        }
+
+        private static int? ReadImageWidth(byte[]? data)
+        {
+            if (data == null || data.Length < 24) return null;
+            try
+            {
+                using var ms = new MemoryStream(data);
+                using var codec = SkiaSharp.SKCodec.Create(ms);
+                return codec?.Info.Width;
+            }
+            catch { return null; }
+        }
+
+        private static int? ReadImageHeight(byte[]? data)
+        {
+            if (data == null || data.Length < 24) return null;
+            try
+            {
+                using var ms = new MemoryStream(data);
+                using var codec = SkiaSharp.SKCodec.Create(ms);
+                return codec?.Info.Height;
+            }
+            catch { return null; }
+        }
+
+        /// <summary>
+        /// 纯文生图走 Responses API（§16 统一路线）。
+        /// 无参考图时 content 只有 input_text，多图通过 instructions 引导。
+        /// </summary>
+        private async Task<ImageAttemptResult> SendPureTextGenV2RequestAsync(
+            AiConfig config,
+            string prompt,
+            MediaGenConfig genConfig,
+            string authModeText,
+            CancellationToken ct)
+        {
+            var responsesUrls = BuildImageResponsesCandidateUrls(config);
+            if (responsesUrls.Count == 0)
+                throw new HttpRequestException("纯文生图(Responses API)失败: 无法构建 URL");
+
+            var contentItems = new List<object>
+            {
+                new Dictionary<string, object>
+                {
+                    ["type"] = "input_text",
+                    ["text"] = prompt
+                }
+            };
+
+            var textModel = !string.IsNullOrWhiteSpace(genConfig.TextModelForResponses)
+                ? genConfig.TextModelForResponses
+                : config.ModelName;
+
+            var bodyObj = new Dictionary<string, object>
+            {
+                ["model"] = textModel,
+                ["input"] = new[]
+                {
+                    new Dictionary<string, object>
+                    {
+                        ["role"] = "user",
+                        ["content"] = contentItems
+                    }
+                },
+                ["tools"] = new[]
+                {
+                    BuildImageGenerationToolDefinition(genConfig)
+                }
+            };
+
+            // 多图：通过 instructions（developer 角色）引导精确数量
+            if (genConfig.ImageCount > 1)
+            {
+                bodyObj["instructions"] = $"When generating images, always produce EXACTLY {genConfig.ImageCount} images. Each image should be a distinct variation.";
+            }
+
+            // 多轮改图：传递 previous_response_id
+            if (!string.IsNullOrWhiteSpace(genConfig.PreviousResponseId))
+                bodyObj["previous_response_id"] = genConfig.PreviousResponseId;
+
+            var jsonBody = JsonSerializer.Serialize(bodyObj);
+
+            var responsesHeaders = new Dictionary<string, string>
+            {
+                ["x-ms-oai-image-generation-deployment"] = genConfig.ImageModel
+            };
+
+            await AppLogService.Instance.LogHttpDebugAsync(
+                "image", "PureTextGenV2-ResponsesApi.Build",
+                $"TextModel={textModel}\nImageDeployment={genConfig.ImageModel}\nImageCount={genConfig.ImageCount}", ct);
+
+            ImageAttemptResult? lastAttempt = null;
+            var attemptedUrls = new List<string>();
+
+            foreach (var url in responsesUrls)
+            {
+                attemptedUrls.Add(url);
+                var response = await SendJsonImageRequestAsync(
+                    config, url, jsonBody, authModeText, ct, "PureTextGenV2-ResponsesApi", responsesHeaders);
+
+                if (response.IsSuccessStatusCode)
+                    return new ImageAttemptResult { Response = response, Url = url, AttemptedUrls = attemptedUrls.ToList() };
+
+                var errorText = await response.Content.ReadAsStringAsync(ct);
+                lastAttempt = new ImageAttemptResult { Response = response, Url = url, ErrorText = errorText, AttemptedUrls = attemptedUrls.ToList() };
+
+                if (ShouldTryNextImageCandidate(response))
+                    continue;
+
+                return lastAttempt;
+            }
+
+            return lastAttempt ?? throw new HttpRequestException("纯文生图(Responses API)失败: 未发送请求");
         }
 
         /// <summary>
         /// 构建 image_generation tool 定义。
-        /// Azure OpenAI Responses API 的改图路径只接受固定 size（1024x1024/1024x1536/1536x1024/auto），
-        /// 自定义分辨率会返回 400，因此 size 始终不传（等同于 auto）。
+        /// 支持编程化参数：quality, size, background, output_format。
+        /// Azure APIM size 仅允许 1024x1024/1024x1536/1536x1024/auto 四种固定值。
         /// </summary>
-        private static Dictionary<string, object> BuildImageGenerationToolDefinition(MediaGenConfig genConfig)
+        internal static Dictionary<string, object> BuildImageGenerationToolDefinition(MediaGenConfig genConfig, bool hasReferenceInput = false)
         {
             var tool = new Dictionary<string, object> { ["type"] = "image_generation" };
-            // size 不传 — Azure Responses API 不支持自定义分辨率，留给服务端自动决策
+
+            // quality
             if (!string.IsNullOrWhiteSpace(genConfig.ImageQuality) && genConfig.ImageQuality != "auto")
                 tool["quality"] = genConfig.ImageQuality;
+
+            // size — Azure APIM 仅允许固定值，非标值返回 400
+            var size = genConfig.ImageSize;
+            if (!string.IsNullOrWhiteSpace(size) && size != "auto")
+            {
+                if (size is "1024x1024" or "1024x1536" or "1536x1024")
+                    tool["size"] = size;
+                // 非标准尺寸不传（等同 auto），避免 Azure APIM 400
+            }
+
+            // background — transparent 需配合 png 格式
+            var bg = genConfig.ImageBackground;
+            if (!string.IsNullOrWhiteSpace(bg) && bg != "auto")
+            {
+                // transparent 仅在 png 格式下有效
+                if (bg == "transparent" && genConfig.ImageFormat is "png" or "auto" or null or "")
+                    tool["background"] = "transparent";
+                else if (bg == "opaque")
+                    tool["background"] = "opaque";
+            }
+
+            // output_format
+            if (!string.IsNullOrWhiteSpace(genConfig.ImageFormat) && genConfig.ImageFormat != "auto")
+                tool["output_format"] = genConfig.ImageFormat;
+
+            // input_fidelity — gpt-image-1.5 可调（low/high），gpt-image-2 不支持
+            var fidelity = genConfig.InputFidelity;
+            if (!string.IsNullOrWhiteSpace(fidelity) && fidelity != "auto")
+                tool["input_fidelity"] = fidelity;
+
+            // action — 有参考图时为 edit，否则为 generate
+            if (hasReferenceInput)
+                tool["action"] = "edit";
+
             return tool;
+        }
+
+        /// <summary>
+        /// 自动路由判定：TextModelForResponses 可用且 ImageEditMode 未强制 V1 时走 Responses API。
+        /// </summary>
+        private static bool ShouldUseResponsesApi(MediaGenConfig genConfig)
+        {
+            // 用户显式选 V1 时尊重选择（保留手动覆盖能力）
+            if (genConfig.ImageEditMode == ImageEditMode.V1Multipart)
+                return false;
+            // TextModelForResponses 可用即自动启用 Responses API
+            return !string.IsNullOrWhiteSpace(genConfig.TextModelForResponses);
         }
 
         private static string? BuildImageDataUrl(string? imagePath)
@@ -981,6 +1251,50 @@ namespace TrueFluentPro.Services
                 _ => "image/png"
             };
             return $"data:{mime};base64,{Convert.ToBase64String(bytes)}";
+        }
+
+        // ── Pipeline 步骤用公开方法 ──
+
+        public IReadOnlyList<string> GetResponsesApiCandidateUrls(AiConfig config)
+            => BuildImageResponsesCandidateUrls(config);
+
+        public async Task<HttpResponseMessage> SendAuthenticatedJsonAsync(
+            AiConfig config,
+            string url,
+            string jsonBody,
+            IReadOnlyDictionary<string, string>? additionalHeaders,
+            CancellationToken ct)
+        {
+            return await SendJsonImageRequestAsync(config, url, jsonBody, "Pipeline", ct, "Pipeline", additionalHeaders);
+        }
+
+        /// <summary>
+        /// 使用 Pipeline 执行完整的图片生成流程：Route → Upload → BuildRequest → Execute → Land。
+        /// 此方法目前作为备选入口，与现有 GenerateAndSaveImagesAsync 并行存在。
+        /// </summary>
+        public async Task<ImagePipeline.ImagePipelineContext> RunPipelineAsync(
+            ImagePipeline.ImageTaskRequest taskRequest,
+            AiConfig config,
+            MediaGenConfig genConfig,
+            ImageModelCapabilities? modelCaps,
+            CancellationToken ct)
+        {
+            var ctx = new ImagePipeline.ImagePipelineContext
+            {
+                Request = taskRequest,
+                Config = config,
+                GenConfig = genConfig,
+                ModelCaps = modelCaps,
+            };
+
+            var runner = new ImagePipeline.ImagePipelineRunner()
+                .AddStep(new ImagePipeline.Steps.RouteStep())
+                .AddStep(new ImagePipeline.Steps.UploadStep(this, _fileIdCache))
+                .AddStep(new ImagePipeline.Steps.BuildRequestStep())
+                .AddStep(new ImagePipeline.Steps.ExecuteStep(this))
+                .AddStep(new ImagePipeline.Steps.LandStep());
+
+            return await runner.RunAsync(ctx, ct);
         }
 
     }

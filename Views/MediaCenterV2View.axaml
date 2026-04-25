@@ -161,14 +161,15 @@
                             </Grid>
 
                             <StackPanel Spacing="8" IsVisible="{Binding IsImageKind}">
-                                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="8">
+                                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="8">
                                     <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Text="尺寸"/>
                                     <ComboBox Grid.Row="0" Grid.Column="1"
                                               ItemsSource="{Binding WorkspaceSession.ImageSizeOptions}"
                                               SelectedItem="{Binding WorkspaceSession.ImageSize}"
                                               Padding="8,5"/>
                                     <Button Grid.Row="0" Grid.Column="2" Padding="6,4"
-                                            ToolTip.Tip="画布尺寸选择器">
+                                            ToolTip.Tip="画布尺寸选择器"
+                                            IsVisible="{Binding WorkspaceSession.IsCanvasSelectorAvailable}">
                                         <icons:Icon Value="fa-solid fa-expand" FontSize="12"/>
                                         <Button.Flyout>
                                             <Flyout Placement="BottomEdgeAlignedRight">
@@ -193,6 +194,24 @@
                                               ItemsSource="{Binding WorkspaceSession.ImageCountOptions}"
                                               SelectedItem="{Binding WorkspaceSession.ImageCount}"
                                               Padding="8,5"/>
+
+                                    <!-- 背景（仅 gpt-image-1.5 等支持透明的模型可见） -->
+                                    <TextBlock Grid.Row="4" Grid.Column="0" VerticalAlignment="Center" Text="背景"
+                                               IsVisible="{Binding WorkspaceSession.IsTransparentBackgroundSupported}"/>
+                                    <ComboBox Grid.Row="4" Grid.Column="1"
+                                              ItemsSource="{Binding WorkspaceSession.ImageBackgroundOptions}"
+                                              SelectedItem="{Binding WorkspaceSession.ImageBackground}"
+                                              Padding="8,5"
+                                              IsVisible="{Binding WorkspaceSession.IsTransparentBackgroundSupported}"/>
+
+                                    <!-- 输入保真度（仅 gpt-image-1.5 等支持可调的模型可见） -->
+                                    <TextBlock Grid.Row="5" Grid.Column="0" VerticalAlignment="Center" Text="保真度"
+                                               IsVisible="{Binding WorkspaceSession.IsInputFidelitySupported}"/>
+                                    <ComboBox Grid.Row="5" Grid.Column="1"
+                                              ItemsSource="{Binding WorkspaceSession.InputFidelityOptions}"
+                                              SelectedItem="{Binding WorkspaceSession.InputFidelity}"
+                                              Padding="8,5"
+                                              IsVisible="{Binding WorkspaceSession.IsInputFidelitySupported}"/>
                                 </Grid>
                             </StackPanel>
 
