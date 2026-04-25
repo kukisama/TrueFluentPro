@@ -34,12 +34,16 @@ namespace TrueFluentPro.Views
 
         public void Initialize(
             AiConfig aiConfig, MediaGenConfig genConfig, List<AiEndpoint> endpoints,
-            IModelRuntimeResolver modelRuntimeResolver, IAzureTokenProviderStore azureTokenProviderStore)
+            IModelRuntimeResolver modelRuntimeResolver, IAzureTokenProviderStore azureTokenProviderStore,
+            ConfigurationService configurationService,
+            Func<AzureSpeechConfig> configProvider,
+            Action<AzureSpeechConfig>? onGlobalConfigUpdated = null)
         {
             if (_initialized) return;
             _initialized = true;
 
-            _viewModel = new MediaCenterV2ViewModel(aiConfig, genConfig, endpoints, modelRuntimeResolver, azureTokenProviderStore);
+            _viewModel = new MediaCenterV2ViewModel(aiConfig, genConfig, endpoints, modelRuntimeResolver, azureTokenProviderStore,
+                configurationService, configProvider, onGlobalConfigUpdated);
             DataContext = _viewModel;
 
             var workspaceScroll = this.FindControl<ScrollViewer>("WorkspaceScrollViewer");

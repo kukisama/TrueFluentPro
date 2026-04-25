@@ -493,13 +493,20 @@ namespace TrueFluentPro.ViewModels
                 }
                 else
                 {
-                    // FreeForm 恢复预设列表
+                    // FreeForm: 确保预设列表完整，同时保留自定义 canvas 尺寸
                     var presets = Helpers.ImageSizeCalculator.Presets;
-                    if (ImageSizeOptions.Count != presets.Count || !ImageSizeOptions.SequenceEqual(presets))
+                    bool needsRebuild = ImageSizeOptions.Count < presets.Count
+                        || !presets.SequenceEqual(ImageSizeOptions.Take(presets.Count));
+                    if (needsRebuild)
                     {
                         ImageSizeOptions.Clear();
                         foreach (var s in presets)
                             ImageSizeOptions.Add(s);
+                    }
+                    // ★ 恢复自定义 canvas 尺寸（画布选择器选中的非预设值）
+                    if (_customSizeItem != null && !ImageSizeOptions.Contains(_customSizeItem))
+                    {
+                        ImageSizeOptions.Add(_customSizeItem);
                     }
                 }
 
@@ -1266,7 +1273,8 @@ namespace TrueFluentPro.ViewModels
                 Type = MediaGenType.Image,
                 Status = MediaGenStatus.Running,
                 Prompt = prompt,
-                HasReferenceInput = HasReferenceImage
+                HasReferenceInput = HasReferenceImage,
+                ModelUsed = _genConfig.ImageModelRef?.ModelId ?? _genConfig.ImageModel
             };
 
             RunningTasks.Add(task);
@@ -1347,12 +1355,9 @@ namespace TrueFluentPro.ViewModels
                 }
             }
 
-            // V2 图片编辑（Responses API）需要文本模型作为 model 字段
-            // 从聊天/对话模型配置中获取
-            if (TryBuildChatRuntimeConfig(out var chatRuntimeForImage, out _, out _))
-            {
-                effectiveConfig.TextModelForResponses = chatRuntimeForImage.ModelName;
-            }
+            // 媒体中心明确生图 → 直走 /images/generations（原生支持 n 参数）
+            // 不注入 TextModelForResponses，ShouldUseResponsesApi() 返回 false
+            // 创作坊聊天模式的图片生成仍走 Responses API（在 SendTextChatAsync 中）
 
             var imageConfig = imageRuntime.CreateRequestConfig();
 
@@ -1527,7 +1532,8 @@ namespace TrueFluentPro.ViewModels
                 Type = MediaGenType.Video,
                 Status = MediaGenStatus.Running,
                 Prompt = prompt,
-                HasReferenceInput = HasReferenceImage
+                HasReferenceInput = HasReferenceImage,
+                ModelUsed = _genConfig.VideoModelRef?.ModelId ?? _genConfig.VideoModel
             };
 
             RunningTasks.Add(task);
@@ -2824,11 +2830,16 @@ namespace TrueFluentPro.ViewModels
             {
                 runtimeRequest.EnableChatImageGeneration = true;
                 runtimeRequest.ImageModelDeployment = chatImageRuntime!.ModelId;
-                // image_generation tool 只允许 1024x1024, 1024x1536, 1536x1024, auto
-                var allowedSizes = new HashSet<string> { "1024x1024", "1024x1536", "1536x1024", "auto" };
-                runtimeRequest.ImageSize = allowedSizes.Contains(_genConfig.ImageSize) ? _genConfig.ImageSize : "auto";
+                runtimeRequest.ImageSize = _genConfig.ImageSize;
                 runtimeRequest.ImageQuality = _genConfig.ImageQuality;
                 runtimeRequest.ImageFormat = _genConfig.ImageFormat;
+                runtimeRequest.ImageCount = _genConfig.ImageCount;
+
+                // 友好提示：告诉用户识别到了什么意图
+                var reasonText = string.IsNullOrWhiteSpace(intentResult.Reason)
+                    ? "正在准备生成图片..."
+                    : $"{intentResult.Reason}，正在准备生成...";
+                aiMessage.Text = $"🎨 {reasonText}";
             }
 
             var runtimeService = new AiInsightService(tokenProvider);
@@ -3101,18 +3112,38 @@ namespace TrueFluentPro.ViewModels
             foreach (var msg in textMessages.Take(textMessages.Count - 1))
             {
                 var label = msg.IsUser ? "用户" : "AI";
-                // 对 AI 消息：如果它携带了搜索引用，只保留回答文本（截断到合理长度），
-                // 避免把上一轮搜索的完整网页正文滚雪球带入后续轮次。
                 var text = msg.Text;
-                if (!msg.IsUser && msg.Citations is { Count: > 0 })
+
+                if (!msg.IsUser)
                 {
-                    text = TruncateHistoryMessage(text, 800);
+                    // 纯状态消息（图片生成 / 错误占位）不纳入上下文，避免历史膨胀误触安全过滤
+                    if (IsStatusOnlyMessage(text))
+                        continue;
+
+                    // 所有 AI 回复统一截断，有搜索引用的用较短上限
+                    var limit = msg.Citations is { Count: > 0 } ? 400 : 600;
+                    text = TruncateHistoryMessage(text, limit);
                 }
+
                 sb.AppendLine($"[{label}]: {text}");
                 sb.AppendLine();
             }
             sb.AppendLine($"[用户]: {currentPrompt}");
             return sb.ToString();
+        }
+
+        /// <summary>
+        /// 检测 AI 消息是否为纯状态/进度文本，不应纳入多轮上下文。
+        /// 如 "🎨 已生成 N 张图片..."、"已生成 N 张图片..."、"**错误**: ..."。
+        /// </summary>
+        private static bool IsStatusOnlyMessage(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return true;
+            var trimmed = text.TrimStart();
+            return trimmed.StartsWith("🎨")
+                || trimmed.StartsWith("已生成")
+                || trimmed.StartsWith("**错误**")
+                || trimmed.StartsWith("I'm sorry, but I cannot assist");
         }
 
         /// <summary>

@@ -7,6 +7,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.DependencyInjection;
 using TrueFluentPro.Models;
 using TrueFluentPro.Services.EndpointProfiles;
 
@@ -41,6 +42,8 @@ namespace TrueFluentPro.Services
         public string ImageQuality { get; set; } = "medium";
         /// <summary>聊天模式输出格式（png/jpeg/webp）</summary>
         public string ImageFormat { get; set; } = "png";
+        /// <summary>聊天模式出图数量</summary>
+        public int ImageCount { get; set; } = 1;
         /// <summary>Vision 输入：已上传的图片 file_id 列表（通过 Files API 上传后获得）</summary>
         public List<string>? ImageFileIds { get; set; }
 
@@ -836,17 +839,40 @@ namespace TrueFluentPro.Services
                 if (request.EnableChatImageGeneration && !string.IsNullOrWhiteSpace(request.ImageModelDeployment))
                 {
                     var imageTool = new Dictionary<string, object> { ["type"] = "image_generation" };
-                    // image_generation tool 只允许 1024x1024, 1024x1536, 1536x1024, auto
-                    // 其他自定义尺寸（如参考图对齐后的 960x688）会导致 400 错误
-                    var allowedSizes = new HashSet<string> { "1024x1024", "1024x1536", "1536x1024" };
-                    if (!string.IsNullOrWhiteSpace(request.ImageSize) && request.ImageSize != "auto"
-                        && allowedSizes.Contains(request.ImageSize))
-                        imageTool["size"] = request.ImageSize;
+
+                    // size — 按模型能力分级：FreeForm 传任意值，Fixed 仅传已声明的值，无声明时保守白名单
+                    var modelCaps = App.Services?.GetService<ImageModelCatalogService>()?.GetCapabilities(request.ImageModelDeployment);
+                    var reqSize = request.ImageSize;
+                    if (!string.IsNullOrWhiteSpace(reqSize) && reqSize != "auto")
+                    {
+                        if (modelCaps?.ResolutionMode == Models.ResolutionMode.FreeForm)
+                        {
+                            imageTool["size"] = reqSize;
+                        }
+                        else if (modelCaps?.ResolutionMode == Models.ResolutionMode.Fixed)
+                        {
+                            if (modelCaps.FixedSizes.Contains(reqSize))
+                                imageTool["size"] = reqSize;
+                        }
+                        else
+                        {
+                            var safeSizes = new HashSet<string> { "1024x1024", "1024x1536", "1536x1024" };
+                            if (safeSizes.Contains(reqSize))
+                                imageTool["size"] = reqSize;
+                        }
+                    }
+
                     if (!string.IsNullOrWhiteSpace(request.ImageQuality) && request.ImageQuality != "auto")
                         imageTool["quality"] = request.ImageQuality;
                     if (!string.IsNullOrWhiteSpace(request.ImageFormat) && request.ImageFormat != "png")
                         imageTool["output_format"] = request.ImageFormat;
                     responsesBody["tools"] = new[] { imageTool };
+
+                    // 多图：通过 instructions 引导精确数量
+                    if (request.ImageCount > 1)
+                    {
+                        responsesBody["instructions"] = $"When generating images, always produce EXACTLY {request.ImageCount} images. Each image should be a distinct variation.";
+                    }
                 }
 
                 return responsesBody;

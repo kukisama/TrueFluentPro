@@ -21,32 +21,38 @@
                 <TextBlock Grid.Row="0" Grid.Column="0" Text="尺寸:" VerticalAlignment="Center"/>
                 <ComboBox Grid.Row="0" Grid.Column="1" MinWidth="180"
                           ItemsSource="{Binding ImageSizeOptions}"
-                          SelectedItem="{Binding ImageSize, Mode=TwoWay}"/>
+                          SelectedItem="{Binding ImageSize, Mode=TwoWay}"
+                          ToolTip.Tip="生成图片的分辨率。auto 由模型自动选择；gpt-image-2 支持自由画布任意尺寸，gpt-image-1.5 仅支持 3 种固定尺寸。"/>
 
                 <TextBlock Grid.Row="1" Grid.Column="0" Text="质量:" VerticalAlignment="Center"/>
                 <ComboBox Grid.Row="1" Grid.Column="1" MinWidth="180"
                           ItemsSource="{Binding ImageQualityOptions}"
-                          SelectedItem="{Binding ImageQuality, Mode=TwoWay}"/>
+                          SelectedItem="{Binding ImageQuality, Mode=TwoWay}"
+                          ToolTip.Tip="low = 速度快、成本低；medium = 均衡；high = 最高画质、耗时更长。"/>
 
                 <TextBlock Grid.Row="2" Grid.Column="0" Text="格式:" VerticalAlignment="Center"/>
                 <ComboBox Grid.Row="2" Grid.Column="1" MinWidth="180"
                           ItemsSource="{Binding ImageFormatOptions}"
-                          SelectedItem="{Binding ImageFormat, Mode=TwoWay}"/>
+                          SelectedItem="{Binding ImageFormat, Mode=TwoWay}"
+                          ToolTip.Tip="png = 无损、支持透明；jpeg = 体积小、不支持透明；webp = 兼顾质量与体积。"/>
 
                 <TextBlock Grid.Row="3" Grid.Column="0" Text="数量:" VerticalAlignment="Center"/>
                 <ComboBox Grid.Row="3" Grid.Column="1" MinWidth="120"
                           ItemsSource="{Binding ImageCountOptions}"
-                          SelectedItem="{Binding ImageCount, Mode=TwoWay}"/>
+                          SelectedItem="{Binding ImageCount, Mode=TwoWay}"
+                          ToolTip.Tip="每次生成的图片数量。数量越多耗时和成本等比增加。"/>
 
                 <TextBlock Grid.Row="4" Grid.Column="0" Text="背景:" VerticalAlignment="Center"/>
                 <ComboBox Grid.Row="4" Grid.Column="1" MinWidth="180"
                           ItemsSource="{Binding ImageBackgroundOptions}"
-                          SelectedItem="{Binding ImageBackground, Mode=TwoWay}"/>
+                          SelectedItem="{Binding ImageBackground, Mode=TwoWay}"
+                          ToolTip.Tip="auto = 模型自动决定；opaque = 不透明背景；transparent = 透明背景（仅 gpt-image-1.5 支持，需配合 png 格式）。"/>
 
                 <TextBlock Grid.Row="5" Grid.Column="0" Text="保真度:" VerticalAlignment="Center"/>
                 <ComboBox Grid.Row="5" Grid.Column="1" MinWidth="180"
                           ItemsSource="{Binding InputFidelityOptions}"
-                          SelectedItem="{Binding InputFidelity, Mode=TwoWay}"/>
+                          SelectedItem="{Binding InputFidelity, Mode=TwoWay}"
+                          ToolTip.Tip="控制改图时对参考图细节的保留程度（仅 gpt-image-1.5 支持）。low = 允许更大变化；high = 尽量保留原图细节。"/>
 
                 <!-- 改图模式已固定为 V2ResponsesApi（file_id + Responses API），不再向用户暴露选项 -->
             </Grid>

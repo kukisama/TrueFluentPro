@@ -145,20 +145,28 @@
                                 </Border>
                             </Grid>
 
-                            <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
-                                <Border Grid.Column="0" Background="{DynamicResource MediaItemBrush}" CornerRadius="10" Padding="10,8">
-                                    <StackPanel>
-                                        <TextBlock Classes="meta-label" Text="提供商"/>
-                                        <TextBlock FontWeight="SemiBold" FontSize="12" Text="{Binding CurrentEndpointDisplayName}" TextTrimming="CharacterEllipsis"/>
-                                    </StackPanel>
-                                </Border>
-                                <Border Grid.Column="1" Background="{DynamicResource MediaItemBrush}" CornerRadius="10" Padding="10,8">
-                                    <StackPanel>
-                                        <TextBlock Classes="meta-label" Text="模型"/>
-                                        <TextBlock FontWeight="SemiBold" FontSize="12" Text="{Binding CurrentModelDisplayName}" TextTrimming="CharacterEllipsis"/>
-                                    </StackPanel>
-                                </Border>
-                            </Grid>
+                            <Border Background="{DynamicResource MediaItemBrush}" CornerRadius="10" Padding="10,8"
+                                    IsVisible="{Binding IsImageKind}">
+                                <StackPanel>
+                                    <TextBlock Classes="meta-label" Text="图像模型"/>
+                                    <ComboBox ItemsSource="{Binding AvailableImageModels}"
+                                              SelectedItem="{Binding SelectedImageModel}"
+                                              Padding="4,2" MinHeight="0" FontSize="12" FontWeight="SemiBold"
+                                              HorizontalAlignment="Stretch"
+                                              ToolTip.Tip="切换图像模型，立即生效并同步到配置中心"/>
+                                </StackPanel>
+                            </Border>
+                            <Border Background="{DynamicResource MediaItemBrush}" CornerRadius="10" Padding="10,8"
+                                    IsVisible="{Binding IsVideoKind}">
+                                <StackPanel>
+                                    <TextBlock Classes="meta-label" Text="视频模型"/>
+                                    <ComboBox ItemsSource="{Binding AvailableVideoModels}"
+                                              SelectedItem="{Binding SelectedVideoModel}"
+                                              Padding="4,2" MinHeight="0" FontSize="12" FontWeight="SemiBold"
+                                              HorizontalAlignment="Stretch"
+                                              ToolTip.Tip="切换视频模型，立即生效并同步到配置中心"/>
+                                </StackPanel>
+                            </Border>
 
                             <StackPanel Spacing="8" IsVisible="{Binding IsImageKind}">
                                 <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="8">
@@ -166,7 +174,8 @@
                                     <ComboBox Grid.Row="0" Grid.Column="1"
                                               ItemsSource="{Binding WorkspaceSession.ImageSizeOptions}"
                                               SelectedItem="{Binding WorkspaceSession.ImageSize}"
-                                              Padding="8,5"/>
+                                              Padding="8,5"
+                                              ToolTip.Tip="生成图片的分辨率。auto 由模型自动选择；自由画布模式可拖拽选任意尺寸。"/>
                                     <Button Grid.Row="0" Grid.Column="2" Padding="6,4"
                                             ToolTip.Tip="画布尺寸选择器"
                                             IsVisible="{Binding WorkspaceSession.IsCanvasSelectorAvailable}">
@@ -183,17 +192,20 @@
                                     <ComboBox Grid.Row="1" Grid.Column="1"
                                               ItemsSource="{Binding WorkspaceSession.ImageQualityOptions}"
                                               SelectedItem="{Binding WorkspaceSession.ImageQuality}"
-                                              Padding="8,5"/>
+                                              Padding="8,5"
+                                              ToolTip.Tip="low = 速度快、成本低；medium = 均衡；high = 最高画质。"/>
                                     <TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Text="格式"/>
                                     <ComboBox Grid.Row="2" Grid.Column="1"
                                               ItemsSource="{Binding WorkspaceSession.ImageFormatOptions}"
                                               SelectedItem="{Binding WorkspaceSession.ImageFormat}"
-                                              Padding="8,5"/>
+                                              Padding="8,5"
+                                              ToolTip.Tip="png = 无损、支持透明；jpeg = 体积小；webp = 兼顾质量与体积。"/>
                                     <TextBlock Grid.Row="3" Grid.Column="0" VerticalAlignment="Center" Text="数量"/>
                                     <ComboBox Grid.Row="3" Grid.Column="1"
                                               ItemsSource="{Binding WorkspaceSession.ImageCountOptions}"
                                               SelectedItem="{Binding WorkspaceSession.ImageCount}"
-                                              Padding="8,5"/>
+                                              Padding="8,5"
+                                              ToolTip.Tip="每次生成的图片数量。数量越多耗时和成本等比增加。"/>
 
                                     <!-- 背景（仅 gpt-image-1.5 等支持透明的模型可见） -->
                                     <TextBlock Grid.Row="4" Grid.Column="0" VerticalAlignment="Center" Text="背景"
@@ -202,7 +214,8 @@
                                               ItemsSource="{Binding WorkspaceSession.ImageBackgroundOptions}"
                                               SelectedItem="{Binding WorkspaceSession.ImageBackground}"
                                               Padding="8,5"
-                                              IsVisible="{Binding WorkspaceSession.IsTransparentBackgroundSupported}"/>
+                                              IsVisible="{Binding WorkspaceSession.IsTransparentBackgroundSupported}"
+                                              ToolTip.Tip="auto = 模型自动决定；opaque = 不透明背景；transparent = 透明背景（需配合 png 格式）。"/>
 
                                     <!-- 输入保真度（仅 gpt-image-1.5 等支持可调的模型可见） -->
                                     <TextBlock Grid.Row="5" Grid.Column="0" VerticalAlignment="Center" Text="保真度"
@@ -211,7 +224,8 @@
                                               ItemsSource="{Binding WorkspaceSession.InputFidelityOptions}"
                                               SelectedItem="{Binding WorkspaceSession.InputFidelity}"
                                               Padding="8,5"
-                                              IsVisible="{Binding WorkspaceSession.IsInputFidelitySupported}"/>
+                                              IsVisible="{Binding WorkspaceSession.IsInputFidelitySupported}"
+                                              ToolTip.Tip="控制改图时对参考图细节的保留程度。low = 允许更大变化；high = 尽量保留原图细节。"/>
                                 </Grid>
                             </StackPanel>
 
@@ -533,12 +547,10 @@
                 <StackPanel Grid.Row="4" Spacing="10">
                     <StackPanel Spacing="2">
                         <Border HorizontalAlignment="Left"
-                                Background="{Binding ModeAccentBackground}"
-                                BorderBrush="{Binding ModeAccentBorderBrush}"
-                                BorderThickness="1"
+                                Background="{Binding SelectedGroupWorkflowBadgeColor}"
                                 CornerRadius="999"
                                 Padding="8,3">
-                            <TextBlock FontSize="11" FontWeight="SemiBold" Text="{Binding SelectedGroupWorkflowText}"/>
+                            <TextBlock FontSize="11" FontWeight="SemiBold" Foreground="White" Text="{Binding SelectedGroupWorkflowText}"/>
                         </Border>
                         <SelectableTextBlock FontSize="15" FontWeight="SemiBold" Text="{Binding SelectedGroupPromptText}" TextWrapping="Wrap"/>
                         <TextBlock Classes="panel-note" Text="{Binding SelectedGroupMetaText}"/>
@@ -630,7 +642,7 @@
                                                 <Border HorizontalAlignment="Right"
                                                         VerticalAlignment="Bottom"
                                                         Margin="5"
-                                                        Background="#B3000000"
+                                                        Background="{Binding Group.WorkflowBadgeColor}"
                                                         CornerRadius="4"
                                                         Padding="4,1">
                                                     <TextBlock FontSize="9" Foreground="White" Text="{Binding Group.WorkflowBadgeText}"/>

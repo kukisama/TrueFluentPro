@@ -27,6 +27,9 @@ namespace TrueFluentPro.ViewModels
         private readonly List<AiEndpoint> _endpoints = new();
         private readonly IModelRuntimeResolver _modelRuntimeResolver;
         private readonly IAzureTokenProviderStore _azureTokenProviderStore;
+        private readonly ConfigurationService _configurationService;
+        private readonly Func<AzureSpeechConfig> _configProvider;
+        private readonly Action<AzureSpeechConfig>? _onGlobalConfigUpdated;
         private readonly AiImageGenService _imageService = new(App.Services.GetRequiredService<FileIdCache>());
         private readonly AiVideoGenService _videoService = new();
         private readonly string _workspaceRootDirectory;
@@ -57,10 +60,16 @@ namespace TrueFluentPro.ViewModels
             MediaGenConfig genConfig,
             List<AiEndpoint> endpoints,
             IModelRuntimeResolver modelRuntimeResolver,
-            IAzureTokenProviderStore azureTokenProviderStore)
+            IAzureTokenProviderStore azureTokenProviderStore,
+            ConfigurationService configurationService,
+            Func<AzureSpeechConfig> configProvider,
+            Action<AzureSpeechConfig>? onGlobalConfigUpdated = null)
         {
             _modelRuntimeResolver = modelRuntimeResolver;
             _azureTokenProviderStore = azureTokenProviderStore;
+            _configurationService = configurationService;
+            _configProvider = configProvider;
+            _onGlobalConfigUpdated = onGlobalConfigUpdated;
 
             CopyAiConfig(aiConfig, _aiConfig);
             CopyMediaGenConfig(genConfig, _genConfig);
@@ -103,7 +112,119 @@ namespace TrueFluentPro.ViewModels
                 p => _ = EditAssetAsync(p as MediaCreatorResultAsset),
                 p => p is MediaCreatorResultAsset { IsPending: false });
 
+            RefreshAvailableImageModels();
+            RefreshAvailableVideoModels();
+
             _ = InitializeAsync();
+        }
+
+        // ── 图像模型选择（与配置中心同步） ──
+        private List<ModelOption> _availableImageModels = new();
+        public List<ModelOption> AvailableImageModels
+        {
+            get => _availableImageModels;
+            private set => SetProperty(ref _availableImageModels, value);
+        }
+
+        private ModelOption? _selectedImageModel;
+        public ModelOption? SelectedImageModel
+        {
+            get => _selectedImageModel;
+            set
+            {
+                if (SetProperty(ref _selectedImageModel, value) && value != null)
+                    _ = ChangeImageModelAsync(value);
+            }
+        }
+
+        // ── 视频模型选择 ──
+        private List<ModelOption> _availableVideoModels = new();
+        public List<ModelOption> AvailableVideoModels
+        {
+            get => _availableVideoModels;
+            private set => SetProperty(ref _availableVideoModels, value);
+        }
+
+        private ModelOption? _selectedVideoModel;
+        public ModelOption? SelectedVideoModel
+        {
+            get => _selectedVideoModel;
+            set
+            {
+                if (SetProperty(ref _selectedVideoModel, value) && value != null)
+                    _ = ChangeVideoModelAsync(value);
+            }
+        }
+
+        public void RefreshAvailableImageModels()
+        {
+            var config = _configProvider();
+            var models = config.GetAvailableModels(ModelCapability.Image)
+                .Select(pair => new ModelOption
+                {
+                    Reference = new ModelReference { EndpointId = pair.Endpoint.Id, ModelId = pair.Model.ModelId },
+                    EndpointName = pair.Endpoint.Name,
+                    ModelDisplayName = string.IsNullOrWhiteSpace(pair.Model.DisplayName) ? pair.Model.ModelId : pair.Model.DisplayName,
+                    EndpointType = pair.Endpoint.EndpointType
+                })
+                .ToList();
+
+            AvailableImageModels = models;
+
+            var currentRef = _genConfig.ImageModelRef;
+            _selectedImageModel = currentRef == null ? null
+                : models.FirstOrDefault(m => m.Reference.EndpointId == currentRef.EndpointId && m.Reference.ModelId == currentRef.ModelId);
+            OnPropertyChanged(nameof(SelectedImageModel));
+        }
+
+        public void RefreshAvailableVideoModels()
+        {
+            var config = _configProvider();
+            var models = config.GetAvailableModels(ModelCapability.Video)
+                .Select(pair => new ModelOption
+                {
+                    Reference = new ModelReference { EndpointId = pair.Endpoint.Id, ModelId = pair.Model.ModelId },
+                    EndpointName = pair.Endpoint.Name,
+                    ModelDisplayName = string.IsNullOrWhiteSpace(pair.Model.DisplayName) ? pair.Model.ModelId : pair.Model.DisplayName,
+                    EndpointType = pair.Endpoint.EndpointType
+                })
+                .ToList();
+
+            AvailableVideoModels = models;
+
+            var currentRef = _genConfig.VideoModelRef;
+            _selectedVideoModel = currentRef == null ? null
+                : models.FirstOrDefault(m => m.Reference.EndpointId == currentRef.EndpointId && m.Reference.ModelId == currentRef.ModelId);
+            OnPropertyChanged(nameof(SelectedVideoModel));
+        }
+
+        private async Task ChangeImageModelAsync(ModelOption model)
+        {
+            _genConfig.ImageModelRef = new ModelReference { EndpointId = model.Reference.EndpointId, ModelId = model.Reference.ModelId };
+            OnPropertyChanged(nameof(CurrentEndpointDisplayName));
+            OnPropertyChanged(nameof(CurrentModelDisplayName));
+            ApplyWorkflowToWorkspace();
+            WorkspaceSession?.RefreshImageModelCapabilities();
+
+            var config = _configProvider();
+            config.MediaGenConfig ??= new MediaGenConfig();
+            config.MediaGenConfig.ImageModelRef = new ModelReference { EndpointId = model.Reference.EndpointId, ModelId = model.Reference.ModelId };
+            await _configurationService.SaveConfigAsync(config);
+            _onGlobalConfigUpdated?.Invoke(config);
+        }
+
+        private async Task ChangeVideoModelAsync(ModelOption model)
+        {
+            _genConfig.VideoModelRef = new ModelReference { EndpointId = model.Reference.EndpointId, ModelId = model.Reference.ModelId };
+            OnPropertyChanged(nameof(CurrentEndpointDisplayName));
+            OnPropertyChanged(nameof(CurrentModelDisplayName));
+            ApplyWorkflowToWorkspace();
+
+            var config = _configProvider();
+            config.MediaGenConfig ??= new MediaGenConfig();
+            config.MediaGenConfig.VideoModelRef = new ModelReference { EndpointId = model.Reference.EndpointId, ModelId = model.Reference.ModelId };
+            await _configurationService.SaveConfigAsync(config);
+            _onGlobalConfigUpdated?.Invoke(config);
         }
 
         public MediaSessionViewModel? WorkspaceSession
@@ -186,6 +307,7 @@ namespace TrueFluentPro.ViewModels
                     OnPropertyChanged(nameof(SelectedGroupResultSummary));
                     OnPropertyChanged(nameof(SelectedGroupSuggestedNextText));
                     OnPropertyChanged(nameof(SelectedGroupWorkflowText));
+                    OnPropertyChanged(nameof(SelectedGroupWorkflowBadgeColor));
                 }
             }
         }
@@ -468,6 +590,7 @@ namespace TrueFluentPro.ViewModels
         public string SelectedGroupResultSummary => SelectedGroup?.ResultSummaryText ?? "暂无结果";
         public string SelectedGroupSuggestedNextText => SelectedGroup?.SuggestedNextStepText ?? CurrentCanvasDescription;
         public string SelectedGroupWorkflowText => SelectedGroup?.WorkflowDisplayText ?? CurrentModeBadgeText;
+        public string SelectedGroupWorkflowBadgeColor => SelectedGroup?.WorkflowBadgeColor ?? "#5BAD6F";
         public string SelectedAssetMetaText => SelectedAsset?.MetaSummaryText ?? "选中图片或视频后，这里会告诉你它来自哪一组结果。";
         public string SelectedAssetPromptText => SelectedAsset?.PromptSummaryText ?? CurrentCanvasDescription;
 
@@ -623,6 +746,8 @@ namespace TrueFluentPro.ViewModels
             ApplyWorkflowToWorkspace();
             OnPropertyChanged(nameof(CurrentEndpointDisplayName));
             OnPropertyChanged(nameof(CurrentModelDisplayName));
+            RefreshAvailableImageModels();
+            RefreshAvailableVideoModels();
             _ = TrySilentLoginForMediaAsync();
         }
 
@@ -1345,6 +1470,7 @@ namespace TrueFluentPro.ViewModels
                     CreatedAt = message.Timestamp,
                     SessionName = session.SessionName,
                     Kind = groupKind,
+                    ModelUsed = matchedTask?.ModelUsed ?? string.Empty,
                     Workflow = matchedTask?.HasReferenceInput == true || promptInfo.HasReferenceInput
                         ? CreatorWorkflowKind.Edit
                         : CreatorWorkflowKind.Create,
@@ -1376,6 +1502,7 @@ namespace TrueFluentPro.ViewModels
                     CreatedAt = task.CreatedAt,
                     SessionName = session.SessionName,
                     Kind = taskKind,
+                    ModelUsed = task.ModelUsed ?? string.Empty,
                     Workflow = task.HasReferenceInput ? CreatorWorkflowKind.Edit : CreatorWorkflowKind.Create,
                     IsPending = !isFailed,
                     IsFailed = isFailed,
@@ -2691,6 +2818,7 @@ namespace TrueFluentPro.ViewModels
         public string SessionName { get; set; } = string.Empty;
         public CreatorAssetKind Kind { get; set; }
         public CreatorWorkflowKind Workflow { get; set; }
+        public string ModelUsed { get; set; } = string.Empty;
         public bool IsPending { get; set; }
         public bool IsFailed { get; set; }
         public string FailedErrorMessage { get; set; } = string.Empty;
@@ -2715,6 +2843,7 @@ namespace TrueFluentPro.ViewModels
             : Compact(PromptText, 220);
 
         public string WorkflowBadgeText => Workflow == CreatorWorkflowKind.Edit ? "修改" : "创建";
+        public string WorkflowBadgeColor => Workflow == CreatorWorkflowKind.Edit ? "#E8A855" : "#5BAD6F";
         public string WorkflowDisplayText => IsFailed ? PendingStatusText : IsPending ? PendingStatusText : WorkflowBadgeText;
         public bool HasLineage => !string.IsNullOrWhiteSpace(SourceSessionName) || !string.IsNullOrWhiteSpace(SourceAssetFileName);
         public string LineageText => BuildLineageText(SourceSessionName, SourceAssetFileName, SourceReferenceRole);
@@ -2722,7 +2851,13 @@ namespace TrueFluentPro.ViewModels
             ? AppendLineage($"{PendingStatusText} · {SessionName} · {CreatedAt:yyyy-MM-dd HH:mm}")
             : IsPending
             ? AppendLineage($"{PendingStatusText} · {SessionName} · {CreatedAt:yyyy-MM-dd HH:mm}")
-            : AppendLineage($"{WorkflowBadgeText} · {SessionName} · {CreatedAt:yyyy-MM-dd HH:mm}");
+            : AppendLineage(BuildSecondaryBase());
+
+        private string BuildSecondaryBase()
+        {
+            var modelPart = string.IsNullOrWhiteSpace(ModelUsed) ? "" : $" · {ModelUsed}";
+            return $"{WorkflowBadgeText} · {SessionName} · {CreatedAt:yyyy-MM-dd HH:mm}{modelPart}";
+        }
         public string ResultSummaryText => IsFailed
             ? $"生成失败：{FailedErrorMessage}"
             : IsPending

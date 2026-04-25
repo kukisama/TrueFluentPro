@@ -64,7 +64,7 @@ namespace TrueFluentPro.Services.ImagePipeline.Steps
                 },
                 ["tools"] = new[]
                 {
-                    AiImageGenService.BuildImageGenerationToolDefinition(genConfig, hasReferenceInput)
+                    AiImageGenService.BuildImageGenerationToolDefinition(genConfig, hasReferenceInput, modelCaps: ctx.ModelCaps)
                 }
             };
 

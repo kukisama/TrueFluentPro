@@ -275,7 +275,14 @@ public partial class MainWindow : Window
                         config.MediaGenConfig,
                         config.Endpoints,
                         App.Services.GetRequiredService<IModelRuntimeResolver>(),
-                        App.Services.GetRequiredService<IAzureTokenProviderStore>());
+                        App.Services.GetRequiredService<IAzureTokenProviderStore>(),
+                        App.Services.GetRequiredService<ConfigurationService>(),
+                        () => _viewModel.ConfigVM.Config,
+                        updatedConfig =>
+                        {
+                            _viewModel.ConfigVM.SetConfig(updatedConfig);
+                            _viewModel.Settings.Initialize(updatedConfig);
+                        });
                 }
             }, DispatcherPriority.Background);
         }

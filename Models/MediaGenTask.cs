@@ -41,7 +41,10 @@ namespace TrueFluentPro.Models
         /// 创建任务时是否带参考输入，用于区分“创建”还是“修改 / 图生视频”。
         /// </summary>
         public bool HasReferenceInput { get; set; }
-
+        /// <summary>
+        /// 记录生成该任务时使用的模型名称。
+        /// </summary>
+        public string? ModelUsed { get; set; }
         private int _progress;
         public int Progress
         {

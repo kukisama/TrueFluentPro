@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace TrueFluentPro.Models
@@ -156,6 +157,9 @@ namespace TrueFluentPro.Models
     /// </summary>
     public sealed class ImageModelsConfig
     {
+        [JsonPropertyName("defaults")]
+        public JsonElement? Defaults { get; set; }
+
         [JsonPropertyName("models")]
         public List<ImageModelCapabilities> Models { get; set; } = new();
     }

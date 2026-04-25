@@ -8,6 +8,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.DependencyInjection;
 using TrueFluentPro.Models;
 
 namespace TrueFluentPro.Services
@@ -167,13 +168,16 @@ namespace TrueFluentPro.Services
                     .ToList();
 
                 ImageAttemptResult editAttempt;
+                // 查询模型能力声明（用于 size 智能过滤）
+                var modelCaps = App.Services?.GetService<ImageModelCatalogService>()?.GetCapabilities(genConfig.ImageModel);
+
                 if (ShouldUseResponsesApi(genConfig))
                 {
-                    editAttempt = await SendImageEditV2RequestAsync(config, prompt, genConfig, validReferenceImages, authModeText, imageNames, ct);
+                    editAttempt = await SendImageEditV2RequestAsync(config, prompt, genConfig, validReferenceImages, authModeText, imageNames, ct, modelCaps);
                 }
                 else
                 {
-                    editAttempt = await SendImageEditRequestAsync(config, prompt, genConfig, validReferenceImages, authModeText, imageNames, ct);
+                    editAttempt = await SendImageEditRequestAsync(config, prompt, genConfig, validReferenceImages, authModeText, imageNames, ct, modelCaps);
                 }
                 response = editAttempt.Response;
                 requestUrl = editAttempt.Url;
@@ -213,10 +217,13 @@ namespace TrueFluentPro.Services
             {
                 // ── 无参考图 ──
                 // 自动路由：TextModelForResponses 可用时走 Responses API，否则 fallback /images/generations
+                // 查询模型能力（用于 size 智能过滤）
+                var modelCaps = App.Services?.GetService<ImageModelCatalogService>()?.GetCapabilities(genConfig.ImageModel);
+
                 if (ShouldUseResponsesApi(genConfig))
                 {
                     var authModeText = DescribeMediaAuthStrategy(config);
-                    var responsesAttempt = await SendPureTextGenV2RequestAsync(config, prompt, genConfig, authModeText, ct);
+                    var responsesAttempt = await SendPureTextGenV2RequestAsync(config, prompt, genConfig, authModeText, ct, modelCaps);
                     response = responsesAttempt.Response;
                     requestUrl = responsesAttempt.Url;
                     attemptedUrls = responsesAttempt.AttemptedUrls;
@@ -234,16 +241,22 @@ namespace TrueFluentPro.Services
                 }
                 else
                 {
-                    // /images/generations 备选路径
+                    // /images/generations 直接路径
+                    // size 按模型能力过滤：FreeForm 传任意值，Fixed 仅传声明值，否则回退 auto
+                    var effectiveSize = ResolveEffectiveSize(genConfig.ImageSize, modelCaps);
+
                     var bodyObj = new Dictionary<string, object>
                     {
                         ["prompt"] = prompt,
                         ["model"] = genConfig.ImageModel,
-                        ["n"] = genConfig.ImageCount,
-                        ["size"] = genConfig.ImageSize,
+                        ["size"] = effectiveSize,
                         ["quality"] = genConfig.ImageQuality,
                         ["output_format"] = genConfig.ImageFormat
                     };
+                    if (genConfig.ImageCount > 1)
+                        bodyObj["n"] = genConfig.ImageCount;
+                    if (!string.IsNullOrWhiteSpace(genConfig.ImageBackground) && genConfig.ImageBackground != "auto")
+                        bodyObj["background"] = genConfig.ImageBackground;
                     var authModeText = DescribeMediaAuthStrategy(config);
                     var generateAttempt = await SendImageGenerateRequestAsync(config, bodyObj, authModeText, ct);
                     response = generateAttempt.Response;
@@ -436,15 +449,21 @@ namespace TrueFluentPro.Services
             IReadOnlyList<string> candidateUrls,
             CancellationToken ct)
         {
+            var modelCaps = App.Services?.GetService<ImageModelCatalogService>()?.GetCapabilities(genConfig.ImageModel);
+            var effectiveSize = ResolveEffectiveSize(genConfig.ImageSize, modelCaps);
+
             var bodyObj = new Dictionary<string, object>
             {
                 ["prompt"] = prompt,
                 ["model"] = genConfig.ImageModel,
-                ["n"] = genConfig.ImageCount,
-                ["size"] = genConfig.ImageSize,
+                ["size"] = effectiveSize,
                 ["quality"] = genConfig.ImageQuality,
                 ["output_format"] = genConfig.ImageFormat
             };
+            if (genConfig.ImageCount > 1)
+                bodyObj["n"] = genConfig.ImageCount;
+            if (!string.IsNullOrWhiteSpace(genConfig.ImageBackground) && genConfig.ImageBackground != "auto")
+                bodyObj["background"] = genConfig.ImageBackground;
 
             var authModeText = DescribeMediaAuthStrategy(config);
             var jsonBody = JsonSerializer.Serialize(bodyObj);
@@ -583,7 +602,8 @@ namespace TrueFluentPro.Services
             IReadOnlyList<string> validReferenceImages,
             string authModeText,
             IReadOnlyList<string> imageNames,
-            CancellationToken ct)
+            CancellationToken ct,
+            ImageModelCapabilities? modelCaps = null)
         {
             ImageAttemptResult? lastAttempt = null;
             var attemptedUrls = new List<string>();
@@ -600,7 +620,8 @@ namespace TrueFluentPro.Services
                     authModeText,
                     imageNames,
                     ct,
-                    "ImageEdit");
+                    "ImageEdit",
+                    modelCaps);
 
                 if (response.IsSuccessStatusCode)
                 {
@@ -624,7 +645,8 @@ namespace TrueFluentPro.Services
                         authModeText,
                         imageNames,
                         ct,
-                        "ImageEdit-ApimQueryRetry");
+                        "ImageEdit-ApimQueryRetry",
+                        modelCaps);
 
                     if (response.IsSuccessStatusCode)
                     {
@@ -705,7 +727,8 @@ namespace TrueFluentPro.Services
             string authModeText,
             IReadOnlyList<string> imageNames,
             CancellationToken ct,
-            string logPrefix)
+            string logPrefix,
+            ImageModelCapabilities? modelCaps = null)
         {
             using var formContent = new MultipartFormDataContent();
             foreach (var imagePath in validReferenceImages)
@@ -729,10 +752,29 @@ namespace TrueFluentPro.Services
 
             formContent.Add(new StringContent(prompt), "prompt");
             formContent.Add(new StringContent(genConfig.ImageModel), "model");
-            if (!string.IsNullOrWhiteSpace(genConfig.ImageSize) && genConfig.ImageSize != "auto")
-                formContent.Add(new StringContent(genConfig.ImageSize), "size");
+
+            // size — 按模型能力过滤（与 generations 路径一致）
+            var effectiveSize = ResolveEffectiveSize(genConfig.ImageSize, modelCaps);
+            if (effectiveSize != "auto")
+                formContent.Add(new StringContent(effectiveSize), "size");
+
             if (!string.IsNullOrWhiteSpace(genConfig.ImageQuality))
                 formContent.Add(new StringContent(genConfig.ImageQuality), "quality");
+
+            // background — 仅在模型声明支持透明时传 transparent
+            var bg = genConfig.ImageBackground;
+            if (!string.IsNullOrWhiteSpace(bg) && bg != "auto")
+            {
+                if (bg == "transparent" && modelCaps?.SupportsTransparentBackground == true)
+                    formContent.Add(new StringContent("transparent"), "background");
+                else if (bg == "opaque")
+                    formContent.Add(new StringContent("opaque"), "background");
+            }
+
+            // input_fidelity — 仅在模型声明支持时传递
+            var fidelity = genConfig.InputFidelity;
+            if (!string.IsNullOrWhiteSpace(fidelity) && fidelity != "auto" && modelCaps?.SupportsInputFidelity == true)
+                formContent.Add(new StringContent(fidelity), "input_fidelity");
 
             using var request = new HttpRequestMessage(HttpMethod.Post, url);
             request.Content = formContent;
@@ -876,7 +918,8 @@ namespace TrueFluentPro.Services
             IReadOnlyList<string> validReferenceImages,
             string authModeText,
             IReadOnlyList<string> imageNames,
-            CancellationToken ct)
+            CancellationToken ct,
+            ImageModelCapabilities? modelCaps = null)
         {
             // 1) 构建 Responses API URL 候选
             var responsesUrls = BuildImageResponsesCandidateUrls(config);
@@ -927,9 +970,15 @@ namespace TrueFluentPro.Services
                 },
                 ["tools"] = new[]
                 {
-                    BuildImageGenerationToolDefinition(genConfig, hasReferenceInput: true)
+                    BuildImageGenerationToolDefinition(genConfig, hasReferenceInput: true, modelCaps: modelCaps)
                 }
             };
+
+            // 多图：通过 instructions 引导精确数量（与纯文生图一致）
+            if (genConfig.ImageCount > 1)
+            {
+                bodyObj["instructions"] = $"When generating images, always produce EXACTLY {genConfig.ImageCount} images. Each image should be a distinct variation.";
+            }
 
             // 多轮改图：传递 previous_response_id
             if (!string.IsNullOrWhiteSpace(genConfig.PreviousResponseId))
@@ -1093,7 +1142,8 @@ namespace TrueFluentPro.Services
             string prompt,
             MediaGenConfig genConfig,
             string authModeText,
-            CancellationToken ct)
+            CancellationToken ct,
+            ImageModelCapabilities? modelCaps = null)
         {
             var responsesUrls = BuildImageResponsesCandidateUrls(config);
             if (responsesUrls.Count == 0)
@@ -1125,7 +1175,7 @@ namespace TrueFluentPro.Services
                 },
                 ["tools"] = new[]
                 {
-                    BuildImageGenerationToolDefinition(genConfig)
+                    BuildImageGenerationToolDefinition(genConfig, modelCaps: modelCaps)
                 }
             };
 
@@ -1179,7 +1229,8 @@ namespace TrueFluentPro.Services
         /// 支持编程化参数：quality, size, background, output_format。
         /// Azure APIM size 仅允许 1024x1024/1024x1536/1536x1024/auto 四种固定值。
         /// </summary>
-        internal static Dictionary<string, object> BuildImageGenerationToolDefinition(MediaGenConfig genConfig, bool hasReferenceInput = false)
+        internal static Dictionary<string, object> BuildImageGenerationToolDefinition(
+            MediaGenConfig genConfig, bool hasReferenceInput = false, ImageModelCapabilities? modelCaps = null)
         {
             var tool = new Dictionary<string, object> { ["type"] = "image_generation" };
 
@@ -1187,13 +1238,27 @@ namespace TrueFluentPro.Services
             if (!string.IsNullOrWhiteSpace(genConfig.ImageQuality) && genConfig.ImageQuality != "auto")
                 tool["quality"] = genConfig.ImageQuality;
 
-            // size — Azure APIM 仅允许固定值，非标值返回 400
+            // size — 按模型能力分级处理
             var size = genConfig.ImageSize;
             if (!string.IsNullOrWhiteSpace(size) && size != "auto")
             {
-                if (size is "1024x1024" or "1024x1536" or "1536x1024")
+                if (modelCaps?.ResolutionMode == ResolutionMode.FreeForm)
+                {
+                    // gpt-image-2 类模型：支持灵活尺寸，直接传给 API
                     tool["size"] = size;
-                // 非标准尺寸不传（等同 auto），避免 Azure APIM 400
+                }
+                else if (modelCaps?.ResolutionMode == ResolutionMode.Fixed)
+                {
+                    // gpt-image-1.5 类模型：仅允许 FixedSizes 中声明的值
+                    if (modelCaps.FixedSizes.Contains(size))
+                        tool["size"] = size;
+                }
+                else
+                {
+                    // 无能力声明时保守处理：仅传标准安全值
+                    if (size is "1024x1024" or "1024x1536" or "1536x1024")
+                        tool["size"] = size;
+                }
             }
 
             // background — transparent 需配合 png 格式
@@ -1233,6 +1298,26 @@ namespace TrueFluentPro.Services
                 return false;
             // TextModelForResponses 可用即自动启用 Responses API
             return !string.IsNullOrWhiteSpace(genConfig.TextModelForResponses);
+        }
+
+        /// <summary>
+        /// 按模型能力解析有效 size：FreeForm 传任意值，Fixed 仅传声明值，否则回退 auto。
+        /// </summary>
+        internal static string ResolveEffectiveSize(string? requestedSize, ImageModelCapabilities? modelCaps)
+        {
+            if (string.IsNullOrWhiteSpace(requestedSize) || requestedSize == "auto")
+                return "auto";
+
+            if (modelCaps == null)
+                return requestedSize; // 无能力声明，原样传（API 自行校验）
+
+            if (modelCaps.ResolutionMode == Models.ResolutionMode.FreeForm)
+                return requestedSize; // 自由画布，任意尺寸
+
+            if (modelCaps.ResolutionMode == Models.ResolutionMode.Fixed)
+                return modelCaps.FixedSizes.Contains(requestedSize) ? requestedSize : "auto";
+
+            return requestedSize;
         }
 
         private static string? BuildImageDataUrl(string? imagePath)

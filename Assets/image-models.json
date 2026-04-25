@@ -1,14 +1,29 @@
 {
+  "defaults": {
+    "vendor": "openai",
+    "supportsGeneration": true,
+    "supportsEditing": true,
+    "supportsMask": true,
+    "supportsMultiReference": true,
+    "qualityOptions": ["low", "medium", "high"],
+    "outputFormats": ["png", "jpeg", "webp"],
+    "defaultInputFidelity": "high",
+    "supportsStreaming": true,
+    "maxPartialImages": 3,
+    "supportsImageApi": true,
+    "supportsResponsesApi": true,
+    "requiresDeploymentHeader": true,
+    "billing": {
+      "supportsTokenBilling": true,
+      "textInputTokenPrice": 5.0,
+      "imageInputTokenPrice": 8.0
+    }
+  },
   "models": [
     {
       "modelId": "gpt-image-2",
-      "vendor": "openai",
       "snapshotVersion": "gpt-image-2-2026-04-21",
       "supportsTextOutput": false,
-      "supportsGeneration": true,
-      "supportsEditing": true,
-      "supportsMask": true,
-      "supportsMultiReference": true,
       "resolutionMode": "FreeForm",
       "freeFormConstraints": {
         "maxEdge": 3840,
@@ -17,78 +32,40 @@
         "minPixels": 655360,
         "maxPixels": 8294400
       },
-      "qualityOptions": ["low", "medium", "high"],
-      "outputFormats": ["png", "jpeg", "webp"],
       "supportsTransparentBackground": false,
       "supportsInputFidelity": false,
-      "defaultInputFidelity": "high",
-      "supportsStreaming": true,
-      "maxPartialImages": 3,
-      "supportsImageApi": true,
-      "supportsResponsesApi": true,
-      "requiresDeploymentHeader": true,
       "billing": {
-        "supportsTokenBilling": true,
         "supportsPerImageBilling": false,
         "tokenCalcMode": "DynamicCalculator",
-        "imageOutputTokenPrice": 30.0,
-        "textInputTokenPrice": 5.0,
-        "imageInputTokenPrice": 8.0
+        "imageOutputTokenPrice": 30.0
       }
     },
     {
       "modelId": "gpt-image-1.5",
-      "vendor": "openai",
       "snapshotVersion": "gpt-image-1.5-2025-12-16",
       "supportsTextOutput": true,
-      "supportsGeneration": true,
-      "supportsEditing": true,
-      "supportsMask": true,
-      "supportsMultiReference": true,
       "resolutionMode": "Fixed",
       "fixedSizes": ["1024x1024", "1536x1024", "1024x1536"],
-      "qualityOptions": ["low", "medium", "high"],
-      "outputFormats": ["png", "jpeg", "webp"],
       "supportsTransparentBackground": true,
       "supportsInputFidelity": true,
-      "defaultInputFidelity": "high",
-      "supportsStreaming": true,
-      "maxPartialImages": 3,
-      "supportsImageApi": true,
-      "supportsResponsesApi": true,
-      "requiresDeploymentHeader": true,
       "billing": {
-        "supportsTokenBilling": true,
         "supportsPerImageBilling": true,
         "tokenCalcMode": "FixedLadder",
-        "imageOutputTokenPrice": 32.0,
-        "textInputTokenPrice": 5.0,
-        "imageInputTokenPrice": 8.0
+        "imageOutputTokenPrice": 32.0
       }
     },
     {
       "modelId": "gpt-image-1",
-      "vendor": "openai",
       "supportsTextOutput": true,
-      "supportsGeneration": true,
-      "supportsEditing": true,
-      "supportsMask": true,
       "supportsMultiReference": false,
       "resolutionMode": "Fixed",
       "fixedSizes": ["1024x1024", "1536x1024", "1024x1536"],
-      "qualityOptions": ["low", "medium", "high"],
       "supportsTransparentBackground": true,
       "supportsInputFidelity": true,
-      "supportsImageApi": true,
-      "supportsResponsesApi": true,
-      "requiresDeploymentHeader": true,
       "billing": {
-        "supportsTokenBilling": true,
         "supportsPerImageBilling": true,
         "tokenCalcMode": "FixedLadder",
-        "imageOutputTokenPrice": 32.0,
-        "textInputTokenPrice": 5.0,
-        "imageInputTokenPrice": 8.0
+        "imageOutputTokenPrice": 32.0
       }
     }
   ]

@@ -1,0 +1,16 @@
+[package]
+name = "speech-sdk"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Azure Cognitive Services Speech SDK Rust FFI bindings with Translation support"
+
+[dependencies]
+log = "0.4"
+
+[build-dependencies]
+bindgen = "0.71"
+zip = "2"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full"] }
