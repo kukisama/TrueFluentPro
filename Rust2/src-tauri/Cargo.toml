@@ -17,7 +17,7 @@ tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
-reqwest = { version = "0.12", features = ["json", "stream"] }
+reqwest = { version = "0.12", features = ["json", "stream", "multipart"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
 tokio-stream = "0.1"
 futures-util = "0.3"
@@ -31,6 +31,9 @@ log = "0.4"
 
 # Azure Speech SDK FFI 绑定（本地 crate）
 speech-sdk = { path = "../../rustnew-backend/crates/speech-sdk" }
+
+# 音频设备枚举
+cpal = "0.15"
 
 [profile.release]
 codegen-units = 1

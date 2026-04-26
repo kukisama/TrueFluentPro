@@ -586,19 +586,7 @@ pub struct TokenUsage {
     pub total_tokens: u32,
 }
 
-// ─── 批量处理模型 ───
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BatchTask {
-    pub id: String,
-    pub name: String,
-    pub status: TaskStatus,
-    pub task_type: BatchTaskType,
-    pub progress: f64,
-    pub created_at: String,
-    pub updated_at: String,
-    pub error: Option<String>,
-}
+// ─── 任务通用枚举 ───
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -608,15 +596,6 @@ pub enum TaskStatus {
     Completed,
     Failed,
     Cancelled,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum BatchTaskType {
-    SubtitleTranslation,
-    AudioTranscription,
-    TextTranslation,
-    ImageGeneration,
 }
 
 // ─── 音频实验室模型 ───
@@ -670,4 +649,152 @@ pub struct MediaItem {
     pub result_url: Option<String>,
     pub status: TaskStatus,
     pub created_at: String,
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  P1.2: 会话 & 消息（对齐 C# ChatSessionViewModel）
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Session {
+    pub id: String,
+    pub title: String,
+    pub session_type: String,
+    pub message_count: i64,
+    pub token_total: i64,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Message {
+    pub id: String,
+    pub session_id: String,
+    pub role: String,
+    pub content: String,
+    #[serde(default = "default_mode")]
+    pub mode: String,
+    pub reasoning_text: Option<String>,
+    pub prompt_tokens: Option<i64>,
+    pub completion_tokens: Option<i64>,
+    pub image_base64: Option<String>,
+    pub attachments: Option<String>,
+    pub created_at: String,
+}
+
+fn default_mode() -> String {
+    "text".into()
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  P1.2: 音频库 & 生命周期（对齐 C# AudioProcessingSnapshot）
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AudioLibraryItem {
+    pub id: String,
+    pub file_name: String,
+    pub file_path: String,
+    pub duration_ms: i64,
+    pub sample_rate: i64,
+    pub channels: i64,
+    pub source_lang: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AudioLifecycleRow {
+    pub id: String,
+    pub audio_item_id: String,
+    pub stage: String,
+    pub status: String,
+    pub result_text: Option<String>,
+    pub result_json: Option<String>,
+    pub model_id: Option<String>,
+    pub token_used: Option<i64>,
+    pub error: Option<String>,
+    pub started_at: Option<String>,
+    pub completed_at: Option<String>,
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  P2.1: 任务队列模型
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AudioTaskRow {
+    pub id: String,
+    pub audio_item_id: String,
+    pub stage: String,
+    pub task_type: String,
+    pub status: String,
+    pub priority: i64,
+    pub retry_count: i64,
+    pub max_retries: i64,
+    pub progress: f64,
+    pub prompt_text: Option<String>,
+    pub result_text: Option<String>,
+    pub error: Option<String>,
+    pub submitted_at: String,
+    pub started_at: Option<String>,
+    pub completed_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskExecutionRow {
+    pub id: String,
+    pub task_id: String,
+    pub attempt: i64,
+    pub status: String,
+    pub error: Option<String>,
+    pub prompt_tokens: Option<i64>,
+    pub completion_tokens: Option<i64>,
+    pub duration_ms: Option<i64>,
+    pub started_at: String,
+    pub completed_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct TaskEngineStats {
+    pub queued: i64,
+    pub executing: i64,
+    pub completed: i64,
+    pub failed: i64,
+    pub cancelled: i64,
+    pub total_tokens: i64,
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  P3.5: 计费记录
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BillingRecord {
+    pub id: String,
+    pub task_id: Option<String>,
+    pub endpoint_id: String,
+    pub model_id: String,
+    pub prompt_tokens: i64,
+    pub completion_tokens: i64,
+    pub cost_usd: Option<f64>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct BillingSummary {
+    pub total_prompt_tokens: i64,
+    pub total_completion_tokens: i64,
+    pub total_cost_usd: f64,
+    pub record_count: i64,
+    pub by_model: Vec<BillingByModel>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BillingByModel {
+    pub model_id: String,
+    pub prompt_tokens: i64,
+    pub completion_tokens: i64,
+    pub cost_usd: f64,
+    pub count: i64,
 }

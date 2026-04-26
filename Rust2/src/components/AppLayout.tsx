@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
 import {
-  Languages, Layers, Mic, Palette, ListChecks, Settings, Info,
+  Languages, Mic, Palette, Image, ListChecks, Settings, Info,
   PanelLeftClose, PanelLeftOpen, LogIn, X, Sun, Moon, Monitor,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
@@ -10,9 +10,9 @@ import { useAppStore, type AppView } from "../stores/app-store";
 import { useThemeStore, type ThemeMode } from "../stores/theme-store";
 
 import { LiveTranslationView } from "../views/LiveTranslationView";
-import { BatchProcessingView } from "../views/BatchProcessingView";
 import { AudioLabView } from "../views/AudioLabView";
 import { MediaStudioView } from "../views/MediaStudioView";
+import { MediaCenterView } from "../views/MediaCenterView";
 import { TaskMonitorView } from "../views/TaskMonitorView";
 import { SettingsView } from "../views/SettingsView";
 import { AboutView } from "../views/AboutView";
@@ -27,9 +27,9 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { id: "live-translation", labelKey: "nav.liveTranslation", icon: <Languages size={18} />, section: "core" },
-  { id: "batch-processing", labelKey: "nav.batchProcessing", icon: <Layers size={18} />, section: "core" },
-  { id: "audio-lab", labelKey: "nav.audioLab", icon: <Mic size={18} />, section: "core" },
   { id: "media-studio", labelKey: "nav.mediaStudio", icon: <Palette size={18} />, section: "core" },
+  { id: "media-center", labelKey: "nav.mediaCenter", icon: <Image size={18} />, section: "core" },
+  { id: "audio-lab", labelKey: "nav.audioLab", icon: <Mic size={18} />, section: "core" },
   { id: "task-monitor", labelKey: "nav.taskMonitor", icon: <ListChecks size={18} />, section: "manage" },
   { id: "settings", labelKey: "nav.settings", icon: <Settings size={18} />, section: "system" },
   { id: "about", labelKey: "nav.about", icon: <Info size={18} />, section: "system" },
@@ -37,9 +37,9 @@ const NAV_ITEMS: NavItem[] = [
 
 const VIEW_MAP: Record<AppView, React.ReactNode> = {
   "live-translation": <LiveTranslationView />,
-  "batch-processing": <BatchProcessingView />,
-  "audio-lab": <AudioLabView />,
   "media-studio": <MediaStudioView />,
+  "media-center": <MediaCenterView />,
+  "audio-lab": <AudioLabView />,
   "task-monitor": <TaskMonitorView />,
   settings: <SettingsView />,
   about: <AboutView />,
@@ -70,6 +70,7 @@ export function AppLayout() {
 
   const themeMode = useThemeStore((s) => s.mode);
   const cycleTheme = useThemeStore((s) => s.cycleTheme);
+  const transitionDuration = useThemeStore((s) => s.transitionDuration);
 
   return (
     <div className="flex h-screen w-screen overflow-hidden" style={{ backgroundColor: "var(--surface-0)" }}>
@@ -218,10 +219,10 @@ export function AppLayout() {
           <AnimatePresence mode="wait">
             <motion.div
               key={activeView}
-              initial={{ opacity: 0, y: 6 }}
+              initial={transitionDuration > 0 ? { opacity: 0, y: 6 } : false}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
-              transition={{ duration: 0.2, ease: "easeOut" }}
+              exit={transitionDuration > 0 ? { opacity: 0, y: -6 } : undefined}
+              transition={{ duration: transitionDuration / 1000, ease: "easeOut" }}
               className="h-full"
             >
               {VIEW_MAP[activeView]}

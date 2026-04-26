@@ -255,17 +255,6 @@ export interface TranslationHistory {
   created_at: string;
 }
 
-export interface BatchTask {
-  id: string;
-  name: string;
-  status: string;
-  task_type: string;
-  progress: number;
-  created_at: string;
-  updated_at: string;
-  error?: string;
-}
-
 // ── 系统 ──
 
 export interface AppInfo {
@@ -273,6 +262,193 @@ export interface AppInfo {
   platform: string;
   arch: string;
   data_dir: string;
+}
+
+// ── 会话 & 消息（对齐 C# ChatSessionViewModel）──
+
+export interface Session {
+  id: string;
+  title: string;
+  session_type: "chat" | "image" | "mixed";
+  created_at: string;
+  updated_at: string;
+  message_count: number;
+  token_total: number;
+}
+
+export interface ChatMessage {
+  id: string;
+  session_id: string;
+  role: "user" | "assistant" | "system";
+  content: string;
+  mode?: "text" | "image" | "search";
+  reasoning_text?: string;
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  image_base64?: string;
+  attachments?: string;
+  created_at: string;
+}
+
+// ── 音频生命周期（对齐 C# AudioLifecycleStage + AudioProcessingSnapshot）──
+
+export type LifecycleStage =
+  | "Transcribed"
+  | "Summarized"
+  | "MindMap"
+  | "Insight"
+  | "Research"
+  | "PodcastScript"
+  | "PodcastAudio"
+  | "Translated";
+
+export type StageStatus = "Pending" | "Running" | "Completed" | "Failed" | "Stale";
+
+export interface AudioLibraryItem {
+  id: string;
+  file_name: string;
+  file_path: string;
+  duration_ms: number;
+  sample_rate: number;
+  channels: number;
+  source_lang: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AudioLifecycle {
+  id: string;
+  audio_item_id: string;
+  stage: LifecycleStage;
+  status: StageStatus;
+  result_text?: string;
+  result_json?: string;
+  model_id?: string;
+  token_used?: number;
+  error?: string;
+  started_at?: string;
+  completed_at?: string;
+}
+
+// ── 任务引擎（对齐 C# AudioTaskRecord + TaskMonitorViewModel）──
+
+export type TaskStatus = "Queued" | "Executing" | "Completed" | "Failed" | "Cancelled";
+export type TaskType = "Transcription" | "AiCompletion" | "TTS" | "ImageGeneration" | "VideoGeneration" | "BatchTranslation";
+
+export interface AudioTask {
+  id: string;
+  audio_item_id: string;
+  stage: LifecycleStage;
+  task_type: TaskType;
+  status: TaskStatus;
+  priority: number;
+  retry_count: number;
+  max_retries: number;
+  progress: number;
+  prompt_text?: string;
+  result_text?: string;
+  error?: string;
+  submitted_at: string;
+  started_at?: string;
+  completed_at?: string;
+}
+
+export interface TaskExecution {
+  id: string;
+  task_id: string;
+  attempt: number;
+  status: TaskStatus;
+  error?: string;
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  duration_ms?: number;
+  started_at: string;
+  completed_at?: string;
+}
+
+export interface TaskEngineStats {
+  queued: number;
+  executing: number;
+  completed: number;
+  failed: number;
+  cancelled: number;
+  total_tokens: number;
+}
+
+export interface TaskEvent {
+  type: "TaskSubmitted" | "TaskStarted" | "TaskProgress" | "TaskCompleted" | "TaskFailed" | "TaskCancelled";
+  task_id: string;
+  audio_item_id?: string;
+  stage?: LifecycleStage;
+  progress?: number;
+  error?: string;
+}
+
+// ── 计费记录 ──
+
+export interface BillingRecord {
+  id: string;
+  task_id?: string;
+  endpoint_id: string;
+  model_id: string;
+  prompt_tokens: number;
+  completion_tokens: number;
+  cost_usd?: number;
+  created_at: string;
+}
+
+// ── 计费汇总 ──
+
+export interface BillingSummary {
+  total_prompt_tokens: number;
+  total_completion_tokens: number;
+  total_cost_usd: number;
+  record_count: number;
+  by_model: BillingByModel[];
+}
+
+export interface BillingByModel {
+  model_id: string;
+  prompt_tokens: number;
+  completion_tokens: number;
+  cost_usd: number;
+  count: number;
+}
+
+// ── 图片管道 ──
+
+export interface ImagePipelineRequest {
+  prompt: string;
+  negative_prompt?: string;
+  model: string;
+  width: number;
+  height: number;
+  quality?: string;
+  style?: string;
+  endpoint_id: string;
+  optimize_prompt: boolean;
+  upscale: boolean;
+}
+
+export interface ImagePipelineResult {
+  original_prompt: string;
+  optimized_prompt?: string;
+  image_base64?: string;
+  image_url?: string;
+  revised_prompt?: string;
+  steps_completed: string[];
+}
+
+export interface ModelCapabilityEntry {
+  model_id: string;
+  display_name: string;
+  provider: string;
+  capabilities: string[];
+  supported_sizes: string[];
+  supported_qualities: string[];
+  supported_styles: string[];
+  max_prompt_length: number;
+  supports_negative_prompt: boolean;
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -318,10 +494,58 @@ export const api = {
   // 存储
   getTranslationHistory: (limit?: number) =>
     invoke<TranslationHistory[]>("get_translation_history", { limit }),
-  getBatchTasks: (limit?: number) => invoke<BatchTask[]>("get_batch_tasks", { limit }),
   validateStorageConnection: (connectionString: string) =>
     invoke<void>("validate_storage_connection", { connectionString }),
 
+  // 会话 & 消息
+  listSessions: (sessionType?: string) => invoke<Session[]>("list_sessions", { sessionType }),
+  createSession: (title: string, sessionType: string) =>
+    invoke<Session>("create_session", { title, sessionType }),
+  deleteSession: (sessionId: string) => invoke<void>("delete_session", { sessionId }),
+  getSessionMessages: (sessionId: string) => invoke<ChatMessage[]>("get_session_messages", { sessionId }),
+  addMessage: (msg: Omit<ChatMessage, "id" | "created_at">) =>
+    invoke<ChatMessage>("add_message", { msg }),
+
+  // 音频库 & 生命周期
+  listAudioItems: () => invoke<AudioLibraryItem[]>("list_audio_items"),
+  addAudioItem: (item: Omit<AudioLibraryItem, "id" | "created_at" | "updated_at">) =>
+    invoke<AudioLibraryItem>("add_audio_item", { item }),
+  deleteAudioItem: (itemId: string) => invoke<void>("delete_audio_item", { itemId }),
+  getAudioLifecycle: (audioItemId: string) => invoke<AudioLifecycle[]>("get_audio_lifecycle", { audioItemId }),
+  updateLifecycleStage: (lifecycle: AudioLifecycle) =>
+    invoke<void>("update_lifecycle_stage", { lifecycle }),
+
+  // 任务引擎
+  submitTask: (task: Omit<AudioTask, "id" | "submitted_at">) =>
+    invoke<AudioTask>("submit_task", { task }),
+  cancelTask: (taskId: string) => invoke<void>("cancel_task", { taskId }),
+  retryTask: (taskId: string) => invoke<void>("retry_task", { taskId }),
+  getTaskEngineStats: () => invoke<TaskEngineStats>("get_task_engine_stats"),
+  listTasks: (status?: TaskStatus, limit?: number) =>
+    invoke<AudioTask[]>("list_tasks", { status, limit }),
+  getTaskExecutions: (taskId: string) => invoke<TaskExecution[]>("get_task_executions", { taskId }),
+  onTaskEvent: (cb: (e: TaskEvent) => void): Promise<UnlistenFn> =>
+    listen<TaskEvent>("task-event", (event) => cb(event.payload)),
+
   // 系统
   getAppInfo: () => invoke<AppInfo>("get_app_info"),
+
+  // 配置导入/导出
+  exportConfig: () => invoke<string>("export_config"),
+  importConfig: (json: string) => invoke<void>("import_config", { json }),
+  writeTextFile: (path: string, content: string) => invoke<void>("write_text_file", { path, content }),
+  readTextFile: (path: string) => invoke<string>("read_text_file", { path }),
+
+  // 计费
+  getBillingRecords: (limit?: number) => invoke<BillingRecord[]>("get_billing_records", { limit }),
+  getBillingSummary: () => invoke<BillingSummary>("get_billing_summary"),
+
+  // 图片管道
+  runImagePipeline: (request: ImagePipelineRequest) =>
+    invoke<ImagePipelineResult>("run_image_pipeline", { request }),
+  getImageModelCatalog: () => invoke<ModelCapabilityEntry[]>("get_image_model_catalog"),
+
+  // 视频（预留）
+  generateVideo: (prompt: string, model: string, endpointId: string) =>
+    invoke<string>("generate_video", { prompt, model, endpointId }),
 };

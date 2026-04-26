@@ -3,12 +3,14 @@ mod models;
 mod providers;
 mod state;
 mod storage;
+mod task_engine;
+mod image_pipeline;
 
 use std::sync::Arc;
 use tauri::Manager;
 
 use models::{EndpointType, AiEndpoint};
-use providers::{OpenAiChatProvider, OpenAiImageProvider, AzureSpeechProvider};
+use providers::{OpenAiChatProvider, OpenAiImageProvider, AzureSpeechProvider, AzureSttProvider, AzureTtsProvider};
 use state::AppState;
 use storage::Database;
 
@@ -25,7 +27,9 @@ fn register_providers_from_config(state: &AppState, endpoints: &[AiEndpoint]) {
             }
             EndpointType::AzureSpeech => {
                 registry.register_realtime_speech(Arc::new(AzureSpeechProvider::new(ep.clone())));
-                tracing::info!("已注册 Speech Provider: {} ({})", ep.name, ep.id);
+                registry.register_stt(Arc::new(AzureSttProvider::new(ep.clone())));
+                registry.register_tts(Arc::new(AzureTtsProvider::new(ep.clone())));
+                tracing::info!("已注册 Speech+STT+TTS Provider: {} ({})", ep.name, ep.id);
             }
             // Translator / DeepL 等留空 — 后续插件化
             _ => {
@@ -67,6 +71,22 @@ pub fn run() {
             }
 
             app.manage(app_state);
+
+            // 启动后台任务引擎
+            let state: tauri::State<'_, AppState> = app.state();
+            let db_arc = state.db.clone();
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let state_ref: &AppState = handle.state::<AppState>().inner();
+                // 安全: AppState 通过 Tauri State 管理，生命周期跟随 app
+                let state_arc = Arc::new(tokio::sync::RwLock::new(()));
+                let _ = state_arc; // placeholder
+                let engine = task_engine::TaskEngine::start_with_app(handle.clone(), db_arc);
+                let mut te = state_ref.task_engine.write().await;
+                *te = Some(engine);
+                tracing::info!("任务引擎已启动");
+            });
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -87,8 +107,26 @@ pub fn run() {
             commands::ai_complete,
             // 存储
             commands::get_translation_history,
-            commands::get_batch_tasks,
             commands::validate_storage_connection,
+            // 会话 & 消息
+            commands::list_sessions,
+            commands::create_session,
+            commands::delete_session,
+            commands::get_session_messages,
+            commands::add_message,
+            // 音频库 & 生命周期
+            commands::list_audio_items,
+            commands::add_audio_item,
+            commands::delete_audio_item,
+            commands::get_audio_lifecycle,
+            commands::update_lifecycle_stage,
+            // 任务引擎
+            commands::submit_task,
+            commands::cancel_task,
+            commands::retry_task,
+            commands::get_task_engine_stats,
+            commands::list_tasks,
+            commands::get_task_executions,
             // 系统
             commands::get_app_info,
             commands::refresh_providers,
@@ -96,6 +134,19 @@ pub fn run() {
             commands::test_endpoint,
             commands::get_vendor_profiles,
             commands::discover_models,
+            // 配置导入/导出
+            commands::export_config,
+            commands::import_config,
+            commands::write_text_file,
+            commands::read_text_file,
+            // 计费
+            commands::get_billing_records,
+            commands::get_billing_summary,
+            // 图片管道
+            commands::run_image_pipeline,
+            commands::get_image_model_catalog,
+            // 视频（预留）
+            commands::generate_video,
         ])
         .run(tauri::generate_context!())
         .expect("启动 Tauri 应用失败");

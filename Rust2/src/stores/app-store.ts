@@ -1,11 +1,11 @@
 import { create } from "zustand";
-import type { AppConfig, BatchTask, ProviderInfo, TranslationHistory } from "../lib/tauri-api";
+import type { AppConfig, ProviderInfo, TranslationHistory } from "../lib/tauri-api";
 
 export type AppView =
   | "live-translation"
-  | "batch-processing"
-  | "audio-lab"
   | "media-studio"
+  | "media-center"
+  | "audio-lab"
   | "task-monitor"
   | "settings"
   | "about"
@@ -43,9 +43,12 @@ interface AppState {
   clearStream: () => void;
   setStreaming: (v: boolean) => void;
 
-  // 批量任务
-  batchTasks: BatchTask[];
-  setBatchTasks: (tasks: BatchTask[]) => void;
+  // 全局 InfoBar
+  infoBarOpen: boolean;
+  infoBarMessage: string;
+  infoBarSeverity: "info" | "warning" | "error" | "success";
+  showInfoBar: (message: string, severity?: "info" | "warning" | "error" | "success") => void;
+  hideInfoBar: () => void;
 
   // 翻译历史
   history: TranslationHistory[];
@@ -91,9 +94,13 @@ export const useAppStore = create<AppState>((set) => ({
   clearStream: () => set({ streamingContent: "", isStreaming: false }),
   setStreaming: (v) => set({ isStreaming: v }),
 
-  // 批量任务
-  batchTasks: [],
-  setBatchTasks: (tasks) => set({ batchTasks: tasks }),
+  // 全局 InfoBar
+  infoBarOpen: false,
+  infoBarMessage: "",
+  infoBarSeverity: "info",
+  showInfoBar: (message, severity = "info") =>
+    set({ infoBarOpen: true, infoBarMessage: message, infoBarSeverity: severity }),
+  hideInfoBar: () => set({ infoBarOpen: false }),
 
   // 历史
   history: [],

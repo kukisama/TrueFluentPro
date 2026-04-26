@@ -1,7 +1,10 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading;
+using System.Threading.Channels;
 using System.Threading.Tasks;
 using Microsoft.CognitiveServices.Speech;
 using Microsoft.CognitiveServices.Speech.Audio;
@@ -20,6 +23,26 @@ namespace TrueFluentPro.Services
             "ja-JP",
             "ko-KR"
         };
+
+        // F2: 预编译的语气助词过滤正则（避免每次回调都重新编译 75 个正则）
+        private static readonly string[] ModalParticleFillers =
+        {
+            "啊", "呀", "吧", "啦", "嘛", "呢", "哦", "呐", "哈", "呵", "嗯", "唉", "哎",
+            "那个", "这个", "就是", "然后", "就是说", "怎么说", "你知道", "对吧", "是吧",
+            "呃", "额", "嗯嗯", "啊啊", "哦哦"
+        };
+        private static readonly (Regex start, Regex middle, Regex end)[] ModalParticlePatterns =
+            ModalParticleFillers.Select(f =>
+            {
+                var escaped = Regex.Escape(f);
+                return (
+                    start:  new Regex($@"^{escaped}[，,]?\s*", RegexOptions.Compiled | RegexOptions.IgnoreCase),
+                    middle: new Regex($@"\s+{escaped}\s+", RegexOptions.Compiled | RegexOptions.IgnoreCase),
+                    end:    new Regex($@"{escaped}([。！？，,]?)$", RegexOptions.Compiled | RegexOptions.IgnoreCase)
+                );
+            }).ToArray();
+        private static readonly Regex MultiSpaceRegex = new(@"\s+", RegexOptions.Compiled);
+        private static readonly Regex MultiCommaRegex = new(@"[，,]\s*[，,]", RegexOptions.Compiled);
         private AzureSpeechConfig _config;
         private readonly Action<string>? _auditLog;
         private TranslationRecognizer? _recognizer;
@@ -42,6 +65,16 @@ namespace TrueFluentPro.Services
         private string _recognizeOutputDeviceIdInUse = "";
 
         private Task? _pendingTranscodeTask;
+
+        // F1: 后台文件写入队列——将 SaveTranslationToFile / WriteSubtitleEntry 从 SDK 回调线程剥离
+        private Channel<Action> _fileWriteChannel = Channel.CreateBounded<Action>(
+            new BoundedChannelOptions(256)
+            {
+                FullMode = BoundedChannelFullMode.DropOldest,
+                SingleReader = true
+            });
+        private CancellationTokenSource? _fileWriterCts;
+        private Task? _fileWriterTask;
 
         private readonly object _subtitleLock = new();
         private StreamWriter? _srtWriter;
@@ -127,6 +160,7 @@ namespace TrueFluentPro.Services
                 var speechConfig = CreateSpeechConfig();
                 _audioConfig = CreateAudioConfigAndStartSource();
                 InitializeSubtitleWriters();
+                StartFileWriterTask();
                 _recognizer = CreateTranslationRecognizer(speechConfig, _audioConfig);
 
                 _recognizer.Recognized += OnRecognized;
@@ -186,6 +220,8 @@ namespace TrueFluentPro.Services
                 PublishAudioLevel(0);
                 OnDiagnosticsUpdated?.Invoke(this, "诊断: 已停止");
 
+                // F1: 先 drain 后台写入队列（确保所有文件 I/O 完成），再关闭字幕写入器
+                await StopFileWriterTaskAsync().ConfigureAwait(false);
                 DisposeSubtitleWriters();
 
                 await CleanupAudioAsync().ConfigureAwait(false);
@@ -227,8 +263,18 @@ namespace TrueFluentPro.Services
                 // 句子结束，释放 VAD 句级锁
                 _audioCoordinator?.VadGate?.NotifySentenceFinalized();
 
-                SaveTranslationToFile(translationItem);
-                WriteSubtitleEntry(e.Result, translatedText);
+                // F1: 在回调线程提取时间戳数据（result 对象可能在回调返回后失效）
+                TryGetSubtitleTiming(e.Result, out var subtitleStart, out var subtitleEnd);
+                var capturedTranslatedText = translatedText;
+                var capturedSessionStartUtc = _sessionStartUtc;
+
+                // F1: 文件 I/O 入队到后台写入线程，不阻塞 SDK 回调
+                _fileWriteChannel.Writer.TryWrite(() =>
+                {
+                    SaveTranslationToFile(translationItem);
+                    WriteSubtitleEntryFromTiming(capturedTranslatedText, subtitleStart, subtitleEnd, capturedSessionStartUtc);
+                });
+
                 OnFinalTranslationReceived?.Invoke(this, translationItem);
 
                 OnStatusChanged?.Invoke(this, "收到最终识别结果");
@@ -290,26 +336,21 @@ namespace TrueFluentPro.Services
             OnStatusChanged?.Invoke(this, "翻译会话已结束");
         }
 
-        private string FilterModalParticles(string text)
+        private static string FilterModalParticles(string text)
         {
             if (string.IsNullOrEmpty(text))
                 return text;
 
-            string[] fillers = { 
-                "啊", "呀", "吧", "啦", "嘛", "呢", "哦", "呐", "哈", "呵", "嗯", "唉", "哎",
-                "那个", "这个", "就是", "然后", "就是说", "怎么说", "你知道", "对吧", "是吧",
-                "呃", "额", "嗯嗯", "啊啊", "哦哦"
-            };
+            var result = text;
 
-            string result = text;
-
-            foreach (string filler in fillers)
+            for (var i = 0; i < ModalParticlePatterns.Length; i++)
             {
-                result = System.Text.RegularExpressions.Regex.Replace(result, $@"^{System.Text.RegularExpressions.Regex.Escape(filler)}[，,]?\s*", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                var (start, middle, end) = ModalParticlePatterns[i];
+                var filler = ModalParticleFillers[i];
 
-                result = System.Text.RegularExpressions.Regex.Replace(result, $@"\s+{System.Text.RegularExpressions.Regex.Escape(filler)}\s+", " ", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-
-                result = System.Text.RegularExpressions.Regex.Replace(result, $@"{System.Text.RegularExpressions.Regex.Escape(filler)}([。！？，,]?)$", "$1", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                result = start.Replace(result, "");
+                result = middle.Replace(result, " ");
+                result = end.Replace(result, "$1");
 
                 result = result.Replace($"，{filler}", "，")
                                .Replace($"。{filler}", "。")
@@ -317,8 +358,8 @@ namespace TrueFluentPro.Services
                                .Replace($"！{filler}", "！");
             }
 
-            result = System.Text.RegularExpressions.Regex.Replace(result, @"\s+", " ");
-            result = System.Text.RegularExpressions.Regex.Replace(result, @"[，,]\s*[，,]", "，");
+            result = MultiSpaceRegex.Replace(result, " ");
+            result = MultiCommaRegex.Replace(result, "，");
             result = result.Trim();
 
             return result;
@@ -436,6 +477,66 @@ namespace TrueFluentPro.Services
             if (!TryGetSubtitleTiming(result, out var start, out var end))
             {
                 var fallbackEnd = DateTime.UtcNow - _sessionStartUtc;
+                if (fallbackEnd < _lastSubtitleEnd + TimeSpan.FromMilliseconds(200))
+                {
+                    fallbackEnd = _lastSubtitleEnd + TimeSpan.FromMilliseconds(200);
+                }
+                start = _lastSubtitleEnd;
+                end = fallbackEnd;
+            }
+
+            if (end <= start)
+            {
+                end = start + TimeSpan.FromMilliseconds(300);
+            }
+
+            lock (_subtitleLock)
+            {
+                if (_srtWriter != null)
+                {
+                    _srtWriter.WriteLine(_subtitleIndex);
+                    _srtWriter.WriteLine($"{FormatSrtTime(start)} --> {FormatSrtTime(end)}");
+                    _srtWriter.WriteLine(translatedText);
+                    _srtWriter.WriteLine();
+                    _srtWriter.Flush();
+                }
+
+                if (_vttWriter != null)
+                {
+                    _vttWriter.WriteLine($"{FormatVttTime(start)} --> {FormatVttTime(end)}");
+                    _vttWriter.WriteLine(translatedText);
+                    _vttWriter.WriteLine();
+                    _vttWriter.Flush();
+                }
+
+                _subtitleIndex++;
+            }
+
+            _lastSubtitleEnd = end;
+        }
+
+        /// <summary>
+        /// F1: 后台写入线程使用的字幕写入方法——接受预提取的时间戳，不依赖 SDK Result 对象。
+        /// </summary>
+        private void WriteSubtitleEntryFromTiming(string translatedText, TimeSpan preStart, TimeSpan preEnd, DateTime sessionStartUtc)
+        {
+            if (string.IsNullOrWhiteSpace(translatedText))
+            {
+                return;
+            }
+
+            if (_srtWriter == null && _vttWriter == null)
+            {
+                return;
+            }
+
+            var start = preStart;
+            var end = preEnd;
+
+            // 如果回调线程没能解析出时间戳（start==end==Zero），用 fallback
+            if (start == TimeSpan.Zero && end == TimeSpan.Zero)
+            {
+                var fallbackEnd = DateTime.UtcNow - sessionStartUtc;
                 if (fallbackEnd < _lastSubtitleEnd + TimeSpan.FromMilliseconds(200))
                 {
                     fallbackEnd = _lastSubtitleEnd + TimeSpan.FromMilliseconds(200);
@@ -1084,6 +1185,69 @@ namespace TrueFluentPro.Services
             return false;
         }
 
+        // ── F1: 后台文件写入线程 ──
+
+        private void StartFileWriterTask()
+        {
+            _fileWriterCts?.Cancel();
+            _fileWriterCts?.Dispose();
+            _fileWriterCts = new CancellationTokenSource();
+            var token = _fileWriterCts.Token;
+
+            // 每次启动都重建 channel（上次 stop 时已 TryComplete）
+            _fileWriteChannel = Channel.CreateBounded<Action>(
+                new BoundedChannelOptions(256)
+                {
+                    FullMode = BoundedChannelFullMode.DropOldest,
+                    SingleReader = true
+                });
+
+            var channel = _fileWriteChannel;
+            _fileWriterTask = Task.Run(async () =>
+            {
+                try
+                {
+                    await foreach (var writeAction in channel.Reader.ReadAllAsync(token).ConfigureAwait(false))
+                    {
+                        try
+                        {
+                            writeAction();
+                        }
+                        catch (Exception ex)
+                        {
+                            _auditLog?.Invoke($"[文件写入] 后台写入异常: {ex.Message}");
+                        }
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    // 正常停止
+                }
+            }, CancellationToken.None);
+        }
+
+        private async Task StopFileWriterTaskAsync()
+        {
+            // 通知 channel 不再接收新消息
+            _fileWriteChannel.Writer.TryComplete();
+
+            // 等待队列中剩余的写操作 drain 完成（最多等 2 秒，避免卡在磁盘 I/O 上无限等）
+            if (_fileWriterTask != null)
+            {
+                var drainTask = _fileWriterTask;
+                var completed = await Task.WhenAny(drainTask, Task.Delay(2000)).ConfigureAwait(false);
+                if (completed != drainTask)
+                {
+                    _fileWriterCts?.Cancel();
+                    _auditLog?.Invoke("[文件写入] 后台写入队列 drain 超时 (2s)，已强制取消");
+                }
+            }
+
+            _fileWriterCts?.Dispose();
+            _fileWriterCts = null;
+            _fileWriterTask = null;
+        }
+
         private void StartNoResponseMonitor()
         {
             if (!_config.EnableNoResponseRestart)
@@ -1124,11 +1288,6 @@ namespace TrueFluentPro.Services
                     }
 
                     if (now - _lastRecognitionUtc < threshold)
-                    {
-                        continue;
-                    }
-
-                    if (now - _lastAudioActivityUtc > threshold)
                     {
                         continue;
                     }
@@ -1451,6 +1610,7 @@ namespace TrueFluentPro.Services
             _liveRoutingDebounceCts?.Dispose();
             _noResponseMonitorCts?.Dispose();
             _managedReconnectCts?.Dispose();
+            _fileWriterCts?.Dispose();
 
             GC.SuppressFinalize(this);
         }

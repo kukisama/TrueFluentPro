@@ -1,4 +1,5 @@
 using System;
+using System.Buffers;
 using System.IO;
 using NAudio.Lame;
 using NAudio.Wave;
@@ -46,11 +47,29 @@ namespace TrueFluentPro.Services.Audio
 
             lock (_writeLock)
             {
-                var chunk = new byte[pcm16Chunk.Length];
-                Buffer.BlockCopy(pcm16Chunk, 0, chunk, 0, pcm16Chunk.Length);
-                _autoGainProcessor?.ProcessInPlace(chunk, chunk.Length);
-                _writer.Write(chunk, 0, chunk.Length);
-                _unflushedBytes += chunk.Length;
+                if (_autoGainProcessor != null)
+                {
+                    // F4: 有 AutoGain 时需要 clone（ProcessInPlace 会修改内容，不能污染调用方的 buffer）
+                    // 使用 ArrayPool 避免每次分配
+                    var chunk = ArrayPool<byte>.Shared.Rent(pcm16Chunk.Length);
+                    try
+                    {
+                        Buffer.BlockCopy(pcm16Chunk, 0, chunk, 0, pcm16Chunk.Length);
+                        _autoGainProcessor.ProcessInPlace(chunk, pcm16Chunk.Length);
+                        _writer.Write(chunk, 0, pcm16Chunk.Length);
+                    }
+                    finally
+                    {
+                        ArrayPool<byte>.Shared.Return(chunk);
+                    }
+                }
+                else
+                {
+                    // F4: 无 AutoGain 时直接写原 buffer，省掉 clone
+                    _writer.Write(pcm16Chunk, 0, pcm16Chunk.Length);
+                }
+
+                _unflushedBytes += pcm16Chunk.Length;
                 if (_unflushedBytes >= FlushThresholdBytes)
                 {
                     _fileStream.Flush();

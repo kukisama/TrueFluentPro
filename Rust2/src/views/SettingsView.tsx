@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
+import { save as dialogSave, open as dialogOpen } from "@tauri-apps/plugin-dialog";
 import {
   Plus, Trash2, Edit2, Check, X, Globe, Brain, Image, Volume2,
   TestTube, Monitor, Cloud, FileText,
@@ -52,6 +53,24 @@ const VENDOR_BADGE: Record<string, { label: string; badge: string; glyph: string
 const CAPABILITY_LABELS: Record<string, string> = {
   text: "文字", image: "图片", video: "视频",
   speech_to_text: "语音识别", text_to_speech: "语音合成",
+};
+
+const CAPABILITY_ICONS: Record<string, typeof Globe> = {
+  text: FileText, image: Image, video: Video,
+  speech_to_text: Mic, text_to_speech: Volume2,
+};
+
+const CAPABILITY_COLORS: Record<string, string> = {
+  text: "#8AADA0", image: "#B09AAC", video: "#8FA4B8",
+  speech_to_text: "#B5A88A", text_to_speech: "#9A92AD",
+};
+
+const CAPABILITY_TIPS: Record<string, string> = {
+  text: "文字对话：洞察、复盘、快问、会话",
+  image: "图片生成：AI 绘图、图片编辑",
+  video: "视频生成：AI 视频创作",
+  speech_to_text: "语音转文字：音频转写、实时听写",
+  text_to_speech: "文字转语音：语音合成、朗读",
 };
 
 const ALL_CAPABILITIES: ModelCapability[] = ["text", "image", "video", "speech_to_text", "text_to_speech"];
@@ -180,9 +199,10 @@ function EndpointsSection() {
                             <div className="flex flex-wrap gap-1 mt-1 pl-4">
                               {ep.models.map((m) => (
                                 <span key={m.model_id} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] bg-[var(--surface-2)] text-[var(--text-secondary)]">
-                                  {m.capabilities.map((c) => (
-                                    <span key={c} className="opacity-60">{c === "text" ? "💬" : c === "image" ? "🖼" : c === "video" ? "🎬" : c === "speech_to_text" ? "🎙" : "🔊"}</span>
-                                  ))}
+                                  {m.capabilities.map((c) => {
+                                    const Icon = CAPABILITY_ICONS[c];
+                                    return Icon ? <Icon key={c} size={11} style={{ color: CAPABILITY_COLORS[c] }} /> : null;
+                                  })}
                                   {m.display_name || m.model_id}
                                 </span>
                               ))}
@@ -579,11 +599,16 @@ function EndpointForm({ onClose }: { onClose: () => void }) {
                 <div key={m.model_id} className="flex items-center gap-2 px-2 py-1.5 rounded bg-[var(--surface-1)]">
                   <span className="text-xs text-[var(--text-primary)] flex-1">{m.display_name || m.model_id}</span>
                   <div className="flex gap-1">
-                    {m.capabilities.map((c) => (
-                      <Badge key={c} variant="blue" className="text-[9px] px-1 py-0">
-                        {CAPABILITY_LABELS[c] || c}
-                      </Badge>
-                    ))}
+                    {m.capabilities.map((c) => {
+                      const Icon = CAPABILITY_ICONS[c];
+                      return (
+                        <span key={c} title={CAPABILITY_TIPS[c]} className="flex items-center gap-0.5 text-[10px]"
+                          style={{ color: CAPABILITY_COLORS[c] }}>
+                          {Icon && <Icon size={12} />}
+                          {CAPABILITY_LABELS[c] || c}
+                        </span>
+                      );
+                    })}
                   </div>
                   <button onClick={() => removeModel(m.model_id)} className="text-red-400 hover:text-red-300">
                     <X size={12} />
@@ -601,21 +626,25 @@ function EndpointForm({ onClose }: { onClose: () => void }) {
                 onKeyDown={(e) => e.key === "Enter" && addModel()} />
             </div>
             <div className="flex gap-1">
-              {ALL_CAPABILITIES.slice(0, 3).map((c) => (
-                <button key={c}
-                  className={cn(
-                    "px-1.5 py-1 rounded text-[10px] border transition-colors",
-                    newModelCaps.includes(c)
-                      ? "bg-brand-500/20 border-brand-500/40 text-brand-400"
-                      : "border-[var(--border-subtle)] text-[var(--text-muted)]",
-                  )}
-                  onClick={() => setNewModelCaps((prev) =>
-                    prev.includes(c) ? prev.filter((x) => x !== c) : [...prev, c]
-                  )}
-                >
-                  {CAPABILITY_LABELS[c]}
-                </button>
-              ))}
+              {ALL_CAPABILITIES.map((c) => {
+                const Icon = CAPABILITY_ICONS[c];
+                const color = CAPABILITY_COLORS[c];
+                const isActive = newModelCaps.includes(c);
+                return (
+                  <button key={c} title={CAPABILITY_TIPS[c]}
+                    className={cn(
+                      "w-7 h-7 rounded flex items-center justify-center border transition-all",
+                      isActive
+                        ? "border-current shadow-sm"
+                        : "border-[var(--border-subtle)] text-[var(--text-muted)] opacity-40 hover:opacity-70",
+                    )}
+                    style={isActive ? { color, borderColor: color, backgroundColor: `${color}22` } : undefined}
+                    onClick={() => setNewModelCaps([c])}
+                  >
+                    <Icon size={14} />
+                  </button>
+                );
+              })}
             </div>
             <Button size="sm" variant="secondary" onClick={addModel} disabled={!newModelId.trim()}>
               <Plus size={12} />
@@ -746,9 +775,16 @@ function EndpointEditPanel({ endpoint, onClose }: { endpoint: AiEndpoint; onClos
           {models.map((m) => (
             <div key={m.model_id} className="flex items-center gap-2 px-2 py-1 rounded bg-[var(--surface-1)]">
               <span className="text-xs flex-1">{m.display_name || m.model_id}</span>
-              {m.capabilities.map((c) => (
-                <Badge key={c} variant="blue" className="text-[9px] px-1 py-0">{CAPABILITY_LABELS[c] || c}</Badge>
-              ))}
+              {m.capabilities.map((c) => {
+                const Icon = CAPABILITY_ICONS[c];
+                return (
+                  <span key={c} title={CAPABILITY_TIPS[c]} className="flex items-center gap-0.5 text-[10px]"
+                    style={{ color: CAPABILITY_COLORS[c] }}>
+                    {Icon && <Icon size={12} />}
+                    {CAPABILITY_LABELS[c] || c}
+                  </span>
+                );
+              })}
               <button onClick={() => removeModel(m.model_id)} className="text-red-400"><X size={12} /></button>
             </div>
           ))}
@@ -757,18 +793,25 @@ function EndpointEditPanel({ endpoint, onClose }: { endpoint: AiEndpoint; onClos
             <Input value={newModelId} onChange={(e) => setNewModelId(e.target.value)} placeholder="模型 ID / 部署名" className="flex-1"
               onKeyDown={(e) => e.key === "Enter" && addModel()} />
         <div className="flex gap-1">
-          {ALL_CAPABILITIES.slice(0, 3).map((c) => (
-            <button key={c} className={cn(
-              "px-1.5 py-1 rounded text-[10px] border transition-colors",
-              newModelCaps.includes(c)
-                ? "bg-brand-500/20 border-brand-500/40 text-brand-400"
-                : "border-[var(--border-subtle)] text-[var(--text-muted)]",
-            )} onClick={() => setNewModelCaps((prev) =>
-              prev.includes(c) ? prev.filter((x) => x !== c) : [...prev, c]
-            )}>
-              {CAPABILITY_LABELS[c]}
-            </button>
-          ))}
+          {ALL_CAPABILITIES.map((c) => {
+            const Icon = CAPABILITY_ICONS[c];
+            const color = CAPABILITY_COLORS[c];
+            const isActive = newModelCaps.includes(c);
+            return (
+              <button key={c} title={CAPABILITY_TIPS[c]}
+                className={cn(
+                  "w-7 h-7 rounded flex items-center justify-center border transition-all",
+                  isActive
+                    ? "border-current shadow-sm"
+                    : "border-[var(--border-subtle)] text-[var(--text-muted)] opacity-40 hover:opacity-70",
+                )}
+                style={isActive ? { color, borderColor: color, backgroundColor: `${color}22` } : undefined}
+                onClick={() => setNewModelCaps([c])}
+              >
+                <Icon size={14} />
+              </button>
+            );
+          })}
         </div>
         <Button size="sm" variant="secondary" onClick={addModel} disabled={!newModelId.trim()}><Plus size={12} /></Button>
       </div>
@@ -1123,7 +1166,6 @@ function InsightSection() {
           <ModelRefSelector label="摘要模型" value={ai.summary_model} onChange={setModelRef("summary_model")} capability="text" />
           <ModelRefSelector label="快问模型" value={ai.quick_model} onChange={setModelRef("quick_model")} capability="text" />
           <ModelRefSelector label="对话模型" value={ai.conversation_model} onChange={setModelRef("conversation_model")} capability="text" />
-          <ModelRefSelector label="复盘模型" value={ai.review_model} onChange={setModelRef("review_model")} capability="text" />
           <ModelRefSelector label="意图识别模型" value={ai.intent_model} onChange={setModelRef("intent_model")} capability="text" />
         </div>
       </GlassCard>
@@ -1368,6 +1410,62 @@ function CloudSection() {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function TransferSection() {
+  const [status, setStatus] = useState("");
+
+  const handleExport = async (fullConfig: boolean) => {
+    try {
+      const json = await api.exportConfig();
+      let data = json;
+      if (!fullConfig) {
+        // 仅导出端点部分
+        const parsed = JSON.parse(json);
+        data = JSON.stringify({ endpoints: parsed.endpoints, ai: parsed.ai, media: parsed.media }, null, 2);
+      }
+      const path = await dialogSave({
+        title: fullConfig ? "导出完整配置" : "导出基础 AI 配置",
+        defaultPath: fullConfig ? "truefluent-config-full.json" : "truefluent-config.json",
+        filters: [{ name: "JSON", extensions: ["json"] }],
+      });
+      if (!path) return;
+      await api.writeTextFile(path, data);
+      setStatus(`✓ 已导出到 ${path}`);
+    } catch (e) {
+      setStatus(`✗ 导出失败: ${e}`);
+    }
+  };
+
+  const handleImport = async (fullConfig: boolean) => {
+    try {
+      const path = await dialogOpen({
+        title: fullConfig ? "导入完整配置" : "导入基础 AI 配置",
+        multiple: false,
+        filters: [{ name: "JSON", extensions: ["json"] }],
+      });
+      if (!path) return;
+      const filePath = typeof path === "string" ? path : (path as string[])[0];
+      if (!filePath) return;
+      const json = await api.readTextFile(filePath);
+      if (fullConfig) {
+        await api.importConfig(json);
+      } else {
+        // 合并端点部分到现有配置
+        const partial = JSON.parse(json);
+        const currentJson = await api.exportConfig();
+        const current = JSON.parse(currentJson);
+        if (partial.endpoints) current.endpoints = partial.endpoints;
+        if (partial.ai) current.ai = partial.ai;
+        if (partial.media) current.media = partial.media;
+        await api.importConfig(JSON.stringify(current));
+      }
+      const cfg = await api.getConfig();
+      useAppStore.getState().setConfig(cfg);
+      await api.refreshProviders();
+      setStatus("✓ 导入成功，配置已更新");
+    } catch (e) {
+      setStatus(`✗ 导入失败: ${e}`);
+    }
+  };
+
   return (
     <div className="max-w-2xl space-y-6">
       <SectionHeader title="导入导出" description="配置备份与迁移" />
@@ -1376,8 +1474,8 @@ function TransferSection() {
         <h3 className="text-sm font-semibold text-[var(--text-primary)]">基础 AI 配置</h3>
         <p className="text-xs text-[var(--text-muted)]">仅包含端点和模型引用</p>
         <div className="flex gap-2">
-          <Button variant="secondary" size="sm"><Download size={14} /> 导出</Button>
-          <Button variant="secondary" size="sm"><Upload size={14} /> 导入</Button>
+          <Button variant="secondary" size="sm" onClick={() => handleExport(false)}><Download size={14} /> 导出</Button>
+          <Button variant="secondary" size="sm" onClick={() => handleImport(false)}><Upload size={14} /> 导入</Button>
         </div>
       </GlassCard>
 
@@ -1385,10 +1483,14 @@ function TransferSection() {
         <h3 className="text-sm font-semibold text-[var(--text-primary)]">完整配置</h3>
         <p className="text-xs text-[var(--text-muted)]">包含所有设置、端点、主题等</p>
         <div className="flex gap-2">
-          <Button variant="secondary" size="sm"><Download size={14} /> 导出全部</Button>
-          <Button variant="secondary" size="sm"><Upload size={14} /> 导入全部</Button>
+          <Button variant="secondary" size="sm" onClick={() => handleExport(true)}><Download size={14} /> 导出全部</Button>
+          <Button variant="secondary" size="sm" onClick={() => handleImport(true)}><Upload size={14} /> 导入全部</Button>
         </div>
       </GlassCard>
+
+      {status && (
+        <p className={cn("text-xs", status.startsWith("✓") ? "text-emerald-500" : "text-red-400")}>{status}</p>
+      )}
     </div>
   );
 }
@@ -1400,6 +1502,10 @@ function TransferSection() {
 function UiSection() {
   const themeMode = useThemeStore((s) => s.mode);
   const setMode = useThemeStore((s) => s.setMode);
+  const fontSize = useThemeStore((s) => s.fontSize);
+  const setFontSize = useThemeStore((s) => s.setFontSize);
+  const transitionDuration = useThemeStore((s) => s.transitionDuration);
+  const setTransitionDuration = useThemeStore((s) => s.setTransitionDuration);
 
   return (
     <div className="max-w-2xl space-y-6">
@@ -1429,7 +1535,22 @@ function UiSection() {
       </GlassCard>
 
       <GlassCard className="space-y-4">
-        <div><Label>字号</Label><Input className="w-24" type="number" min="12" max="20" defaultValue="14" /></div>
+        <div>
+          <Label>字号 ({fontSize}px)</Label>
+          <Input className="w-24" type="number" min={12} max={20} value={fontSize}
+            onChange={(e) => setFontSize(Number(e.target.value) || 14)} />
+        </div>
+        <div>
+          <Label>页面切换动画 ({transitionDuration}ms)</Label>
+          <div className="flex items-center gap-3">
+            <input type="range" min={0} max={500} step={10} value={transitionDuration}
+              onChange={(e) => setTransitionDuration(Number(e.target.value))}
+              className="flex-1 accent-brand-500" />
+            <Input className="w-20" type="number" min={0} max={1000} value={transitionDuration}
+              onChange={(e) => setTransitionDuration(Number(e.target.value) || 0)} />
+          </div>
+          <p className="text-[10px] text-[var(--text-muted)] mt-1">设为 0 可关闭动画</p>
+        </div>
         <div><Label>界面语言</Label>
           <Select className="w-40"><option value="zh-CN">简体中文</option><option value="en">English</option></Select>
         </div>

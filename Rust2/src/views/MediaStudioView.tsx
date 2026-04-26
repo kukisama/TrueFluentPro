@@ -5,6 +5,7 @@ import {
   Maximize2, Plus, Loader2, Globe, ImagePlus,
   MessageSquare, Edit2, RefreshCw, Brain,
   Copy, StopCircle, Check, X,
+  PanelLeftClose, PanelLeftOpen,
 } from "lucide-react";
 import { cn } from "../lib/utils";
 import {
@@ -13,7 +14,7 @@ import {
   FadeIn, EmptyState, ScrollArea, Badge,
 } from "../components/ui";
 import { useAppStore } from "../stores/app-store";
-import { api, type ImageGenResult, type StreamTokenEvent } from "../lib/tauri-api";
+import { api, type ImageGenResult, type StreamTokenEvent, type Session } from "../lib/tauri-api";
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    创作工坊 — AI 对话 + 图片 + 视频
@@ -98,6 +99,59 @@ function AiChatPanel() {
   const [reasoningExpanded, setReasoningExpanded] = useState<Record<string, boolean>>({});
   const scrollRef = useRef<HTMLDivElement>(null);
   const unlistenRef = useRef<(() => void) | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [attachments, setAttachments] = useState<{ name: string; size: number }[]>([]);
+
+  // ── 会话持久化（对齐 C# SessionListViewModel）──
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  useEffect(() => {
+    api.listSessions().then(setSessions).catch(() => {});
+  }, []);
+
+  const handleNewSession = useCallback(async () => {
+    try {
+      const session = await api.createSession("新对话", "chat");
+      setSessions((prev) => [session, ...prev]);
+      setActiveSessionId(session.id);
+      setMessages([{
+        id: "sys-0", role: "assistant",
+        content: "新对话已创建，请开始提问。", timestamp: now(),
+      }]);
+    } catch (err) { console.error("Failed to create session:", err); }
+  }, []);
+
+  const handleSelectSession = useCallback(async (sessionId: string) => {
+    setActiveSessionId(sessionId);
+    try {
+      const msgs = await api.getSessionMessages(sessionId);
+      setMessages(msgs.length > 0
+        ? msgs.map((m) => ({ id: m.id, role: m.role as any, content: m.content, timestamp: m.created_at || now() }))
+        : [{ id: "sys-0", role: "assistant", content: "对话记录为空。", timestamp: now() }]
+      );
+    } catch (err) { console.error("Failed to load session messages:", err); }
+  }, []);
+
+  const handleDeleteSession = useCallback(async (sessionId: string) => {
+    try {
+      await api.deleteSession(sessionId);
+      setSessions((prev) => prev.filter((s) => s.id !== sessionId));
+      if (activeSessionId === sessionId) {
+        setActiveSessionId(null);
+        setMessages([{ id: "sys-0", role: "assistant", content: "请选择或新建对话。", timestamp: now() }]);
+      }
+    } catch (err) { console.error("Failed to delete session:", err); }
+  }, [activeSessionId]);
+
+  // 持久化消息到 SQLite
+  const persistMessage = useCallback(async (msg: ChatMessage) => {
+    if (!activeSessionId) return;
+    try {
+      await api.addMessage({ session_id: activeSessionId, role: msg.role, content: msg.content });
+    } catch { /* best-effort */ }
+  }, [activeSessionId]);
 
   // 从配置读取对话模型（对齐 C# ConversationModelRef）
   const conversationModel = config?.ai?.conversation_model;
@@ -225,8 +279,9 @@ function AiChatPanel() {
     if (!input.trim() || streaming) return;
     const userMsg: ChatMessage = { id: genId(), role: "user", content: input, mode: chatMode, timestamp: now() };
     setInput("");
+    persistMessage(userMsg);
     await doSend([...messages, userMsg], chatMode);
-  }, [input, messages, streaming, chatMode, doSend]);
+  }, [input, messages, streaming, chatMode, doSend, persistMessage]);
 
   // ── 编辑消息后重发（对齐 C# SendEditCommand）──
   const handleEditSend = useCallback(async (msgId: string) => {
@@ -273,8 +328,58 @@ function AiChatPanel() {
   };
 
   return (
-    <div className="flex h-full">
+    <div className="flex h-full relative">
+      {/* ── 会话列表侧栏 ── */}
+      <div className={cn(
+        "border-r border-[var(--border-subtle)] flex flex-col shrink-0 transition-all duration-200 overflow-hidden",
+        sidebarOpen ? "w-[200px]" : "w-0 border-r-0",
+      )} style={{ backgroundColor: "var(--sidebar-bg)" }}>
+        <div className="w-[200px]">
+          <div className="p-2 border-b border-[var(--border-subtle)] flex items-center gap-1">
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleNewSession} title="新建对话">
+              <Plus size={14} />
+            </Button>
+            <span className="text-xs text-[var(--text-muted)] flex-1">会话</span>
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setSidebarOpen(false)}>
+              <PanelLeftClose size={14} />
+            </Button>
+          </div>
+          <ScrollArea className="flex-1" style={{ height: "calc(100vh - 120px)" }}>
+            <div className="p-1.5 space-y-0.5">
+              {sessions.map((s) => (
+                <button key={s.id} onClick={() => handleSelectSession(s.id)}
+                  className={cn(
+                    "w-full text-left px-2.5 py-2 rounded-lg text-xs transition-all group",
+                    activeSessionId === s.id
+                      ? "bg-brand-600/15 text-[var(--active-text)]"
+                      : "text-[var(--text-secondary)] hover:bg-[var(--hover-bg)]"
+                  )}>
+                  <div className="flex items-center gap-1.5">
+                    <MessageSquare size={12} className="shrink-0" />
+                    <span className="truncate flex-1">{s.title}</span>
+                    <button onClick={(e) => { e.stopPropagation(); handleDeleteSession(s.id); }}
+                      className="opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Trash2 size={10} className="text-red-400" />
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-[var(--text-muted)] mt-0.5 ml-4">
+                    {s.message_count || 0} 条
+                  </p>
+                </button>
+              ))}
+            </div>
+          </ScrollArea>
+        </div>
+      </div>
+
       <div className="flex flex-col flex-1 min-w-0">
+        {/* 侧栏开关 */}
+        {!sidebarOpen && (
+          <Button variant="ghost" size="icon" className="absolute top-2 left-2 z-10 h-7 w-7"
+            onClick={() => setSidebarOpen(true)} title="展开会话列表">
+            <PanelLeftOpen size={14} />
+          </Button>
+        )}
         {/* 消息区 */}
         <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-3">
           {messages.map((msg) => (
@@ -427,17 +532,39 @@ function AiChatPanel() {
           </div>
 
           <div className="flex gap-2 max-w-3xl mx-auto">
-            <Input
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && (e.preventDefault(), handleSend())}
-              placeholder={
-                chatMode === "image" ? "描述你想要的图片..."
-                : chatMode === "search" ? "输入需要联网搜索的问题..."
-                : "输入问题或粘贴文本..."
-              }
-              className="flex-1"
-            />
+            {/* 附件按钮 */}
+            <input ref={fileInputRef} type="file" className="hidden" multiple
+              onChange={(e) => {
+                const files = Array.from(e.target.files || []);
+                setAttachments((prev) => [...prev, ...files.map((f) => ({ name: f.name, size: f.size }))]);
+                e.target.value = "";
+              }} />
+            <Button variant="ghost" size="icon" className="h-10 w-10 shrink-0" title="附件"
+              onClick={() => fileInputRef.current?.click()}>
+              <Plus size={16} />
+            </Button>
+            <div className="flex-1 flex flex-col gap-1">
+              {attachments.length > 0 && (
+                <div className="flex gap-1 flex-wrap">
+                  {attachments.map((a, i) => (
+                    <Badge key={i} variant="blue" className="text-[10px] gap-1">
+                      {a.name}
+                      <button onClick={() => setAttachments((p) => p.filter((_, j) => j !== i))} className="ml-0.5">×</button>
+                    </Badge>
+                  ))}
+                </div>
+              )}
+              <Input
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && (e.preventDefault(), handleSend())}
+                placeholder={
+                  chatMode === "image" ? "描述你想要的图片..."
+                  : chatMode === "search" ? "输入需要联网搜索的问题..."
+                  : "输入问题或粘贴文本..."
+                }
+              />
+            </div>
             {streaming ? (
               <Button variant="danger" onClick={handleStop} className="px-5">
                 <StopCircle size={16} /> 停止

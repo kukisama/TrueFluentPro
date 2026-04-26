@@ -205,17 +205,6 @@ pub async fn get_translation_history(
         .map_err(|e| e.to_string())
 }
 
-#[tauri::command]
-pub async fn get_batch_tasks(
-    state: State<'_, AppState>,
-    limit: Option<u32>,
-) -> Result<Vec<BatchTask>, String> {
-    state
-        .db
-        .list_batch_tasks(limit.unwrap_or(100))
-        .map_err(|e| e.to_string())
-}
-
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  系统信息命令
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -938,4 +927,268 @@ fn parse_model_list(body: &str) -> Result<Vec<crate::models::DiscoveredModel>, (
         .collect();
 
     Ok(models)
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  P1.2: 会话 & 消息命令
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+#[tauri::command]
+pub async fn list_sessions(
+    state: State<'_, AppState>,
+    session_type: Option<String>,
+) -> Result<Vec<Session>, String> {
+    state.db.list_sessions(session_type.as_deref()).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn create_session(
+    state: State<'_, AppState>,
+    title: String,
+    session_type: String,
+) -> Result<Session, String> {
+    let now = chrono::Utc::now().to_rfc3339();
+    let session = Session {
+        id: uuid::Uuid::new_v4().to_string(),
+        title,
+        session_type,
+        message_count: 0,
+        token_total: 0,
+        created_at: now.clone(),
+        updated_at: now,
+    };
+    state.db.create_session(&session).map_err(|e| e.to_string())?;
+    Ok(session)
+}
+
+#[tauri::command]
+pub async fn delete_session(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<(), String> {
+    state.db.delete_session(&session_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_session_messages(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<Vec<Message>, String> {
+    state.db.get_session_messages(&session_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn add_message(
+    state: State<'_, AppState>,
+    msg: Message,
+) -> Result<Message, String> {
+    let mut msg = msg;
+    if msg.id.is_empty() {
+        msg.id = uuid::Uuid::new_v4().to_string();
+    }
+    if msg.created_at.is_empty() {
+        msg.created_at = chrono::Utc::now().to_rfc3339();
+    }
+    state.db.add_message(&msg).map_err(|e| e.to_string())?;
+    Ok(msg)
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  P1.2: 音频库命令
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+#[tauri::command]
+pub async fn list_audio_items(
+    state: State<'_, AppState>,
+) -> Result<Vec<AudioLibraryItem>, String> {
+    state.db.list_audio_items().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn add_audio_item(
+    state: State<'_, AppState>,
+    item: AudioLibraryItem,
+) -> Result<AudioLibraryItem, String> {
+    let mut item = item;
+    if item.id.is_empty() {
+        item.id = uuid::Uuid::new_v4().to_string();
+    }
+    let now = chrono::Utc::now().to_rfc3339();
+    if item.created_at.is_empty() {
+        item.created_at = now.clone();
+    }
+    if item.updated_at.is_empty() {
+        item.updated_at = now;
+    }
+    state.db.add_audio_item(&item).map_err(|e| e.to_string())?;
+    // Initialize 8-stage lifecycle
+    state.db.init_lifecycle_stages(&item.id).map_err(|e| e.to_string())?;
+    Ok(item)
+}
+
+#[tauri::command]
+pub async fn delete_audio_item(
+    state: State<'_, AppState>,
+    item_id: String,
+) -> Result<(), String> {
+    state.db.delete_audio_item(&item_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_audio_lifecycle(
+    state: State<'_, AppState>,
+    audio_item_id: String,
+) -> Result<Vec<AudioLifecycleRow>, String> {
+    state.db.get_audio_lifecycle(&audio_item_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn update_lifecycle_stage(
+    state: State<'_, AppState>,
+    lifecycle: AudioLifecycleRow,
+) -> Result<(), String> {
+    state.db.upsert_lifecycle(&lifecycle).map_err(|e| e.to_string())
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  P2.1: 任务引擎命令
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+#[tauri::command]
+pub async fn submit_task(
+    state: State<'_, AppState>,
+    task: AudioTaskRow,
+) -> Result<AudioTaskRow, String> {
+    let mut task = task;
+    if task.id.is_empty() {
+        task.id = uuid::Uuid::new_v4().to_string();
+    }
+    if task.submitted_at.is_empty() {
+        task.submitted_at = chrono::Utc::now().to_rfc3339();
+    }
+    state.db.submit_task(&task).map_err(|e| e.to_string())?;
+    Ok(task)
+}
+
+#[tauri::command]
+pub async fn cancel_task(
+    state: State<'_, AppState>,
+    task_id: String,
+) -> Result<(), String> {
+    state.db.update_task_status_new(&task_id, "Cancelled", None).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn retry_task(
+    state: State<'_, AppState>,
+    task_id: String,
+) -> Result<(), String> {
+    state.db.update_task_status_new(&task_id, "Queued", None).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_task_engine_stats(
+    state: State<'_, AppState>,
+) -> Result<TaskEngineStats, String> {
+    state.db.get_task_stats().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn list_tasks(
+    state: State<'_, AppState>,
+    status: Option<String>,
+    limit: Option<u32>,
+) -> Result<Vec<AudioTaskRow>, String> {
+    state.db.list_tasks(status.as_deref(), limit.unwrap_or(100)).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_task_executions(
+    state: State<'_, AppState>,
+    task_id: String,
+) -> Result<Vec<TaskExecutionRow>, String> {
+    state.db.get_task_executions(&task_id).map_err(|e| e.to_string())
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  P3.4: 配置导入/导出
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+#[tauri::command]
+pub async fn export_config(state: State<'_, AppState>) -> Result<String, String> {
+    let config = state.config.read().await;
+    serde_json::to_string_pretty(&*config).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn import_config(
+    state: State<'_, AppState>,
+    json: String,
+) -> Result<(), String> {
+    let new_config: AppConfig = serde_json::from_str(&json)
+        .map_err(|e| format!("Invalid config JSON: {e}"))?;
+    {
+        let mut config = state.config.write().await;
+        *config = new_config;
+    }
+    state.persist_config().await
+}
+
+#[tauri::command]
+pub async fn write_text_file(path: String, content: String) -> Result<(), String> {
+    std::fs::write(&path, &content).map_err(|e| format!("写入文件失败: {e}"))
+}
+
+#[tauri::command]
+pub async fn read_text_file(path: String) -> Result<String, String> {
+    std::fs::read_to_string(&path).map_err(|e| format!("读取文件失败: {e}"))
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  P3.5: 计费查询
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+#[tauri::command]
+pub async fn get_billing_records(
+    state: State<'_, AppState>,
+    limit: Option<u32>,
+) -> Result<Vec<BillingRecord>, String> {
+    state.db.get_billing_records(limit.unwrap_or(100)).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_billing_summary(
+    state: State<'_, AppState>,
+) -> Result<BillingSummary, String> {
+    state.db.get_billing_summary().map_err(|e| e.to_string())
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  P4.1: 图片管道
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+#[tauri::command]
+pub async fn run_image_pipeline(
+    app: tauri::AppHandle,
+    request: crate::image_pipeline::pipeline::PipelineRequest,
+) -> Result<crate::image_pipeline::pipeline::PipelineResult, String> {
+    crate::image_pipeline::pipeline::run_pipeline(&app, request).await
+}
+
+#[tauri::command]
+pub async fn get_image_model_catalog() -> Result<Vec<crate::image_pipeline::catalog::ModelCapabilityEntry>, String> {
+    Ok(crate::image_pipeline::catalog::builtin_image_models())
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  P4.2: 视频生成（预留）
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+#[tauri::command]
+pub async fn generate_video(
+    _prompt: String,
+    _model: String,
+    _endpoint_id: String,
+) -> Result<String, String> {
+    Err("Video generation is not yet implemented".into())
 }

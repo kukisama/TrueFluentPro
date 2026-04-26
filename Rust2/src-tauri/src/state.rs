@@ -5,6 +5,7 @@ use tokio::sync::RwLock;
 use crate::models::AppConfig;
 use crate::providers::{ProviderRegistry, RealtimeSessionHandle};
 use crate::storage::Database;
+use crate::task_engine::TaskEngine;
 
 /// 全局应用状态，通过 Tauri State 注入
 pub struct AppState {
@@ -13,6 +14,8 @@ pub struct AppState {
     pub providers: RwLock<ProviderRegistry>,
     /// 活跃的实时语音翻译会话（session_id → handle）
     pub active_speech_sessions: RwLock<HashMap<String, Box<dyn RealtimeSessionHandle>>>,
+    /// 后台任务引擎
+    pub task_engine: RwLock<Option<TaskEngine>>,
 }
 
 impl AppState {
@@ -30,6 +33,7 @@ impl AppState {
             db: Arc::new(db),
             providers: RwLock::new(ProviderRegistry::new()),
             active_speech_sessions: RwLock::new(HashMap::new()),
+            task_engine: RwLock::new(None),
         }
     }
 
