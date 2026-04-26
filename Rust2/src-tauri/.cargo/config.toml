@@ -1,0 +1,7 @@
+# 开发期链接加速配置
+# 
+# 如需启用 lld-link 替代默认 link.exe（链接速度提升 3-5 倍），取消下方注释：
+# 前提：rustup component add llvm-tools
+#
+# [target.x86_64-pc-windows-msvc]
+# linker = "lld-link"

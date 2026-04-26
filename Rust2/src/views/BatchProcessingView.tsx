@@ -38,15 +38,13 @@ export function BatchProcessingView() {
   const { t } = useTranslation();
   const [tasks] = useState(MOCK_TASKS);
   const [filterStatus, setFilterStatus] = useState<TaskStatus | "all">("all");
-
   const filtered = filterStatus === "all" ? tasks : tasks.filter((t) => t.status === filterStatus);
 
   return (
     <div className="flex flex-col h-full">
-      {/* 顶部工具栏 */}
-      <div className="flex items-center gap-3 px-6 py-3 border-b border-white/[0.06] bg-white/[0.02]">
-        <h1 className="text-base font-semibold text-slate-100 mr-4">{t("batch.title")}</h1>
-
+      <div className="flex items-center gap-3 px-6 py-3 border-b border-[var(--border-subtle)]"
+        style={{ backgroundColor: "var(--toolbar-bg)" }}>
+        <h1 className="text-base font-semibold text-[var(--text-primary)] mr-4">{t("batch.title")}</h1>
         <div className="relative">
           <Select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value as TaskStatus | "all")} className="w-28">
             <option value="all">{t("batch.all")}</option>
@@ -55,54 +53,43 @@ export function BatchProcessingView() {
             <option value="completed">{t("batch.completed")}</option>
             <option value="failed">{t("batch.failed")}</option>
           </Select>
-          <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+          <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none" />
         </div>
-
         <div className="flex-1" />
         <Button size="sm"><Plus size={14} /> {t("batch.newTask")}</Button>
       </div>
 
-      {/* 拖放上传区 */}
       <div className="px-6 pt-4">
-        <GlassCard className="border-dashed border-white/10 flex flex-col items-center py-6 cursor-pointer hover:border-brand-500/30 transition-colors">
-          <Upload size={24} className="text-slate-500 mb-2" />
-          <p className="text-sm text-slate-400">{t("batch.dragHint")}</p>
-          <p className="text-xs text-slate-600 mt-1">{t("batch.dragSubHint")}</p>
+        <GlassCard className="border-dashed flex flex-col items-center py-6 cursor-pointer hover:border-brand-500/30 transition-colors">
+          <Upload size={24} className="text-[var(--text-muted)] mb-2" />
+          <p className="text-sm text-[var(--text-secondary)]">{t("batch.dragHint")}</p>
+          <p className="text-xs text-[var(--text-muted)] mt-1">{t("batch.dragSubHint")}</p>
         </GlassCard>
       </div>
 
-      {/* 任务列表 */}
       <div className="flex-1 overflow-y-auto p-6 pt-4">
         {filtered.length === 0 ? (
-          <EmptyState
-            icon={<FileText size={48} />}
-            title={t("batch.noTasks")}
-            description={t("batch.noTasksHint")}
-          />
+          <EmptyState icon={<FileText size={48} />} title={t("batch.noTasks")} description={t("batch.noTasksHint")} />
         ) : (
           <div className="space-y-3">
             {filtered.map((task, i) => {
               const status = STATUS_MAP[task.status];
               return (
                 <FadeIn key={task.id} delay={i * 0.05}>
-                  <GlassCard className="hover:border-white/10 transition-colors">
+                  <GlassCard className="hover:border-[var(--border-medium)] transition-colors">
                     <div className="flex items-center gap-4">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1.5">
-                          <span className="font-medium text-slate-200 truncate">{task.name}</span>
-                          <Badge variant={status.variant}>
-                            {status.icon}
-                            <span className="ml-0.5">{status.label}</span>
-                          </Badge>
+                          <span className="font-medium text-[var(--text-primary)] truncate">{task.name}</span>
+                          <Badge variant={status.variant}>{status.icon}<span className="ml-0.5">{status.label}</span></Badge>
                           <Badge variant="gray">{task.type}</Badge>
                         </div>
-                        <p className="text-xs text-slate-500">{task.fileCount} {t("batch.files")}</p>
+                        <p className="text-xs text-[var(--text-muted)]">{task.fileCount} {t("batch.files")}</p>
                       </div>
-
                       {task.status === "running" && (
                         <div className="w-36 space-y-1">
                           <Progress value={task.progress * 100} />
-                          <span className="text-xs text-slate-500">{Math.round(task.progress * 100)}%</span>
+                          <span className="text-xs text-[var(--text-muted)]">{Math.round(task.progress * 100)}%</span>
                         </div>
                       )}
                     </div>

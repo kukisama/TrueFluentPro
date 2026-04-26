@@ -27,6 +27,10 @@ async-trait = "0.1"
 thiserror = "2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+log = "0.4"
+
+# Azure Speech SDK FFI 绑定（本地 crate）
+speech-sdk = { path = "../../rustnew-backend/crates/speech-sdk" }
 
 [profile.release]
 codegen-units = 1

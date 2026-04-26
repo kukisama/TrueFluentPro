@@ -31,11 +31,10 @@ impl OpenAiImageProvider {
 
         match self.endpoint.endpoint_type {
             EndpointType::AzureOpenAi => {
-                // Azure 有两种路径策略:
-                // 1. 有 deployment → /openai/deployments/{deploy}/images/generations
-                // 2. APIM/v1 路由 → /openai/v1/images/generations
-                if let Some(ref deploy) = self.endpoint.deployment {
-                    format!("{base}/openai/deployments/{deploy}/images/generations?api-version=2025-03-01-preview")
+                let api_ver = self.endpoint.api_version.as_deref().unwrap_or("2025-03-01-preview");
+                if let Some(model) = self.endpoint.first_model_with_capability(ModelCapability::Image) {
+                    let deploy = model.effective_deployment();
+                    format!("{base}/openai/deployments/{deploy}/images/generations?api-version={api_ver}")
                 } else {
                     format!("{base}/openai/v1/images/generations")
                 }
@@ -51,9 +50,10 @@ impl OpenAiImageProvider {
     }
 
     fn apply_auth(&self, req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
-        match self.endpoint.endpoint_type {
-            EndpointType::AzureOpenAi => req.header("api-key", &self.endpoint.api_key),
-            _ => req.header("Authorization", format!("Bearer {}", self.endpoint.api_key)),
+        if self.endpoint.is_azure() {
+            req.header("api-key", &self.endpoint.api_key)
+        } else {
+            req.header("Authorization", format!("Bearer {}", self.endpoint.api_key))
         }
     }
 

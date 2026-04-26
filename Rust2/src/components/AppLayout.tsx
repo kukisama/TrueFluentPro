@@ -1,21 +1,13 @@
 import { useTranslation } from "react-i18next";
 import {
-  Languages,
-  Layers,
-  Mic,
-  Palette,
-  ListChecks,
-  Settings,
-  Info,
-  PanelLeftClose,
-  PanelLeftOpen,
-  LogIn,
-  X,
+  Languages, Layers, Mic, Palette, ListChecks, Settings, Info,
+  PanelLeftClose, PanelLeftOpen, LogIn, X, Sun, Moon, Monitor,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { cn } from "../lib/utils";
 import { Button, Separator, Tooltip, TooltipTrigger, TooltipContent } from "./ui";
 import { useAppStore, type AppView } from "../stores/app-store";
+import { useThemeStore, type ThemeMode } from "../stores/theme-store";
 
 import { LiveTranslationView } from "../views/LiveTranslationView";
 import { BatchProcessingView } from "../views/BatchProcessingView";
@@ -55,38 +47,48 @@ const VIEW_MAP: Record<AppView, React.ReactNode> = {
   auth: <AuthView />,
 };
 
+const THEME_ICONS: Record<ThemeMode, React.ReactNode> = {
+  system: <Monitor size={16} />,
+  light: <Sun size={16} />,
+  dark: <Moon size={16} />,
+};
+
+const THEME_LABELS: Record<ThemeMode, string> = {
+  system: "跟随系统",
+  light: "浅色",
+  dark: "深色",
+};
+
 export function AppLayout() {
   const { t } = useTranslation();
   const activeView = useAppStore((s) => s.activeView);
   const setActiveView = useAppStore((s) => s.setActiveView);
   const collapsed = useAppStore((s) => s.sidebarCollapsed);
   const toggleSidebar = useAppStore((s) => s.toggleSidebar);
-  const isTranslating = useAppStore((s) => s.isTranslating);
   const error = useAppStore((s) => s.error);
   const setError = useAppStore((s) => s.setError);
 
+  const themeMode = useThemeStore((s) => s.mode);
+  const cycleTheme = useThemeStore((s) => s.cycleTheme);
+
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-surface-0">
+    <div className="flex h-screen w-screen overflow-hidden" style={{ backgroundColor: "var(--surface-0)" }}>
       {/* ── Sidebar ── */}
       <aside
         className={cn(
-          "flex flex-col border-r border-white/[0.06] bg-white/[0.02] backdrop-blur-md transition-all duration-300 ease-out",
+          "flex flex-col border-r border-[var(--border-subtle)] transition-all duration-300 ease-out",
           collapsed ? "w-[56px]" : "w-[200px]",
         )}
+        style={{ backgroundColor: "var(--sidebar-bg)" }}
       >
         {/* Logo / 折叠 */}
-        <div className="flex items-center h-12 px-3 border-b border-white/[0.06]">
+        <div className="flex items-center h-12 px-3 border-b border-[var(--border-subtle)]">
           {!collapsed && (
             <span className="text-sm font-bold text-gradient whitespace-nowrap mr-auto tracking-wide">
               {t("app.name")}
             </span>
           )}
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={toggleSidebar}
-            className="ml-auto h-7 w-7"
-          >
+          <Button variant="ghost" size="icon" onClick={toggleSidebar} className="ml-auto h-7 w-7">
             {collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
           </Button>
         </div>
@@ -105,8 +107,8 @@ export function AppLayout() {
                 className={cn(
                   "flex items-center gap-2.5 w-full rounded-xl px-2.5 py-2 text-sm transition-all duration-200",
                   isActive
-                    ? "bg-brand-600/15 text-brand-300 shadow-sm shadow-brand-600/5"
-                    : "text-slate-500 hover:bg-white/[0.04] hover:text-slate-300",
+                    ? "bg-[var(--active-bg)] text-[var(--active-text)] shadow-sm"
+                    : "text-[var(--text-muted)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-secondary)]",
                 )}
               >
                 <span className="shrink-0">{item.icon}</span>
@@ -130,8 +132,32 @@ export function AppLayout() {
           })}
         </nav>
 
-        {/* 底部：账户 */}
-        <div className="border-t border-white/[0.06] p-1.5">
+        {/* 底部：主题切换 + 账户 */}
+        <div className="border-t border-[var(--border-subtle)] p-1.5 space-y-0.5">
+          {/* 主题切换按钮 */}
+          {collapsed ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={cycleTheme}
+                  className="flex items-center gap-2.5 w-full rounded-xl px-2.5 py-2 text-sm transition-all duration-200 text-[var(--text-muted)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-secondary)]"
+                >
+                  {THEME_ICONS[themeMode]}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right">{THEME_LABELS[themeMode]}</TooltipContent>
+            </Tooltip>
+          ) : (
+            <button
+              onClick={cycleTheme}
+              className="flex items-center gap-2.5 w-full rounded-xl px-2.5 py-2 text-sm transition-all duration-200 text-[var(--text-muted)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-secondary)]"
+            >
+              {THEME_ICONS[themeMode]}
+              <span>{THEME_LABELS[themeMode]}</span>
+            </button>
+          )}
+
+          {/* 账户 */}
           {collapsed ? (
             <Tooltip>
               <TooltipTrigger asChild>
@@ -140,8 +166,8 @@ export function AppLayout() {
                   className={cn(
                     "flex items-center gap-2.5 w-full rounded-xl px-2.5 py-2 text-sm transition-all duration-200",
                     activeView === "auth"
-                      ? "bg-brand-600/15 text-brand-300"
-                      : "text-slate-500 hover:bg-white/[0.04] hover:text-slate-300",
+                      ? "bg-[var(--active-bg)] text-[var(--active-text)]"
+                      : "text-[var(--text-muted)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-secondary)]",
                   )}
                 >
                   <LogIn size={18} />
@@ -155,8 +181,8 @@ export function AppLayout() {
               className={cn(
                 "flex items-center gap-2.5 w-full rounded-xl px-2.5 py-2 text-sm transition-all duration-200",
                 activeView === "auth"
-                  ? "bg-brand-600/15 text-brand-300"
-                  : "text-slate-500 hover:bg-white/[0.04] hover:text-slate-300",
+                  ? "bg-[var(--active-bg)] text-[var(--active-text)]"
+                  : "text-[var(--text-muted)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-secondary)]",
               )}
             >
               <LogIn size={18} />
@@ -177,7 +203,7 @@ export function AppLayout() {
               exit={{ height: 0, opacity: 0 }}
               className="overflow-hidden"
             >
-              <div className="bg-red-500/10 border-b border-red-500/20 px-4 py-2 text-sm text-red-300 flex items-center justify-between backdrop-blur-sm">
+              <div className="bg-red-500/10 border-b border-red-500/20 px-4 py-2 text-sm text-red-400 flex items-center justify-between backdrop-blur-sm">
                 <span>{error}</span>
                 <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setError(null)}>
                   <X size={14} />
@@ -202,24 +228,6 @@ export function AppLayout() {
             </motion.div>
           </AnimatePresence>
         </main>
-
-        {/* Status Bar */}
-        <footer className="h-7 bg-white/[0.02] border-t border-white/[0.06] flex items-center px-3 text-xs text-slate-600 gap-4 shrink-0">
-          <span className="flex items-center gap-1.5">
-            {isTranslating ? (
-              <>
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                {t("status.translating")}
-              </>
-            ) : (
-              <>
-                <span className="w-1.5 h-1.5 rounded-full bg-slate-600" />
-                {t("status.ready")}
-              </>
-            )}
-          </span>
-          <span className="ml-auto">{t("app.version")}</span>
-        </footer>
       </div>
     </div>
   );

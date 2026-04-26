@@ -1,7 +1,7 @@
 /*  ────────────────────────────────────────────
     译见 Pro — 现代 UI 组件集
     基于 Radix UI + Tailwind + Framer Motion
-    玻璃拟态 + 微动效 + 科技美学
+    支持 dark / light 主题 (CSS 变量驱动)
     ──────────────────────────────────────────── */
 
 import React, { forwardRef } from "react";
@@ -29,8 +29,8 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         "inline-flex items-center justify-center gap-2 rounded-xl font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 disabled:opacity-40 disabled:pointer-events-none active:scale-[0.97]",
         {
           "bg-brand-600 text-white hover:bg-brand-500 shadow-lg shadow-brand-600/20": variant === "primary",
-          "bg-white/5 text-slate-200 hover:bg-white/10 border border-white/10": variant === "secondary",
-          "text-slate-400 hover:text-slate-200 hover:bg-white/5": variant === "ghost",
+          "bg-[var(--input-bg)] text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] border border-[var(--border-medium)]": variant === "secondary",
+          "text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--hover-bg)]": variant === "ghost",
           "bg-red-600/80 text-white hover:bg-red-500 shadow-lg shadow-red-600/20": variant === "danger",
         },
         {
@@ -60,7 +60,7 @@ export const GlassCard = forwardRef<HTMLDivElement, GlassCardProps>(
     <div
       ref={ref}
       className={cn(
-        "rounded-2xl border border-white/[0.06] bg-white/[0.03] backdrop-blur-xl p-5",
+        "rounded-2xl border border-[var(--card-border)] bg-[var(--card-bg)] backdrop-blur-xl p-5",
         glow && "shadow-[0_0_40px_-12px] shadow-brand-500/10",
         className,
       )}
@@ -81,7 +81,7 @@ export const Input = forwardRef<
   <input
     ref={ref}
     className={cn(
-      "h-9 w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 text-sm text-slate-200 placeholder:text-slate-500 transition-colors focus:outline-none focus:border-brand-500/50 focus:ring-1 focus:ring-brand-500/30",
+      "h-9 w-full rounded-xl border border-[var(--input-border)] bg-[var(--input-bg)] px-3 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-placeholder)] transition-colors focus:outline-none focus:border-brand-500/50 focus:ring-1 focus:ring-brand-500/30",
       className,
     )}
     {...props}
@@ -98,7 +98,7 @@ export const Textarea = forwardRef<
   <textarea
     ref={ref}
     className={cn(
-      "w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-slate-200 placeholder:text-slate-500 transition-colors focus:outline-none focus:border-brand-500/50 focus:ring-1 focus:ring-brand-500/30 resize-none",
+      "w-full rounded-xl border border-[var(--input-border)] bg-[var(--input-bg)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-placeholder)] transition-colors focus:outline-none focus:border-brand-500/50 focus:ring-1 focus:ring-brand-500/30 resize-none",
       className,
     )}
     {...props}
@@ -115,7 +115,7 @@ export const Select = forwardRef<
   <select
     ref={ref}
     className={cn(
-      "h-9 rounded-xl border border-white/10 bg-white/[0.04] px-3 text-sm text-slate-200 transition-colors focus:outline-none focus:border-brand-500/50 appearance-none cursor-pointer",
+      "h-9 rounded-xl border border-[var(--input-border)] bg-[var(--input-bg)] px-3 text-sm text-[var(--text-primary)] transition-colors focus:outline-none focus:border-brand-500/50 appearance-none cursor-pointer",
       className,
     )}
     {...props}
@@ -129,7 +129,7 @@ Select.displayName = "Select";
 
 export function Label({ className, children, ...props }: React.LabelHTMLAttributes<HTMLLabelElement>) {
   return (
-    <label className={cn("block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wider", className)} {...props}>
+    <label className={cn("block text-xs font-medium text-[var(--text-muted)] mb-1.5 uppercase tracking-wider", className)} {...props}>
       {children}
     </label>
   );
@@ -147,12 +147,12 @@ export function Badge({ className, variant = "default", children, ...props }: Ba
       className={cn(
         "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium",
         {
-          "bg-white/10 text-slate-300": variant === "default",
-          "bg-blue-500/15 text-blue-400 ring-1 ring-blue-500/20": variant === "blue",
-          "bg-emerald-500/15 text-emerald-400 ring-1 ring-emerald-500/20": variant === "green",
-          "bg-red-500/15 text-red-400 ring-1 ring-red-500/20": variant === "red",
-          "bg-amber-500/15 text-amber-400 ring-1 ring-amber-500/20": variant === "amber",
-          "bg-slate-500/15 text-slate-400 ring-1 ring-slate-500/20": variant === "gray",
+          "bg-[var(--input-bg)] text-[var(--text-secondary)]": variant === "default",
+          "bg-blue-500/15 text-blue-600 dark:text-blue-400 ring-1 ring-blue-500/20": variant === "blue",
+          "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 ring-1 ring-emerald-500/20": variant === "green",
+          "bg-red-500/15 text-red-600 dark:text-red-400 ring-1 ring-red-500/20": variant === "red",
+          "bg-amber-500/15 text-amber-600 dark:text-amber-400 ring-1 ring-amber-500/20": variant === "amber",
+          "bg-slate-500/15 text-[var(--text-muted)] ring-1 ring-slate-500/20": variant === "gray",
         },
         className,
       )}
@@ -174,7 +174,7 @@ export const TabsList = forwardRef<
   <TabsPrimitive.List
     ref={ref}
     className={cn(
-      "inline-flex items-center gap-1 rounded-xl bg-white/[0.04] p-1",
+      "inline-flex items-center gap-1 rounded-xl bg-[var(--input-bg)] p-1",
       className,
     )}
     {...props}
@@ -189,7 +189,7 @@ export const TabsTrigger = forwardRef<
   <TabsPrimitive.Trigger
     ref={ref}
     className={cn(
-      "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium text-slate-400 transition-all duration-200 hover:text-slate-200 data-[state=active]:bg-brand-600/20 data-[state=active]:text-brand-300 data-[state=active]:shadow-sm",
+      "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium text-[var(--text-muted)] transition-all duration-200 hover:text-[var(--text-primary)] data-[state=active]:bg-brand-600/20 data-[state=active]:text-[var(--active-text)] data-[state=active]:shadow-sm",
       className,
     )}
     {...props}
@@ -208,7 +208,7 @@ export const Switch = forwardRef<
   <SwitchPrimitive.Root
     ref={ref}
     className={cn(
-      "peer inline-flex h-5 w-10 shrink-0 cursor-pointer items-center rounded-full border border-white/10 transition-colors duration-200 focus-visible:outline-none data-[state=checked]:bg-brand-600 data-[state=unchecked]:bg-white/10",
+      "peer inline-flex h-5 w-10 shrink-0 cursor-pointer items-center rounded-full border border-[var(--border-medium)] transition-colors duration-200 focus-visible:outline-none data-[state=checked]:bg-brand-600 data-[state=unchecked]:bg-[var(--input-bg)]",
       className,
     )}
     {...props}
@@ -228,7 +228,7 @@ export const Progress = forwardRef<
 >(({ className, value, indicatorClassName, ...props }, ref) => (
   <ProgressPrimitive.Root
     ref={ref}
-    className={cn("relative h-1.5 w-full overflow-hidden rounded-full bg-white/10", className)}
+    className={cn("relative h-1.5 w-full overflow-hidden rounded-full bg-[var(--input-bg)]", className)}
     {...props}
   >
     <ProgressPrimitive.Indicator
@@ -253,7 +253,7 @@ export const TooltipContent = forwardRef<
     ref={ref}
     sideOffset={sideOffset}
     className={cn(
-      "z-50 overflow-hidden rounded-lg bg-slate-800 px-3 py-1.5 text-xs text-slate-200 shadow-xl border border-white/10 animate-in fade-in-0 zoom-in-95",
+      "z-50 overflow-hidden rounded-lg bg-[var(--surface-2)] px-3 py-1.5 text-xs text-[var(--text-primary)] shadow-xl border border-[var(--border-medium)] animate-in fade-in-0 zoom-in-95",
       className,
     )}
     {...props}
@@ -272,7 +272,7 @@ export const Separator = forwardRef<
     decorative
     orientation={orientation}
     className={cn(
-      "shrink-0 bg-white/[0.06]",
+      "shrink-0 bg-[var(--border-subtle)]",
       orientation === "horizontal" ? "h-px w-full my-4" : "h-full w-px mx-4",
       className,
     )}
@@ -299,13 +299,13 @@ export const ScrollArea = forwardRef<
       orientation="vertical"
       className="flex touch-none select-none p-0.5 transition-opacity duration-150 data-[state=visible]:opacity-100 data-[state=hidden]:opacity-0 w-2"
     >
-      <ScrollAreaPrimitive.Thumb className="relative flex-1 rounded-full bg-white/20 hover:bg-white/30" />
+      <ScrollAreaPrimitive.Thumb className="relative flex-1 rounded-full bg-[var(--scrollbar-thumb)]" />
     </ScrollAreaPrimitive.Scrollbar>
   </ScrollAreaPrimitive.Root>
 ));
 ScrollArea.displayName = "ScrollArea";
 
-// ─── MotionDiv — 带进场动画的容器 ───
+// ─── FadeIn — 带进场动画的容器 ───
 
 export function FadeIn({
   children,
@@ -343,9 +343,9 @@ export function EmptyState({
 }) {
   return (
     <div className="flex flex-col items-center justify-center h-full text-center py-16">
-      <div className="text-slate-600 mb-5">{icon}</div>
-      <p className="text-lg font-medium text-slate-400">{title}</p>
-      {description && <p className="text-sm text-slate-500 mt-1.5 max-w-sm">{description}</p>}
+      <div className="text-[var(--text-muted)] mb-5">{icon}</div>
+      <p className="text-lg font-medium text-[var(--text-secondary)]">{title}</p>
+      {description && <p className="text-sm text-[var(--text-muted)] mt-1.5 max-w-sm">{description}</p>}
       {action && <div className="mt-5">{action}</div>}
     </div>
   );
@@ -365,10 +365,32 @@ export function SectionHeader({
   return (
     <div className="flex items-center justify-between mb-5">
       <div>
-        <h2 className="text-sm font-semibold text-slate-200 uppercase tracking-wider">{title}</h2>
-        {description && <p className="text-xs text-slate-500 mt-0.5">{description}</p>}
+        <h2 className="text-sm font-semibold text-[var(--text-primary)] uppercase tracking-wider">{title}</h2>
+        {description && <p className="text-xs text-[var(--text-muted)] mt-0.5">{description}</p>}
       </div>
       {action}
+    </div>
+  );
+}
+
+// ─── SettingRow — 设置行（label + 控件） ───
+
+export function SettingRow({
+  label,
+  description,
+  children,
+}: {
+  label: string;
+  description?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <div className="min-w-0">
+        <p className="text-sm text-[var(--text-primary)]">{label}</p>
+        {description && <p className="text-xs text-[var(--text-muted)]">{description}</p>}
+      </div>
+      <div className="shrink-0">{children}</div>
     </div>
   );
 }

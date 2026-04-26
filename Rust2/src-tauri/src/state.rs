@@ -1,8 +1,9 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use crate::models::AppConfig;
-use crate::providers::ProviderRegistry;
+use crate::providers::{ProviderRegistry, RealtimeSessionHandle};
 use crate::storage::Database;
 
 /// 全局应用状态，通过 Tauri State 注入
@@ -10,6 +11,8 @@ pub struct AppState {
     pub config: RwLock<AppConfig>,
     pub db: Arc<Database>,
     pub providers: RwLock<ProviderRegistry>,
+    /// 活跃的实时语音翻译会话（session_id → handle）
+    pub active_speech_sessions: RwLock<HashMap<String, Box<dyn RealtimeSessionHandle>>>,
 }
 
 impl AppState {
@@ -26,6 +29,7 @@ impl AppState {
             config: RwLock::new(config),
             db: Arc::new(db),
             providers: RwLock::new(ProviderRegistry::new()),
+            active_speech_sessions: RwLock::new(HashMap::new()),
         }
     }
 

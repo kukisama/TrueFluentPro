@@ -1,6 +1,16 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+// ─── 模型引用（对齐 C# ModelReference）───
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ModelReference {
+    #[serde(default)]
+    pub endpoint_id: String,
+    #[serde(default)]
+    pub model_id: String,
+}
+
 // ─── 配置模型 ───
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -10,6 +20,16 @@ pub struct AppConfig {
     pub default_target_langs: Vec<String>,
     pub audio: AudioConfig,
     pub ui: UiConfig,
+    #[serde(default)]
+    pub ai: AiSettings,
+    #[serde(default)]
+    pub media: MediaSettings,
+    #[serde(default)]
+    pub storage: StorageSettings,
+    #[serde(default)]
+    pub recognition: RecognitionSettings,
+    #[serde(default)]
+    pub web_search: WebSearchSettings,
 }
 
 impl Default for AppConfig {
@@ -20,9 +40,243 @@ impl Default for AppConfig {
             default_target_langs: vec!["en".into()],
             audio: AudioConfig::default(),
             ui: UiConfig::default(),
+            ai: AiSettings::default(),
+            media: MediaSettings::default(),
+            storage: StorageSettings::default(),
+            recognition: RecognitionSettings::default(),
+            web_search: WebSearchSettings::default(),
         }
     }
 }
+
+// ─── AI 洞察设置（对齐 C# AiConfig）───
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AiSettings {
+    #[serde(default)]
+    pub insight_model: ModelReference,
+    #[serde(default)]
+    pub summary_model: ModelReference,
+    #[serde(default)]
+    pub quick_model: ModelReference,
+    #[serde(default)]
+    pub review_model: ModelReference,
+    #[serde(default)]
+    pub conversation_model: ModelReference,
+    #[serde(default)]
+    pub intent_model: ModelReference,
+    #[serde(default)]
+    pub insight_system_prompt: String,
+    #[serde(default = "default_true")]
+    pub enable_reasoning: bool,
+    #[serde(default = "default_max_turns")]
+    pub max_conversation_turns: u32,
+}
+
+fn default_true() -> bool { true }
+fn default_max_turns() -> u32 { 20 }
+
+impl Default for AiSettings {
+    fn default() -> Self {
+        Self {
+            insight_model: ModelReference::default(),
+            summary_model: ModelReference::default(),
+            quick_model: ModelReference::default(),
+            review_model: ModelReference::default(),
+            conversation_model: ModelReference::default(),
+            intent_model: ModelReference::default(),
+            insight_system_prompt: "你是一个专业的会议/翻译分析助手。".into(),
+            enable_reasoning: true,
+            max_conversation_turns: 20,
+        }
+    }
+}
+
+// ─── 媒体生成设置（对齐 C# MediaGenConfig）───
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MediaSettings {
+    #[serde(default)]
+    pub image_model: ModelReference,
+    #[serde(default)]
+    pub video_model: ModelReference,
+    #[serde(default = "default_image_quality")]
+    pub image_quality: String,
+    #[serde(default = "default_image_format")]
+    pub image_format: String,
+    #[serde(default = "default_image_size")]
+    pub image_size: String,
+    #[serde(default = "default_one")]
+    pub image_count: u32,
+    #[serde(default = "default_image_background")]
+    pub image_background: String,
+    #[serde(default = "default_video_aspect")]
+    pub video_aspect_ratio: String,
+    #[serde(default = "default_video_resolution")]
+    pub video_resolution: String,
+    #[serde(default = "default_video_seconds")]
+    pub video_seconds: u32,
+    #[serde(default = "default_one")]
+    pub video_variants: u32,
+    #[serde(default = "default_poll_interval")]
+    pub video_poll_interval_ms: u32,
+}
+
+fn default_image_quality() -> String { "auto".into() }
+fn default_image_format() -> String { "png".into() }
+fn default_image_size() -> String { "1024x1024".into() }
+fn default_one() -> u32 { 1 }
+fn default_image_background() -> String { "auto".into() }
+fn default_video_aspect() -> String { "16:9".into() }
+fn default_video_resolution() -> String { "720p".into() }
+fn default_video_seconds() -> u32 { 5 }
+fn default_poll_interval() -> u32 { 3000 }
+
+impl Default for MediaSettings {
+    fn default() -> Self {
+        Self {
+            image_model: ModelReference::default(),
+            video_model: ModelReference::default(),
+            image_quality: default_image_quality(),
+            image_format: default_image_format(),
+            image_size: default_image_size(),
+            image_count: 1,
+            image_background: default_image_background(),
+            video_aspect_ratio: default_video_aspect(),
+            video_resolution: default_video_resolution(),
+            video_seconds: 5,
+            video_variants: 1,
+            video_poll_interval_ms: 3000,
+        }
+    }
+}
+
+// ─── 存储设置（对齐 C# StorageSectionVM）───
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StorageSettings {
+    #[serde(default)]
+    pub batch_storage_connection_string: String,
+    #[serde(default)]
+    pub batch_storage_is_valid: bool,
+    #[serde(default = "default_audio_container")]
+    pub batch_audio_container_name: String,
+    #[serde(default = "default_result_container")]
+    pub batch_result_container_name: String,
+    #[serde(default = "default_true")]
+    pub enable_recording: bool,
+    #[serde(default = "default_mp3_bitrate")]
+    pub recording_mp3_bitrate_kbps: u32,
+    #[serde(default = "default_true")]
+    pub export_vtt_subtitles: bool,
+    #[serde(default)]
+    pub export_srt_subtitles: bool,
+}
+
+fn default_audio_container() -> String { "truefluentpro-audio".into() }
+fn default_result_container() -> String { "truefluentpro-results".into() }
+fn default_mp3_bitrate() -> u32 { 256 }
+
+impl Default for StorageSettings {
+    fn default() -> Self {
+        Self {
+            batch_storage_connection_string: String::new(),
+            batch_storage_is_valid: false,
+            batch_audio_container_name: default_audio_container(),
+            batch_result_container_name: default_result_container(),
+            enable_recording: true,
+            recording_mp3_bitrate_kbps: 256,
+            export_vtt_subtitles: true,
+            export_srt_subtitles: false,
+        }
+    }
+}
+
+// ─── 识别设置（对齐 C# RecognitionSectionVM）───
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecognitionSettings {
+    #[serde(default = "default_true")]
+    pub filter_modal_particles: bool,
+    #[serde(default = "default_max_history")]
+    pub max_history_items: u32,
+    #[serde(default = "default_realtime_max")]
+    pub realtime_max_length: u32,
+    #[serde(default = "default_true")]
+    pub enable_auto_timeout: bool,
+    #[serde(default = "default_timeout")]
+    pub timeout_seconds: u32,
+    #[serde(default = "default_initial_silence")]
+    pub initial_silence_timeout_seconds: u32,
+    #[serde(default = "default_end_silence")]
+    pub end_silence_timeout_seconds: u32,
+}
+
+fn default_max_history() -> u32 { 500 }
+fn default_realtime_max() -> u32 { 150 }
+fn default_timeout() -> u32 { 5 }
+fn default_initial_silence() -> u32 { 25 }
+fn default_end_silence() -> u32 { 1 }
+
+impl Default for RecognitionSettings {
+    fn default() -> Self {
+        Self {
+            filter_modal_particles: true,
+            max_history_items: 500,
+            realtime_max_length: 150,
+            enable_auto_timeout: true,
+            timeout_seconds: 5,
+            initial_silence_timeout_seconds: 25,
+            end_silence_timeout_seconds: 1,
+        }
+    }
+}
+
+// ─── 网页搜索设置（对齐 C# WebSearchConfig）───
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WebSearchSettings {
+    #[serde(default = "default_search_provider")]
+    pub provider_id: String,
+    #[serde(default = "default_search_trigger")]
+    pub trigger_mode: String,
+    #[serde(default = "default_search_max")]
+    pub max_results: u32,
+    #[serde(default = "default_true")]
+    pub enable_intent_analysis: bool,
+    #[serde(default)]
+    pub enable_result_compression: bool,
+    #[serde(default)]
+    pub mcp_endpoint: String,
+    #[serde(default)]
+    pub mcp_tool_name: String,
+    #[serde(default)]
+    pub mcp_api_key: String,
+    #[serde(default)]
+    pub debug_mode: bool,
+}
+
+fn default_search_provider() -> String { "duckduckgo".into() }
+fn default_search_trigger() -> String { "auto".into() }
+fn default_search_max() -> u32 { 5 }
+
+impl Default for WebSearchSettings {
+    fn default() -> Self {
+        Self {
+            provider_id: default_search_provider(),
+            trigger_mode: default_search_trigger(),
+            max_results: 5,
+            enable_intent_analysis: true,
+            enable_result_compression: false,
+            mcp_endpoint: String::new(),
+            mcp_tool_name: "web_search".into(),
+            mcp_api_key: String::new(),
+            debug_mode: false,
+        }
+    }
+}
+
+// ─── 终结点模型（对齐 C# AiEndpoint）───
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AiEndpoint {
@@ -32,23 +286,143 @@ pub struct AiEndpoint {
     pub url: String,
     #[serde(default)]
     pub api_key: String,
+    pub api_version: Option<String>,
     pub region: Option<String>,
-    pub deployment: Option<String>,
+    #[serde(default)]
+    pub models: Vec<AiModelEntry>,
     pub enabled: bool,
+    /// 认证头模式: "api_key" | "bearer" | "auto"
+    #[serde(default = "default_auth_header_mode")]
+    pub auth_header_mode: String,
+
+    // ── Azure Speech 专属字段（对齐 C# AiEndpoint）──
+    #[serde(default)]
+    pub speech_subscription_key: String,
+    #[serde(default)]
+    pub speech_region: String,
+    #[serde(default)]
+    pub speech_endpoint: String,
+}
+
+fn default_auth_header_mode() -> String {
+    "auto".into()
+}
+
+impl AiEndpoint {
+    /// 是否为 Azure 系终结点
+    pub fn is_azure(&self) -> bool {
+        matches!(
+            self.endpoint_type,
+            EndpointType::AzureOpenAi | EndpointType::ApiManagementGateway | EndpointType::AzureSpeech
+        )
+    }
+
+    /// 是否为 Speech 终结点
+    pub fn is_speech(&self) -> bool {
+        self.endpoint_type == EndpointType::AzureSpeech
+    }
+
+    /// 取该终结点下第一个有某能力的模型
+    pub fn first_model_with_capability(&self, cap: ModelCapability) -> Option<&AiModelEntry> {
+        self.models.iter().find(|m| m.capabilities.contains(&cap))
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum EndpointType {
     AzureOpenAi,
+    ApiManagementGateway,
+    OpenAiCompatible,
     AzureSpeech,
+    // 预留
     AzureTranslator,
-    OpenAi,
     DeepL,
-    Google,
     TencentCloud,
     AlibabaCloud,
     Custom,
+}
+
+/// 厂商资料包 — 匹配 C# EndpointProfile
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VendorProfile {
+    pub endpoint_type: EndpointType,
+    pub label: String,
+    pub badge: String,
+    pub subtitle: String,
+    pub glyph: String,
+    pub default_auth_header: String,
+    pub default_api_version: String,
+    pub supports_model_discovery: bool,
+    pub model_discovery_urls: Vec<String>,
+    /// 各能力的测试 URL 模板（{baseUrl}, {deployment}, {apiVersion}, {model}）
+    pub test_url_templates: HashMap<String, String>,
+}
+
+/// 模型条目 — 匹配 C# AiModelEntry
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AiModelEntry {
+    pub model_id: String,
+    pub display_name: String,
+    /// Azure 部署名（仅 Azure 终结点使用）
+    pub deployment_name: Option<String>,
+    pub capabilities: Vec<ModelCapability>,
+}
+
+impl AiModelEntry {
+    pub fn effective_deployment(&self) -> &str {
+        self.deployment_name
+            .as_deref()
+            .unwrap_or(&self.model_id)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModelCapability {
+    Text,
+    Image,
+    Video,
+    SpeechToText,
+    TextToSpeech,
+}
+
+// ─── 终结点测试结果 ───
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EndpointTestReport {
+    pub endpoint_id: String,
+    pub endpoint_name: String,
+    pub items: Vec<EndpointTestItem>,
+    pub duration_ms: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EndpointTestItem {
+    pub model_id: String,
+    pub capability: String,
+    pub status: TestStatus,
+    pub summary: String,
+    pub detail: Option<String>,
+    pub request_url: Option<String>,
+    pub duration_ms: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TestStatus {
+    Success,
+    Failed,
+    Skipped,
+}
+
+// ─── 模型发现结果 ───
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiscoveredModel {
+    pub id: String,
+    pub display_name: Option<String>,
+    pub owned_by: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

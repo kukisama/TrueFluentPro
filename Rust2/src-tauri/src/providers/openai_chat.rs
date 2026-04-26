@@ -30,15 +30,15 @@ impl OpenAiChatProvider {
         match self.endpoint.endpoint_type {
             EndpointType::AzureOpenAi => {
                 // Azure: /openai/deployments/{deployment}/chat/completions?api-version=...
-                if let Some(ref deploy) = self.endpoint.deployment {
-                    format!("{base}/openai/deployments/{deploy}/chat/completions?api-version=2024-08-01-preview")
+                let api_ver = self.endpoint.api_version.as_deref().unwrap_or("2024-08-01-preview");
+                if let Some(model) = self.endpoint.first_model_with_capability(ModelCapability::Text) {
+                    let deploy = model.effective_deployment();
+                    format!("{base}/openai/deployments/{deploy}/chat/completions?api-version={api_ver}")
                 } else {
-                    // 如果没有 deployment，尝试 v1 路由
                     format!("{base}/openai/v1/chat/completions")
                 }
             }
             _ => {
-                // OpenAI 兼容: /v1/chat/completions
                 if base.ends_with("/v1") || base.ends_with("/v1/chat/completions") {
                     if base.ends_with("/v1/chat/completions") {
                         base.to_string()
@@ -53,9 +53,10 @@ impl OpenAiChatProvider {
     }
 
     fn apply_auth(&self, req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
-        match self.endpoint.endpoint_type {
-            EndpointType::AzureOpenAi => req.header("api-key", &self.endpoint.api_key),
-            _ => req.header("Authorization", format!("Bearer {}", self.endpoint.api_key)),
+        if self.endpoint.is_azure() {
+            req.header("api-key", &self.endpoint.api_key)
+        } else {
+            req.header("Authorization", format!("Bearer {}", self.endpoint.api_key))
         }
     }
 }
@@ -94,7 +95,7 @@ impl AiCompletionSlot for OpenAiChatProvider {
         });
 
         // model 字段：Azure 模式下可不传（由 deployment 决定），其他必传
-        if self.endpoint.endpoint_type != EndpointType::AzureOpenAi || self.endpoint.deployment.is_none() {
+        if !self.endpoint.is_azure() {
             body["model"] = json!(&request.model);
         }
 
@@ -167,7 +168,7 @@ impl AiCompletionSlot for OpenAiChatProvider {
             "stream_options": { "include_usage": true },
         });
 
-        if self.endpoint.endpoint_type != EndpointType::AzureOpenAi || self.endpoint.deployment.is_none() {
+        if !self.endpoint.is_azure() {
             body["model"] = json!(&request.model);
         }
         if let Some(temp) = request.temperature {

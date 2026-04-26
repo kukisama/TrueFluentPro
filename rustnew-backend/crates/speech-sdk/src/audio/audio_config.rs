@@ -4,7 +4,7 @@ use crate::error::{convert_err, Result};
 use crate::ffi::{
     audio_config_create_audio_input_from_default_microphone,
     audio_config_create_audio_input_from_wav_file_name,
-    audio_config_create_audio_input_from_a_push_stream,
+    audio_config_create_audio_input_from_stream,
     audio_config_release,
     SmartHandle, SPXAUDIOCONFIGHANDLE,
 };
@@ -53,7 +53,7 @@ impl AudioConfig {
     pub unsafe fn from_push_stream(stream_handle: usize) -> Result<AudioConfig> {
         unsafe {
             let mut handle: MaybeUninit<SPXAUDIOCONFIGHANDLE> = MaybeUninit::uninit();
-            let ret = audio_config_create_audio_input_from_a_push_stream(
+            let ret = audio_config_create_audio_input_from_stream(
                 handle.as_mut_ptr(),
                 stream_handle,
             );

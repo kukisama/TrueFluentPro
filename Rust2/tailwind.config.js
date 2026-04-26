@@ -17,12 +17,27 @@ export default {
           800: "#1e40af",
           900: "#1e3a8a",
         },
+        // 使用 CSS 变量作为语义色，让 dark/light 自动切换
         surface: {
-          0: "#020617",
-          1: "#0f172a",
-          2: "#1e293b",
-          3: "#334155",
-          4: "#475569",
+          0: "var(--surface-0)",
+          1: "var(--surface-1)",
+          2: "var(--surface-2)",
+          3: "var(--surface-3)",
+          4: "var(--surface-4)",
+        },
+        card: {
+          DEFAULT: "var(--card-bg)",
+          border: "var(--card-border)",
+        },
+        txt: {
+          primary: "var(--text-primary)",
+          secondary: "var(--text-secondary)",
+          muted: "var(--text-muted)",
+          placeholder: "var(--text-placeholder)",
+        },
+        border: {
+          subtle: "var(--border-subtle)",
+          medium: "var(--border-medium)",
         },
       },
       fontFamily: {

@@ -8,7 +8,7 @@ use std::sync::Arc;
 use tauri::Manager;
 
 use models::{EndpointType, AiEndpoint};
-use providers::{OpenAiChatProvider, OpenAiImageProvider};
+use providers::{OpenAiChatProvider, OpenAiImageProvider, AzureSpeechProvider};
 use state::AppState;
 use storage::Database;
 
@@ -17,13 +17,17 @@ fn register_providers_from_config(state: &AppState, endpoints: &[AiEndpoint]) {
     let mut registry = state.providers.blocking_write();
     for ep in endpoints.iter().filter(|e| e.enabled) {
         match ep.endpoint_type {
-            EndpointType::AzureOpenAi | EndpointType::OpenAi | EndpointType::Custom => {
+            EndpointType::AzureOpenAi | EndpointType::OpenAiCompatible | EndpointType::ApiManagementGateway | EndpointType::Custom => {
                 // OpenAI 兼容端点同时注册 Chat 和 Image 能力
                 registry.register_ai_completion(Arc::new(OpenAiChatProvider::new(ep.clone())));
                 registry.register_image_gen(Arc::new(OpenAiImageProvider::new(ep.clone())));
                 tracing::info!("已注册 AI+Image Provider: {} ({})", ep.name, ep.id);
             }
-            // Speech / Translator / DeepL 等留空 — 后续插件化
+            EndpointType::AzureSpeech => {
+                registry.register_realtime_speech(Arc::new(AzureSpeechProvider::new(ep.clone())));
+                tracing::info!("已注册 Speech Provider: {} ({})", ep.name, ep.id);
+            }
+            // Translator / DeepL 等留空 — 后续插件化
             _ => {
                 tracing::debug!("端点 {} ({:?}) 暂无对应 Provider 实现", ep.name, ep.endpoint_type);
             }
@@ -75,6 +79,7 @@ pub fn run() {
             // 翻译
             commands::translate_text,
             commands::start_realtime_translation,
+            commands::stop_realtime_translation,
             // Provider
             commands::list_providers,
             // AI 媒体
@@ -83,11 +88,14 @@ pub fn run() {
             // 存储
             commands::get_translation_history,
             commands::get_batch_tasks,
+            commands::validate_storage_connection,
             // 系统
             commands::get_app_info,
             commands::refresh_providers,
             commands::ai_complete_stream,
             commands::test_endpoint,
+            commands::get_vendor_profiles,
+            commands::discover_models,
         ])
         .run(tauri::generate_context!())
         .expect("启动 Tauri 应用失败");
