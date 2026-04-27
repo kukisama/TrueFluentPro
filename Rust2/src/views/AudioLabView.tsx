@@ -1,16 +1,19 @@
 import { useState, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
+import { convertFileSrc } from "@tauri-apps/api/core";
+import { open as dialogOpen } from "@tauri-apps/plugin-dialog";
 import {
-  FileAudio, FolderOpen, RefreshCw, Play, Pause,
-  SkipForward, SkipBack, ChevronRight, Loader2,
+  FileAudio, FolderOpen, RefreshCw, Play,
+  ChevronRight, Loader2,
   Brain, Sparkles, FileText, Podcast, Globe,
   Network, Music, Lightbulb, Trash2,
   CheckCircle2, Clock, AlertCircle, Timer,
-  Volume2,
 } from "lucide-react";
+import { AudioPlayer } from "../components/AudioPlayer";
+import { MindMapCanvas } from "../components/MindMapCanvas";
 import { cn } from "../lib/utils";
 import {
-  Button, GlassCard, Select, Badge, FadeIn,
+  Button, GlassCard, Badge, FadeIn,
   EmptyState, ScrollArea, Separator,
 } from "../components/ui";
 import { api } from "../lib/tauri-api";
@@ -48,8 +51,6 @@ export function AudioLabView() {
   const [lifecycle, setLifecycle] = useState<AudioLifecycle[]>([]);
   const [activeStage, setActiveStage] = useState<LifecycleStage>("Transcribed");
   const [, setLoading] = useState(false);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
 
   const selectedItem = audioItems.find((a) => a.id === selectedItemId);
   const activeLifecycle = lifecycle.find((lc) => lc.stage === activeStage);
@@ -85,9 +86,17 @@ export function AudioLabView() {
 
   const handleOpenFile = useCallback(async () => {
     try {
+      const selected = await dialogOpen({
+        multiple: false,
+        filters: [{ name: "音频文件", extensions: ["wav", "mp3", "flac", "ogg", "m4a", "aac", "wma"] }],
+      });
+      if (!selected) return; // 用户取消
+      const filePath = selected as string;
+      const fileName = filePath.split(/[\\/]/).pop() || "audio";
+
       const item = await api.addAudioItem({
-        file_name: "recording.wav",
-        file_path: "",
+        file_name: fileName,
+        file_path: filePath,
         duration_ms: 0,
         sample_rate: 16000,
         channels: 1,
@@ -142,11 +151,42 @@ export function AudioLabView() {
     }
   }, [selectedItemId, lifecycle, handleSubmitStage]);
 
+  // O-43: 拖放文件到音频库
+  const [dragOver, setDragOver] = useState(false);
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+    const files = Array.from(e.dataTransfer.files).filter((f) =>
+      /\.(wav|mp3|flac|ogg|m4a|aac|wma)$/i.test(f.name)
+    );
+    for (const file of files) {
+      try {
+        const filePath = (file as any).path as string;
+        if (!filePath) continue;
+        const item = await api.addAudioItem({
+          file_name: file.name,
+          file_path: filePath,
+          duration_ms: 0,
+          sample_rate: 16000,
+          channels: 1,
+          source_lang: "zh-CN",
+        } as any);
+        setAudioItems((prev) => [item, ...prev]);
+      } catch (err) { console.error("Drop add failed:", err); }
+    }
+  }, []);
+
   return (
     <div className="flex h-full">
       {/* 左侧: 音频文件列表 */}
-      <div className="w-[240px] border-r border-[var(--border-subtle)] flex flex-col shrink-0"
-        style={{ backgroundColor: "var(--sidebar-bg)" }}>
+      <div className={cn(
+          "w-[240px] border-r border-[var(--border-subtle)] flex flex-col shrink-0",
+          dragOver && "ring-2 ring-brand-500/50 ring-inset"
+        )}
+        style={{ backgroundColor: "var(--sidebar-bg)" }}
+        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={handleDrop}>
         <div className="p-3 border-b border-[var(--border-subtle)] flex items-center gap-2">
           <h2 className="text-sm font-semibold text-[var(--text-primary)] flex-1">音频库</h2>
           <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleOpenFile} title="打开文件">
@@ -194,24 +234,13 @@ export function AudioLabView() {
       <div className="flex-1 flex flex-col min-w-0">
         {selectedItem ? (
           <>
-            {/* 播放控件 */}
-            <div className="px-5 py-3 border-b border-[var(--border-subtle)] flex items-center gap-4"
+            {/* 播放控件 — 使用真实 AudioPlayer 组件 */}
+            <div className="border-b border-[var(--border-subtle)]"
               style={{ backgroundColor: "var(--toolbar-bg)" }}>
-              <div className="flex items-center gap-2">
-                <Button variant="ghost" size="icon" className="h-8 w-8"><SkipBack size={14} /></Button>
-                <Button variant="secondary" size="icon" className="h-9 w-9" onClick={() => setIsPlaying(!isPlaying)}>
-                  {isPlaying ? <Pause size={16} /> : <Play size={16} />}
-                </Button>
-                <Button variant="ghost" size="icon" className="h-8 w-8"><SkipForward size={14} /></Button>
-              </div>
-              <div className="flex-1 h-1.5 bg-[var(--surface-2)] rounded-full">
-                <div className="h-full w-0 bg-brand-500 rounded-full" />
-              </div>
-              <Volume2 size={14} className="text-[var(--text-muted)]" />
-              <Select className="w-16 h-7 text-xs" value={playbackSpeed.toString()} onChange={(e) => setPlaybackSpeed(Number(e.target.value))}>
-                {[0.5, 0.75, 1.0, 1.25, 1.5, 2.0].map((s) => <option key={s} value={s}>{s}x</option>)}
-              </Select>
-              <span className="text-xs text-[var(--text-muted)]">{selectedItem.file_name} · {formatDuration(selectedItem.duration_ms)}</span>
+              <AudioPlayer
+                src={selectedItem.file_path ? convertFileSrc(selectedItem.file_path) : ""}
+                title={`${selectedItem.file_name} · ${formatDuration(selectedItem.duration_ms)}`}
+              />
             </div>
 
             {/* 8阶段管道 */}
@@ -271,6 +300,25 @@ function StageContent({ stage, lifecycle, onSubmit }: { stage: LifecycleStage; l
   const status: StageStatus = (lifecycle?.status as StageStatus) || "Pending";
   const stageInfo = STAGES.find((s) => s.key === stage);
 
+  // O-20: 深度研究 ResearchPhase 状态机 — 4 子阶段
+  const RESEARCH_PHASES = [
+    { key: "planning", label: "规划", icon: <Lightbulb size={14} /> },
+    { key: "searching", label: "搜索", icon: <Globe size={14} /> },
+    { key: "analyzing", label: "分析", icon: <Brain size={14} /> },
+    { key: "synthesizing", label: "综合", icon: <Sparkles size={14} /> },
+  ];
+  // 从 result_json 解析当前子阶段（如果后端有写入）
+  const researchPhase = (() => {
+    if (stage !== "Research" || status !== "Running") return null;
+    try {
+      if (lifecycle?.result_json) {
+        const json = JSON.parse(lifecycle.result_json);
+        return json.phase || "planning";
+      }
+    } catch { /* ignore */ }
+    return "planning";
+  })();
+
   return (
     <div className="max-w-4xl space-y-4">
       <div className="flex items-center gap-3">
@@ -304,11 +352,20 @@ function StageContent({ stage, lifecycle, onSubmit }: { stage: LifecycleStage; l
       {status === "Completed" && lifecycle?.result_text ? (
         <GlassCard className="p-5">
           {stage === "PodcastAudio" ? (
-            <div className="flex items-center gap-4 p-4">
-              <Button variant="secondary" size="icon" className="h-12 w-12"><Play size={20} /></Button>
-              <div className="flex-1 h-2 bg-[var(--surface-2)] rounded-full"><div className="h-full w-0 bg-brand-500 rounded-full" /></div>
-              <span className="text-xs text-[var(--text-muted)]">0:00</span>
-            </div>
+            /* O-07: 播客音频播放 — 使用真实 AudioPlayer 组件 */
+            lifecycle?.result_text ? (
+              <AudioPlayer
+                src={convertFileSrc(lifecycle.result_text)}
+                title="播客音频"
+              />
+            ) : (
+              <div className="flex items-center gap-4 p-4">
+                <Button variant="secondary" size="icon" className="h-12 w-12" disabled><Play size={20} /></Button>
+                <span className="text-xs text-[var(--text-muted)]">无音频文件</span>
+              </div>
+            )
+          ) : stage === "MindMap" ? (
+            <MindMapCanvas data={lifecycle.result_json || lifecycle.result_text} className="min-h-[300px]" />
           ) : (
             <pre className="text-sm text-[var(--text-primary)] whitespace-pre-wrap leading-relaxed">{lifecycle.result_text}</pre>
           )}
@@ -317,6 +374,28 @@ function StageContent({ stage, lifecycle, onSubmit }: { stage: LifecycleStage; l
         <GlassCard className="p-8 flex flex-col items-center gap-3">
           <Loader2 size={32} className="text-brand-400 animate-spin" />
           <p className="text-sm text-[var(--text-muted)]">正在处理 {stageInfo?.label}...</p>
+          {/* O-20: 深度研究子阶段进度 */}
+          {stage === "Research" && researchPhase && (
+            <div className="flex items-center gap-2 mt-2">
+              {RESEARCH_PHASES.map((p, i) => {
+                const isCurrent = p.key === researchPhase;
+                const phaseIdx = RESEARCH_PHASES.findIndex((rp) => rp.key === researchPhase);
+                const isDone = i < phaseIdx;
+                return (
+                  <div key={p.key} className="flex items-center gap-1">
+                    <div className={cn(
+                      "flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium transition-all",
+                      isCurrent ? "bg-blue-500/20 text-blue-400" : isDone ? "bg-emerald-500/15 text-emerald-400" : "bg-[var(--surface-2)] text-[var(--text-muted)]"
+                    )}>
+                      {isDone ? <CheckCircle2 size={10} /> : isCurrent ? <Loader2 size={10} className="animate-spin" /> : p.icon}
+                      {p.label}
+                    </div>
+                    {i < RESEARCH_PHASES.length - 1 && <ChevronRight size={10} className="text-[var(--text-placeholder)]" />}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </GlassCard>
       ) : status === "Failed" ? (
         <GlassCard className="p-5 border-red-500/30">

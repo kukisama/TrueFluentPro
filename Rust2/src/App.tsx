@@ -36,6 +36,7 @@ export default function App() {
   }, [setConfig, setProviders, setError]);
 
   // 全局快捷键: Ctrl+1~5 切换视图, Ctrl+, 打开设置
+  // O-39: F5 开始翻译, F6 停止翻译
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.ctrlKey && !e.altKey && !e.shiftKey) {
@@ -44,6 +45,17 @@ export default function App() {
           e.preventDefault();
           setActiveView(view);
         }
+      }
+      // O-39: F5/F6 — 对齐 C# MainWindow F5=切换到翻译视图, F6=停止翻译
+      // F5 切换到翻译视图（由视图组件管理实际开始逻辑）
+      if (e.key === "F5") {
+        e.preventDefault();
+        setActiveView("live-translation");
+      }
+      // F6 派发自定义事件，由 LiveTranslationView 监听并停止
+      if (e.key === "F6") {
+        e.preventDefault();
+        window.dispatchEvent(new CustomEvent("tfp:stop-translation"));
       }
     };
     window.addEventListener("keydown", handler);

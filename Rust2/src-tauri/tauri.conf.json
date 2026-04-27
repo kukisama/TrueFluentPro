@@ -17,12 +17,19 @@
         "height": 800,
         "minWidth": 960,
         "minHeight": 640,
-        "decorations": true,
+        "decorations": false,
         "transparent": false
       }
     ],
     "security": {
-      "csp": null
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": {
+          "allow": ["$APPDATA/**", "$AUDIO/**", "$HOME/Music/**", "$HOME/Downloads/**"],
+          "deny": ["$APPDATA/Microsoft/**"]
+        }
+      }
     }
   },
   "bundle": {

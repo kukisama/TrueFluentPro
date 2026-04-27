@@ -2,15 +2,18 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Mic, MicOff, RotateCcw, Copy, Download, Languages, AlertCircle,
-  SplitSquareVertical, Lightbulb, Bookmark, Volume2,
+  SplitSquareVertical, Lightbulb, Bookmark, Volume2, Subtitles,
 } from "lucide-react";
 import {
   Button, GlassCard, Select, Badge, FadeIn, EmptyState,
 } from "../components/ui";
+import { FloatingSubtitle } from "../components/FloatingWindow";
 import { useAppStore } from "../stores/app-store";
-import { api, type UnlistenFn } from "../lib/tauri-api";
+import { api, type UnlistenFn, type AudioDeviceInfo } from "../lib/tauri-api";
+import { cn } from "../lib/utils";
 
-const LANGUAGES = [
+// O-34: 语言列表默认值，运行时从后端获取
+const DEFAULT_LANGUAGES = [
   { code: "zh-Hans", name: "中文（简体）" },
   { code: "en", name: "English" },
   { code: "ja", name: "日本語" },
@@ -33,15 +36,48 @@ export function LiveTranslationView() {
 
   const [sourceLang, setSourceLang] = useState("zh-Hans");
   const [targetLang, setTargetLang] = useState("en");
+  // O-34: 从后端获取语言列表
+  const [languages, setLanguages] = useState(DEFAULT_LANGUAGES);
+  useEffect(() => {
+    api.getSupportedLanguages().then((list) => {
+      if (list && list.length > 0) setLanguages(list.map(([code, name]) => ({ code, name })));
+    }).catch(() => {});
+  }, []);
   const [selectedSpeechEp, setSelectedSpeechEp] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [partialText, setPartialText] = useState("");
   const [viewMode, setViewMode] = useState<ViewMode>("bilingual");
   const [audioLevel, setAudioLevel] = useState(0);
-  const [bookmarkedIdx, setBookmarkedIdx] = useState<Set<number>>(new Set());
+  // 音频设备枚举
+  const [inputDevices, setInputDevices] = useState<AudioDeviceInfo[]>([]);
+  const [selectedInputDevice, setSelectedInputDevice] = useState("");
+  useEffect(() => {
+    api.listAudioDevices().then((devices) => {
+      const inputs = devices.filter(d => d.device_type === "Input");
+      setInputDevices(inputs);
+      const defaultDev = inputs.find(d => d.is_default);
+      if (defaultDev) setSelectedInputDevice(defaultDev.id);
+      else if (inputs.length > 0) setSelectedInputDevice(inputs[0].id);
+    }).catch(() => {});
+  }, []);
+  // O-04: 书签持久化到 localStorage（避免切换页面丢失）
+  const [bookmarkedIdx, setBookmarkedIdx] = useState<Set<number>>(() => {
+    try {
+      const saved = localStorage.getItem("tfp_bookmarked_idx");
+      return saved ? new Set(JSON.parse(saved) as number[]) : new Set();
+    } catch { return new Set(); }
+  });
   const [showHistory, setShowHistory] = useState(false);
+  const [showFloatingSubtitle, setShowFloatingSubtitle] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const unlistenRef = useRef<UnlistenFn | null>(null);
+  // O-23: 自动重连状态
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reconnectCountRef = useRef(0);
+  const MAX_RECONNECTS = 3;
+  const intentionalStopRef = useRef(false);
+  // N-06: 重连守卫 — 防止并发重连
+  const isReconnectingRef = useRef(false);
 
   const speechEndpoints = (config?.endpoints ?? []).filter(
     (ep) => ep.endpoint_type === "azure_speech" && ep.enabled
@@ -63,20 +99,38 @@ export function LiveTranslationView() {
         unlistenRef.current();
         unlistenRef.current = null;
       }
+      // O-23: 清理重连定时器
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
     };
   }, []);
 
-  // 模拟音频电平（真实实现需要 cpal）
+  // 基于语音识别活动的音频电平指示（非随机数）
+  // 原理：收到 Recognizing 事件时 partialText 变化 → 表示有语音输入 → 电平升高
+  //       无新识别结果时 → 逐渐衰减至零
+  const lastPartialRef = useRef("");
   useEffect(() => {
     if (!isTranslating) { setAudioLevel(0); return; }
-    const iv = setInterval(() => setAudioLevel(Math.random() * 0.8 + 0.1), 120);
-    return () => clearInterval(iv);
-  }, [isTranslating]);
+    if (partialText !== lastPartialRef.current) {
+      // 有新的识别文字 → 语音活跃
+      lastPartialRef.current = partialText;
+      setAudioLevel(0.7); // 语音活跃时固定电平
+    }
+    // 定时衰减：若 300ms 内无新 partialText 变化，逐渐降低电平
+    const decay = setInterval(() => {
+      setAudioLevel((prev) => Math.max(0, prev - 0.08));
+    }, 150);
+    return () => clearInterval(decay);
+  }, [isTranslating, partialText]);
 
   const toggleBookmark = useCallback((idx: number) => {
     setBookmarkedIdx((prev) => {
       const next = new Set(prev);
       if (next.has(idx)) next.delete(idx); else next.add(idx);
+      // O-04: 持久化到 localStorage
+      try { localStorage.setItem("tfp_bookmarked_idx", JSON.stringify([...next])); } catch { /* best-effort */ }
       return next;
     });
   }, []);
@@ -104,8 +158,34 @@ export function LiveTranslationView() {
     URL.revokeObjectURL(url);
   }, [recognizedSegments]);
 
+  // O-22: SRT 字幕文件导出
+  const handleExportSrt = useCallback(() => {
+    const lines = recognizedSegments.map((s, i) => {
+      const start = timeToSrtTimestamp(s.time, 0);
+      const end = timeToSrtTimestamp(s.time, 3); // 每段约 3 秒
+      return `${i + 1}\n${start} --> ${end}\n${s.source}\n${s.translation}`;
+    });
+    const content = lines.join("\n\n");
+    downloadFile(content, `translation_${new Date().toISOString().slice(0, 10)}.srt`, "text/srt;charset=utf-8");
+  }, [recognizedSegments]);
+
+  // O-22: VTT 字幕文件导出
+  const handleExportVtt = useCallback(() => {
+    const lines = recognizedSegments.map((s) => {
+      const start = timeToVttTimestamp(s.time, 0);
+      const end = timeToVttTimestamp(s.time, 3);
+      return `${start} --> ${end}\n${s.source}\n${s.translation}`;
+    });
+    const content = "WEBVTT\n\n" + lines.join("\n\n");
+    downloadFile(content, `translation_${new Date().toISOString().slice(0, 10)}.vtt`, "text/vtt;charset=utf-8");
+  }, [recognizedSegments]);
+
   const handleToggle = useCallback(async () => {
     if (isTranslating) {
+      // O-23: 标记为主动停止，不触发重连
+      intentionalStopRef.current = true;
+      if (reconnectTimerRef.current) { clearTimeout(reconnectTimerRef.current); reconnectTimerRef.current = null; }
+      reconnectCountRef.current = 0;
       if (sessionId) {
         try { await api.stopRealtimeTranslation(sessionId); } catch (e) { console.error("停止失败:", e); }
       }
@@ -116,6 +196,8 @@ export function LiveTranslationView() {
     } else {
       if (!selectedSpeechEp) { setError("请先在设置中添加 Azure Speech 端点"); return; }
       setError(null);
+      intentionalStopRef.current = false;
+      reconnectCountRef.current = 0;
       try {
         const unlisten = await api.onRealtimeEvent((event) => {
           switch (event.type) {
@@ -140,11 +222,43 @@ export function LiveTranslationView() {
             case "Error": {
               const msg = (event.data as { message?: string }).message || "未知错误";
               setError(msg);
+              // O-23: 非主动停止时尝试自动重连
+              if (!intentionalStopRef.current && reconnectCountRef.current < MAX_RECONNECTS && !isReconnectingRef.current) {
+                isReconnectingRef.current = true;
+                reconnectCountRef.current++;
+                const delay = Math.min(2000 * reconnectCountRef.current, 10000);
+                setError(`连接中断，${delay / 1000}秒后自动重连 (${reconnectCountRef.current}/${MAX_RECONNECTS})...`);
+                reconnectTimerRef.current = setTimeout(async () => {
+                  reconnectTimerRef.current = null;
+                  // N-06: 先清理旧会话再重连，用守卫替代 double setTimeout
+                  if (unlistenRef.current) { unlistenRef.current(); unlistenRef.current = null; }
+                  setTranslating(false);
+                  setSessionId(null);
+                  isReconnectingRef.current = false;
+                  handleToggle();
+                }, delay);
+              }
               break;
             }
             case "SessionStopped": {
-              setTranslating(false);
-              setSessionId(null);
+              // O-23: 非主动停止 → 尝试重连
+              if (!intentionalStopRef.current && reconnectCountRef.current < MAX_RECONNECTS && !isReconnectingRef.current) {
+                isReconnectingRef.current = true;
+                reconnectCountRef.current++;
+                const delay = Math.min(2000 * reconnectCountRef.current, 10000);
+                setError(`会话已断开，${delay / 1000}秒后自动重连 (${reconnectCountRef.current}/${MAX_RECONNECTS})...`);
+                reconnectTimerRef.current = setTimeout(async () => {
+                  reconnectTimerRef.current = null;
+                  if (unlistenRef.current) { unlistenRef.current(); unlistenRef.current = null; }
+                  setTranslating(false);
+                  setSessionId(null);
+                  isReconnectingRef.current = false;
+                  handleToggle();
+                }, delay);
+              } else {
+                setTranslating(false);
+                setSessionId(null);
+              }
               break;
             }
           }
@@ -166,6 +280,13 @@ export function LiveTranslationView() {
       }
     }
   }, [isTranslating, sessionId, selectedSpeechEp, sourceLang, targetLang, addSegment, setTranslating, setSessionId]);
+
+  // O-39: 监听 F6 自定义事件来停止翻译
+  useEffect(() => {
+    const onStop = () => { if (isTranslating) handleToggle(); };
+    window.addEventListener("tfp:stop-translation", onStop);
+    return () => window.removeEventListener("tfp:stop-translation", onStop);
+  }, [isTranslating, handleToggle]);
 
   return (
     <div className="flex h-full">
@@ -193,7 +314,7 @@ export function LiveTranslationView() {
                   {Array.from({ length: 8 }).map((_, i) => (
                     <div key={i} className="w-1 rounded-sm transition-all duration-75"
                       style={{
-                        height: `${Math.max(3, audioLevel * 16 * (0.5 + Math.random() * 0.5))}px`,
+                        height: `${Math.max(3, audioLevel * 16 * (0.4 + 0.6 * Math.sin(i * 1.2 + 0.5)))}px`,
                         backgroundColor: audioLevel > 0.6 ? "var(--brand-500)" : "var(--text-muted)",
                       }} />
                   ))}
@@ -201,13 +322,23 @@ export function LiveTranslationView() {
               </div>
             )}
 
+            {/* 输入设备选择 */}
+            {inputDevices.length > 0 && (
+              <>
+                <span className="text-[var(--text-muted)]">|</span>
+                <Select value={selectedInputDevice} onChange={(e) => setSelectedInputDevice(e.target.value)} className="w-36">
+                  {inputDevices.map((d) => <option key={d.id} value={d.id}>{d.is_default ? "🎙️ " : ""}{d.name}</option>)}
+                </Select>
+              </>
+            )}
+
             <span className="text-[var(--text-muted)]">|</span>
             <Select value={sourceLang} onChange={(e) => setSourceLang(e.target.value)} className="w-32">
-              {LANGUAGES.map((l) => <option key={l.code} value={l.code}>{l.name}</option>)}
+              {languages.map((l) => <option key={l.code} value={l.code}>{l.name}</option>)}
             </Select>
             <span className="text-[var(--text-muted)]">→</span>
             <Select value={targetLang} onChange={(e) => setTargetLang(e.target.value)} className="w-32">
-              {LANGUAGES.map((l) => <option key={l.code} value={l.code}>{l.name}</option>)}
+              {languages.map((l) => <option key={l.code} value={l.code}>{l.name}</option>)}
             </Select>
           </div>
 
@@ -239,11 +370,22 @@ export function LiveTranslationView() {
           <Button variant="ghost" size="sm" onClick={handleCopyAll} disabled={recognizedSegments.length === 0}>
             <Copy size={14} />
           </Button>
-          <Button variant="ghost" size="sm" onClick={handleExport} disabled={recognizedSegments.length === 0}>
+          <Button variant="ghost" size="sm" onClick={handleExport} disabled={recognizedSegments.length === 0} title="导出 TXT">
             <Download size={14} />
+          </Button>
+          {/* O-22: SRT/VTT 字幕导出 */}
+          <Button variant="ghost" size="sm" onClick={handleExportSrt} disabled={recognizedSegments.length === 0} title="导出 SRT 字幕">
+            <Subtitles size={12} /><span className="text-[10px]">SRT</span>
+          </Button>
+          <Button variant="ghost" size="sm" onClick={handleExportVtt} disabled={recognizedSegments.length === 0} title="导出 VTT 字幕">
+            <Subtitles size={12} /><span className="text-[10px]">VTT</span>
           </Button>
           <Button variant="ghost" size="sm" onClick={() => setShowHistory(!showHistory)}>
             <Lightbulb size={14} />
+          </Button>
+          <Button variant={showFloatingSubtitle ? "secondary" : "ghost"} size="sm"
+            onClick={() => setShowFloatingSubtitle(!showFloatingSubtitle)} title="浮动字幕">
+            <Subtitles size={14} />
           </Button>
         </div>
 
@@ -261,11 +403,37 @@ export function LiveTranslationView() {
               title={t("live.startHint")}
               description={t("live.startSubHint")}
             />
-          ) : (
+          ) : (() => {
+            // O-21: 转录段落合并 + 说话人分色（6 色调色板）
+            const SPEAKER_COLORS = [
+              "border-l-blue-400", "border-l-emerald-400", "border-l-amber-400",
+              "border-l-purple-400", "border-l-rose-400", "border-l-cyan-400",
+            ];
+            // 合并连续段落：相邻段落时间差 < 3 秒且源文本可拼接
+            type MergedSeg = { source: string; translation: string; time: string; endTime: string; speakerIdx: number; originalIndices: number[] };
+            const merged: MergedSeg[] = [];
+            let currentSpeaker = 0;
+            for (let i = 0; i < recognizedSegments.length; i++) {
+              const seg = recognizedSegments[i];
+              const prev = merged[merged.length - 1];
+              // 简易说话人检测: 时间间隔 > 5 秒视为换人
+              const gap = prev ? timeGapSeconds(prev.endTime, seg.time) : 999;
+              if (gap > 5) currentSpeaker = (currentSpeaker + 1) % SPEAKER_COLORS.length;
+              // 合并：同一说话人、间隔 < 3 秒
+              if (prev && gap < 3 && prev.speakerIdx === currentSpeaker) {
+                prev.source += " " + seg.source;
+                prev.translation += " " + seg.translation;
+                prev.endTime = seg.time;
+                prev.originalIndices.push(i);
+              } else {
+                merged.push({ source: seg.source, translation: seg.translation, time: seg.time, endTime: seg.time, speakerIdx: currentSpeaker, originalIndices: [i] });
+              }
+            }
+            return (
             <div className="space-y-3 max-w-3xl mx-auto">
-              {recognizedSegments.map((seg, i) => (
-                <FadeIn key={i}>
-                  <GlassCard className="py-3 group">
+              {merged.map((seg, mi) => (
+                <FadeIn key={mi}>
+                  <GlassCard className={cn("py-3 group border-l-2", SPEAKER_COLORS[seg.speakerIdx])}>
                     <div className="flex items-start gap-3">
                       <span className="text-[10px] text-[var(--text-placeholder)] pt-1 shrink-0 font-mono">{seg.time}</span>
                       <div className="flex-1 min-w-0 space-y-1">
@@ -278,9 +446,9 @@ export function LiveTranslationView() {
                       </div>
                       {/* 行操作按钮 */}
                       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                        <button onClick={() => toggleBookmark(i)} className="p-1 hover:bg-white/10 rounded"
+                        <button onClick={() => toggleBookmark(seg.originalIndices[0])} className="p-1 hover:bg-white/10 rounded"
                           title="书签">
-                          <Bookmark size={12} className={bookmarkedIdx.has(i) ? "text-amber-400 fill-amber-400" : "text-[var(--text-muted)]"} />
+                          <Bookmark size={12} className={bookmarkedIdx.has(seg.originalIndices[0]) ? "text-amber-400 fill-amber-400" : "text-[var(--text-muted)]"} />
                         </button>
                         <button
                           onClick={() => {
@@ -296,7 +464,8 @@ export function LiveTranslationView() {
                 </FadeIn>
               ))}
             </div>
-          )}
+            );
+          })()}
 
           {/* 实时部分识别 */}
           {partialText && isTranslating && (
@@ -359,6 +528,47 @@ export function LiveTranslationView() {
           </div>
         </div>
       )}
+
+      {/* 浮动字幕窗口 */}
+      {showFloatingSubtitle && <FloatingSubtitle />}
     </div>
   );
+}
+
+// O-21: 计算两个时间字符串之间的秒数差（格式如 "10:30:05" 或 "10:30"）
+function timeGapSeconds(t1: string, t2: string): number {
+  const parse = (t: string) => {
+    const parts = t.split(":").map(Number);
+    if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    if (parts.length === 2) return parts[0] * 60 + parts[1];
+    return 0;
+  };
+  return Math.abs(parse(t2) - parse(t1));
+}
+
+// O-22: SRT/VTT 时间戳工具
+function timeToSrtTimestamp(timeStr: string, offsetSec: number): string {
+  const parts = timeStr.split(":").map(Number);
+  let totalSec = 0;
+  if (parts.length === 3) totalSec = parts[0] * 3600 + parts[1] * 60 + parts[2];
+  else if (parts.length === 2) totalSec = parts[0] * 60 + parts[1];
+  totalSec += offsetSec;
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = Math.floor(totalSec % 60);
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")},000`;
+}
+
+function timeToVttTimestamp(timeStr: string, offsetSec: number): string {
+  return timeToSrtTimestamp(timeStr, offsetSec).replace(",", ".");
+}
+
+function downloadFile(content: string, fileName: string, mimeType: string) {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = fileName;
+  a.click();
+  URL.revokeObjectURL(url);
 }

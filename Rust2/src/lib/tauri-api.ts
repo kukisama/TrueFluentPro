@@ -282,12 +282,17 @@ export interface SavedImage {
 }
 
 export interface CompletionRequest {
-  messages: { role: string; content: string }[];
+  messages: { role: string; content: string | ContentPart[] }[];
   model: string;
   temperature?: number;
   max_tokens?: number;
   endpoint_id: string;
 }
+
+/** OpenAI 多模态 content part */
+export type ContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string; detail?: string } };
 
 export interface CompletionResponse {
   content: string;
@@ -300,6 +305,8 @@ export interface CompletionResponse {
 export interface StreamTokenEvent {
   stream_id: string;
   token?: string;
+  reasoning?: string;
+  usage?: { prompt_tokens: number; completion_tokens: number };
   done?: boolean;
   error?: string;
 }
@@ -520,6 +527,44 @@ export interface ModelCapabilityEntry {
   supports_negative_prompt: boolean;
 }
 
+// 音频设备枚举
+export interface AudioDeviceInfo {
+  id: string;
+  name: string;
+  device_type: "Input" | "Output" | "Loopback";
+  is_default: boolean;
+}
+
+// AAD 设备代码流
+export interface DeviceCodeResponse {
+  user_code: string;
+  verification_uri: string;
+  message: string;
+  expires_in: number;
+  interval: number;
+}
+
+export interface AadAuthResult {
+  endpoint_id: string;
+  success: boolean;
+  error?: string;
+  warning?: string;
+  token?: {
+    access_token: string;
+    token_type: string;
+    expires_in: number;
+    scope: string;
+  };
+}
+
+/// 租户选择事件（多租户时由后端发出）
+export interface AadTenantSelectionEvent {
+  endpoint_id: string;
+  tenants: Array<{ tenant_id: string; display_name: string; default_domain: string }>;
+  client_id: string;
+  scope: string;
+}
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  类型安全的 invoke 封装
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -573,6 +618,10 @@ export const api = {
   createSession: (title: string, sessionType: string) =>
     invoke<Session>("create_session", { title, sessionType }),
   deleteSession: (sessionId: string) => invoke<void>("delete_session", { sessionId }),
+  renameSession: (sessionId: string, newTitle: string) => invoke<void>("rename_session", { sessionId, newTitle }),
+  optimizePrompt: (prompt: string, endpointId?: string) => invoke<string>("optimize_prompt", { prompt, endpointId }),
+  // O-34: 获取后端支持的语言列表
+  getSupportedLanguages: () => invoke<[string, string][]>("get_supported_languages"),
   getSessionMessages: (sessionId: string) => invoke<ChatMessage[]>("get_session_messages", { sessionId }),
   addMessage: (msg: Omit<ChatMessage, "id" | "created_at">) =>
     invoke<ChatMessage>("add_message", { msg }),
@@ -592,11 +641,19 @@ export const api = {
   cancelTask: (taskId: string) => invoke<void>("cancel_task", { taskId }),
   retryTask: (taskId: string) => invoke<void>("retry_task", { taskId }),
   getTaskEngineStats: () => invoke<TaskEngineStats>("get_task_engine_stats"),
+  // O-08: 更新引擎配置
+  updateTaskEngineConfig: (concurrency: number, timeoutSecs: number) =>
+    invoke<void>("update_task_engine_config", { concurrency, timeoutSecs }),
+  // O-48: 清理过期任务
+  cleanupExpiredTasks: (days: number) => invoke<number>("cleanup_expired_tasks", { days }),
   listTasks: (status?: TaskStatus, limit?: number) =>
     invoke<AudioTask[]>("list_tasks", { status, limit }),
   getTaskExecutions: (taskId: string) => invoke<TaskExecution[]>("get_task_executions", { taskId }),
   onTaskEvent: (cb: (e: TaskEvent) => void): Promise<UnlistenFn> =>
     listen<TaskEvent>("task-event", (event) => cb(event.payload)),
+  // O-40: 图片管线进度事件
+  onImagePipelineProgress: (cb: (e: { step: string; progress: number }) => void): Promise<UnlistenFn> =>
+    listen<{ step: string; progress: number }>("image-pipeline-progress", (event) => cb(event.payload)),
 
   // 系统
   getAppInfo: () => invoke<AppInfo>("get_app_info"),
@@ -616,7 +673,31 @@ export const api = {
     invoke<ImagePipelineResult>("run_image_pipeline", { request }),
   getImageModelCatalog: () => invoke<ModelCapabilityEntry[]>("get_image_model_catalog"),
 
-  // 视频（预留）
-  generateVideo: (prompt: string, model: string, endpointId: string) =>
-    invoke<string>("generate_video", { prompt, model, endpointId }),
+  // 视频生成（完整 create → poll → download，进度通过 video-progress 事件推送）
+  generateVideo: (request: {
+    prompt: string; model: string; endpoint_id: string;
+    size?: string; duration_seconds?: number; n?: number;
+    api_mode?: "sora_jobs" | "videos"; reference_image_path?: string;
+  }) => invoke<string>("generate_video", { request }),
+  onVideoProgress: (cb: (e: {
+    task_id: string; status: string; message?: string;
+    error?: string; file_path?: string; elapsed_seconds?: number;
+    video_status?: string; video_id?: string;
+  }) => void): Promise<UnlistenFn> =>
+    listen<any>("video-progress", (event) => cb(event.payload)),
+
+  // 音频设备枚举
+  listAudioDevices: () => invoke<AudioDeviceInfo[]>("list_audio_devices"),
+
+  // AAD 认证
+  aadStartDeviceCodeFlow: (endpointId: string, tenantId: string, clientId: string, scope?: string) =>
+    invoke<DeviceCodeResponse>("aad_start_device_code_flow", { endpointId, tenantId, clientId, scope }),
+  aadSelectTenant: (endpointId: string, tenantId: string, clientId: string, scope?: string) =>
+    invoke<void>("aad_select_tenant", { endpointId, tenantId, clientId, scope }),
+  aadRefreshToken: (endpointId: string) =>
+    invoke<void>("aad_refresh_token", { endpointId }),
+  onAadAuthResult: (cb: (e: AadAuthResult) => void): Promise<UnlistenFn> =>
+    listen<AadAuthResult>("aad-auth-result", (event) => cb(event.payload)),
+  onAadTenantSelection: (cb: (e: AadTenantSelectionEvent) => void): Promise<UnlistenFn> =>
+    listen<AadTenantSelectionEvent>("aad-tenant-selection", (event) => cb(event.payload)),
 };

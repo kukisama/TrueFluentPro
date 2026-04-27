@@ -6,7 +6,7 @@ import {
   TestTube, Monitor, Cloud, FileText,
   Mic, Search, Video, ArrowUpDown, Download, Upload, Info,
   Sun, Moon, Shield, Zap, Loader2, ChevronRight, ChevronLeft,
-  CheckCircle2, XCircle, SkipForward,
+  CheckCircle2, XCircle, SkipForward, Copy, Clipboard,
 } from "lucide-react";
 import { cn } from "../lib/utils";
 import {
@@ -402,7 +402,7 @@ function TestResultRow({ item }: { item: EndpointTestItem }) {
 
 /* ─── 新建端点表单 ─── */
 
-/* ─── 模型引用选择器（对齐 C# ModelOption 二级下拉） ─── */
+/* ─── O-19: 端点→模型级联选择器（单格：端点名/模型名）─── */
 
 function ModelRefSelector({
   label,
@@ -418,36 +418,45 @@ function ModelRefSelector({
   const config = useAppStore((s) => s.config);
   const endpoints = config?.endpoints ?? [];
 
-  // 构建 "端点名/模型名" 列表（对齐 C# BuildModelOptions）
-  const options = endpoints
+  // 过滤有合适模型的端点
+  const filteredEndpoints = endpoints
     .filter((ep) => ep.enabled && ep.endpoint_type !== "azure_speech")
-    .flatMap((ep) =>
-      ep.models
-        .filter((m) => !capability || m.capabilities.includes(capability))
-        .map((m) => ({
-          endpoint_id: ep.id,
-          model_id: m.model_id,
-          display: `${ep.name} / ${m.display_name || m.model_id}`,
-        })),
-    );
+    .filter((ep) => !capability || ep.models.some((m) => m.capabilities.includes(capability)));
 
-  const currentKey = `${value.endpoint_id}|${value.model_id}`;
+  // 构建扁平化的 "端点名/模型名" 选项列表
+  const options: { endpoint_id: string; model_id: string; displayLabel: string }[] = [];
+  for (const ep of filteredEndpoints) {
+    const models = ep.models.filter((m) => !capability || m.capabilities.includes(capability));
+    for (const m of models) {
+      options.push({
+        endpoint_id: ep.id,
+        model_id: m.model_id,
+        displayLabel: `${ep.name} / ${m.display_name || m.model_id}`,
+      });
+    }
+  }
+
+  const currentValue = value.endpoint_id && value.model_id
+    ? `${value.endpoint_id}::${value.model_id}`
+    : "";
 
   return (
     <div>
       <Label>{label}</Label>
       <Select
         className="w-full"
-        value={currentKey}
+        value={currentValue}
         onChange={(e) => {
-          const [eid, mid] = e.target.value.split("|");
-          onChange({ endpoint_id: eid || "", model_id: mid || "" });
+          const v = e.target.value;
+          if (!v) { onChange({ endpoint_id: "", model_id: "" }); return; }
+          const [eid, ...rest] = v.split("::");
+          onChange({ endpoint_id: eid, model_id: rest.join("::") });
         }}
       >
-        <option value="|">未配置</option>
+        <option value="">选择模型</option>
         {options.map((o) => (
-          <option key={`${o.endpoint_id}|${o.model_id}`} value={`${o.endpoint_id}|${o.model_id}`}>
-            {o.display}
+          <option key={`${o.endpoint_id}::${o.model_id}`} value={`${o.endpoint_id}::${o.model_id}`}>
+            {o.displayLabel}
           </option>
         ))}
       </Select>
@@ -560,6 +569,8 @@ function EndpointForm({ onClose }: { onClose: () => void }) {
       id: tempId, name: "temp", endpoint_type: form.endpoint_type,
       url: form.url, api_key: form.api_key, api_version: form.api_version || undefined,
       models: [], enabled: true, auth_header_mode: form.auth_header_mode,
+      auth_mode: form.auth_mode, azure_tenant_id: form.azure_tenant_id,
+      azure_client_id: form.azure_client_id,
       speech_subscription_key: "", speech_region: "", speech_endpoint: "",
     };
     await api.addEndpoint(tempEp);
@@ -726,14 +737,10 @@ function EndpointForm({ onClose }: { onClose: () => void }) {
               </div>
               <div>
                 <Label>Client ID（可选）</Label>
-                <Input value={form.azure_client_id} onChange={(e) => update("azure_client_id", e.target.value)} placeholder="留空使用默认应用" />
+                <Input value={form.azure_client_id} onChange={(e) => update("azure_client_id", e.target.value)} placeholder="留空使用 Azure CLI 默认应用" />
               </div>
               <div className="col-span-2">
-                <div className="rounded-lg bg-blue-500/10 border border-blue-500/20 p-3">
-                  <p className="text-xs text-[var(--text-secondary)]">
-                    🔐 AAD 登录功能即将上线。配置 Tenant ID 后可通过 Microsoft Entra ID 进行交互式认证，无需 API Key。
-                  </p>
-                </div>
+                <AadLoginButton endpointId={form.name || "new"} tenantId={form.azure_tenant_id} clientId={form.azure_client_id} />
               </div>
             </div>
           )}
@@ -1029,14 +1036,14 @@ function EndpointEditPanel({ endpoint, onClose }: { endpoint: AiEndpoint; onClos
             <div><Label>API Key</Label><Input type="password" value={form.api_key} onChange={(e) => setForm((s) => ({ ...s, api_key: e.target.value }))} onBlur={() => scheduleSave()} /></div>
             <div><Label>API 版本</Label><Input value={form.api_version || ""} onChange={(e) => setForm((s) => ({ ...s, api_version: e.target.value }))} onBlur={() => scheduleSave()} /></div>
             <div><Label>区域</Label><Input value={form.region || ""} onChange={(e) => setForm((s) => ({ ...s, region: e.target.value }))} onBlur={() => scheduleSave()} /></div>
-            <div>
-              <Label>认证方式</Label>
-              <Select className="w-full" value={form.auth_header_mode} onChange={(e) => update("auth_header_mode", e.target.value)}>
-                <option value="api_key">api-key Header</option>
-                <option value="bearer">Bearer Token</option>
-              </Select>
-            </div>
           </div>
+
+          {/* AAD 登录 — 仅 Azure 端点显示 */}
+          {(form.endpoint_type === "azure_open_ai" || form.endpoint_type === "api_management_gateway") && (
+            <div className="mt-2">
+              <AadLoginButton endpointId={endpoint.id} tenantId={form.azure_tenant_id || ""} clientId={form.azure_client_id || ""} />
+            </div>
+          )}
 
           <Separator />
 
@@ -1165,6 +1172,137 @@ function EndpointEditPanel({ endpoint, onClose }: { endpoint: AiEndpoint; onClos
             </div>
           )}
         </>
+      )}
+    </div>
+  );
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  AAD 设备代码流登录按钮
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+function AadLoginButton({ endpointId, tenantId, clientId }: { endpointId: string; tenantId: string; clientId: string }) {
+  const [status, setStatus] = useState<"idle" | "waiting" | "selecting-tenant" | "success" | "error">("idle");
+  const [errorMsg, setErrorMsg] = useState("");
+  const [warningMsg, setWarningMsg] = useState("");
+  const [tenants, setTenants] = useState<Array<{ tenant_id: string; display_name: string; default_domain: string }>>([]);
+  const [tenantCtx, setTenantCtx] = useState<{ client_id: string; scope: string }>({ client_id: "", scope: "" });
+
+  useEffect(() => {
+    const unlistenAuth = api.onAadAuthResult((result) => {
+      if (result.endpoint_id !== endpointId) return;
+      // 如果后端通知需要浏览器重新认证（如 MFA），切换到等待状态
+      if ((result as any).reauth) {
+        setStatus("waiting");
+        return;
+      }
+      if (result.success) {
+        setStatus("success");
+        if (result.warning) setWarningMsg(result.warning);
+      } else {
+        setStatus("error");
+        setErrorMsg(result.error || "认证失败");
+      }
+    });
+    const unlistenTenant = api.onAadTenantSelection((event) => {
+      if (event.endpoint_id !== endpointId) return;
+      setTenants(event.tenants);
+      setTenantCtx({ client_id: event.client_id, scope: event.scope });
+      setStatus("selecting-tenant");
+    });
+    return () => {
+      unlistenAuth.then(fn => fn());
+      unlistenTenant.then(fn => fn());
+    };
+  }, [endpointId]);
+
+  const handleLogin = async () => {
+    if (!endpointId) return;
+    setStatus("waiting");
+    setErrorMsg("");
+    setWarningMsg("");
+    try {
+      await api.aadStartDeviceCodeFlow(endpointId, tenantId, clientId);
+    } catch (e: any) {
+      setStatus("error");
+      setErrorMsg(String(e));
+    }
+  };
+
+  const handleSelectTenant = async (tid: string) => {
+    setStatus("waiting");
+    try {
+      await api.aadSelectTenant(endpointId, tid, tenantCtx.client_id, tenantCtx.scope);
+    } catch (e: any) {
+      setStatus("error");
+      setErrorMsg(String(e));
+    }
+  };
+
+  return (
+    <div className="rounded-lg p-3 space-y-2" style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)' }}>
+      {status === "idle" && (
+        <>
+          <p className="text-xs text-[var(--text-secondary)]">
+            🔐 通过 Microsoft Entra ID 浏览器交互式登录，无需手动输入 API Key。
+          </p>
+          <Button variant="secondary" size="sm" onClick={handleLogin}>
+            <Shield size={14} /> 登录 AAD
+          </Button>
+        </>
+      )}
+      {status === "waiting" && (
+        <div className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
+          <Loader2 size={12} className="animate-spin" /> 浏览器已打开，请在浏览器中完成登录...
+          <Button variant="ghost" size="sm" onClick={() => setStatus("idle")} className="ml-2 text-xs">取消</Button>
+        </div>
+      )}
+      {status === "selecting-tenant" && (
+        <div className="space-y-2">
+          <p className="text-xs text-[var(--text-secondary)]">
+            🏢 检测到多个租户，请选择您的 Azure 资源所在的租户：
+          </p>
+          <div className="space-y-0.5 max-h-40 overflow-y-auto rounded p-1" style={{ border: '1px solid var(--border-subtle)' }}>
+            {tenants.map((t) => (
+              <button
+                key={t.tenant_id}
+                className="w-full text-left px-3 py-2 rounded text-xs transition-colors flex flex-col gap-0.5"
+                style={{ border: '1px solid transparent' }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--hover-bg)'; e.currentTarget.style.borderColor = 'var(--border-medium)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = ''; e.currentTarget.style.borderColor = 'transparent'; }}
+                onClick={() => handleSelectTenant(t.tenant_id)}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="font-medium" style={{ color: 'var(--text-primary)' }}>{t.display_name || t.default_domain || "未命名租户"}</span>
+                  {t.default_domain && t.display_name && (
+                    <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>({t.default_domain})</span>
+                  )}
+                </div>
+                <span className="text-[10px] font-mono" style={{ color: 'var(--text-muted)' }}>{t.tenant_id}</span>
+              </button>
+            ))}
+          </div>
+          <Button variant="ghost" size="sm" onClick={() => setStatus("idle")} className="text-xs">取消</Button>
+        </div>
+      )}
+      {status === "success" && (
+        <div className="space-y-1">
+          <div className="flex items-center gap-1 text-xs" style={{ color: 'var(--active-text)' }}>
+            <CheckCircle2 size={14} /> AAD 登录成功！Token 已自动保存。
+            <Button variant="ghost" size="sm" onClick={() => setStatus("idle")} className="ml-2 text-xs">重新登录</Button>
+          </div>
+          {warningMsg && (
+            <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>{warningMsg}</p>
+          )}
+        </div>
+      )}
+      {status === "error" && (
+        <div className="space-y-1">
+          <p className="text-xs flex items-center gap-1" style={{ color: '#ef4444' }}>
+            <XCircle size={14} /> {errorMsg}
+          </p>
+          <Button variant="secondary" size="sm" onClick={handleLogin}>重试</Button>
+        </div>
       )}
     </div>
   );
@@ -1421,33 +1559,51 @@ function StorageSection() {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function AudioSection() {
+  const config = useAppStore((s) => s.config);
+  const audio = config?.audio;
+  const updateConfig = useConfigUpdater();
+
+  if (!audio) return null;
+
   return (
     <div className="max-w-2xl space-y-6">
       <SectionHeader title="音频预处理" description="WebRTC APM 参数、设备选择" />
 
       <GlassCard className="space-y-4">
         <h3 className="text-sm font-semibold text-[var(--text-primary)]">设备</h3>
-        <div><Label>输入设备（麦克风）</Label><Select className="w-full"><option>默认设备</option></Select></div>
-        <div><Label>回环采集设备（系统声音）</Label><Select className="w-full"><option>默认输出设备</option></Select></div>
-        <div><Label>采样率</Label><Select className="w-40"><option>16000 Hz</option><option>44100 Hz</option><option>48000 Hz</option></Select></div>
+        <div><Label>输入设备（麦克风）</Label>
+          <Select className="w-full" value={audio.input_device_id || ""}
+            onChange={(e) => updateConfig((cfg) => { cfg.audio.input_device_id = e.target.value || undefined; })}>
+            <option value="">默认设备</option>
+          </Select>
+        </div>
+        <div><Label>回环采集设备（系统声音）</Label>
+          <Select className="w-full" value={audio.loopback_device_id || ""}
+            onChange={(e) => updateConfig((cfg) => { cfg.audio.loopback_device_id = e.target.value || undefined; })}>
+            <option value="">默认输出设备</option>
+          </Select>
+        </div>
+        <div><Label>采样率</Label>
+          <Select className="w-40" value={audio.sample_rate.toString()}
+            onChange={(e) => updateConfig((cfg) => { cfg.audio.sample_rate = Number(e.target.value); })}>
+            <option value="16000">16000 Hz</option>
+            <option value="44100">44100 Hz</option>
+            <option value="48000">48000 Hz</option>
+          </Select>
+        </div>
       </GlassCard>
 
       <GlassCard className="space-y-4">
         <h3 className="text-sm font-semibold text-[var(--text-primary)]">WebRTC APM</h3>
-        <SettingRow label="回声消除 (AEC)" description="消除扬声器回声"><Switch defaultChecked /></SettingRow>
-        <SettingRow label="噪音抑制 (NS)" description="降低环境噪音"><Switch defaultChecked /></SettingRow>
-        <SettingRow label="自动增益 (AGC)" description="自动调整音量"><Switch defaultChecked /></SettingRow>
-        <SettingRow label="高通滤波" description="去除低频杂音"><Switch /></SettingRow>
-        <SettingRow label="前置增益 (PreAmp)" description="输入预放大"><Switch /></SettingRow>
-      </GlassCard>
-
-      <GlassCard className="space-y-4">
-        <h3 className="text-sm font-semibold text-[var(--text-primary)]">VAD 门控</h3>
-        <SettingRow label="启用 VAD 门控" description="语音活动检测，静默时不发送数据"><Switch defaultChecked /></SettingRow>
-        <div className="grid grid-cols-2 gap-4">
-          <div><Label>VAD 灵敏度</Label><Select className="w-full"><option>低</option><option>中</option><option>高</option></Select></div>
-          <div><Label>静默持续 (毫秒)</Label><Input type="number" defaultValue="300" className="w-full" /></div>
-        </div>
+        <SettingRow label="回声消除 (AEC)" description="消除扬声器回声">
+          <Switch checked={audio.enable_aec} onCheckedChange={(v) => updateConfig((cfg) => { cfg.audio.enable_aec = v; })} />
+        </SettingRow>
+        <SettingRow label="噪音抑制 (NS)" description="降低环境噪音">
+          <Switch checked={audio.enable_ns} onCheckedChange={(v) => updateConfig((cfg) => { cfg.audio.enable_ns = v; })} />
+        </SettingRow>
+        <SettingRow label="自动增益 (AGC)" description="自动调整音量">
+          <Switch checked={audio.enable_agc} onCheckedChange={(v) => updateConfig((cfg) => { cfg.audio.enable_agc = v; })} />
+        </SettingRow>
       </GlassCard>
     </div>
   );
@@ -1480,6 +1636,8 @@ function InsightSection() {
           <ModelRefSelector label="快问模型" value={ai.quick_model} onChange={setModelRef("quick_model")} capability="text" />
           <ModelRefSelector label="对话模型" value={ai.conversation_model} onChange={setModelRef("conversation_model")} capability="text" />
           <ModelRefSelector label="意图识别模型" value={ai.intent_model} onChange={setModelRef("intent_model")} capability="text" />
+          {/* O-09: 补齐缺失的复盘模型选择器 */}
+          <ModelRefSelector label="复盘模型" value={ai.review_model} onChange={setModelRef("review_model")} capability="text" />
         </div>
       </GlassCard>
 
@@ -1747,6 +1905,44 @@ function TransferSection() {
     }
   };
 
+  const handleExportToClipboard = async (fullConfig: boolean) => {
+    try {
+      const json = await api.exportConfig();
+      let data = json;
+      if (!fullConfig) {
+        const parsed = JSON.parse(json);
+        data = JSON.stringify({ endpoints: parsed.endpoints, ai: parsed.ai, media: parsed.media }, null, 2);
+      }
+      await navigator.clipboard.writeText(data);
+      setStatus(`✓ 已复制到剪贴板`);
+    } catch (e) {
+      setStatus(`✗ 复制失败: ${e}`);
+    }
+  };
+
+  const handleImportFromClipboard = async () => {
+    try {
+      const json = await navigator.clipboard.readText();
+      if (!json.trim()) { setStatus("✗ 剪贴板为空"); return; }
+      // 尝试解析验证
+      JSON.parse(json);
+      // 合并导入
+      const partial = JSON.parse(json);
+      const currentJson = await api.exportConfig();
+      const current = JSON.parse(currentJson);
+      if (partial.endpoints) current.endpoints = partial.endpoints;
+      if (partial.ai) current.ai = partial.ai;
+      if (partial.media) current.media = partial.media;
+      await api.importConfig(JSON.stringify(current));
+      const cfg = await api.getConfig();
+      useAppStore.getState().setConfig(cfg);
+      await api.refreshProviders();
+      setStatus("✓ 从剪贴板导入成功");
+    } catch (e) {
+      setStatus(`✗ 剪贴板导入失败: ${e}`);
+    }
+  };
+
   const handleImport = async (fullConfig: boolean) => {
     try {
       const path = await dialogOpen({
@@ -1798,6 +1994,15 @@ function TransferSection() {
         <div className="flex gap-2">
           <Button variant="secondary" size="sm" onClick={() => handleExport(true)}><Download size={14} /> 导出全部</Button>
           <Button variant="secondary" size="sm" onClick={() => handleImport(true)}><Upload size={14} /> 导入全部</Button>
+        </div>
+      </GlassCard>
+
+      <GlassCard className="space-y-4">
+        <h3 className="text-sm font-semibold text-[var(--text-primary)]">配置迁移</h3>
+        <p className="text-xs text-[var(--text-muted)]">通过剪贴板快速复制配置到其他设备</p>
+        <div className="flex gap-2 flex-wrap">
+          <Button variant="secondary" size="sm" onClick={() => handleExportToClipboard(true)}><Copy size={14} /> 复制AI配置</Button>
+          <Button variant="secondary" size="sm" onClick={() => handleImportFromClipboard()}><Clipboard size={14} /> 从剪贴板导入</Button>
         </div>
       </GlassCard>
 

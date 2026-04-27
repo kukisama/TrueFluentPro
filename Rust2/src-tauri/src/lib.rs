@@ -11,7 +11,7 @@ use std::sync::Arc;
 use tauri::Manager;
 
 use models::{EndpointType, AiEndpoint};
-use providers::{OpenAiChatProvider, OpenAiImageProvider, AzureSpeechProvider, AzureSttProvider, AzureTtsProvider};
+use providers::{OpenAiChatProvider, OpenAiImageProvider, OpenAiTranslationProvider, OpenAiRealtimeProvider, AzureSpeechProvider, AzureSttProvider, AzureTtsProvider};
 use state::AppState;
 use storage::Database;
 
@@ -24,7 +24,11 @@ async fn register_providers_from_config_async(state: &AppState, endpoints: &[AiE
             EndpointType::AzureOpenAi | EndpointType::OpenAiCompatible | EndpointType::ApiManagementGateway | EndpointType::Custom => {
                 registry.register_ai_completion(Arc::new(OpenAiChatProvider::new(ep.clone())));
                 registry.register_image_gen(Arc::new(OpenAiImageProvider::new(ep.clone())));
-                tracing::info!("已注册 AI+Image Provider: {} ({})", ep.name, ep.id);
+                // B-05: TextTranslation（基于 AI Completion 的翻译适配器）
+                registry.register_text_translation(Arc::new(OpenAiTranslationProvider::new(ep.clone())));
+                // P3-1: OpenAI Realtime WebSocket 翻译
+                registry.register_realtime_speech(Arc::new(OpenAiRealtimeProvider::new(ep.clone())));
+                tracing::info!("已注册 AI+Image+Translation+Realtime Provider: {} ({})", ep.name, ep.id);
             }
             EndpointType::AzureSpeech => {
                 registry.register_realtime_speech(Arc::new(AzureSpeechProvider::new(ep.clone())));
@@ -45,10 +49,11 @@ fn register_providers_from_config(state: &AppState, endpoints: &[AiEndpoint]) {
     for ep in endpoints.iter().filter(|e| e.enabled) {
         match ep.endpoint_type {
             EndpointType::AzureOpenAi | EndpointType::OpenAiCompatible | EndpointType::ApiManagementGateway | EndpointType::Custom => {
-                // OpenAI 兼容端点同时注册 Chat 和 Image 能力
                 registry.register_ai_completion(Arc::new(OpenAiChatProvider::new(ep.clone())));
                 registry.register_image_gen(Arc::new(OpenAiImageProvider::new(ep.clone())));
-                tracing::info!("已注册 AI+Image Provider: {} ({})", ep.name, ep.id);
+                registry.register_text_translation(Arc::new(OpenAiTranslationProvider::new(ep.clone())));
+                registry.register_realtime_speech(Arc::new(OpenAiRealtimeProvider::new(ep.clone())));
+                tracing::info!("已注册 AI+Image+Translation+Realtime Provider: {} ({})", ep.name, ep.id);
             }
             EndpointType::AzureSpeech => {
                 registry.register_realtime_speech(Arc::new(AzureSpeechProvider::new(ep.clone())));
@@ -56,7 +61,6 @@ fn register_providers_from_config(state: &AppState, endpoints: &[AiEndpoint]) {
                 registry.register_tts(Arc::new(AzureTtsProvider::new(ep.clone())));
                 tracing::info!("已注册 Speech+STT+TTS Provider: {} ({})", ep.name, ep.id);
             }
-            // Translator / DeepL 等留空 — 后续插件化
             _ => {
                 tracing::debug!("端点 {} ({:?}) 暂无对应 Provider 实现", ep.name, ep.endpoint_type);
             }
@@ -66,6 +70,28 @@ fn register_providers_from_config(state: &AppState, endpoints: &[AiEndpoint]) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // O-26: CrashLogger — panic hook 记录崩溃日志
+    {
+        let default_hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            // 写入崩溃日志到临时目录
+            let crash_dir = std::env::temp_dir().join("TrueFluentPro-crash-logs");
+            let _ = std::fs::create_dir_all(&crash_dir);
+            let ts = chrono::Local::now().format("%Y%m%d_%H%M%S");
+            let path = crash_dir.join(format!("crash_{ts}.log"));
+            let mut msg = format!("=== TrueFluentPro Crash Report ===\nTime: {}\n", chrono::Local::now().to_rfc3339());
+            if let Some(loc) = info.location() {
+                msg.push_str(&format!("Location: {}:{}:{}\n", loc.file(), loc.line(), loc.column()));
+            }
+            msg.push_str(&format!("Payload: {info}\n"));
+            msg.push_str(&format!("Backtrace:\n{:?}\n", std::backtrace::Backtrace::force_capture()));
+            let _ = std::fs::write(&path, &msg);
+            eprintln!("[CrashLogger] 崩溃日志已写入: {}", path.display());
+            // 调用默认 hook（打印到 stderr）
+            default_hook(info);
+        }));
+    }
+
     // 初始化日志
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -112,6 +138,44 @@ pub fn run() {
                 tracing::info!("任务引擎已启动");
             });
 
+            // 启动时自动刷新所有 AAD 端点的 token（后台静默执行）
+            let handle2 = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let state_ref: &AppState = handle2.state::<AppState>().inner();
+                let endpoints_to_refresh: Vec<(String, String, String)> = {
+                    let tokens = state_ref.refresh_tokens.read().await;
+                    let config = state_ref.config.read().await;
+                    config.endpoints.iter()
+                        .filter(|ep| ep.auth_mode == "aad" && tokens.contains_key(&ep.id))
+                        .map(|ep| {
+                            let tid = if ep.azure_tenant_id.is_empty() { "common".to_string() } else { ep.azure_tenant_id.clone() };
+                            let cid = if ep.azure_client_id.is_empty() { "04b07795-8ddb-461a-bbee-02f9e1bf7b46".to_string() } else { ep.azure_client_id.clone() };
+                            (ep.id.clone(), tid, cid)
+                        })
+                        .collect()
+                };
+
+                for (endpoint_id, tenant_id, client_id) in endpoints_to_refresh {
+                    let rt = {
+                        let tokens = state_ref.refresh_tokens.read().await;
+                        tokens.get(&endpoint_id).cloned()
+                    };
+                    let Some(refresh_token) = rt else { continue };
+
+                    match commands::auth::refresh_token_silent(state_ref, &endpoint_id, &tenant_id, &client_id, &refresh_token).await {
+                        Ok(_) => tracing::info!("AAD token 自动刷新成功: {endpoint_id}"),
+                        Err(e) => tracing::warn!("AAD token 自动刷新失败 ({endpoint_id}): {e}"),
+                    }
+                }
+
+                // AAD token 刷新后，重新注册 providers 让新 token 对所有能力生效
+                let config = state_ref.config.read().await;
+                let endpoints = config.endpoints.clone();
+                drop(config);
+                register_providers_from_config_async(state_ref, &endpoints).await;
+                tracing::info!("AAD 启动刷新后已重新注册 providers");
+            });
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -139,19 +203,25 @@ pub fn run() {
             commands::list_sessions,
             commands::create_session,
             commands::delete_session,
+            commands::rename_session,
             commands::get_session_messages,
             commands::add_message,
+            commands::get_supported_languages,
+            commands::optimize_prompt,
             // 音频库 & 生命周期
             commands::list_audio_items,
             commands::add_audio_item,
             commands::delete_audio_item,
             commands::get_audio_lifecycle,
             commands::update_lifecycle_stage,
+            commands::list_audio_devices,
             // 任务引擎
             commands::submit_task,
             commands::cancel_task,
             commands::retry_task,
             commands::get_task_engine_stats,
+            commands::update_task_engine_config,
+            commands::cleanup_expired_tasks,
             commands::list_tasks,
             commands::get_task_executions,
             // 系统
@@ -161,6 +231,10 @@ pub fn run() {
             commands::test_endpoint,
             commands::get_vendor_profiles,
             commands::discover_models,
+            // AAD 认证
+            commands::aad_start_device_code_flow,
+            commands::aad_select_tenant,
+            commands::aad_refresh_token,
             // 配置导入/导出
             commands::export_config,
             commands::import_config,

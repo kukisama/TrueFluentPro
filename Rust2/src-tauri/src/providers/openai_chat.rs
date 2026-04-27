@@ -29,14 +29,9 @@ impl OpenAiChatProvider {
 
         match self.endpoint.endpoint_type {
             EndpointType::AzureOpenAi => {
-                // Azure: /openai/deployments/{deployment}/chat/completions?api-version=...
-                let api_ver = self.endpoint.api_version.as_deref().unwrap_or("2024-08-01-preview");
-                if let Some(model) = self.endpoint.first_model_with_capability(ModelCapability::Text) {
-                    let deploy = model.effective_deployment();
-                    format!("{base}/openai/deployments/{deploy}/chat/completions?api-version={api_ver}")
-                } else {
-                    format!("{base}/openai/v1/chat/completions")
-                }
+                // Azure OpenAI: 对齐 C# azure-openai.json textApiProtocolMode=Responses
+                // 优先走 /openai/v1/responses（和 C# 厂商包一致）
+                format!("{base}/openai/v1/responses")
             }
             EndpointType::ApiManagementGateway => {
                 // APIM: 优先 /responses（对齐 C# apim-gateway.json text_url_candidates 第 1 条）
@@ -73,9 +68,50 @@ impl OpenAiChatProvider {
             }
         }
     }
-    /// 是否走 Responses API（APIM 用 /responses 而非 /chat/completions）
+    /// 是否走 Responses API — Azure OpenAI 和 APIM 都走 Responses（对齐 C# 厂商包配置）
     fn is_responses_api(&self) -> bool {
-        self.endpoint.endpoint_type == EndpointType::ApiManagementGateway
+        matches!(self.endpoint.endpoint_type, EndpointType::AzureOpenAi | EndpointType::ApiManagementGateway)
+    }
+
+    /// B-08/P3-11 修复: 从完整 messages 构建 Responses API 的 input。
+    /// 支持多轮对话：将所有 messages 转为 Responses API input 数组格式。
+    /// - 单条纯文本 → 直接返回字符串
+    /// - 多条消息 → 转为 [{type: "message", role, content}...] 数组
+    fn build_responses_input(messages: &[ChatMessage]) -> serde_json::Value {
+        if messages.is_empty() {
+            return json!("");
+        }
+
+        // 多条消息时：转为 Responses API input 数组格式（支持多轮上下文）
+        if messages.len() > 1 {
+            let input: Vec<serde_json::Value> = messages.iter().map(|msg| {
+                let content = match &msg.content {
+                    serde_json::Value::String(s) => json!(s),
+                    serde_json::Value::Array(parts) => json!(parts),
+                    other => json!(other.to_string()),
+                };
+                json!({
+                    "type": "message",
+                    "role": &msg.role,
+                    "content": content
+                })
+            }).collect();
+            return json!(input);
+        }
+
+        // 单条消息：保持兼容，纯文本直接返回字符串
+        let last_msg = &messages[0];
+        match &last_msg.content {
+            serde_json::Value::String(s) => json!(s),
+            serde_json::Value::Array(parts) => {
+                json!([{
+                    "type": "message",
+                    "role": "user",
+                    "content": parts
+                }])
+            }
+            other => json!(other.to_string()),
+        }
     }
 }
 
@@ -103,13 +139,11 @@ impl AiCompletionSlot for OpenAiChatProvider {
         let is_responses = self.is_responses_api();
 
         let body = if is_responses {
-            // Responses API 格式：input 是纯文本或 messages 数组
-            let last_msg = request.messages.last()
-                .map(|m| m.content.as_str())
-                .unwrap_or("");
+            // Responses API 格式：input 支持纯文本或多模态数组
+            let input = Self::build_responses_input(&request.messages);
             let mut b = json!({
                 "model": &request.model,
-                "input": last_msg,
+                "input": input,
                 "stream": false,
             });
             if let Some(temp) = request.temperature {
@@ -125,15 +159,14 @@ impl AiCompletionSlot for OpenAiChatProvider {
                 .collect();
 
             let mut b = json!({
+                "model": &request.model,
                 "messages": messages,
                 "stream": false,
             });
 
-            // model 字段：纯 Azure 模式下可不传（由 deployment 决定），APIM 和其他必传
-            if !self.endpoint.is_azure()
-                || self.endpoint.endpoint_type == EndpointType::ApiManagementGateway
-            {
-                b["model"] = json!(&request.model);
+            // 仅当 URL 含 /openai/deployments/{deploy}/ 旧式部署路由时移除 model
+            if url.contains("/openai/deployments/") {
+                b.as_object_mut().unwrap().remove("model");
             }
 
             if let Some(temp) = request.temperature {
@@ -211,18 +244,16 @@ impl AiCompletionSlot for OpenAiChatProvider {
     async fn complete_stream(
         &self,
         request: &CompletionRequest,
-    ) -> Result<mpsc::UnboundedReceiver<Result<String, ProviderError>>, ProviderError> {
+    ) -> Result<mpsc::UnboundedReceiver<Result<StreamChunk, ProviderError>>, ProviderError> {
         let url = self.build_url();
         let is_responses = self.is_responses_api();
 
         let body = if is_responses {
-            // Responses API 流式请求
-            let last_msg = request.messages.last()
-                .map(|m| m.content.as_str())
-                .unwrap_or("");
+            // Responses API 流式请求：input 支持纯文本或多模态数组
+            let input = Self::build_responses_input(&request.messages);
             let mut b = json!({
                 "model": &request.model,
-                "input": last_msg,
+                "input": input,
                 "stream": true,
             });
             if let Some(temp) = request.temperature {
@@ -238,15 +269,15 @@ impl AiCompletionSlot for OpenAiChatProvider {
                 .collect();
 
             let mut b = json!({
+                "model": &request.model,
                 "messages": messages,
                 "stream": true,
                 "stream_options": { "include_usage": true },
             });
 
-            if !self.endpoint.is_azure()
-                || self.endpoint.endpoint_type == EndpointType::ApiManagementGateway
-            {
-                b["model"] = json!(&request.model);
+            // 仅当 URL 含 /openai/deployments/{deploy}/ 旧式部署路由时移除 model
+            if url.contains("/openai/deployments/") {
+                b.as_object_mut().unwrap().remove("model");
             }
             if let Some(temp) = request.temperature {
                 b["temperature"] = json!(temp);
@@ -304,16 +335,36 @@ impl AiCompletionSlot for OpenAiChatProvider {
                                 if v["type"].as_str() == Some("response.output_text.delta") {
                                     if let Some(delta) = v["delta"].as_str() {
                                         if !delta.is_empty() {
-                                            let _ = tx.send(Ok(delta.to_string()));
+                                            let _ = tx.send(Ok(StreamChunk::Token(delta.to_string())));
                                         }
+                                    }
+                                }
+                                // Responses API: usage in response.completed event
+                                if v["type"].as_str() == Some("response.completed") {
+                                    if let Some(usage) = v["response"]["usage"].as_object() {
+                                        let pt = usage.get("input_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+                                        let ct = usage.get("output_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+                                        let _ = tx.send(Ok(StreamChunk::Usage { prompt_tokens: pt, completion_tokens: ct }));
                                     }
                                 }
                             } else {
                                 // ChatCompletions SSE: choices[0].delta.content
                                 if let Some(delta) = v["choices"][0]["delta"]["content"].as_str() {
                                     if !delta.is_empty() {
-                                        let _ = tx.send(Ok(delta.to_string()));
+                                        let _ = tx.send(Ok(StreamChunk::Token(delta.to_string())));
                                     }
+                                }
+                                // ChatCompletions: choices[0].delta.reasoning_content（o1/o3 模型）
+                                if let Some(reasoning) = v["choices"][0]["delta"]["reasoning_content"].as_str() {
+                                    if !reasoning.is_empty() {
+                                        let _ = tx.send(Ok(StreamChunk::Reasoning(reasoning.to_string())));
+                                    }
+                                }
+                                // ChatCompletions: usage chunk (stream_options.include_usage=true)
+                                if let Some(usage) = v["usage"].as_object() {
+                                    let pt = usage.get("prompt_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+                                    let ct = usage.get("completion_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+                                    let _ = tx.send(Ok(StreamChunk::Usage { prompt_tokens: pt, completion_tokens: ct }));
                                 }
                             }
                         }

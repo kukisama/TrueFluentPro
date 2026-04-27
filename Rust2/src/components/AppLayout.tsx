@@ -2,12 +2,15 @@ import { useTranslation } from "react-i18next";
 import {
   Languages, Mic, Palette, Image, ListChecks, Settings, Info,
   PanelLeftClose, PanelLeftOpen, LogIn, X, Sun, Moon, Monitor,
+  Minus, Maximize2,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { cn } from "../lib/utils";
 import { Button, Separator, Tooltip, TooltipTrigger, TooltipContent } from "./ui";
 import { useAppStore, type AppView } from "../stores/app-store";
 import { useThemeStore, type ThemeMode } from "../stores/theme-store";
+import { InfoBar } from "./InfoBar";
 
 import { LiveTranslationView } from "../views/LiveTranslationView";
 import { AudioLabView } from "../views/AudioLabView";
@@ -59,6 +62,34 @@ const THEME_LABELS: Record<ThemeMode, string> = {
   dark: "深色",
 };
 
+const appWindow = getCurrentWindow();
+
+/** 窗口控制按钮（最小化/最大化/关闭），嵌入右上角 */
+function WindowControls() {
+  return (
+    <div className="flex items-center h-9 shrink-0 z-50">
+      <button
+        onClick={() => appWindow.minimize()}
+        className="h-full w-10 flex items-center justify-center text-[var(--text-muted)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] transition-colors"
+      >
+        <Minus size={14} />
+      </button>
+      <button
+        onClick={() => appWindow.toggleMaximize()}
+        className="h-full w-10 flex items-center justify-center text-[var(--text-muted)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] transition-colors"
+      >
+        <Maximize2 size={12} />
+      </button>
+      <button
+        onClick={() => appWindow.close()}
+        className="h-full w-10 flex items-center justify-center text-[var(--text-muted)] hover:bg-red-500/80 hover:text-white transition-colors rounded-tr-none"
+      >
+        <X size={14} />
+      </button>
+    </div>
+  );
+}
+
 export function AppLayout() {
   const { t } = useTranslation();
   const activeView = useAppStore((s) => s.activeView);
@@ -82,8 +113,8 @@ export function AppLayout() {
         )}
         style={{ backgroundColor: "var(--sidebar-bg)" }}
       >
-        {/* Logo / 折叠 */}
-        <div className="flex items-center h-12 px-3 border-b border-[var(--border-subtle)]">
+        {/* Logo / 折叠 — 同时作为窗口拖拽区域 */}
+        <div data-tauri-drag-region className="flex items-center h-12 px-3 border-b border-[var(--border-subtle)] select-none">
           {!collapsed && (
             <span className="text-sm font-bold text-gradient whitespace-nowrap mr-auto tracking-wide">
               {t("app.name")}
@@ -195,6 +226,13 @@ export function AppLayout() {
 
       {/* ── Main ── */}
       <div className="flex flex-col flex-1 min-w-0">
+        {/* 顶部拖拽区 + 窗口按钮 */}
+        <div data-tauri-drag-region className="flex items-center shrink-0 select-none h-9 border-b border-[var(--border-subtle)]"
+          style={{ backgroundColor: "var(--surface-0)" }}>
+          <div data-tauri-drag-region className="flex-1 h-full" />
+          <WindowControls />
+        </div>
+
         {/* 错误横幅 */}
         <AnimatePresence>
           {error && (
@@ -213,6 +251,9 @@ export function AppLayout() {
             </motion.div>
           )}
         </AnimatePresence>
+
+        {/* InfoBar 通知横幅 */}
+        <InfoBar />
 
         {/* 内容区 */}
         <main className="flex-1 overflow-y-auto overflow-x-hidden">

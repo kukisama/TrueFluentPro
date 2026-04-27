@@ -54,6 +54,97 @@ impl AzureTtsProvider {
             text = xml_escape(text),
         )
     }
+
+    /// P3-7: 多发言人 SSML — 根据 speakers 映射和文本中的角色标记生成多 voice SSML
+    ///
+    /// 文本格式: "主持人A: 内容\n主持人B: 内容\n..."
+    /// speakers: [("主持人A", "zh-CN-XiaoxiaoMultilingualNeural"), ("主持人B", "zh-CN-YunxiMultilingualNeural")]
+    fn build_multi_speaker_ssml(text: &str, speakers: &[(String, String)]) -> String {
+        let mut ssml = String::from(
+            r#"<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="zh-CN">"#,
+        );
+        ssml.push('\n');
+
+        let default_voice = speakers
+            .first()
+            .map(|(_, v)| v.as_str())
+            .unwrap_or("zh-CN-XiaoxiaoMultilingualNeural");
+
+        for line in text.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+
+            // 查找匹配的发言人标记
+            let mut matched_voice = default_voice;
+            let mut content = trimmed;
+
+            for (label, voice) in speakers {
+                // 匹配 "标签: 内容" 或 "标签：内容"
+                let prefix_colon = format!("{label}: ");
+                let prefix_cn_colon = format!("{label}：");
+                if let Some(stripped) = trimmed.strip_prefix(&prefix_colon) {
+                    matched_voice = voice;
+                    content = stripped;
+                    break;
+                }
+                if let Some(stripped) = trimmed.strip_prefix(&prefix_cn_colon) {
+                    matched_voice = voice;
+                    content = stripped;
+                    break;
+                }
+            }
+
+            ssml.push_str(&format!(
+                "  <voice name=\"{voice}\">\n    <prosody rate=\"+0%\">{text}</prosody>\n  </voice>\n",
+                voice = matched_voice,
+                text = xml_escape(content),
+            ));
+        }
+
+        ssml.push_str("</speak>");
+        ssml
+    }
+
+    /// 发送 SSML 到 TTS API 并返回音频字节
+    async fn send_ssml(
+        &self,
+        url: &str,
+        key: &str,
+        ssml: &str,
+        format: &str,
+    ) -> Result<Vec<u8>, ProviderError> {
+        let output_format = match format {
+            "mp3" => "audio-16khz-128kbitrate-mono-mp3",
+            "ogg" => "ogg-16khz-16bit-mono-opus",
+            _ => "riff-16khz-16bit-mono-pcm",
+        };
+
+        let resp = self
+            .client
+            .post(url)
+            .header("Ocp-Apim-Subscription-Key", key)
+            .header("Content-Type", "application/ssml+xml")
+            .header("X-Microsoft-OutputFormat", output_format)
+            .body(ssml.to_string())
+            .send()
+            .await
+            .map_err(|e| ProviderError::Network(e.to_string()))?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(ProviderError::Network(format!(
+                "TTS API returned {status}: {body}"
+            )));
+        }
+
+        resp.bytes()
+            .await
+            .map(|b| b.to_vec())
+            .map_err(|e| ProviderError::Internal(e.to_string()))
+    }
 }
 
 fn xml_escape(s: &str) -> String {
@@ -99,37 +190,27 @@ impl TextToSpeechSlot for AzureTtsProvider {
         }
 
         let ssml = Self::build_ssml(text, voice, format);
+        self.send_ssml(&url, key, &ssml, format).await
+    }
 
-        // 默认输出 16kHz WAV
-        let output_format = match format {
-            "mp3" => "audio-16khz-128kbitrate-mono-mp3",
-            "ogg" => "ogg-16khz-16bit-mono-opus",
-            _ => "riff-16khz-16bit-mono-pcm",
-        };
+    /// P3-7: 多发言人合成 — 使用多 <voice> SSML
+    async fn synthesize_multi_speaker(
+        &self,
+        text: &str,
+        speakers: &[(String, String)],
+        format: &str,
+    ) -> Result<Vec<u8>, ProviderError> {
+        let url = self.build_tts_url();
+        let key = &self.endpoint.speech_subscription_key;
 
-        let resp = self
-            .client
-            .post(&url)
-            .header("Ocp-Apim-Subscription-Key", key)
-            .header("Content-Type", "application/ssml+xml")
-            .header("X-Microsoft-OutputFormat", output_format)
-            .body(ssml)
-            .send()
-            .await
-            .map_err(|e| ProviderError::Network(e.to_string()))?;
-
-        if !resp.status().is_success() {
-            let status = resp.status();
-            let body = resp.text().await.unwrap_or_default();
-            return Err(ProviderError::Network(format!(
-                "TTS API returned {status}: {body}"
-            )));
+        if key.is_empty() {
+            return Err(ProviderError::NotConfigured(
+                "Speech subscription key is empty".into(),
+            ));
         }
 
-        resp.bytes()
-            .await
-            .map(|b| b.to_vec())
-            .map_err(|e| ProviderError::Internal(e.to_string()))
+        let ssml = Self::build_multi_speaker_ssml(text, speakers);
+        self.send_ssml(&url, key, &ssml, format).await
     }
 
     async fn list_voices(&self, locale: &str) -> Result<Vec<VoiceInfo>, ProviderError> {

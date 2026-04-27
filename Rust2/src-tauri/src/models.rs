@@ -30,6 +30,12 @@ pub struct AppConfig {
     pub recognition: RecognitionSettings,
     #[serde(default)]
     pub web_search: WebSearchSettings,
+    /// O-08: 任务引擎并发数
+    #[serde(default)]
+    pub task_engine_concurrency: Option<u32>,
+    /// O-08: 任务引擎超时(秒)
+    #[serde(default)]
+    pub task_engine_timeout_secs: Option<u64>,
 }
 
 impl Default for AppConfig {
@@ -45,6 +51,8 @@ impl Default for AppConfig {
             storage: StorageSettings::default(),
             recognition: RecognitionSettings::default(),
             web_search: WebSearchSettings::default(),
+            task_engine_concurrency: None,
+            task_engine_timeout_secs: None,
         }
     }
 }
@@ -631,6 +639,15 @@ pub struct ImageGenRequest {
     pub background: Option<String>,
     pub n: Option<u32>,
     pub endpoint_id: String,
+    /// P3-3: Responses API V2 — 文本模型 (如 gpt-4.1)，用于 body.model
+    #[serde(default)]
+    pub text_model: Option<String>,
+    /// P3-3: Responses API V2 — 图片模型 (如 gpt-image-2)，用于 x-ms-oai-image-generation-deployment 头
+    #[serde(default)]
+    pub image_model: Option<String>,
+    /// P3-3: 多轮改图的 previous_response_id
+    #[serde(default)]
+    pub previous_response_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -638,12 +655,15 @@ pub struct ImageGenResult {
     pub url: Option<String>,
     pub base64: Option<String>,
     pub revised_prompt: Option<String>,
+    /// P3-3: Responses API 返回的 response_id，用于多轮改图
+    #[serde(default)]
+    pub response_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatMessage {
     pub role: String,
-    pub content: String,
+    pub content: serde_json::Value, // 支持 string 或 array（多模态 content parts）
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -670,6 +690,47 @@ pub struct TokenUsage {
 }
 
 // ─── 任务通用枚举 ───
+
+/// P3-4: 视频 API 模式
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum VideoApiMode {
+    /// sora-1: /openai/v1/video/generations/jobs (JSON)
+    SoraJobs,
+    /// sora-2: /v1/videos (multipart)
+    Videos,
+}
+
+/// P3-4: 视频生成请求
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VideoGenRequest {
+    pub prompt: String,
+    pub model: String,
+    pub endpoint_id: String,
+    #[serde(default = "default_video_size")]
+    pub size: String,
+    #[serde(default = "default_video_duration")]
+    pub duration_seconds: u32,
+    #[serde(default)]
+    pub api_mode: Option<VideoApiMode>,
+    #[serde(default)]
+    pub reference_image_path: Option<String>,
+    #[serde(default)]
+    pub n: Option<u32>,
+}
+
+fn default_video_size() -> String { "1080x1920".to_string() }
+fn default_video_duration() -> u32 { 10 }
+
+/// P3-4: 视频生成结果
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VideoGenResult {
+    pub video_id: String,
+    pub status: String,
+    pub download_url: Option<String>,
+    pub file_path: Option<String>,
+    pub generate_seconds: Option<f64>,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -862,7 +923,12 @@ pub struct BillingRecord {
     pub completion_tokens: i64,
     pub cost_usd: Option<f64>,
     pub created_at: String,
+    /// RV-O3: 状态机 — Staging → Running → Landed → Committed
+    #[serde(default = "default_billing_status")]
+    pub status: String,
 }
+
+fn default_billing_status() -> String { "Committed".to_string() }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct BillingSummary {
@@ -916,4 +982,60 @@ pub struct SaveImageRequest {
     pub endpoint_id: Option<String>,
     pub generate_seconds: Option<f64>,
     pub source: String,
+}
+
+// ─── RV-O4: 关联表模型结构 ───
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MessageAttachment {
+    pub id: String,
+    pub message_id: String,
+    pub file_type: String,
+    pub file_path: Option<String>,
+    pub file_url: Option<String>,
+    pub file_name: Option<String>,
+    pub file_size: Option<i64>,
+    pub mime_type: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionTask {
+    pub id: String,
+    pub session_id: String,
+    pub task_id: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionAsset {
+    pub id: String,
+    pub session_id: String,
+    pub asset_type: String,
+    pub asset_path: String,
+    pub file_size: Option<i64>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MessageMediaRef {
+    pub id: String,
+    pub message_id: String,
+    pub media_type: String,
+    pub media_url: String,
+    pub thumbnail_url: Option<String>,
+    pub width: Option<i32>,
+    pub height: Option<i32>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MessageCitation {
+    pub id: String,
+    pub message_id: String,
+    pub citation_index: i32,
+    pub title: Option<String>,
+    pub url: Option<String>,
+    pub snippet: Option<String>,
+    pub created_at: String,
 }

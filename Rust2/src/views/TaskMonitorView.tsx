@@ -3,8 +3,7 @@ import { useTranslation } from "react-i18next";
 import {
   ListChecks, RefreshCw, CheckCircle2, AlertCircle,
   Clock, Play, Loader2, XCircle, Ban, RotateCcw,
-  Zap,
-  Eye,
+  Zap, Eye, Trash2, ArrowUpDown, Settings2,
 } from "lucide-react";
 import { cn } from "../lib/utils";
 import {
@@ -36,8 +35,25 @@ export function TaskMonitorView() {
   const [executions, setExecutions] = useState<TaskExecution[]>([]);
   const [statusFilter, setStatusFilter] = useState<TaskStatus | "all">("all");
   const [loading, setLoading] = useState(false);
+  // O-46: 排序
+  const [sortField, setSortField] = useState<"created_at" | "status" | "task_type">("created_at");
+  const [sortAsc, setSortAsc] = useState(false);
+  // O-08: 并发/超时配置
+  const [showConfig, setShowConfig] = useState(false);
+  const [concurrency, setConcurrency] = useState(3);
+  const [timeoutSecs, setTimeoutSecs] = useState(300);
+  // O-47: 调试对话框
+  const [debugTask, setDebugTask] = useState<AudioTask | null>(null);
 
   const selectedTask = tasks.find((t) => t.id === selectedTaskId);
+
+  // O-46: 排序后的任务列表
+  const sortedTasks = [...tasks].sort((a, b) => {
+    const va = (a as any)[sortField] ?? "";
+    const vb = (b as any)[sortField] ?? "";
+    const cmp = va < vb ? -1 : va > vb ? 1 : 0;
+    return sortAsc ? cmp : -cmp;
+  });
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -55,15 +71,30 @@ export function TaskMonitorView() {
     }
   }, [statusFilter]);
 
+  // O-48: 清理已完成/过期任务
+  const handleCleanup = useCallback(async () => {
+    try {
+      await api.cleanupExpiredTasks(7);
+      await loadData();
+    } catch (err) { console.error("Cleanup failed:", err); }
+  }, [loadData]);
+
   useEffect(() => { loadData(); }, [loadData]);
 
-  // Listen for task events
+  // Listen for task events — O-02: 修复 listen() Promise 竞态条件
   useEffect(() => {
+    let cancelled = false;
     let unlisten: (() => void) | null = null;
     api.onTaskEvent((_event: TaskEvent) => {
-      loadData(); // Refresh on any task event
-    }).then((fn) => { unlisten = fn; });
-    return () => { unlisten?.(); };
+      loadData();
+    }).then((fn) => {
+      if (cancelled) { fn(); } // 组件已卸载，立即取消
+      else { unlisten = fn; }
+    });
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
   }, [loadData]);
 
   const handleSelectTask = useCallback(async (taskId: string) => {
@@ -103,11 +134,43 @@ export function TaskMonitorView() {
           style={{ backgroundColor: "var(--toolbar-bg)" }}>
           <h1 className="text-base font-semibold text-[var(--text-primary)] mr-4">{t("tasks.title")}</h1>
           <div className="flex-1" />
+          {/* O-08: 并发/超时配置 */}
+          <Button variant="ghost" size="sm" onClick={() => setShowConfig(!showConfig)}>
+            <Settings2 size={14} /> 引擎配置
+          </Button>
+          {/* O-48: 清理过期任务 */}
+          <Button variant="ghost" size="sm" onClick={handleCleanup}>
+            <Trash2 size={14} /> 清理
+          </Button>
           <Button variant="ghost" size="sm" onClick={loadData} disabled={loading}>
             {loading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
             刷新
           </Button>
         </div>
+
+        {/* O-08: 引擎配置面板 */}
+        {showConfig && (
+          <div className="px-6 py-3 border-b border-[var(--border-subtle)] bg-[var(--surface-1)] flex items-center gap-4">
+            <label className="text-xs text-[var(--text-secondary)]">
+              并发数
+              <input type="number" min={1} max={16} value={concurrency}
+                onChange={(e) => setConcurrency(Number(e.target.value))}
+                className="ml-2 w-16 px-2 py-1 text-xs rounded border border-[var(--border-medium)] bg-[var(--input-bg)]" />
+            </label>
+            <label className="text-xs text-[var(--text-secondary)]">
+              超时(秒)
+              <input type="number" min={30} max={3600} step={30} value={timeoutSecs}
+                onChange={(e) => setTimeoutSecs(Number(e.target.value))}
+                className="ml-2 w-20 px-2 py-1 text-xs rounded border border-[var(--border-medium)] bg-[var(--input-bg)]" />
+            </label>
+            <Button variant="secondary" size="sm"
+              onClick={async () => {
+                try { await api.updateTaskEngineConfig(concurrency, timeoutSecs); } catch (err) { console.error(err); }
+              }}>
+              应用
+            </Button>
+          </div>
+        )}
 
         {/* 统计卡片 */}
         <div className="px-6 pt-4 grid grid-cols-5 gap-2">
@@ -154,11 +217,20 @@ export function TaskMonitorView() {
 
         {/* 任务列表 */}
         <ScrollArea className="flex-1 px-6 pt-3 pb-4">
-          {tasks.length === 0 ? (
+          {/* O-46: 排序表头 */}
+          <div className="flex items-center gap-2 pb-2 text-[10px] text-[var(--text-muted)]">
+            {([["created_at", "时间"], ["status", "状态"], ["task_type", "类型"]] as const).map(([field, label]) => (
+              <button key={field} className="flex items-center gap-0.5 hover:text-[var(--text-secondary)]"
+                onClick={() => { if (sortField === field) setSortAsc(!sortAsc); else { setSortField(field); setSortAsc(false); } }}>
+                <ArrowUpDown size={10} /> {label} {sortField === field && (sortAsc ? "↑" : "↓")}
+              </button>
+            ))}
+          </div>
+          {sortedTasks.length === 0 ? (
             <EmptyState icon={<ListChecks size={48} />} title="暂无任务" description="提交音频分析任务后在此监控" />
           ) : (
             <div className="space-y-1.5">
-              {tasks.map((task, i) => (
+              {sortedTasks.map((task, i) => (
                 <FadeIn key={task.id} delay={i * 0.02}>
                   <button
                     onClick={() => handleSelectTask(task.id)}
@@ -198,6 +270,11 @@ export function TaskMonitorView() {
                             <RotateCcw size={12} className="text-amber-400" />
                           </Button>
                         )}
+                        {/* O-47: 调试查看 prompt/result */}
+                        <Button variant="ghost" size="icon" className="h-6 w-6" title="调试详情"
+                          onClick={(e) => { e.stopPropagation(); setDebugTask(task); }}>
+                          <Eye size={12} />
+                        </Button>
                       </div>
                     </div>
                   </button>
@@ -306,6 +383,41 @@ export function TaskMonitorView() {
           </div>
         )}
       </div>
+
+      {/* O-47: 调试对话框 — 显示 prompt_text / result_text */}
+      {debugTask && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setDebugTask(null)}>
+          <div className="bg-[var(--card-bg)] border border-[var(--border-medium)] rounded-xl shadow-2xl w-[640px] max-h-[80vh] overflow-auto p-5"
+            onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold text-[var(--text-primary)]">任务调试 — {debugTask.id.slice(0, 8)}</h3>
+              <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setDebugTask(null)}>
+                <XCircle size={14} />
+              </Button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <p className="text-[10px] text-[var(--text-muted)] mb-1">Prompt Text</p>
+                <pre className="text-xs bg-[var(--surface-1)] rounded p-3 whitespace-pre-wrap max-h-48 overflow-auto font-mono">
+                  {debugTask.prompt_text || "(空)"}
+                </pre>
+              </div>
+              <div>
+                <p className="text-[10px] text-[var(--text-muted)] mb-1">Result Text</p>
+                <pre className="text-xs bg-[var(--surface-1)] rounded p-3 whitespace-pre-wrap max-h-48 overflow-auto font-mono">
+                  {debugTask.result_text || "(空)"}
+                </pre>
+              </div>
+              <div>
+                <p className="text-[10px] text-[var(--text-muted)] mb-1">Error Details</p>
+                <pre className="text-xs bg-[var(--surface-1)] rounded p-3 whitespace-pre-wrap max-h-32 overflow-auto font-mono text-red-400">
+                  {debugTask.error || "(无错误)"}
+                </pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -102,6 +102,18 @@ pub trait TextToSpeechSlot: ProviderMeta {
         format: &str,
     ) -> Result<Vec<u8>, ProviderError>;
 
+    /// P3-7: 多发言人合成 — speakers: [(角色标签, voice_name), ...]
+    /// 默认实现: 忽略 speakers，使用第一个 voice 合成全文
+    async fn synthesize_multi_speaker(
+        &self,
+        text: &str,
+        speakers: &[(String, String)],
+        format: &str,
+    ) -> Result<Vec<u8>, ProviderError> {
+        let voice = speakers.first().map(|(_, v)| v.as_str()).unwrap_or("en-US-JennyNeural");
+        self.synthesize(text, voice, format).await
+    }
+
     async fn list_voices(&self, locale: &str) -> Result<Vec<VoiceInfo>, ProviderError>;
 }
 
@@ -126,7 +138,18 @@ pub trait AiCompletionSlot: ProviderMeta {
     async fn complete_stream(
         &self,
         request: &CompletionRequest,
-    ) -> Result<mpsc::UnboundedReceiver<Result<String, ProviderError>>, ProviderError>;
+    ) -> Result<mpsc::UnboundedReceiver<Result<StreamChunk, ProviderError>>, ProviderError>;
+}
+
+/// 流式补全事件块
+#[derive(Debug, Clone)]
+pub enum StreamChunk {
+    /// 正文 token
+    Token(String),
+    /// 推理过程 token（reasoning_content）
+    Reasoning(String),
+    /// 最终 usage 统计
+    Usage { prompt_tokens: u32, completion_tokens: u32 },
 }
 
 // ─── 插槽 6: 图片生成 ───
@@ -255,26 +278,43 @@ impl ProviderRegistry {
         self.image_gen.get(id).cloned()
     }
 
-    /// 列出所有已注册 provider 的元信息
+    /// 列出所有已注册 provider 的元信息（B-06 修复: 合并全部 6 个 slot）
     pub fn list_providers(&self) -> Vec<ProviderInfo> {
         let mut result = Vec::new();
-        for p in self.text_translation.values() {
-            result.push(ProviderInfo {
-                id: p.id().to_string(),
-                name: p.display_name().to_string(),
-                capabilities: p.capabilities(),
-            });
-        }
-        for p in self.realtime_speech.values() {
-            if !result.iter().any(|r| r.id == p.id()) {
+        let mut merge = |id: &str, name: &str, caps: Vec<ProviderCapability>| {
+            if let Some(existing) = result.iter_mut().find(|r: &&mut ProviderInfo| r.id == id) {
+                for cap in caps {
+                    if !existing.capabilities.contains(&cap) {
+                        existing.capabilities.push(cap);
+                    }
+                }
+            } else {
                 result.push(ProviderInfo {
-                    id: p.id().to_string(),
-                    name: p.display_name().to_string(),
-                    capabilities: p.capabilities(),
+                    id: id.to_string(),
+                    name: name.to_string(),
+                    capabilities: caps,
                 });
             }
+        };
+
+        for p in self.text_translation.values() {
+            merge(p.id(), p.display_name(), p.capabilities());
         }
-        // 同理合并其他 slot 的 provider…
+        for p in self.realtime_speech.values() {
+            merge(p.id(), p.display_name(), p.capabilities());
+        }
+        for p in self.stt.values() {
+            merge(p.id(), p.display_name(), p.capabilities());
+        }
+        for p in self.tts.values() {
+            merge(p.id(), p.display_name(), p.capabilities());
+        }
+        for p in self.ai_completion.values() {
+            merge(p.id(), p.display_name(), p.capabilities());
+        }
+        for p in self.image_gen.values() {
+            merge(p.id(), p.display_name(), p.capabilities());
+        }
         result
     }
 }

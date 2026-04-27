@@ -12,6 +12,8 @@ import {
 } from "../components/ui";
 import { useAppStore } from "../stores/app-store";
 import { api, type ImageGenResult } from "../lib/tauri-api";
+import { open as dialogOpen } from "@tauri-apps/plugin-dialog";
+import { convertFileSrc } from "@tauri-apps/api/core";
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    媒体中心 — 画板式图片/视频批量生成
@@ -172,6 +174,9 @@ export function MediaCenterView() {
           height: size.h || 1024,
           model: imageModelId,
           quality,
+          n: count,
+          output_format: format,
+          background: background !== "auto" ? background : undefined,
           endpoint_id: imageEndpoint.id,
         });
         const elapsedMs = Date.now() - startTime;
@@ -211,15 +216,75 @@ export function MediaCenterView() {
         );
       }
     } else {
-      // Video placeholder
-      setWorkspaces((prev) =>
-        prev.map((ws) => ws.id === wsId
-          ? { ...ws, status: "failed" as AssetStatus, error: "视频生成即将支持" }
-          : ws)
+      // 视频生成 — 使用完整 create → poll → download 流程
+      const videoEndpoint = config?.endpoints.find(
+        (ep) => ep.enabled && ep.endpoint_type !== "azure_speech" && ep.models.some((m) => m.capabilities.includes("video")),
       );
+      if (!videoEndpoint) {
+        setWorkspaces((prev) =>
+          prev.map((ws) => ws.id === wsId
+            ? { ...ws, status: "failed" as AssetStatus, error: "未配置含视频能力的端点，请先在设置中添加 sora-2 模型" }
+            : ws)
+        );
+        return;
+      }
+
+      const videoModelId = videoEndpoint.models.find((m) => m.capabilities.includes("video"))?.model_id || "sora-2";
+
+      // 将纵横比 + 分辨率转换为像素尺寸
+      const resMap: Record<string, number> = { "480p": 480, "720p": 720, "1080p": 1080 };
+      const resH = resMap[resolution] || 720;
+      let sizeStr: string;
+      if (aspectRatio === "16:9") sizeStr = `${Math.round(resH * 16 / 9)}x${resH}`;
+      else if (aspectRatio === "9:16") sizeStr = `${resH}x${Math.round(resH * 16 / 9)}`;
+      else sizeStr = `${resH}x${resH}`;
+
+      try {
+        const taskId = await api.generateVideo({
+          prompt: prompt.trim(),
+          model: videoModelId,
+          endpoint_id: videoEndpoint.id,
+          size: sizeStr,
+          duration_seconds: duration,
+          n: videoCount,
+        });
+
+        // 监听进度事件
+        const unlisten = await api.onVideoProgress((ev) => {
+          if (ev.task_id !== taskId) return;
+          if (ev.status === "completed") {
+            setWorkspaces((prev) =>
+              prev.map((ws) => ws.id === wsId
+                ? { ...ws, status: "completed" as AssetStatus, elapsedMs: (ev.elapsed_seconds || 0) * 1000 }
+                : ws)
+            );
+            unlisten();
+          } else if (ev.status === "failed") {
+            setWorkspaces((prev) =>
+              prev.map((ws) => ws.id === wsId
+                ? { ...ws, status: "failed" as AssetStatus, error: ev.error || "视频生成失败" }
+                : ws)
+            );
+            unlisten();
+          } else {
+            // 更新状态信息
+            setWorkspaces((prev) =>
+              prev.map((ws) => ws.id === wsId
+                ? { ...ws, elapsedMs: Date.now() - startTime }
+                : ws)
+            );
+          }
+        });
+      } catch (err) {
+        setWorkspaces((prev) =>
+          prev.map((ws) => ws.id === wsId
+            ? { ...ws, status: "failed" as AssetStatus, error: String(err) }
+            : ws)
+        );
+      }
     }
     setPrompt("");
-  }, [prompt, activeWsId, canvasMode, imageEndpoint, imageModelId, quality, sizeIdx]);
+  }, [prompt, activeWsId, canvasMode, imageEndpoint, imageModelId, quality, sizeIdx, count, format, background]);
 
   const removeWorkspace = (id: string) => {
     setWorkspaces((prev) => prev.filter((ws) => ws.id !== id));
@@ -342,10 +407,51 @@ export function MediaCenterView() {
           <div>
             <Label>{t("mediaCenter.reference")}</Label>
             <div className="flex gap-2 mt-1 flex-wrap">
-              {activeWs?.referenceImages.map((_, i) => (
-                <div key={i} className="w-12 h-12 rounded bg-[var(--surface-2)] border border-[var(--border-subtle)]" />
+              {activeWs?.referenceImages.map((img, i) => (
+                <div key={i} className="relative w-12 h-12 rounded bg-[var(--surface-2)] border border-[var(--border-subtle)] overflow-hidden group">
+                  <img src={`data:image/png;base64,${img}`} alt="" className="w-full h-full object-cover" />
+                  <button className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                    onClick={() => setWorkspaces(prev => prev.map(ws =>
+                      ws.id === activeWsId ? { ...ws, referenceImages: ws.referenceImages.filter((_, j) => j !== i) } : ws
+                    ))}>
+                    <X size={12} className="text-white" />
+                  </button>
+                </div>
               ))}
-              <button className="w-12 h-12 rounded border border-dashed border-[var(--border-medium)] flex items-center justify-center text-[var(--text-muted)] hover:border-brand-500/50 transition-colors">
+              <button className="w-12 h-12 rounded border border-dashed border-[var(--border-medium)] flex items-center justify-center text-[var(--text-muted)] hover:border-brand-500/50 transition-colors"
+                onClick={async () => {
+                  if (!activeWsId) return;
+                  try {
+                    const selected = await dialogOpen({
+                      multiple: true,
+                      filters: [{ name: "图片", extensions: ["png", "jpg", "jpeg", "webp", "gif", "bmp"] }],
+                    });
+                    if (!selected) return;
+                    const paths = Array.isArray(selected) ? selected : [selected];
+                    const base64List: string[] = [];
+                    for (const p of paths) {
+                      const dataUrl = await new Promise<string>((resolve, reject) => {
+                        const xhr = new XMLHttpRequest();
+                        xhr.open("GET", convertFileSrc(p));
+                        xhr.responseType = "blob";
+                        xhr.onload = () => {
+                          const reader = new FileReader();
+                          reader.onloadend = () => resolve((reader.result as string).split(",")[1]);
+                          reader.onerror = reject;
+                          reader.readAsDataURL(xhr.response);
+                        };
+                        xhr.onerror = () => reject(new Error("fetch failed"));
+                        xhr.send();
+                      });
+                      base64List.push(dataUrl);
+                    }
+                    setWorkspaces(prev => prev.map(ws =>
+                      ws.id === activeWsId ? { ...ws, referenceImages: [...ws.referenceImages, ...base64List] } : ws
+                    ));
+                  } catch (err) {
+                    console.error("添加参考素材失败:", err);
+                  }
+                }}>
                 <Plus size={16} />
               </button>
             </div>
@@ -403,8 +509,22 @@ export function MediaCenterView() {
                   )}
                   {/* Hover actions */}
                   <div className="absolute top-3 right-3 flex gap-1.5">
-                    <Button variant="secondary" size="icon" className="h-7 w-7 backdrop-blur-md"><Maximize2 size={12} /></Button>
-                    <Button variant="secondary" size="icon" className="h-7 w-7 backdrop-blur-md"><Download size={12} /></Button>
+                    <Button variant="secondary" size="icon" className="h-7 w-7 backdrop-blur-md"
+                      onClick={() => {
+                        const b64 = activeWs.results[activeWs.currentIndex]?.base64;
+                        if (!b64) return;
+                        const w = window.open("", "_blank", "width=1200,height=900");
+                        if (w) { w.document.write(`<img src="data:image/png;base64,${b64}" style="max-width:100%;max-height:100vh" />`); w.document.title = activeWs.prompt || "预览"; }
+                      }}><Maximize2 size={12} /></Button>
+                    <Button variant="secondary" size="icon" className="h-7 w-7 backdrop-blur-md"
+                      onClick={() => {
+                        const b64 = activeWs.results[activeWs.currentIndex]?.base64;
+                        if (!b64) return;
+                        const link = document.createElement("a");
+                        link.href = `data:image/${format || "png"};base64,${b64}`;
+                        link.download = `${(activeWs.prompt || "image").slice(0, 30)}.${format || "png"}`;
+                        link.click();
+                      }}><Download size={12} /></Button>
                   </div>
                 </div>
               ) : (

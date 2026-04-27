@@ -1,18 +1,25 @@
 use std::sync::Arc;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Semaphore};
 use tauri::Emitter;
 use crate::storage::Database;
 use serde::{Deserialize, Serialize};
 
-/// 任务引擎 — 后台轮询 audio_task_queue，按优先级执行
+/// P3-8: 任务引擎 — 支持可配置并发度（默认 3）
+/// P3-9: 每个任务有超时控制（默认 300 秒）
+///
 /// 对标 C# AudioLabViewModel.TaskEngine
 ///
 /// 设计要点:
-/// - 单一消费者循环，避免并发冲突
+/// - Semaphore 控制并发上限（1-10 可配置）
 /// - 通过 mpsc 接收 kick 信号（新任务提交时踢一下）
 /// - 失败自动重试（retry_count < max_retries）
 /// - 每次执行记录 task_executions 表
-/// - 真实调用 Provider (STT/Chat/TTS)
+/// - P3-9: tokio::time::timeout 保护每个任务执行
+
+/// 默认并发度
+const DEFAULT_CONCURRENCY: usize = 3;
+/// P3-9: 默认单任务超时秒数
+const DEFAULT_TASK_TIMEOUT_SECS: u64 = 300;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data")]
@@ -29,14 +36,26 @@ pub struct TaskEngine {
 }
 
 impl TaskEngine {
-    /// 通过 Tauri AppHandle 启动，可以访问 State<AppState> 里的 providers
+    /// P3-8: 通过 Tauri AppHandle 启动，支持并发执行（Semaphore 控制）
     pub fn start_with_app(
         app_handle: tauri::AppHandle,
         storage: Arc<Database>,
     ) -> Self {
         let (kick_tx, mut kick_rx) = mpsc::channel::<()>(32);
+        let semaphore = Arc::new(Semaphore::new(DEFAULT_CONCURRENCY));
 
         tokio::spawn(async move {
+            // O-25: 启动时恢复中断的任务 — 将上次崩溃时停留在 Executing 状态的任务重新排队
+            match storage.recover_interrupted_tasks().await {
+                Ok(count) if count > 0 => {
+                    eprintln!("[TaskEngine] O-25: 已恢复 {count} 个中断任务为 Queued 状态");
+                }
+                Err(e) => {
+                    eprintln!("[TaskEngine] O-25: recover_interrupted_tasks error: {e}");
+                }
+                _ => {}
+            }
+
             loop {
                 // 等待 kick 信号或 5 秒轮询
                 let _ = tokio::time::timeout(
@@ -44,120 +63,189 @@ impl TaskEngine {
                     kick_rx.recv(),
                 ).await;
 
-                // 取一条 Queued 任务
-                let task = match storage.get_next_queued_task() {
-                    Ok(Some(t)) => t,
-                    Ok(None) => continue,
-                    Err(e) => {
-                        eprintln!("[TaskEngine] get_next_queued_task error: {e}");
+                // P3-8: 循环取任务直到没有可执行的或达到并发上限
+                loop {
+                    // 获取 semaphore permit（如果并发已满则不再取新任务）
+                    let permit = match semaphore.clone().try_acquire_owned() {
+                        Ok(p) => p,
+                        Err(_) => break, // 并发已满，等下一轮
+                    };
+
+                    // 取一条 Queued 任务
+                    let task = match storage.get_next_queued_task().await {
+                        Ok(Some(t)) => t,
+                        Ok(None) => {
+                            drop(permit);
+                            break; // 没有待执行任务
+                        }
+                        Err(e) => {
+                            eprintln!("[TaskEngine] get_next_queued_task error: {e}");
+                            drop(permit);
+                            break;
+                        }
+                    };
+
+                    // 标记 Executing
+                    if let Err(e) = storage.update_task_status_new(&task.id, "Executing", None).await {
+                        eprintln!("[TaskEngine] update_task_status error: {e}");
+                        drop(permit);
                         continue;
                     }
-                };
 
-                // 标记 Executing
-                if let Err(e) = storage.update_task_status_new(&task.id, "Executing", None) {
-                    eprintln!("[TaskEngine] update_task_status error: {e}");
-                    continue;
-                }
+                    // 发事件: Started
+                    let _ = app_handle.emit("task-event", serde_json::json!({
+                        "type": "TaskStarted",
+                        "task_id": task.id,
+                        "audio_item_id": task.audio_item_id,
+                        "stage": task.stage,
+                    }));
 
-                // 发事件: Started
-                let _ = app_handle.emit("task-event", serde_json::json!({
-                    "type": "TaskStarted",
-                    "task_id": task.id,
-                    "audio_item_id": task.audio_item_id,
-                    "stage": task.stage,
-                }));
+                    // P3-8: 在独立 tokio task 中执行（并发）
+                    let app = app_handle.clone();
+                    let db = storage.clone();
+                    tokio::spawn(async move {
+                        let _permit = permit; // permit 在 task 结束时自动释放
 
-                let task_id = task.id.clone();
-                let stage = task.stage.clone();
+                        let task_id = task.id.clone();
+                        let stage = task.stage.clone();
 
-                // 执行任务
-                let start = std::time::Instant::now();
-                let result = execute_task_real(&app_handle, &storage, &task).await;
-                let duration_ms = start.elapsed().as_millis() as i64;
-
-                match result {
-                    Ok((result_text, prompt_tokens, completion_tokens)) => {
-                        let _ = storage.update_task_status_new(&task_id, "Completed", None);
-                        let lc = crate::models::AudioLifecycleRow {
-                            id: format!("{}-{}", task.audio_item_id, stage),
-                            audio_item_id: task.audio_item_id.clone(),
-                            stage: stage.clone(),
-                            status: "Completed".to_string(),
-                            result_text: Some(result_text),
-                            result_json: None,
-                            model_id: None,
-                            token_used: Some((prompt_tokens + completion_tokens) as i64),
-                            error: None,
-                            started_at: None,
-                            completed_at: Some(chrono::Utc::now().to_rfc3339()),
+                        // RV-O3: 计费记录 — Staging 阶段
+                        let billing_id = uuid::Uuid::new_v4().to_string();
+                        let billing_rec = crate::models::BillingRecord {
+                            id: billing_id.clone(),
+                            task_id: Some(task_id.clone()),
+                            endpoint_id: String::new(), // execute_task_real 内部选择端点
+                            model_id: String::new(),
+                            prompt_tokens: 0,
+                            completion_tokens: 0,
+                            cost_usd: None,
+                            created_at: chrono::Utc::now().to_rfc3339(),
+                            status: "Staging".to_string(),
                         };
-                        let _ = storage.upsert_lifecycle(&lc);
-                        let exec = crate::models::TaskExecutionRow {
-                            id: uuid::Uuid::new_v4().to_string(),
-                            task_id: task_id.clone(),
-                            attempt: task.retry_count + 1,
-                            status: "Completed".to_string(),
-                            error: None,
-                            prompt_tokens: Some(prompt_tokens as i64),
-                            completion_tokens: Some(completion_tokens as i64),
-                            duration_ms: Some(duration_ms),
-                            started_at: chrono::Utc::now().to_rfc3339(),
-                            completed_at: Some(chrono::Utc::now().to_rfc3339()),
-                        };
-                        let _ = storage.add_task_execution(&exec);
+                        let _ = db.add_billing_record(&billing_rec).await;
 
-                        // 发事件: Completed
-                        let _ = app_handle.emit("task-event", serde_json::json!({
-                            "type": "TaskCompleted",
-                            "task_id": task_id,
-                            "stage": stage,
-                        }));
-                    }
-                    Err(err) => {
-                        let err_msg = err.to_string();
-                        if task.retry_count < task.max_retries {
-                            let _ = storage.update_task_status_new(&task_id, "Queued", Some(&err_msg));
-                        } else {
-                            let _ = storage.update_task_status_new(&task_id, "Failed", Some(&err_msg));
-                            let lc = crate::models::AudioLifecycleRow {
-                                id: format!("{}-{}", task.audio_item_id, stage),
-                                audio_item_id: task.audio_item_id.clone(),
-                                stage: stage.clone(),
-                                status: "Failed".to_string(),
-                                result_text: None,
-                                result_json: None,
-                                model_id: None,
-                                token_used: None,
-                                error: Some(err_msg.clone()),
-                                started_at: None,
-                                completed_at: Some(chrono::Utc::now().to_rfc3339()),
-                            };
-                            let _ = storage.upsert_lifecycle(&lc);
+                        // RV-O3: 计费记录 → Running
+                        let _ = db.update_billing_status(&billing_id, "Running").await;
+
+                        // B-03: 在执行前记录 started_at
+                        let started_at = chrono::Utc::now().to_rfc3339();
+
+                        // P3-9: 超时控制
+                        let start = std::time::Instant::now();
+                        let timeout_dur = std::time::Duration::from_secs(DEFAULT_TASK_TIMEOUT_SECS);
+                        let result = tokio::time::timeout(
+                            timeout_dur,
+                            execute_task_real(&app, &db, &task),
+                        ).await;
+
+                        let duration_ms = start.elapsed().as_millis() as i64;
+                        let completed_at = chrono::Utc::now().to_rfc3339();
+
+                        // P3-9: 将 timeout 转为统一错误
+                        let result = match result {
+                            Ok(inner) => inner,
+                            Err(_) => Err(format!(
+                                "任务超时: 超过 {DEFAULT_TASK_TIMEOUT_SECS} 秒未完成"
+                            ).into()),
+                        };
+
+                        match result {
+                            Ok((result_text, prompt_tokens, completion_tokens)) => {
+                                let _ = db.update_task_status_new(&task_id, "Completed", None).await;
+                                let lc = crate::models::AudioLifecycleRow {
+                                    id: format!("{}-{}", task.audio_item_id, stage),
+                                    audio_item_id: task.audio_item_id.clone(),
+                                    stage: stage.clone(),
+                                    status: "Completed".to_string(),
+                                    result_text: Some(result_text),
+                                    result_json: None,
+                                    model_id: None,
+                                    token_used: Some((prompt_tokens + completion_tokens) as i64),
+                                    error: None,
+                                    started_at: Some(started_at.clone()),
+                                    completed_at: Some(completed_at.clone()),
+                                };
+                                let _ = db.upsert_lifecycle(&lc).await;
+                                let exec = crate::models::TaskExecutionRow {
+                                    id: uuid::Uuid::new_v4().to_string(),
+                                    task_id: task_id.clone(),
+                                    attempt: task.retry_count + 1,
+                                    status: "Completed".to_string(),
+                                    error: None,
+                                    prompt_tokens: Some(prompt_tokens as i64),
+                                    completion_tokens: Some(completion_tokens as i64),
+                                    duration_ms: Some(duration_ms),
+                                    started_at: started_at.clone(),
+                                    completed_at: Some(completed_at),
+                                };
+                                let _ = db.add_task_execution(&exec).await;
+
+                                // RV-O3: 计费记录 → Landed（记录实际 token）→ Committed
+                                let _ = db.update_billing_status(&billing_id, "Landed").await;
+                                // 更新 token 数据
+                                let _ = db.update_billing_tokens(
+                                    &billing_id, prompt_tokens as i64, completion_tokens as i64,
+                                ).await;
+                                let _ = db.update_billing_status(&billing_id, "Committed").await;
+
+                                // P3-10: DAG 级联失效 — 完成阶段后重置下游
+                                if let Err(e) = db.invalidate_downstream_stages(&task.audio_item_id, &stage).await {
+                                    eprintln!("[TaskEngine] invalidate_downstream error: {e}");
+                                }
+
+                                let _ = app.emit("task-event", serde_json::json!({
+                                    "type": "TaskCompleted",
+                                    "task_id": task_id,
+                                    "stage": stage,
+                                }));
+                            }
+                            Err(err) => {
+                                let err_msg = err.to_string();
+                                if task.retry_count < task.max_retries {
+                                    let _ = db.increment_retry_and_requeue(&task_id, &err_msg).await;
+                                } else {
+                                    let _ = db.update_task_status_new(&task_id, "Failed", Some(&err_msg)).await;
+                                    let lc = crate::models::AudioLifecycleRow {
+                                        id: format!("{}-{}", task.audio_item_id, stage),
+                                        audio_item_id: task.audio_item_id.clone(),
+                                        stage: stage.clone(),
+                                        status: "Failed".to_string(),
+                                        result_text: None,
+                                        result_json: None,
+                                        model_id: None,
+                                        token_used: None,
+                                        error: Some(err_msg.clone()),
+                                        started_at: Some(started_at.clone()),
+                                        completed_at: Some(completed_at.clone()),
+                                    };
+                                    let _ = db.upsert_lifecycle(&lc).await;
+                                }
+                                let exec = crate::models::TaskExecutionRow {
+                                    id: uuid::Uuid::new_v4().to_string(),
+                                    task_id: task_id.clone(),
+                                    attempt: task.retry_count + 1,
+                                    status: "Failed".to_string(),
+                                    error: Some(err_msg.clone()),
+                                    prompt_tokens: None,
+                                    completion_tokens: None,
+                                    duration_ms: Some(duration_ms),
+                                    started_at: started_at.clone(),
+                                    completed_at: Some(completed_at),
+                                };
+                                let _ = db.add_task_execution(&exec).await;
+
+                                // RV-O3: 计费记录 → Failed（任务失败不计入 Committed）
+                                let _ = db.update_billing_status(&billing_id, "Failed").await;
+
+                                let _ = app.emit("task-event", serde_json::json!({
+                                    "task_id": task_id,
+                                    "error": err_msg,
+                                }));
+                            }
                         }
-                        let exec = crate::models::TaskExecutionRow {
-                            id: uuid::Uuid::new_v4().to_string(),
-                            task_id: task_id.clone(),
-                            attempt: task.retry_count + 1,
-                            status: "Failed".to_string(),
-                            error: Some(err_msg.clone()),
-                            prompt_tokens: None,
-                            completion_tokens: None,
-                            duration_ms: Some(duration_ms),
-                            started_at: chrono::Utc::now().to_rfc3339(),
-                            completed_at: Some(chrono::Utc::now().to_rfc3339()),
-                        };
-                        let _ = storage.add_task_execution(&exec);
-
-                        // 发事件: Failed
-                        let _ = app_handle.emit("task-event", serde_json::json!({
-                            "type": "TaskFailed",
-                            "task_id": task_id,
-                            "error": err_msg,
-                        }));
-                    }
-                }
-            }
+                    });
+                } // inner loop
+            } // outer loop
         });
 
         TaskEngine { kick_tx }
@@ -182,7 +270,7 @@ async fn execute_task_real(
     match task.task_type.as_str() {
         "Transcription" => {
             // 读取音频文件数据
-            let audio_item = storage.get_audio_item(&task.audio_item_id)
+            let audio_item = storage.get_audio_item(&task.audio_item_id).await
                 .map_err(|e| format!("Failed to get audio item: {e}"))?
                 .ok_or("Audio item not found")?;
 
@@ -214,7 +302,7 @@ async fn execute_task_real(
         }
         "AiCompletion" => {
             // 需要前置阶段的结果作为输入
-            let prev_content = get_previous_stage_content(storage, task)?;
+            let prev_content = get_previous_stage_content(storage, task).await?;
 
             let system_prompt = match task.stage.as_str() {
                 "Summarized" => "你是一个专业的音频内容总结助手。请根据转录文本，生成结构化的要点总结。使用 Markdown 格式。",
@@ -257,8 +345,8 @@ async fn execute_task_real(
 
                     let request = crate::models::CompletionRequest {
                         messages: vec![
-                            crate::models::ChatMessage { role: "system".into(), content: system_prompt.into() },
-                            crate::models::ChatMessage { role: "user".into(), content: prev_content },
+                            crate::models::ChatMessage { role: "system".into(), content: serde_json::Value::String(system_prompt.to_string()) },
+                            crate::models::ChatMessage { role: "user".into(), content: serde_json::Value::String(prev_content) },
                         ],
                         model,
                         temperature: Some(0.7),
@@ -282,7 +370,7 @@ async fn execute_task_real(
         }
         "TTS" => {
             // 读取播客台本
-            let script = get_stage_content(storage, &task.audio_item_id, "PodcastScript")?;
+            let script = get_stage_content(storage, &task.audio_item_id, "PodcastScript").await?;
             if script.is_empty() {
                 return Err("PodcastScript stage has no content — please generate it first".into());
             }
@@ -296,9 +384,20 @@ async fn execute_task_real(
                 if let Some(tts) = providers.get_tts(&ep.id) {
                     drop(providers);
                     drop(config);
-                    let voice = "zh-CN-XiaoxiaoMultilingualNeural";
-                    let audio_bytes = tts.synthesize(&script, voice, "wav").await
-                        .map_err(|e| format!("TTS failed: {e}"))?;
+
+                    // P3-7-FIX: 检测多发言人格式（"角色:" 或 "角色：" 开头的行）
+                    let speakers = detect_speakers(&script);
+                    let audio_bytes = if speakers.len() >= 2 {
+                        tracing::info!("[TaskEngine] TTS: detected {} speakers, using multi-speaker", speakers.len());
+                        tts.synthesize_multi_speaker(&script, &speakers, "wav").await
+                            .map_err(|e| format!("TTS multi-speaker failed: {e}"))?
+                    } else {
+                        let voice = speakers.first()
+                            .map(|(_, v)| v.as_str())
+                            .unwrap_or("zh-CN-XiaoxiaoMultilingualNeural");
+                        tts.synthesize(&script, voice, "wav").await
+                            .map_err(|e| format!("TTS failed: {e}"))?
+                    };
 
                     // 保存音频文件
                     let out_dir = app_handle.path().app_data_dir()
@@ -348,6 +447,9 @@ async fn execute_task_real(
                         background: None,
                         n: None,
                         endpoint_id: ep.id.clone(),
+                        text_model: None,
+                        image_model: None,
+                        previous_response_id: None,
                     };
 
                     let results = img.generate(&request).await
@@ -372,7 +474,7 @@ async fn execute_task_real(
 }
 
 /// 获取前置阶段的内容用作当前阶段的输入
-fn get_previous_stage_content(
+async fn get_previous_stage_content(
     storage: &Arc<Database>,
     task: &crate::models::AudioTaskRow,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
@@ -383,15 +485,15 @@ fn get_previous_stage_content(
         "PodcastScript" => "Summarized",
         _ => "Transcribed",
     };
-    get_stage_content(storage, &task.audio_item_id, dep_stage)
+    get_stage_content(storage, &task.audio_item_id, dep_stage).await
 }
 
-fn get_stage_content(
+async fn get_stage_content(
     storage: &Arc<Database>,
     audio_item_id: &str,
     stage: &str,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-    let lifecycles = storage.get_audio_lifecycle(audio_item_id)
+    let lifecycles = storage.get_audio_lifecycle(audio_item_id).await
         .map_err(|e| format!("Failed to get lifecycle: {e}"))?;
     let lc = lifecycles.iter().find(|l| l.stage == stage);
     match lc {
@@ -401,4 +503,58 @@ fn get_stage_content(
         Some(l) => Err(format!("Stage {stage} is not completed (status: {})", l.status).into()),
         None => Err(format!("Dependency stage {stage} has not been processed yet").into()),
     }
+}
+
+/// P3-7-FIX: 从播客台本中检测发言人角色
+///
+/// 扫描文本行中的 "角色名: " 或 "角色名：" 模式，提取去重的角色列表。
+/// 为每个角色分配不同的语音（交替使用男女声）。
+fn detect_speakers(script: &str) -> Vec<(String, String)> {
+    let voices = [
+        "zh-CN-XiaoxiaoMultilingualNeural",
+        "zh-CN-YunxiMultilingualNeural",
+        "zh-CN-XiaoyiNeural",
+        "zh-CN-YunjianNeural",
+    ];
+
+    let mut seen: Vec<String> = Vec::new();
+    for line in script.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        // 匹配 "标签: " 或 "标签：" 格式
+        let label = if let Some(pos) = trimmed.find(": ") {
+            let candidate = &trimmed[..pos];
+            // 角色标签一般不超过 20 字符且不含换行
+            if candidate.len() <= 40 && !candidate.contains('\n') {
+                Some(candidate.to_string())
+            } else {
+                None
+            }
+        } else if let Some(pos) = trimmed.find("：") {
+            let candidate = &trimmed[..pos];
+            if candidate.len() <= 40 && !candidate.contains('\n') {
+                Some(candidate.to_string())
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        if let Some(l) = label {
+            if !seen.contains(&l) {
+                seen.push(l);
+            }
+        }
+    }
+
+    seen.into_iter()
+        .enumerate()
+        .map(|(i, label)| {
+            let voice = voices[i % voices.len()].to_string();
+            (label, voice)
+        })
+        .collect()
 }

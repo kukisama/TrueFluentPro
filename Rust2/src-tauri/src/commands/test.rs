@@ -1,416 +1,7 @@
-use tauri::{Emitter, Manager, State};
+use tauri::{Emitter, State};
 
 use crate::models::*;
-use crate::providers::ProviderInfo;
 use crate::state::AppState;
-
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-//  配置命令
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-#[tauri::command]
-pub async fn get_config(state: State<'_, AppState>) -> Result<AppConfig, String> {
-    let config = state.config.read().await;
-    Ok(config.clone())
-}
-
-#[tauri::command]
-pub async fn update_config(state: State<'_, AppState>, config: AppConfig) -> Result<(), String> {
-    {
-        let mut current = state.config.write().await;
-        *current = config;
-    }
-    state.persist_config().await
-}
-
-#[tauri::command]
-pub async fn add_endpoint(
-    state: State<'_, AppState>,
-    endpoint: AiEndpoint,
-) -> Result<(), String> {
-    {
-        let mut config = state.config.write().await;
-        config.endpoints.push(endpoint);
-    }
-    state.persist_config().await
-}
-
-#[tauri::command]
-pub async fn remove_endpoint(
-    state: State<'_, AppState>,
-    endpoint_id: String,
-) -> Result<(), String> {
-    {
-        let mut config = state.config.write().await;
-        config.endpoints.retain(|e| e.id != endpoint_id);
-    }
-    state.persist_config().await
-}
-
-#[tauri::command]
-pub async fn update_endpoint(
-    state: State<'_, AppState>,
-    endpoint: AiEndpoint,
-) -> Result<(), String> {
-    {
-        let mut config = state.config.write().await;
-        if let Some(existing) = config.endpoints.iter_mut().find(|e| e.id == endpoint.id) {
-            *existing = endpoint;
-        }
-    }
-    state.persist_config().await
-}
-
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-//  翻译命令
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-#[tauri::command]
-pub async fn translate_text(
-    state: State<'_, AppState>,
-    request: TranslateRequest,
-) -> Result<TranslateResponse, String> {
-    let providers = state.providers.read().await;
-    let provider_id = request
-        .endpoint_id
-        .as_deref()
-        .unwrap_or("default");
-    let provider = providers
-        .get_text_translation(provider_id)
-        .ok_or_else(|| format!("未找到翻译 Provider: {provider_id}"))?;
-
-    provider
-        .translate(&request)
-        .await
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn start_realtime_translation(
-    app: tauri::AppHandle,
-    state: State<'_, AppState>,
-    config: RealtimeSessionConfig,
-) -> Result<String, String> {
-    let providers = state.providers.read().await;
-    let provider = providers
-        .get_realtime_speech(&config.endpoint_id)
-        .ok_or_else(|| {
-            format!(
-                "未找到实时语音翻译 Provider: {}。请在设置中添加 Azure Speech 类型端点。",
-                config.endpoint_id
-            )
-        })?;
-
-    let (mut rx, handle) = provider
-        .create_session(&config)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let session_id = uuid::Uuid::new_v4().to_string();
-    let sid = session_id.clone();
-
-    // 保存 handle 到全局 state 以便后续 stop
-    {
-        let mut sessions = state.active_speech_sessions.write().await;
-        sessions.insert(sid.clone(), handle);
-    }
-
-    // 将实时事件通过 Tauri Event 推送到前端
-    tauri::async_runtime::spawn(async move {
-        while let Some(event) = rx.recv().await {
-            let _ = app.emit("realtime-event", &event);
-        }
-    });
-
-    Ok(sid)
-}
-
-/// 停止实时语音翻译会话
-#[tauri::command]
-pub async fn stop_realtime_translation(
-    state: State<'_, AppState>,
-    session_id: String,
-) -> Result<(), String> {
-    let handle = {
-        let mut sessions = state.active_speech_sessions.write().await;
-        sessions.remove(&session_id)
-    };
-
-    if let Some(h) = handle {
-        h.stop().await.map_err(|e| e.to_string())?;
-    }
-
-    Ok(())
-}
-
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-//  Provider 查询命令
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-#[tauri::command]
-pub async fn list_providers(state: State<'_, AppState>) -> Result<Vec<ProviderInfo>, String> {
-    let providers = state.providers.read().await;
-    Ok(providers.list_providers())
-}
-
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-//  AI 媒体命令
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-#[tauri::command]
-pub async fn generate_image(
-    state: State<'_, AppState>,
-    request: ImageGenRequest,
-) -> Result<Vec<ImageGenResult>, String> {
-    let providers = state.providers.read().await;
-    let provider = providers
-        .get_image_gen(&request.endpoint_id)
-        .ok_or_else(|| format!("未找到图片生成 Provider: {}", request.endpoint_id))?;
-
-    provider
-        .generate(&request)
-        .await
-        .map_err(|e| e.to_string())
-}
-
-/// 保存图片到本地文件 + 记录到数据库（对齐 C# GenerateAndSaveImagesAsync）
-#[tauri::command]
-pub async fn save_image(
-    app: tauri::AppHandle,
-    state: State<'_, AppState>,
-    request: SaveImageRequest,
-) -> Result<SavedImage, String> {
-    use base64::Engine;
-    use std::io::Write;
-
-    // 解码 base64
-    let bytes = base64::engine::general_purpose::STANDARD
-        .decode(&request.base64)
-        .map_err(|e| format!("base64 解码失败: {e}"))?;
-
-    // 确定存储目录: {app_data_dir}/images/
-    let data_dir = app.path().app_data_dir()
-        .map_err(|e| format!("获取数据目录失败: {e}"))?;
-    let img_dir = data_dir.join("images");
-    std::fs::create_dir_all(&img_dir).map_err(|e| format!("创建目录失败: {e}"))?;
-
-    // 文件名: img_{timestamp}_{random}.{ext}（对齐 C# img_{seq:D3}_{randomId:N}.{ext}）
-    let ext = match request.format.as_str() {
-        "jpeg" | "jpg" => "jpg",
-        "webp" => "webp",
-        _ => "png",
-    };
-    let file_name = format!(
-        "img_{}_{}.{}",
-        chrono::Utc::now().format("%Y%m%d_%H%M%S"),
-        &uuid::Uuid::new_v4().to_string()[..8],
-        ext
-    );
-    let file_path = img_dir.join(&file_name);
-
-    // 原子写入: .tmp → rename（对齐 C# 的 .tmp + File.Move 模式）
-    let tmp_path = file_path.with_extension(format!("{ext}.tmp"));
-    {
-        let mut f = std::fs::File::create(&tmp_path)
-            .map_err(|e| format!("创建临时文件失败: {e}"))?;
-        f.write_all(&bytes).map_err(|e| format!("写入失败: {e}"))?;
-        f.flush().map_err(|e| format!("flush 失败: {e}"))?;
-    }
-    std::fs::rename(&tmp_path, &file_path)
-        .map_err(|e| format!("重命名失败: {e}"))?;
-
-    let file_size = bytes.len() as i64;
-
-    // 写入数据库
-    let record = SavedImage {
-        id: uuid::Uuid::new_v4().to_string(),
-        prompt: request.prompt,
-        revised_prompt: request.revised_prompt,
-        file_path: file_path.to_string_lossy().to_string(),
-        file_size,
-        width: request.width,
-        height: request.height,
-        model_id: request.model_id,
-        endpoint_id: request.endpoint_id,
-        generate_seconds: request.generate_seconds,
-        source: request.source,
-        created_at: chrono::Utc::now().to_rfc3339(),
-    };
-    state.db.add_saved_image(&record).map_err(|e| e.to_string())?;
-
-    tracing::info!("✓ 图片已保存: {} ({} bytes)", file_name, file_size);
-    Ok(record)
-}
-
-/// 列出已保存的图片记录
-#[tauri::command]
-pub async fn list_saved_images(
-    state: State<'_, AppState>,
-    limit: Option<u32>,
-) -> Result<Vec<SavedImage>, String> {
-    state.db.list_saved_images(limit.unwrap_or(50)).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn ai_complete(
-    state: State<'_, AppState>,
-    request: CompletionRequest,
-) -> Result<CompletionResponse, String> {
-    let providers = state.providers.read().await;
-    let provider = providers
-        .get_ai_completion(&request.endpoint_id)
-        .ok_or_else(|| format!("未找到 AI 补全 Provider: {}", request.endpoint_id))?;
-
-    provider
-        .complete(&request)
-        .await
-        .map_err(|e| e.to_string())
-}
-
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-//  存储命令
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-#[tauri::command]
-pub async fn get_translation_history(
-    state: State<'_, AppState>,
-    limit: Option<u32>,
-) -> Result<Vec<TranslationHistory>, String> {
-    state
-        .db
-        .list_translations(limit.unwrap_or(50))
-        .map_err(|e| e.to_string())
-}
-
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-//  系统信息命令
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-#[derive(serde::Serialize)]
-pub struct AppInfo {
-    pub version: String,
-    pub platform: String,
-    pub arch: String,
-    pub data_dir: String,
-}
-
-#[tauri::command]
-pub async fn get_app_info(app: tauri::AppHandle) -> Result<AppInfo, String> {
-    let data_dir = app
-        .path()
-        .app_data_dir()
-        .map(|p| p.to_string_lossy().to_string())
-        .map_err(|e| e.to_string())?;
-
-    Ok(AppInfo {
-        version: env!("CARGO_PKG_VERSION").to_string(),
-        platform: std::env::consts::OS.to_string(),
-        arch: std::env::consts::ARCH.to_string(),
-        data_dir,
-    })
-}
-
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-//  Azure 存储验证
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-#[tauri::command]
-pub async fn validate_storage_connection(connection_string: String) -> Result<(), String> {
-    // 基本格式校验：必须包含 AccountName 和 AccountKey
-    if !connection_string.contains("AccountName=") || !connection_string.contains("AccountKey=") {
-        return Err("连接字符串格式不正确，必须包含 AccountName 和 AccountKey".into());
-    }
-    // 提取 AccountName 并尝试构造 endpoint URL 来验证
-    let account_name = connection_string
-        .split(';')
-        .find_map(|p| p.strip_prefix("AccountName="))
-        .ok_or("无法解析 AccountName")?;
-    let endpoint_suffix = connection_string
-        .split(';')
-        .find_map(|p| p.strip_prefix("EndpointSuffix="))
-        .unwrap_or("core.windows.net");
-    let url = format!("https://{}.blob.{}", account_name, endpoint_suffix);
-
-    // 尝试 HEAD 请求验证域名可达
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .build()
-        .map_err(|e| e.to_string())?;
-
-    let resp = client.get(&url).send().await.map_err(|e| format!("无法连接到存储端点: {}", e))?;
-    // Azure Blob 未带认证会返回 403 或 400，但不会超时或域名不存在
-    if resp.status().is_server_error() {
-        return Err(format!("存储端点返回服务器错误: {}", resp.status()));
-    }
-    Ok(())
-}
-
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-//  Provider 热重载
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-/// 端点配置变更后调用，重新注册所有 Provider
-#[tauri::command]
-pub async fn refresh_providers(state: State<'_, AppState>) -> Result<Vec<ProviderInfo>, String> {
-    let config = state.config.read().await;
-    let endpoints = config.endpoints.clone();
-    drop(config);
-
-    crate::register_providers_from_config_async(&*state, &endpoints).await;
-
-    let providers = state.providers.read().await;
-    Ok(providers.list_providers())
-}
-
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-//  流式 AI 补全（通过 Tauri Event 推送 token）
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-#[tauri::command]
-pub async fn ai_complete_stream(
-    app: tauri::AppHandle,
-    state: State<'_, AppState>,
-    request: CompletionRequest,
-) -> Result<String, String> {
-    let providers = state.providers.read().await;
-    let provider = providers
-        .get_ai_completion(&request.endpoint_id)
-        .ok_or_else(|| format!("未找到 AI Provider: {}", request.endpoint_id))?;
-
-    let mut rx = provider
-        .complete_stream(&request)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let stream_id = uuid::Uuid::new_v4().to_string();
-    let sid = stream_id.clone();
-
-    tauri::async_runtime::spawn(async move {
-        while let Some(result) = rx.recv().await {
-            match result {
-                Ok(token) => {
-                    let _ = app.emit("ai-stream-token", serde_json::json!({
-                        "stream_id": &sid,
-                        "token": token,
-                    }));
-                }
-                Err(e) => {
-                    let _ = app.emit("ai-stream-token", serde_json::json!({
-                        "stream_id": &sid,
-                        "error": e.to_string(),
-                    }));
-                    break;
-                }
-            }
-        }
-        let _ = app.emit("ai-stream-token", serde_json::json!({
-            "stream_id": &sid,
-            "done": true,
-        }));
-    });
-
-    Ok(stream_id)
-}
 
 /// 测试端点连通性 — 逐模型逐能力测试，通过事件实时推送进度
 #[tauri::command]
@@ -435,7 +26,9 @@ pub async fn test_endpoint(
 
     // ── Speech 端点走独立逻辑 ──
     if ep.is_speech() {
-        let items = test_speech_endpoint(&ep).await;
+        let mut items = test_speech_endpoint(&ep).await;
+        // O-49: 追加 TTS 语音合成测试
+        items.push(test_speech_tts_voices(&ep).await);
         let report = build_report(&ep, items, start.elapsed().as_millis() as u64);
         return Ok(report);
     }
@@ -893,32 +486,45 @@ async fn test_text_capability(
     profile: Option<&crate::models::VendorProfile>,
 ) -> Result<(String, Option<String>), (String, String)> {
     let is_responses = url.contains("/responses");
+    // 仅 Azure 旧式 deployment 路由（/openai/deployments/{deploy}/...）由 URL 指定模型；
+    // 其他所有情况（含 /openai/v1/、/v1/）都需要在 body 内提供 model
+    let url_has_deployment = url.contains("/openai/deployments/");
 
     let body = if is_responses {
-        // Responses API 格式
+        // Responses API 格式 — 对齐 C# AiInsightService Responses body
+        // input 必须是结构化数组（role + content[{type:"input_text",text}]），不能是字符串
         let mut b = serde_json::json!({
             "model": model.model_id,
-            "input": "计算 2+3 的结果，简短直接回复",
+            "input": [
+                {
+                    "role": "system",
+                    "content": [{"type": "input_text", "text": "你是连通性测试助手，请用简短中文直接回复。"}]
+                },
+                {
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": "计算 2+3 的结果"}]
+                }
+            ],
             "stream": true,
         });
-        // Azure 部署时不需要 model 字段（由 URL 指定）
-        if ep.endpoint_type == crate::models::EndpointType::AzureOpenAi {
+        if url_has_deployment {
             b.as_object_mut().unwrap().remove("model");
         }
         b
     } else {
-        // ChatCompletions 格式
+        // ChatCompletions 格式 — 对齐 C# AiInsightService Azure/ChatCompletions body
+        // 不使用 max_tokens（gpt-5.x 等新模型会 400），保留 stream_options 以与 C# 一致
         let mut b = serde_json::json!({
+            "model": model.model_id,
             "messages": [
                 {"role": "system", "content": "你是连通性测试助手，请用简短中文直接回复。"},
                 {"role": "user", "content": "计算 2+3 的结果"}
             ],
-            "max_tokens": 50,
             "stream": true,
+            "stream_options": { "include_usage": true }
         });
-        // 非 Azure 时需要 model 字段
-        if !ep.is_azure() || ep.endpoint_type == crate::models::EndpointType::ApiManagementGateway {
-            b["model"] = serde_json::Value::String(model.model_id.clone());
+        if url_has_deployment {
+            b.as_object_mut().unwrap().remove("model");
         }
         b
     };
@@ -1249,6 +855,75 @@ async fn test_speech_endpoint(ep: &crate::models::AiEndpoint) -> Vec<crate::mode
     items
 }
 
+/// O-49: 测试 TTS voices 列表接口 — 验证 STT/TTS 能力
+async fn test_speech_tts_voices(ep: &crate::models::AiEndpoint) -> crate::models::EndpointTestItem {
+    let key = if !ep.speech_subscription_key.is_empty() { &ep.speech_subscription_key } else { &ep.api_key };
+    let region = &ep.speech_region;
+    let voices_url = if !ep.speech_endpoint.is_empty() {
+        let base = ep.speech_endpoint.trim_end_matches('/');
+        format!("{base}/cognitiveservices/voices/list")
+    } else if !region.is_empty() {
+        format!("https://{region}.tts.speech.microsoft.com/cognitiveservices/voices/list")
+    } else {
+        return crate::models::EndpointTestItem {
+            model_id: "speech-tts".into(),
+            capability: "TTS 语音合成".into(),
+            status: crate::models::TestStatus::Skipped,
+            summary: "⏭ 区域为空，跳过 TTS 测试".into(),
+            detail: None, request_url: None, request_summary: None,
+            duration_ms: 0, test_branch: None, urls_tried: vec![],
+        };
+    };
+
+    let t0 = std::time::Instant::now();
+    let client = reqwest::Client::builder().timeout(std::time::Duration::from_secs(10)).build().unwrap();
+    let resp = client.get(&voices_url).header("Ocp-Apim-Subscription-Key", key).send().await;
+    let dur = t0.elapsed().as_millis() as u64;
+
+    match resp {
+        Ok(r) if r.status().is_success() => {
+            let body = r.text().await.unwrap_or_default();
+            let count = serde_json::from_str::<Vec<serde_json::Value>>(&body).map(|v| v.len()).unwrap_or(0);
+            crate::models::EndpointTestItem {
+                model_id: "speech-tts".into(),
+                capability: "TTS 语音合成".into(),
+                status: crate::models::TestStatus::Success,
+                summary: format!("✅ TTS 可用，{count} 个语音"),
+                detail: None,
+                request_url: Some(format!("GET {voices_url}")),
+                request_summary: None, duration_ms: dur,
+                test_branch: Some("Voices List API".into()),
+                urls_tried: vec![voices_url],
+            }
+        }
+        Ok(r) => {
+            let status = r.status().as_u16();
+            crate::models::EndpointTestItem {
+                model_id: "speech-tts".into(),
+                capability: "TTS 语音合成".into(),
+                status: crate::models::TestStatus::Failed,
+                summary: format!("❌ TTS 测试失败 (HTTP {status})"),
+                detail: None,
+                request_url: Some(format!("GET {voices_url}")),
+                request_summary: None, duration_ms: dur,
+                test_branch: Some("Voices List API".into()),
+                urls_tried: vec![voices_url],
+            }
+        }
+        Err(e) => crate::models::EndpointTestItem {
+            model_id: "speech-tts".into(),
+            capability: "TTS 语音合成".into(),
+            status: crate::models::TestStatus::Failed,
+            summary: "❌ TTS 连接失败".into(),
+            detail: Some(format!("{e}")),
+            request_url: Some(format!("GET {voices_url}")),
+            request_summary: None, duration_ms: dur,
+            test_branch: Some("Voices List API".into()),
+            urls_tried: vec![voices_url],
+        },
+    }
+}
+
 /// 解析错误响应体，提取人类可读的错误信息
 fn parse_error_body(status_code: u16, body: &str) -> String {
     // 尝试解析 JSON 错误
@@ -1422,268 +1097,4 @@ fn parse_model_list(body: &str) -> Result<Vec<crate::models::DiscoveredModel>, (
         .collect();
 
     Ok(models)
-}
-
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-//  P1.2: 会话 & 消息命令
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-#[tauri::command]
-pub async fn list_sessions(
-    state: State<'_, AppState>,
-    session_type: Option<String>,
-) -> Result<Vec<Session>, String> {
-    state.db.list_sessions(session_type.as_deref()).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn create_session(
-    state: State<'_, AppState>,
-    title: String,
-    session_type: String,
-) -> Result<Session, String> {
-    let now = chrono::Utc::now().to_rfc3339();
-    let session = Session {
-        id: uuid::Uuid::new_v4().to_string(),
-        title,
-        session_type,
-        message_count: 0,
-        token_total: 0,
-        created_at: now.clone(),
-        updated_at: now,
-    };
-    state.db.create_session(&session).map_err(|e| e.to_string())?;
-    Ok(session)
-}
-
-#[tauri::command]
-pub async fn delete_session(
-    state: State<'_, AppState>,
-    session_id: String,
-) -> Result<(), String> {
-    state.db.delete_session(&session_id).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn get_session_messages(
-    state: State<'_, AppState>,
-    session_id: String,
-) -> Result<Vec<Message>, String> {
-    state.db.get_session_messages(&session_id).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn add_message(
-    state: State<'_, AppState>,
-    msg: Message,
-) -> Result<Message, String> {
-    let mut msg = msg;
-    if msg.id.is_empty() {
-        msg.id = uuid::Uuid::new_v4().to_string();
-    }
-    if msg.created_at.is_empty() {
-        msg.created_at = chrono::Utc::now().to_rfc3339();
-    }
-    state.db.add_message(&msg).map_err(|e| e.to_string())?;
-    Ok(msg)
-}
-
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-//  P1.2: 音频库命令
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-#[tauri::command]
-pub async fn list_audio_items(
-    state: State<'_, AppState>,
-) -> Result<Vec<AudioLibraryItem>, String> {
-    state.db.list_audio_items().map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn add_audio_item(
-    state: State<'_, AppState>,
-    item: AudioLibraryItem,
-) -> Result<AudioLibraryItem, String> {
-    let mut item = item;
-    if item.id.is_empty() {
-        item.id = uuid::Uuid::new_v4().to_string();
-    }
-    let now = chrono::Utc::now().to_rfc3339();
-    if item.created_at.is_empty() {
-        item.created_at = now.clone();
-    }
-    if item.updated_at.is_empty() {
-        item.updated_at = now;
-    }
-    state.db.add_audio_item(&item).map_err(|e| e.to_string())?;
-    // Initialize 8-stage lifecycle
-    state.db.init_lifecycle_stages(&item.id).map_err(|e| e.to_string())?;
-    Ok(item)
-}
-
-#[tauri::command]
-pub async fn delete_audio_item(
-    state: State<'_, AppState>,
-    item_id: String,
-) -> Result<(), String> {
-    state.db.delete_audio_item(&item_id).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn get_audio_lifecycle(
-    state: State<'_, AppState>,
-    audio_item_id: String,
-) -> Result<Vec<AudioLifecycleRow>, String> {
-    state.db.get_audio_lifecycle(&audio_item_id).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn update_lifecycle_stage(
-    state: State<'_, AppState>,
-    lifecycle: AudioLifecycleRow,
-) -> Result<(), String> {
-    state.db.upsert_lifecycle(&lifecycle).map_err(|e| e.to_string())
-}
-
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-//  P2.1: 任务引擎命令
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-#[tauri::command]
-pub async fn submit_task(
-    state: State<'_, AppState>,
-    task: AudioTaskRow,
-) -> Result<AudioTaskRow, String> {
-    let mut task = task;
-    if task.id.is_empty() {
-        task.id = uuid::Uuid::new_v4().to_string();
-    }
-    if task.submitted_at.is_empty() {
-        task.submitted_at = chrono::Utc::now().to_rfc3339();
-    }
-    state.db.submit_task(&task).map_err(|e| e.to_string())?;
-    Ok(task)
-}
-
-#[tauri::command]
-pub async fn cancel_task(
-    state: State<'_, AppState>,
-    task_id: String,
-) -> Result<(), String> {
-    state.db.update_task_status_new(&task_id, "Cancelled", None).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn retry_task(
-    state: State<'_, AppState>,
-    task_id: String,
-) -> Result<(), String> {
-    state.db.update_task_status_new(&task_id, "Queued", None).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn get_task_engine_stats(
-    state: State<'_, AppState>,
-) -> Result<TaskEngineStats, String> {
-    state.db.get_task_stats().map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn list_tasks(
-    state: State<'_, AppState>,
-    status: Option<String>,
-    limit: Option<u32>,
-) -> Result<Vec<AudioTaskRow>, String> {
-    state.db.list_tasks(status.as_deref(), limit.unwrap_or(100)).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn get_task_executions(
-    state: State<'_, AppState>,
-    task_id: String,
-) -> Result<Vec<TaskExecutionRow>, String> {
-    state.db.get_task_executions(&task_id).map_err(|e| e.to_string())
-}
-
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-//  P3.4: 配置导入/导出
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-#[tauri::command]
-pub async fn export_config(state: State<'_, AppState>) -> Result<String, String> {
-    let config = state.config.read().await;
-    serde_json::to_string_pretty(&*config).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn import_config(
-    state: State<'_, AppState>,
-    json: String,
-) -> Result<(), String> {
-    let new_config: AppConfig = serde_json::from_str(&json)
-        .map_err(|e| format!("Invalid config JSON: {e}"))?;
-    {
-        let mut config = state.config.write().await;
-        *config = new_config;
-    }
-    state.persist_config().await
-}
-
-#[tauri::command]
-pub async fn write_text_file(path: String, content: String) -> Result<(), String> {
-    std::fs::write(&path, &content).map_err(|e| format!("写入文件失败: {e}"))
-}
-
-#[tauri::command]
-pub async fn read_text_file(path: String) -> Result<String, String> {
-    std::fs::read_to_string(&path).map_err(|e| format!("读取文件失败: {e}"))
-}
-
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-//  P3.5: 计费查询
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-#[tauri::command]
-pub async fn get_billing_records(
-    state: State<'_, AppState>,
-    limit: Option<u32>,
-) -> Result<Vec<BillingRecord>, String> {
-    state.db.get_billing_records(limit.unwrap_or(100)).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn get_billing_summary(
-    state: State<'_, AppState>,
-) -> Result<BillingSummary, String> {
-    state.db.get_billing_summary().map_err(|e| e.to_string())
-}
-
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-//  P4.1: 图片管道
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-#[tauri::command]
-pub async fn run_image_pipeline(
-    app: tauri::AppHandle,
-    request: crate::image_pipeline::pipeline::PipelineRequest,
-) -> Result<crate::image_pipeline::pipeline::PipelineResult, String> {
-    crate::image_pipeline::pipeline::run_pipeline(&app, request).await
-}
-
-#[tauri::command]
-pub async fn get_image_model_catalog() -> Result<Vec<crate::image_pipeline::catalog::ModelCapabilityEntry>, String> {
-    Ok(crate::image_pipeline::catalog::builtin_image_models())
-}
-
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-//  P4.2: 视频生成（预留）
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-#[tauri::command]
-pub async fn generate_video(
-    _prompt: String,
-    _model: String,
-    _endpoint_id: String,
-) -> Result<String, String> {
-    Err("Video generation is not yet implemented".into())
 }
