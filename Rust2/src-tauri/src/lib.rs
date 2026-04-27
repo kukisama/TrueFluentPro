@@ -1,5 +1,6 @@
 mod commands;
 mod models;
+mod profile_loader;
 mod providers;
 mod state;
 mod storage;
@@ -14,7 +15,31 @@ use providers::{OpenAiChatProvider, OpenAiImageProvider, AzureSpeechProvider, Az
 use state::AppState;
 use storage::Database;
 
-/// 根据端点类型自动注册对应的 Provider
+/// 根据端点类型自动注册对应的 Provider（async 版本，在 tokio runtime 内调用）
+async fn register_providers_from_config_async(state: &AppState, endpoints: &[AiEndpoint]) {
+    let mut registry = state.providers.write().await;
+    registry.clear();
+    for ep in endpoints.iter().filter(|e| e.enabled) {
+        match ep.endpoint_type {
+            EndpointType::AzureOpenAi | EndpointType::OpenAiCompatible | EndpointType::ApiManagementGateway | EndpointType::Custom => {
+                registry.register_ai_completion(Arc::new(OpenAiChatProvider::new(ep.clone())));
+                registry.register_image_gen(Arc::new(OpenAiImageProvider::new(ep.clone())));
+                tracing::info!("已注册 AI+Image Provider: {} ({})", ep.name, ep.id);
+            }
+            EndpointType::AzureSpeech => {
+                registry.register_realtime_speech(Arc::new(AzureSpeechProvider::new(ep.clone())));
+                registry.register_stt(Arc::new(AzureSttProvider::new(ep.clone())));
+                registry.register_tts(Arc::new(AzureTtsProvider::new(ep.clone())));
+                tracing::info!("已注册 Speech+STT+TTS Provider: {} ({})", ep.name, ep.id);
+            }
+            _ => {
+                tracing::debug!("端点 {} ({:?}) 暂无对应 Provider 实现", ep.name, ep.endpoint_type);
+            }
+        }
+    }
+}
+
+/// 根据端点类型自动注册对应的 Provider（sync 版本，仅在 setup 同步上下文使用）
 fn register_providers_from_config(state: &AppState, endpoints: &[AiEndpoint]) {
     let mut registry = state.providers.blocking_write();
     for ep in endpoints.iter().filter(|e| e.enabled) {
@@ -104,6 +129,8 @@ pub fn run() {
             commands::list_providers,
             // AI 媒体
             commands::generate_image,
+            commands::save_image,
+            commands::list_saved_images,
             commands::ai_complete,
             // 存储
             commands::get_translation_history,

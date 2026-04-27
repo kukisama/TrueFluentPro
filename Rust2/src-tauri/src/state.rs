@@ -21,12 +21,17 @@ pub struct AppState {
 impl AppState {
     pub fn new(db: Database) -> Self {
         // 从数据库加载保存的配置，不存在则用默认值
-        let config = db
+        let mut config = db
             .kv_get("app_config")
             .ok()
             .flatten()
             .and_then(|json| serde_json::from_str::<AppConfig>(&json).ok())
             .unwrap_or_default();
+
+        // 迁移遗留的 "auto" auth_header_mode 为明确值
+        for ep in &mut config.endpoints {
+            ep.migrate_auth_header_mode();
+        }
 
         Self {
             config: RwLock::new(config),

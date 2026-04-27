@@ -218,6 +218,17 @@ impl ProviderRegistry {
         self.image_gen.insert(provider.id().to_string(), provider);
     }
 
+    // ── 清空 ──
+
+    pub fn clear(&mut self) {
+        self.text_translation.clear();
+        self.realtime_speech.clear();
+        self.stt.clear();
+        self.tts.clear();
+        self.ai_completion.clear();
+        self.image_gen.clear();
+    }
+
     // ── 查询 ──
 
     pub fn get_text_translation(&self, id: &str) -> Option<Arc<dyn TextTranslationSlot>> {

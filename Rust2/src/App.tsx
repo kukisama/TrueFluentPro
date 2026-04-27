@@ -51,7 +51,7 @@ export default function App() {
   }, [setActiveView]);
 
   return (
-    <TooltipProvider delayDuration={300}>
+    <TooltipProvider delayDuration={100} skipDelayDuration={50}>
       <AppLayout />
     </TooltipProvider>
   );

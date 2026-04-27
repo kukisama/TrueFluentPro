@@ -8,8 +8,12 @@ description = "Azure Cognitive Services Speech SDK Rust FFI bindings with Transl
 [dependencies]
 log = "0.4"
 
+[features]
+default = []
+bindgen-gen = ["dep:bindgen"]
+
 [build-dependencies]
-bindgen = "0.71"
+bindgen = { version = "0.71", optional = true }
 zip = "2"
 
 [dev-dependencies]

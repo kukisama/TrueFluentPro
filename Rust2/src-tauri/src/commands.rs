@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use tauri::{Emitter, Manager, State};
 
 use crate::models::*;
@@ -174,6 +173,84 @@ pub async fn generate_image(
         .map_err(|e| e.to_string())
 }
 
+/// 保存图片到本地文件 + 记录到数据库（对齐 C# GenerateAndSaveImagesAsync）
+#[tauri::command]
+pub async fn save_image(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    request: SaveImageRequest,
+) -> Result<SavedImage, String> {
+    use base64::Engine;
+    use std::io::Write;
+
+    // 解码 base64
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(&request.base64)
+        .map_err(|e| format!("base64 解码失败: {e}"))?;
+
+    // 确定存储目录: {app_data_dir}/images/
+    let data_dir = app.path().app_data_dir()
+        .map_err(|e| format!("获取数据目录失败: {e}"))?;
+    let img_dir = data_dir.join("images");
+    std::fs::create_dir_all(&img_dir).map_err(|e| format!("创建目录失败: {e}"))?;
+
+    // 文件名: img_{timestamp}_{random}.{ext}（对齐 C# img_{seq:D3}_{randomId:N}.{ext}）
+    let ext = match request.format.as_str() {
+        "jpeg" | "jpg" => "jpg",
+        "webp" => "webp",
+        _ => "png",
+    };
+    let file_name = format!(
+        "img_{}_{}.{}",
+        chrono::Utc::now().format("%Y%m%d_%H%M%S"),
+        &uuid::Uuid::new_v4().to_string()[..8],
+        ext
+    );
+    let file_path = img_dir.join(&file_name);
+
+    // 原子写入: .tmp → rename（对齐 C# 的 .tmp + File.Move 模式）
+    let tmp_path = file_path.with_extension(format!("{ext}.tmp"));
+    {
+        let mut f = std::fs::File::create(&tmp_path)
+            .map_err(|e| format!("创建临时文件失败: {e}"))?;
+        f.write_all(&bytes).map_err(|e| format!("写入失败: {e}"))?;
+        f.flush().map_err(|e| format!("flush 失败: {e}"))?;
+    }
+    std::fs::rename(&tmp_path, &file_path)
+        .map_err(|e| format!("重命名失败: {e}"))?;
+
+    let file_size = bytes.len() as i64;
+
+    // 写入数据库
+    let record = SavedImage {
+        id: uuid::Uuid::new_v4().to_string(),
+        prompt: request.prompt,
+        revised_prompt: request.revised_prompt,
+        file_path: file_path.to_string_lossy().to_string(),
+        file_size,
+        width: request.width,
+        height: request.height,
+        model_id: request.model_id,
+        endpoint_id: request.endpoint_id,
+        generate_seconds: request.generate_seconds,
+        source: request.source,
+        created_at: chrono::Utc::now().to_rfc3339(),
+    };
+    state.db.add_saved_image(&record).map_err(|e| e.to_string())?;
+
+    tracing::info!("✓ 图片已保存: {} ({} bytes)", file_name, file_size);
+    Ok(record)
+}
+
+/// 列出已保存的图片记录
+#[tauri::command]
+pub async fn list_saved_images(
+    state: State<'_, AppState>,
+    limit: Option<u32>,
+) -> Result<Vec<SavedImage>, String> {
+    state.db.list_saved_images(limit.unwrap_or(50)).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub async fn ai_complete(
     state: State<'_, AppState>,
@@ -279,7 +356,7 @@ pub async fn refresh_providers(state: State<'_, AppState>) -> Result<Vec<Provide
     let endpoints = config.endpoints.clone();
     drop(config);
 
-    crate::register_providers_from_config(&*state, &endpoints);
+    crate::register_providers_from_config_async(&*state, &endpoints).await;
 
     let providers = state.providers.read().await;
     Ok(providers.list_providers())
@@ -335,9 +412,10 @@ pub async fn ai_complete_stream(
     Ok(stream_id)
 }
 
-/// 测试端点连通性 — 逐模型逐能力测试，返回详细报告
+/// 测试端点连通性 — 逐模型逐能力测试，通过事件实时推送进度
 #[tauri::command]
 pub async fn test_endpoint(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
     endpoint_id: String,
 ) -> Result<crate::models::EndpointTestReport, String> {
@@ -350,105 +428,19 @@ pub async fn test_endpoint(
         .clone();
     drop(config);
 
+    let profiles = build_vendor_profiles();
+    let profile = profiles.iter().find(|p| p.endpoint_type == ep.endpoint_type);
+    let started_at = chrono::Utc::now().to_rfc3339();
     let start = std::time::Instant::now();
-    let mut items = Vec::new();
 
-    // Speech 端点走独立测试逻辑
+    // ── Speech 端点走独立逻辑 ──
     if ep.is_speech() {
-        let key = if !ep.speech_subscription_key.is_empty() {
-            &ep.speech_subscription_key
-        } else {
-            &ep.api_key
-        };
-        let region = &ep.speech_region;
-        let endpoint = &ep.speech_endpoint;
-
-        if key.is_empty() {
-            return Err("订阅密钥为空，请先填写".into());
-        }
-        if region.is_empty() && endpoint.is_empty() {
-            return Err("区域和终结点均为空，请至少填写一项".into());
-        }
-
-        // 用 token issue 接口测试连通性
-        let t0 = std::time::Instant::now();
-        let test_url = if !endpoint.is_empty() {
-            // 从终结点推导 token issue URL
-            let base = endpoint.trim_end_matches('/');
-            if base.contains("/sts/") {
-                base.to_string()
-            } else {
-                format!("{base}/sts/v1.0/issuetoken")
-            }
-        } else {
-            format!("https://{region}.api.cognitive.microsoft.com/sts/v1.0/issuetoken")
-        };
-
-        let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(15))
-            .build()
-            .map_err(|e| e.to_string())?;
-
-        let resp = client
-            .post(&test_url)
-            .header("Ocp-Apim-Subscription-Key", key)
-            .header("Content-Length", "0")
-            .send()
-            .await;
-
-        let dur = t0.elapsed().as_millis() as u64;
-
-        match resp {
-            Ok(r) if r.status().is_success() => {
-                items.push(crate::models::EndpointTestItem {
-                    model_id: "speech-sdk".into(),
-                    capability: "SpeechTranslation".into(),
-                    status: crate::models::TestStatus::Success,
-                    summary: format!("✅ Speech 连通成功 (区域: {})", if !region.is_empty() { region.as_str() } else { "自定义终结点" }),
-                    detail: None,
-                    request_url: Some(test_url),
-                    duration_ms: dur,
-                });
-            }
-            Ok(r) => {
-                let status = r.status().as_u16();
-                let body = r.text().await.unwrap_or_default();
-                items.push(crate::models::EndpointTestItem {
-                    model_id: "speech-sdk".into(),
-                    capability: "SpeechTranslation".into(),
-                    status: crate::models::TestStatus::Failed,
-                    summary: format!("❌ Speech 认证失败 (HTTP {status})"),
-                    detail: Some(if status == 401 {
-                        "订阅密钥无效或已过期，请检查密钥和区域是否匹配".into()
-                    } else {
-                        body
-                    }),
-                    request_url: Some(test_url),
-                    duration_ms: dur,
-                });
-            }
-            Err(e) => {
-                items.push(crate::models::EndpointTestItem {
-                    model_id: "speech-sdk".into(),
-                    capability: "SpeechTranslation".into(),
-                    status: crate::models::TestStatus::Failed,
-                    summary: "❌ Speech 连接失败".into(),
-                    detail: Some(format!("无法连接到 Speech 服务: {e}")),
-                    request_url: Some(test_url),
-                    duration_ms: dur,
-                });
-            }
-        }
-
-        return Ok(crate::models::EndpointTestReport {
-            endpoint_id: ep.id.clone(),
-            endpoint_name: ep.name.clone(),
-            items,
-            duration_ms: start.elapsed().as_millis() as u64,
-        });
+        let items = test_speech_endpoint(&ep).await;
+        let report = build_report(&ep, items, start.elapsed().as_millis() as u64);
+        return Ok(report);
     }
 
-    // AI 端点前置校验
+    // ── AI 端点前置校验 ──
     if ep.url.trim().is_empty() {
         return Err("端点 URL 为空，请先填写".into());
     }
@@ -459,182 +451,181 @@ pub async fn test_endpoint(
         return Err("模型列表为空，请至少添加一个模型".into());
     }
 
+    // ── 计算总测试项并初始化进度 ──
+    let mut plan: Vec<(String, crate::models::ModelCapability)> = Vec::new();
+    for model in &ep.models {
+        for cap in &model.capabilities {
+            plan.push((model.model_id.clone(), cap.clone()));
+        }
+    }
+    let total = plan.len();
+
+    // 初始化 items 为 Running（全部并发，无 Pending 排队）
+    let items: Vec<crate::models::EndpointTestItem> = plan
+        .iter()
+        .map(|(mid, cap)| crate::models::EndpointTestItem {
+            model_id: mid.clone(),
+            capability: cap_label(cap),
+            status: crate::models::TestStatus::Running,
+            summary: format!("正在测试 {}...", cap_label(cap)),
+            detail: None,
+            request_url: None,
+            request_summary: None,
+            duration_ms: 0,
+            test_branch: None,
+            urls_tried: vec![],
+        })
+        .collect();
+
+    // 推送初始进度——全部 Running
+    emit_progress(&app, &ep, &items, &started_at, false);
+
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(20))
+        .timeout(std::time::Duration::from_secs(25))
         .build()
         .map_err(|e| e.to_string())?;
 
-    for model in &ep.models {
-        for cap in &model.capabilities {
-            let t0 = std::time::Instant::now();
-            let result =
-                test_single_capability(&client, &ep, model, cap).await;
-            let dur = t0.elapsed().as_millis() as u64;
+    // ── 并发测试：所有 (model, capability) 一口气发出 ──
+    let items_shared = std::sync::Arc::new(tokio::sync::Mutex::new(items));
+    let mut handles = Vec::new();
 
-            match result {
-                Ok((summary, url)) => {
-                    items.push(crate::models::EndpointTestItem {
-                        model_id: model.model_id.clone(),
-                        capability: format!("{cap:?}"),
-                        status: crate::models::TestStatus::Success,
-                        summary,
-                        detail: None,
-                        request_url: Some(url),
-                        duration_ms: dur,
-                    });
-                }
-                Err((summary, detail, url)) => {
-                    items.push(crate::models::EndpointTestItem {
-                        model_id: model.model_id.clone(),
-                        capability: format!("{cap:?}"),
-                        status: crate::models::TestStatus::Failed,
-                        summary,
-                        detail: Some(detail),
-                        request_url: url,
-                        duration_ms: dur,
-                    });
-                }
-            }
-        }
+    for (idx, (model_id, cap)) in plan.iter().enumerate() {
+        let client = client.clone();
+        let ep = ep.clone();
+        let profile = profile.cloned();
+        let model = ep.models.iter().find(|m| m.model_id == *model_id).unwrap().clone();
+        let cap = cap.clone();
+        let items_shared = items_shared.clone();
+        let app = app.clone();
+        let started_at = started_at.clone();
+
+        let handle = tokio::spawn(async move {
+            let t0 = std::time::Instant::now();
+            let mut result = test_single_capability_v2(&client, &ep, &model, &cap, profile.as_ref()).await;
+            result.duration_ms = t0.elapsed().as_millis() as u64;
+
+            // 更新共享 items 并推送进度
+            let mut items = items_shared.lock().await;
+            items[idx] = result;
+            emit_progress(&app, &ep, &items, &started_at, false);
+        });
+        handles.push(handle);
     }
 
-    Ok(crate::models::EndpointTestReport {
+    // 等待全部完成
+    for h in handles {
+        let _ = h.await;
+    }
+
+    let items = match std::sync::Arc::try_unwrap(items_shared) {
+        Ok(mutex) => mutex.into_inner(),
+        Err(arc) => arc.lock().await.clone(),
+    };
+
+    // 推送完成
+    emit_progress(&app, &ep, &items, &started_at, true);
+
+    Ok(build_report(&ep, items, start.elapsed().as_millis() as u64))
+}
+
+fn emit_progress(
+    app: &tauri::AppHandle,
+    ep: &crate::models::AiEndpoint,
+    items: &[crate::models::EndpointTestItem],
+    started_at: &str,
+    is_completed: bool,
+) {
+    let progress = crate::models::EndpointTestProgress {
         endpoint_id: ep.id.clone(),
         endpoint_name: ep.name.clone(),
-        items,
-        duration_ms: start.elapsed().as_millis() as u64,
-    })
+        total_count: items.len(),
+        pending_count: items.iter().filter(|i| i.status == crate::models::TestStatus::Pending).count(),
+        running_count: items.iter().filter(|i| i.status == crate::models::TestStatus::Running).count(),
+        success_count: items.iter().filter(|i| i.status == crate::models::TestStatus::Success).count(),
+        failed_count: items.iter().filter(|i| i.status == crate::models::TestStatus::Failed).count(),
+        skipped_count: items.iter().filter(|i| i.status == crate::models::TestStatus::Skipped).count(),
+        items: items.to_vec(),
+        is_completed,
+        started_at: started_at.to_string(),
+    };
+    let _ = app.emit("endpoint-test-progress", &progress);
 }
 
-/// 单能力测试——返回 Ok((summary, url)) 或 Err((summary, detail, url))
-async fn test_single_capability(
-    client: &reqwest::Client,
+fn build_report(
     ep: &crate::models::AiEndpoint,
-    model: &crate::models::AiModelEntry,
-    cap: &crate::models::ModelCapability,
-) -> Result<(String, String), (String, String, Option<String>)> {
+    items: Vec<crate::models::EndpointTestItem>,
+    duration_ms: u64,
+) -> crate::models::EndpointTestReport {
+    let success_count = items.iter().filter(|i| i.status == crate::models::TestStatus::Success).count();
+    let failed_count = items.iter().filter(|i| i.status == crate::models::TestStatus::Failed).count();
+    let skipped_count = items.iter().filter(|i| i.status == crate::models::TestStatus::Skipped).count();
+    crate::models::EndpointTestReport {
+        endpoint_id: ep.id.clone(),
+        endpoint_name: ep.name.clone(),
+        endpoint_type_name: format!("{:?}", ep.endpoint_type),
+        items: items.clone(),
+        duration_ms,
+        total_count: items.len(),
+        success_count,
+        failed_count,
+        skipped_count,
+    }
+}
+
+fn cap_label(cap: &crate::models::ModelCapability) -> String {
     use crate::models::ModelCapability;
-
-    let base = ep.url.trim_end_matches('/');
-    let api_ver = ep.api_version.as_deref().unwrap_or("2024-08-01-preview");
-    let deploy = model.effective_deployment();
-
     match cap {
-        ModelCapability::Text => {
-            let url = build_text_url(base, &ep.endpoint_type, deploy, api_ver);
-            let body = serde_json::json!({
-                "messages": [
-                    {"role": "system", "content": "你是连通性测试助手，请用简短中文直接回复。"},
-                    {"role": "user", "content": "计算 2+3 的结果"}
-                ],
-                "max_tokens": 20,
-                "stream": false,
-            });
-            // 非 Azure 部署时需要 model 字段
-            let body = if ep.is_azure() {
-                body
-            } else {
-                let mut b = body;
-                b["model"] = serde_json::Value::String(model.model_id.clone());
-                b
-            };
-            let req = build_authed_request(client.post(&url), ep).json(&body);
-            execute_and_check(req, &url, "文字").await
-        }
-        ModelCapability::Image => {
-            let url = build_image_url(base, &ep.endpoint_type, deploy, api_ver);
-            let body = serde_json::json!({
-                "prompt": "一只卡通兔子",
-                "model": model.model_id,
-                "n": 1,
-                "size": "1024x1024",
-                "quality": "low",
-            });
-            let req = build_authed_request(client.post(&url), ep).json(&body);
-            execute_and_check(req, &url, "图片").await
-        }
-        ModelCapability::Video => {
-            let url = format!("{base}/v1/video/generations");
-            let body = serde_json::json!({
-                "prompt": "一只卡通兔子",
-                "model": model.model_id,
-            });
-            let req = build_authed_request(client.post(&url), ep).json(&body);
-            execute_and_check(req, &url, "视频").await
-        }
-        ModelCapability::SpeechToText => {
-            // STT 需要上传音频文件，这里仅做 OPTIONS 探活
-            let url = build_stt_url(base, &ep.endpoint_type, deploy, api_ver);
-            let summary = format!("⏭ STT 端口探测暂未实现（需上传音频）");
-            Err((
-                summary,
-                "STT 测试需要上传音频文件，暂不支持一键测试".into(),
-                Some(url),
-            ))
-        }
-        ModelCapability::TextToSpeech => {
-            let summary = format!("⏭ TTS 端口探测暂未实现");
-            Err((
-                summary,
-                "TTS 测试暂不支持一键测试".into(),
-                None,
-            ))
-        }
+        ModelCapability::Text => "文字".into(),
+        ModelCapability::Image => "图片".into(),
+        ModelCapability::Video => "视频".into(),
+        ModelCapability::SpeechToText => "语音识别".into(),
+        ModelCapability::TextToSpeech => "语音合成".into(),
     }
 }
 
-fn build_text_url(base: &str, ep_type: &crate::models::EndpointType, deploy: &str, api_ver: &str) -> String {
-    use crate::models::EndpointType;
-    match ep_type {
-        EndpointType::AzureOpenAi => {
-            format!("{base}/openai/deployments/{deploy}/chat/completions?api-version={api_ver}")
-        }
-        EndpointType::ApiManagementGateway => {
-            format!("{base}/v1/chat/completions")
-        }
-        _ => {
-            format!("{base}/v1/chat/completions")
-        }
+/// 解析最终认证头模式（对齐 C# GetEffectiveApiKeyHeaderMode 四级级联）
+fn resolve_auth_mode(ep: &crate::models::AiEndpoint, profile: Option<&crate::models::VendorProfile>) -> String {
+    let mode = ep.auth_header_mode.as_str();
+    if mode != "auto" && !mode.is_empty() {
+        return mode.to_string();
+    }
+    // auto → 从 profile 取默认
+    if let Some(p) = profile {
+        return p.default_auth_header.clone();
+    }
+    // 无 profile 时的平台默认
+    if ep.is_azure() && ep.endpoint_type != crate::models::EndpointType::ApiManagementGateway {
+        "api_key".into()
+    } else {
+        "bearer".into()
     }
 }
 
-fn build_image_url(base: &str, ep_type: &crate::models::EndpointType, deploy: &str, api_ver: &str) -> String {
-    use crate::models::EndpointType;
-    match ep_type {
-        EndpointType::AzureOpenAi => {
-            format!("{base}/openai/deployments/{deploy}/images/generations?api-version={api_ver}")
-        }
-        EndpointType::ApiManagementGateway => {
-            format!("{base}/v1/images/generations")
-        }
-        _ => {
-            format!("{base}/v1/images/generations")
+fn resolve_api_version(ep: &crate::models::AiEndpoint, profile: Option<&crate::models::VendorProfile>) -> String {
+    if let Some(v) = &ep.api_version {
+        if !v.is_empty() {
+            return v.clone();
         }
     }
-}
-
-fn build_stt_url(base: &str, ep_type: &crate::models::EndpointType, deploy: &str, api_ver: &str) -> String {
-    use crate::models::EndpointType;
-    match ep_type {
-        EndpointType::AzureOpenAi => {
-            format!("{base}/openai/deployments/{deploy}/audio/transcriptions?api-version={api_ver}")
-        }
-        _ => {
-            format!("{base}/v1/audio/transcriptions")
+    if let Some(p) = profile {
+        if !p.default_api_version.is_empty() {
+            return p.default_api_version.clone();
         }
     }
+    "2025-03-01-preview".into()
 }
 
 fn build_authed_request(
     req: reqwest::RequestBuilder,
     ep: &crate::models::AiEndpoint,
+    profile: Option<&crate::models::VendorProfile>,
 ) -> reqwest::RequestBuilder {
-    let mode = ep.auth_header_mode.as_str();
-    match mode {
+    let mode = resolve_auth_mode(ep, profile);
+    match mode.as_str() {
         "bearer" => req.header("Authorization", format!("Bearer {}", ep.api_key)),
-        "api_key" => req.header("api-key", &ep.api_key),
+        "api_key" | "api_key_header" => req.header("api-key", &ep.api_key),
         _ => {
-            // auto: Azure 用 api-key, 其他用 Bearer
+            // fallback: 所有 Azure 系（含 APIM）统一 api-key，非 Azure 用 Bearer
             if ep.is_azure() {
                 req.header("api-key", &ep.api_key)
             } else {
@@ -644,52 +635,618 @@ fn build_authed_request(
     }
 }
 
-async fn execute_and_check(
-    req: reqwest::RequestBuilder,
+fn auth_mode_display(mode: &str) -> &str {
+    match mode {
+        "bearer" => "Bearer Token",
+        "api_key" | "api_key_header" => "api-key Header",
+        _ => "auto",
+    }
+}
+
+/// 构建 URL 候选列表（对齐 C# EndpointProfileUrlBuilder.BuildConfiguredTextUrlCandidates）
+fn build_url_candidates(
+    ep: &crate::models::AiEndpoint,
+    model: &crate::models::AiModelEntry,
+    cap: &crate::models::ModelCapability,
+    profile: Option<&crate::models::VendorProfile>,
+) -> Vec<String> {
+    use crate::models::{EndpointType, ModelCapability};
+    let base = ep.url.trim_end_matches('/');
+    let deploy = model.effective_deployment();
+    let api_ver = resolve_api_version(ep, profile);
+
+    // 如果 profile 有候选列表，使用它
+    if let Some(p) = profile {
+        let empty = Vec::new();
+        let templates = match cap {
+            ModelCapability::Text => &p.text_url_candidates,
+            ModelCapability::Image => &p.image_url_candidates,
+            ModelCapability::Video => &p.video_url_candidates,
+            ModelCapability::SpeechToText => &p.audio_url_candidates,
+            ModelCapability::TextToSpeech => &p.speech_url_candidates,
+        };
+        let templates = if templates.is_empty() { &empty } else { templates };
+        if !templates.is_empty() {
+            return templates
+                .iter()
+                .map(|t| {
+                    t.replace("{baseUrl}", base)
+                        .replace("{deployment}", deploy)
+                        .replace("{apiVersion}", &api_ver)
+                        .replace("{model}", &model.model_id)
+                })
+                .collect();
+        }
+    }
+
+    // 无 profile 或无候选时的默认构建
+    match (cap, &ep.endpoint_type) {
+        (ModelCapability::Text, EndpointType::AzureOpenAi) => {
+            vec![format!("{base}/openai/deployments/{deploy}/chat/completions?api-version={api_ver}")]
+        }
+        (ModelCapability::Text, _) => {
+            vec![format!("{base}/v1/chat/completions")]
+        }
+        (ModelCapability::Image, EndpointType::AzureOpenAi) => {
+            vec![format!("{base}/openai/deployments/{deploy}/images/generations?api-version={api_ver}")]
+        }
+        (ModelCapability::Image, _) => {
+            vec![format!("{base}/v1/images/generations")]
+        }
+        (ModelCapability::Video, _) => {
+            vec![format!("{base}/v1/video/generations")]
+        }
+        (ModelCapability::SpeechToText, EndpointType::AzureOpenAi) => {
+            vec![format!("{base}/openai/deployments/{deploy}/audio/transcriptions?api-version={api_ver}")]
+        }
+        (ModelCapability::SpeechToText, _) => {
+            vec![format!("{base}/v1/audio/transcriptions")]
+        }
+        (ModelCapability::TextToSpeech, _) => {
+            vec![]
+        }
+    }
+}
+
+/// 构建请求摘要（对齐 C# RequestSummary）
+fn build_request_summary(
+    ep: &crate::models::AiEndpoint,
+    model: &crate::models::AiModelEntry,
+    cap: &crate::models::ModelCapability,
+    profile: Option<&crate::models::VendorProfile>,
+    url_idx: usize,
+    total_urls: usize,
+) -> String {
+    let auth_mode = resolve_auth_mode(ep, profile);
+    let auth = auth_mode_display(&auth_mode);
+    let api_ver = resolve_api_version(ep, profile);
+    let protocol = if let Some(p) = profile {
+        if !p.text_protocol.is_empty() { p.text_protocol.as_str() } else { "chat_completions" }
+    } else {
+        "chat_completions"
+    };
+    let source = if profile.is_some() { "资料包" } else { "默认" };
+    let branch = if total_urls > 1 {
+        format!("候选 {}/{}", url_idx + 1, total_urls)
+    } else {
+        "唯一候选".into()
+    };
+
+    let mut lines = Vec::new();
+    lines.push(format!("认证: {auth}"));
+    lines.push(format!("基础地址: {}", ep.url));
+    lines.push(format!("模型: {}", model.model_id));
+    if !api_ver.is_empty() {
+        lines.push(format!("API版本: {api_ver}"));
+    }
+    if matches!(cap, crate::models::ModelCapability::Text) {
+        lines.push(format!("文本协议: {protocol} ({})", source));
+    }
+    lines.push(format!("测试来源: {source}"));
+    lines.push(format!("测试分支: {} ({source}第 {} 条候选)", if url_idx == 0 { "主测试" } else { "回退测试" }, url_idx + 1));
+    lines.join("\n")
+}
+
+/// V2 单能力测试——支持候选 URL 回退、流式、推理检测
+async fn test_single_capability_v2(
+    client: &reqwest::Client,
+    ep: &crate::models::AiEndpoint,
+    model: &crate::models::AiModelEntry,
+    cap: &crate::models::ModelCapability,
+    profile: Option<&crate::models::VendorProfile>,
+) -> crate::models::EndpointTestItem {
+    use crate::models::ModelCapability;
+
+    let label = cap_label(cap);
+
+    // STT / TTS 暂不支持
+    if matches!(cap, ModelCapability::SpeechToText) {
+        return crate::models::EndpointTestItem {
+            model_id: model.model_id.clone(),
+            capability: label.clone(),
+            status: crate::models::TestStatus::Skipped,
+            summary: "⏭ 语音识别测试暂未实现（需上传音频）".into(),
+            detail: Some("语音识别测试需要上传音频文件，暂不支持一键测试".into()),
+            request_url: None,
+            request_summary: None,
+            duration_ms: 0,
+            test_branch: None,
+            urls_tried: vec![],
+        };
+    }
+    if matches!(cap, ModelCapability::TextToSpeech) {
+        return crate::models::EndpointTestItem {
+            model_id: model.model_id.clone(),
+            capability: label.clone(),
+            status: crate::models::TestStatus::Skipped,
+            summary: "⏭ 语音合成测试暂未实现".into(),
+            detail: None,
+            request_url: None,
+            request_summary: None,
+            duration_ms: 0,
+            test_branch: None,
+            urls_tried: vec![],
+        };
+    }
+
+    let candidates = build_url_candidates(ep, model, cap, profile);
+    if candidates.is_empty() {
+        let summary = format!("❌ {}无可用 URL 候选", &label);
+        return crate::models::EndpointTestItem {
+            model_id: model.model_id.clone(),
+            capability: label,
+            status: crate::models::TestStatus::Failed,
+            summary,
+            detail: Some("资料包中未声明该能力的 URL 候选列表".into()),
+            request_url: None,
+            request_summary: None,
+            duration_ms: 0,
+            test_branch: None,
+            urls_tried: vec![],
+        };
+    }
+
+    let total_urls = candidates.len();
+    let mut urls_tried = Vec::new();
+
+    // 逐候选测试，主 URL 成功即返回
+    for (url_idx, url) in candidates.iter().enumerate() {
+        urls_tried.push(url.clone());
+        let request_summary = build_request_summary(ep, model, cap, profile, url_idx, total_urls);
+        let branch = if url_idx == 0 {
+            format!("主测试 (资料包第 1 条候选)")
+        } else {
+            format!("回退测试 (资料包第 {} 条候选)", url_idx + 1)
+        };
+
+        let result = match cap {
+            ModelCapability::Text => {
+                test_text_capability(client, ep, model, url, profile).await
+            }
+            ModelCapability::Image => {
+                test_image_capability(client, ep, model, url, profile).await
+            }
+            ModelCapability::Video => {
+                test_video_capability(client, ep, model, url, profile).await
+            }
+            _ => unreachable!(),
+        };
+
+        match result {
+            Ok((summary, detail)) => {
+                return crate::models::EndpointTestItem {
+                    model_id: model.model_id.clone(),
+                    capability: label.clone(),
+                    status: crate::models::TestStatus::Success,
+                    summary,
+                    detail,
+                    request_url: Some(format!("POST {url}")),
+                    request_summary: Some(request_summary),
+                    duration_ms: 0,
+                    test_branch: Some(branch),
+                    urls_tried: urls_tried.clone(),
+                };
+            }
+            Err((summary, detail)) => {
+                // 如果是主 URL 且有回退候选，继续尝试
+                if url_idx < total_urls - 1 {
+                    continue;
+                }
+                // 最后一个候选也失败了
+                return crate::models::EndpointTestItem {
+                    model_id: model.model_id.clone(),
+                    capability: label.clone(),
+                    status: crate::models::TestStatus::Failed,
+                    summary,
+                    detail: Some(detail),
+                    request_url: Some(format!("POST {url}")),
+                    request_summary: Some(request_summary),
+                    duration_ms: 0,
+                    test_branch: Some(format!("全部 {total_urls} 条候选均失败")),
+                    urls_tried,
+                };
+            }
+        }
+    }
+
+    // 不应到这里
+    crate::models::EndpointTestItem {
+        model_id: model.model_id.clone(),
+        capability: label,
+        status: crate::models::TestStatus::Failed,
+        summary: "❌ 未知错误".into(),
+        detail: None,
+        request_url: None,
+        request_summary: None,
+        duration_ms: 0,
+        test_branch: None,
+        urls_tried,
+    }
+}
+
+/// 文字能力测试——流式请求 + 推理检测
+async fn test_text_capability(
+    client: &reqwest::Client,
+    ep: &crate::models::AiEndpoint,
+    model: &crate::models::AiModelEntry,
     url: &str,
-    cap_label: &str,
-) -> Result<(String, String), (String, String, Option<String>)> {
+    profile: Option<&crate::models::VendorProfile>,
+) -> Result<(String, Option<String>), (String, String)> {
+    let is_responses = url.contains("/responses");
+
+    let body = if is_responses {
+        // Responses API 格式
+        let mut b = serde_json::json!({
+            "model": model.model_id,
+            "input": "计算 2+3 的结果，简短直接回复",
+            "stream": true,
+        });
+        // Azure 部署时不需要 model 字段（由 URL 指定）
+        if ep.endpoint_type == crate::models::EndpointType::AzureOpenAi {
+            b.as_object_mut().unwrap().remove("model");
+        }
+        b
+    } else {
+        // ChatCompletions 格式
+        let mut b = serde_json::json!({
+            "messages": [
+                {"role": "system", "content": "你是连通性测试助手，请用简短中文直接回复。"},
+                {"role": "user", "content": "计算 2+3 的结果"}
+            ],
+            "max_tokens": 50,
+            "stream": true,
+        });
+        // 非 Azure 时需要 model 字段
+        if !ep.is_azure() || ep.endpoint_type == crate::models::EndpointType::ApiManagementGateway {
+            b["model"] = serde_json::Value::String(model.model_id.clone());
+        }
+        b
+    };
+
+    let req = build_authed_request(client.post(url), ep, profile).json(&body);
+
     match req.send().await {
         Ok(resp) => {
             let status = resp.status();
             let status_code = status.as_u16();
-            if status.is_success() || status_code == 200 {
-                let body = resp.text().await.unwrap_or_default();
-                // 尝试从响应中提取模型信息
-                let model_info = serde_json::from_str::<serde_json::Value>(&body)
-                    .ok()
-                    .and_then(|v| v.get("model").and_then(|m| m.as_str().map(String::from)));
-                let summary = if let Some(m) = model_info {
-                    format!("✅ {cap_label}连通成功 (模型: {m})")
-                } else {
-                    format!("✅ {cap_label}连通成功")
-                };
-                Ok((summary, url.to_string()))
-            } else {
+            if !status.is_success() {
                 let body = resp.text().await.unwrap_or_default();
                 let detail = parse_error_body(status_code, &body);
-                Err((
-                    format!("❌ {cap_label}测试失败 (HTTP {status_code})"),
+                return Err((
+                    format!("❌ 文字测试失败 (HTTP {status_code})"),
                     detail,
-                    Some(url.to_string()),
-                ))
+                ));
             }
+
+            // 读取流式响应
+            let body_text = resp.text().await.unwrap_or_default();
+            let (text_chunks, reasoning_chunks, model_name) =
+                parse_stream_response(&body_text, is_responses);
+
+            let total_chunks = text_chunks + reasoning_chunks;
+            let has_reasoning = reasoning_chunks > 0;
+
+            let mut summary = format!("✅ 文字测试通过");
+            if has_reasoning {
+                summary.push_str("。⚡ 推理可用");
+            } else {
+                summary.push_str("。⚠ 推理未返回（模型可能不支持 reasoning）");
+            }
+
+            let mut detail_lines = Vec::new();
+            detail_lines.push(format!("返回片段: {total_chunks}"));
+            if has_reasoning {
+                detail_lines.push(format!("推理片段: {reasoning_chunks}"));
+            }
+            if let Some(m) = &model_name {
+                detail_lines.push(format!("响应模型: {m}"));
+            }
+
+            Ok((summary, Some(detail_lines.join("\n"))))
         }
         Err(e) => {
             let detail = if e.is_timeout() {
-                "请求超时（20秒），请检查网络或终结点地址是否可达".into()
+                "请求超时（25秒），请检查网络或终结点地址是否可达".into()
             } else if e.is_connect() {
-                format!("无法连接到服务器，请检查 URL 是否正确: {e}")
+                format!("无法连接到服务器: {e}")
             } else {
                 format!("网络错误: {e}")
             };
             Err((
-                format!("❌ {cap_label}连接失败"),
+                "❌ 文字连接失败".into(),
                 detail,
-                Some(url.to_string()),
             ))
         }
     }
+}
+
+/// 解析 SSE 流式响应，统计文字/推理片段数
+fn parse_stream_response(body: &str, is_responses: bool) -> (usize, usize, Option<String>) {
+    let mut text_chunks = 0usize;
+    let mut reasoning_chunks = 0usize;
+    let mut model_name: Option<String> = None;
+
+    for line in body.lines() {
+        let line = line.trim();
+        if !line.starts_with("data: ") {
+            continue;
+        }
+        let data = &line[6..];
+        if data == "[DONE]" {
+            break;
+        }
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(data) {
+            // 提取 model
+            if model_name.is_none() {
+                if let Some(m) = v.get("model").and_then(|m| m.as_str()) {
+                    model_name = Some(m.to_string());
+                }
+            }
+
+            if is_responses {
+                // Responses API: output_text.delta / reasoning.delta 等
+                if let Some(t) = v.get("type").and_then(|t| t.as_str()) {
+                    match t {
+                        "response.output_text.delta" => text_chunks += 1,
+                        "response.reasoning.delta" | "response.reasoning_summary_text.delta" => reasoning_chunks += 1,
+                        _ => {}
+                    }
+                }
+            } else {
+                // ChatCompletions SSE: choices[0].delta
+                if let Some(choices) = v.get("choices").and_then(|c| c.as_array()) {
+                    if let Some(delta) = choices.first().and_then(|c| c.get("delta")) {
+                        if delta.get("content").and_then(|c| c.as_str()).map_or(false, |s| !s.is_empty()) {
+                            text_chunks += 1;
+                        }
+                        if delta.get("reasoning_content").and_then(|c| c.as_str()).map_or(false, |s| !s.is_empty()) {
+                            reasoning_chunks += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    (text_chunks, reasoning_chunks, model_name)
+}
+
+/// 图片能力测试
+async fn test_image_capability(
+    client: &reqwest::Client,
+    ep: &crate::models::AiEndpoint,
+    model: &crate::models::AiModelEntry,
+    url: &str,
+    profile: Option<&crate::models::VendorProfile>,
+) -> Result<(String, Option<String>), (String, String)> {
+    // 对齐 C# AiImageGenService.SendImageGenerateRequestAsync body 格式
+    let body = serde_json::json!({
+        "prompt": "一只卡通兔子",
+        "model": model.model_id,
+        "size": "1024x1024",
+        "quality": "low",
+        "output_format": "png",
+    });
+    let req = build_authed_request(client.post(url), ep, profile).json(&body);
+
+    match req.send().await {
+        Ok(resp) => {
+            let status = resp.status();
+            let status_code = status.as_u16();
+            if !status.is_success() {
+                let body = resp.text().await.unwrap_or_default();
+                return Err((
+                    format!("❌ 图片测试失败 (HTTP {status_code})"),
+                    parse_error_body(status_code, &body),
+                ));
+            }
+            let body = resp.text().await.unwrap_or_default();
+            let image_count = serde_json::from_str::<serde_json::Value>(&body)
+                .ok()
+                .and_then(|v| v.get("data").and_then(|d| d.as_array()).map(|a| a.len()))
+                .unwrap_or(0);
+            Ok((
+                format!("✅ 图片生成成功 (返回 {image_count} 张)"),
+                Some(format!("图片数量: {image_count}")),
+            ))
+        }
+        Err(e) => Err((
+            "❌ 图片连接失败".into(),
+            format!("网络错误: {e}"),
+        )),
+    }
+}
+
+/// 视频能力测试——仅验证创建接口可达
+async fn test_video_capability(
+    client: &reqwest::Client,
+    ep: &crate::models::AiEndpoint,
+    model: &crate::models::AiModelEntry,
+    url: &str,
+    profile: Option<&crate::models::VendorProfile>,
+) -> Result<(String, Option<String>), (String, String)> {
+    let body = serde_json::json!({
+        "prompt": "一只卡通兔子在草地上跳跃",
+        "model": model.model_id,
+    });
+    let req = build_authed_request(client.post(url), ep, profile).json(&body);
+
+    match req.send().await {
+        Ok(resp) => {
+            let status = resp.status();
+            let status_code = status.as_u16();
+            // 视频创建通常返回 200 或 202
+            if status.is_success() || status_code == 202 {
+                let body = resp.text().await.unwrap_or_default();
+                let video_id = serde_json::from_str::<serde_json::Value>(&body)
+                    .ok()
+                    .and_then(|v| {
+                        v.get("id").or_else(|| v.get("video_id"))
+                            .and_then(|id| id.as_str().map(String::from))
+                    });
+                let summary = if let Some(vid) = &video_id {
+                    format!("✅ 视频创建已提交 (ID: {vid})")
+                } else {
+                    "✅ 视频接口连通成功".into()
+                };
+                Ok((summary, video_id.map(|v| format!("video_id: {v}"))))
+            } else {
+                let body = resp.text().await.unwrap_or_default();
+                Err((
+                    format!("❌ 视频测试失败 (HTTP {status_code})"),
+                    parse_error_body(status_code, &body),
+                ))
+            }
+        }
+        Err(e) => Err((
+            "❌ 视频连接失败".into(),
+            format!("网络错误: {e}"),
+        )),
+    }
+}
+
+/// Speech 端点独立测试
+async fn test_speech_endpoint(ep: &crate::models::AiEndpoint) -> Vec<crate::models::EndpointTestItem> {
+    let mut items = Vec::new();
+    let key = if !ep.speech_subscription_key.is_empty() {
+        &ep.speech_subscription_key
+    } else {
+        &ep.api_key
+    };
+    let region = &ep.speech_region;
+    let endpoint = &ep.speech_endpoint;
+
+    if key.is_empty() {
+        items.push(crate::models::EndpointTestItem {
+            model_id: "speech-sdk".into(),
+            capability: "语音翻译".into(),
+            status: crate::models::TestStatus::Failed,
+            summary: "❌ 订阅密钥为空".into(),
+            detail: Some("请在终结点配置中填写 Speech 订阅密钥".into()),
+            request_url: None,
+            request_summary: None,
+            duration_ms: 0,
+            test_branch: None,
+            urls_tried: vec![],
+        });
+        return items;
+    }
+
+    let t0 = std::time::Instant::now();
+    let test_url = if !endpoint.is_empty() {
+        let base = endpoint.trim_end_matches('/');
+        if base.contains("/sts/") { base.to_string() } else { format!("{base}/sts/v1.0/issuetoken") }
+    } else if !region.is_empty() {
+        format!("https://{region}.api.cognitive.microsoft.com/sts/v1.0/issuetoken")
+    } else {
+        items.push(crate::models::EndpointTestItem {
+            model_id: "speech-sdk".into(),
+            capability: "语音翻译".into(),
+            status: crate::models::TestStatus::Failed,
+            summary: "❌ 区域和终结点均为空".into(),
+            detail: Some("请至少填写区域或终结点".into()),
+            request_url: None,
+            request_summary: None,
+            duration_ms: 0,
+            test_branch: None,
+            urls_tried: vec![],
+        });
+        return items;
+    };
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .unwrap();
+
+    let resp = client
+        .post(&test_url)
+        .header("Ocp-Apim-Subscription-Key", key)
+        .header("Content-Length", "0")
+        .send()
+        .await;
+
+    let dur = t0.elapsed().as_millis() as u64;
+    let region_display = if !region.is_empty() { region.as_str() } else { "自定义终结点" };
+
+    let request_summary = format!(
+        "认证: Ocp-Apim-Subscription-Key\n\
+         终结点: {test_url}\n\
+         区域: {region_display}"
+    );
+
+    match resp {
+        Ok(r) if r.status().is_success() => {
+            items.push(crate::models::EndpointTestItem {
+                model_id: "speech-sdk".into(),
+                capability: "语音翻译".into(),
+                status: crate::models::TestStatus::Success,
+                summary: format!("✅ Speech 连通成功 (区域: {region_display})"),
+                detail: None,
+                request_url: Some(format!("POST {test_url}")),
+                request_summary: Some(request_summary),
+                duration_ms: dur,
+                test_branch: Some("Token Issue 接口".into()),
+                urls_tried: vec![test_url],
+            });
+        }
+        Ok(r) => {
+            let status = r.status().as_u16();
+            let body = r.text().await.unwrap_or_default();
+            items.push(crate::models::EndpointTestItem {
+                model_id: "speech-sdk".into(),
+                capability: "语音翻译".into(),
+                status: crate::models::TestStatus::Failed,
+                summary: format!("❌ Speech 认证失败 (HTTP {status})"),
+                detail: Some(if status == 401 {
+                    "订阅密钥无效或已过期，请检查密钥和区域是否匹配".into()
+                } else {
+                    body
+                }),
+                request_url: Some(format!("POST {test_url}")),
+                request_summary: Some(request_summary),
+                duration_ms: dur,
+                test_branch: Some("Token Issue 接口".into()),
+                urls_tried: vec![test_url],
+            });
+        }
+        Err(e) => {
+            items.push(crate::models::EndpointTestItem {
+                model_id: "speech-sdk".into(),
+                capability: "语音翻译".into(),
+                status: crate::models::TestStatus::Failed,
+                summary: "❌ Speech 连接失败".into(),
+                detail: Some(format!("无法连接: {e}")),
+                request_url: Some(format!("POST {test_url}")),
+                request_summary: Some(request_summary),
+                duration_ms: dur,
+                test_branch: Some("Token Issue 接口".into()),
+                urls_tried: vec![test_url],
+            });
+        }
+    }
+
+    items
 }
 
 /// 解析错误响应体，提取人类可读的错误信息
@@ -744,79 +1301,14 @@ fn parse_error_body(status_code: u16, body: &str) -> String {
 }
 
 /// 获取厂商资料包列表（内置）
+/// 获取厂商资料包列表（从嵌入的 JSON 解析，与 C# 共用同一份 JSON）
 #[tauri::command]
 pub async fn get_vendor_profiles() -> Result<Vec<crate::models::VendorProfile>, String> {
-    use crate::models::{EndpointType, VendorProfile};
-    let mut profiles = Vec::new();
+    Ok(build_vendor_profiles())
+}
 
-    profiles.push(VendorProfile {
-        endpoint_type: EndpointType::AzureOpenAi,
-        label: "Azure OpenAI".into(),
-        badge: "AZ".into(),
-        subtitle: "微软 Azure OpenAI 服务".into(),
-        glyph: "☁".into(),
-        default_auth_header: "api_key".into(),
-        default_api_version: "2024-08-01-preview".into(),
-        supports_model_discovery: false,
-        model_discovery_urls: vec![],
-        test_url_templates: [
-            ("text".into(), "{baseUrl}/openai/deployments/{deployment}/chat/completions?api-version={apiVersion}".into()),
-            ("image".into(), "{baseUrl}/openai/deployments/{deployment}/images/generations?api-version={apiVersion}".into()),
-        ].into_iter().collect(),
-    });
-
-    profiles.push(VendorProfile {
-        endpoint_type: EndpointType::ApiManagementGateway,
-        label: "APIM 网关".into(),
-        badge: "AP".into(),
-        subtitle: "Azure API Management 网关".into(),
-        glyph: "⇆".into(),
-        default_auth_header: "api_key".into(),
-        default_api_version: "2025-03-01-preview".into(),
-        supports_model_discovery: true,
-        model_discovery_urls: vec![
-            "{baseUrl}/models".into(),
-            "{baseUrl}/v1/models".into(),
-        ],
-        test_url_templates: [
-            ("text".into(), "{baseUrl}/v1/chat/completions".into()),
-            ("image".into(), "{baseUrl}/v1/images/generations".into()),
-        ].into_iter().collect(),
-    });
-
-    profiles.push(VendorProfile {
-        endpoint_type: EndpointType::OpenAiCompatible,
-        label: "OpenAI 兼容".into(),
-        badge: "OA".into(),
-        subtitle: "OpenAI / DeepSeek / Ollama / vLLM 等兼容厂商".into(),
-        glyph: "✦".into(),
-        default_auth_header: "bearer".into(),
-        default_api_version: "".into(),
-        supports_model_discovery: true,
-        model_discovery_urls: vec![
-            "{baseUrl}/v1/models".into(),
-            "{baseUrl}/models".into(),
-        ],
-        test_url_templates: [
-            ("text".into(), "{baseUrl}/v1/chat/completions".into()),
-            ("image".into(), "{baseUrl}/v1/images/generations".into()),
-        ].into_iter().collect(),
-    });
-
-    profiles.push(VendorProfile {
-        endpoint_type: EndpointType::AzureSpeech,
-        label: "Azure Speech".into(),
-        badge: "SP".into(),
-        subtitle: "微软语音服务（STT / TTS / 实时翻译）".into(),
-        glyph: "🎤".into(),
-        default_auth_header: "api_key".into(),
-        default_api_version: "".into(),
-        supports_model_discovery: false,
-        model_discovery_urls: vec![],
-        test_url_templates: HashMap::new(),
-    });
-
-    Ok(profiles)
+fn build_vendor_profiles() -> Vec<crate::models::VendorProfile> {
+    crate::profile_loader::load_profiles()
 }
 
 /// 从终结点自动发现可用模型列表
@@ -859,8 +1351,11 @@ pub async fn discover_models(
         }
     };
 
+    let profiles = build_vendor_profiles();
+    let profile = profiles.iter().find(|p| p.endpoint_type == ep.endpoint_type);
+
     for url in &candidates {
-        let req = build_authed_request(client.get(url), &ep);
+        let req = build_authed_request(client.get(url), &ep, profile);
         match req.send().await {
             Ok(resp) if resp.status().is_success() => {
                 let body = resp.text().await.unwrap_or_default();

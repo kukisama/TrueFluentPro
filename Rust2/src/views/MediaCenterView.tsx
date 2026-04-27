@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Image, Video, Plus, Loader2, Download, Trash2,
@@ -84,6 +84,31 @@ export function MediaCenterView() {
 
   const activeWs = workspaces.find((ws) => ws.id === activeWsId);
 
+  // 实时计时器：生成中每秒更新 elapsedMs（对齐 C# Stopwatch + Timer 1s）
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const startTimeRef = useRef<number>(0);
+
+  useEffect(() => {
+    const isGenerating = workspaces.some((ws) => ws.status === "generating");
+    if (isGenerating && !timerRef.current) {
+      timerRef.current = setInterval(() => {
+        setWorkspaces((prev) =>
+          prev.map((ws) =>
+            ws.status === "generating"
+              ? { ...ws, elapsedMs: Date.now() - startTimeRef.current }
+              : ws
+          )
+        );
+      }, 200);
+    } else if (!isGenerating && timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    return () => {
+      if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+    };
+  }, [workspaces.some((ws) => ws.status === "generating")]);
+
   // 从配置中获取模型
   const imageModelRef = config?.media?.image_model;
   const imageEndpoint = config?.endpoints.find(
@@ -136,6 +161,7 @@ export function MediaCenterView() {
     }
 
     const startTime = Date.now();
+    startTimeRef.current = startTime;
 
     if (canvasMode === "image") {
       try {
@@ -148,6 +174,7 @@ export function MediaCenterView() {
           quality,
           endpoint_id: imageEndpoint.id,
         });
+        const elapsedMs = Date.now() - startTime;
         const assets: GeneratedAsset[] = results.map((r, i) => ({
           id: `${wsId}-${i}`,
           base64: r.base64,
@@ -156,9 +183,26 @@ export function MediaCenterView() {
         }));
         setWorkspaces((prev) =>
           prev.map((ws) => ws.id === wsId
-            ? { ...ws, status: "completed" as AssetStatus, results: assets, elapsedMs: Date.now() - startTime }
+            ? { ...ws, status: "completed" as AssetStatus, results: assets, elapsedMs }
             : ws)
         );
+        // 保存图片到文件 + 数据库（对齐 C# GenerateAndSaveImagesAsync）
+        for (const r of results) {
+          if (r.base64) {
+            api.saveImage({
+              base64: r.base64,
+              prompt,
+              revised_prompt: r.revised_prompt,
+              format: format || "png",
+              width: size.w || 1024,
+              height: size.h || 1024,
+              model_id: imageModelId,
+              endpoint_id: imageEndpoint.id,
+              generate_seconds: elapsedMs / 1000,
+              source: "media_center",
+            }).catch((e) => console.error("保存图片失败:", e));
+          }
+        }
       } catch (err) {
         setWorkspaces((prev) =>
           prev.map((ws) => ws.id === wsId
@@ -334,6 +378,11 @@ export function MediaCenterView() {
                       alt={activeWs.prompt}
                       className="max-w-full max-h-[calc(100vh-300px)] rounded-xl border border-[var(--border-subtle)] shadow-2xl"
                     />
+                  )}
+                  {activeWs.elapsedMs && (
+                    <p className="text-center text-xs text-[var(--text-placeholder)] mt-2">
+                      生成耗时 {(activeWs.elapsedMs / 1000).toFixed(1)}s
+                    </p>
                   )}
                   {activeWs.results.length > 1 && (
                     <div className="absolute inset-x-0 bottom-4 flex items-center justify-center gap-4">

@@ -340,12 +340,13 @@ async fn execute_task_real(
 
                     let request = crate::models::ImageGenRequest {
                         prompt: prompt.to_string(),
-                        negative_prompt: None,
                         width: 1024,
                         height: 1024,
                         model,
                         quality: Some("auto".into()),
-                        style: None,
+                        output_format: Some("png".into()),
+                        background: None,
+                        n: None,
                         endpoint_id: ep.id.clone(),
                     };
 

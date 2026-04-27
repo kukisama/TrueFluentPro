@@ -38,6 +38,11 @@ impl OpenAiChatProvider {
                     format!("{base}/openai/v1/chat/completions")
                 }
             }
+            EndpointType::ApiManagementGateway => {
+                // APIM: 优先 /responses（对齐 C# apim-gateway.json text_url_candidates 第 1 条）
+                let api_ver = self.endpoint.api_version.as_deref().unwrap_or("2025-03-01-preview");
+                format!("{base}/responses?api-version={api_ver}")
+            }
             _ => {
                 if base.ends_with("/v1") || base.ends_with("/v1/chat/completions") {
                     if base.ends_with("/v1/chat/completions") {
@@ -53,11 +58,24 @@ impl OpenAiChatProvider {
     }
 
     fn apply_auth(&self, req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
-        if self.endpoint.is_azure() {
-            req.header("api-key", &self.endpoint.api_key)
-        } else {
-            req.header("Authorization", format!("Bearer {}", self.endpoint.api_key))
+        let mode = self.endpoint.auth_header_mode.as_str();
+        match mode {
+            "bearer" => req.header("Authorization", format!("Bearer {}", self.endpoint.api_key)),
+            "api_key" | "api_key_header" => req.header("api-key", &self.endpoint.api_key),
+            _ => {
+                // auto: 所有 Azure 系（含 APIM）用 api-key，对齐 C# defaults.apiKeyHeaderMode = "ApiKeyHeader"
+                // 非 Azure 用 Bearer
+                if self.endpoint.is_azure() {
+                    req.header("api-key", &self.endpoint.api_key)
+                } else {
+                    req.header("Authorization", format!("Bearer {}", self.endpoint.api_key))
+                }
+            }
         }
+    }
+    /// 是否走 Responses API（APIM 用 /responses 而非 /chat/completions）
+    fn is_responses_api(&self) -> bool {
+        self.endpoint.endpoint_type == EndpointType::ApiManagementGateway
     }
 }
 
@@ -82,29 +100,50 @@ impl AiCompletionSlot for OpenAiChatProvider {
         request: &CompletionRequest,
     ) -> Result<CompletionResponse, ProviderError> {
         let url = self.build_url();
+        let is_responses = self.is_responses_api();
 
-        let messages: Vec<serde_json::Value> = request
-            .messages
-            .iter()
-            .map(|m| json!({ "role": &m.role, "content": &m.content }))
-            .collect();
+        let body = if is_responses {
+            // Responses API 格式：input 是纯文本或 messages 数组
+            let last_msg = request.messages.last()
+                .map(|m| m.content.as_str())
+                .unwrap_or("");
+            let mut b = json!({
+                "model": &request.model,
+                "input": last_msg,
+                "stream": false,
+            });
+            if let Some(temp) = request.temperature {
+                b["temperature"] = json!(temp);
+            }
+            b
+        } else {
+            // ChatCompletions 格式
+            let messages: Vec<serde_json::Value> = request
+                .messages
+                .iter()
+                .map(|m| json!({ "role": &m.role, "content": &m.content }))
+                .collect();
 
-        let mut body = json!({
-            "messages": messages,
-            "stream": false,
-        });
+            let mut b = json!({
+                "messages": messages,
+                "stream": false,
+            });
 
-        // model 字段：Azure 模式下可不传（由 deployment 决定），其他必传
-        if !self.endpoint.is_azure() {
-            body["model"] = json!(&request.model);
-        }
+            // model 字段：纯 Azure 模式下可不传（由 deployment 决定），APIM 和其他必传
+            if !self.endpoint.is_azure()
+                || self.endpoint.endpoint_type == EndpointType::ApiManagementGateway
+            {
+                b["model"] = json!(&request.model);
+            }
 
-        if let Some(temp) = request.temperature {
-            body["temperature"] = json!(temp);
-        }
-        if let Some(max) = request.max_tokens {
-            body["max_tokens"] = json!(max);
-        }
+            if let Some(temp) = request.temperature {
+                b["temperature"] = json!(temp);
+            }
+            if let Some(max) = request.max_tokens {
+                b["max_tokens"] = json!(max);
+            }
+            b
+        };
 
         let resp = self
             .apply_auth(self.client.post(&url))
@@ -125,29 +164,48 @@ impl AiCompletionSlot for OpenAiChatProvider {
             return Err(ProviderError::Network(format!("{status}: {text}")));
         }
 
-        let json: serde_json::Value = resp
+        let json_val: serde_json::Value = resp
             .json()
             .await
             .map_err(|e| ProviderError::Internal(format!("JSON 解析失败: {e}")))?;
 
-        let content = json["choices"][0]["message"]["content"]
-            .as_str()
-            .unwrap_or("")
-            .to_string();
+        if is_responses {
+            // Responses API 响应: output[].content[].text
+            let content = json_val["output"]
+                .as_array()
+                .and_then(|arr| arr.iter().find(|o| o["type"].as_str() == Some("message")))
+                .and_then(|msg| msg["content"].as_array())
+                .and_then(|c| c.first())
+                .and_then(|t| t["text"].as_str())
+                .unwrap_or("")
+                .to_string();
 
-        let model_name = json["model"].as_str().unwrap_or(&request.model).to_string();
+            let model_name = json_val["model"].as_str().unwrap_or(&request.model).to_string();
 
-        let usage = json.get("usage").map(|u| TokenUsage {
-            prompt_tokens: u["prompt_tokens"].as_u64().unwrap_or(0) as u32,
-            completion_tokens: u["completion_tokens"].as_u64().unwrap_or(0) as u32,
-            total_tokens: u["total_tokens"].as_u64().unwrap_or(0) as u32,
-        });
+            let usage = json_val.get("usage").map(|u| TokenUsage {
+                prompt_tokens: u["input_tokens"].as_u64().unwrap_or(0) as u32,
+                completion_tokens: u["output_tokens"].as_u64().unwrap_or(0) as u32,
+                total_tokens: u["total_tokens"].as_u64().unwrap_or(0) as u32,
+            });
 
-        Ok(CompletionResponse {
-            content,
-            model: model_name,
-            usage,
-        })
+            Ok(CompletionResponse { content, model: model_name, usage })
+        } else {
+            // ChatCompletions 响应
+            let content = json_val["choices"][0]["message"]["content"]
+                .as_str()
+                .unwrap_or("")
+                .to_string();
+
+            let model_name = json_val["model"].as_str().unwrap_or(&request.model).to_string();
+
+            let usage = json_val.get("usage").map(|u| TokenUsage {
+                prompt_tokens: u["prompt_tokens"].as_u64().unwrap_or(0) as u32,
+                completion_tokens: u["completion_tokens"].as_u64().unwrap_or(0) as u32,
+                total_tokens: u["total_tokens"].as_u64().unwrap_or(0) as u32,
+            });
+
+            Ok(CompletionResponse { content, model: model_name, usage })
+        }
     }
 
     async fn complete_stream(
@@ -155,28 +213,49 @@ impl AiCompletionSlot for OpenAiChatProvider {
         request: &CompletionRequest,
     ) -> Result<mpsc::UnboundedReceiver<Result<String, ProviderError>>, ProviderError> {
         let url = self.build_url();
+        let is_responses = self.is_responses_api();
 
-        let messages: Vec<serde_json::Value> = request
-            .messages
-            .iter()
-            .map(|m| json!({ "role": &m.role, "content": &m.content }))
-            .collect();
+        let body = if is_responses {
+            // Responses API 流式请求
+            let last_msg = request.messages.last()
+                .map(|m| m.content.as_str())
+                .unwrap_or("");
+            let mut b = json!({
+                "model": &request.model,
+                "input": last_msg,
+                "stream": true,
+            });
+            if let Some(temp) = request.temperature {
+                b["temperature"] = json!(temp);
+            }
+            b
+        } else {
+            // ChatCompletions 流式请求
+            let messages: Vec<serde_json::Value> = request
+                .messages
+                .iter()
+                .map(|m| json!({ "role": &m.role, "content": &m.content }))
+                .collect();
 
-        let mut body = json!({
-            "messages": messages,
-            "stream": true,
-            "stream_options": { "include_usage": true },
-        });
+            let mut b = json!({
+                "messages": messages,
+                "stream": true,
+                "stream_options": { "include_usage": true },
+            });
 
-        if !self.endpoint.is_azure() {
-            body["model"] = json!(&request.model);
-        }
-        if let Some(temp) = request.temperature {
-            body["temperature"] = json!(temp);
-        }
-        if let Some(max) = request.max_tokens {
-            body["max_tokens"] = json!(max);
-        }
+            if !self.endpoint.is_azure()
+                || self.endpoint.endpoint_type == EndpointType::ApiManagementGateway
+            {
+                b["model"] = json!(&request.model);
+            }
+            if let Some(temp) = request.temperature {
+                b["temperature"] = json!(temp);
+            }
+            if let Some(max) = request.max_tokens {
+                b["max_tokens"] = json!(max);
+            }
+            b
+        };
 
         let resp = self
             .apply_auth(self.client.post(&url))
@@ -193,7 +272,6 @@ impl AiCompletionSlot for OpenAiChatProvider {
 
         let (tx, rx) = mpsc::unbounded_channel();
 
-        // 简洁的 SSE 解析：直接消费 bytes_stream
         tokio::spawn(async move {
             let mut byte_stream = resp.bytes_stream();
             let mut buffer = String::new();
@@ -209,7 +287,6 @@ impl AiCompletionSlot for OpenAiChatProvider {
 
                 buffer.push_str(&chunk);
 
-                // 按行解析 SSE
                 while let Some(pos) = buffer.find('\n') {
                     let line = buffer[..pos].trim().to_string();
                     buffer = buffer[pos + 1..].to_string();
@@ -222,9 +299,21 @@ impl AiCompletionSlot for OpenAiChatProvider {
                     }
                     if let Some(json_str) = line.strip_prefix("data: ") {
                         if let Ok(v) = serde_json::from_str::<serde_json::Value>(json_str) {
-                            if let Some(delta) = v["choices"][0]["delta"]["content"].as_str() {
-                                if !delta.is_empty() {
-                                    let _ = tx.send(Ok(delta.to_string()));
+                            if is_responses {
+                                // Responses API SSE: type=response.output_text.delta → delta 字段
+                                if v["type"].as_str() == Some("response.output_text.delta") {
+                                    if let Some(delta) = v["delta"].as_str() {
+                                        if !delta.is_empty() {
+                                            let _ = tx.send(Ok(delta.to_string()));
+                                        }
+                                    }
+                                }
+                            } else {
+                                // ChatCompletions SSE: choices[0].delta.content
+                                if let Some(delta) = v["choices"][0]["delta"]["content"].as_str() {
+                                    if !delta.is_empty() {
+                                        let _ = tx.send(Ok(delta.to_string()));
+                                    }
                                 }
                             }
                         }

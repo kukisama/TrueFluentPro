@@ -295,6 +295,16 @@ pub struct AiEndpoint {
     #[serde(default = "default_auth_header_mode")]
     pub auth_header_mode: String,
 
+    /// 认证方式: "api_key" | "aad"（对齐 C# AiEndpoint.AuthMode）
+    #[serde(default = "default_auth_mode")]
+    pub auth_mode: String,
+    /// AAD 租户 ID（对齐 C# AiEndpoint.AzureTenantId）
+    #[serde(default)]
+    pub azure_tenant_id: String,
+    /// AAD 客户端 ID（对齐 C# AiEndpoint.AzureClientId）
+    #[serde(default)]
+    pub azure_client_id: String,
+
     // ── Azure Speech 专属字段（对齐 C# AiEndpoint）──
     #[serde(default)]
     pub speech_subscription_key: String,
@@ -305,10 +315,25 @@ pub struct AiEndpoint {
 }
 
 fn default_auth_header_mode() -> String {
-    "auto".into()
+    "api_key".into()
+}
+
+fn default_auth_mode() -> String {
+    "api_key".into()
 }
 
 impl AiEndpoint {
+    /// 将遗留的 "auto" auth_header_mode 按端点类型修正为明确值
+    pub fn migrate_auth_header_mode(&mut self) {
+        if self.auth_header_mode == "auto" {
+            self.auth_header_mode = if self.is_azure() {
+                "api_key".into()
+            } else {
+                "bearer".into()
+            };
+        }
+    }
+
     /// 是否为 Azure 系终结点
     pub fn is_azure(&self) -> bool {
         matches!(
@@ -351,12 +376,40 @@ pub struct VendorProfile {
     pub badge: String,
     pub subtitle: String,
     pub glyph: String,
+    /// 默认认证头模式: "api_key" | "bearer"（对齐 C# defaults.apiKeyHeaderMode）
     pub default_auth_header: String,
     pub default_api_version: String,
+    /// 是否支持 AAD 认证（对齐 C# defaults.supportsAad）— 仅 Azure OpenAI 为 true
+    #[serde(default)]
+    pub supports_aad: bool,
     pub supports_model_discovery: bool,
     pub model_discovery_urls: Vec<String>,
     /// 各能力的测试 URL 模板（{baseUrl}, {deployment}, {apiVersion}, {model}）
     pub test_url_templates: HashMap<String, String>,
+    /// 文字能力 URL 候选列表（按优先级排序，主 URL + 回退）
+    #[serde(default)]
+    pub text_url_candidates: Vec<String>,
+    /// 图片能力 URL 候选列表
+    #[serde(default)]
+    pub image_url_candidates: Vec<String>,
+    /// 视频能力 URL 候选列表
+    #[serde(default)]
+    pub video_url_candidates: Vec<String>,
+    /// 音频（STT）URL 候选列表
+    #[serde(default)]
+    pub audio_url_candidates: Vec<String>,
+    /// 语音合成（TTS）URL 候选列表
+    #[serde(default)]
+    pub speech_url_candidates: Vec<String>,
+    /// 首选文字协议: "responses" | "chat_completions"
+    #[serde(default)]
+    pub text_protocol: String,
+    /// 支持的认证模式列表（对齐 C# auth.supportedModes）: ["ApiKey"], ["ApiKey","AAD"]
+    #[serde(default)]
+    pub supported_auth_modes: Vec<String>,
+    /// 完整 JSON（可选，供前端直接使用）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub raw_json: Option<serde_json::Value>,
 }
 
 /// 模型条目 — 匹配 C# AiModelEntry
@@ -393,8 +446,13 @@ pub enum ModelCapability {
 pub struct EndpointTestReport {
     pub endpoint_id: String,
     pub endpoint_name: String,
+    pub endpoint_type_name: String,
     pub items: Vec<EndpointTestItem>,
     pub duration_ms: u64,
+    pub total_count: usize,
+    pub success_count: usize,
+    pub failed_count: usize,
+    pub skipped_count: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -405,12 +463,36 @@ pub struct EndpointTestItem {
     pub summary: String,
     pub detail: Option<String>,
     pub request_url: Option<String>,
+    /// 请求摘要（认证方式、基础地址、API版本、文本协议等）
+    pub request_summary: Option<String>,
     pub duration_ms: u64,
+    /// 测试分支描述（如"主测试 (资料包第 1 条候选)"）
+    pub test_branch: Option<String>,
+    /// 尝试过的所有 URL
+    pub urls_tried: Vec<String>,
+}
+
+/// 实时进度事件（通过 Tauri event 推送）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EndpointTestProgress {
+    pub endpoint_id: String,
+    pub endpoint_name: String,
+    pub total_count: usize,
+    pub pending_count: usize,
+    pub running_count: usize,
+    pub success_count: usize,
+    pub failed_count: usize,
+    pub skipped_count: usize,
+    pub items: Vec<EndpointTestItem>,
+    pub is_completed: bool,
+    pub started_at: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TestStatus {
+    Pending,
+    Running,
     Success,
     Failed,
     Skipped,
@@ -541,12 +623,13 @@ pub enum AudioDeviceType {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ImageGenRequest {
     pub prompt: String,
-    pub negative_prompt: Option<String>,
     pub width: u32,
     pub height: u32,
     pub model: String,
     pub quality: Option<String>,
-    pub style: Option<String>,
+    pub output_format: Option<String>,
+    pub background: Option<String>,
+    pub n: Option<u32>,
     pub endpoint_id: String,
 }
 
@@ -797,4 +880,40 @@ pub struct BillingByModel {
     pub completion_tokens: i64,
     pub cost_usd: f64,
     pub count: i64,
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  图片保存记录（对齐 C# ImageSaveResult）
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SavedImage {
+    #[serde(default)]
+    pub id: String,
+    pub prompt: String,
+    pub revised_prompt: Option<String>,
+    pub file_path: String,
+    pub file_size: i64,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+    pub model_id: Option<String>,
+    pub endpoint_id: Option<String>,
+    pub generate_seconds: Option<f64>,
+    pub source: String,
+    #[serde(default)]
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SaveImageRequest {
+    pub base64: String,
+    pub prompt: String,
+    pub revised_prompt: Option<String>,
+    pub format: String,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+    pub model_id: Option<String>,
+    pub endpoint_id: Option<String>,
+    pub generate_seconds: Option<f64>,
+    pub source: String,
 }

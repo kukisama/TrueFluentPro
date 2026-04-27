@@ -178,6 +178,23 @@ impl Database {
                 created_at        TEXT NOT NULL DEFAULT (datetime('now'))
             );
             CREATE INDEX IF NOT EXISTS idx_billing_time ON billing_records(created_at);
+
+            -- 图片保存记录（对齐 C# ImageSaveResult + 文件存储）
+            CREATE TABLE IF NOT EXISTS saved_images (
+                id              TEXT PRIMARY KEY,
+                prompt          TEXT NOT NULL,
+                revised_prompt  TEXT,
+                file_path       TEXT NOT NULL,
+                file_size       INTEGER NOT NULL DEFAULT 0,
+                width           INTEGER,
+                height          INTEGER,
+                model_id        TEXT,
+                endpoint_id     TEXT,
+                generate_seconds REAL,
+                source          TEXT NOT NULL DEFAULT 'media_center',
+                created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE INDEX IF NOT EXISTS idx_saved_images_time ON saved_images(created_at);
             ",
         )?;
         Ok(())
@@ -716,5 +733,49 @@ impl Database {
             record_count: count,
             by_model,
         })
+    }
+
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    //  图片保存记录
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    pub fn add_saved_image(&self, img: &SavedImage) -> SqlResult<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO saved_images (id, prompt, revised_prompt, file_path, file_size, width, height, model_id, endpoint_id, generate_seconds, source, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+            params![
+                img.id, img.prompt, img.revised_prompt, img.file_path,
+                img.file_size, img.width, img.height,
+                img.model_id, img.endpoint_id, img.generate_seconds,
+                img.source, img.created_at,
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_saved_images(&self, limit: u32) -> SqlResult<Vec<SavedImage>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, prompt, revised_prompt, file_path, file_size, width, height, model_id, endpoint_id, generate_seconds, source, created_at
+             FROM saved_images ORDER BY created_at DESC LIMIT ?1",
+        )?;
+        let rows = stmt.query_map(params![limit], |row| {
+            Ok(SavedImage {
+                id: row.get(0)?,
+                prompt: row.get(1)?,
+                revised_prompt: row.get(2)?,
+                file_path: row.get(3)?,
+                file_size: row.get(4)?,
+                width: row.get(5)?,
+                height: row.get(6)?,
+                model_id: row.get(7)?,
+                endpoint_id: row.get(8)?,
+                generate_seconds: row.get(9)?,
+                source: row.get(10)?,
+                created_at: row.get(11)?,
+            })
+        })?;
+        rows.collect()
     }
 }

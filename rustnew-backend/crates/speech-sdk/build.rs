@@ -95,23 +95,21 @@ fn main() {
     println!("cargo:rustc-link-search=native={}", lib_path.display());
     println!("cargo:rustc-link-lib=dylib=Microsoft.CognitiveServices.Speech.core");
 
-    let skip_bindgen = env::var("MS_COG_SVC_SPEECH_SKIP_BINDGEN")
-        .map(|v| v == "1")
-        .unwrap_or(false);
-
-    if skip_bindgen {
-        return;
+    // bindings.rs 已预生成，无需 bindgen
+    #[cfg(feature = "bindgen-gen")]
+    {
+        let bindings_path = Path::new("src/ffi/bindings.rs");
+        if !bindings_path.exists() {
+            let bindings = bindgen::Builder::default()
+                .header("c_api/wrapper.h")
+                .clang_arg(inc_arg.as_str())
+                .generate()
+                .expect("Unable to generate bindings");
+            bindings
+                .write_to_file(bindings_path)
+                .expect("Couldn't write bindings!");
+        }
     }
-
-    let bindings = bindgen::Builder::default()
-        .header("c_api/wrapper.h")
-        .clang_arg(inc_arg.as_str())
-        .generate()
-        .expect("Unable to generate bindings");
-
-    bindings
-        .write_to_file("src/ffi/bindings.rs")
-        .expect("Couldn't write bindings!");
 }
 
 #[cfg(target_os = "linux")]
@@ -167,23 +165,20 @@ fn main() {
     println!("cargo:rustc-link-search=native={}", lib_path.display());
     println!("cargo:rustc-link-lib=dylib=Microsoft.CognitiveServices.Speech.core");
 
-    let skip_bindgen = env::var("MS_COG_SVC_SPEECH_SKIP_BINDGEN")
-        .map(|v| v == "1")
-        .unwrap_or(false);
-
-    if skip_bindgen {
-        return;
+    #[cfg(feature = "bindgen-gen")]
+    {
+        let bindings_path = Path::new("src/ffi/bindings.rs");
+        if !bindings_path.exists() {
+            let bindings = bindgen::Builder::default()
+                .header("c_api/wrapper.h")
+                .clang_arg(inc_arg.as_str())
+                .generate()
+                .expect("Unable to generate bindings");
+            bindings
+                .write_to_file(bindings_path)
+                .expect("Couldn't write bindings!");
+        }
     }
-
-    let bindings = bindgen::Builder::default()
-        .header("c_api/wrapper.h")
-        .clang_arg(inc_arg.as_str())
-        .generate()
-        .expect("Unable to generate bindings");
-
-    bindings
-        .write_to_file("src/ffi/bindings.rs")
-        .expect("Couldn't write bindings!");
 }
 
 #[cfg(target_os = "macos")]
@@ -219,32 +214,28 @@ fn main() {
             .unwrap();
     }
 
-    let skip_bindgen = env::var("MS_COG_SVC_SPEECH_SKIP_BINDGEN")
-        .map(|v| v == "1")
-        .unwrap_or(false);
-
-    if skip_bindgen {
-        return;
-    }
-
     println!(
         "cargo:rustc-link-search=framework={}/MicrosoftCognitiveServicesSpeech.xcframework/macos-arm64_x86_64",
         sdk_output_dir.display()
     );
     println!("cargo:rustc-link-lib=framework=MicrosoftCognitiveServicesSpeech");
 
-    let inc_arg = format!(
-        "-I{}/MicrosoftCognitiveServicesSpeech.xcframework/macos-arm64_x86_64/MicrosoftCognitiveServicesSpeech.framework/Headers",
-        sdk_output_dir.display()
-    );
-
-    let bindings = bindgen::Builder::default()
-        .header("c_api/wrapper.h")
-        .clang_arg(inc_arg)
-        .generate()
-        .expect("Unable to generate bindings");
-
-    bindings
-        .write_to_file("src/ffi/bindings.rs")
-        .expect("Couldn't write bindings!");
+    #[cfg(feature = "bindgen-gen")]
+    {
+        let bindings_path = Path::new("src/ffi/bindings.rs");
+        if !bindings_path.exists() {
+            let inc_arg = format!(
+                "-I{}/MicrosoftCognitiveServicesSpeech.xcframework/macos-arm64_x86_64/MicrosoftCognitiveServicesSpeech.framework/Headers",
+                sdk_output_dir.display()
+            );
+            let bindings = bindgen::Builder::default()
+                .header("c_api/wrapper.h")
+                .clang_arg(inc_arg)
+                .generate()
+                .expect("Unable to generate bindings");
+            bindings
+                .write_to_file(bindings_path)
+                .expect("Couldn't write bindings!");
+        }
+    }
 }

@@ -10,12 +10,12 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PipelineRequest {
     pub prompt: String,
-    pub negative_prompt: Option<String>,
     pub model: String,
     pub width: u32,
     pub height: u32,
     pub quality: Option<String>,
-    pub style: Option<String>,
+    pub output_format: Option<String>,
+    pub background: Option<String>,
     pub endpoint_id: String,
     pub optimize_prompt: bool,
     pub upscale: bool,
@@ -109,12 +109,13 @@ pub async fn run_pipeline(
         drop(providers);
         let gen_req = crate::models::ImageGenRequest {
             prompt: final_prompt,
-            negative_prompt: request.negative_prompt,
             width: request.width,
             height: request.height,
             model: request.model,
             quality: request.quality,
-            style: request.style,
+            output_format: request.output_format,
+            background: request.background,
+            n: None,
             endpoint_id: request.endpoint_id,
         };
         let results = img.generate(&gen_req).await.map_err(|e| e.to_string())?;

@@ -149,7 +149,13 @@ function AiChatPanel() {
   const persistMessage = useCallback(async (msg: ChatMessage) => {
     if (!activeSessionId) return;
     try {
-      await api.addMessage({ session_id: activeSessionId, role: msg.role, content: msg.content });
+      await api.addMessage({
+        session_id: activeSessionId,
+        role: msg.role,
+        content: msg.content,
+        mode: msg.mode,
+        image_base64: msg.imageBase64,
+      });
     } catch { /* best-effort */ }
   }, [activeSessionId]);
 
@@ -199,13 +205,16 @@ function AiChatPanel() {
           prompt: userMsg.content,
           width: 1024, height: 1024,
           model: config?.media?.image_model?.model_id || "gpt-image-2",
+          output_format: "png",
           endpoint_id: config?.media?.image_model?.endpoint_id || resolvedEndpoint.id,
         });
+        const imgContent = results[0]?.revised_prompt || userMsg.content;
         setMessages((prev) => prev.map((m) =>
           m.id === loadingMsg.id
-            ? { ...m, content: results[0]?.revised_prompt || userMsg.content, imageBase64: results[0]?.base64, imagePrompt: userMsg.content, loading: false }
+            ? { ...m, content: imgContent, imageBase64: results[0]?.base64, imagePrompt: userMsg.content, loading: false }
             : m,
         ));
+        persistMessage({ id: loadingMsg.id, role: "assistant", content: imgContent, mode: "image", imageBase64: results[0]?.base64, timestamp: now() });
       } catch (err) {
         setMessages((prev) => prev.map((m) =>
           m.id === loadingMsg.id ? { ...m, content: `图片生成失败: ${err}`, loading: false } : m,
@@ -245,10 +254,12 @@ function AiChatPanel() {
       const unlisten = await api.onStreamToken((event: StreamTokenEvent) => {
         if (event.stream_id !== streamId) return;
         if (event.done) {
-          setMessages((prev) => [...prev, {
+          const assistantMsg: ChatMessage = {
             id: genId(), role: "assistant", content: buffer,
             timestamp: now(), mode: mode === "search" ? "search" : undefined,
-          }]);
+          };
+          setMessages((prev) => [...prev, assistantMsg]);
+          persistMessage(assistantMsg);
           setStreamBuffer("");
           setStreaming(false);
           unlistenRef.current = null;
@@ -273,7 +284,7 @@ function AiChatPanel() {
       setMessages((prev) => [...prev, { id: genId(), role: "assistant", content: `请求失败: ${err}`, timestamp: now() }]);
       setStreaming(false);
     }
-  }, [resolvedEndpoint, resolvedModelId, config]);
+  }, [resolvedEndpoint, resolvedModelId, config, persistMessage]);
 
   const handleSend = useCallback(async () => {
     if (!input.trim() || streaming) return;
@@ -596,6 +607,7 @@ interface GeneratedImage {
   base64?: string;
   revised_prompt?: string;
   time: string;
+  elapsedSec?: number;
   loading?: boolean;
 }
 
@@ -605,8 +617,12 @@ function ImageGenPanel() {
   const [prompt, setPrompt] = useState("");
   const [sizeIdx, setSizeIdx] = useState(0);
   const [quality, setQuality] = useState(config?.media?.image_quality || "auto");
+  const [format, setFormat] = useState("png");
+  const [background, setBackground] = useState("auto");
   const [images, setImages] = useState<GeneratedImage[]>([]);
   const [generating, setGenerating] = useState(false);
+  const [elapsedSec, setElapsedSec] = useState(0);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // 从配置中获取图片模型（对齐 C# ImageModelRef）
   const imageModelRef = config?.media?.image_model;
@@ -625,19 +641,47 @@ function ImageGenPanel() {
     setImages((prev) => [{ id, prompt, time: now(), loading: true }, ...prev]);
     setGenerating(true);
 
+    // 实时计时器（对齐 C# Stopwatch + Timer 1s）
+    const startMs = Date.now();
+    setElapsedSec(0);
+    timerRef.current = setInterval(() => {
+      setElapsedSec(Math.floor((Date.now() - startMs) / 1000));
+    }, 1000);
+
     try {
       const results = await api.generateImage({
         prompt, width: SIZE_PRESETS[sizeIdx].w, height: SIZE_PRESETS[sizeIdx].h,
-        model: imageModelId, quality, endpoint_id: imageEndpoint.id,
+        model: imageModelId, quality, output_format: format, background,
+        endpoint_id: imageEndpoint.id,
       });
+      const totalSec = ((Date.now() - startMs) / 1000);
       setImages((prev) => prev.map((img) =>
-        img.id === id ? { ...img, base64: results[0]?.base64, revised_prompt: results[0]?.revised_prompt, loading: false } : img,
+        img.id === id ? { ...img, base64: results[0]?.base64, revised_prompt: results[0]?.revised_prompt, loading: false, elapsedSec: totalSec } : img,
       ));
+      // 保存图片到文件 + 数据库
+      for (const r of results) {
+        if (r.base64) {
+          api.saveImage({
+            base64: r.base64,
+            prompt,
+            revised_prompt: r.revised_prompt,
+            format: format || "png",
+            width: SIZE_PRESETS[sizeIdx].w,
+            height: SIZE_PRESETS[sizeIdx].h,
+            model_id: imageModelId,
+            endpoint_id: imageEndpoint.id,
+            generate_seconds: totalSec,
+            source: "image_gen",
+          }).catch((e) => console.error("保存图片失败:", e));
+        }
+      }
     } catch (err) {
+      const totalSec = ((Date.now() - startMs) / 1000);
       setImages((prev) => prev.map((img) =>
-        img.id === id ? { ...img, loading: false, revised_prompt: String(err) } : img,
+        img.id === id ? { ...img, loading: false, revised_prompt: String(err), elapsedSec: totalSec } : img,
       ));
     } finally {
+      if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
       setGenerating(false);
       setPrompt("");
     }
@@ -675,8 +719,20 @@ function ImageGenPanel() {
             <option value="auto">auto</option><option value="low">low</option><option value="medium">medium</option><option value="high">high</option>
           </Select>
 
+          <Label>格式</Label>
+          <Select className="w-full mb-4" value={format} onChange={(e) => setFormat(e.target.value)}>
+            <option value="png">png</option><option value="jpeg">jpeg</option><option value="webp">webp</option>
+          </Select>
+
+          <Label>背景</Label>
+          <Select className="w-full mb-4" value={background} onChange={(e) => setBackground(e.target.value)}>
+            <option value="auto">auto</option><option value="opaque">opaque</option><option value="transparent">transparent</option>
+          </Select>
+
           <Button className="mt-auto w-full" onClick={handleGenerate} disabled={!prompt.trim() || !imageEndpoint || generating}>
-            {generating ? <><Loader2 size={14} className="animate-spin" /> {t("media.generating")}</> : <><Sparkles size={14} /> {t("media.generate")}</>}
+            {generating
+              ? <><Loader2 size={14} className="animate-spin" /> ⏳ 等待服务端生成... {elapsedSec}s</>
+              : <><Sparkles size={14} /> {t("media.generate")}</>}
           </Button>
           {!imageEndpoint && <p className="text-xs text-amber-500 mt-2 text-center">请先在设置中配置 AI 端点</p>}
         </FadeIn>
@@ -696,7 +752,7 @@ function ImageGenPanel() {
                       {img.loading ? (
                         <div className="flex flex-col items-center gap-2">
                           <Loader2 size={24} className="text-brand-400 animate-spin" />
-                          <span className="text-xs text-[var(--text-muted)]">{t("media.generating")}</span>
+                          <span className="text-xs text-[var(--text-muted)]">⏳ 等待服务端生成... {elapsedSec}s</span>
                         </div>
                       ) : img.base64 ? (
                         <img src={`data:image/png;base64,${img.base64}`} alt={img.prompt} className="w-full h-full object-cover" />
@@ -707,7 +763,7 @@ function ImageGenPanel() {
                     <div className="p-3">
                       <p className="text-xs text-[var(--text-muted)] truncate">{img.prompt}</p>
                       {img.revised_prompt && !img.base64 && <p className="text-xs text-red-400 truncate mt-0.5">{img.revised_prompt}</p>}
-                      <span className="text-[10px] text-[var(--text-placeholder)]">{img.time}</span>
+                      <span className="text-[10px] text-[var(--text-placeholder)]">{img.time}{img.elapsedSec != null ? ` · ${img.elapsedSec.toFixed(1)}s` : ""}</span>
                     </div>
                     {img.base64 && (
                       <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">

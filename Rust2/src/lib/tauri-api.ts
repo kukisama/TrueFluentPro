@@ -23,6 +23,12 @@ export interface AiEndpoint {
   models: AiModelEntry[];
   enabled: boolean;
   auth_header_mode: string;
+  /** 认证方式: "api_key" | "aad"（对齐 C# AiEndpoint.AuthMode） */
+  auth_mode: string;
+  /** AAD 租户 ID */
+  azure_tenant_id: string;
+  /** AAD 客户端 ID */
+  azure_client_id: string;
   // Azure Speech 专属字段（对齐 C# AiEndpoint）
   speech_subscription_key: string;
   speech_region: string;
@@ -46,26 +52,60 @@ export interface VendorProfile {
   glyph: string;
   default_auth_header: string;
   default_api_version: string;
+  /** 是否支持 AAD 认证（对齐 C# defaults.supportsAad） */
+  supports_aad: boolean;
   supports_model_discovery: boolean;
   model_discovery_urls: string[];
   test_url_templates: Record<string, string>;
+  text_url_candidates: string[];
+  image_url_candidates: string[];
+  video_url_candidates: string[];
+  audio_url_candidates: string[];
+  speech_url_candidates: string[];
+  text_protocol: string;
+  /** 支持的认证模式 ["ApiKey"] 或 ["ApiKey","AAD"] */
+  supported_auth_modes: string[];
+  /** 完整的原始 JSON 资料包（可选） */
+  raw_json?: Record<string, unknown>;
 }
 
 export interface EndpointTestReport {
   endpoint_id: string;
   endpoint_name: string;
+  endpoint_type_name: string;
   items: EndpointTestItem[];
   duration_ms: number;
+  total_count: number;
+  success_count: number;
+  failed_count: number;
+  skipped_count: number;
 }
 
 export interface EndpointTestItem {
   model_id: string;
   capability: string;
-  status: "success" | "failed" | "skipped";
+  status: "pending" | "running" | "success" | "failed" | "skipped";
   summary: string;
   detail?: string;
   request_url?: string;
+  request_summary?: string;
   duration_ms: number;
+  test_branch?: string;
+  urls_tried: string[];
+}
+
+export interface EndpointTestProgress {
+  endpoint_id: string;
+  endpoint_name: string;
+  total_count: number;
+  pending_count: number;
+  running_count: number;
+  success_count: number;
+  failed_count: number;
+  skipped_count: number;
+  items: EndpointTestItem[];
+  is_completed: boolean;
+  started_at: string;
 }
 
 export interface DiscoveredModel {
@@ -197,12 +237,13 @@ export interface RealtimeEvent {
 
 export interface ImageGenRequest {
   prompt: string;
-  negative_prompt?: string;
   width: number;
   height: number;
   model: string;
   quality?: string;
-  style?: string;
+  output_format?: string;
+  background?: string;
+  n?: number;
   endpoint_id: string;
 }
 
@@ -210,6 +251,34 @@ export interface ImageGenResult {
   url?: string;
   base64?: string;
   revised_prompt?: string;
+}
+
+export interface SaveImageRequest {
+  base64: string;
+  prompt: string;
+  revised_prompt?: string;
+  format: string;
+  width?: number;
+  height?: number;
+  model_id?: string;
+  endpoint_id?: string;
+  generate_seconds?: number;
+  source: string;
+}
+
+export interface SavedImage {
+  id: string;
+  prompt: string;
+  revised_prompt?: string;
+  file_path: string;
+  file_size: number;
+  width?: number;
+  height?: number;
+  model_id?: string;
+  endpoint_id?: string;
+  generate_seconds?: number;
+  source: string;
+  created_at: string;
 }
 
 export interface CompletionRequest {
@@ -478,6 +547,8 @@ export const api = {
 
   // AI 媒体
   generateImage: (request: ImageGenRequest) => invoke<ImageGenResult[]>("generate_image", { request }),
+  saveImage: (request: SaveImageRequest) => invoke<SavedImage>("save_image", { request }),
+  listSavedImages: (limit?: number) => invoke<SavedImage[]>("list_saved_images", { limit }),
   aiComplete: (request: CompletionRequest) => invoke<CompletionResponse>("ai_complete", { request }),
 
   // AI 流式补全

@@ -115,9 +115,10 @@ export const Select = forwardRef<
   <select
     ref={ref}
     className={cn(
-      "h-9 rounded-xl border border-[var(--input-border)] bg-[var(--input-bg)] px-3 text-sm text-[var(--text-primary)] transition-colors focus:outline-none focus:border-brand-500/50 appearance-none cursor-pointer",
+      "h-9 rounded-xl border border-[var(--input-border)] bg-[var(--input-bg)] px-3 text-sm transition-colors focus:outline-none focus:border-brand-500/50 appearance-none cursor-pointer",
       className,
     )}
+    style={{ color: "var(--select-text)" }}
     {...props}
   >
     {children}

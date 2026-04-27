@@ -36,6 +36,25 @@
     --user-msg-bg: rgba(37, 99, 235, 0.10);
     --user-msg-border: rgba(37, 99, 235, 0.15);
 
+    /* 能力颜色 — 随主题变化 */
+    --cap-text: #8AADA0;
+    --cap-image: #B09AAC;
+    --cap-video: #8FA4B8;
+    --cap-stt: #B5A88A;
+    --cap-tts: #9A92AD;
+
+    /* 模型项选中/未选中 */
+    --model-item-bg: var(--surface-1);
+    --model-item-selected-bg: rgba(37, 99, 235, 0.12);
+    --model-item-selected-border: rgba(37, 99, 235, 0.30);
+    --model-item-text: var(--text-secondary);
+    --model-item-selected-text: var(--text-primary);
+
+    /* Select 下拉文字 */
+    --select-text: var(--text-primary);
+    --select-option-bg: var(--surface-2);
+    --select-option-text: var(--text-primary);
+
     color-scheme: dark;
   }
 
@@ -69,6 +88,25 @@
     --scrollbar-hover: rgba(0, 0, 0, 0.20);
     --user-msg-bg: rgba(37, 99, 235, 0.08);
     --user-msg-border: rgba(37, 99, 235, 0.15);
+
+    /* 浅色模式能力颜色 — 加深以保证可见性 */
+    --cap-text: #4D8C7D;
+    --cap-image: #8B6B84;
+    --cap-video: #5A7A94;
+    --cap-stt: #8D7D5F;
+    --cap-tts: #6B5F8B;
+
+    /* 模型项选中/未选中 */
+    --model-item-bg: var(--surface-1);
+    --model-item-selected-bg: rgba(37, 99, 235, 0.08);
+    --model-item-selected-border: rgba(37, 99, 235, 0.25);
+    --model-item-text: var(--text-secondary);
+    --model-item-selected-text: var(--text-primary);
+
+    /* Select 下拉文字 */
+    --select-text: var(--text-primary);
+    --select-option-bg: #ffffff;
+    --select-option-text: #0f172a;
 
     color-scheme: light;
   }
