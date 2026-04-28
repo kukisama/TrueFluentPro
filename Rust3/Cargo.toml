@@ -1,0 +1,14 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/tfp-core",
+    "crates/tfp-providers",
+    "crates/tfp-storage",
+    "crates/tfp-engine",
+    "crates/tfp-chat",
+    "crates/tfp-media",
+    "crates/tfp-audiolab",
+    "crates/tfp-search",
+    "crates/tfp-speech",
+    "src-tauri",
+]

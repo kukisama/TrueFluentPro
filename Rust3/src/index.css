@@ -1,0 +1,149 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /* ── Dark theme (default) ── */
+  :root {
+    --color-brand: 37 99 235;
+
+    --surface-0: #020617;
+    --surface-1: #0f172a;
+    --surface-2: #1e293b;
+    --surface-3: #334155;
+    --surface-4: #475569;
+
+    --card-bg: rgba(255, 255, 255, 0.03);
+    --card-border: rgba(255, 255, 255, 0.06);
+
+    --text-primary: #e2e8f0;
+    --text-secondary: #94a3b8;
+    --text-muted: #64748b;
+    --text-placeholder: #475569;
+
+    --border-subtle: rgba(255, 255, 255, 0.06);
+    --border-medium: rgba(255, 255, 255, 0.10);
+
+    --sidebar-bg: rgba(255, 255, 255, 0.02);
+    --toolbar-bg: rgba(255, 255, 255, 0.02);
+    --input-bg: rgba(255, 255, 255, 0.04);
+    --input-border: rgba(255, 255, 255, 0.10);
+    --hover-bg: rgba(255, 255, 255, 0.04);
+    --active-bg: rgba(37, 99, 235, 0.15);
+    --active-text: #93c5fd;
+    --scrollbar-thumb: rgba(255, 255, 255, 0.10);
+    --scrollbar-hover: rgba(255, 255, 255, 0.20);
+    --user-msg-bg: rgba(37, 99, 235, 0.10);
+    --user-msg-border: rgba(37, 99, 235, 0.15);
+
+    --cap-text: #8AADA0;
+    --cap-image: #B09AAC;
+    --cap-video: #8FA4B8;
+    --cap-stt: #B5A88A;
+    --cap-tts: #9A92AD;
+
+    --model-item-bg: var(--surface-1);
+    --model-item-selected-bg: rgba(37, 99, 235, 0.12);
+    --model-item-selected-border: rgba(37, 99, 235, 0.30);
+    --model-item-text: var(--text-secondary);
+    --model-item-selected-text: var(--text-primary);
+
+    --select-text: var(--text-primary);
+    --select-option-bg: var(--surface-2);
+    --select-option-text: var(--text-primary);
+
+    color-scheme: dark;
+  }
+
+  /* ── Light theme ── */
+  .light {
+    --surface-0: #f8fafc;
+    --surface-1: #f1f5f9;
+    --surface-2: #e2e8f0;
+    --surface-3: #cbd5e1;
+    --surface-4: #94a3b8;
+
+    --card-bg: rgba(255, 255, 255, 0.80);
+    --card-border: rgba(0, 0, 0, 0.08);
+
+    --text-primary: #0f172a;
+    --text-secondary: #475569;
+    --text-muted: #64748b;
+    --text-placeholder: #94a3b8;
+
+    --border-subtle: rgba(0, 0, 0, 0.06);
+    --border-medium: rgba(0, 0, 0, 0.10);
+
+    --sidebar-bg: rgba(255, 255, 255, 0.60);
+    --toolbar-bg: rgba(255, 255, 255, 0.60);
+    --input-bg: rgba(0, 0, 0, 0.03);
+    --input-border: rgba(0, 0, 0, 0.12);
+    --hover-bg: rgba(0, 0, 0, 0.04);
+    --active-bg: rgba(37, 99, 235, 0.10);
+    --active-text: #2563eb;
+    --scrollbar-thumb: rgba(0, 0, 0, 0.12);
+    --scrollbar-hover: rgba(0, 0, 0, 0.20);
+    --user-msg-bg: rgba(37, 99, 235, 0.08);
+    --user-msg-border: rgba(37, 99, 235, 0.15);
+
+    --cap-text: #4D8C7D;
+    --cap-image: #8B6B84;
+    --cap-video: #5A7A94;
+    --cap-stt: #8D7D5F;
+    --cap-tts: #6B5F8B;
+
+    --model-item-bg: var(--surface-1);
+    --model-item-selected-bg: rgba(37, 99, 235, 0.08);
+    --model-item-selected-border: rgba(37, 99, 235, 0.25);
+    --model-item-text: var(--text-secondary);
+    --model-item-selected-text: var(--text-primary);
+
+    --select-text: var(--text-primary);
+    --select-option-bg: #ffffff;
+    --select-option-text: #0f172a;
+
+    color-scheme: light;
+  }
+
+  body {
+    background-color: var(--surface-0);
+    color: var(--text-primary);
+    font-family: "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    @apply w-1;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+    @apply rounded-full;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--scrollbar-hover);
+  }
+
+  ::selection {
+    @apply bg-brand-500/30;
+    color: var(--text-primary);
+  }
+}
+
+@layer utilities {
+  .text-gradient {
+    @apply bg-gradient-to-r from-brand-400 to-cyan-400 bg-clip-text text-transparent;
+  }
+  .pulse-dot {
+    @apply relative;
+  }
+  .pulse-dot::after {
+    content: "";
+    @apply absolute inset-0 rounded-full animate-ping opacity-75;
+    background: inherit;
+  }
+}
