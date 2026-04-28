@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "id": "builtin.microsoft.azure-speech",
+  "vendor": "Microsoft",
+  "basePolicyId": "platform.azure-speech",
+  "endpointType": "AzureSpeech",
+  "displayName": "Azure Speech",
+  "subtitle": "Azure 认知服务语音资源（传统 Speech SDK 密钥）",
+  "glyph": "🎤",
+  "summary": "使用 Azure 认知服务语音资源的订阅密钥与区域终结点，支持实时语音识别、批量转写和语音合成。",
+  "defaultNamePrefix": "Azure Speech",
+  "iconAssetPath": "Assets/EndpointProfiles/Icons/azure-speech.svg",
+  "tags": ["builtin", "azure", "speech"],
+  "capabilities": {
+    "mode": "InheritDefault",
+    "allowed": [],
+    "disabled": []
+  },
+  "overrides": {
+    "defaults": {},
+    "auth": {
+      "defaultMode": "ApiKey",
+      "allowedModes": ["ApiKey"],
+      "defaultApiKeyHeaderMode": "ApiKeyHeader",
+      "allowedApiKeyHeaderModes": ["ApiKeyHeader"]
+    },
+    "capabilities": {
+      "mode": "InheritDefault",
+      "allowed": [],
+      "disabled": []
+    },
+    "routes": {},
+    "version": {}
+  },
+  "fallbacks": {},
+  "specialPolicies": {
+    "allowApimSubscriptionKeyQueryRetry": false,
+    "allowPreviewFallback": false
+  },
+  "defaults": {
+    "providerType": "AzureOpenAi",
+    "authMode": "ApiKey",
+    "apiKeyHeaderMode": "ApiKeyHeader",
+    "textApiProtocolMode": "Auto",
+    "imageApiRouteMode": "Auto",
+    "defaultApiVersion": ""
+  }
+}

@@ -27,6 +27,44 @@ import type {
   VendorProfile,
   VideoGenRequest,
   AppInfo,
+  TaskEvent,
+  MonitorSnapshot,
+  MonitorTaskItem,
+  MonitorExecutionRecord,
+  MonitorSettings,
+  MonitorUiState,
+  AudioTask,
+  TaskExecution,
+  TaskStatus,
+  DeviceCodeResponse,
+  AadAuthResult,
+  AadTenantSelectionEvent,
+  SegmentUpdatePayload,
+  RealtimeSessionConfig,
+  AudioDeviceInfo,
+  StudioSession,
+  StudioMessage,
+  StudioMediaRef,
+  StudioTask,
+  StudioReferenceImage,
+  StudioSessionBundle,
+  StudioTaskEvent,
+  StudioMessageDelta,
+  CenterWorkspace,
+  CenterWorkspaceBundle,
+  CanvasRound,
+  CenterAssetDetail,
+  ExportResult,
+  VideoCapabilityEntry,
+  CenterTaskEvent,
+  AudioFile,
+  AudioLabBundle,
+  AudioPlaybackInfo,
+  AudioStagePreset,
+  AudioLabTaskEvent,
+  AudioLabStageDelta,
+  AudioAutoTag,
+  AudioResearchTopic,
 } from "./types";
 
 export type { UnlistenFn };
@@ -98,6 +136,14 @@ export const api = {
   optimizePrompt: (prompt: string, endpointId?: string) =>
     invoke<string>("optimize_prompt", { prompt, endpointId }),
 
+  // ── Realtime control (3) ──
+  startRealtimeTranslation: (config: RealtimeSessionConfig) =>
+    invoke<string>("start_realtime_translation", { config }),
+  stopRealtimeTranslation: (sessionId: string) =>
+    invoke<void>("stop_realtime_translation", { sessionId }),
+  listAudioDevices: () =>
+    invoke<AudioDeviceInfo[]>("list_audio_devices"),
+
   // ── Live translation (9) ──
   liveGetActiveSession: () =>
     invoke<TranslationSession | null>("live_get_active_session"),
@@ -134,12 +180,8 @@ export const api = {
     listen<RealtimeEvent>("realtime-event", (event) => cb(event.payload)),
   onStreamToken: (cb: (e: StreamTokenEvent) => void): Promise<UnlistenFn> =>
     listen<StreamTokenEvent>("ai-stream-token", (event) => cb(event.payload)),
-  onSegmentUpdated: (
-    cb: (e: { segment_id: string; is_bookmarked: boolean; bookmark_note: string | null }) => void,
-  ): Promise<UnlistenFn> =>
-    listen("segment-updated", (event) =>
-      cb(event.payload as { segment_id: string; is_bookmarked: boolean; bookmark_note: string | null }),
-    ),
+  onSegmentUpdated: (cb: (e: SegmentUpdatePayload) => void): Promise<UnlistenFn> =>
+    listen<SegmentUpdatePayload>("segment-updated", (event) => cb(event.payload)),
   onFloatingWindowStateChanged: (
     cb: (e: { window: string; open: boolean }) => void,
   ): Promise<UnlistenFn> =>
@@ -172,4 +214,230 @@ export const api = {
     ),
   onTestProgress: (cb: (e: EndpointTestProgress) => void): Promise<UnlistenFn> =>
     listen<EndpointTestProgress>("endpoint-test-progress", (event) => cb(event.payload)),
+
+  // ── Config transfer (4) ──
+  exportConfig: () => invoke<string>("export_config"),
+  importConfig: (json: string) => invoke<void>("import_config", { json }),
+  writeTextFile: (path: string, content: string) => invoke<void>("write_text_file", { path, content }),
+  readTextFile: (path: string) => invoke<string>("read_text_file", { path }),
+
+  // ── Task engine (4) ──
+  updateTaskEngineConfig: (concurrency: number, timeoutSecs: number) =>
+    invoke<void>("update_task_engine_config", { concurrency, timeoutSecs }),
+  cleanupExpiredTasks: (days: number) => invoke<number>("cleanup_expired_tasks", { days }),
+  listTasks: (status?: TaskStatus, limit?: number) =>
+    invoke<AudioTask[]>("list_tasks", { status, limit }),
+  getTaskExecutions: (taskId: string) => invoke<TaskExecution[]>("get_task_executions", { taskId }),
+
+  // ── Monitor (15) ──
+  monitorGetSnapshot: (bucket?: string, sortColumn?: string, sortAscending?: boolean) =>
+    invoke<MonitorSnapshot>("monitor_get_snapshot", { bucket, sortColumn, sortAscending }),
+  monitorSetBucket: (bucketKey: string, sortColumn?: string, sortAscending?: boolean) =>
+    invoke<MonitorTaskItem[]>("monitor_set_bucket", { bucketKey, sortColumn, sortAscending }),
+  monitorListExecutions: (taskId: string) =>
+    invoke<MonitorExecutionRecord[]>("monitor_list_executions", { taskId }),
+  monitorGetExecutionDetail: (executionId: string) =>
+    invoke<MonitorExecutionRecord>("monitor_get_execution_detail", { executionId }),
+  monitorCancelTask: (taskId: string, reason?: string) =>
+    invoke<void>("monitor_cancel_task", { taskId, reason }),
+  monitorGetSettings: () => invoke<MonitorSettings>("monitor_get_settings"),
+  monitorUpdateSettings: (maxTranscriptionConcurrency?: number, maxAiConcurrency?: number, transcriptionTimeoutMinutes?: number) =>
+    invoke<void>("monitor_update_settings", { maxTranscriptionConcurrency, maxAiConcurrency, transcriptionTimeoutMinutes }),
+  monitorCleanupCompleted: (olderThanDays?: number) =>
+    invoke<number>("monitor_cleanup_completed", { olderThanDays }),
+  monitorRefresh: () => invoke<MonitorSnapshot>("monitor_refresh"),
+  monitorRetryTask: (taskId: string) => invoke<string>("monitor_retry_task", { taskId }),
+  monitorBatchCancel: (taskIds: string[]) => invoke<number>("monitor_batch_cancel", { taskIds }),
+  monitorBatchDelete: (taskIds: string[]) => invoke<number>("monitor_batch_delete", { taskIds }),
+  monitorExportCsv: (filePath: string, statusFilter?: string, includeDebug?: boolean) =>
+    invoke<string>("monitor_export_csv", { filePath, statusFilter, includeDebug }),
+  monitorSaveUiState: (uiState: MonitorUiState) =>
+    invoke<void>("monitor_save_ui_state", { uiState }),
+  monitorLoadUiState: () =>
+    invoke<MonitorUiState | null>("monitor_load_ui_state"),
+
+  // ── Monitor events (2) ──
+  onTaskEvent: (cb: (e: TaskEvent) => void): Promise<UnlistenFn> =>
+    listen<TaskEvent>("task-event", (event) => cb(event.payload)),
+  onMonitorSnapshotUpdate: (cb: (e?: MonitorSnapshot | null) => void): Promise<UnlistenFn> =>
+    listen<MonitorSnapshot | null>("monitor-snapshot-update", (event) => cb(event.payload)),
+
+  // ── AAD auth (5) ──
+  aadStartDeviceCodeFlow: (endpointId: string, tenantId: string, clientId: string, scope?: string) =>
+    invoke<DeviceCodeResponse>("aad_start_device_code_flow", { endpointId, tenantId, clientId, scope }),
+  aadSelectTenant: (endpointId: string, tenantId: string, clientId: string, scope?: string) =>
+    invoke<void>("aad_select_tenant", { endpointId, tenantId, clientId, scope }),
+  aadRefreshToken: (endpointId: string) =>
+    invoke<void>("aad_refresh_token", { endpointId }),
+  onAadAuthResult: (cb: (e: AadAuthResult) => void): Promise<UnlistenFn> =>
+    listen<AadAuthResult>("aad-auth-result", (event) => cb(event.payload)),
+  onAadTenantSelection: (cb: (e: AadTenantSelectionEvent) => void): Promise<UnlistenFn> =>
+    listen<AadTenantSelectionEvent>("aad-tenant-selection", (event) => cb(event.payload)),
+
+  // ── 创作工坊 ──
+  studioListSessions: (limit?: number, offset?: number) =>
+    invoke<StudioSession[]>("studio_list_sessions", { limit, offset }),
+  studioGetSession: (sessionId: string) =>
+    invoke<StudioSession | null>("studio_get_session", { sessionId }),
+  studioCreateSession: (sessionType: string, name: string) =>
+    invoke<StudioSession>("studio_create_session", { sessionType, name }),
+  studioRenameSession: (sessionId: string, newName: string) =>
+    invoke<void>("studio_rename_session", { sessionId, newName }),
+  studioSoftDeleteSession: (sessionId: string) =>
+    invoke<void>("studio_soft_delete_session", { sessionId }),
+  studioGetSessionBundle: (sessionId: string) =>
+    invoke<StudioSessionBundle>("studio_get_session_bundle", { sessionId }),
+  studioAppendMessage: (args: {
+    sessionId: string; role: string; text: string;
+    contentType?: string; reasoningText?: string;
+    promptTokens?: number; completionTokens?: number;
+    generateSeconds?: number; downloadSeconds?: number;
+    searchSummary?: string;
+  }) => invoke<StudioMessage>("studio_append_message", {
+    sessionId: args.sessionId, role: args.role, text: args.text,
+    contentType: args.contentType, reasoningText: args.reasoningText,
+    promptTokens: args.promptTokens, completionTokens: args.completionTokens,
+    generateSeconds: args.generateSeconds, downloadSeconds: args.downloadSeconds,
+    searchSummary: args.searchSummary,
+  }),
+  studioGetMessagesBefore: (sessionId: string, beforeSequence: number, limit?: number) =>
+    invoke<StudioMessage[]>("studio_get_messages_before", { sessionId, beforeSequence, limit }),
+  studioListRunningTasks: (sessionId: string) =>
+    invoke<StudioTask[]>("studio_list_running_tasks", { sessionId }),
+  studioChatStream: (sessionId: string, text: string, endpointId: string, model: string) =>
+    invoke<string>("studio_chat_stream", { sessionId, text, endpointId, model }),
+  studioStartImageTask: (args: {
+    sessionId: string; prompt: string; params: Record<string, unknown>;
+    referencePaths: string[];
+  }) => invoke<string>("studio_start_image_task", {
+    sessionId: args.sessionId, prompt: args.prompt,
+    params: args.params, referencePaths: args.referencePaths,
+  }),
+  studioStartVideoTask: (args: {
+    sessionId: string; prompt: string; params: Record<string, unknown>;
+    referencePath?: string;
+  }) => invoke<string>("studio_start_video_task", {
+    sessionId: args.sessionId, prompt: args.prompt,
+    params: args.params, referencePath: args.referencePath,
+  }),
+  studioCancelTask: (taskId: string) =>
+    invoke<void>("studio_cancel_task", { taskId }),
+  studioAddReferenceImage: (sessionId: string, filePath: string, width?: number, height?: number) =>
+    invoke<StudioReferenceImage>("studio_add_reference_image", { sessionId, filePath, width, height }),
+  studioDeleteReferenceImage: (id: string) =>
+    invoke<void>("studio_delete_reference_image", { id }),
+  studioListReferenceImages: (sessionId: string) =>
+    invoke<StudioReferenceImage[]>("studio_list_reference_images", { sessionId }),
+  onStudioTaskUpdate: (cb: (e: StudioTaskEvent) => void): Promise<UnlistenFn> =>
+    listen<StudioTaskEvent>("studio-task-update", (event) => cb(event.payload)),
+  onStudioMessageNew: (cb: (e: { session_id: string; message: StudioMessage; media_refs?: StudioMediaRef[] }) => void): Promise<UnlistenFn> =>
+    listen<{ session_id: string; message: StudioMessage; media_refs?: StudioMediaRef[] }>("studio-message-new", (event) => cb(event.payload)),
+  onStudioMessageDelta: (cb: (e: StudioMessageDelta) => void): Promise<UnlistenFn> =>
+    listen<StudioMessageDelta>("studio-message-delta", (event) => cb(event.payload)),
+
+  // ── 媒体中心 ──
+  centerListWorkspaces: (limit?: number, offset?: number) =>
+    invoke<CenterWorkspace[]>("center_list_workspaces", { limit, offset }),
+  centerCreateWorkspace: (kind: string, name: string) =>
+    invoke<CenterWorkspace>("center_create_workspace", { kind, name }),
+  centerRenameWorkspace: (id: string, name: string) =>
+    invoke<void>("center_rename_workspace", { id, name }),
+  centerSoftDeleteWorkspace: (id: string) =>
+    invoke<void>("center_soft_delete_workspace", { id }),
+  centerGetWorkspaceBundle: (id: string) =>
+    invoke<CenterWorkspaceBundle>("center_get_workspace_bundle", { id }),
+  centerListRounds: (workspaceId: string) =>
+    invoke<CanvasRound[]>("center_list_rounds", { workspaceId }),
+  centerGetRound: (roundId: string) =>
+    invoke<CanvasRound | null>("center_get_round", { roundId }),
+  centerSetActiveRound: (workspaceId: string, roundId: string) =>
+    invoke<void>("center_set_active_round", { workspaceId, roundId }),
+  centerStartImageRound: (args: {
+    workspaceId: string; prompt: string; params: Record<string, unknown>;
+    referencePaths: string[];
+  }) => invoke<{ task_id: string; round_id: string }>("center_start_image_round", {
+    workspaceId: args.workspaceId, prompt: args.prompt,
+    params: args.params, referencePaths: args.referencePaths,
+  }),
+  centerStartVideoRound: (args: {
+    workspaceId: string; prompt: string; params: Record<string, unknown>;
+    referencePath?: string;
+  }) => invoke<{ task_id: string; round_id: string }>("center_start_video_round", {
+    workspaceId: args.workspaceId, prompt: args.prompt,
+    params: args.params, referencePath: args.referencePath,
+  }),
+  centerSelectAssets: (roundId: string, assetIds: string[], selected: boolean) =>
+    invoke<void>("center_select_assets", { roundId, assetIds, selected }),
+  centerDeleteAssets: (assetIds: string[]) =>
+    invoke<void>("center_delete_assets", { assetIds }),
+  centerExportAssets: (assetIds: string[], destDir: string) =>
+    invoke<ExportResult>("center_export_assets", { assetIds, destDir }),
+  centerListRunningTasks: (workspaceId: string) =>
+    invoke<StudioTask[]>("center_list_running_tasks", { workspaceId }),
+  centerGetRoundAssets: (roundId: string) =>
+    invoke<CenterAssetDetail[]>("center_get_round_assets", { roundId }),
+  videoGetCapabilities: () =>
+    invoke<VideoCapabilityEntry[]>("video_get_capabilities"),
+  onCenterTaskUpdate: (cb: (e: CenterTaskEvent) => void): Promise<UnlistenFn> =>
+    listen<CenterTaskEvent>("center-task-update", (event) => cb(event.payload)),
+
+  // ── 听析中心 AudioLab (PR-1) ──
+  audiolabImportFiles: (paths: string[]) =>
+    invoke<string[]>("audiolab_import_files", { paths }),
+  audiolabListFiles: (limit?: number, offset?: number, search?: string, sort?: string) =>
+    invoke<AudioFile[]>("audiolab_list_files", { limit, offset, search, sort }),
+  audiolabGetFile: (fileId: string) =>
+    invoke<AudioFile | null>("audiolab_get_file", { fileId }),
+  audiolabRemoveFile: (fileId: string, deleteSource: boolean) =>
+    invoke<void>("audiolab_remove_file", { fileId, deleteSource }),
+  audiolabGetBundle: (sessionId: string) =>
+    invoke<AudioLabBundle>("audiolab_get_bundle", { sessionId }),
+  audiolabStartTranscription: (sessionId: string, audioFileId: string, parserKind: string, modelRef?: string) =>
+    invoke<string>("audiolab_start_transcription", { sessionId, audioFileId, parserKind, modelRef }),
+  audiolabListRunningTasks: (sessionId: string) =>
+    invoke<StudioTask[]>("audiolab_list_running_tasks", { sessionId }),
+  audiolabListStagePresets: () =>
+    invoke<AudioStagePreset[]>("audiolab_list_stage_presets"),
+  audiolabUpsertStagePreset: (preset: AudioStagePreset) =>
+    invoke<void>("audiolab_upsert_stage_preset", { preset }),
+  audiolabDeleteStagePreset: (stage: string) =>
+    invoke<void>("audiolab_delete_stage_preset", { stage }),
+
+  // ── 听析中心 AudioLab (PR-2: 播放) ──
+  audiolabPlaybackOpen: (sessionId: string) =>
+    invoke<AudioPlaybackInfo>("audiolab_playback_open", { sessionId }),
+  onAudiolabTaskUpdate: (cb: (e: AudioLabTaskEvent) => void): Promise<UnlistenFn> =>
+    listen<AudioLabTaskEvent>("audiolab-task-update", (event) => cb(event.payload)),
+  onAudiolabStageDelta: (cb: (e: AudioLabStageDelta) => void): Promise<UnlistenFn> =>
+    listen<AudioLabStageDelta>("audiolab-stage-delta", (event) => cb(event.payload)),
+
+  // ── 听析中心 AudioLab (PR-3: 阶段生成 + AutoTags + Research) ──
+  audiolabStartStage: (sessionId: string, stageKey: string, modelRef?: string) =>
+    invoke<string>("audiolab_start_stage", { sessionId, stageKey, modelRef }),
+  audiolabUpdateStageContent: (sessionId: string, stageKey: string, content: string) =>
+    invoke<void>("audiolab_update_stage_content", { sessionId, stageKey, content }),
+  audiolabStartPodcastTts: (sessionId: string, voiceLibRef?: string) =>
+    invoke<string>("audiolab_start_podcast_tts", { sessionId, voiceLibRef }),
+  audiolabGenerateAutoTags: (sessionId: string, modelRef?: string) =>
+    invoke<string>("audiolab_generate_auto_tags", { sessionId, modelRef }),
+  audiolabAddManualTag: (sessionId: string, tag: string) =>
+    invoke<AudioAutoTag>("audiolab_add_manual_tag", { sessionId, tag }),
+  audiolabRemoveAutoTag: (tagId: string) =>
+    invoke<void>("audiolab_remove_auto_tag", { tagId }),
+  audiolabAddResearchTopic: (sessionId: string, title: string, description: string) =>
+    invoke<AudioResearchTopic>("audiolab_add_research_topic", { sessionId, title, description }),
+  audiolabStartResearch: (topicId: string, modelRef?: string) =>
+    invoke<string>("audiolab_start_research", { topicId, modelRef }),
+  audiolabRemoveResearchTopic: (topicId: string) =>
+    invoke<void>("audiolab_remove_research_topic", { topicId }),
+
+  // ── 听析中心 AudioLab (PR-4: 段落编辑 + 导出 + 实时桥接) ──
+  audiolabRenameSpeaker: (transcriptId: string, oldIndex: number, newLabel: string) =>
+    invoke<void>("audiolab_rename_speaker", { transcriptId, oldIndex, newLabel }),
+  audiolabUpdateSegment: (segmentId: string, text?: string, speaker?: string, startMs?: number, endMs?: number) =>
+    invoke<void>("audiolab_update_segment", { segmentId, text, speaker, startMs, endMs }),
+  audiolabExport: (sessionId: string, target: "srt" | "vtt" | "txt" | "json" | "markdown", outputPath: string, stageKey?: string) =>
+    invoke<void>("audiolab_export", { sessionId, target, stageKey, outputPath }),
+  audiolabImportFromRealtime: (realtimeSessionId: string) =>
+    invoke<string>("audiolab_import_from_realtime", { realtimeSessionId }),
 };

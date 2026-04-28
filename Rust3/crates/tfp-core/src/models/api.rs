@@ -246,3 +246,98 @@ pub struct VoiceInfo {
     pub locale: String,
     pub gender: String,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SaveImageRequest {
+    pub base64: String,
+    pub prompt: String,
+    pub revised_prompt: Option<String>,
+    pub format: String,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+    pub model_id: Option<String>,
+    pub endpoint_id: Option<String>,
+    pub generate_seconds: Option<f64>,
+    pub source: String,
+}
+
+// ── Audio library & task engine models ──
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AudioLibraryItem {
+    pub id: String,
+    pub file_name: String,
+    pub file_path: String,
+    pub duration_ms: i64,
+    pub sample_rate: i64,
+    pub channels: i64,
+    pub source_lang: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AudioLifecycleRow {
+    pub id: String,
+    pub audio_item_id: String,
+    pub stage: String,
+    pub status: String,
+    pub result_text: Option<String>,
+    pub result_json: Option<String>,
+    pub model_id: Option<String>,
+    pub token_used: Option<i64>,
+    pub error: Option<String>,
+    pub started_at: Option<String>,
+    pub completed_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AudioTaskRow {
+    pub id: String,
+    pub audio_item_id: String,
+    pub stage: String,
+    pub task_type: String,
+    pub status: String,
+    pub priority: i64,
+    pub retry_count: i64,
+    pub max_retries: i64,
+    pub progress: f64,
+    pub prompt_text: Option<String>,
+    pub result_text: Option<String>,
+    pub error: Option<String>,
+    pub submitted_at: String,
+    pub started_at: Option<String>,
+    pub completed_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskExecutionRow {
+    pub id: String,
+    pub task_id: String,
+    pub attempt: i64,
+    pub status: String,
+    pub error: Option<String>,
+    pub prompt_tokens: Option<i64>,
+    pub completion_tokens: Option<i64>,
+    pub duration_ms: Option<i64>,
+    pub started_at: String,
+    pub completed_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct TaskEngineStats {
+    pub queued: i64,
+    pub executing: i64,
+    pub completed: i64,
+    pub failed: i64,
+    pub cancelled: i64,
+    pub total_tokens: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MonitorGlobalStats {
+    pub total_executions: i64,
+    pub billable_executions: i64,
+    pub billable_tokens_in: i64,
+    pub billable_tokens_out: i64,
+}

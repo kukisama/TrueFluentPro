@@ -1,9 +1,10 @@
 use rusqlite::params;
+use serde::{Deserialize, Serialize};
 use sha2::{Sha256, Digest};
 
 use crate::db::{Database, map_db_err};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Session {
     pub id: String,
     pub title: String,
@@ -14,7 +15,7 @@ pub struct Session {
     pub updated_at: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Message {
     pub id: String,
     pub session_id: String,
@@ -65,23 +66,9 @@ impl Database {
              FROM sessions ORDER BY updated_at DESC"
         ).map_err(map_db_err)?;
         let rows = stmt
-            .query_map([], |row| {
-                Ok(Session {
-                    id: row.get(0)?,
-                    title: row.get(1)?,
-                    session_type: row.get(2)?,
-                    message_count: row.get(3)?,
-                    token_total: row.get(4)?,
-                    created_at: row.get(5)?,
-                    updated_at: row.get(6)?,
-                })
-            })
+            .query_map([], map_session_query_row)
             .map_err(map_db_err)?;
-        let mut result = Vec::new();
-        for r in rows {
-            result.push(r.map_err(map_db_err)?);
-        }
-        Ok(result)
+        collect_rows(rows)
     }
 
     pub async fn delete_session(&self, id: &str) -> tfp_core::Result<()> {
@@ -89,6 +76,27 @@ impl Database {
         conn.execute("DELETE FROM sessions WHERE id = ?1", params![id])
             .map_err(map_db_err)?;
         Ok(())
+    }
+
+    pub async fn rename_session(&self, id: &str, new_title: &str) -> tfp_core::Result<()> {
+        let conn = self.conn().lock().await;
+        conn.execute(
+            "UPDATE sessions SET title = ?2, updated_at = datetime('now') WHERE id = ?1",
+            params![id, new_title],
+        ).map_err(map_db_err)?;
+        Ok(())
+    }
+
+    pub async fn list_sessions_by_type(&self, session_type: &str) -> tfp_core::Result<Vec<Session>> {
+        let conn = self.conn().lock().await;
+        let mut stmt = conn.prepare(
+            "SELECT id, title, session_type, message_count, token_total, created_at, updated_at
+             FROM sessions WHERE session_type = ?1 ORDER BY updated_at DESC"
+        ).map_err(map_db_err)?;
+        let rows = stmt
+            .query_map(params![session_type], map_session_query_row)
+            .map_err(map_db_err)?;
+        collect_rows(rows)
     }
 
     pub async fn add_message(&self, msg: &Message) -> tfp_core::Result<()> {
@@ -185,73 +193,25 @@ fn map_session_row(row: &rusqlite::Row) -> tfp_core::Result<Session> {
     })
 }
 
-#[cfg(test)]
-mod tests {
-    use crate::Database;
-    use super::*;
-
-    fn make_session(id: &str) -> Session {
-        Session {
-            id: id.to_string(),
-            title: "Test".into(),
-            session_type: "chat".into(),
-            message_count: 0,
-            token_total: 0,
-            created_at: "2026-01-01T00:00:00".into(),
-            updated_at: "2026-01-01T00:00:00".into(),
-        }
-    }
-
-    fn make_message(id: &str, session_id: &str) -> Message {
-        Message {
-            id: id.to_string(),
-            session_id: session_id.to_string(),
-            role: "user".into(),
-            content: "hello".into(),
-            mode: "text".into(),
-            reasoning_text: None,
-            prompt_tokens: Some(10),
-            completion_tokens: Some(20),
-            image_base64: None,
-            attachments: None,
-            content_hash: None,
-            created_at: "2026-01-01T00:00:00".into(),
-        }
-    }
-
-    #[tokio::test]
-    async fn test_session_crud() {
-        let db = Database::open_in_memory().unwrap();
-        let s = make_session("s1");
-
-        db.create_session(&s).await.unwrap();
-        let got = db.get_session("s1").await.unwrap();
-        assert!(got.is_some());
-        assert_eq!(got.unwrap().title, "Test");
-
-        let list = db.list_sessions().await.unwrap();
-        assert_eq!(list.len(), 1);
-
-        db.delete_session("s1").await.unwrap();
-        let got2 = db.get_session("s1").await.unwrap();
-        assert!(got2.is_none());
-    }
-
-    #[tokio::test]
-    async fn test_message_crud() {
-        let db = Database::open_in_memory().unwrap();
-        let s = make_session("s1");
-        db.create_session(&s).await.unwrap();
-
-        let m = make_message("m1", "s1");
-        db.add_message(&m).await.unwrap();
-
-        let msgs = db.list_messages("s1").await.unwrap();
-        assert_eq!(msgs.len(), 1);
-        assert_eq!(msgs[0].content, "hello");
-
-        db.delete_messages_by_session("s1").await.unwrap();
-        let msgs2 = db.list_messages("s1").await.unwrap();
-        assert_eq!(msgs2.len(), 0);
-    }
+fn map_session_query_row(row: &rusqlite::Row) -> rusqlite::Result<Session> {
+    Ok(Session {
+        id: row.get(0)?,
+        title: row.get(1)?,
+        session_type: row.get(2)?,
+        message_count: row.get(3)?,
+        token_total: row.get(4)?,
+        created_at: row.get(5)?,
+        updated_at: row.get(6)?,
+    })
 }
+
+fn collect_rows(rows: impl Iterator<Item = rusqlite::Result<Session>>) -> tfp_core::Result<Vec<Session>> {
+    let mut result = Vec::new();
+    for r in rows {
+        result.push(r.map_err(map_db_err)?);
+    }
+    Ok(result)
+}
+
+#[cfg(test)]
+mod tests;

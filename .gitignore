@@ -3,7 +3,7 @@ bin/
 obj/
 out/
 artifacts/
-
+.exchange/
 # Rust build output
 **/target/
 rustbackend/data/

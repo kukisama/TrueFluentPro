@@ -19,7 +19,6 @@ pub struct TestEndpoint {
 
 /// Load endpoints from Rust2's SQLite database (kv_store).
 /// Requires the Rust2 database to exist at the default app data path.
-#[allow(dead_code)]
 pub fn load_rust2_endpoints() -> Vec<TestEndpoint> {
     let db_path = dirs::data_dir()
         .expect("could not resolve data directory")
@@ -50,18 +49,13 @@ pub fn load_rust2_endpoints() -> Vec<TestEndpoint> {
         .collect()
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    #[ignore] // Requires Rust2 database to exist
-    fn can_load_rust2_endpoints() {
-        let endpoints = load_rust2_endpoints();
-        assert!(!endpoints.is_empty(), "Expected at least one enabled endpoint");
-        for ep in &endpoints {
-            assert!(!ep.id.is_empty());
-            assert!(!ep.url.is_empty());
-        }
+#[test]
+#[ignore] // Requires Rust2 database to exist
+fn can_load_rust2_endpoints() {
+    let endpoints = load_rust2_endpoints();
+    assert!(!endpoints.is_empty(), "Expected at least one enabled endpoint");
+    for ep in &endpoints {
+        assert!(!ep.id.is_empty());
+        assert!(!ep.url.is_empty());
     }
 }

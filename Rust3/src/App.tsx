@@ -1,27 +1,65 @@
-import { useTranslation } from "react-i18next";
-import { useThemeStore } from "./stores/theme-store";
-import { useAppStore } from "./stores/app-store";
-import { cn } from "./lib/utils";
+import { useEffect } from "react";
+import "./lib/i18n";
+import { TooltipProvider } from "./components/ui";
+import { AppLayout } from "./components/AppLayout";
+import { useAppStore, type AppView } from "./stores/app-store";
+import { api } from "./lib/tauri-api";
 
-function App() {
-  const { t } = useTranslation();
-  const resolved = useThemeStore((s) => s.resolved);
-  const activeView = useAppStore((s) => s.activeView);
+const SHORTCUT_MAP: Record<string, AppView> = {
+  "1": "live-translation",
+  "2": "media-studio",
+  "3": "media-center",
+  "4": "audio-lab",
+  "5": "task-monitor",
+  ",": "settings",
+};
+
+export default function App() {
+  const setConfig = useAppStore((s) => s.setConfig);
+  const setProviders = useAppStore((s) => s.setProviders);
+  const setError = useAppStore((s) => s.setError);
+  const setActiveView = useAppStore((s) => s.setActiveView);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const [config, providers] = await Promise.all([
+          api.getConfig(),
+          api.listProviders(),
+        ]);
+        setConfig(config);
+        setProviders(providers);
+      } catch (e) {
+        setError(String(e));
+      }
+    })();
+  }, [setConfig, setProviders, setError]);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.ctrlKey && !e.altKey && !e.shiftKey) {
+        const view = SHORTCUT_MAP[e.key];
+        if (view) {
+          e.preventDefault();
+          setActiveView(view);
+        }
+      }
+      if (e.key === "F5") {
+        e.preventDefault();
+        setActiveView("live-translation");
+      }
+      if (e.key === "F6") {
+        e.preventDefault();
+        window.dispatchEvent(new CustomEvent("tfp:stop-translation"));
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [setActiveView]);
 
   return (
-    <div
-      className={cn(
-        "min-h-screen",
-        resolved === "dark"
-          ? "dark bg-neutral-900 text-white"
-          : "bg-white text-neutral-900",
-      )}
-    >
-      <p>
-        {t("app.name")} &mdash; {activeView}
-      </p>
-    </div>
+    <TooltipProvider delayDuration={200}>
+      <AppLayout />
+    </TooltipProvider>
   );
 }
-
-export default App;

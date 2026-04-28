@@ -1,10 +1,18 @@
 mod config;
 mod settings;
 mod api;
+mod live;
+mod studio;
+mod center;
+mod audiolab;
 
 pub use config::*;
 pub use settings::*;
 pub use api::*;
+pub use live::*;
+pub use studio::*;
+pub use center::*;
+pub use audiolab::*;
 
 #[cfg(test)]
 mod tests {

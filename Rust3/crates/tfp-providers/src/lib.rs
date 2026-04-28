@@ -1,5 +1,25 @@
 pub mod traits;
 pub mod registry;
+pub mod auth;
+pub mod openai_chat;
+pub mod openai_image;
+pub mod openai_video;
+pub mod openai_translation;
+pub mod azure_stt;
+pub mod azure_tts;
+mod profile_raw;
+pub mod profile_loader;
+pub mod registration;
+#[cfg(test)]
+mod test_helpers;
 
 pub use traits::*;
 pub use registry::{ProviderRegistry, ProviderInfo};
+pub use registration::register_providers;
+pub use profile_loader::load_profiles;
+pub use openai_chat::OpenAiChatProvider;
+pub use openai_image::OpenAiImageProvider;
+pub use openai_video::OpenAiVideoProvider;
+pub use openai_translation::OpenAiTranslationProvider;
+pub use azure_stt::AzureSttProvider;
+pub use azure_tts::AzureTtsProvider;

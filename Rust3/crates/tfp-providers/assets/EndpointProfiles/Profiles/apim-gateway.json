@@ -1,0 +1,241 @@
+{
+    "schemaVersion": 1,
+    "id": "builtin.microsoft.apim-gateway",
+    "vendor": "Microsoft",
+    "basePolicyId": "platform.apim-gateway",
+    "endpointType": "ApiManagementGateway",
+    "displayName": "APIM 网关",
+    "subtitle": "通过 Azure API Management 暴露的 OpenAI 兼容入口",
+    "glyph": "⇄",
+    "summary": "文本优先 /responses，API Key 优先走 api-key Header，图片优先自动试 deployments、/v1/images 与 /images。",
+    "defaultNamePrefix": "APIM 网关",
+    "iconAssetPath": "Assets/EndpointProfiles/Icons/apim-gateway.svg",
+    "tags": [
+        "builtin",
+        "azure",
+        "apim"
+    ],
+    "capabilities": {
+        "mode": "InheritDefault",
+        "allowed": [],
+        "disabled": []
+    },
+    "overrides": {
+        "defaults": {},
+        "auth": {
+            "defaultMode": "ApiKey",
+            "allowedModes": ["ApiKey"],
+            "defaultApiKeyHeaderMode": "Bearer",
+            "allowedApiKeyHeaderModes": ["ApiKeyHeader", "Bearer"]
+        },
+        "capabilities": {
+            "mode": "InheritDefault",
+            "allowed": [],
+            "disabled": []
+        },
+        "routes": {
+            "text": {
+                "primaryProtocol": "Responses",
+                "primaryUrl": "{baseUrl}/responses?api-version={apiVersion}",
+                "deploymentPrimaryUrl": ""
+            },
+            "modelDiscovery": {
+                "primaryUrl": "{baseUrl}/models"
+            },
+            "audio": {
+                "primaryUrl": "{baseUrl}/openai/deployments/{deployment}/audio/transcriptions?api-version={apiVersion}",
+                "defaultApiVersion": "2025-04-01-preview"
+            },
+            "speech": {
+                "primaryUrl": "{baseUrl}/openai/deployments/{deployment}/audio/speech?api-version={apiVersion}",
+                "defaultApiVersion": "2025-04-01-preview"
+            },
+            "image": {
+                "generatePrimaryUrl": "{baseUrl}/v1/images/generations",
+                "editPrimaryUrl": "{baseUrl}/v1/images/edits",
+                "deploymentGeneratePrimaryUrl": "",
+                "defaultApiVersion": "2025-04-01-preview"
+            },
+            "video": {
+                "defaultMode": "Videos",
+                "createPrimaryUrl": "{baseUrl}/v1/videos",
+                "jobsCreatePrimaryUrl": "",
+                "pollPrimaryUrl": "{baseUrl}/videos/{videoId}",
+                "jobsPollPrimaryUrl": "",
+                "downloadPrimaryUrl": "{baseUrl}/videos/{videoId}/content",
+                "jobsDownloadPrimaryUrl": "",
+                "downloadVideoContentPrimaryUrl": "{baseUrl}/videos/{videoId}/content/video",
+                "generationDownloadPrimaryUrl": "",
+                "generationDownloadVideoContentPrimaryUrl": ""
+            }
+        },
+        "version": {
+            "endpointApiVersion": "2025-03-01-preview",
+            "textApiVersion": "2025-03-01-preview",
+            "audioApiVersion": "2025-04-01-preview",
+            "speechApiVersion": "2025-04-01-preview",
+            "videoApiVersion": ""
+        }
+    },
+    "fallbacks": {
+        "modelDiscovery": ["{baseUrl}/v1/models"],
+        "text": [
+            "{baseUrl}/responses",
+            "{baseUrl}/v1/chat/completions?api-version={apiVersion}",
+            "{baseUrl}/v1/chat/completions",
+            "{baseUrl}/chat/completions?api-version={apiVersion}",
+            "{baseUrl}/chat/completions"
+        ],
+        "imageGenerate": [
+            "{baseUrl}/images/generations?api-version={apiVersion}",
+            "{baseUrl}/v1/images/generations",
+            "{baseUrl}/images/generations"
+        ],
+        "imageEdit": [
+            "{baseUrl}/v1/images/edits?api-version={apiVersion}",
+            "{baseUrl}/images/edits",
+            "{baseUrl}/v1/images/edits"
+        ],
+        "audio": [
+            "{baseUrl}/deployments/{deployment}/audio/transcriptions?api-version={apiVersion}",
+            "{baseUrl}/v1/audio/transcriptions?api-version={apiVersion}",
+            "{baseUrl}/audio/transcriptions?api-version={apiVersion}",
+            "{baseUrl}/v1/audio/transcriptions",
+            "{baseUrl}/audio/transcriptions"
+        ],
+        "speech": [
+            "{baseUrl}/deployments/{deployment}/audio/speech?api-version={apiVersion}",
+            "{baseUrl}/v1/audio/speech?api-version={apiVersion}",
+            "{baseUrl}/audio/speech?api-version={apiVersion}",
+            "{baseUrl}/v1/audio/speech",
+            "{baseUrl}/audio/speech"
+        ],
+        "videoCreate": [],
+        "videoJobsCreate": [],
+        "videoPoll": ["{baseUrl}/v1/videos/{videoId}"],
+        "videoJobsPoll": [],
+        "videoDownload": ["{baseUrl}/v1/videos/{videoId}/content"],
+        "videoJobsDownload": [],
+        "videoDownloadVideoContent": ["{baseUrl}/v1/videos/{videoId}/content/video"],
+        "videoGenerationDownload": [],
+        "videoGenerationDownloadVideoContent": []
+    },
+    "specialPolicies": {
+        "allowApimSubscriptionKeyQueryRetry": true,
+        "allowPreviewFallback": false
+    },
+    "defaults": {
+        "providerType": "OpenAiCompatible",
+        "authMode": "ApiKey",
+        "apiKeyHeaderMode": "ApiKeyHeader",
+        "textApiProtocolMode": "Responses",
+        "imageApiRouteMode": "Auto",
+        "apiVersion": "2025-03-01-preview",
+        "supportsAad": false,
+        "clearAzureIdentityFields": true
+    },
+    "auth": {
+        "supportedModes": [
+            "ApiKey"
+        ],
+        "supportedApiKeyHeaderModes": [
+            "ApiKeyHeader",
+            "Bearer"
+        ],
+        "defaultMode": "ApiKey",
+        "defaultApiKeyHeaderMode": "Bearer",
+        "supportsSubscriptionKeyQueryFallback": true
+    },
+    "modelDiscovery": {
+        "urlCandidates": [
+            "{baseUrl}/models",
+            "{baseUrl}/v1/models"
+        ]
+    },
+    "text": {
+        "preferredProtocol": "Responses",
+        "responsesUrlCandidates": [
+            "{baseUrl}/responses?api-version={apiVersion}",
+            "{baseUrl}/responses"
+        ],
+        "chatCompletionsV1UrlCandidates": [
+            "{baseUrl}/v1/chat/completions?api-version={apiVersion}",
+            "{baseUrl}/v1/chat/completions"
+        ],
+        "chatCompletionsRawUrlCandidates": [
+            "{baseUrl}/chat/completions?api-version={apiVersion}",
+            "{baseUrl}/chat/completions"
+        ]
+    },
+        "audio": {
+            "defaultApiVersion": "2025-04-01-preview",
+            "transcriptionUrlCandidates": [
+                "{baseUrl}/openai/deployments/{deployment}/audio/transcriptions?api-version={apiVersion}",
+                "{baseUrl}/deployments/{deployment}/audio/transcriptions?api-version={apiVersion}",
+                "{baseUrl}/v1/audio/transcriptions?api-version={apiVersion}",
+                "{baseUrl}/audio/transcriptions?api-version={apiVersion}",
+                "{baseUrl}/v1/audio/transcriptions",
+                "{baseUrl}/audio/transcriptions"
+            ]
+        },
+        "speech": {
+            "defaultApiVersion": "2025-04-01-preview",
+            "synthesisUrlCandidates": [
+                "{baseUrl}/openai/deployments/{deployment}/audio/speech?api-version={apiVersion}",
+                "{baseUrl}/deployments/{deployment}/audio/speech?api-version={apiVersion}",
+                "{baseUrl}/v1/audio/speech?api-version={apiVersion}",
+                "{baseUrl}/audio/speech?api-version={apiVersion}",
+                "{baseUrl}/v1/audio/speech",
+                "{baseUrl}/audio/speech"
+            ]
+        },
+    "image": {
+        "deploymentGenerateUrlCandidates": [],
+        "generateUrlCandidates": [
+            "{baseUrl}/v1/images/generations"
+        ],
+        "editUrlCandidates": [
+            "{baseUrl}/v1/images/edits"
+        ]
+    },
+    "video": {
+        "apiModeOptions": [
+            {
+                "mode": "Videos",
+                "displayName": "videos (/v1/videos)",
+                "description": "通过网关暴露的标准 /v1/videos 路线；是否补 api-version 与具体后缀由资料包候选控制。"
+            }
+        ],
+        "modelModeBindings": [
+            {
+                "mode": "Videos",
+                "modelPatterns": [
+                    "sora-2",
+                    "sora-2*",
+                    "sora",
+                    "sora-1",
+                    "sora-1*"
+                ],
+                "description": "当前 APIM 内置资料包只声明 Videos 模式，相关视频模型统一走网关暴露的 /videos 路线。"
+            }
+        ],
+        "supportedApiModes": [
+            "Videos"
+        ],
+        "createUrlCandidates": [
+            "{baseUrl}/v1/videos"
+        ],
+        "pollUrlCandidates": [
+            "{baseUrl}/videos/{videoId}",
+            "{baseUrl}/v1/videos/{videoId}"
+        ],
+        "downloadUrlCandidates": [
+            "{baseUrl}/videos/{videoId}/content",
+            "{baseUrl}/v1/videos/{videoId}/content"
+        ],
+        "downloadVideoContentUrlCandidates": [
+            "{baseUrl}/videos/{videoId}/content/video",
+            "{baseUrl}/v1/videos/{videoId}/content/video"
+        ]
+    }
+}
