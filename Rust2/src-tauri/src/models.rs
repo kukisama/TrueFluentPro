@@ -210,21 +210,34 @@ pub struct RecognitionSettings {
     pub max_history_items: u32,
     #[serde(default = "default_realtime_max")]
     pub realtime_max_length: u32,
+    #[serde(default = "default_chunk_duration")]
+    pub chunk_duration_ms: u32,
     #[serde(default = "default_true")]
     pub enable_auto_timeout: bool,
-    #[serde(default = "default_timeout")]
-    pub timeout_seconds: u32,
     #[serde(default = "default_initial_silence")]
     pub initial_silence_timeout_seconds: u32,
     #[serde(default = "default_end_silence")]
     pub end_silence_timeout_seconds: u32,
+    #[serde(default)]
+    pub enable_no_response_restart: bool,
+    #[serde(default = "default_no_response")]
+    pub no_response_restart_seconds: u32,
+    #[serde(default = "default_audio_threshold")]
+    pub audio_activity_threshold: u32,
+    #[serde(default = "default_audio_gain")]
+    pub audio_level_gain: f64,
+    #[serde(default = "default_true")]
+    pub show_reconnect_marker: bool,
 }
 
 fn default_max_history() -> u32 { 500 }
 fn default_realtime_max() -> u32 { 150 }
-fn default_timeout() -> u32 { 5 }
+fn default_chunk_duration() -> u32 { 200 }
 fn default_initial_silence() -> u32 { 25 }
 fn default_end_silence() -> u32 { 1 }
+fn default_no_response() -> u32 { 3 }
+fn default_audio_threshold() -> u32 { 600 }
+fn default_audio_gain() -> f64 { 2.0 }
 
 impl Default for RecognitionSettings {
     fn default() -> Self {
@@ -232,10 +245,15 @@ impl Default for RecognitionSettings {
             filter_modal_particles: true,
             max_history_items: 500,
             realtime_max_length: 150,
+            chunk_duration_ms: 200,
             enable_auto_timeout: true,
-            timeout_seconds: 5,
             initial_silence_timeout_seconds: 25,
             end_silence_timeout_seconds: 1,
+            enable_no_response_restart: false,
+            no_response_restart_seconds: 3,
+            audio_activity_threshold: 600,
+            audio_level_gain: 2.0,
+            show_reconnect_marker: true,
         }
     }
 }
@@ -591,6 +609,12 @@ pub struct RealtimeSessionConfig {
     pub endpoint_id: String,
     pub enable_partial: bool,
     pub profanity_filter: bool,
+    /// S-1: 初始静音超时（秒）— 透传到 Speech SDK
+    #[serde(default)]
+    pub initial_silence_timeout_seconds: Option<u32>,
+    /// S-1: 结束静音超时（秒）— 透传到 Speech SDK
+    #[serde(default)]
+    pub end_silence_timeout_seconds: Option<u32>,
 }
 
 /// 实时翻译事件 — 通过 Tauri Event 推送给前端
@@ -1038,4 +1062,417 @@ pub struct MessageCitation {
     pub url: Option<String>,
     pub snippet: Option<String>,
     pub created_at: String,
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  创作工坊 — 对齐 C# StorageModels.cs
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// 会话记录（对应 studio_sessions 表，对齐 C# SessionRecord）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StudioSession {
+    pub id: String,
+    pub session_type: String,
+    pub name: String,
+    pub directory_path: String,
+    pub canvas_mode: String,
+    pub media_kind: String,
+    pub is_deleted: bool,
+    pub created_at: String,
+    pub updated_at: String,
+    pub last_accessed_at: Option<String>,
+    pub source_session_id: Option<String>,
+    pub source_session_name: Option<String>,
+    pub source_session_directory_name: Option<String>,
+    pub source_asset_id: Option<String>,
+    pub source_asset_kind: Option<String>,
+    pub source_asset_file_name: Option<String>,
+    pub source_asset_path: Option<String>,
+    pub source_preview_path: Option<String>,
+    pub source_reference_role: Option<String>,
+    pub message_count: i64,
+    pub task_count: i64,
+    pub asset_count: i64,
+    pub latest_message_preview: Option<String>,
+    pub legacy_source_path: Option<String>,
+    pub import_batch_id: Option<String>,
+    pub imported_at: Option<String>,
+    pub is_legacy_import: bool,
+}
+
+/// 消息记录（对应 studio_messages 表，对齐 C# MessageRecord）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StudioMessage {
+    pub id: String,
+    pub session_id: String,
+    pub sequence_no: i64,
+    pub role: String,
+    pub content_type: String,
+    pub text: String,
+    pub reasoning_text: String,
+    pub prompt_tokens: Option<i64>,
+    pub completion_tokens: Option<i64>,
+    pub generate_seconds: Option<f64>,
+    pub download_seconds: Option<f64>,
+    pub search_summary: Option<String>,
+    pub timestamp: String,
+    pub is_deleted: bool,
+}
+
+/// 消息媒体引用（对应 studio_media_refs 表，对齐 C# MediaRefRecord）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StudioMediaRef {
+    pub id: i64,
+    pub message_id: String,
+    pub media_path: String,
+    pub media_kind: String,
+    pub sort_order: i64,
+    pub preview_path: Option<String>,
+}
+
+/// 消息引用（对应 studio_citations 表，对齐 C# CitationRecord）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StudioCitation {
+    pub id: i64,
+    pub message_id: String,
+    pub citation_number: i64,
+    pub title: String,
+    pub url: String,
+    pub snippet: String,
+    pub hostname: String,
+}
+
+/// 消息附件（对应 studio_attachments 表，对齐 C# AttachmentRecord）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StudioAttachment {
+    pub id: i64,
+    pub message_id: String,
+    pub attachment_type: String,
+    pub file_name: String,
+    pub file_path: String,
+    pub file_size: i64,
+    pub sort_order: i64,
+}
+
+/// 会话任务（对应 studio_tasks 表，对齐 C# TaskRecord）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StudioTask {
+    pub id: String,
+    pub session_id: String,
+    pub task_type: String,
+    pub status: String,
+    pub prompt: String,
+    pub progress: f64,
+    pub result_file_path: Option<String>,
+    pub error_message: Option<String>,
+    pub has_reference_input: bool,
+    pub remote_video_id: Option<String>,
+    pub remote_video_api_mode: Option<String>,
+    pub remote_generation_id: Option<String>,
+    pub remote_download_url: Option<String>,
+    pub generate_seconds: Option<f64>,
+    pub download_seconds: Option<f64>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// 会话资产（对应 studio_assets 表，对齐 C# AssetRecord）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StudioAsset {
+    pub asset_id: String,
+    pub session_id: String,
+    pub group_id: String,
+    pub kind: String,
+    pub workflow: String,
+    pub file_name: String,
+    pub file_path: String,
+    pub preview_path: String,
+    pub prompt_text: String,
+    pub file_size: Option<i64>,
+    pub mime_type: Option<String>,
+    pub width: Option<i64>,
+    pub height: Option<i64>,
+    pub duration_ms: Option<i64>,
+    pub created_at: String,
+    pub modified_at: String,
+    pub storage_scope: String,
+    pub derived_from_session_id: Option<String>,
+    pub derived_from_session_name: Option<String>,
+    pub derived_from_asset_id: Option<String>,
+    pub derived_from_asset_file_name: Option<String>,
+    pub derived_from_asset_kind: Option<String>,
+    pub derived_from_reference_role: Option<String>,
+}
+
+/// 参考图记录（对应 studio_reference_images 表，对齐 C# ReferenceImageRecord）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StudioReferenceImage {
+    pub id: String,
+    pub session_id: String,
+    pub file_path: String,
+    pub sort_order: i64,
+    pub width: Option<i64>,
+    pub height: Option<i64>,
+    pub created_at: String,
+}
+
+/// 批量加载结果：消息 + 关联数据（对齐 C# SessionMessagesBundle）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StudioSessionBundle {
+    pub messages: Vec<StudioMessage>,
+    pub media_refs: HashMap<String, Vec<StudioMediaRef>>,
+    pub citations: HashMap<String, Vec<StudioCitation>>,
+    pub attachments: HashMap<String, Vec<StudioAttachment>>,
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  听析中心（AudioLab）模型 — 对齐 C# StorageModels.cs
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// 音频文件记录（对应 audio_files 表，对齐 C# AudioItemRecord 全字段）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AudioFile {
+    pub id: String,
+    pub display_name: String,
+    pub source_path: String,
+    pub mp3_path: Option<String>,
+    pub sample_rate: i64,
+    pub channels: i64,
+    pub duration_ms: i64,
+    pub file_size_bytes: i64,
+    pub sha256: String,
+    pub imported_at: String,
+    pub last_opened_at: Option<String>,
+    pub is_legacy_import: bool,
+    pub legacy_source_path: Option<String>,
+    pub import_batch_id: Option<String>,
+    /// 关联的 studio_session id（通过 source_asset_id JOIN 获得，非 DB 原生列）
+    #[serde(default)]
+    pub session_id: Option<String>,
+}
+
+/// 转录记录（对应 audio_transcripts 表）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AudioTranscript {
+    pub id: String,
+    pub session_id: String,
+    pub audio_file_id: String,
+    pub language: String,
+    pub raw_json: Option<String>,
+    pub parser_kind: String,
+    pub created_at: String,
+}
+
+/// 转录段落（对应 audio_segments 表，对齐 C# TranscriptSegment）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AudioSegment {
+    pub id: String,
+    pub transcript_id: String,
+    pub sequence: i64,
+    pub speaker: String,
+    pub speaker_index: i64,
+    pub start_ms: i64,
+    pub end_ms: i64,
+    pub text: String,
+    pub confidence: Option<f64>,
+}
+
+/// 阶段产出（对应 audio_stage_outputs 表，对齐 C# StageContent / StageContentState）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AudioStageOutput {
+    pub id: String,
+    pub session_id: String,
+    pub stage_key: String,
+    pub content_markdown: String,
+    pub status: String,
+    pub error_message: Option<String>,
+    pub model_ref: Option<String>,
+    pub generated_at: Option<String>,
+    pub custom_stage_key: Option<String>,
+    pub custom_is_mindmap: Option<bool>,
+}
+
+/// 深度研究 topic（对应 audio_research_topics 表）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AudioResearchTopic {
+    pub id: String,
+    pub session_id: String,
+    pub title: String,
+    pub description: String,
+    pub status: String,
+    pub report_markdown: Option<String>,
+    pub created_at: String,
+}
+
+/// 自动标签（对应 audio_auto_tags 表）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AudioAutoTag {
+    pub id: String,
+    pub session_id: String,
+    pub tag: String,
+    pub source: String,
+    pub created_at: String,
+}
+
+/// 阶段预设（对应 audio_stage_presets 表，对齐 C# AudioLabStagePreset）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AudioStagePreset {
+    pub id: String,
+    pub stage: String,
+    pub display_name: String,
+    pub system_prompt: String,
+    pub show_in_tab: bool,
+    pub include_in_batch: bool,
+    pub is_enabled: bool,
+    pub display_mode: String,
+    pub sort_order: i64,
+}
+
+/// 懒加载 bundle（audiolab_get_bundle 返回）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AudioLabBundle {
+    pub file: AudioFile,
+    pub transcript: Option<AudioTranscript>,
+    pub segments: Vec<AudioSegment>,
+    pub auto_tags: Vec<AudioAutoTag>,
+    pub stage_outputs: Vec<AudioStageOutput>,
+    pub research_topics: Vec<AudioResearchTopic>,
+    pub custom_presets: Vec<AudioStagePreset>,
+}
+
+/// 播放打开返回信息
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AudioPlaybackInfo {
+    pub file_id: String,
+    pub playback_path: String,
+    pub duration_ms: i64,
+    pub display_name: String,
+}
+
+//  实时翻译数据模型（对齐 C# TranslationHistoryRepository.cs）
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// 翻译会话（对应 translation_sessions 表）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TranslationSession {
+    pub id: String,
+    pub started_at: String,
+    pub stopped_at: Option<String>,
+    pub source_lang: String,
+    /// JSON 数组字符串，如 '["en","ja"]'
+    pub target_langs: String,
+    pub provider: String,
+    pub status: String,
+}
+
+/// 翻译片段（对应 translation_segments 表，字段完全对齐 C#）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TranslationSegment {
+    pub id: String,
+    pub session_id: String,
+    pub sequence: i64,
+    pub original_text: String,
+    pub translated_text: String,
+    pub target_lang: String,
+    pub started_at: Option<String>,
+    pub ended_at: Option<String>,
+    pub is_bookmarked: bool,
+    pub bookmark_note: Option<String>,
+    pub audio_path: Option<String>,
+    pub raw_event_json: Option<String>,
+}
+
+/// 支持的语言条目
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SupportedLanguage {
+    pub code: String,
+    pub label: String,
+    /// "source" | "target" | "both"
+    pub kind: String,
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  媒体中心（Media Center）— 对齐 C# MediaCenterV2ViewModel / SessionContentRepository
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// 工作区元数据（复用 studio_sessions，靠 session_type='canvas_image'/'canvas_video' 区分）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CenterWorkspace {
+    pub id: String,
+    pub session_type: String,
+    pub name: String,
+    pub is_deleted: bool,
+    pub created_at: String,
+    pub updated_at: String,
+    pub last_accessed_at: Option<String>,
+    pub current_round_id: Option<String>,
+    pub round_count: i64,
+    pub asset_count: i64,
+    pub has_running_task: bool,
+}
+
+/// 生成轮次（对应 canvas_rounds 表，对齐 C# 结果集概念）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CanvasRound {
+    pub id: String,
+    pub session_id: String,
+    pub round_index: i64,
+    pub prompt: String,
+    pub params_json: String,
+    pub model_ref: String,
+    pub created_at: String,
+    pub status: String,
+}
+
+/// 轮次资产关联（对应 canvas_round_assets 表）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CanvasRoundAsset {
+    pub id: String,
+    pub round_id: String,
+    pub asset_id: String,
+    pub sequence: i64,
+    pub is_selected: bool,
+}
+
+/// 工作区完整 bundle（懒加载时一次性拉取）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CenterWorkspaceBundle {
+    pub workspace: CenterWorkspace,
+    pub rounds: Vec<CanvasRound>,
+    pub current_round_assets: Vec<CenterAssetDetail>,
+    pub reference_images: Vec<StudioReferenceImage>,
+    pub running_tasks: Vec<StudioTask>,
+}
+
+/// 资产详情（用于前端网格展示）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CenterAssetDetail {
+    pub id: String,
+    pub round_id: String,
+    pub asset_id: String,
+    pub sequence: i64,
+    pub is_selected: bool,
+    pub file_path: String,
+    pub preview_path: String,
+    pub kind: String,
+    pub width: Option<i64>,
+    pub height: Option<i64>,
+    pub duration_ms: Option<i64>,
+    pub created_at: String,
+}
+
+/// 视频能力组合条目
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VideoCapabilityEntry {
+    pub aspect_ratio: String,
+    pub resolution: String,
+    pub duration_seconds: Vec<i64>,
+    pub max_count: i64,
+}
+
+/// 批量导出结果
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExportResult {
+    pub copied: i64,
+    pub failed: i64,
 }

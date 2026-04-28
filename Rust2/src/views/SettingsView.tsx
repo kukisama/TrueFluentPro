@@ -1431,6 +1431,25 @@ function RecognitionSection() {
               onChange={(e) => updateConfig((cfg) => { cfg.recognition.realtime_max_length = Number(e.target.value) || 150; })} />
           </div>
         </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div><Label>Chunk 时长 (ms)</Label>
+            <Input type="number" value={rec.chunk_duration_ms} className="w-32"
+              onChange={(e) => updateConfig((cfg) => { cfg.recognition.chunk_duration_ms = Number(e.target.value) || 200; })} />
+          </div>
+          <div><Label>音频活动阈值</Label>
+            <Input type="number" value={rec.audio_activity_threshold} className="w-32"
+              onChange={(e) => updateConfig((cfg) => { cfg.recognition.audio_activity_threshold = Number(e.target.value) || 600; })} />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div><Label>音频电平增益</Label>
+            <Input type="number" step="0.1" value={rec.audio_level_gain} className="w-32"
+              onChange={(e) => updateConfig((cfg) => { cfg.recognition.audio_level_gain = Number(e.target.value) || 2.0; })} />
+          </div>
+        </div>
+        <SettingRow label="显示重连标记" description="在识别流中显示重连标记">
+          <Switch checked={rec.show_reconnect_marker} onCheckedChange={(v) => updateConfig((cfg) => { cfg.recognition.show_reconnect_marker = v; })} />
+        </SettingRow>
       </GlassCard>
 
       <GlassCard className="space-y-4">
@@ -1447,6 +1466,17 @@ function RecognitionSection() {
             <Input type="number" value={rec.end_silence_timeout_seconds} className="w-32"
               onChange={(e) => updateConfig((cfg) => { cfg.recognition.end_silence_timeout_seconds = Number(e.target.value) || 1; })} />
           </div>
+        </div>
+      </GlassCard>
+
+      <GlassCard className="space-y-4">
+        <h3 className="text-sm font-semibold text-[var(--text-primary)]">无回显重连</h3>
+        <SettingRow label="启用无回显重连" description="长时间无识别结果时自动重连">
+          <Switch checked={rec.enable_no_response_restart} onCheckedChange={(v) => updateConfig((cfg) => { cfg.recognition.enable_no_response_restart = v; })} />
+        </SettingRow>
+        <div><Label>无回显超时 (秒)</Label>
+          <Input type="number" value={rec.no_response_restart_seconds} className="w-32"
+            onChange={(e) => updateConfig((cfg) => { cfg.recognition.no_response_restart_seconds = Number(e.target.value) || 3; })} />
         </div>
       </GlassCard>
     </div>

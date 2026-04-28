@@ -185,10 +185,48 @@ export interface RecognitionSettings {
   filter_modal_particles: boolean;
   max_history_items: number;
   realtime_max_length: number;
+  chunk_duration_ms: number;
   enable_auto_timeout: boolean;
-  timeout_seconds: number;
   initial_silence_timeout_seconds: number;
   end_silence_timeout_seconds: number;
+  enable_no_response_restart: boolean;
+  no_response_restart_seconds: number;
+  audio_activity_threshold: number;
+  audio_level_gain: number;
+  show_reconnect_marker: boolean;
+}
+
+// ── 实时翻译 ──
+
+export interface TranslationSession {
+  id: string;
+  started_at: string;
+  stopped_at: string | null;
+  source_lang: string;
+  target_langs: string;
+  provider: string;
+  status: string;
+}
+
+export interface TranslationSegment {
+  id: string;
+  session_id: string;
+  sequence: number;
+  original_text: string;
+  translated_text: string;
+  target_lang: string;
+  started_at: string | null;
+  ended_at: string | null;
+  is_bookmarked: boolean;
+  bookmark_note: string | null;
+  audio_path: string | null;
+  raw_event_json: string | null;
+}
+
+export interface SupportedLanguage {
+  code: string;
+  label: string;
+  kind: "source" | "target" | "both";
 }
 
 export interface WebSearchSettings {
@@ -460,6 +498,90 @@ export interface TaskEvent {
   error?: string;
 }
 
+// ── 任务监控（PR-1~PR-4 对齐 C# TaskQueueMonitorViewModel）──
+
+export interface MonitorBucket {
+  key: string;
+  title: string;
+  icon: string;
+  count: number;
+  is_danger: boolean;
+}
+
+export interface MonitorTaskItem {
+  id: string;
+  short_task_id: string;
+  audio_item_id: string;
+  audio_file_name: string;
+  stage: string;
+  stage_display_name: string;
+  stage_color: string;
+  task_type: string;
+  status: string;
+  status_display_name: string;
+  priority: number;
+  retry_count: number;
+  progress: number;
+  error_message?: string;
+  progress_message?: string;
+  submitted_at: string;
+  started_at?: string;
+  finished_at?: string;
+  elapsed_time: string;
+  params_snapshot_json?: string;
+}
+
+export interface MonitorExecutionRecord {
+  id: string;
+  task_id: string;
+  status: string;
+  status_display_name: string;
+  billable: boolean;
+  billable_display: string;
+  model_name?: string;
+  tokens_in?: number;
+  tokens_out?: number;
+  tokens_display: string;
+  duration_ms?: number;
+  duration_display: string;
+  error_message?: string;
+  cancel_reason?: string;
+  started_at: string;
+  finished_at?: string;
+  time_display: string;
+  has_debug_data: boolean;
+  debug_prompt?: string;
+  debug_response?: string;
+}
+
+export interface MonitorGlobalStats {
+  total_executions: number;
+  billable_executions: number;
+  billable_tokens_in: number;
+  billable_tokens_out: number;
+}
+
+export interface MonitorSettings {
+  max_transcription_concurrency: number;
+  max_ai_concurrency: number;
+  transcription_timeout_minutes: number;
+}
+
+export interface MonitorSnapshot {
+  buckets: MonitorBucket[];
+  current_bucket: string;
+  current_bucket_tasks: MonitorTaskItem[];
+  global_stats: MonitorGlobalStats;
+}
+
+// PR-2.14: UI 状态持久化
+export interface MonitorUiState {
+  active_bucket: string;
+  sort_column: string;
+  sort_ascending: boolean;
+  selected_task_id: string | null;
+}
+
 // ── 计费记录 ──
 
 export interface BillingRecord {
@@ -565,6 +687,343 @@ export interface AadTenantSelectionEvent {
   scope: string;
 }
 
+// ── 创作工坊（对齐 C# StorageModels.cs）──
+
+export interface StudioSession {
+  id: string;
+  session_type: string;
+  name: string;
+  directory_path: string;
+  canvas_mode: string;
+  media_kind: string;
+  is_deleted: boolean;
+  created_at: string;
+  updated_at: string;
+  last_accessed_at?: string;
+  source_session_id?: string;
+  source_session_name?: string;
+  source_session_directory_name?: string;
+  source_asset_id?: string;
+  source_asset_kind?: string;
+  source_asset_file_name?: string;
+  source_asset_path?: string;
+  source_preview_path?: string;
+  source_reference_role?: string;
+  message_count: number;
+  task_count: number;
+  asset_count: number;
+  latest_message_preview?: string;
+  legacy_source_path?: string;
+  import_batch_id?: string;
+  imported_at?: string;
+  is_legacy_import: boolean;
+}
+
+export interface StudioMessage {
+  id: string;
+  session_id: string;
+  sequence_no: number;
+  role: string;
+  content_type: string;
+  text: string;
+  reasoning_text: string;
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  generate_seconds?: number;
+  download_seconds?: number;
+  search_summary?: string;
+  timestamp: string;
+  is_deleted: boolean;
+}
+
+export interface StudioMediaRef {
+  id: number;
+  message_id: string;
+  media_path: string;
+  media_kind: string;
+  sort_order: number;
+  preview_path?: string;
+}
+
+export interface StudioCitation {
+  id: number;
+  message_id: string;
+  citation_number: number;
+  title: string;
+  url: string;
+  snippet: string;
+  hostname: string;
+}
+
+export interface StudioAttachment {
+  id: number;
+  message_id: string;
+  attachment_type: string;
+  file_name: string;
+  file_path: string;
+  file_size: number;
+  sort_order: number;
+}
+
+export interface StudioTask {
+  id: string;
+  session_id: string;
+  task_type: string;
+  status: string;
+  prompt: string;
+  progress: number;
+  result_file_path?: string;
+  error_message?: string;
+  has_reference_input: boolean;
+  remote_video_id?: string;
+  remote_video_api_mode?: string;
+  remote_generation_id?: string;
+  remote_download_url?: string;
+  generate_seconds?: number;
+  download_seconds?: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StudioReferenceImage {
+  id: string;
+  session_id: string;
+  file_path: string;
+  sort_order: number;
+  width?: number;
+  height?: number;
+  created_at: string;
+}
+
+export interface StudioSessionBundle {
+  messages: StudioMessage[];
+  media_refs: Record<string, StudioMediaRef[]>;
+  citations: Record<string, StudioCitation[]>;
+  attachments: Record<string, StudioAttachment[]>;
+}
+
+export interface StudioTaskEvent {
+  task_id: string;
+  session_id: string;
+  status: string;
+  progress?: number;
+  error?: string;
+  result_paths?: string[];
+  result_path?: string;
+}
+
+export interface StudioMessageDelta {
+  session_id: string;
+  message_id: string;
+  token?: string;
+  reasoning?: string;
+  done?: boolean;
+}
+
+// ── 媒体中心（对齐 Rust CenterWorkspace / CanvasRound 等）──
+
+export interface CenterWorkspace {
+  id: string;
+  session_type: string;
+  name: string;
+  is_deleted: boolean;
+  created_at: string;
+  updated_at: string;
+  last_accessed_at?: string;
+  current_round_id?: string;
+  round_count: number;
+  asset_count: number;
+  has_running_task: boolean;
+}
+
+export interface CanvasRound {
+  id: string;
+  session_id: string;
+  round_index: number;
+  prompt: string;
+  params_json: string;
+  model_ref: string;
+  created_at: string;
+  status: string;
+}
+
+export interface CenterAssetDetail {
+  id: string;
+  round_id: string;
+  asset_id: string;
+  sequence: number;
+  is_selected: boolean;
+  file_path: string;
+  preview_path: string;
+  kind: string;
+  width?: number;
+  height?: number;
+  duration_ms?: number;
+  created_at: string;
+}
+
+export interface CenterWorkspaceBundle {
+  workspace: CenterWorkspace;
+  rounds: CanvasRound[];
+  current_round_assets: CenterAssetDetail[];
+  reference_images: StudioReferenceImage[];
+  running_tasks: StudioTask[];
+}
+
+export interface VideoCapabilityEntry {
+  aspect_ratio: string;
+  resolution: string;
+  duration_seconds: number[];
+  max_count: number;
+}
+
+export interface ExportResult {
+  copied: number;
+  failed: number;
+}
+
+export interface CenterTaskEvent {
+  task_id: string;
+  session_id: string;
+  round_id: string;
+  status: string;
+  progress?: number;
+  error?: string;
+  asset_ids?: string[];
+  elapsed_seconds?: number;
+}
+
+// ── 听析中心 AudioLab（对齐 Rust AudioFile / AudioLabBundle 等）──
+
+export interface AudioFile {
+  id: string;
+  display_name: string;
+  source_path: string;
+  mp3_path: string | null;
+  sample_rate: number;
+  channels: number;
+  duration_ms: number;
+  file_size_bytes: number;
+  sha256: string;
+  imported_at: string;
+  last_opened_at: string | null;
+  is_legacy_import: boolean;
+  legacy_source_path: string | null;
+  import_batch_id: string | null;
+  /** 关联 studio_session id（JOIN 获得） */
+  session_id: string | null;
+}
+
+export interface AudioTranscript {
+  id: string;
+  session_id: string;
+  audio_file_id: string;
+  language: string;
+  raw_json: string | null;
+  parser_kind: string;
+  created_at: string;
+}
+
+export interface AudioSegment {
+  id: string;
+  transcript_id: string;
+  sequence: number;
+  speaker: string;
+  speaker_index: number;
+  start_ms: number;
+  end_ms: number;
+  text: string;
+  confidence: number | null;
+}
+
+export interface AudioStageOutput {
+  id: string;
+  session_id: string;
+  stage_key: string;
+  content_markdown: string;
+  status: string;
+  error_message: string | null;
+  model_ref: string | null;
+  generated_at: string | null;
+  custom_stage_key: string | null;
+  custom_is_mindmap: boolean | null;
+}
+
+export interface AudioResearchTopic {
+  id: string;
+  session_id: string;
+  title: string;
+  description: string;
+  status: string;
+  report_markdown: string | null;
+  created_at: string;
+}
+
+export interface AudioAutoTag {
+  id: string;
+  session_id: string;
+  tag: string;
+  source: string;
+  created_at: string;
+}
+
+export interface AudioStagePreset {
+  id: string;
+  stage: string;
+  display_name: string;
+  system_prompt: string;
+  show_in_tab: boolean;
+  include_in_batch: boolean;
+  is_enabled: boolean;
+  display_mode: string;
+  sort_order: number;
+}
+
+export interface AudioLabBundle {
+  file: AudioFile;
+  transcript: AudioTranscript | null;
+  segments: AudioSegment[];
+  auto_tags: AudioAutoTag[];
+  stage_outputs: AudioStageOutput[];
+  research_topics: AudioResearchTopic[];
+  custom_presets: AudioStagePreset[];
+}
+
+export interface AudioPlaybackInfo {
+  file_id: string;
+  playback_path: string;
+  duration_ms: number;
+  display_name: string;
+}
+
+/** AudioLab Tab 枚举（对齐 C# AudioLabTabKind） */
+export type AudioLabTabKind =
+  | "Summary"
+  | "Transcript"
+  | "MindMap"
+  | "Insight"
+  | "Research"
+  | "Podcast"
+  | "Translation"
+  | "Custom";
+
+/** 阶段任务更新事件 */
+export interface AudioLabTaskEvent {
+  task_id: string;
+  session_id: string;
+  stage_key: string;
+  status: string;
+  progress?: number;
+  error?: string;
+}
+
+/** 阶段流式增量事件 */
+export interface AudioLabStageDelta {
+  session_id: string;
+  stage_key: string;
+  delta: string;
+}
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  类型安全的 invoke 封装
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -655,6 +1114,38 @@ export const api = {
   onImagePipelineProgress: (cb: (e: { step: string; progress: number }) => void): Promise<UnlistenFn> =>
     listen<{ step: string; progress: number }>("image-pipeline-progress", (event) => cb(event.payload)),
 
+  // ── 任务监控 API（PR-1~PR-4）──
+  monitorGetSnapshot: (bucket?: string, sortColumn?: string, sortAscending?: boolean) =>
+    invoke<MonitorSnapshot>("monitor_get_snapshot", { bucket, sortColumn, sortAscending }),
+  monitorSetBucket: (bucketKey: string, sortColumn?: string, sortAscending?: boolean) =>
+    invoke<MonitorTaskItem[]>("monitor_set_bucket", { bucketKey, sortColumn, sortAscending }),
+  monitorListExecutions: (taskId: string) =>
+    invoke<MonitorExecutionRecord[]>("monitor_list_executions", { taskId }),
+  monitorGetExecutionDetail: (executionId: string) =>
+    invoke<MonitorExecutionRecord>("monitor_get_execution_detail", { executionId }),
+  monitorCancelTask: (taskId: string, reason?: string) =>
+    invoke<void>("monitor_cancel_task", { taskId, reason }),
+  monitorGetSettings: () => invoke<MonitorSettings>("monitor_get_settings"),
+  monitorUpdateSettings: (maxTranscriptionConcurrency?: number, maxAiConcurrency?: number, transcriptionTimeoutMinutes?: number) =>
+    invoke<void>("monitor_update_settings", { maxTranscriptionConcurrency, maxAiConcurrency, transcriptionTimeoutMinutes }),
+  monitorCleanupCompleted: (olderThanDays?: number) =>
+    invoke<number>("monitor_cleanup_completed", { olderThanDays }),
+  monitorRefresh: () => invoke<MonitorSnapshot>("monitor_refresh"),
+  monitorRetryTask: (taskId: string) => invoke<string>("monitor_retry_task", { taskId }),
+  monitorBatchCancel: (taskIds: string[]) => invoke<number>("monitor_batch_cancel", { taskIds }),
+  monitorBatchDelete: (taskIds: string[]) => invoke<number>("monitor_batch_delete", { taskIds }),
+  monitorExportCsv: (filePath: string, statusFilter?: string, includeDebug?: boolean) =>
+    invoke<string>("monitor_export_csv", { filePath, statusFilter, includeDebug }),
+  monitorGetArchivedSnapshot: (dateFrom: string, dateTo: string) =>
+    invoke<MonitorSnapshot>("monitor_get_archived_snapshot", { dateFrom, dateTo }),
+  // PR-2.14: UI 状态持久化
+  monitorSaveUiState: (uiState: MonitorUiState) =>
+    invoke<void>("monitor_save_ui_state", { uiState }),
+  monitorLoadUiState: () =>
+    invoke<MonitorUiState | null>("monitor_load_ui_state"),
+  onMonitorSnapshotUpdate: (cb: (e?: MonitorSnapshot | null) => void): Promise<UnlistenFn> =>
+    listen<MonitorSnapshot | null>("monitor-snapshot-update", (event) => cb(event.payload)),
+
   // 系统
   getAppInfo: () => invoke<AppInfo>("get_app_info"),
 
@@ -700,4 +1191,202 @@ export const api = {
     listen<AadAuthResult>("aad-auth-result", (event) => cb(event.payload)),
   onAadTenantSelection: (cb: (e: AadTenantSelectionEvent) => void): Promise<UnlistenFn> =>
     listen<AadTenantSelectionEvent>("aad-tenant-selection", (event) => cb(event.payload)),
+
+  // 创作工坊
+  studioListSessions: (limit?: number, offset?: number) =>
+    invoke<StudioSession[]>("studio_list_sessions", { limit, offset }),
+  studioGetSession: (sessionId: string) =>
+    invoke<StudioSession | null>("studio_get_session", { sessionId }),
+  studioCreateSession: (sessionType: string, name: string) =>
+    invoke<StudioSession>("studio_create_session", { sessionType, name }),
+  studioRenameSession: (sessionId: string, newName: string) =>
+    invoke<void>("studio_rename_session", { sessionId, newName }),
+  studioSoftDeleteSession: (sessionId: string) =>
+    invoke<void>("studio_soft_delete_session", { sessionId }),
+  studioGetSessionBundle: (sessionId: string) =>
+    invoke<StudioSessionBundle>("studio_get_session_bundle", { sessionId }),
+  studioAppendMessage: (args: {
+    sessionId: string; role: string; text: string;
+    contentType?: string; reasoningText?: string;
+    promptTokens?: number; completionTokens?: number;
+    generateSeconds?: number; downloadSeconds?: number;
+    searchSummary?: string;
+  }) => invoke<StudioMessage>("studio_append_message", {
+    sessionId: args.sessionId, role: args.role, text: args.text,
+    contentType: args.contentType, reasoningText: args.reasoningText,
+    promptTokens: args.promptTokens, completionTokens: args.completionTokens,
+    generateSeconds: args.generateSeconds, downloadSeconds: args.downloadSeconds,
+    searchSummary: args.searchSummary,
+  }),
+  studioGetMessagesBefore: (sessionId: string, beforeSequence: number, limit?: number) =>
+    invoke<StudioMessage[]>("studio_get_messages_before", { sessionId, beforeSequence, limit }),
+  studioListRunningTasks: (sessionId: string) =>
+    invoke<StudioTask[]>("studio_list_running_tasks", { sessionId }),
+  studioChatStream: (sessionId: string, text: string, endpointId: string, model: string) =>
+    invoke<string>("studio_chat_stream", { sessionId, text, endpointId, model }),
+  studioStartImageTask: (args: {
+    sessionId: string; prompt: string; params: Record<string, unknown>;
+    referencePaths: string[];
+  }) => invoke<string>("studio_start_image_task", {
+    sessionId: args.sessionId, prompt: args.prompt,
+    params: args.params, referencePaths: args.referencePaths,
+  }),
+  studioStartVideoTask: (args: {
+    sessionId: string; prompt: string; params: Record<string, unknown>;
+    referencePath?: string;
+  }) => invoke<string>("studio_start_video_task", {
+    sessionId: args.sessionId, prompt: args.prompt,
+    params: args.params, referencePath: args.referencePath,
+  }),
+  studioCancelTask: (taskId: string) =>
+    invoke<void>("studio_cancel_task", { taskId }),
+  studioAddReferenceImage: (sessionId: string, filePath: string, width?: number, height?: number) =>
+    invoke<StudioReferenceImage>("studio_add_reference_image", { sessionId, filePath, width, height }),
+  studioDeleteReferenceImage: (id: string) =>
+    invoke<void>("studio_delete_reference_image", { id }),
+  studioListReferenceImages: (sessionId: string) =>
+    invoke<StudioReferenceImage[]>("studio_list_reference_images", { sessionId }),
+  onStudioTaskUpdate: (cb: (e: StudioTaskEvent) => void): Promise<UnlistenFn> =>
+    listen<StudioTaskEvent>("studio-task-update", (event) => cb(event.payload)),
+  onStudioMessageNew: (cb: (e: { session_id: string; message: StudioMessage; media_refs?: StudioMediaRef[] }) => void): Promise<UnlistenFn> =>
+    listen<any>("studio-message-new", (event) => cb(event.payload)),
+  onStudioMessageDelta: (cb: (e: StudioMessageDelta) => void): Promise<UnlistenFn> =>
+    listen<StudioMessageDelta>("studio-message-delta", (event) => cb(event.payload)),
+
+  // ── 媒体中心 ──
+  centerListWorkspaces: (limit?: number, offset?: number) =>
+    invoke<CenterWorkspace[]>("center_list_workspaces", { limit, offset }),
+  centerCreateWorkspace: (kind: string, name: string) =>
+    invoke<CenterWorkspace>("center_create_workspace", { kind, name }),
+  centerRenameWorkspace: (id: string, name: string) =>
+    invoke<void>("center_rename_workspace", { id, name }),
+  centerSoftDeleteWorkspace: (id: string) =>
+    invoke<void>("center_soft_delete_workspace", { id }),
+  centerGetWorkspaceBundle: (id: string) =>
+    invoke<CenterWorkspaceBundle>("center_get_workspace_bundle", { id }),
+  centerListRounds: (workspaceId: string) =>
+    invoke<CanvasRound[]>("center_list_rounds", { workspaceId }),
+  centerGetRound: (roundId: string) =>
+    invoke<CanvasRound | null>("center_get_round", { roundId }),
+  centerSetActiveRound: (workspaceId: string, roundId: string) =>
+    invoke<void>("center_set_active_round", { workspaceId, roundId }),
+  centerStartImageRound: (args: {
+    workspaceId: string; prompt: string; params: Record<string, unknown>;
+    referencePaths: string[];
+  }) => invoke<{ task_id: string; round_id: string }>("center_start_image_round", {
+    workspaceId: args.workspaceId, prompt: args.prompt,
+    params: args.params, referencePaths: args.referencePaths,
+  }),
+  centerStartVideoRound: (args: {
+    workspaceId: string; prompt: string; params: Record<string, unknown>;
+    referencePath?: string;
+  }) => invoke<{ task_id: string; round_id: string }>("center_start_video_round", {
+    workspaceId: args.workspaceId, prompt: args.prompt,
+    params: args.params, referencePath: args.referencePath,
+  }),
+  centerSelectAssets: (roundId: string, assetIds: string[], selected: boolean) =>
+    invoke<void>("center_select_assets", { roundId, assetIds, selected }),
+  centerDeleteAssets: (assetIds: string[]) =>
+    invoke<void>("center_delete_assets", { assetIds }),
+  centerExportAssets: (assetIds: string[], destDir: string) =>
+    invoke<ExportResult>("center_export_assets", { assetIds, destDir }),
+  centerListRunningTasks: (workspaceId: string) =>
+    invoke<StudioTask[]>("center_list_running_tasks", { workspaceId }),
+  centerGetRoundAssets: (roundId: string) =>
+    invoke<CenterAssetDetail[]>("center_get_round_assets", { roundId }),
+  videoGetCapabilities: () =>
+    invoke<VideoCapabilityEntry[]>("video_get_capabilities"),
+  onCenterTaskUpdate: (cb: (e: CenterTaskEvent) => void): Promise<UnlistenFn> =>
+    listen<CenterTaskEvent>("center-task-update", (event) => cb(event.payload)),
+
+  // ── 实时翻译 (PR-1) ──
+  liveGetActiveSession: () =>
+    invoke<TranslationSession | null>("live_get_active_session"),
+  liveGetRecentSegments: (sessionId: string, limit?: number) =>
+    invoke<TranslationSegment[]>("live_get_recent_segments", { sessionId, limit }),
+  liveBookmarkSegment: (segmentId: string, note?: string) =>
+    invoke<void>("live_bookmark_segment", { segmentId, note }),
+  liveUnbookmarkSegment: (segmentId: string) =>
+    invoke<void>("live_unbookmark_segment", { segmentId }),
+  liveListSupportedLanguages: (provider: string) =>
+    invoke<SupportedLanguage[]>("live_list_supported_languages", { provider }),
+  onSegmentUpdated: (cb: (e: { segment_id: string; is_bookmarked: boolean; bookmark_note: string | null }) => void): Promise<UnlistenFn> =>
+    listen<any>("segment-updated", (event) => cb(event.payload)),
+  // PR-3: 悬浮窗口
+  liveShowFloatingSubtitle: () => invoke<void>("live_show_floating_subtitle"),
+  liveHideFloatingSubtitle: () => invoke<void>("live_hide_floating_subtitle"),
+  liveToggleFloatingSubtitle: () => invoke<void>("live_toggle_floating_subtitle"),
+  liveShowFloatingInsight: () => invoke<void>("live_show_floating_insight"),
+  liveHideFloatingInsight: () => invoke<void>("live_hide_floating_insight"),
+  onFloatingWindowStateChanged: (cb: (e: { window: string; open: boolean }) => void): Promise<UnlistenFn> =>
+    listen<any>("floating-window-state-changed", (event) => cb(event.payload)),
+  // PR-4: 历史浏览与导出
+  liveListSessions: (limit?: number, offset?: number) =>
+    invoke<TranslationSession[]>("live_list_sessions", { limit, offset }),
+  liveGetSessionSegments: (sessionId: string) =>
+    invoke<TranslationSegment[]>("live_get_session_segments", { sessionId }),
+  liveExportSubtitles: (sessionId: string, format: "srt" | "vtt", includeTranslation: boolean, outputPath: string) =>
+    invoke<string>("live_export_subtitles", { sessionId, format, includeTranslation, outputPath }),
+  liveClearSessionSegments: (sessionId: string) =>
+    invoke<void>("live_clear_session_segments", { sessionId }),
+
+  // ── 听析中心 AudioLab (PR-1) ──
+  audiolabImportFiles: (paths: string[]) =>
+    invoke<string[]>("audiolab_import_files", { paths }),
+  audiolabListFiles: (limit?: number, offset?: number, search?: string, sort?: string) =>
+    invoke<AudioFile[]>("audiolab_list_files", { limit, offset, search, sort }),
+  audiolabGetFile: (fileId: string) =>
+    invoke<AudioFile | null>("audiolab_get_file", { fileId }),
+  audiolabRemoveFile: (fileId: string, deleteSource: boolean) =>
+    invoke<void>("audiolab_remove_file", { fileId, deleteSource }),
+  audiolabGetBundle: (sessionId: string) =>
+    invoke<AudioLabBundle>("audiolab_get_bundle", { sessionId }),
+  audiolabStartTranscription: (sessionId: string, audioFileId: string, parserKind: string, modelRef?: string) =>
+    invoke<string>("audiolab_start_transcription", { sessionId, audioFileId, parserKind, modelRef }),
+  audiolabListRunningTasks: (sessionId: string) =>
+    invoke<StudioTask[]>("audiolab_list_running_tasks", { sessionId }),
+  audiolabListStagePresets: () =>
+    invoke<AudioStagePreset[]>("audiolab_list_stage_presets"),
+  audiolabUpsertStagePreset: (preset: AudioStagePreset) =>
+    invoke<void>("audiolab_upsert_stage_preset", { preset }),
+  audiolabDeleteStagePreset: (stage: string) =>
+    invoke<void>("audiolab_delete_stage_preset", { stage }),
+
+  // ── 听析中心 AudioLab (PR-2: 播放) ──
+  audiolabPlaybackOpen: (sessionId: string) =>
+    invoke<AudioPlaybackInfo>("audiolab_playback_open", { sessionId }),
+  onAudiolabTaskUpdate: (cb: (e: AudioLabTaskEvent) => void): Promise<UnlistenFn> =>
+    listen<AudioLabTaskEvent>("audiolab-task-update", (event) => cb(event.payload)),
+  onAudiolabStageDelta: (cb: (e: AudioLabStageDelta) => void): Promise<UnlistenFn> =>
+    listen<AudioLabStageDelta>("audiolab-stage-delta", (event) => cb(event.payload)),
+
+  // ── 听析中心 AudioLab (PR-3: 阶段生成 + AutoTags + Research) ──
+  audiolabStartStage: (sessionId: string, stageKey: string, modelRef?: string) =>
+    invoke<string>("audiolab_start_stage", { sessionId, stageKey, modelRef }),
+  audiolabUpdateStageContent: (sessionId: string, stageKey: string, content: string) =>
+    invoke<void>("audiolab_update_stage_content", { sessionId, stageKey, content }),
+  audiolabStartPodcastTts: (sessionId: string, voiceLibRef?: string) =>
+    invoke<string>("audiolab_start_podcast_tts", { sessionId, voiceLibRef }),
+  audiolabGenerateAutoTags: (sessionId: string, modelRef?: string) =>
+    invoke<string>("audiolab_generate_auto_tags", { sessionId, modelRef }),
+  audiolabAddManualTag: (sessionId: string, tag: string) =>
+    invoke<AudioAutoTag>("audiolab_add_manual_tag", { sessionId, tag }),
+  audiolabRemoveAutoTag: (tagId: string) =>
+    invoke<void>("audiolab_remove_auto_tag", { tagId }),
+  audiolabAddResearchTopic: (sessionId: string, title: string, description: string) =>
+    invoke<AudioResearchTopic>("audiolab_add_research_topic", { sessionId, title, description }),
+  audiolabStartResearch: (topicId: string, modelRef?: string) =>
+    invoke<string>("audiolab_start_research", { topicId, modelRef }),
+  audiolabRemoveResearchTopic: (topicId: string) =>
+    invoke<void>("audiolab_remove_research_topic", { topicId }),
+
+  // ── 听析中心 AudioLab (PR-4: 段落编辑 + 导出 + 实时桥接) ──
+  audiolabRenameSpeaker: (transcriptId: string, oldIndex: number, newLabel: string) =>
+    invoke<void>("audiolab_rename_speaker", { transcriptId, oldIndex, newLabel }),
+  audiolabUpdateSegment: (segmentId: string, text?: string, speaker?: string, startMs?: number, endMs?: number) =>
+    invoke<void>("audiolab_update_segment", { segmentId, text, speaker, startMs, endMs }),
+  audiolabExport: (sessionId: string, target: "srt" | "vtt" | "txt" | "json" | "markdown", outputPath: string, stageKey?: string) =>
+    invoke<void>("audiolab_export", { sessionId, target, stageKey, outputPath }),
+  audiolabImportFromRealtime: (realtimeSessionId: string) =>
+    invoke<string>("audiolab_import_from_realtime", { realtimeSessionId }),
 };

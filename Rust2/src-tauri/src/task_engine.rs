@@ -1,51 +1,76 @@
 use std::sync::Arc;
-use tokio::sync::{mpsc, Semaphore};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use tokio::sync::mpsc;
 use tauri::Emitter;
 use crate::storage::Database;
-use serde::{Deserialize, Serialize};
-
-/// P3-8: 任务引擎 — 支持可配置并发度（默认 3）
-/// P3-9: 每个任务有超时控制（默认 300 秒）
-///
-/// 对标 C# AudioLabViewModel.TaskEngine
-///
-/// 设计要点:
-/// - Semaphore 控制并发上限（1-10 可配置）
-/// - 通过 mpsc 接收 kick 信号（新任务提交时踢一下）
-/// - 失败自动重试（retry_count < max_retries）
-/// - 每次执行记录 task_executions 表
-/// - P3-9: tokio::time::timeout 保护每个任务执行
-
-/// 默认并发度
-const DEFAULT_CONCURRENCY: usize = 3;
-/// P3-9: 默认单任务超时秒数
-const DEFAULT_TASK_TIMEOUT_SECS: u64 = 300;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type", content = "data")]
-pub enum TaskEvent {
-    Started { task_id: String, stage: String },
-    Progress { task_id: String, progress: f64 },
-    Completed { task_id: String, stage: String },
-    Failed { task_id: String, error: String },
-    Cancelled { task_id: String },
-}
+use crate::task_event_bus::{TaskEventBus, TaskBusEvent};
 
 pub struct TaskEngine {
     kick_tx: mpsc::Sender<()>,
 }
 
+/// PR-1.8: 辅助 — 在状态变更后通知监控视图刷新
+fn notify_monitor(app_handle: &tauri::AppHandle, bus: &TaskEventBus, event: TaskBusEvent) {
+    bus.publish(event);
+    // 节流由 TaskEventBus 的 last_emit 控制（见下方 emit_throttled）
+    emit_throttled(app_handle);
+}
+
+/// PR-1.8: 500ms 节流 emit monitor-snapshot-update
+/// 使用 thread-local 不可行（async），用简单的 AtomicU64 时间戳
+static LAST_MONITOR_EMIT_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+fn emit_throttled(app_handle: &tauri::AppHandle) {
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+    let last = LAST_MONITOR_EMIT_MS.load(std::sync::atomic::Ordering::Relaxed);
+    if now_ms.saturating_sub(last) >= 500 {
+        LAST_MONITOR_EMIT_MS.store(now_ms, std::sync::atomic::Ordering::Relaxed);
+        let _ = app_handle.emit("monitor-snapshot-update", serde_json::Value::Null);
+    }
+}
+
+/// PR-1.5: 从 KV 读取并发上限（M-4: 拆分为独立的转录和 AI 上限）
+async fn read_concurrency_limits(storage: &Database) -> (usize, usize) {
+    let tc = storage.kv_get("monitor.max_transcription_concurrency").await
+        .ok().flatten()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(2);
+    let ac = storage.kv_get("monitor.max_ai_concurrency").await
+        .ok().flatten()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(4);
+    (tc.max(1), ac.max(1))
+}
+
+/// M-4: 判断任务是否为转录类型
+fn is_transcription_task(task_type: &str) -> bool {
+    task_type == "Transcription" || task_type == "audio_transcribe"
+}
+
+/// PR-1.5: 从 KV 读取超时（分钟 → 秒）
+async fn read_timeout_secs(storage: &Database) -> u64 {
+    let minutes = storage.kv_get("monitor.transcription_timeout_minutes").await
+        .ok().flatten()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(10);
+    (minutes * 60).max(60)
+}
+
 impl TaskEngine {
-    /// P3-8: 通过 Tauri AppHandle 启动，支持并发执行（Semaphore 控制）
+    /// PR-1.5: 从 KV 动态读取并发上限 + 超时，支持热更新
     pub fn start_with_app(
         app_handle: tauri::AppHandle,
         storage: Arc<Database>,
     ) -> Self {
         let (kick_tx, mut kick_rx) = mpsc::channel::<()>(32);
-        let semaphore = Arc::new(Semaphore::new(DEFAULT_CONCURRENCY));
+        // M-4: 拆分为独立的转录和 AI 活跃计数器
+        let active_transcription = Arc::new(AtomicUsize::new(0));
+        let active_ai = Arc::new(AtomicUsize::new(0));
 
         tokio::spawn(async move {
-            // O-25: 启动时恢复中断的任务 — 将上次崩溃时停留在 Executing 状态的任务重新排队
+            // O-25: 启动时恢复中断的任务
             match storage.recover_interrupted_tasks().await {
                 Ok(count) if count > 0 => {
                     eprintln!("[TaskEngine] O-25: 已恢复 {count} 个中断任务为 Queued 状态");
@@ -56,41 +81,60 @@ impl TaskEngine {
                 _ => {}
             }
 
+            // PR-4.7: 启动时标记 interrupted（last_heartbeat_at 过期的 Executing 任务）
+            match storage.monitor_recover_interrupted().await {
+                Ok(count) if count > 0 => {
+                    eprintln!("[TaskEngine] PR-4.7: 已标记 {count} 个中断任务为 Interrupted");
+                }
+                Err(e) => eprintln!("[TaskEngine] monitor_recover_interrupted error: {e}"),
+                _ => {}
+            }
+
             loop {
-                // 等待 kick 信号或 5 秒轮询
                 let _ = tokio::time::timeout(
                     std::time::Duration::from_secs(5),
                     kick_rx.recv(),
                 ).await;
 
-                // P3-8: 循环取任务直到没有可执行的或达到并发上限
-                loop {
-                    // 获取 semaphore permit（如果并发已满则不再取新任务）
-                    let permit = match semaphore.clone().try_acquire_owned() {
-                        Ok(p) => p,
-                        Err(_) => break, // 并发已满，等下一轮
-                    };
+                // M-4: 每次循环从 KV 读取独立的转录和 AI 并发上限
+                let (max_transcription, max_ai) = read_concurrency_limits(&storage).await;
+                let timeout_secs = read_timeout_secs(&storage).await;
 
+                loop {
                     // 取一条 Queued 任务
                     let task = match storage.get_next_queued_task().await {
                         Ok(Some(t)) => t,
                         Ok(None) => {
-                            drop(permit);
                             break; // 没有待执行任务
                         }
                         Err(e) => {
                             eprintln!("[TaskEngine] get_next_queued_task error: {e}");
-                            drop(permit);
                             break;
                         }
                     };
 
+                    // M-4: 根据任务类型检查对应的并发计数器
+                    let is_transcription = is_transcription_task(&task.task_type);
+                    let (counter, limit) = if is_transcription {
+                        (&active_transcription, max_transcription)
+                    } else {
+                        (&active_ai, max_ai)
+                    };
+
+                    let current = counter.load(Ordering::Acquire);
+                    if current >= limit {
+                        // 该类型并发已满，跳过（任务留在队列中等下次调度）
+                        break;
+                    }
+
                     // 标记 Executing
                     if let Err(e) = storage.update_task_status_new(&task.id, "Executing", None).await {
                         eprintln!("[TaskEngine] update_task_status error: {e}");
-                        drop(permit);
                         continue;
                     }
+
+                    // M-4: 递增对应类型的活跃计数
+                    counter.fetch_add(1, Ordering::Release);
 
                     // 发事件: Started
                     let _ = app_handle.emit("task-event", serde_json::json!({
@@ -99,12 +143,33 @@ impl TaskEngine {
                         "audio_item_id": task.audio_item_id,
                         "stage": task.stage,
                     }));
+                    // PR-1.8: 通知监控视图
+                    {
+                        use tauri::Manager;
+                        let bus = &app_handle.state::<crate::state::AppState>().task_event_bus;
+                        notify_monitor(&app_handle, bus, TaskBusEvent::Started {
+                            task_id: task.id.clone(),
+                            stage: task.stage.clone(),
+                        });
+                    }
 
                     // P3-8: 在独立 tokio task 中执行（并发）
                     let app = app_handle.clone();
                     let db = storage.clone();
+                    // M-4: 根据任务类型选择对应计数器
+                    let active = if is_transcription {
+                        active_transcription.clone()
+                    } else {
+                        active_ai.clone()
+                    };
+                    let task_timeout_secs = timeout_secs;
                     tokio::spawn(async move {
-                        let _permit = permit; // permit 在 task 结束时自动释放
+                        // M-4: 任务结束时递减对应类型的活跃计数
+                        struct ActiveGuard(Arc<AtomicUsize>);
+                        impl Drop for ActiveGuard {
+                            fn drop(&mut self) { self.0.fetch_sub(1, Ordering::Release); }
+                        }
+                        let _guard = ActiveGuard(active);
 
                         let task_id = task.id.clone();
                         let stage = task.stage.clone();
@@ -130,9 +195,9 @@ impl TaskEngine {
                         // B-03: 在执行前记录 started_at
                         let started_at = chrono::Utc::now().to_rfc3339();
 
-                        // P3-9: 超时控制
+                        // PR-1.5: 超时控制（从 KV 读取的值）
                         let start = std::time::Instant::now();
-                        let timeout_dur = std::time::Duration::from_secs(DEFAULT_TASK_TIMEOUT_SECS);
+                        let timeout_dur = std::time::Duration::from_secs(task_timeout_secs);
                         let result = tokio::time::timeout(
                             timeout_dur,
                             execute_task_real(&app, &db, &task),
@@ -141,11 +206,11 @@ impl TaskEngine {
                         let duration_ms = start.elapsed().as_millis() as i64;
                         let completed_at = chrono::Utc::now().to_rfc3339();
 
-                        // P3-9: 将 timeout 转为统一错误
+                        // PR-1.5: 将 timeout 转为统一错误 + 标记 Timeout 状态
                         let result = match result {
                             Ok(inner) => inner,
                             Err(_) => Err(format!(
-                                "任务超时: 超过 {DEFAULT_TASK_TIMEOUT_SECS} 秒未完成"
+                                "任务超时: 超过 {task_timeout_secs} 秒未完成"
                             ).into()),
                         };
 
@@ -198,6 +263,15 @@ impl TaskEngine {
                                     "task_id": task_id,
                                     "stage": stage,
                                 }));
+                                // PR-1.8: 通知监控视图
+                                {
+                                    use tauri::Manager;
+                                    let bus = &app.state::<crate::state::AppState>().task_event_bus;
+                                    notify_monitor(&app, bus, TaskBusEvent::Completed {
+                                        task_id: task_id.clone(),
+                                        stage: stage.clone(),
+                                    });
+                                }
                             }
                             Err(err) => {
                                 let err_msg = err.to_string();
@@ -238,9 +312,19 @@ impl TaskEngine {
                                 let _ = db.update_billing_status(&billing_id, "Failed").await;
 
                                 let _ = app.emit("task-event", serde_json::json!({
+                                    "type": "TaskFailed",
                                     "task_id": task_id,
                                     "error": err_msg,
                                 }));
+                                // PR-1.8: 通知监控视图
+                                {
+                                    use tauri::Manager;
+                                    let bus = &app.state::<crate::state::AppState>().task_event_bus;
+                                    notify_monitor(&app, bus, TaskBusEvent::Failed {
+                                        task_id: task_id.clone(),
+                                        error: err_msg.clone(),
+                                    });
+                                }
                             }
                         }
                     });

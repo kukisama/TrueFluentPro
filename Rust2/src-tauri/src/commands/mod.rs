@@ -17,6 +17,12 @@ pub mod audio;
 pub mod test;
 pub mod system;
 pub mod auth;
+pub mod studio;
+pub mod live;
+pub mod floating;
+pub mod center;
+pub mod audiolab;
+pub mod monitor;
 
 // Re-export all public items so callers can use commands::xxx
 pub use config::*;
@@ -27,3 +33,9 @@ pub use audio::*;
 pub use test::*;
 pub use system::*;
 pub use auth::*;
+pub use studio::*;
+pub use live::*;
+pub use floating::*;
+pub use center::*;
+pub use audiolab::*;
+pub use monitor::*;

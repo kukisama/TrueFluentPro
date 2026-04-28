@@ -7,6 +7,7 @@ use crate::models::AppConfig;
 use crate::providers::{ProviderRegistry, RealtimeSessionHandle};
 use crate::storage::Database;
 use crate::task_engine::TaskEngine;
+use crate::task_event_bus::TaskEventBus;
 
 /// 全局应用状态，通过 Tauri State 注入
 pub struct AppState {
@@ -21,6 +22,8 @@ pub struct AppState {
     pub file_id_cache: Arc<FileIdCache>,
     /// AAD refresh_token 缓存（endpoint_id → refresh_token）— 用于租户切换和 token 刷新
     pub refresh_tokens: RwLock<HashMap<String, String>>,
+    /// PR-1.7: 任务事件总线
+    pub task_event_bus: TaskEventBus,
 }
 
 impl AppState {
@@ -54,6 +57,7 @@ impl AppState {
             task_engine: RwLock::new(None),
             file_id_cache: Arc::new(FileIdCache::new()),
             refresh_tokens: RwLock::new(refresh_tokens),
+            task_event_bus: TaskEventBus::new(),
         }
     }
 

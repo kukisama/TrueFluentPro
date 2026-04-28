@@ -5,6 +5,7 @@ mod providers;
 mod state;
 mod storage;
 mod task_engine;
+mod task_event_bus;
 mod image_pipeline;
 
 use std::sync::Arc;
@@ -132,10 +133,13 @@ pub fn run() {
                 // 安全: AppState 通过 Tauri State 管理，生命周期跟随 app
                 let state_arc = Arc::new(tokio::sync::RwLock::new(()));
                 let _ = state_arc; // placeholder
-                let engine = task_engine::TaskEngine::start_with_app(handle.clone(), db_arc);
+                let engine = task_engine::TaskEngine::start_with_app(handle.clone(), db_arc.clone());
                 let mut te = state_ref.task_engine.write().await;
                 *te = Some(engine);
                 tracing::info!("任务引擎已启动");
+
+                // PR-4: 恢复中断的视频轮询任务
+                commands::studio::studio_resume_interrupted_video_tasks(handle.clone(), db_arc).await;
             });
 
             // 启动时自动刷新所有 AAD 端点的 token（后台静默执行）
@@ -248,6 +252,102 @@ pub fn run() {
             commands::get_image_model_catalog,
             // 视频（预留）
             commands::generate_video,
+            // 创作工坊
+            commands::studio_list_sessions,
+            commands::studio_get_session,
+            commands::studio_create_session,
+            commands::studio_rename_session,
+            commands::studio_soft_delete_session,
+            commands::studio_get_session_bundle,
+            commands::studio_append_message,
+            commands::studio_get_messages_before,
+            commands::studio_list_running_tasks,
+            commands::studio_chat_stream,
+            commands::studio_start_image_task,
+            commands::studio_start_video_task,
+            commands::studio_cancel_task,
+            commands::studio_add_reference_image,
+            commands::studio_delete_reference_image,
+            commands::studio_list_reference_images,
+            // 实时翻译（PR-1）
+            commands::live_get_active_session,
+            commands::live_get_recent_segments,
+            commands::live_bookmark_segment,
+            commands::live_unbookmark_segment,
+            commands::live_list_supported_languages,
+            // 悬浮窗口（PR-3）
+            commands::live_show_floating_subtitle,
+            commands::live_hide_floating_subtitle,
+            commands::live_toggle_floating_subtitle,
+            commands::live_show_floating_insight,
+            commands::live_hide_floating_insight,
+            // 历史浏览与导出（PR-4）
+            commands::live_list_sessions,
+            commands::live_get_session_segments,
+            commands::live_export_subtitles,
+            commands::live_clear_session_segments,
+            // 媒体中心
+            commands::center_list_workspaces,
+            commands::center_create_workspace,
+            commands::center_rename_workspace,
+            commands::center_soft_delete_workspace,
+            commands::center_get_workspace_bundle,
+            commands::center_list_rounds,
+            commands::center_get_round,
+            commands::center_set_active_round,
+            commands::center_start_image_round,
+            commands::center_start_video_round,
+            commands::center_select_assets,
+            commands::center_delete_assets,
+            commands::center_export_assets,
+            commands::center_list_running_tasks,
+            commands::center_get_round_assets,
+            commands::video_get_capabilities,
+            // 听析中心 AudioLab
+            commands::audiolab_import_files,
+            commands::audiolab_list_files,
+            commands::audiolab_get_file,
+            commands::audiolab_remove_file,
+            commands::audiolab_get_bundle,
+            commands::audiolab_start_transcription,
+            commands::audiolab_list_running_tasks,
+            commands::audiolab_list_stage_presets,
+            commands::audiolab_upsert_stage_preset,
+            commands::audiolab_delete_stage_preset,
+            // PR-2: 播放
+            commands::audiolab_playback_open,
+            // PR-3: 阶段生成 + AutoTags + Research
+            commands::audiolab_start_stage,
+            commands::audiolab_update_stage_content,
+            commands::audiolab_start_podcast_tts,
+            commands::audiolab_generate_auto_tags,
+            commands::audiolab_add_manual_tag,
+            commands::audiolab_remove_auto_tag,
+            commands::audiolab_add_research_topic,
+            commands::audiolab_start_research,
+            commands::audiolab_remove_research_topic,
+            // PR-4: 段落编辑 + 导出 + 实时桥接
+            commands::audiolab_rename_speaker,
+            commands::audiolab_update_segment,
+            commands::audiolab_export,
+            commands::audiolab_import_from_realtime,
+            // 任务监控（PR-1~PR-4）
+            commands::monitor_get_snapshot,
+            commands::monitor_set_bucket,
+            commands::monitor_list_executions,
+            commands::monitor_get_execution_detail,
+            commands::monitor_cancel_task,
+            commands::monitor_get_settings,
+            commands::monitor_update_settings,
+            commands::monitor_cleanup_completed,
+            commands::monitor_refresh,
+            commands::monitor_retry_task,
+            commands::monitor_batch_cancel,
+            commands::monitor_batch_delete,
+            commands::monitor_export_csv,
+            commands::monitor_get_archived_snapshot,
+            commands::monitor_save_ui_state,
+            commands::monitor_load_ui_state,
         ])
         .run(tauri::generate_context!())
         .expect("启动 Tauri 应用失败");

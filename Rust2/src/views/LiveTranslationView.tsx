@@ -7,22 +7,9 @@ import {
 import {
   Button, GlassCard, Select, Badge, FadeIn, EmptyState,
 } from "../components/ui";
-import { FloatingSubtitle } from "../components/FloatingWindow";
 import { useAppStore } from "../stores/app-store";
-import { api, type UnlistenFn, type AudioDeviceInfo } from "../lib/tauri-api";
+import { api, type UnlistenFn, type AudioDeviceInfo, type SupportedLanguage } from "../lib/tauri-api";
 import { cn } from "../lib/utils";
-
-// O-34: 语言列表默认值，运行时从后端获取
-const DEFAULT_LANGUAGES = [
-  { code: "zh-Hans", name: "中文（简体）" },
-  { code: "en", name: "English" },
-  { code: "ja", name: "日本語" },
-  { code: "ko", name: "한국어" },
-  { code: "fr", name: "Français" },
-  { code: "de", name: "Deutsch" },
-  { code: "es", name: "Español" },
-  { code: "ru", name: "Русский" },
-];
 
 type ViewMode = "bilingual" | "source-only" | "translation-only";
 
@@ -36,13 +23,18 @@ export function LiveTranslationView() {
 
   const [sourceLang, setSourceLang] = useState("zh-Hans");
   const [targetLang, setTargetLang] = useState("en");
-  // O-34: 从后端获取语言列表
-  const [languages, setLanguages] = useState(DEFAULT_LANGUAGES);
+  // PR-2: 从后端动态获取语言列表（分 source/target）
+  const [sourceLangs, setSourceLangs] = useState<SupportedLanguage[]>([]);
+  const [targetLangs, setTargetLangs] = useState<SupportedLanguage[]>([]);
+  const [currentProvider] = useState("azure_speech");
   useEffect(() => {
-    api.getSupportedLanguages().then((list) => {
-      if (list && list.length > 0) setLanguages(list.map(([code, name]) => ({ code, name })));
+    api.liveListSupportedLanguages(currentProvider).then((list) => {
+      if (list && list.length > 0) {
+        setSourceLangs(list.filter(l => l.kind === "source" || l.kind === "both"));
+        setTargetLangs(list.filter(l => l.kind === "target" || l.kind === "both"));
+      }
     }).catch(() => {});
-  }, []);
+  }, [currentProvider]);
   const [selectedSpeechEp, setSelectedSpeechEp] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [partialText, setPartialText] = useState("");
@@ -60,15 +52,14 @@ export function LiveTranslationView() {
       else if (inputs.length > 0) setSelectedInputDevice(inputs[0].id);
     }).catch(() => {});
   }, []);
-  // O-04: 书签持久化到 localStorage（避免切换页面丢失）
-  const [bookmarkedIdx, setBookmarkedIdx] = useState<Set<number>>(() => {
-    try {
-      const saved = localStorage.getItem("tfp_bookmarked_idx");
-      return saved ? new Set(JSON.parse(saved) as number[]) : new Set();
-    } catch { return new Set(); }
-  });
+  // PR-2: 书签持久化到后端 DB（通过 segment_id 跟踪）
+  const [bookmarkedIds, setBookmarkedIds] = useState<Set<string>>(new Set());
+  // 同时保留 index-based 书签用于内存段落（还没持久化的 partial segments）
+  const [bookmarkedIdx, setBookmarkedIdx] = useState<Set<number>>(new Set());
   const [showHistory, setShowHistory] = useState(false);
-  const [showFloatingSubtitle, setShowFloatingSubtitle] = useState(false);
+  // PR-3: 悬浮窗状态由后端管理，通过 floating-window-state-changed 事件同步
+  const [isSubtitleOpen, setIsSubtitleOpen] = useState(false);
+  const [isInsightOpen, setIsInsightOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const unlistenRef = useRef<UnlistenFn | null>(null);
   // O-23: 自动重连状态
@@ -78,6 +69,56 @@ export function LiveTranslationView() {
   const intentionalStopRef = useRef(false);
   // N-06: 重连守卫 — 防止并发重连
   const isReconnectingRef = useRef(false);
+
+  // PR-2: F5 刷新恢复 — 页面加载时检查是否有活跃会话
+  useEffect(() => {
+    (async () => {
+      try {
+        const activeSession = await api.liveGetActiveSession();
+        if (activeSession) {
+          setSessionId(activeSession.id);
+          // 恢复最近段落
+          const segments = await api.liveGetRecentSegments(activeSession.id, 200);
+          for (const seg of segments) {
+            addSegment({
+              source: seg.original_text,
+              translation: seg.translated_text || "",
+              time: seg.started_at ? (seg.started_at.split("T")[1]?.split(".")[0] || seg.started_at) : "",
+            });
+            if (seg.is_bookmarked) {
+              setBookmarkedIds(prev => new Set(prev).add(seg.id));
+            }
+          }
+          showInfoBar(`已恢复会话 (${segments.length} 条记录)`, "info");
+        }
+      } catch { /* 首次启动无活跃会话，正常 */ }
+    })();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // PR-2: 监听后端 segment-updated 事件
+  useEffect(() => {
+    const unlisten = api.onSegmentUpdated((seg) => {
+      if (seg.is_bookmarked) {
+        setBookmarkedIds(prev => new Set(prev).add(seg.segment_id));
+      } else {
+        setBookmarkedIds(prev => {
+          const next = new Set(prev);
+          next.delete(seg.segment_id);
+          return next;
+        });
+      }
+    });
+    return () => { unlisten.then(fn => fn()); };
+  }, []);
+
+  // PR-3: 监听悬浮窗状态事件
+  useEffect(() => {
+    const unlisten = api.onFloatingWindowStateChanged((e) => {
+      if (e.window === "subtitle") setIsSubtitleOpen(e.open);
+      if (e.window === "insight") setIsInsightOpen(e.open);
+    });
+    return () => { unlisten.then(fn => fn()); };
+  }, []);
 
   const speechEndpoints = (config?.endpoints ?? []).filter(
     (ep) => ep.endpoint_type === "azure_speech" && ep.enabled
@@ -125,15 +166,23 @@ export function LiveTranslationView() {
     return () => clearInterval(decay);
   }, [isTranslating, partialText]);
 
-  const toggleBookmark = useCallback((idx: number) => {
+  const toggleBookmark = useCallback((idx: number, segmentId?: string) => {
+    // PR-2: 有 segment_id → 通过后端持久化
+    if (segmentId) {
+      const isCurrentlyBookmarked = bookmarkedIds.has(segmentId);
+      const promise = isCurrentlyBookmarked
+        ? api.liveUnbookmarkSegment(segmentId)
+        : api.liveBookmarkSegment(segmentId);
+      promise.catch(() => showInfoBar("书签操作失败", "error"));
+      return; // 后端会通过 segment-updated 事件更新 bookmarkedIds
+    }
+    // 无 segment_id → 内存 index 模式（兼容未持久化的段落）
     setBookmarkedIdx((prev) => {
       const next = new Set(prev);
       if (next.has(idx)) next.delete(idx); else next.add(idx);
-      // O-04: 持久化到 localStorage
-      try { localStorage.setItem("tfp_bookmarked_idx", JSON.stringify([...next])); } catch { /* best-effort */ }
       return next;
     });
-  }, []);
+  }, [bookmarkedIds, showInfoBar]);
 
   const handleCopyAll = useCallback(async () => {
     const text = recognizedSegments
@@ -334,11 +383,11 @@ export function LiveTranslationView() {
 
             <span className="text-[var(--text-muted)]">|</span>
             <Select value={sourceLang} onChange={(e) => setSourceLang(e.target.value)} className="w-32">
-              {languages.map((l) => <option key={l.code} value={l.code}>{l.name}</option>)}
+              {sourceLangs.map((l) => <option key={l.code} value={l.code}>{l.label}</option>)}
             </Select>
             <span className="text-[var(--text-muted)]">→</span>
             <Select value={targetLang} onChange={(e) => setTargetLang(e.target.value)} className="w-32">
-              {languages.map((l) => <option key={l.code} value={l.code}>{l.name}</option>)}
+              {targetLangs.map((l) => <option key={l.code} value={l.code}>{l.label}</option>)}
             </Select>
           </div>
 
@@ -383,9 +432,13 @@ export function LiveTranslationView() {
           <Button variant="ghost" size="sm" onClick={() => setShowHistory(!showHistory)}>
             <Lightbulb size={14} />
           </Button>
-          <Button variant={showFloatingSubtitle ? "secondary" : "ghost"} size="sm"
-            onClick={() => setShowFloatingSubtitle(!showFloatingSubtitle)} title="浮动字幕">
+          <Button variant={isSubtitleOpen ? "secondary" : "ghost"} size="sm"
+            onClick={() => api.liveToggleFloatingSubtitle()} title="浮动字幕窗">
             <Subtitles size={14} />
+          </Button>
+          <Button variant={isInsightOpen ? "secondary" : "ghost"} size="sm"
+            onClick={() => { isInsightOpen ? api.liveHideFloatingInsight() : api.liveShowFloatingInsight(); }} title="浮动洞察窗">
+            🧠
           </Button>
         </div>
 
@@ -413,8 +466,11 @@ export function LiveTranslationView() {
             type MergedSeg = { source: string; translation: string; time: string; endTime: string; speakerIdx: number; originalIndices: number[] };
             const merged: MergedSeg[] = [];
             let currentSpeaker = 0;
-            for (let i = 0; i < recognizedSegments.length; i++) {
-              const seg = recognizedSegments[i];
+            // S-2: 应用 max_history_items 截断，避免长时间运行后渲染性能下降
+            const maxHistory = config?.recognition?.max_history_items ?? 500;
+            const visibleSegments = recognizedSegments.slice(-maxHistory);
+            for (let i = 0; i < visibleSegments.length; i++) {
+              const seg = visibleSegments[i];
               const prev = merged[merged.length - 1];
               // 简易说话人检测: 时间间隔 > 5 秒视为换人
               const gap = prev ? timeGapSeconds(prev.endTime, seg.time) : 999;
@@ -485,7 +541,7 @@ export function LiveTranslationView() {
           style={{ backgroundColor: "var(--toolbar-bg)" }}>
           <span className="text-xs text-[var(--text-muted)]">
             {recognizedSegments.length} 条结果
-            {bookmarkedIdx.size > 0 && ` · ${bookmarkedIdx.size} 条书签`}
+            {(bookmarkedIdx.size + bookmarkedIds.size) > 0 && ` · ${bookmarkedIdx.size + bookmarkedIds.size} 条书签`}
           </span>
           <Button
             variant={isTranslating ? "danger" : "primary"}
@@ -501,36 +557,13 @@ export function LiveTranslationView() {
 
       {/* 右侧历史/洞察面板 */}
       {showHistory && (
-        <div className="w-72 border-l border-[var(--border-subtle)] flex flex-col bg-[var(--surface-0)]">
-          <div className="px-4 py-3 border-b border-[var(--border-subtle)] flex items-center justify-between">
-            <span className="text-xs font-medium text-[var(--text-primary)]">书签 & 洞察</span>
-            <Button variant="ghost" size="sm" onClick={() => setShowHistory(false)}>×</Button>
-          </div>
-          <div className="flex-1 overflow-y-auto p-3 space-y-2">
-            {bookmarkedIdx.size === 0 ? (
-              <p className="text-xs text-[var(--text-muted)] text-center py-8">点击 <Bookmark size={10} className="inline" /> 标记重要内容</p>
-            ) : (
-              [...bookmarkedIdx].sort().map((idx) => {
-                const seg = recognizedSegments[idx];
-                if (!seg) return null;
-                return (
-                  <div key={idx} className="p-2 rounded-lg bg-[var(--surface-1)] text-xs space-y-1">
-                    <div className="flex items-center gap-1">
-                      <Bookmark size={10} className="text-amber-400 fill-amber-400" />
-                      <span className="text-[var(--text-muted)] font-mono">{seg.time}</span>
-                    </div>
-                    <p className="text-[var(--text-primary)]">{seg.source}</p>
-                    <p className="text-[var(--active-text)]">{seg.translation}</p>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </div>
+        <HistoryPanel
+          recognizedSegments={recognizedSegments}
+          bookmarkedIdx={bookmarkedIdx}
+          onClose={() => setShowHistory(false)}
+          showInfoBar={showInfoBar}
+        />
       )}
-
-      {/* 浮动字幕窗口 */}
-      {showFloatingSubtitle && <FloatingSubtitle />}
     </div>
   );
 }
@@ -571,4 +604,140 @@ function downloadFile(content: string, fileName: string, mimeType: string) {
   a.download = fileName;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+// PR-4: 历史面板组件
+import type { TranslationSession, TranslationSegment } from "../lib/tauri-api";
+
+function HistoryPanel({
+  recognizedSegments,
+  bookmarkedIdx,
+  onClose,
+  showInfoBar,
+}: {
+  recognizedSegments: Array<{ source: string; translation: string; time: string }>;
+  bookmarkedIdx: Set<number>;
+  onClose: () => void;
+  showInfoBar: (msg: string, type: "success" | "error" | "info") => void;
+}) {
+  const [tab, setTab] = useState<"bookmarks" | "history">("bookmarks");
+  const [sessions, setSessions] = useState<TranslationSession[]>([]);
+  const [selectedSession, setSelectedSession] = useState<string | null>(null);
+  const [historySegments, setHistorySegments] = useState<TranslationSegment[]>([]);
+
+  useEffect(() => {
+    if (tab === "history") {
+      api.liveListSessions(20, 0).then(setSessions).catch(() => {});
+    }
+  }, [tab]);
+
+  useEffect(() => {
+    if (selectedSession) {
+      api.liveGetSessionSegments(selectedSession).then(setHistorySegments).catch(() => {});
+    }
+  }, [selectedSession]);
+
+  return (
+    <div className="w-80 border-l border-[var(--border-subtle)] flex flex-col bg-[var(--surface-0)]">
+      <div className="px-4 py-3 border-b border-[var(--border-subtle)] flex items-center justify-between">
+        <div className="flex gap-2">
+          <button
+            className={`text-xs font-medium px-2 py-1 rounded ${tab === "bookmarks" ? "bg-[var(--brand-500)]/20 text-[var(--brand-400)]" : "text-[var(--text-muted)]"}`}
+            onClick={() => { setTab("bookmarks"); setSelectedSession(null); }}
+          >
+            书签
+          </button>
+          <button
+            className={`text-xs font-medium px-2 py-1 rounded ${tab === "history" ? "bg-[var(--brand-500)]/20 text-[var(--brand-400)]" : "text-[var(--text-muted)]"}`}
+            onClick={() => setTab("history")}
+          >
+            历史会话
+          </button>
+        </div>
+        <Button variant="ghost" size="sm" onClick={onClose}>×</Button>
+      </div>
+      <div className="flex-1 overflow-y-auto p-3 space-y-2">
+        {tab === "bookmarks" && (
+          bookmarkedIdx.size === 0 ? (
+            <p className="text-xs text-[var(--text-muted)] text-center py-8">点击 <Bookmark size={10} className="inline" /> 标记重要内容</p>
+          ) : (
+            [...bookmarkedIdx].sort().map((idx) => {
+              const seg = recognizedSegments[idx];
+              if (!seg) return null;
+              return (
+                <div key={idx} className="p-2 rounded-lg bg-[var(--surface-1)] text-xs space-y-1">
+                  <div className="flex items-center gap-1">
+                    <Bookmark size={10} className="text-amber-400 fill-amber-400" />
+                    <span className="text-[var(--text-muted)] font-mono">{seg.time}</span>
+                  </div>
+                  <p className="text-[var(--text-primary)]">{seg.source}</p>
+                  <p className="text-[var(--active-text)]">{seg.translation}</p>
+                </div>
+              );
+            })
+          )
+        )}
+        {tab === "history" && !selectedSession && (
+          sessions.length === 0 ? (
+            <p className="text-xs text-[var(--text-muted)] text-center py-8">暂无历史会话</p>
+          ) : (
+            sessions.map((s) => (
+              <div
+                key={s.id}
+                className="p-2 rounded-lg bg-[var(--surface-1)] text-xs space-y-1 cursor-pointer hover:bg-[var(--surface-2)]"
+                onClick={() => setSelectedSession(s.id)}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-[var(--text-muted)] font-mono">{s.started_at}</span>
+                  <span className={`px-1.5 py-0.5 rounded text-[10px] ${s.status === "active" ? "bg-green-500/20 text-green-400" : "bg-gray-500/20 text-gray-400"}`}>
+                    {s.status}
+                  </span>
+                </div>
+                <p className="text-[var(--text-primary)]">{s.source_lang} → {s.target_langs}</p>
+              </div>
+            ))
+          )
+        )}
+        {tab === "history" && selectedSession && (
+          <>
+            <div className="flex items-center gap-2 mb-2">
+              <button
+                className="text-xs text-[var(--brand-400)] hover:underline"
+                onClick={() => { setSelectedSession(null); setHistorySegments([]); }}
+              >
+                ← 返回列表
+              </button>
+              <div className="flex-1" />
+              <button
+                className="text-xs text-red-400 hover:underline"
+                onClick={async () => {
+                  if (confirm("确定清空此会话的所有片段？")) {
+                    await api.liveClearSessionSegments(selectedSession);
+                    setHistorySegments([]);
+                    showInfoBar("已清空会话片段", "success");
+                  }
+                }}
+              >
+                清空
+              </button>
+            </div>
+            {historySegments.length === 0 ? (
+              <p className="text-xs text-[var(--text-muted)] text-center py-4">无片段</p>
+            ) : (
+              historySegments.map((seg) => (
+                <div key={seg.id} className="p-2 rounded-lg bg-[var(--surface-1)] text-xs space-y-1">
+                  <div className="flex items-center gap-1">
+                    <span className="text-[var(--text-muted)] font-mono text-[10px]">#{seg.sequence}</span>
+                    {seg.is_bookmarked && <Bookmark size={10} className="text-amber-400 fill-amber-400" />}
+                  </div>
+                  <p className="text-[var(--text-primary)]">{seg.original_text}</p>
+                  {seg.translated_text && <p className="text-[var(--active-text)]">{seg.translated_text}</p>}
+                </div>
+              ))
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
 }

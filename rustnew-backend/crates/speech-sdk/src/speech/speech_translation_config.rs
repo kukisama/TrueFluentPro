@@ -262,4 +262,9 @@ impl SpeechTranslationConfig {
     pub fn get_auth_token(&self) -> Result<String> {
         self.properties.get_property(PropertyId::SpeechServiceAuthorizationToken, "")
     }
+
+    /// Set a property by its string name (for SDK properties without a PropertyId enum variant).
+    pub fn set_property_by_name(&mut self, name: &str, value: &str) -> Result<()> {
+        self.properties.set_property_by_string(name, value)
+    }
 }

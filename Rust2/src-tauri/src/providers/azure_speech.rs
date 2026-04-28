@@ -89,6 +89,10 @@ impl RealtimeSpeechSlot for AzureSpeechProvider {
 
         let (tx, rx) = mpsc::unbounded_channel::<RealtimeEvent>();
 
+        // S-1: 提取超时设置传入 Speech SDK
+        let initial_silence_timeout_seconds = config.initial_silence_timeout_seconds;
+        let end_silence_timeout_seconds = config.end_silence_timeout_seconds;
+
         // Speech SDK 的 FFI 调用是阻塞的，在 spawn_blocking 中初始化
         let tx_clone = tx.clone();
         let handle = tokio::task::spawn_blocking(move || {
@@ -98,6 +102,8 @@ impl RealtimeSpeechSlot for AzureSpeechProvider {
                 &source_lang,
                 &target_langs,
                 tx_clone,
+                initial_silence_timeout_seconds,
+                end_silence_timeout_seconds,
             )
         })
         .await
@@ -118,6 +124,8 @@ fn create_recognizer_session(
     source_lang: &str,
     target_langs: &[String],
     tx: mpsc::UnboundedSender<RealtimeEvent>,
+    initial_silence_timeout_seconds: Option<u32>,
+    end_silence_timeout_seconds: Option<u32>,
 ) -> Result<SpeechSessionHandle, String> {
     // 创建翻译配置
     let mut speech_config = SpeechTranslationConfig::from_subscription(api_key, region)
@@ -131,6 +139,22 @@ fn create_recognizer_session(
         speech_config
             .add_target_language(lang)
             .map_err(|e| format!("添加目标语言 {lang} 失败: {e}"))?;
+    }
+
+    // S-1: 将 RecognitionSettings 的超时参数透传到 Speech SDK
+    if let Some(initial_secs) = initial_silence_timeout_seconds {
+        let ms_str = (initial_secs as u64 * 1000).to_string();
+        let _ = speech_config.set_property_by_name(
+            "SpeechServiceConnection_InitialSilenceTimeoutMs",
+            &ms_str,
+        );
+    }
+    if let Some(end_secs) = end_silence_timeout_seconds {
+        let ms_str = (end_secs as u64 * 1000).to_string();
+        let _ = speech_config.set_property_by_name(
+            "SpeechServiceConnection_EndSilenceTimeoutMs",
+            &ms_str,
+        );
     }
 
     // 创建音频输入（默认麦克风）
