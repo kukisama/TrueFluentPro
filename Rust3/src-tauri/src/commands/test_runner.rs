@@ -185,21 +185,19 @@ pub(crate) async fn test_single_capability(
 /// Parse model list from various response formats
 pub(crate) fn parse_model_list(json: &serde_json::Value) -> Vec<tfp_core::DiscoveredModel> {
     let arrays = [json["data"].as_array(), json["models"].as_array(), json["value"].as_array(), json.as_array()];
-    for arr_opt in arrays {
-        if let Some(arr) = arr_opt {
-            let models: Vec<_> = arr.iter().filter_map(|item| {
-                if let Some(s) = item.as_str() {
-                    return Some(tfp_core::DiscoveredModel { id: s.into(), display_name: None, owned_by: None });
-                }
-                let id = item["id"].as_str().or_else(|| item["model"].as_str()).or_else(|| item["name"].as_str())?;
-                Some(tfp_core::DiscoveredModel {
-                    id: id.into(),
-                    display_name: item["display_name"].as_str().or_else(|| item["displayName"].as_str()).map(Into::into),
-                    owned_by: item["owned_by"].as_str().or_else(|| item["ownedBy"].as_str()).map(Into::into),
-                })
-            }).collect();
-            if !models.is_empty() { return models; }
-        }
+    for arr in arrays.into_iter().flatten() {
+        let models: Vec<_> = arr.iter().filter_map(|item| {
+            if let Some(s) = item.as_str() {
+                return Some(tfp_core::DiscoveredModel { id: s.into(), display_name: None, owned_by: None });
+            }
+            let id = item["id"].as_str().or_else(|| item["model"].as_str()).or_else(|| item["name"].as_str())?;
+            Some(tfp_core::DiscoveredModel {
+                id: id.into(),
+                display_name: item["display_name"].as_str().or_else(|| item["displayName"].as_str()).map(Into::into),
+                owned_by: item["owned_by"].as_str().or_else(|| item["ownedBy"].as_str()).map(Into::into),
+            })
+        }).collect();
+        if !models.is_empty() { return models; }
     }
     Vec::new()
 }

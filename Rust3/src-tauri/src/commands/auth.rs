@@ -278,7 +278,7 @@ async fn save_token_and_notify(
         let config = state_ref.config.read().await;
         let endpoints = config.endpoints.clone();
         drop(config);
-        crate::register_providers_async(&*state_ref, &endpoints).await;
+        crate::register_providers_async(&state_ref, &endpoints).await;
     }
 
     let token_result = AadTokenResult {

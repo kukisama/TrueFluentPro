@@ -104,7 +104,7 @@ fn estimate_audio_duration_ms(path: &Path, file_size_bytes: i64) -> i64 {
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
     match ext.as_str() {
         "wav" => {
-            let bytes_per_sec = 16000_i64 * 1 * 2;
+            let bytes_per_sec = 32000_i64; // 16kHz, 16-bit mono = 32000 bytes/sec
             if file_size_bytes > 44 {
                 ((file_size_bytes - 44) * 1000) / bytes_per_sec
             } else {

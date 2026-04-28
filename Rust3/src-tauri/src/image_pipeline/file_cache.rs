@@ -8,7 +8,6 @@ use sha2::{Digest, Sha256};
 /// key = SHA256(endpoint_id) + "_" + SHA256(file_content)
 /// value = (file_id, uploaded_at)
 /// TTL = 12 hours
-
 const TTL_SECS: u64 = 12 * 3600;
 
 struct CacheEntry {

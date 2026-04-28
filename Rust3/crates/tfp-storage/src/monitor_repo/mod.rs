@@ -286,6 +286,7 @@ impl Database {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn monitor_insert_execution(
         &self,
         id: &str,

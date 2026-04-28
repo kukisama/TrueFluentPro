@@ -106,6 +106,7 @@ pub async fn studio_get_session_bundle(
         .map_err(|e| e.to_string())
 }
 
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn studio_append_message(
     state: State<'_, AppState>,

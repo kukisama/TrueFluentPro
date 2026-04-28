@@ -500,7 +500,7 @@ async fn step_build(state: &crate::state::AppState, ctx: &mut PipelineContext) {
             // Candidate URLs
             let api_ver = ep.api_version.as_deref().unwrap_or("2025-04-01-preview");
             let model = &ctx.request.model;
-            let candidate_urls = vec![
+            let candidate_urls = [
                 format!("{base}/openai/deployments/{model}/images/generations?api-version={api_ver}"),
                 format!("{base}/v1/images/generations"),
                 format!("{base}/images/generations"),

@@ -16,7 +16,7 @@ pub async fn refresh_providers(state: State<'_, AppState>) -> Result<(), String>
     let endpoints = config.endpoints.clone();
     drop(config);
 
-    crate::register_providers_async(&*state, &endpoints).await;
+    crate::register_providers_async(&state, &endpoints).await;
     Ok(())
 }
 
