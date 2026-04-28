@@ -162,3 +162,52 @@ pub fn builtin_image_models() -> Vec<ModelCapabilityEntry> {
         },
     ]
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_builtin_image_models() {
+        let models = builtin_image_models();
+        assert_eq!(models.len(), 2);
+
+        // First entry: gpt-image-2
+        assert_eq!(models[0].model_id, "gpt-image-2");
+        assert!(models[0].capabilities.contains(&"generate".to_string()));
+        assert!(models[0].capabilities.contains(&"edit".to_string()));
+
+        // Second entry: gpt-image-1, Fixed resolution
+        assert_eq!(models[1].model_id, "gpt-image-1");
+        assert_eq!(models[1].resolution_mode, "Fixed");
+    }
+
+    #[test]
+    fn test_parse_valid_json() {
+        let json = r#"{
+            "defaults": {
+                "qualityOptions": ["auto"],
+                "outputFormats": [],
+                "supportsGeneration": true,
+                "supportsEditing": false,
+                "supportsTransparentBackground": false,
+                "supportsInputFidelity": false
+            },
+            "models": [{"modelId": "test-model"}]
+        }"#;
+
+        let result = parse_image_models_json(json);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].model_id, "test-model");
+        assert!(result[0].capabilities.contains(&"generate".to_string()));
+        assert!(!result[0].capabilities.contains(&"edit".to_string()));
+    }
+
+    #[test]
+    fn test_parse_invalid_json_falls_back() {
+        let result = parse_image_models_json("not json");
+        // Falls back to builtin defaults
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].model_id, "gpt-image-2");
+    }
+}

@@ -58,3 +58,40 @@ impl TaskEventBus {
         self.tx.subscribe()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_publish_subscribe_roundtrip() {
+        let bus = TaskEventBus::new();
+        let mut rx = bus.subscribe();
+
+        bus.publish(TaskBusEvent::Submitted {
+            task_id: "t-001".into(),
+            stage: "queued".into(),
+            task_type: "translation".into(),
+        });
+
+        let event = rx.try_recv().expect("should receive event");
+        match event {
+            TaskBusEvent::Submitted { task_id, stage, task_type } => {
+                assert_eq!(task_id, "t-001");
+                assert_eq!(stage, "queued");
+                assert_eq!(task_type, "translation");
+            }
+            other => panic!("unexpected event variant: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_publish_without_subscriber_no_panic() {
+        let bus = TaskEventBus::new();
+        // No subscriber — should not panic
+        bus.publish(TaskBusEvent::Started {
+            task_id: "t-002".into(),
+            stage: "running".into(),
+        });
+    }
+}

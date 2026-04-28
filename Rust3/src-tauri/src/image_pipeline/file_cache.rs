@@ -87,3 +87,53 @@ fn hex_sha256(data: &[u8]) -> String {
     let result = hasher.finalize();
     hex::encode(result)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cache_hit_and_miss() {
+        let cache = FileIdCache::new();
+        cache.set("ep1", b"data", "fid-1".into());
+
+        // Hit: same endpoint + same content
+        assert_eq!(cache.try_get("ep1", b"data"), Some("fid-1".into()));
+        // Miss: same endpoint + different content
+        assert_eq!(cache.try_get("ep1", b"other"), None);
+        // Miss: different endpoint + same content
+        assert_eq!(cache.try_get("ep2", b"data"), None);
+    }
+
+    #[test]
+    fn test_invalidate_and_clear() {
+        let cache = FileIdCache::new();
+
+        // invalidate removes a specific entry
+        cache.set("ep1", b"data", "fid-1".into());
+        cache.invalidate("ep1", b"data");
+        assert_eq!(cache.try_get("ep1", b"data"), None);
+
+        // clear removes all entries
+        cache.set("ep1", b"a", "fid-a".into());
+        cache.set("ep2", b"b", "fid-b".into());
+        cache.clear();
+        assert_eq!(cache.try_get("ep1", b"a"), None);
+        assert_eq!(cache.try_get("ep2", b"b"), None);
+    }
+
+    #[test]
+    fn test_cache_key_deterministic() {
+        // Same inputs produce the same key
+        let k1 = FileIdCache::cache_key("ep1", b"content");
+        let k2 = FileIdCache::cache_key("ep1", b"content");
+        assert_eq!(k1, k2);
+
+        // Different inputs produce different keys
+        let k3 = FileIdCache::cache_key("ep1", b"other");
+        assert_ne!(k1, k3);
+
+        let k4 = FileIdCache::cache_key("ep2", b"content");
+        assert_ne!(k1, k4);
+    }
+}
