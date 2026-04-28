@@ -136,3 +136,38 @@ pub(crate) fn emit_insight_update(
         },
     );
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_window_label_constants() {
+        assert_eq!(SUBTITLE_LABEL, "floating-subtitle");
+        assert_eq!(INSIGHT_LABEL, "floating-insight");
+    }
+
+    #[test]
+    fn test_subtitle_payload_serde() {
+        let p = SubtitlePayload {
+            source_text: "hello".into(),
+            translated_text: "你好".into(),
+        };
+        let v = serde_json::to_value(&p).unwrap();
+        let obj = v.as_object().unwrap();
+        assert_eq!(obj["source_text"], "hello");
+        assert_eq!(obj["translated_text"], "你好");
+    }
+
+    #[test]
+    fn test_insight_payload_serde() {
+        let p = InsightPayload {
+            markdown: "# Title".into(),
+            streaming: true,
+        };
+        let v = serde_json::to_value(&p).unwrap();
+        let obj = v.as_object().unwrap();
+        assert_eq!(obj["markdown"], "# Title");
+        assert_eq!(obj["streaming"], true);
+    }
+}

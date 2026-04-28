@@ -10,7 +10,7 @@ use crate::state::AppState;
 
 use super::test_runner;
 
-fn find_profile<'a>(
+pub(crate) fn find_profile<'a>(
     profiles: &'a [VendorProfile],
     ep_type: &EndpointType,
 ) -> Option<&'a VendorProfile> {
@@ -237,4 +237,55 @@ pub async fn discover_models(
     }
 
     Err(format!("Model discovery failed: {last_error}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+    use tfp_core::{EndpointType, VendorProfile};
+
+    fn make_profile(ep_type: EndpointType, label: &str) -> VendorProfile {
+        VendorProfile {
+            endpoint_type: ep_type,
+            label: label.into(),
+            badge: String::new(),
+            subtitle: String::new(),
+            glyph: String::new(),
+            default_auth_header: String::new(),
+            default_api_version: String::new(),
+            supports_aad: false,
+            supports_model_discovery: false,
+            model_discovery_urls: vec![],
+            test_url_templates: HashMap::new(),
+            text_url_candidates: vec![],
+            image_url_candidates: vec![],
+            video_url_candidates: vec![],
+            audio_url_candidates: vec![],
+            speech_url_candidates: vec![],
+            text_protocol: String::new(),
+            supported_auth_modes: vec![],
+            raw_json: None,
+        }
+    }
+
+    #[test]
+    fn test_find_profile_match() {
+        let profiles = vec![
+            make_profile(EndpointType::AzureOpenAi, "Azure OpenAI"),
+            make_profile(EndpointType::OpenAiCompatible, "OpenAI Compatible"),
+        ];
+        let found = find_profile(&profiles, &EndpointType::AzureOpenAi);
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().endpoint_type, EndpointType::AzureOpenAi);
+    }
+
+    #[test]
+    fn test_find_profile_no_match() {
+        let profiles = vec![
+            make_profile(EndpointType::AzureOpenAi, "Azure OpenAI"),
+        ];
+        let found = find_profile(&profiles, &EndpointType::AzureSpeech);
+        assert!(found.is_none());
+    }
 }

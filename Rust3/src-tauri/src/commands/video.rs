@@ -273,3 +273,29 @@ async fn download_video(
 
     Ok(final_path.to_string_lossy().to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_video_progress_json_fields() {
+        let p = VideoProgress {
+            task_id: "t1".into(),
+            status: "polling".into(),
+            message: "Checking...".into(),
+            video_id: Some("vid-1".into()),
+            file_path: None,
+            elapsed_seconds: Some(12.5),
+            error: None,
+        };
+        let v = serde_json::to_value(&p).unwrap();
+        let obj = v.as_object().unwrap();
+        assert_eq!(obj.len(), 7);
+        assert_eq!(obj["task_id"], "t1");
+        assert_eq!(obj["status"], "polling");
+        assert_eq!(obj["video_id"], "vid-1");
+        assert!(obj["file_path"].is_null());
+        assert_eq!(obj["elapsed_seconds"], 12.5);
+    }
+}

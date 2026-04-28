@@ -12,6 +12,14 @@ use tfp_providers::{OpenAiVideoProvider, StreamChunk, VideoGenSlot};
 //  Studio commands
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+pub(crate) fn determine_video_api_mode(model: &str) -> &'static str {
+    if model.contains("sora-2") || model == "sora" {
+        "videos"
+    } else {
+        "sora_jobs"
+    }
+}
+
 #[tauri::command]
 pub async fn studio_list_sessions(
     state: State<'_, AppState>,
@@ -619,11 +627,7 @@ pub async fn studio_start_video_task(
         let video_id = gen_result.video_id;
 
         // Persist remote_video_id for crash recovery
-        let api_mode_str = if model.contains("sora-2") || model == "sora" {
-            "videos"
-        } else {
-            "sora_jobs"
-        };
+        let api_mode_str = determine_video_api_mode(&model);
         {
             let now2 = chrono::Utc::now().to_rfc3339();
             let _ = db.studio_upsert_task(&StudioTask {
@@ -927,4 +931,27 @@ pub(crate) async fn studio_download_video(url: &str, output_path: &std::path::Pa
         .map_err(|e| format!("Write video file: {e}"))?;
 
     Ok(output_path.to_string_lossy().to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_api_mode_sora() {
+        assert_eq!(determine_video_api_mode("sora"), "videos");
+    }
+
+    #[test]
+    fn test_api_mode_sora2_variants() {
+        assert_eq!(determine_video_api_mode("sora-2"), "videos");
+        assert_eq!(determine_video_api_mode("sora-2-turbo"), "videos");
+    }
+
+    #[test]
+    fn test_api_mode_other_models() {
+        assert_eq!(determine_video_api_mode("other-model"), "sora_jobs");
+        assert_eq!(determine_video_api_mode(""), "sora_jobs");
+        assert_eq!(determine_video_api_mode("Sora"), "sora_jobs");
+    }
 }

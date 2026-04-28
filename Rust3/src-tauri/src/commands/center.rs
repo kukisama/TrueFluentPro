@@ -12,6 +12,13 @@ use tfp_providers::{OpenAiVideoProvider, VideoGenSlot};
 //  Media Center commands
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+pub(crate) fn validate_workspace_kind(kind: &str) -> Result<(), String> {
+    if kind != "canvas_image" && kind != "canvas_video" {
+        return Err("kind must be 'canvas_image' or 'canvas_video'".to_string());
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn center_list_workspaces(
     state: State<'_, AppState>,
@@ -29,9 +36,7 @@ pub async fn center_create_workspace(
     kind: String,
     name: String,
 ) -> Result<CenterWorkspace, String> {
-    if kind != "canvas_image" && kind != "canvas_video" {
-        return Err("kind must be 'canvas_image' or 'canvas_video'".to_string());
-    }
+    validate_workspace_kind(&kind)?;
     state.db.center_create_workspace(&kind, &name)
         .await
         .map_err(|e| e.to_string())
@@ -649,4 +654,37 @@ pub async fn video_get_capabilities() -> Result<Vec<VideoCapabilityEntry>, Strin
             max_count: 2,
         },
     ])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_validate_workspace_kind_valid() {
+        assert_eq!(validate_workspace_kind("canvas_image"), Ok(()));
+        assert_eq!(validate_workspace_kind("canvas_video"), Ok(()));
+    }
+
+    #[test]
+    fn test_validate_workspace_kind_invalid() {
+        assert!(validate_workspace_kind("image").is_err());
+        assert!(validate_workspace_kind("").is_err());
+    }
+
+    #[tokio::test]
+    async fn test_video_capabilities_count() {
+        let result = video_get_capabilities().await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().len(), 9);
+    }
+
+    #[tokio::test]
+    async fn test_video_capabilities_aspect_ratios() {
+        let caps = video_get_capabilities().await.unwrap();
+        let mut ratios: Vec<&str> = caps.iter().map(|c| c.aspect_ratio.as_str()).collect();
+        ratios.sort();
+        ratios.dedup();
+        assert_eq!(ratios, vec!["16:9", "1:1", "9:16"]);
+    }
 }
