@@ -636,3 +636,118 @@ fn detect_speakers(script: &str) -> Vec<(String, String)> {
         })
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── is_transcription_task tests ──
+
+    #[test]
+    fn test_is_transcription_task_match() {
+        assert!(is_transcription_task("Transcription"));
+        assert!(is_transcription_task("audio_transcribe"));
+    }
+
+    #[test]
+    fn test_is_transcription_task_no_match() {
+        assert!(!is_transcription_task("AiCompletion"));
+        assert!(!is_transcription_task("TTS"));
+        assert!(!is_transcription_task(""));
+    }
+
+    // ── detect_speakers tests ──
+
+    #[test]
+    fn test_detect_speakers_colon_format() {
+        let input = "主持人A: 你好\n主持人B: 大家好";
+        let result = detect_speakers(input);
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].0, "主持人A");
+        assert_eq!(result[1].0, "主持人B");
+    }
+
+    #[test]
+    fn test_detect_speakers_fullwidth_colon() {
+        let input = "张三：问题是\n李四：解答";
+        let result = detect_speakers(input);
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].0, "张三");
+        assert_eq!(result[1].0, "李四");
+    }
+
+    #[test]
+    fn test_detect_speakers_dedup() {
+        let input = "A: line1\nA: line2\nB: line3";
+        let result = detect_speakers(input);
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].0, "A");
+        assert_eq!(result[1].0, "B");
+    }
+
+    #[test]
+    fn test_detect_speakers_empty() {
+        let result = detect_speakers("");
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_detect_speakers_no_colon() {
+        let input = "纯文本没有冒号\n第二行";
+        let result = detect_speakers(input);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_detect_speakers_voice_assignment() {
+        let input = "A: hello\nB: world";
+        let result = detect_speakers(input);
+        assert_eq!(result[0].1, "zh-CN-XiaoxiaoMultilingualNeural");
+        assert_eq!(result[1].1, "zh-CN-YunxiMultilingualNeural");
+
+        // Verify the full voices array order with 4 speakers
+        let input4 = "S1: a\nS2: b\nS3: c\nS4: d";
+        let result4 = detect_speakers(input4);
+        assert_eq!(result4[0].1, "zh-CN-XiaoxiaoMultilingualNeural");
+        assert_eq!(result4[1].1, "zh-CN-YunxiMultilingualNeural");
+        assert_eq!(result4[2].1, "zh-CN-XiaoyiNeural");
+        assert_eq!(result4[3].1, "zh-CN-YunjianNeural");
+    }
+
+    #[test]
+    fn test_detect_speakers_long_label_ignored() {
+        // A label longer than 40 bytes should be skipped
+        let long_label = "A".repeat(41);
+        let input = format!("{long_label}: ignored\nShort: kept");
+        let result = detect_speakers(&input);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].0, "Short");
+    }
+
+    #[test]
+    fn test_detect_speakers_mixed_colons() {
+        let input = "A: 你好\nB：世界";
+        let result = detect_speakers(input);
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].0, "A");
+        assert_eq!(result[1].0, "B");
+    }
+
+    #[test]
+    fn test_detect_speakers_empty_lines_skipped() {
+        let input = "\n\nA: 你好\n\n\nB: 世界\n";
+        let result = detect_speakers(input);
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].0, "A");
+        assert_eq!(result[1].0, "B");
+    }
+
+    #[test]
+    fn test_detect_speakers_four_speakers_wrap_voices() {
+        let input = "S1: a\nS2: b\nS3: c\nS4: d\nS5: e";
+        let result = detect_speakers(input);
+        assert_eq!(result.len(), 5);
+        // 5th speaker wraps to voices[0]
+        assert_eq!(result[4].1, "zh-CN-XiaoxiaoMultilingualNeural");
+    }
+}

@@ -305,3 +305,46 @@ pub async fn get_image_model_catalog(
     Ok(crate::image_pipeline::catalog::builtin_image_models())
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_format_timestamp_format() {
+        let ts = format_timestamp_for_filename();
+        // Must be exactly 15 chars: YYYYMMDD_HHMMSS
+        assert_eq!(ts.len(), 15);
+        // Verify underscore at position 8
+        assert_eq!(ts.as_bytes()[8], b'_');
+        // All other chars must be ASCII digits
+        for (i, ch) in ts.chars().enumerate() {
+            if i == 8 {
+                assert_eq!(ch, '_');
+            } else {
+                assert!(ch.is_ascii_digit(), "char at {i} is not digit: {ch}");
+            }
+        }
+    }
+
+    #[test]
+    fn test_format_timestamp_reasonable_year() {
+        let ts = format_timestamp_for_filename();
+        let year: u32 = ts[..4].parse().unwrap();
+        assert!(year >= 2020 && year <= 2099, "year out of range: {year}");
+    }
+
+    #[test]
+    fn test_format_timestamp_deterministic_within_second() {
+        let ts1 = format_timestamp_for_filename();
+        let ts2 = format_timestamp_for_filename();
+        // Either identical or seconds differ by at most 1
+        if ts1 != ts2 {
+            // Parse seconds from both (positions 13..15)
+            let s1: u32 = ts1[13..15].parse().unwrap();
+            let s2: u32 = ts2[13..15].parse().unwrap();
+            let diff = if s2 >= s1 { s2 - s1 } else { s1 - s2 };
+            assert!(diff <= 1, "timestamps differ by more than 1 second: {ts1} vs {ts2}");
+        }
+    }
+}
+
