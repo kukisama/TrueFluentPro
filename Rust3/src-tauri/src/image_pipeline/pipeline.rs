@@ -635,3 +635,120 @@ async fn step_land(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── T-004: Serde contract tests ──
+
+    #[test]
+    fn test_pipeline_request_json_fields() {
+        let req = PipelineRequest {
+            prompt: "a sunset".into(),
+            model: "gpt-image-2".into(),
+            width: 1024,
+            height: 1024,
+            quality: Some("auto".into()),
+            output_format: Some("png".into()),
+            background: Some("auto".into()),
+            endpoint_id: "ep1".into(),
+            optimize_prompt: false,
+            reference_image_paths: vec!["/tmp/ref.png".into()],
+            mask_image_path: None,
+            previous_response_id: None,
+            output_directory: None,
+            text_model: Some("gpt-4.1".into()),
+            image_model: Some("gpt-image-2".into()),
+        };
+        let json: serde_json::Value = serde_json::to_value(&req).unwrap();
+        let obj = json.as_object().unwrap();
+
+        for key in &[
+            "prompt", "model", "width", "height", "quality", "output_format",
+            "background", "endpoint_id", "optimize_prompt", "reference_image_paths",
+            "mask_image_path", "previous_response_id", "output_directory",
+            "text_model", "image_model",
+        ] {
+            assert!(obj.contains_key(*key), "Missing key: {key}");
+        }
+        assert!(obj["reference_image_paths"].is_array());
+    }
+
+    #[test]
+    fn test_pipeline_result_json_fields() {
+        let result = PipelineResult {
+            original_prompt: "a sunset".into(),
+            optimized_prompt: Some("A beautiful golden sunset...".into()),
+            image_base64: Some("iVBOR".into()),
+            image_url: None,
+            revised_prompt: None,
+            steps_completed: vec!["route".into(), "build".into()],
+            response_id: Some("resp-123".into()),
+            result_file_paths: vec!["/tmp/out.png".into()],
+            error_message: None,
+        };
+        let json: serde_json::Value = serde_json::to_value(&result).unwrap();
+        let obj = json.as_object().unwrap();
+
+        for key in &[
+            "original_prompt", "optimized_prompt", "image_base64", "image_url",
+            "revised_prompt", "steps_completed", "response_id", "result_file_paths",
+            "error_message",
+        ] {
+            assert!(obj.contains_key(*key), "Missing key: {key}");
+        }
+        assert!(obj["steps_completed"].is_array());
+        assert!(obj["result_file_paths"].is_array());
+    }
+
+    #[test]
+    fn test_image_api_strategy_serde() {
+        let images = serde_json::to_value(ImageApiStrategy::ImagesApi).unwrap();
+        assert_eq!(images, serde_json::json!("ImagesApi"));
+
+        let responses = serde_json::to_value(ImageApiStrategy::ResponsesApi).unwrap();
+        assert_eq!(responses, serde_json::json!("ResponsesApi"));
+    }
+
+    // ── T-006: Pure function unit tests ──
+
+    #[test]
+    fn test_base64_roundtrip() {
+        let original = b"hello world";
+        let encoded = base64_encode(original);
+        let decoded = base64_decode(&encoded).unwrap();
+        assert_eq!(decoded, original);
+    }
+
+    #[test]
+    fn test_base64_decode_invalid() {
+        let result = base64_decode("!!!invalid!!!");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_read_path_nonexistent() {
+        let result = validate_pipeline_read_path("/nonexistent/path/to/file.png");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Path resolution failed"));
+    }
+
+    #[test]
+    fn test_validate_read_path_directory() {
+        let dir = std::env::temp_dir();
+        let result = validate_pipeline_read_path(dir.to_str().unwrap());
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("not a regular file"));
+    }
+
+    #[test]
+    fn test_validate_read_path_valid_file() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_pipeline_read_42.txt");
+        std::fs::write(&path, b"test").unwrap();
+        let result = validate_pipeline_read_path(path.to_str().unwrap());
+        assert!(result.is_ok());
+        std::fs::remove_file(&path).ok();
+    }
+}

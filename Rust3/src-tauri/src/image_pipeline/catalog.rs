@@ -210,4 +210,24 @@ mod tests {
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].model_id, "gpt-image-2");
     }
+
+    #[test]
+    fn test_model_capability_entry_json_fields() {
+        let models = builtin_image_models();
+        let first = &models[0];
+        let json: serde_json::Value = serde_json::to_value(first).unwrap();
+        let obj = json.as_object().unwrap();
+
+        for key in &[
+            "model_id", "display_name", "provider", "capabilities",
+            "supported_sizes", "supported_qualities", "supported_styles",
+            "max_prompt_length", "supports_negative_prompt",
+            "supports_transparent_background", "supports_input_fidelity",
+            "resolution_mode",
+        ] {
+            assert!(obj.contains_key(*key), "Missing key: {key}");
+        }
+        assert!(obj["capabilities"].is_array());
+        assert!(obj["supported_sizes"].is_array());
+    }
 }

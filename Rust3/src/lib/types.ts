@@ -899,15 +899,20 @@ export interface BillingByModel {
 // ── Image pipeline ──
 export interface ImagePipelineRequest {
   prompt: string;
-  negative_prompt?: string;
   model: string;
   width: number;
   height: number;
   quality?: string;
-  style?: string;
+  output_format?: string;
+  background?: string;
   endpoint_id: string;
   optimize_prompt: boolean;
-  upscale: boolean;
+  reference_image_paths?: string[];
+  mask_image_path?: string;
+  previous_response_id?: string;
+  output_directory?: string;
+  text_model?: string;
+  image_model?: string;
 }
 
 export interface ImagePipelineResult {
@@ -917,6 +922,9 @@ export interface ImagePipelineResult {
   image_url?: string;
   revised_prompt?: string;
   steps_completed: string[];
+  response_id?: string;
+  result_file_paths: string[];
+  error_message?: string;
 }
 
 // ── Model capability catalog ──
@@ -930,4 +938,7 @@ export interface ModelCapabilityEntry {
   supported_styles: string[];
   max_prompt_length: number;
   supports_negative_prompt: boolean;
+  supports_transparent_background: boolean;
+  supports_input_fidelity: boolean;
+  resolution_mode: string;
 }
