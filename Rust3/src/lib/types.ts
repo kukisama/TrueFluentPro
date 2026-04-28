@@ -877,6 +877,7 @@ export interface BillingRecord {
   completion_tokens: number;
   cost_usd?: number;
   created_at: string;
+  status: string;
 }
 
 export interface BillingSummary {
