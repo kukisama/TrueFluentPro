@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Loader2, TestTube } from "lucide-react";
+import { api } from "../../lib/api";
 import { cn } from "../../lib/utils";
 import {
   Button, GlassCard, Input, Select, Label, Badge, Switch,
@@ -132,8 +133,7 @@ export function StorageSection() {
     setValidating(true);
     setValidationMsg(t("settingsSections.validating"));
     try {
-      // TODO: wire validate_storage_connection Tauri command when available
-      await new Promise((_, reject) => setTimeout(() => reject(new Error("Not implemented yet")), 200));
+      await api.validateStorageConnection(storage.batch_storage_connection_string);
       setValidationMsg("✓ OK");
       updateConfig((cfg) => { cfg.storage.batch_storage_is_valid = true; });
     } catch (e) {

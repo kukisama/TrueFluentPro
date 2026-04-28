@@ -389,4 +389,283 @@ mod tests {
             assert!(resp_obj.contains_key(*key), "response missing field: {}", key);
         }
     }
+
+    // ── Serde JSON contract tests (batch 41 — Studio) ──
+
+    #[test]
+    fn test_studio_session_json_fields() {
+        let session = StudioSession {
+            id: "s1".into(),
+            session_type: "image".into(),
+            name: "Test".into(),
+            directory_path: "/tmp".into(),
+            canvas_mode: "single".into(),
+            media_kind: "image".into(),
+            is_deleted: false,
+            created_at: "2026-01-01T00:00:00Z".into(),
+            updated_at: "2026-01-01T00:00:00Z".into(),
+            last_accessed_at: None,
+            source_session_id: None,
+            source_session_name: None,
+            source_session_directory_name: None,
+            source_asset_id: None,
+            source_asset_kind: None,
+            source_asset_file_name: None,
+            source_asset_path: None,
+            source_preview_path: None,
+            source_reference_role: None,
+            message_count: 0,
+            task_count: 0,
+            asset_count: 0,
+            latest_message_preview: None,
+            legacy_source_path: None,
+            import_batch_id: None,
+            imported_at: None,
+            is_legacy_import: false,
+        };
+        let json = serde_json::to_value(&session).unwrap();
+        let obj = json.as_object().unwrap();
+        for key in &[
+            "id", "session_type", "name", "directory_path", "canvas_mode",
+            "media_kind", "is_deleted", "created_at", "updated_at",
+            "last_accessed_at", "source_session_id", "source_session_name",
+            "source_session_directory_name", "source_asset_id", "source_asset_kind",
+            "source_asset_file_name", "source_asset_path", "source_preview_path",
+            "source_reference_role", "message_count", "task_count", "asset_count",
+            "latest_message_preview", "legacy_source_path", "import_batch_id",
+            "imported_at", "is_legacy_import",
+        ] {
+            assert!(obj.contains_key(*key), "missing field: {}", key);
+        }
+    }
+
+    #[test]
+    fn test_studio_message_json_fields() {
+        let msg = StudioMessage {
+            id: "m1".into(),
+            session_id: "s1".into(),
+            sequence_no: 1,
+            role: "user".into(),
+            content_type: "text".into(),
+            text: "Hello".into(),
+            reasoning_text: "".into(),
+            prompt_tokens: Some(10),
+            completion_tokens: Some(20),
+            generate_seconds: Some(1.5),
+            download_seconds: None,
+            search_summary: None,
+            timestamp: "2026-01-01T00:00:00Z".into(),
+            is_deleted: false,
+        };
+        let json = serde_json::to_value(&msg).unwrap();
+        let obj = json.as_object().unwrap();
+        for key in &[
+            "id", "session_id", "sequence_no", "role", "content_type", "text",
+            "reasoning_text", "prompt_tokens", "completion_tokens",
+            "generate_seconds", "download_seconds", "search_summary",
+            "timestamp", "is_deleted",
+        ] {
+            assert!(obj.contains_key(*key), "missing field: {}", key);
+        }
+    }
+
+    #[test]
+    fn test_studio_task_json_fields() {
+        let task = StudioTask {
+            id: "t1".into(),
+            session_id: "s1".into(),
+            task_type: "image_gen".into(),
+            status: "completed".into(),
+            prompt: "a cat".into(),
+            progress: 1.0,
+            result_file_path: Some("/tmp/out.png".into()),
+            error_message: None,
+            has_reference_input: false,
+            remote_video_id: None,
+            remote_video_api_mode: None,
+            remote_generation_id: None,
+            remote_download_url: None,
+            generate_seconds: Some(5.0),
+            download_seconds: None,
+            created_at: "2026-01-01T00:00:00Z".into(),
+            updated_at: "2026-01-01T00:00:00Z".into(),
+        };
+        let json = serde_json::to_value(&task).unwrap();
+        let obj = json.as_object().unwrap();
+        for key in &[
+            "id", "session_id", "task_type", "status", "prompt", "progress",
+            "result_file_path", "error_message", "has_reference_input",
+            "remote_video_id", "remote_video_api_mode", "remote_generation_id",
+            "remote_download_url", "generate_seconds", "download_seconds",
+            "created_at", "updated_at",
+        ] {
+            assert!(obj.contains_key(*key), "missing field: {}", key);
+        }
+    }
+
+    #[test]
+    fn test_studio_session_bundle_json_fields() {
+        use std::collections::HashMap;
+        let bundle = StudioSessionBundle {
+            messages: vec![],
+            media_refs: HashMap::new(),
+            citations: HashMap::new(),
+            attachments: HashMap::new(),
+        };
+        let json = serde_json::to_value(&bundle).unwrap();
+        let obj = json.as_object().unwrap();
+        for key in &["messages", "media_refs", "citations", "attachments"] {
+            assert!(obj.contains_key(*key), "missing field: {}", key);
+        }
+        assert!(obj["messages"].is_array(), "messages should be array");
+        assert!(obj["media_refs"].is_object(), "media_refs should be object");
+    }
+
+    // ── Serde JSON contract tests (batch 41 — Center) ──
+
+    #[test]
+    fn test_center_workspace_json_fields() {
+        let ws = CenterWorkspace {
+            id: "ws1".into(),
+            session_type: "canvas_image".into(),
+            name: "Workspace".into(),
+            is_deleted: false,
+            created_at: "2026-01-01T00:00:00Z".into(),
+            updated_at: "2026-01-01T00:00:00Z".into(),
+            last_accessed_at: None,
+            current_round_id: None,
+            round_count: 0,
+            asset_count: 0,
+            has_running_task: false,
+        };
+        let json = serde_json::to_value(&ws).unwrap();
+        let obj = json.as_object().unwrap();
+        for key in &[
+            "id", "session_type", "name", "is_deleted", "created_at", "updated_at",
+            "last_accessed_at", "current_round_id", "round_count", "asset_count",
+            "has_running_task",
+        ] {
+            assert!(obj.contains_key(*key), "missing field: {}", key);
+        }
+    }
+
+    #[test]
+    fn test_canvas_round_json_fields() {
+        let round = CanvasRound {
+            id: "r1".into(),
+            session_id: "ws1".into(),
+            round_index: 0,
+            prompt: "sunset".into(),
+            params_json: "{}".into(),
+            model_ref: "dall-e-3".into(),
+            created_at: "2026-01-01T00:00:00Z".into(),
+            status: "completed".into(),
+        };
+        let json = serde_json::to_value(&round).unwrap();
+        let obj = json.as_object().unwrap();
+        for key in &[
+            "id", "session_id", "round_index", "prompt", "params_json",
+            "model_ref", "created_at", "status",
+        ] {
+            assert!(obj.contains_key(*key), "missing field: {}", key);
+        }
+    }
+
+    #[test]
+    fn test_center_asset_detail_json_fields() {
+        let detail = CenterAssetDetail {
+            id: "cra1".into(),
+            round_id: "r1".into(),
+            asset_id: "a1".into(),
+            sequence: 0,
+            is_selected: true,
+            file_path: "/tmp/img.png".into(),
+            preview_path: "/tmp/img_thumb.png".into(),
+            kind: "image".into(),
+            width: Some(1024),
+            height: Some(1024),
+            duration_ms: None,
+            created_at: "2026-01-01T00:00:00Z".into(),
+        };
+        let json = serde_json::to_value(&detail).unwrap();
+        let obj = json.as_object().unwrap();
+        for key in &[
+            "id", "round_id", "asset_id", "sequence", "is_selected",
+            "file_path", "preview_path", "kind", "width", "height",
+            "duration_ms", "created_at",
+        ] {
+            assert!(obj.contains_key(*key), "missing field: {}", key);
+        }
+    }
+
+    #[test]
+    fn test_video_capability_entry_json_fields() {
+        let entry = VideoCapabilityEntry {
+            aspect_ratio: "16:9".into(),
+            resolution: "1920x1080".into(),
+            duration_seconds: vec![5, 10],
+            max_count: 4,
+        };
+        let json = serde_json::to_value(&entry).unwrap();
+        let obj = json.as_object().unwrap();
+        for key in &["aspect_ratio", "resolution", "duration_seconds", "max_count"] {
+            assert!(obj.contains_key(*key), "missing field: {}", key);
+        }
+        assert!(obj["duration_seconds"].is_array(), "duration_seconds should be array");
+    }
+
+    // ── Serde JSON contract tests (batch 41 — Video + pipeline) ──
+
+    #[test]
+    fn test_video_gen_request_json_fields() {
+        let req = VideoGenRequest {
+            prompt: "a sunset".into(),
+            model: "sora".into(),
+            endpoint_id: "ep1".into(),
+            size: "1920x1080".into(),
+            duration_seconds: 10,
+            api_mode: None,
+            reference_image_path: None,
+            n: None,
+        };
+        let json = serde_json::to_value(&req).unwrap();
+        let obj = json.as_object().unwrap();
+        for key in &["prompt", "model", "endpoint_id", "size", "duration_seconds"] {
+            assert!(obj.contains_key(*key), "missing field: {}", key);
+        }
+        assert!(obj["duration_seconds"].is_number(), "duration_seconds should be number");
+    }
+
+    #[test]
+    fn test_export_result_json_fields() {
+        let result = ExportResult {
+            copied: 5,
+            failed: 1,
+        };
+        let json = serde_json::to_value(&result).unwrap();
+        let obj = json.as_object().unwrap();
+        for key in &["copied", "failed"] {
+            assert!(obj.contains_key(*key), "missing field: {}", key);
+        }
+        assert!(obj["copied"].is_number(), "copied should be number");
+        assert!(obj["failed"].is_number(), "failed should be number");
+    }
+
+    #[test]
+    fn test_studio_reference_image_json_fields() {
+        let img = StudioReferenceImage {
+            id: "ri1".into(),
+            session_id: "s1".into(),
+            file_path: "/tmp/ref.png".into(),
+            sort_order: 0,
+            width: Some(512),
+            height: Some(512),
+            created_at: "2026-01-01T00:00:00Z".into(),
+        };
+        let json = serde_json::to_value(&img).unwrap();
+        let obj = json.as_object().unwrap();
+        for key in &["id", "session_id", "file_path", "sort_order", "width", "height", "created_at"] {
+            assert!(obj.contains_key(*key), "missing field: {}", key);
+        }
+    }
 }
