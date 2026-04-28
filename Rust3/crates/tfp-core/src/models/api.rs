@@ -1,0 +1,248 @@
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+
+fn default_video_size() -> String { "1080x1920".into() }
+fn default_video_duration() -> u32 { 10 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TranslateRequest {
+    pub text: String,
+    pub source_lang: String,
+    pub target_lang: String,
+    pub endpoint_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TranslateResponse {
+    pub translated_text: String,
+    pub source_lang: String,
+    pub target_lang: String,
+    pub confidence: Option<f64>,
+    pub provider: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LanguageInfo {
+    pub code: String,
+    pub name: String,
+    pub native_name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RealtimeSessionConfig {
+    pub source_lang: String,
+    pub target_langs: Vec<String>,
+    pub endpoint_id: String,
+    pub enable_partial: bool,
+    pub profanity_filter: bool,
+    #[serde(default)]
+    pub initial_silence_timeout_seconds: Option<u32>,
+    #[serde(default)]
+    pub end_silence_timeout_seconds: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
+pub enum RealtimeEvent {
+    SessionStarted { session_id: String },
+    Recognizing { text: String, offset_ms: u64 },
+    Recognized { text: String, duration_ms: u64 },
+    Translated {
+        source_text: String,
+        translations: HashMap<String, String>,
+    },
+    SessionStopped { session_id: String },
+    Error { message: String },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImageGenRequest {
+    pub prompt: String,
+    pub width: u32,
+    pub height: u32,
+    pub model: String,
+    pub quality: Option<String>,
+    pub output_format: Option<String>,
+    pub background: Option<String>,
+    pub n: Option<u32>,
+    pub endpoint_id: String,
+    #[serde(default)]
+    pub text_model: Option<String>,
+    #[serde(default)]
+    pub image_model: Option<String>,
+    #[serde(default)]
+    pub previous_response_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImageGenResult {
+    pub url: Option<String>,
+    pub base64: Option<String>,
+    pub revised_prompt: Option<String>,
+    #[serde(default)]
+    pub response_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum VideoApiMode {
+    SoraJobs,
+    Videos,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VideoGenRequest {
+    pub prompt: String,
+    pub model: String,
+    pub endpoint_id: String,
+    #[serde(default = "default_video_size")]
+    pub size: String,
+    #[serde(default = "default_video_duration")]
+    pub duration_seconds: u32,
+    #[serde(default)]
+    pub api_mode: Option<VideoApiMode>,
+    #[serde(default)]
+    pub reference_image_path: Option<String>,
+    #[serde(default)]
+    pub n: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VideoGenResult {
+    pub video_id: String,
+    pub status: String,
+    pub download_url: Option<String>,
+    pub file_path: Option<String>,
+    pub generate_seconds: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatMessage {
+    pub role: String,
+    pub content: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CompletionRequest {
+    pub messages: Vec<ChatMessage>,
+    pub model: String,
+    pub temperature: Option<f64>,
+    pub max_tokens: Option<u32>,
+    pub endpoint_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CompletionResponse {
+    pub content: String,
+    pub model: String,
+    pub usage: Option<TokenUsage>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TokenUsage {
+    pub prompt_tokens: u32,
+    pub completion_tokens: u32,
+    pub total_tokens: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AudioDeviceInfo {
+    pub id: String,
+    pub name: String,
+    pub device_type: AudioDeviceType,
+    pub is_default: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum AudioDeviceType {
+    Input,
+    Output,
+    Loopback,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EndpointTestReport {
+    pub endpoint_id: String,
+    pub endpoint_name: String,
+    pub endpoint_type_name: String,
+    pub items: Vec<EndpointTestItem>,
+    pub duration_ms: u64,
+    pub total_count: usize,
+    pub success_count: usize,
+    pub failed_count: usize,
+    pub skipped_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EndpointTestItem {
+    pub model_id: String,
+    pub capability: String,
+    pub status: TestStatus,
+    pub summary: String,
+    pub detail: Option<String>,
+    pub request_url: Option<String>,
+    pub request_summary: Option<String>,
+    pub duration_ms: u64,
+    pub test_branch: Option<String>,
+    pub urls_tried: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EndpointTestProgress {
+    pub endpoint_id: String,
+    pub endpoint_name: String,
+    pub total_count: usize,
+    pub pending_count: usize,
+    pub running_count: usize,
+    pub success_count: usize,
+    pub failed_count: usize,
+    pub skipped_count: usize,
+    pub items: Vec<EndpointTestItem>,
+    pub is_completed: bool,
+    pub started_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TestStatus {
+    Pending,
+    Running,
+    Success,
+    Failed,
+    Skipped,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiscoveredModel {
+    pub id: String,
+    pub display_name: Option<String>,
+    pub owned_by: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskStatus {
+    Pending,
+    Running,
+    Completed,
+    Failed,
+    Cancelled,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TranscriptSegment {
+    pub text: String,
+    pub start_ms: u64,
+    pub end_ms: u64,
+    pub confidence: f64,
+    pub speaker: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VoiceInfo {
+    pub id: String,
+    pub name: String,
+    pub locale: String,
+    pub gender: String,
+}

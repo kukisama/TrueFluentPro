@@ -1,9 +1,5 @@
-//! tfp-providers — Provider trait 定义
+pub mod traits;
+pub mod registry;
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        assert!(true);
-    }
-}
+pub use traits::*;
+pub use registry::{ProviderRegistry, ProviderInfo};

@@ -1,9 +1,5 @@
-//! tfp-core — 核心模型和配置
+pub mod models;
+pub mod error;
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        assert!(true);
-    }
-}
+pub use models::*;
+pub use error::{AppError, ProviderError, Result};
