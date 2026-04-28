@@ -614,3 +614,131 @@ pub async fn monitor_load_ui_state(
         None => Ok(None),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    #[test]
+    fn test_stage_display() {
+        assert_eq!(stage_display("Transcribed"), "转录");
+        assert_eq!(stage_display("Summarized"), "总结");
+        assert_eq!(stage_display("MindMap"), "脑图");
+        assert_eq!(stage_display("Insight"), "顿悟");
+        assert_eq!(stage_display("PodcastScript"), "播客");
+        assert_eq!(stage_display("PodcastAudio"), "播客音频");
+        assert_eq!(stage_display("Research"), "研究");
+        assert_eq!(stage_display("Translated"), "翻译");
+        assert_eq!(stage_display("ImageGen"), "图片");
+        assert_eq!(stage_display("VideoGen"), "视频");
+        // Unknown stage returns original text
+        assert_eq!(stage_display("UnknownStage"), "UnknownStage");
+        assert_eq!(stage_display("Custom"), "Custom");
+    }
+
+    #[test]
+    fn test_stage_color() {
+        assert_eq!(stage_color("Transcribed"), "#4FC3F7");
+        assert_eq!(stage_color("Summarized"), "#81C784");
+        assert_eq!(stage_color("MindMap"), "#CE93D8");
+        assert_eq!(stage_color("Insight"), "#FFB74D");
+        assert_eq!(stage_color("Research"), "#64B5F6");
+        // Unknown stage returns default grey
+        assert_eq!(stage_color("UnknownStage"), "#90A4AE");
+    }
+
+    #[test]
+    fn test_status_display() {
+        assert_eq!(status_display("Queued", None), "排队中");
+        assert_eq!(status_display("Executing", None), "执行中");
+        assert_eq!(status_display("Executing", Some("处理中 50%")), "处理中 50%");
+        assert_eq!(status_display("Executing", Some("")), "执行中");
+        assert_eq!(status_display("Completed", None), "已完成");
+        assert_eq!(status_display("Failed", None), "失败");
+        assert_eq!(status_display("Cancelled", None), "已取消");
+        assert_eq!(status_display("Timeout", None), "超时");
+        assert_eq!(status_display("Interrupted", None), "已中断");
+        // Unknown returns original
+        assert_eq!(status_display("CustomStatus", None), "CustomStatus");
+    }
+
+    #[test]
+    fn test_execution_status_display() {
+        assert_eq!(execution_status_display("Running"), "执行中");
+        assert_eq!(execution_status_display("Completed"), "✓ 完成");
+        assert_eq!(execution_status_display("Failed"), "✗ 失败");
+        assert_eq!(execution_status_display("Cancelled"), "已取消");
+        assert_eq!(execution_status_display("Interrupted"), "中断");
+        assert_eq!(execution_status_display("Timeout"), "超时");
+        // Unknown returns original
+        assert_eq!(execution_status_display("Custom"), "Custom");
+    }
+
+    #[test]
+    fn test_duration_display() {
+        assert_eq!(duration_display(None), "--");
+        assert_eq!(duration_display(Some(500)), "0.5s");
+        assert_eq!(duration_display(Some(1000)), "1.0s");
+        assert_eq!(duration_display(Some(65000)), "1:05");
+        assert_eq!(duration_display(Some(120000)), "2:00");
+        assert_eq!(duration_display(Some(0)), "0.0s");
+    }
+
+    #[test]
+    fn test_tokens_display() {
+        assert_eq!(tokens_display(None, None), "--");
+        assert_eq!(tokens_display(Some(100), Some(50)), "入 100 / 出 50");
+        assert_eq!(tokens_display(Some(100), None), "入 100 / 出 0");
+        assert_eq!(tokens_display(None, Some(50)), "入 0 / 出 50");
+    }
+
+    #[test]
+    fn test_compute_elapsed_time() {
+        // No start → "--"
+        assert_eq!(compute_elapsed_time(None, None), "--");
+        // 5 seconds apart
+        assert_eq!(
+            compute_elapsed_time(
+                Some("2024-01-01T00:00:00+00:00"),
+                Some("2024-01-01T00:00:05+00:00"),
+            ),
+            "0:05"
+        );
+        // 1 hour
+        assert_eq!(
+            compute_elapsed_time(
+                Some("2024-01-01T00:00:00+00:00"),
+                Some("2024-01-01T01:00:00+00:00"),
+            ),
+            "1:00:00"
+        );
+        // Invalid start date → "--"
+        assert_eq!(compute_elapsed_time(Some("not-a-date"), None), "--");
+    }
+
+    #[test]
+    fn test_build_buckets() {
+        let mut counts = HashMap::new();
+        counts.insert("Queued".into(), 3);
+        counts.insert("Completed".into(), 5);
+        counts.insert("Failed".into(), 2);
+
+        let buckets = build_buckets(&counts);
+        assert_eq!(buckets.len(), 5);
+        // pending bucket
+        assert_eq!(buckets[0].key, "pending");
+        assert_eq!(buckets[0].count, 3);
+        // completed bucket
+        assert_eq!(buckets[2].key, "completed");
+        assert_eq!(buckets[2].count, 5);
+        // failed bucket (aggregates Failed+Timeout+Interrupted)
+        assert_eq!(buckets[3].key, "failed");
+        assert_eq!(buckets[3].count, 2);
+        assert!(buckets[3].is_danger);
+        // cancelled bucket
+        assert_eq!(buckets[4].key, "cancelled");
+        assert_eq!(buckets[4].count, 0);
+        assert!(!buckets[4].is_danger);
+    }
+}

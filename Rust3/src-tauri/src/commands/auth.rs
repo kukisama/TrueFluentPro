@@ -695,3 +695,45 @@ async fn wait_for_callback(listener: TcpListener) -> Result<String, String> {
         None => Err(error.unwrap_or_else(|| "回调中未包含 code 参数".into())),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_generate_code_verifier_length() {
+        let verifier = generate_code_verifier();
+        assert!(
+            verifier.len() >= 43 && verifier.len() <= 128,
+            "verifier length {} not in PKCE range 43..=128", verifier.len(),
+        );
+    }
+
+    #[test]
+    fn test_generate_code_verifier_url_safe() {
+        let verifier = generate_code_verifier();
+        for c in verifier.chars() {
+            assert!(
+                c.is_ascii_alphanumeric() || c == '-' || c == '_',
+                "verifier contains non-URL-safe char: '{c}'",
+            );
+        }
+    }
+
+    #[test]
+    fn test_compute_code_challenge_s256() {
+        // RFC 7636 Appendix B reference vector
+        let verifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
+        let challenge = compute_code_challenge(verifier);
+        assert_eq!(challenge, "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM");
+    }
+
+    #[test]
+    fn test_compute_code_challenge_deterministic() {
+        let verifier = generate_code_verifier();
+        let c1 = compute_code_challenge(&verifier);
+        let c2 = compute_code_challenge(&verifier);
+        assert_eq!(c1, c2, "same verifier must produce same challenge");
+        assert_ne!(c1, verifier, "challenge must differ from verifier");
+    }
+}

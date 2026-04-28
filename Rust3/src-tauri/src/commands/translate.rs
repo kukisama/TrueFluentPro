@@ -344,3 +344,114 @@ fn filter_modal_particles(text: &str) -> String {
     }
     result.trim().to_string()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+    use std::sync::Arc;
+    use std::sync::atomic::AtomicI64;
+    use tfp_core::{RealtimeEvent, RecognitionSettings};
+
+    #[test]
+    fn test_built_in_languages() {
+        let langs = built_in_languages();
+        assert_eq!(langs.len(), 15);
+        assert_eq!(langs[0].code, "zh-Hans");
+        assert_eq!(langs[0].name, "Chinese (Simplified)");
+        assert_eq!(langs[0].native_name, "中文（简体）");
+        assert_eq!(langs.last().unwrap().code, "vi");
+    }
+
+    #[test]
+    fn test_filter_modal_particles_removes_fillers() {
+        // Filler "啊" at start followed by "，" → removed
+        assert_eq!(filter_modal_particles("啊，很好"), "很好");
+        // Filler "吧" at end → removed
+        assert_eq!(filter_modal_particles("好的吧"), "好的");
+        // Normal text → unchanged
+        assert_eq!(filter_modal_particles("正常文本"), "正常文本");
+        // Filler "然后" at end → removed
+        assert_eq!(filter_modal_particles("我觉得然后"), "我觉得");
+    }
+
+    #[test]
+    fn test_filter_modal_particles_empty_after_filter() {
+        // Single filler word only → cleared
+        assert_eq!(filter_modal_particles("啊"), "");
+        assert_eq!(filter_modal_particles("吧"), "");
+    }
+
+    #[test]
+    fn test_extract_final_segment_recognized() {
+        let counter = Arc::new(AtomicI64::new(0));
+        let recognition = RecognitionSettings {
+            filter_modal_particles: false,
+            ..Default::default()
+        };
+        let event = RealtimeEvent::Recognized {
+            text: "hello".into(),
+            duration_ms: 1000,
+        };
+        let seg = extract_final_segment(&event, "sess-1", &counter, &recognition);
+        assert!(seg.is_some());
+        let seg = seg.unwrap();
+        assert_eq!(seg.original_text, "hello");
+        assert_eq!(seg.sequence, 1);
+        assert_eq!(seg.session_id, "sess-1");
+        assert_eq!(seg.translated_text, "");
+    }
+
+    #[test]
+    fn test_extract_final_segment_translated() {
+        let counter = Arc::new(AtomicI64::new(0));
+        let recognition = RecognitionSettings {
+            filter_modal_particles: false,
+            ..Default::default()
+        };
+        let mut translations = HashMap::new();
+        translations.insert("en".to_string(), "hello".to_string());
+        let event = RealtimeEvent::Translated {
+            source_text: "你好".into(),
+            translations,
+        };
+        let seg = extract_final_segment(&event, "sess-1", &counter, &recognition);
+        assert!(seg.is_some());
+        let seg = seg.unwrap();
+        assert_eq!(seg.original_text, "你好");
+        assert_eq!(seg.translated_text, "hello");
+        assert_eq!(seg.target_lang, "en");
+    }
+
+    #[test]
+    fn test_extract_final_segment_empty_returns_none() {
+        let counter = Arc::new(AtomicI64::new(0));
+        let recognition = RecognitionSettings {
+            filter_modal_particles: false,
+            ..Default::default()
+        };
+        let event = RealtimeEvent::Recognized {
+            text: "".into(),
+            duration_ms: 0,
+        };
+        assert!(extract_final_segment(&event, "sess-1", &counter, &recognition).is_none());
+    }
+
+    #[test]
+    fn test_extract_final_segment_ignores_other_events() {
+        let counter = Arc::new(AtomicI64::new(0));
+        let recognition = RecognitionSettings::default();
+        let events = vec![
+            RealtimeEvent::SessionStarted { session_id: "s1".into() },
+            RealtimeEvent::Recognizing { text: "partial".into(), offset_ms: 0 },
+            RealtimeEvent::SessionStopped { session_id: "s1".into() },
+            RealtimeEvent::Error { message: "err".into() },
+        ];
+        for event in &events {
+            assert!(
+                extract_final_segment(event, "sess-1", &counter, &recognition).is_none(),
+                "expected None for event {:?}", event,
+            );
+        }
+    }
+}
