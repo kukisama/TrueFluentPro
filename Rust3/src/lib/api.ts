@@ -65,6 +65,15 @@ import type {
   AudioLabStageDelta,
   AudioAutoTag,
   AudioResearchTopic,
+  AudioLibraryItem,
+  AudioLifecycle,
+  BillingRecord,
+  BillingSummary,
+  ImagePipelineRequest,
+  ImagePipelineResult,
+  ModelCapabilityEntry,
+  TaskEngineStats,
+  TranslationHistory,
 } from "./types";
 
 export type { UnlistenFn };
@@ -88,6 +97,10 @@ export const api = {
 
   // ── System (1) ──
   getAppInfo: () => invoke<AppInfo>("get_app_info"),
+
+  // ── Billing (2) ──
+  getBillingRecords: (limit?: number) => invoke<BillingRecord[]>("get_billing_records", { limit }),
+  getBillingSummary: () => invoke<BillingSummary>("get_billing_summary"),
 
   // ── Translation (2) ──
   translateText: (request: TranslateRequest) =>
@@ -131,6 +144,11 @@ export const api = {
   // ── Video (1) ──
   generateVideo: (request: VideoGenRequest) =>
     invoke<string>("generate_video", { request }),
+
+  // ── Image pipeline (2) ──
+  runImagePipeline: (request: ImagePipelineRequest) =>
+    invoke<ImagePipelineResult>("run_image_pipeline", { request }),
+  getImageModelCatalog: () => invoke<ModelCapabilityEntry[]>("get_image_model_catalog"),
 
   // ── Prompt (1) ──
   optimizePrompt: (prompt: string, endpointId?: string) =>
@@ -221,15 +239,36 @@ export const api = {
   writeTextFile: (path: string, content: string) => invoke<void>("write_text_file", { path, content }),
   readTextFile: (path: string) => invoke<string>("read_text_file", { path }),
 
-  // ── Task engine (4) ──
+  // ── Storage (2) ──
+  getTranslationHistory: (limit?: number) =>
+    invoke<TranslationHistory[]>("get_translation_history", { limit }),
+  validateStorageConnection: (connectionString: string) =>
+    invoke<void>("validate_storage_connection", { connectionString }),
+
+  // ── Audio library (5) ──
+  listAudioItems: () => invoke<AudioLibraryItem[]>("list_audio_items"),
+  addAudioItem: (item: Omit<AudioLibraryItem, "id" | "created_at" | "updated_at">) =>
+    invoke<AudioLibraryItem>("add_audio_item", { item }),
+  deleteAudioItem: (itemId: string) => invoke<void>("delete_audio_item", { itemId }),
+  getAudioLifecycle: (audioItemId: string) =>
+    invoke<AudioLifecycle[]>("get_audio_lifecycle", { audioItemId }),
+  updateLifecycleStage: (lifecycle: AudioLifecycle) =>
+    invoke<void>("update_lifecycle_stage", { lifecycle }),
+
+  // ── Task engine (8) ──
   updateTaskEngineConfig: (concurrency: number, timeoutSecs: number) =>
     invoke<void>("update_task_engine_config", { concurrency, timeoutSecs }),
   cleanupExpiredTasks: (days: number) => invoke<number>("cleanup_expired_tasks", { days }),
   listTasks: (status?: TaskStatus, limit?: number) =>
     invoke<AudioTask[]>("list_tasks", { status, limit }),
   getTaskExecutions: (taskId: string) => invoke<TaskExecution[]>("get_task_executions", { taskId }),
+  submitTask: (task: Omit<AudioTask, "id" | "submitted_at">) =>
+    invoke<AudioTask>("submit_task", { task }),
+  cancelTask: (taskId: string) => invoke<void>("cancel_task", { taskId }),
+  retryTask: (taskId: string) => invoke<void>("retry_task", { taskId }),
+  getTaskEngineStats: () => invoke<TaskEngineStats>("get_task_engine_stats"),
 
-  // ── Monitor (15) ──
+  // ── Monitor (16) ──
   monitorGetSnapshot: (bucket?: string, sortColumn?: string, sortAscending?: boolean) =>
     invoke<MonitorSnapshot>("monitor_get_snapshot", { bucket, sortColumn, sortAscending }),
   monitorSetBucket: (bucketKey: string, sortColumn?: string, sortAscending?: boolean) =>
@@ -255,6 +294,8 @@ export const api = {
     invoke<void>("monitor_save_ui_state", { uiState }),
   monitorLoadUiState: () =>
     invoke<MonitorUiState | null>("monitor_load_ui_state"),
+  monitorGetArchivedSnapshot: (dateFrom: string, dateTo: string) =>
+    invoke<MonitorSnapshot>("monitor_get_archived_snapshot", { dateFrom, dateTo }),
 
   // ── Monitor events (2) ──
   onTaskEvent: (cb: (e: TaskEvent) => void): Promise<UnlistenFn> =>

@@ -276,3 +276,32 @@ pub(crate) fn format_timestamp_for_filename() -> String {
     format!("{year:04}{month:02}{day:02}_{hours:02}{minutes:02}{seconds:02}")
 }
 
+// ── Image pipeline commands ──
+
+#[tauri::command]
+pub async fn run_image_pipeline(
+    app: tauri::AppHandle,
+    request: crate::image_pipeline::pipeline::PipelineRequest,
+) -> Result<crate::image_pipeline::pipeline::PipelineResult, String> {
+    crate::image_pipeline::pipeline::run_pipeline(&app, request).await
+}
+
+#[tauri::command]
+pub async fn get_image_model_catalog(
+    app: tauri::AppHandle,
+) -> Result<Vec<crate::image_pipeline::catalog::ModelCapabilityEntry>, String> {
+    let resource_path = app.path().resolve("assets/image-models.json", tauri::path::BaseDirectory::Resource);
+    if let Ok(path) = resource_path {
+        if path.exists() {
+            return Ok(crate::image_pipeline::catalog::load_image_models_from_file(&path));
+        }
+    }
+    if let Ok(data_dir) = app.path().app_data_dir() {
+        let fallback = data_dir.join("image-models.json");
+        if fallback.exists() {
+            return Ok(crate::image_pipeline::catalog::load_image_models_from_file(&fallback));
+        }
+    }
+    Ok(crate::image_pipeline::catalog::builtin_image_models())
+}
+

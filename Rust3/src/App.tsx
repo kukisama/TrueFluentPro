@@ -3,7 +3,7 @@ import "./lib/i18n";
 import { TooltipProvider } from "./components/ui";
 import { AppLayout } from "./components/AppLayout";
 import { useAppStore, type AppView } from "./stores/app-store";
-import { api } from "./lib/tauri-api";
+import { api } from "./lib/api";
 
 const SHORTCUT_MAP: Record<string, AppView> = {
   "1": "live-translation",

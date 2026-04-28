@@ -1,5 +1,8 @@
 mod commands;
 mod state;
+mod task_engine;
+mod task_event_bus;
+mod image_pipeline;
 
 use tauri::Manager;
 use tfp_core::AiEndpoint;
@@ -53,7 +56,59 @@ pub fn run() {
             }
 
             app.manage(app_state);
-            // TODO: call studio_resume_interrupted_video_tasks on startup
+            // Startup: auto-refresh all AAD endpoint tokens in background
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let state_ref: &AppState = handle.state::<AppState>().inner();
+                let endpoints_to_refresh: Vec<(String, String, String)> = {
+                    let tokens = state_ref.refresh_tokens.read().await;
+                    let config = state_ref.config.read().await;
+                    config.endpoints.iter()
+                        .filter(|ep| ep.auth_mode == "aad" && tokens.contains_key(&ep.id))
+                        .map(|ep| {
+                            let tid = if ep.azure_tenant_id.is_empty() { "common".to_string() } else { ep.azure_tenant_id.clone() };
+                            let cid = if ep.azure_client_id.is_empty() { "04b07795-8ddb-461a-bbee-02f9e1bf7b46".to_string() } else { ep.azure_client_id.clone() };
+                            (ep.id.clone(), tid, cid)
+                        })
+                        .collect()
+                };
+
+                for (endpoint_id, tenant_id, client_id) in endpoints_to_refresh {
+                    let rt = {
+                        let tokens = state_ref.refresh_tokens.read().await;
+                        tokens.get(&endpoint_id).cloned()
+                    };
+                    let Some(refresh_token) = rt else { continue };
+
+                    match commands::auth::refresh_token_silent(state_ref, &endpoint_id, &tenant_id, &client_id, &refresh_token).await {
+                        Ok(_) => tracing::info!("AAD token 自动刷新成功: {endpoint_id}"),
+                        Err(e) => tracing::warn!("AAD token 自动刷新失败 ({endpoint_id}): {e}"),
+                    }
+                }
+
+                // Re-register providers after AAD token refresh
+                let config = state_ref.config.read().await;
+                let endpoints = config.endpoints.clone();
+                drop(config);
+                register_providers_async(state_ref, &endpoints).await;
+                tracing::info!("AAD 启动刷新后已重新注册 providers");
+            });
+
+            // Start the task engine in background
+            {
+                let handle = app.handle().clone();
+                let state_ref: &AppState = handle.state::<AppState>().inner();
+                let db_arc = state_ref.db.clone();
+                let handle2 = handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    let engine = task_engine::TaskEngine::start_with_app(handle2.clone(), db_arc.clone());
+                    let st: &AppState = handle2.state::<AppState>().inner();
+                    *st.task_engine.write().await = Some(engine);
+                    tracing::info!("Task engine started");
+                    commands::studio::studio_resume_interrupted_video_tasks(handle2, db_arc).await;
+                });
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -63,15 +118,24 @@ pub fn run() {
             commands::add_endpoint,
             commands::remove_endpoint,
             commands::update_endpoint,
+            commands::export_config,
+            commands::import_config,
+            commands::validate_storage_connection,
             // Provider management
             commands::list_providers,
             commands::refresh_providers,
             commands::get_vendor_profiles,
             // System
             commands::get_app_info,
+            commands::write_text_file,
+            commands::read_text_file,
+            commands::get_billing_records,
+            commands::get_billing_summary,
             // Translation
             commands::translate_text,
             commands::get_supported_languages,
+            commands::start_realtime_translation,
+            commands::stop_realtime_translation,
             // Sessions
             commands::list_sessions,
             commands::create_session,
@@ -79,6 +143,7 @@ pub fn run() {
             commands::rename_session,
             commands::get_session_messages,
             commands::add_session_message,
+            commands::get_translation_history,
             // AI Completion
             commands::ai_complete,
             commands::ai_complete_stream,
@@ -148,6 +213,7 @@ pub fn run() {
             commands::studio_rename_session,
             commands::studio_soft_delete_session,
             commands::studio_get_session_bundle,
+            commands::studio_append_message,
             commands::studio_get_messages_before,
             commands::studio_list_running_tasks,
             commands::studio_chat_stream,
@@ -199,6 +265,13 @@ pub fn run() {
             commands::audiolab_update_segment,
             commands::audiolab_export,
             commands::audiolab_import_from_realtime,
+            // AAD authentication
+            commands::aad_start_device_code_flow,
+            commands::aad_select_tenant,
+            commands::aad_refresh_token,
+            // Image pipeline
+            commands::run_image_pipeline,
+            commands::get_image_model_catalog,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

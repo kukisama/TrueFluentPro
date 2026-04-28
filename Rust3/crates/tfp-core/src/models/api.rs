@@ -341,3 +341,51 @@ pub struct MonitorGlobalStats {
     pub billable_tokens_in: i64,
     pub billable_tokens_out: i64,
 }
+
+fn default_billing_status() -> String { "Committed".to_string() }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BillingRecord {
+    pub id: String,
+    pub task_id: Option<String>,
+    pub endpoint_id: String,
+    pub model_id: String,
+    pub prompt_tokens: i64,
+    pub completion_tokens: i64,
+    pub cost_usd: Option<f64>,
+    pub created_at: String,
+    #[serde(default = "default_billing_status")]
+    pub status: String,
+}
+
+/// Aggregated billing summary across all records.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct BillingSummary {
+    pub total_prompt_tokens: i64,
+    pub total_completion_tokens: i64,
+    pub total_cost_usd: f64,
+    pub record_count: i64,
+    pub by_model: Vec<BillingByModel>,
+}
+
+/// Per-model breakdown within a billing summary.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BillingByModel {
+    pub model_id: String,
+    pub prompt_tokens: i64,
+    pub completion_tokens: i64,
+    pub cost_usd: f64,
+    pub count: i64,
+}
+
+/// Legacy translation history record (deprecated, kept for backward compat)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TranslationHistory {
+    pub id: String,
+    pub source_text: String,
+    pub translated_text: String,
+    pub source_lang: String,
+    pub target_lang: String,
+    pub provider: String,
+    pub created_at: String,
+}

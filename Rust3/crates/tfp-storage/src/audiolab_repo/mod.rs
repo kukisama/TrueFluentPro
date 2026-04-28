@@ -417,3 +417,6 @@ impl Database {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests;

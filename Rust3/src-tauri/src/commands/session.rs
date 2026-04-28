@@ -1,4 +1,5 @@
 use tauri::State;
+use tfp_core::TranslationHistory;
 use tfp_storage::{Message, Session};
 
 use crate::state::AppState;
@@ -97,6 +98,18 @@ pub async fn add_session_message(
     state
         .db
         .add_message(&msg)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_translation_history(
+    state: State<'_, AppState>,
+    limit: Option<u32>,
+) -> Result<Vec<TranslationHistory>, String> {
+    state
+        .db
+        .list_translations(limit.unwrap_or(50))
         .await
         .map_err(|e| e.to_string())
 }

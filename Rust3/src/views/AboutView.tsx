@@ -5,7 +5,8 @@ import {
   GlassCard, Badge, FadeIn, Separator,
   Tabs, TabsList, TabsTrigger, TabsContent,
 } from "../components/ui";
-import { api, type AppInfo } from "../lib/tauri-api";
+import { api } from "../lib/api";
+import type { AppInfo } from "../lib/types";
 
 export function AboutView() {
   const { t } = useTranslation();

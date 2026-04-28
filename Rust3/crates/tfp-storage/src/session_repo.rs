@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Sha256, Digest};
 
 use crate::db::{Database, map_db_err};
+use tfp_core::TranslationHistory;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Session {
@@ -178,6 +179,50 @@ impl Database {
             params![session_id],
         ).map_err(map_db_err)?;
         Ok(())
+    }
+
+    // ── Legacy translation history (deprecated) ──
+
+    pub async fn insert_translation(&self, record: &TranslationHistory) -> tfp_core::Result<()> {
+        let conn = self.conn().lock().await;
+        conn.execute(
+            "INSERT INTO translation_history (id, source_text, translated_text, source_lang, target_lang, provider, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                record.id,
+                record.source_text,
+                record.translated_text,
+                record.source_lang,
+                record.target_lang,
+                record.provider,
+                record.created_at,
+            ],
+        ).map_err(map_db_err)?;
+        Ok(())
+    }
+
+    pub async fn list_translations(&self, limit: u32) -> tfp_core::Result<Vec<TranslationHistory>> {
+        let conn = self.conn().lock().await;
+        let mut stmt = conn.prepare(
+            "SELECT id, source_text, translated_text, source_lang, target_lang, provider, created_at
+             FROM translation_history ORDER BY created_at DESC LIMIT ?1",
+        ).map_err(map_db_err)?;
+        let rows = stmt.query_map(params![limit], |row| {
+            Ok(TranslationHistory {
+                id: row.get(0)?,
+                source_text: row.get(1)?,
+                translated_text: row.get(2)?,
+                source_lang: row.get(3)?,
+                target_lang: row.get(4)?,
+                provider: row.get(5)?,
+                created_at: row.get(6)?,
+            })
+        }).map_err(map_db_err)?;
+        let mut result = Vec::new();
+        for r in rows {
+            result.push(r.map_err(map_db_err)?);
+        }
+        Ok(result)
     }
 }
 

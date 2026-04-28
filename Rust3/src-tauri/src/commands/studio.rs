@@ -107,6 +107,62 @@ pub async fn studio_get_session_bundle(
 }
 
 #[tauri::command]
+pub async fn studio_append_message(
+    state: State<'_, AppState>,
+    session_id: String,
+    role: String,
+    text: String,
+    content_type: Option<String>,
+    reasoning_text: Option<String>,
+    prompt_tokens: Option<i64>,
+    completion_tokens: Option<i64>,
+    generate_seconds: Option<f64>,
+    download_seconds: Option<f64>,
+    search_summary: Option<String>,
+) -> Result<StudioMessage, String> {
+    let now = chrono::Utc::now().to_rfc3339();
+    let id = uuid::Uuid::new_v4().to_string();
+    let seq = state
+        .db
+        .studio_get_max_sequence(&session_id)
+        .await
+        .map_err(|e| e.to_string())?
+        + 1;
+
+    let msg = StudioMessage {
+        id: id.clone(),
+        session_id: session_id.clone(),
+        sequence_no: seq,
+        role,
+        content_type: content_type.unwrap_or_else(|| "text".to_string()),
+        text: text.clone(),
+        reasoning_text: reasoning_text.unwrap_or_default(),
+        prompt_tokens,
+        completion_tokens,
+        generate_seconds,
+        download_seconds,
+        search_summary,
+        timestamp: now,
+        is_deleted: false,
+    };
+
+    state
+        .db
+        .studio_append_message(&msg)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // UTF-8 safe preview truncation
+    let preview: String = text.chars().take(100).collect();
+    let _ = state
+        .db
+        .studio_update_latest_preview(&session_id, &preview)
+        .await;
+
+    Ok(msg)
+}
+
+#[tauri::command]
 pub async fn studio_get_messages_before(
     state: State<'_, AppState>,
     session_id: String,

@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { AppConfig, ProviderInfo, TranslationHistory } from "../lib/tauri-api";
+import type { AppConfig, ProviderInfo, TranslationHistory } from "../lib/types";
 
 export type AppView =
   | "live-translation"

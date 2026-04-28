@@ -404,3 +404,6 @@ impl Database {
         Ok(count)
     }
 }
+
+#[cfg(test)]
+mod tests;

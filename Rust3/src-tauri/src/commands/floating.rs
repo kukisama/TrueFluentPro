@@ -108,7 +108,6 @@ struct InsightPayload {
     streaming: bool,
 }
 
-#[allow(dead_code)]
 pub(crate) fn emit_subtitle_update(
     app: &tauri::AppHandle,
     source_text: &str,

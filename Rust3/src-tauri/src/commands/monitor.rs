@@ -479,7 +479,10 @@ pub async fn monitor_retry_task(
 ) -> Result<String, String> {
     let db = &state.db;
     let new_task_id = db.monitor_retry_task(&task_id).await.map_err(|e| e.to_string())?;
-    // TODO: kick task engine when available
+    let engine = state.task_engine.read().await;
+    if let Some(ref eng) = *engine {
+        eng.kick().await;
+    }
     Ok(new_task_id)
 }
 

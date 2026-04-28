@@ -839,3 +839,94 @@ export interface AudioLabStageDelta {
   stage_key: string;
   delta: string;
 }
+
+// ── Audio library ──
+export interface AudioLibraryItem {
+  id: string;
+  file_name: string;
+  file_path: string;
+  duration_ms: number;
+  sample_rate: number;
+  channels: number;
+  source_lang: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AudioLifecycle {
+  id: string;
+  audio_item_id: string;
+  stage: LifecycleStage;
+  status: StageStatus;
+  result_text?: string;
+  result_json?: string;
+  model_id?: string;
+  token_used?: number;
+  error?: string;
+  started_at?: string;
+  completed_at?: string;
+}
+
+// ── Billing ──
+export interface BillingRecord {
+  id: string;
+  task_id?: string;
+  endpoint_id: string;
+  model_id: string;
+  prompt_tokens: number;
+  completion_tokens: number;
+  cost_usd?: number;
+  created_at: string;
+}
+
+export interface BillingSummary {
+  total_prompt_tokens: number;
+  total_completion_tokens: number;
+  total_cost_usd: number;
+  record_count: number;
+  by_model: BillingByModel[];
+}
+
+export interface BillingByModel {
+  model_id: string;
+  prompt_tokens: number;
+  completion_tokens: number;
+  cost_usd: number;
+  count: number;
+}
+
+// ── Image pipeline ──
+export interface ImagePipelineRequest {
+  prompt: string;
+  negative_prompt?: string;
+  model: string;
+  width: number;
+  height: number;
+  quality?: string;
+  style?: string;
+  endpoint_id: string;
+  optimize_prompt: boolean;
+  upscale: boolean;
+}
+
+export interface ImagePipelineResult {
+  original_prompt: string;
+  optimized_prompt?: string;
+  image_base64?: string;
+  image_url?: string;
+  revised_prompt?: string;
+  steps_completed: string[];
+}
+
+// ── Model capability catalog ──
+export interface ModelCapabilityEntry {
+  model_id: string;
+  display_name: string;
+  provider: string;
+  capabilities: string[];
+  supported_sizes: string[];
+  supported_qualities: string[];
+  supported_styles: string[];
+  max_prompt_length: number;
+  supports_negative_prompt: boolean;
+}
