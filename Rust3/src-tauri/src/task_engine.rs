@@ -43,7 +43,7 @@ async fn read_concurrency_limits(storage: &Database) -> (usize, usize) {
 }
 
 /// Return true if the task type is a transcription task.
-fn is_transcription_task(task_type: &str) -> bool {
+pub(crate) fn is_transcription_task(task_type: &str) -> bool {
     task_type == "Transcription" || task_type == "audio_transcribe"
 }
 
@@ -749,5 +749,30 @@ mod tests {
         assert_eq!(result.len(), 5);
         // 5th speaker wraps to voices[0]
         assert_eq!(result[4].1, "zh-CN-XiaoxiaoMultilingualNeural");
+    }
+
+    // ── T-002: is_transcription_task extended tests ──
+
+    #[test]
+    fn test_is_transcription_task_true_cases() {
+        assert!(is_transcription_task("Transcription"));
+        assert!(is_transcription_task("audio_transcribe"));
+    }
+
+    #[test]
+    fn test_is_transcription_task_false_cases() {
+        assert!(!is_transcription_task("AiCompletion"));
+        assert!(!is_transcription_task("TTS"));
+        assert!(!is_transcription_task(""));
+        // Case-sensitive: lowercase should not match
+        assert!(!is_transcription_task("transcription"));
+    }
+
+    #[test]
+    fn test_is_transcription_task_edge_cases() {
+        // Trailing space should not match
+        assert!(!is_transcription_task("Transcription "));
+        // Leading space should not match
+        assert!(!is_transcription_task(" Transcription"));
     }
 }

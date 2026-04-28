@@ -84,8 +84,8 @@ pub async fn import_config(
 
 // ── Azure storage connection validation ──
 
-#[tauri::command]
-pub async fn validate_storage_connection(connection_string: String) -> Result<(), String> {
+/// Parse account name and blob endpoint URL from an Azure Storage connection string.
+pub(crate) fn parse_storage_connection_info(connection_string: &str) -> Result<(String, String), String> {
     if !connection_string.contains("AccountName=") || !connection_string.contains("AccountKey=") {
         return Err(
             "Invalid connection string: must contain AccountName and AccountKey".into(),
@@ -94,12 +94,19 @@ pub async fn validate_storage_connection(connection_string: String) -> Result<()
     let account_name = connection_string
         .split(';')
         .find_map(|p| p.strip_prefix("AccountName="))
-        .ok_or("Cannot parse AccountName from connection string")?;
+        .ok_or("Cannot parse AccountName from connection string")?
+        .to_string();
     let endpoint_suffix = connection_string
         .split(';')
         .find_map(|p| p.strip_prefix("EndpointSuffix="))
         .unwrap_or("core.windows.net");
     let url = format!("https://{account_name}.blob.{endpoint_suffix}");
+    Ok((account_name, url))
+}
+
+#[tauri::command]
+pub async fn validate_storage_connection(connection_string: String) -> Result<(), String> {
+    let (_account_name, url) = parse_storage_connection_info(&connection_string)?;
 
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(10))
@@ -118,4 +125,45 @@ pub async fn validate_storage_connection(connection_string: String) -> Result<()
         ));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_valid_connection_string() {
+        let input = "DefaultEndpointsProtocol=https;AccountName=myaccount;AccountKey=abc123;EndpointSuffix=core.windows.net";
+        let result = parse_storage_connection_info(input);
+        assert!(result.is_ok());
+        let (name, url) = result.unwrap();
+        assert_eq!(name, "myaccount");
+        assert_eq!(url, "https://myaccount.blob.core.windows.net");
+    }
+
+    #[test]
+    fn test_parse_missing_account_name() {
+        let input = "AccountKey=abc123";
+        let result = parse_storage_connection_info(input);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("AccountName"));
+    }
+
+    #[test]
+    fn test_parse_missing_account_key() {
+        let input = "AccountName=myaccount";
+        let result = parse_storage_connection_info(input);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("AccountKey"));
+    }
+
+    #[test]
+    fn test_parse_custom_endpoint_suffix() {
+        let input = "DefaultEndpointsProtocol=https;AccountName=myaccount;AccountKey=abc123;EndpointSuffix=core.chinacloudapi.cn";
+        let result = parse_storage_connection_info(input);
+        assert!(result.is_ok());
+        let (name, url) = result.unwrap();
+        assert_eq!(name, "myaccount");
+        assert_eq!(url, "https://myaccount.blob.core.chinacloudapi.cn");
+    }
 }

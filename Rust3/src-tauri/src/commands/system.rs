@@ -107,3 +107,28 @@ pub async fn get_billing_summary(
 ) -> Result<BillingSummary, String> {
     state.db.get_billing_summary().await.map_err(|e| e.to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_app_info_json_fields() {
+        let info = AppInfo {
+            version: "1.0.0".into(),
+            platform: "windows".into(),
+            arch: "x86_64".into(),
+            data_dir: "C:\\data".into(),
+        };
+        let json: serde_json::Value = serde_json::to_value(&info).unwrap();
+        let obj = json.as_object().unwrap();
+        assert!(obj.contains_key("version"));
+        assert!(obj.contains_key("platform"));
+        assert!(obj.contains_key("arch"));
+        assert!(obj.contains_key("data_dir"));
+        assert_eq!(json["version"], "1.0.0");
+        assert_eq!(json["platform"], "windows");
+        assert_eq!(json["arch"], "x86_64");
+        assert_eq!(json["data_dir"], "C:\\data");
+    }
+}
