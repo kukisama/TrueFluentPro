@@ -223,3 +223,116 @@ fn lang(code: &str, label: &str, kind: &str) -> SupportedLanguage {
         kind: kind.into(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_tseg(
+        original: &str,
+        translated: &str,
+        started_at: Option<&str>,
+        ended_at: Option<&str>,
+    ) -> TranslationSegment {
+        TranslationSegment {
+            id: "seg1".into(),
+            session_id: "sess1".into(),
+            sequence: 1,
+            original_text: original.into(),
+            translated_text: translated.into(),
+            target_lang: "en".into(),
+            started_at: started_at.map(|s| s.into()),
+            ended_at: ended_at.map(|s| s.into()),
+            is_bookmarked: false,
+            bookmark_note: None,
+            audio_path: None,
+            raw_event_json: None,
+        }
+    }
+
+    #[test]
+    fn test_segment_timestamp_srt_valid() {
+        assert_eq!(
+            segment_timestamp_srt(Some("2024-01-01T12:34:56Z")),
+            "12:34:56,000"
+        );
+    }
+
+    #[test]
+    fn test_segment_timestamp_srt_none() {
+        assert_eq!(segment_timestamp_srt(None), "00:00:00,000");
+    }
+
+    #[test]
+    fn test_segment_timestamp_srt_short() {
+        assert_eq!(segment_timestamp_srt(Some("short")), "00:00:00,000");
+    }
+
+    #[test]
+    fn test_segment_timestamp_vtt_valid() {
+        assert_eq!(
+            segment_timestamp_vtt(Some("2024-01-01T12:34:56Z")),
+            "12:34:56.000"
+        );
+    }
+
+    #[test]
+    fn test_segment_timestamp_vtt_none() {
+        assert_eq!(segment_timestamp_vtt(None), "00:00:00.000");
+    }
+
+    #[test]
+    fn test_build_srt_with_translation() {
+        let seg = make_tseg(
+            "你好世界",
+            "Hello World",
+            Some("2024-01-01T00:00:01Z"),
+            Some("2024-01-01T00:00:03Z"),
+        );
+        let out = build_srt(&[seg], true);
+        assert!(out.contains("1\r\n"));
+        assert!(out.contains("00:00:01,000 --> 00:00:03,000\r\n"));
+        assert!(out.contains("Hello World\r\n"));
+        assert!(!out.contains("你好世界"));
+    }
+
+    #[test]
+    fn test_build_vtt_original() {
+        let seg = make_tseg(
+            "你好世界",
+            "Hello World",
+            Some("2024-01-01T00:00:01Z"),
+            Some("2024-01-01T00:00:03Z"),
+        );
+        let out = build_vtt(&[seg], false);
+        assert!(out.starts_with("WEBVTT\r\n\r\n"));
+        assert!(out.contains("你好世界\r\n"));
+        assert!(!out.contains("Hello World"));
+    }
+
+    #[test]
+    fn test_build_language_list_openai() {
+        let list = build_language_list("openai_realtime");
+        assert_eq!(list.len(), 5);
+        assert_eq!(list[0].code, "auto");
+    }
+
+    #[test]
+    fn test_build_language_list_azure() {
+        let list = build_language_list("azure_speech");
+        assert_eq!(list.len(), 6);
+        assert!(list.iter().any(|l| l.code == "zh-Hans"));
+    }
+
+    #[test]
+    fn test_build_language_list_default_is_azure() {
+        let list = build_language_list("unknown_provider");
+        let azure = build_language_list("azure_speech");
+        assert_eq!(list.len(), azure.len());
+        for (a, b) in list.iter().zip(azure.iter()) {
+            assert_eq!(a.code, b.code);
+            assert_eq!(a.label, b.label);
+            assert_eq!(a.kind, b.kind);
+        }
+    }
+}

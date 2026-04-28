@@ -758,3 +758,103 @@ fn ms_to_vtt_time(ms: i64) -> String {
     let millis = ms % 1_000;
     format!("{:02}:{:02}:{:02}.{:03}", h, m, s, millis)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    fn make_seg(seq: i64, start_ms: i64, end_ms: i64, text: &str) -> AudioSegment {
+        AudioSegment {
+            id: format!("s{seq}"),
+            transcript_id: "t1".into(),
+            sequence: seq,
+            speaker: "Speaker 1".into(),
+            speaker_index: 0,
+            start_ms,
+            end_ms,
+            text: text.into(),
+            confidence: None,
+        }
+    }
+
+    #[test]
+    fn test_ms_to_srt_time_zero() {
+        assert_eq!(ms_to_srt_time(0), "00:00:00,000");
+    }
+
+    #[test]
+    fn test_ms_to_srt_time_complex() {
+        assert_eq!(ms_to_srt_time(3661234), "01:01:01,234");
+        assert_eq!(ms_to_srt_time(999), "00:00:00,999");
+        assert_eq!(ms_to_srt_time(60000), "00:01:00,000");
+    }
+
+    #[test]
+    fn test_ms_to_vtt_time_zero() {
+        assert_eq!(ms_to_vtt_time(0), "00:00:00.000");
+    }
+
+    #[test]
+    fn test_ms_to_vtt_time_complex() {
+        assert_eq!(ms_to_vtt_time(3661234), "01:01:01.234");
+    }
+
+    #[test]
+    fn test_estimate_audio_duration_wav() {
+        // WAV: bytes_per_sec = 16000 * 1 * 2 = 32000
+        // (32044 - 44) * 1000 / 32000 = 1000
+        assert_eq!(estimate_audio_duration_ms(Path::new("test.wav"), 32044), 1000);
+        // Header only
+        assert_eq!(estimate_audio_duration_ms(Path::new("test.wav"), 44), 0);
+        // Smaller than header
+        assert_eq!(estimate_audio_duration_ms(Path::new("test.wav"), 20), 0);
+    }
+
+    #[test]
+    fn test_estimate_audio_duration_mp3() {
+        // MP3: bytes_per_sec = 16000
+        // 16000 * 1000 / 16000 = 1000
+        assert_eq!(estimate_audio_duration_ms(Path::new("test.mp3"), 16000), 1000);
+    }
+
+    #[test]
+    fn test_estimate_audio_duration_unknown_ext() {
+        // Unknown ext uses same default formula as mp3
+        assert_eq!(estimate_audio_duration_ms(Path::new("test.flac"), 16000), 1000);
+    }
+
+    #[test]
+    fn test_format_srt_basic() {
+        let segs = vec![
+            make_seg(1, 0, 1500, "Hello world"),
+            make_seg(2, 2000, 4000, "Second line"),
+        ];
+        let out = format_srt(&segs);
+        assert!(out.contains("1\n"));
+        assert!(out.contains("00:00:00,000 --> 00:00:01,500\n"));
+        assert!(out.contains("Hello world\n"));
+        assert!(out.contains("2\n"));
+        assert!(out.contains("00:00:02,000 --> 00:00:04,000\n"));
+        assert!(out.contains("Second line\n"));
+    }
+
+    #[test]
+    fn test_format_vtt_basic() {
+        let segs = vec![
+            make_seg(1, 0, 1500, "Hello world"),
+            make_seg(2, 2000, 4000, "Second line"),
+        ];
+        let out = format_vtt(&segs);
+        assert!(out.starts_with("WEBVTT\n\n"));
+        assert!(out.contains("00:00:00.000 --> 00:00:01.500\n"));
+        assert!(out.contains("Hello world\n"));
+        assert!(out.contains("00:00:02.000 --> 00:00:04.000\n"));
+        assert!(out.contains("Second line\n"));
+    }
+
+    #[test]
+    fn test_format_srt_empty() {
+        assert_eq!(format_srt(&[]), "");
+    }
+}

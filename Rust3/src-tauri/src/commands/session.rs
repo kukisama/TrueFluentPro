@@ -148,3 +148,31 @@ pub(crate) fn days_to_ymd(mut days: u64) -> (u64, u64, u64) {
     let y = if m <= 2 { y + 1 } else { y };
     (y, m, d)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_days_to_ymd_epoch() {
+        assert_eq!(days_to_ymd(0), (1970, 1, 1));
+    }
+
+    #[test]
+    fn test_days_to_ymd_known_date() {
+        // 2024-01-01 = 19723 days since epoch
+        assert_eq!(days_to_ymd(19723), (2024, 1, 1));
+    }
+
+    #[test]
+    fn test_days_to_ymd_leap_year() {
+        // 2000-02-29 = 11016 days since epoch
+        assert_eq!(days_to_ymd(11016), (2000, 2, 29));
+    }
+
+    #[test]
+    fn test_days_to_ymd_recent() {
+        // 2026-04-29 = 20572 days since epoch
+        assert_eq!(days_to_ymd(20572), (2026, 4, 29));
+    }
+}
