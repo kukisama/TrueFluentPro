@@ -29,6 +29,7 @@ struct ImageModelsJson {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 struct ImageModelDefaults {
     #[serde(default)]
     quality_options: Vec<String>,
@@ -46,6 +47,7 @@ struct ImageModelDefaults {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 struct ImageModelEntry {
     model_id: String,
     #[serde(default)]
@@ -68,6 +70,7 @@ struct ImageModelEntry {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 struct FreeFormConstraints {
     #[serde(default)]
     max_edge: u32,

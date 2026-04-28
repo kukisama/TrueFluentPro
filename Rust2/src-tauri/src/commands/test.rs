@@ -1,6 +1,5 @@
 use tauri::{Emitter, State};
 
-use crate::models::*;
 use crate::state::AppState;
 
 /// 测试端点连通性 — 逐模型逐能力测试，通过事件实时推送进度

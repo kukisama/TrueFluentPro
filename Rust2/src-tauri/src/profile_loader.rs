@@ -23,6 +23,7 @@ const AZURE_SPEECH_JSON: &str =
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 struct RawProfile {
     #[serde(default)]
     schema_version: u32,
@@ -70,6 +71,7 @@ struct RawProfile {
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 struct RawOverrides {
     #[serde(default)]
     auth: RawOverridesAuth,
@@ -81,6 +83,7 @@ struct RawOverrides {
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 struct RawOverridesAuth {
     #[serde(default)]
     default_mode: String,
@@ -94,6 +97,7 @@ struct RawOverridesAuth {
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 struct RawOverridesRoutes {
     #[serde(default)]
     text: Option<RawOverridesTextRoute>,
@@ -111,6 +115,7 @@ struct RawOverridesRoutes {
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 struct RawOverridesTextRoute {
     #[serde(default)]
     primary_protocol: String,
@@ -122,6 +127,7 @@ struct RawOverridesTextRoute {
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 struct RawOverridesModelDiscovery {
     #[serde(default)]
     primary_url: String,
@@ -129,6 +135,7 @@ struct RawOverridesModelDiscovery {
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 struct RawOverridesAudioRoute {
     #[serde(default)]
     primary_url: String,
@@ -138,6 +145,7 @@ struct RawOverridesAudioRoute {
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 struct RawOverridesSpeechRoute {
     #[serde(default)]
     primary_url: String,
@@ -147,6 +155,7 @@ struct RawOverridesSpeechRoute {
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 struct RawOverridesImageRoute {
     #[serde(default)]
     generate_primary_url: String,
@@ -158,6 +167,7 @@ struct RawOverridesImageRoute {
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 struct RawOverridesVideoRoute {
     #[serde(default)]
     default_mode: String,
@@ -174,6 +184,7 @@ struct RawOverridesVideoRoute {
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 struct RawOverridesVersion {
     #[serde(default)]
     endpoint_api_version: String,
@@ -189,6 +200,7 @@ struct RawOverridesVersion {
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 struct RawDefaults {
     #[serde(default)]
     provider_type: String,
@@ -210,6 +222,7 @@ struct RawDefaults {
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 struct RawAuth {
     #[serde(default)]
     supported_modes: Vec<String>,
@@ -225,6 +238,7 @@ struct RawAuth {
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 struct RawSpecialPolicies {
     #[serde(default)]
     allow_apim_subscription_key_query_retry: bool,
@@ -234,6 +248,7 @@ struct RawSpecialPolicies {
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 struct RawFallbacks {
     #[serde(default)]
     model_discovery: Vec<String>,
@@ -259,6 +274,7 @@ struct RawFallbacks {
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 struct RawModelDiscovery {
     #[serde(default)]
     url_candidates: Vec<String>,
@@ -266,6 +282,7 @@ struct RawModelDiscovery {
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 struct RawTextRoutes {
     #[serde(default)]
     preferred_protocol: String,
@@ -281,6 +298,7 @@ struct RawTextRoutes {
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 struct RawImageRoutes {
     #[serde(default)]
     deployment_generate_url_candidates: Vec<String>,
@@ -292,6 +310,7 @@ struct RawImageRoutes {
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 struct RawAudioRoutes {
     #[serde(default)]
     default_api_version: String,
@@ -301,6 +320,7 @@ struct RawAudioRoutes {
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 struct RawSpeechRoutes {
     #[serde(default)]
     default_api_version: String,
@@ -310,6 +330,7 @@ struct RawSpeechRoutes {
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 struct RawVideoRoutes {
     #[serde(default)]
     supported_api_modes: Vec<String>,

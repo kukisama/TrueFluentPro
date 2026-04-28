@@ -21,6 +21,7 @@ pub struct Database {
     conn: Mutex<Connection>,
 }
 
+#[allow(dead_code)]
 impl Database {
     pub fn open(path: &Path) -> SqlResult<Self> {
         let conn = Connection::open(path)?;

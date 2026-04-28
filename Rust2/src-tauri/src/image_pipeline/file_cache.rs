@@ -20,6 +20,7 @@ pub struct FileIdCache {
     inner: RwLock<HashMap<String, CacheEntry>>,
 }
 
+#[allow(dead_code)]
 impl FileIdCache {
     pub fn new() -> Self {
         Self {

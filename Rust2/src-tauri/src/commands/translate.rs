@@ -4,7 +4,6 @@ use tauri::{Emitter, State};
 
 use crate::models::*;
 use crate::state::AppState;
-use crate::storage::Database;
 use crate::providers::ProviderInfo;
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

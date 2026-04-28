@@ -12,7 +12,6 @@ pub use registry::*;
 pub use openai_chat::OpenAiChatProvider;
 pub use openai_image::OpenAiImageProvider;
 pub use openai_translation::OpenAiTranslationProvider;
-pub use openai_video::OpenAiVideoProvider;
 pub use openai_realtime::OpenAiRealtimeProvider;
 pub use azure_speech::AzureSpeechProvider;
 pub use azure_stt::AzureSttProvider;

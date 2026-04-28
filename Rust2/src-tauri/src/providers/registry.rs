@@ -38,6 +38,7 @@ pub enum ProviderCapability {
 // ─── 插槽 1: 文本翻译 ───
 
 #[async_trait]
+#[allow(dead_code)]
 pub trait TextTranslationSlot: ProviderMeta {
     async fn translate(
         &self,
@@ -64,6 +65,7 @@ pub trait RealtimeSpeechSlot: ProviderMeta {
 
 /// 实时会话控制接口
 #[async_trait]
+#[allow(dead_code)]
 pub trait RealtimeSessionHandle: Send + Sync {
     /// 推送 PCM 音频数据（16kHz, 16bit, mono）
     async fn push_audio(&self, pcm_data: &[u8]) -> Result<(), ProviderError>;
@@ -94,6 +96,7 @@ pub struct TranscriptSegment {
 // ─── 插槽 4: 语音合成（TTS） ───
 
 #[async_trait]
+#[allow(dead_code)]
 pub trait TextToSpeechSlot: ProviderMeta {
     async fn synthesize(
         &self,
@@ -118,6 +121,7 @@ pub trait TextToSpeechSlot: ProviderMeta {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[allow(dead_code)]
 pub struct VoiceInfo {
     pub id: String,
     pub name: String,
@@ -165,6 +169,7 @@ pub trait ImageGenSlot: ProviderMeta {
 // ─── Provider 错误类型 ───
 
 #[derive(Debug, thiserror::Error)]
+#[allow(dead_code)]
 pub enum ProviderError {
     #[error("network error: {0}")]
     Network(String),

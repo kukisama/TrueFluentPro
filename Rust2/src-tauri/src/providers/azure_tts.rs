@@ -34,6 +34,7 @@ impl AzureTtsProvider {
         )
     }
 
+    #[allow(dead_code)]
     fn build_voices_url(&self) -> String {
         let region = &self.endpoint.speech_region;
         format!(
@@ -165,6 +166,7 @@ impl ProviderMeta for AzureTtsProvider {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "PascalCase")]
+#[allow(dead_code)]
 struct AzureVoice {
     short_name: String,
     display_name: String,

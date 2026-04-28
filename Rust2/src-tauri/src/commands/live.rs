@@ -1,9 +1,7 @@
-use std::sync::Arc;
 use tauri::{Emitter, State};
 
 use crate::models::*;
 use crate::state::AppState;
-use crate::storage::Database;
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  实时翻译命令（PR-1: 数据层 + 会话管理）

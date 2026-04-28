@@ -2,8 +2,6 @@ use tauri::{Emitter, State};
 use tauri::Manager;
 use crate::models::*;
 use crate::state::AppState;
-use std::collections::HashMap;
-use std::sync::Arc;
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  创作工坊命令（对齐 C# ICreativeSessionRepository + ISessionMessageRepository）
