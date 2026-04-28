@@ -222,6 +222,7 @@ pub async fn audiolab_get_bundle(
 
 /// 启动转录任务
 #[tauri::command]
+#[allow(unused_variables)]
 pub async fn audiolab_start_transcription(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
@@ -492,11 +493,12 @@ pub async fn audiolab_start_podcast_tts(
 
 /// 生成自动标签
 #[tauri::command]
+#[allow(unused_variables)]
 pub async fn audiolab_generate_auto_tags(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
     session_id: String,
-    _model_ref: Option<String>,
+    model_ref: Option<String>,
 ) -> Result<String, String> {
     let task_id = uuid::Uuid::new_v4().to_string();
     let now = chrono::Utc::now().to_rfc3339();
@@ -585,11 +587,12 @@ pub async fn audiolab_add_research_topic(
 
 /// 启动研究报告生成
 #[tauri::command]
+#[allow(unused_variables)]
 pub async fn audiolab_start_research(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
     topic_id: String,
-    _model_ref: Option<String>,
+    model_ref: Option<String>,
 ) -> Result<String, String> {
     let task_id = uuid::Uuid::new_v4().to_string();
     let now = chrono::Utc::now().to_rfc3339();

@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import { save as dialogSave, open as dialogOpen } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
 import {
@@ -40,21 +41,21 @@ type SettingsTab =
   | "cloud" | "transfer" | "ui" | "about";
 
 /* 厂商资料包类型映射（前端静态缓存，与 Rust get_vendor_profiles 对齐） */
-const VENDOR_BADGE: Record<string, { label: string; badge: string; icon: string; color: string }> = {
-  azure_open_ai:          { label: "Azure OpenAI",  badge: "AZ", icon: "/icons/azure-openai.svg",       color: "blue" },
-  api_management_gateway: { label: "APIM 网关",     badge: "AP", icon: "/icons/apim-gateway.svg",       color: "purple" },
-  open_ai_compatible:     { label: "OpenAI 兼容",   badge: "OA", icon: "/icons/openai-compatible.svg",  color: "green" },
-  azure_speech:           { label: "Azure Speech",   badge: "SP", icon: "/icons/azure-speech.svg",       color: "yellow" },
-  azure_translator:       { label: "Azure Translator",badge: "TR", icon: "/icons/azure-openai.svg",     color: "blue" },
-  deep_l:                 { label: "DeepL",          badge: "DL", icon: "/icons/openai-compatible.svg",  color: "blue" },
-  tencent_cloud:          { label: "腾讯云",         badge: "TC", icon: "/icons/openai-compatible.svg",  color: "blue" },
-  alibaba_cloud:          { label: "阿里云",         badge: "AL", icon: "/icons/openai-compatible.svg",  color: "orange" },
-  custom:                 { label: "自定义",         badge: "CU", icon: "/icons/openai-compatible.svg",  color: "gray" },
+const VENDOR_BADGE: Record<string, { labelKey: string; badge: string; icon: string; color: string }> = {
+  azure_open_ai:          { labelKey: "vendorLabels.azure_open_ai",          badge: "AZ", icon: "/icons/azure-openai.svg",       color: "blue" },
+  api_management_gateway: { labelKey: "vendorLabels.api_management_gateway", badge: "AP", icon: "/icons/apim-gateway.svg",       color: "purple" },
+  open_ai_compatible:     { labelKey: "vendorLabels.open_ai_compatible",     badge: "OA", icon: "/icons/openai-compatible.svg",  color: "green" },
+  azure_speech:           { labelKey: "vendorLabels.azure_speech",           badge: "SP", icon: "/icons/azure-speech.svg",       color: "yellow" },
+  azure_translator:       { labelKey: "vendorLabels.azure_open_ai",          badge: "TR", icon: "/icons/azure-openai.svg",     color: "blue" },
+  deep_l:                 { labelKey: "vendorLabels.deepl",                  badge: "DL", icon: "/icons/openai-compatible.svg",  color: "blue" },
+  tencent_cloud:          { labelKey: "vendorLabels.tencent_cloud",          badge: "TC", icon: "/icons/openai-compatible.svg",  color: "blue" },
+  alibaba_cloud:          { labelKey: "vendorLabels.alibaba_cloud",          badge: "AL", icon: "/icons/openai-compatible.svg",  color: "orange" },
+  custom:                 { labelKey: "vendorLabels.custom",                 badge: "CU", icon: "/icons/openai-compatible.svg",  color: "gray" },
 };
 
-const CAPABILITY_LABELS: Record<string, string> = {
-  text: "文字", image: "图片", video: "视频",
-  speech_to_text: "语音识别", text_to_speech: "语音合成",
+const CAPABILITY_LABEL_KEYS: Record<string, string> = {
+  text: "capLabels.text", image: "capLabels.image", video: "capLabels.video",
+  speech_to_text: "capLabels.speech_to_text", text_to_speech: "capLabels.text_to_speech",
 };
 
 const CAPABILITY_ICONS: Record<string, typeof Globe> = {
@@ -67,12 +68,12 @@ const CAPABILITY_COLORS: Record<string, string> = {
   speech_to_text: "var(--cap-stt)", text_to_speech: "var(--cap-tts)",
 };
 
-const CAPABILITY_TIPS: Record<string, string> = {
-  text: "文字对话：洞察、复盘、快问、会话",
-  image: "图片生成：AI 绘图、图片编辑",
-  video: "视频生成：AI 视频创作",
-  speech_to_text: "语音转文字：音频转写、实时听写",
-  text_to_speech: "文字转语音：语音合成、朗读",
+const CAPABILITY_TIP_KEYS: Record<string, string> = {
+  text: "capTips.text",
+  image: "capTips.image",
+  video: "capTips.video",
+  speech_to_text: "capTips.speech_to_text",
+  text_to_speech: "capTips.text_to_speech",
 };
 
 const ALL_CAPABILITIES: ModelCapability[] = ["text", "image", "video", "speech_to_text", "text_to_speech"];
@@ -82,6 +83,7 @@ const ALL_CAPABILITIES: ModelCapability[] = ["text", "image", "video", "speech_t
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function EndpointsSection() {
+  const { t } = useTranslation();
   const config = useAppStore((s) => s.config);
   const endpoints = config?.endpoints ?? [];
   const [showCreate, setShowCreate] = useState(false);
@@ -155,11 +157,11 @@ function EndpointsSection() {
   return (
     <div className="max-w-3xl">
       <SectionHeader
-        title="端点管理"
-        description="注册 AI 服务端点，支持 Azure OpenAI、OpenAI 兼容、Azure Speech、APIM 网关等"
+        title={t("settingsSections.endpointsTitle")}
+        description={t("settingsSections.endpointsDesc")}
         action={
           <Button size="sm" onClick={() => setShowCreate(true)}>
-            <Plus size={14} /> 添加端点
+            <Plus size={14} /> {t("settingsSections.addEndpoint")}
           </Button>
         }
       />
@@ -173,11 +175,11 @@ function EndpointsSection() {
       {endpoints.length === 0 && !showCreate ? (
         <EmptyState
           icon={<Globe size={40} />}
-          title="暂无端点配置"
-          description="添加 Azure OpenAI、OpenAI 兼容等服务端点以开始使用"
+          title={t("settingsSections.noEndpoints")}
+          description={t("settingsSections.noEndpointsDesc")}
           action={
             <Button size="sm" onClick={() => setShowCreate(true)}>
-              <Plus size={14} /> 添加端点
+              <Plus size={14} /> {t("settingsSections.addEndpoint")}
             </Button>
           }
         />
@@ -199,7 +201,7 @@ function EndpointsSection() {
                   {/* ─ 头部行 ─ */}
                   <div className="flex items-center gap-3">
                     <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 overflow-hidden bg-[var(--surface-2)]">
-                      <img src={vendor.icon} alt={vendor.label} className="w-6 h-6 object-contain" />
+                      <img src={vendor.icon} alt={t(vendor.labelKey)} className="w-6 h-6 object-contain" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
@@ -209,16 +211,16 @@ function EndpointsSection() {
                         )} />
                         <span className="font-medium text-[var(--text-primary)] truncate">{ep.name}</span>
                         <Badge variant={(vendor.color === "orange" ? "amber" : vendor.color === "purple" ? "blue" : vendor.color === "yellow" ? "amber" : vendor.color) as "blue" | "green" | "red" | "amber" | "gray" | undefined}>{vendor.badge}</Badge>
-                        <span className="text-xs text-[var(--text-muted)]">{vendor.label}</span>
+                        <span className="text-xs text-[var(--text-muted)]">{t(vendor.labelKey)}</span>
                       </div>
                       {/* Speech 端点显示区域+终结点，AI 端点显示 URL */}
                       {isSpeechEp ? (
                         <div className="mt-0.5 pl-4 space-y-0.5">
                           <p className="text-xs text-[var(--text-muted)] truncate">
-                            区域: <span className="text-[var(--text-secondary)]">{ep.speech_region || "未配置"}</span>
+                            {t("endpointForm.regionLabel")}: <span className="text-[var(--text-secondary)]">{ep.speech_region || t("endpointForm.notConfigured")}</span>
                             {ep.speech_region && (
                               <span className="ml-2 text-emerald-400 text-[10px]">
-                                ✓ {ep.speech_endpoint?.includes(".azure.cn") || ep.speech_region.startsWith("china") ? "中国区" : "国际版"}
+                                ✓ {ep.speech_endpoint?.includes(".azure.cn") || ep.speech_region.startsWith("china") ? t("endpointForm.chinaRegion") : t("endpointForm.globalRegion")}
                               </span>
                             )}
                           </p>
@@ -270,10 +272,10 @@ function EndpointsSection() {
                         onClick={() => setExpandedTests((s) => ({ ...s, [ep.id]: !isExpanded }))}
                       >
                         <ChevronRight size={12} className={cn("transition-transform", isExpanded && "rotate-90")} />
-                        <span className="font-medium">{isTesting ? "测试进行中" : "测试报告"}</span>
+                        <span className="font-medium">{isTesting ? t("endpointForm.testInProgress") : t("endpointForm.testReport")}</span>
                         {isTesting && progress && (
                           <span className="flex items-center gap-1.5 ml-2 text-[10px]">
-                            <span className="text-blue-400">共 {progress.total_count} 项</span>
+                            <span className="text-blue-400">{t("endpointForm.totalItems", { count: progress.total_count })}</span>
                             {progress.running_count > 0 && <span className="text-yellow-400">⟳{progress.running_count}</span>}
                             {progress.success_count > 0 && <span className="text-emerald-500">✓{progress.success_count}</span>}
                             {progress.failed_count > 0 && <span className="text-red-400">✗{progress.failed_count}</span>}
@@ -283,7 +285,7 @@ function EndpointsSection() {
                         {!isTesting && report && <TestReportSummaryBadges items={report.items} />}
                         <span className="ml-auto text-[var(--text-muted)] text-[10px]">
                           {isTesting
-                            ? `已运行 ${String(Math.floor((elapsed[ep.id] || 0) / 60)).padStart(2, "0")}:${String((elapsed[ep.id] || 0) % 60).padStart(2, "0")}`
+                            ? `${t("endpointForm.elapsed")} ${String(Math.floor((elapsed[ep.id] || 0) / 60)).padStart(2, "0")}:${String((elapsed[ep.id] || 0) % 60).padStart(2, "0")}`
                             : report ? `${(report.duration_ms / 1000).toFixed(1)}s` : ""}
                         </span>
                       </button>
@@ -331,15 +333,16 @@ function TestReportSummaryBadges({ items }: { items: EndpointTestItem[] }) {
   );
 }
 
-const STATUS_CONFIG: Record<string, { icon: React.ReactNode; bg: string; text: string; label: string }> = {
-  pending: { icon: <div className="w-3 h-3 rounded-full border border-[var(--text-muted)] shrink-0" />, bg: "bg-[var(--surface-2)]", text: "text-[var(--text-muted)]", label: "等待" },
-  running: { icon: <Loader2 size={13} className="text-blue-400 animate-spin shrink-0" />, bg: "bg-blue-500/10", text: "text-blue-400", label: "运行中" },
-  success: { icon: <CheckCircle2 size={13} className="text-emerald-500 shrink-0" />, bg: "bg-emerald-500/15", text: "text-emerald-500", label: "通过" },
-  failed: { icon: <XCircle size={13} className="text-red-400 shrink-0" />, bg: "bg-red-400/15", text: "text-red-400", label: "失败" },
-  skipped: { icon: <SkipForward size={13} className="text-[var(--text-muted)] shrink-0" />, bg: "bg-[var(--surface-2)]", text: "text-[var(--text-muted)]", label: "跳过" },
+const STATUS_CONFIG: Record<string, { icon: React.ReactNode; bg: string; text: string; labelKey: string }> = {
+  pending: { icon: <div className="w-3 h-3 rounded-full border border-[var(--text-muted)] shrink-0" />, bg: "bg-[var(--surface-2)]", text: "text-[var(--text-muted)]", labelKey: "endpointForm.pending" },
+  running: { icon: <Loader2 size={13} className="text-blue-400 animate-spin shrink-0" />, bg: "bg-blue-500/10", text: "text-blue-400", labelKey: "endpointForm.running" },
+  success: { icon: <CheckCircle2 size={13} className="text-emerald-500 shrink-0" />, bg: "bg-emerald-500/15", text: "text-emerald-500", labelKey: "endpointForm.passed" },
+  failed: { icon: <XCircle size={13} className="text-red-400 shrink-0" />, bg: "bg-red-400/15", text: "text-red-400", labelKey: "endpointForm.failed" },
+  skipped: { icon: <SkipForward size={13} className="text-[var(--text-muted)] shrink-0" />, bg: "bg-[var(--surface-2)]", text: "text-[var(--text-muted)]", labelKey: "endpointForm.skipped" },
 };
 
 function TestResultRow({ item }: { item: EndpointTestItem }) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const sc = STATUS_CONFIG[item.status] ?? STATUS_CONFIG.pending;
 
@@ -349,11 +352,11 @@ function TestResultRow({ item }: { item: EndpointTestItem }) {
         {sc.icon}
         <span className="text-xs text-[var(--text-primary)] flex-1">{item.summary}</span>
         <span className={cn("text-[10px] px-1.5 py-0.5 rounded shrink-0", sc.bg, sc.text)}>
-          {item.capability} · {sc.label}
+          {item.capability} · {t(sc.labelKey)}
         </span>
         {item.duration_ms > 0 && (
           <span className="text-[10px] text-[var(--text-muted)] shrink-0 ml-1">
-            耗时 {item.duration_ms < 1000 ? `${item.duration_ms}ms` : `${(item.duration_ms / 1000).toFixed(1)}s`}
+            {t("endpointForm.elapsed")} {item.duration_ms < 1000 ? `${item.duration_ms}ms` : `${(item.duration_ms / 1000).toFixed(1)}s`}
           </span>
         )}
         <span className="text-[10px] text-[var(--text-muted)] shrink-0 ml-0.5 max-w-24 truncate">{item.model_id}</span>
@@ -365,34 +368,34 @@ function TestResultRow({ item }: { item: EndpointTestItem }) {
         <div className="mt-2 pl-5 space-y-1.5 border-l-2 border-[var(--border-subtle)] ml-1.5">
           {item.request_url && (
             <div className="rounded bg-[var(--surface-2)] p-2">
-              <p className="text-[10px] font-medium text-[var(--text-muted)] mb-0.5">最终访问 URL</p>
+              <p className="text-[10px] font-medium text-[var(--text-muted)] mb-0.5">{t("endpointForm.finalUrl")}</p>
               <p className="text-[11px] text-[var(--text-secondary)] break-all font-mono">{item.request_url}</p>
             </div>
           )}
           {item.request_summary && (
             <div className="rounded bg-[var(--surface-2)] p-2">
-              <p className="text-[10px] font-medium text-[var(--text-muted)] mb-0.5">请求摘要</p>
+              <p className="text-[10px] font-medium text-[var(--text-muted)] mb-0.5">{t("endpointForm.requestSummary")}</p>
               <p className="text-[11px] text-[var(--text-secondary)] whitespace-pre-wrap">{item.request_summary}</p>
             </div>
           )}
           {item.detail && (
             <div className="rounded bg-[var(--surface-2)] p-2">
-              <p className="text-[10px] font-medium text-[var(--text-muted)] mb-0.5">详细信息</p>
+              <p className="text-[10px] font-medium text-[var(--text-muted)] mb-0.5">{t("endpointForm.details")}</p>
               <p className="text-[11px] text-[var(--text-secondary)] whitespace-pre-wrap break-all">{item.detail}</p>
             </div>
           )}
           {item.urls_tried && item.urls_tried.length > 1 && (
             <div className="rounded bg-[var(--surface-2)] p-2">
-              <p className="text-[10px] font-medium text-[var(--text-muted)] mb-0.5">URL 地址 (共 {item.urls_tried.length} 条资料包声明{item.test_branch ? `，${item.test_branch}` : ""})</p>
+              <p className="text-[10px] font-medium text-[var(--text-muted)] mb-0.5">{t("endpointForm.urlsFromProfile", { count: item.urls_tried.length, branch: item.test_branch ? `, ${item.test_branch}` : "" })}</p>
               {item.urls_tried.map((u, i) => (
                 <p key={i} className="text-[11px] text-[var(--text-secondary)] break-all font-mono">
-                  {i === 0 ? "* " : ""}{`地址 ${i + 1}`}: {u}
+                  {i === 0 ? "* " : ""}{`${t("endpointForm.urlPrefix", { index: i + 1 })}`}: {u}
                 </p>
               ))}
             </div>
           )}
           {!item.detail && !item.request_url && !item.request_summary && (
-            <p className="text-[11px] text-[var(--text-muted)] italic">无额外诊断信息</p>
+            <p className="text-[11px] text-[var(--text-muted)] italic">{t("endpointForm.noDiagnostics")}</p>
           )}
         </div>
       )}
@@ -415,6 +418,7 @@ function ModelRefSelector({
   onChange: (ref: ModelReference) => void;
   capability?: ModelCapability;
 }) {
+  const { t } = useTranslation();
   const config = useAppStore((s) => s.config);
   const endpoints = config?.endpoints ?? [];
 
@@ -453,7 +457,7 @@ function ModelRefSelector({
           onChange({ endpoint_id: eid, model_id: rest.join("::") });
         }}
       >
-        <option value="">选择模型</option>
+        <option value="">{t("settingsSections.selectModel")}</option>
         {options.map((o) => (
           <option key={`${o.endpoint_id}::${o.model_id}`} value={`${o.endpoint_id}::${o.model_id}`}>
             {o.displayLabel}
@@ -478,6 +482,7 @@ function useConfigUpdater() {
 }
 
 function EndpointForm({ onClose }: { onClose: () => void }) {
+  const { t } = useTranslation();
   const [profiles, setProfiles] = useState<VendorProfile[]>([]);
   const [form, setForm] = useState({
     name: "",
@@ -627,20 +632,20 @@ function EndpointForm({ onClose }: { onClose: () => void }) {
         <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onClose}>
           <ChevronLeft size={16} />
         </Button>
-        <h3 className="text-sm font-semibold text-[var(--text-primary)]">新建端点</h3>
+        <h3 className="text-sm font-semibold text-[var(--text-primary)]">{t("endpointForm.newEndpoint")}</h3>
       </div>
 
       {/* 名称 + 类型 */}
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <Label>名称</Label>
-          <Input value={form.name} onChange={(e) => update("name", e.target.value)} placeholder={isSpeech ? "东南亚" : "我的 AI 端点"} />
+          <Label>{t("endpointForm.name")}</Label>
+          <Input value={form.name} onChange={(e) => update("name", e.target.value)} placeholder={isSpeech ? "Southeast Asia" : "My AI Endpoint"} />
         </div>
         <div>
-          <Label>类型</Label>
+          <Label>{t("endpointForm.type")}</Label>
           <Select className="w-full" value={form.endpoint_type} onChange={(e) => update("endpoint_type", e.target.value)}>
             {Object.entries(VENDOR_BADGE).map(([k, v]) => (
-              <option key={k} value={k}>{v.badge} {v.label}</option>
+              <option key={k} value={k}>{v.badge} {t(v.labelKey)}</option>
             ))}
           </Select>
         </div>
@@ -651,32 +656,31 @@ function EndpointForm({ onClose }: { onClose: () => void }) {
         <div className="space-y-4 mt-4">
           <div className="rounded-lg bg-amber-500/10 border border-amber-500/20 p-3">
             <p className="text-xs text-[var(--text-secondary)]">
-              🎤 Azure Speech 端点使用订阅密钥 + 区域连接，不需要配置模型列表。
-              密钥可在 Azure 门户 → 语音服务 → 密钥和终结点中获取。
+              🎤 {t("endpointForm.speechNote")}
             </p>
           </div>
           <div>
-            <Label>Speech 终结点</Label>
+            <Label>{t("endpointForm.speechEndpoint")}</Label>
             <Input value={form.speech_endpoint}
               onChange={(e) => update("speech_endpoint", e.target.value)}
               placeholder="https://southeastasia.api.cognitive.microsoft.com" />
-            <p className="text-[10px] text-[var(--text-muted)] mt-0.5">完整终结点 URL，留空则根据区域自动生成</p>
+            <p className="text-[10px] text-[var(--text-muted)] mt-0.5">{t("endpointForm.speechEndpointHint")}</p>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <Label>订阅密钥</Label>
+              <Label>{t("endpointForm.subscriptionKey")}</Label>
               <Input type="password" value={form.speech_subscription_key}
                 onChange={(e) => update("speech_subscription_key", e.target.value)}
-                placeholder="Azure Speech 订阅密钥" />
+                placeholder="Azure Speech subscription key" />
             </div>
             <div>
-              <Label>区域</Label>
+              <Label>{t("endpointForm.region")}</Label>
               <Input value={form.speech_region}
                 onChange={(e) => update("speech_region", e.target.value)}
                 placeholder="southeastasia" />
               {form.speech_region && (
                 <p className="text-[10px] mt-0.5 text-emerald-400">
-                  ✓ {form.speech_endpoint?.includes(".azure.cn") || form.speech_region.startsWith("china") ? "中国区" : "国际版"}
+                  ✓ {form.speech_endpoint?.includes(".azure.cn") || form.speech_region.startsWith("china") ? t("endpointForm.chinaRegion") : t("endpointForm.globalRegion")}
                 </p>
               )}
             </div>
@@ -687,7 +691,7 @@ function EndpointForm({ onClose }: { onClose: () => void }) {
         <>
           <div className="grid grid-cols-1 gap-4 mt-4">
             <div>
-              <Label>端点 URL</Label>
+              <Label>{t("endpointForm.endpointUrl")}</Label>
               <Input value={form.url} onChange={(e) => update("url", e.target.value)} placeholder="https://your-endpoint.openai.azure.com/openai" />
             </div>
           </div>
@@ -702,7 +706,7 @@ function EndpointForm({ onClose }: { onClose: () => void }) {
                     : "bg-transparent border-[var(--border-subtle)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
                 )}
                 onClick={() => update("auth_mode", "api_key")}
-              >API Key（默认）</button>
+              >{t("endpointForm.apiKeyDefault")}</button>
               <button
                 className={cn("px-3 py-1 text-xs rounded-md border transition-colors",
                   form.auth_mode === "aad"
@@ -722,7 +726,7 @@ function EndpointForm({ onClose }: { onClose: () => void }) {
                 <Input type="password" value={form.api_key} onChange={(e) => update("api_key", e.target.value)} placeholder="sk-..." />
               </div>
               <div>
-                <Label>区域 {form.endpoint_type.startsWith("azure") ? "(AZURE)" : "(可选)"}</Label>
+                <Label>{t("endpointForm.region")} {form.endpoint_type.startsWith("azure") ? "(AZURE)" : `(${t("endpointForm.optional")})`}</Label>
                 <Input value={form.region} onChange={(e) => update("region", e.target.value)} placeholder="eastus" />
               </div>
             </div>
@@ -733,11 +737,11 @@ function EndpointForm({ onClose }: { onClose: () => void }) {
             <div className="grid grid-cols-2 gap-4 mt-2">
               <div>
                 <Label>Tenant ID</Label>
-                <Input value={form.azure_tenant_id} onChange={(e) => update("azure_tenant_id", e.target.value)} placeholder="留空则自动检测（多租户时需选择）" />
+                <Input value={form.azure_tenant_id} onChange={(e) => update("azure_tenant_id", e.target.value)} placeholder={t("endpointForm.aadTenantHint")} />
               </div>
               <div>
-                <Label>Client ID（可选）</Label>
-                <Input value={form.azure_client_id} onChange={(e) => update("azure_client_id", e.target.value)} placeholder="留空使用 Azure CLI 默认应用" />
+                <Label>{t("endpointForm.clientIdOptional")}</Label>
+                <Input value={form.azure_client_id} onChange={(e) => update("azure_client_id", e.target.value)} placeholder={t("endpointForm.clientIdHint")} />
               </div>
               <div className="col-span-2">
                 <AadLoginButton endpointId={form.name || "new"} tenantId={form.azure_tenant_id} clientId={form.azure_client_id} />
@@ -748,7 +752,7 @@ function EndpointForm({ onClose }: { onClose: () => void }) {
           {/* API 版本 — 有默认值的类型才显示（对齐 C# 各 profile 的 defaults.apiVersion） */}
           {activeProfile && activeProfile.default_api_version && (
             <div className="mt-4" style={{ maxWidth: "50%" }}>
-              <Label>API 版本</Label>
+              <Label>{t("endpointForm.apiVersion")}</Label>
               <Input value={form.api_version} onChange={(e) => update("api_version", e.target.value)} placeholder={activeProfile.default_api_version} />
             </div>
           )}
@@ -756,7 +760,7 @@ function EndpointForm({ onClose }: { onClose: () => void }) {
           <Separator className="my-4" />
 
           {/* ─ 模型列表 ─ */}
-          <h4 className="text-xs font-semibold text-[var(--text-primary)] mb-2">模型列表</h4>
+          <h4 className="text-xs font-semibold text-[var(--text-primary)] mb-2">{t("endpointForm.modelList")}</h4>
 
           {models.length > 0 && (
             <div className="space-y-1 mb-3">
@@ -781,7 +785,7 @@ function EndpointForm({ onClose }: { onClose: () => void }) {
                             <span key={c} className="flex items-center gap-0.5 text-[10px]"
                               style={{ color: CAPABILITY_COLORS[c] }}>
                               {Icon && <Icon size={11} />}
-                              {CAPABILITY_LABELS[c]}
+                              {t(CAPABILITY_LABEL_KEYS[c])}
                             </span>
                           );
                         })}
@@ -799,7 +803,7 @@ function EndpointForm({ onClose }: { onClose: () => void }) {
                             const color = CAPABILITY_COLORS[c];
                             const isActive = m.capabilities.includes(c);
                             return (
-                              <button key={c} title={CAPABILITY_TIPS[c]}
+                              <button key={c} title={t(CAPABILITY_TIP_KEYS[c])}
                                 className={cn(
                                   "h-7 px-2 rounded flex items-center gap-1.5 border text-xs transition-all",
                                   isActive
@@ -810,7 +814,7 @@ function EndpointForm({ onClose }: { onClose: () => void }) {
                                 onClick={() => toggleModelCapability(idx, c)}
                               >
                                 <Icon size={13} />
-                                {CAPABILITY_LABELS[c]}
+                                {t(CAPABILITY_LABEL_KEYS[c])}
                               </button>
                             );
                           })}
@@ -827,7 +831,7 @@ function EndpointForm({ onClose }: { onClose: () => void }) {
           <div className="flex items-end gap-2">
             <div className="flex-1">
               <Input value={newModelId} onChange={(e) => setNewModelId(e.target.value)}
-                placeholder={form.endpoint_type === "azure_open_ai" ? "部署名称 (如 gpt-4o)" : "模型 ID (如 gpt-4o)"}
+                placeholder={form.endpoint_type === "azure_open_ai" ? t("endpointForm.deploymentPlaceholder") : t("endpointForm.modelIdPlaceholder")}
                 onKeyDown={(e) => e.key === "Enter" && addModel()} />
             </div>
             <div className="flex gap-1">
@@ -836,7 +840,7 @@ function EndpointForm({ onClose }: { onClose: () => void }) {
                 const color = CAPABILITY_COLORS[c];
                 const isActive = newModelCaps.includes(c);
                 return (
-                  <button key={c} title={CAPABILITY_TIPS[c]}
+                  <button key={c} title={t(CAPABILITY_TIP_KEYS[c])}
                     className={cn(
                       "w-7 h-7 rounded flex items-center justify-center border transition-all",
                       isActive
@@ -862,7 +866,7 @@ function EndpointForm({ onClose }: { onClose: () => void }) {
               <Button size="sm" variant="secondary" onClick={handleDiscover}
                 disabled={discovering || !form.url || !form.api_key}>
                 {discovering ? <Loader2 size={12} className="animate-spin" /> : <Search size={12} />}
-                {discovering ? " 发现中..." : " 从终结点拉取模型"}
+                {discovering ? t("endpointForm.discovering") : " " + t("endpointForm.discoverModels")}
               </Button>
               {discoveredModels.length > 0 && (
                 <div className="mt-2 max-h-40 overflow-y-auto space-y-0.5 rounded bg-[var(--surface-1)] p-2">
@@ -873,7 +877,7 @@ function EndpointForm({ onClose }: { onClose: () => void }) {
                       <Button size="sm" variant="ghost" className="h-5 px-1.5 text-[10px]"
                         onClick={() => addDiscoveredModel(m)}
                         disabled={models.some((x) => x.model_id === m.id)}>
-                        {models.some((x) => x.model_id === m.id) ? "已添加" : "+ 添加"}
+                        {models.some((x) => x.model_id === m.id) ? t("endpointForm.alreadyAdded") : t("endpointForm.addModel")}
                       </Button>
                     </div>
                   ))}
@@ -885,9 +889,9 @@ function EndpointForm({ onClose }: { onClose: () => void }) {
       )}
 
       <div className="flex justify-end gap-2 mt-4">
-        <Button variant="secondary" size="sm" onClick={onClose}><X size={14} /> 取消</Button>
+        <Button variant="secondary" size="sm" onClick={onClose}><X size={14} /> {t("endpointForm.cancel")}</Button>
         <Button size="sm" onClick={handleSave} disabled={!canSave}>
-          <Check size={14} /> 保存
+          <Check size={14} /> {t("endpointForm.save")}
         </Button>
       </div>
     </GlassCard>
@@ -897,6 +901,7 @@ function EndpointForm({ onClose }: { onClose: () => void }) {
 /* ─── 内联编辑面板（即时保存模式） ─── */
 
 function EndpointEditPanel({ endpoint, onClose }: { endpoint: AiEndpoint; onClose: () => void }) {
+  const { t } = useTranslation();
   const [form, setForm] = useState({ ...endpoint });
   const [models, setModels] = useState<AiModelEntry[]>([...endpoint.models]);
   const [newModelId, setNewModelId] = useState("");
@@ -997,23 +1002,23 @@ function EndpointEditPanel({ endpoint, onClose }: { endpoint: AiEndpoint; onClos
       <div className="flex items-center gap-2">
         <button onClick={handleBack} className="flex items-center gap-1 text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors">
           <ChevronLeft size={14} />
-          <span>返回</span>
+          <span>{t("endpointForm.back")}</span>
         </button>
         <span className="flex-1" />
-        {saving && <span className="text-[10px] text-[var(--text-muted)] animate-pulse">保存中...</span>}
-        <SettingRow label="启用" description="">
+        {saving && <span className="text-[10px] text-[var(--text-muted)] animate-pulse">{t("endpointForm.saving")}</span>}
+        <SettingRow label={t("endpointForm.enabled")} description="">
           <Switch checked={form.enabled} onCheckedChange={(v) => update("enabled", v)} />
         </SettingRow>
       </div>
 
       {/* ── 基本信息 ── */}
       <div className="grid grid-cols-2 gap-3">
-        <div><Label>名称</Label><Input value={form.name} onBlur={() => scheduleSave()} onChange={(e) => setForm((s) => ({ ...s, name: e.target.value }))} /></div>
+        <div><Label>{t("endpointForm.name")}</Label><Input value={form.name} onBlur={() => scheduleSave()} onChange={(e) => setForm((s) => ({ ...s, name: e.target.value }))} /></div>
         <div>
-          <Label>端点类型</Label>
+          <Label>{t("endpointForm.endpointType")}</Label>
           <Select className="w-full" value={form.endpoint_type} onChange={(e) => update("endpoint_type", e.target.value)}>
             {Object.entries(VENDOR_BADGE).map(([k, v]) => (
-              <option key={k} value={k}>{v.label}</option>
+              <option key={k} value={k}>{t(v.labelKey)}</option>
             ))}
           </Select>
         </div>
@@ -1023,19 +1028,19 @@ function EndpointEditPanel({ endpoint, onClose }: { endpoint: AiEndpoint; onClos
         /* ═══ Speech 编辑表单 ═══ */
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
-            <div><Label>区域</Label><Input value={form.speech_region} onChange={(e) => setForm((s) => ({ ...s, speech_region: e.target.value }))} onBlur={() => scheduleSave()} placeholder="southeastasia" /></div>
+            <div><Label>{t("endpointForm.region")}</Label><Input value={form.speech_region} onChange={(e) => setForm((s) => ({ ...s, speech_region: e.target.value }))} onBlur={() => scheduleSave()} placeholder="southeastasia" /></div>
           </div>
-          <div><Label>Speech 终结点</Label><Input value={form.speech_endpoint} onChange={(e) => setForm((s) => ({ ...s, speech_endpoint: e.target.value }))} onBlur={() => scheduleSave()} placeholder="https://region.api.cognitive.microsoft.com" /></div>
-          <div><Label>订阅密钥</Label><Input type="password" value={form.speech_subscription_key} onChange={(e) => setForm((s) => ({ ...s, speech_subscription_key: e.target.value }))} onBlur={() => scheduleSave()} /></div>
+          <div><Label>{t("endpointForm.speechEndpoint")}</Label><Input value={form.speech_endpoint} onChange={(e) => setForm((s) => ({ ...s, speech_endpoint: e.target.value }))} onBlur={() => scheduleSave()} placeholder="https://region.api.cognitive.microsoft.com" /></div>
+          <div><Label>{t("endpointForm.subscriptionKey")}</Label><Input type="password" value={form.speech_subscription_key} onChange={(e) => setForm((s) => ({ ...s, speech_subscription_key: e.target.value }))} onBlur={() => scheduleSave()} /></div>
         </div>
       ) : (
         /* ═══ AI 编辑表单 ═══ */
         <>
           <div className="grid grid-cols-2 gap-3">
-            <div><Label>端点 URL</Label><Input value={form.url} onChange={(e) => setForm((s) => ({ ...s, url: e.target.value }))} onBlur={() => scheduleSave()} /></div>
-            <div><Label>API Key</Label><Input type="password" value={form.api_key} onChange={(e) => setForm((s) => ({ ...s, api_key: e.target.value }))} onBlur={() => scheduleSave()} /></div>
-            <div><Label>API 版本</Label><Input value={form.api_version || ""} onChange={(e) => setForm((s) => ({ ...s, api_version: e.target.value }))} onBlur={() => scheduleSave()} /></div>
-            <div><Label>区域</Label><Input value={form.region || ""} onChange={(e) => setForm((s) => ({ ...s, region: e.target.value }))} onBlur={() => scheduleSave()} /></div>
+            <div><Label>{t("endpointForm.endpointUrl")}</Label><Input value={form.url} onChange={(e) => setForm((s) => ({ ...s, url: e.target.value }))} onBlur={() => scheduleSave()} /></div>
+            <div><Label>{t("endpointForm.apiKey")}</Label><Input type="password" value={form.api_key} onChange={(e) => setForm((s) => ({ ...s, api_key: e.target.value }))} onBlur={() => scheduleSave()} /></div>
+            <div><Label>{t("endpointForm.apiVersion")}</Label><Input value={form.api_version || ""} onChange={(e) => setForm((s) => ({ ...s, api_version: e.target.value }))} onBlur={() => scheduleSave()} /></div>
+            <div><Label>{t("endpointForm.regionOptional")}</Label><Input value={form.region || ""} onChange={(e) => setForm((s) => ({ ...s, region: e.target.value }))} onBlur={() => scheduleSave()} /></div>
           </div>
 
           {/* AAD 登录 — 仅 Azure 端点显示 */}
@@ -1049,8 +1054,8 @@ function EndpointEditPanel({ endpoint, onClose }: { endpoint: AiEndpoint; onClos
 
           {/* ── 模型列表 ── */}
           <div className="flex items-center justify-between">
-            <h4 className="text-xs font-semibold text-[var(--text-primary)]">模型列表</h4>
-            <span className="text-[10px] text-[var(--text-muted)]">点击模型条目可修改能力</span>
+            <h4 className="text-xs font-semibold text-[var(--text-primary)]">{t("endpointForm.modelList")}</h4>
+            <span className="text-[10px] text-[var(--text-muted)]">{t("endpointForm.clickToModify")}</span>
           </div>
           <div className="space-y-1">
             {models.map((m, idx) => {
@@ -1075,7 +1080,7 @@ function EndpointEditPanel({ endpoint, onClose }: { endpoint: AiEndpoint; onClos
                           <span key={c} className="flex items-center gap-0.5 text-[10px]"
                             style={{ color: CAPABILITY_COLORS[c] }}>
                             {Icon && <Icon size={11} />}
-                            {CAPABILITY_LABELS[c]}
+                            {t(CAPABILITY_LABEL_KEYS[c])}
                           </span>
                         );
                       })}
@@ -1094,7 +1099,7 @@ function EndpointEditPanel({ endpoint, onClose }: { endpoint: AiEndpoint; onClos
                           const color = CAPABILITY_COLORS[c];
                           const isActive = m.capabilities.includes(c);
                           return (
-                            <button key={c} title={CAPABILITY_TIPS[c]}
+                            <button key={c} title={t(CAPABILITY_TIP_KEYS[c])}
                               className={cn(
                                 "h-7 px-2 rounded flex items-center gap-1.5 border text-xs transition-all",
                                 isActive
@@ -1105,7 +1110,7 @@ function EndpointEditPanel({ endpoint, onClose }: { endpoint: AiEndpoint; onClos
                               onClick={() => toggleModelCapability(idx, c)}
                             >
                               <Icon size={13} />
-                              {CAPABILITY_LABELS[c]}
+                              {t(CAPABILITY_LABEL_KEYS[c])}
                             </button>
                           );
                         })}
@@ -1119,7 +1124,7 @@ function EndpointEditPanel({ endpoint, onClose }: { endpoint: AiEndpoint; onClos
 
           {/* 添加模型 */}
           <div className="flex items-end gap-2">
-            <Input value={newModelId} onChange={(e) => setNewModelId(e.target.value)} placeholder="模型 ID / 部署名" className="flex-1"
+            <Input value={newModelId} onChange={(e) => setNewModelId(e.target.value)} placeholder={t("endpointForm.modelIdPlaceholder")} className="flex-1"
               onKeyDown={(e) => e.key === "Enter" && addModel()} />
             <div className="flex gap-1">
               {ALL_CAPABILITIES.map((c) => {
@@ -1127,7 +1132,7 @@ function EndpointEditPanel({ endpoint, onClose }: { endpoint: AiEndpoint; onClos
                 const color = CAPABILITY_COLORS[c];
                 const isActive = newModelCaps.includes(c);
                 return (
-                  <button key={c} title={CAPABILITY_TIPS[c]}
+                  <button key={c} title={t(CAPABILITY_TIP_KEYS[c])}
                     className={cn(
                       "w-7 h-7 rounded flex items-center justify-center border transition-all",
                       isActive
@@ -1149,7 +1154,7 @@ function EndpointEditPanel({ endpoint, onClose }: { endpoint: AiEndpoint; onClos
           {!["azure_open_ai", "azure_speech"].includes(form.endpoint_type) && (
             <Button size="sm" variant="secondary" onClick={handleDiscover} disabled={discovering}>
               {discovering ? <Loader2 size={12} className="animate-spin" /> : <Search size={12} />}
-              {discovering ? " 发现中..." : " 从终结点拉取模型"}
+              {discovering ? t("endpointForm.discovering") : " " + t("endpointForm.discoverModels")}
             </Button>
           )}
           {discoveredModels.length > 0 && (
@@ -1165,7 +1170,7 @@ function EndpointEditPanel({ endpoint, onClose }: { endpoint: AiEndpoint; onClos
                       }
                     }}
                     disabled={models.some((x) => x.model_id === m.id)}>
-                    {models.some((x) => x.model_id === m.id) ? "已添加" : "+ 添加"}
+                    {models.some((x) => x.model_id === m.id) ? t("endpointForm.alreadyAdded") : t("endpointForm.addModel")}
                   </Button>
                 </div>
               ))}
@@ -1182,6 +1187,7 @@ function EndpointEditPanel({ endpoint, onClose }: { endpoint: AiEndpoint; onClos
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function AadLoginButton({ endpointId, tenantId, clientId }: { endpointId: string; tenantId: string; clientId: string }) {
+  const { t } = useTranslation();
   const [status, setStatus] = useState<"idle" | "waiting" | "selecting-tenant" | "success" | "error">("idle");
   const [errorMsg, setErrorMsg] = useState("");
   const [warningMsg, setWarningMsg] = useState("");
@@ -1201,7 +1207,7 @@ function AadLoginButton({ endpointId, tenantId, clientId }: { endpointId: string
         if (result.warning) setWarningMsg(result.warning);
       } else {
         setStatus("error");
-        setErrorMsg(result.error || "认证失败");
+        setErrorMsg(result.error || t("endpointForm.authFailed"));
       }
     });
     const unlistenTenant = api.onAadTenantSelection((event) => {
@@ -1244,52 +1250,52 @@ function AadLoginButton({ endpointId, tenantId, clientId }: { endpointId: string
       {status === "idle" && (
         <>
           <p className="text-xs text-[var(--text-secondary)]">
-            🔐 通过 Microsoft Entra ID 浏览器交互式登录，无需手动输入 API Key。
+            🔐 {t("endpointForm.aadLoginDesc")}
           </p>
           <Button variant="secondary" size="sm" onClick={handleLogin}>
-            <Shield size={14} /> 登录 AAD
+            <Shield size={14} /> {t("endpointForm.loginAad")}
           </Button>
         </>
       )}
       {status === "waiting" && (
         <div className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
-          <Loader2 size={12} className="animate-spin" /> 浏览器已打开，请在浏览器中完成登录...
-          <Button variant="ghost" size="sm" onClick={() => setStatus("idle")} className="ml-2 text-xs">取消</Button>
+          <Loader2 size={12} className="animate-spin" /> {t("endpointForm.browserOpened")}
+          <Button variant="ghost" size="sm" onClick={() => setStatus("idle")} className="ml-2 text-xs">{t("endpointForm.cancel")}</Button>
         </div>
       )}
       {status === "selecting-tenant" && (
         <div className="space-y-2">
           <p className="text-xs text-[var(--text-secondary)]">
-            🏢 检测到多个租户，请选择您的 Azure 资源所在的租户：
+            🏢 {t("endpointForm.multiTenantHint")}
           </p>
           <div className="space-y-0.5 max-h-40 overflow-y-auto rounded p-1" style={{ border: '1px solid var(--border-subtle)' }}>
-            {tenants.map((t) => (
+            {tenants.map((tn) => (
               <button
-                key={t.tenant_id}
+                key={tn.tenant_id}
                 className="w-full text-left px-3 py-2 rounded text-xs transition-colors flex flex-col gap-0.5"
                 style={{ border: '1px solid transparent' }}
                 onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--hover-bg)'; e.currentTarget.style.borderColor = 'var(--border-medium)'; }}
                 onMouseLeave={(e) => { e.currentTarget.style.background = ''; e.currentTarget.style.borderColor = 'transparent'; }}
-                onClick={() => handleSelectTenant(t.tenant_id)}
+                onClick={() => handleSelectTenant(tn.tenant_id)}
               >
                 <div className="flex items-center gap-2">
-                  <span className="font-medium" style={{ color: 'var(--text-primary)' }}>{t.display_name || t.default_domain || "未命名租户"}</span>
-                  {t.default_domain && t.display_name && (
-                    <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>({t.default_domain})</span>
+                  <span className="font-medium" style={{ color: 'var(--text-primary)' }}>{tn.display_name || tn.default_domain || t("endpointForm.unnamedTenant")}</span>
+                  {tn.default_domain && tn.display_name && (
+                    <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>({tn.default_domain})</span>
                   )}
                 </div>
-                <span className="text-[10px] font-mono" style={{ color: 'var(--text-muted)' }}>{t.tenant_id}</span>
+                <span className="text-[10px] font-mono" style={{ color: 'var(--text-muted)' }}>{tn.tenant_id}</span>
               </button>
             ))}
           </div>
-          <Button variant="ghost" size="sm" onClick={() => setStatus("idle")} className="text-xs">取消</Button>
+          <Button variant="ghost" size="sm" onClick={() => setStatus("idle")} className="text-xs">{t("endpointForm.cancel")}</Button>
         </div>
       )}
       {status === "success" && (
         <div className="space-y-1">
           <div className="flex items-center gap-1 text-xs" style={{ color: 'var(--active-text)' }}>
-            <CheckCircle2 size={14} /> AAD 登录成功！Token 已自动保存。
-            <Button variant="ghost" size="sm" onClick={() => setStatus("idle")} className="ml-2 text-xs">重新登录</Button>
+            <CheckCircle2 size={14} /> {t("endpointForm.aadSuccess")}
+            <Button variant="ghost" size="sm" onClick={() => setStatus("idle")} className="ml-2 text-xs">{t("endpointForm.reLogin")}</Button>
           </div>
           {warningMsg && (
             <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>{warningMsg}</p>
@@ -1301,7 +1307,7 @@ function AadLoginButton({ endpointId, tenantId, clientId }: { endpointId: string
           <p className="text-xs flex items-center gap-1" style={{ color: '#ef4444' }}>
             <XCircle size={14} /> {errorMsg}
           </p>
-          <Button variant="secondary" size="sm" onClick={handleLogin}>重试</Button>
+          <Button variant="secondary" size="sm" onClick={handleLogin}>{t("endpointForm.retry")}</Button>
         </div>
       )}
     </div>
@@ -1314,27 +1320,28 @@ function AadLoginButton({ endpointId, tenantId, clientId }: { endpointId: string
 
 export function SettingsView() {
   const [activeTab, setActiveTab] = useState<SettingsTab>("endpoints");
+  const { t } = useTranslation();
 
   const tabs: { id: SettingsTab; label: string; icon: React.ReactNode; group: string }[] = [
-    { id: "endpoints", label: "端点管理", icon: <Globe size={15} />, group: "connect" },
-    { id: "recognition", label: "识别与翻译", icon: <Mic size={15} />, group: "voice" },
-    { id: "storage", label: "存储与导出", icon: <FileText size={15} />, group: "voice" },
-    { id: "audio", label: "音频预处理", icon: <Volume2 size={15} />, group: "voice" },
-    { id: "insight", label: "AI 洞察", icon: <Brain size={15} />, group: "ai" },
-    { id: "image", label: "图片生成", icon: <Image size={15} />, group: "ai" },
-    { id: "video", label: "视频生成", icon: <Video size={15} />, group: "ai" },
-    { id: "search", label: "网页搜索", icon: <Search size={15} />, group: "ai" },
-    { id: "cloud", label: "云服务", icon: <Cloud size={15} />, group: "system" },
-    { id: "transfer", label: "导入导出", icon: <ArrowUpDown size={15} />, group: "system" },
-    { id: "ui", label: "界面设置", icon: <Monitor size={15} />, group: "system" },
-    { id: "about", label: "关于", icon: <Info size={15} />, group: "system" },
+    { id: "endpoints", label: t("settingsSidebar.tabEndpoints"), icon: <Globe size={15} />, group: "connect" },
+    { id: "recognition", label: t("settingsSidebar.tabRecognition"), icon: <Mic size={15} />, group: "voice" },
+    { id: "storage", label: t("settingsSidebar.tabStorage"), icon: <FileText size={15} />, group: "voice" },
+    { id: "audio", label: t("settingsSidebar.tabAudio"), icon: <Volume2 size={15} />, group: "voice" },
+    { id: "insight", label: t("settingsSidebar.tabInsight"), icon: <Brain size={15} />, group: "ai" },
+    { id: "image", label: t("settingsSidebar.tabImage"), icon: <Image size={15} />, group: "ai" },
+    { id: "video", label: t("settingsSidebar.tabVideo"), icon: <Video size={15} />, group: "ai" },
+    { id: "search", label: t("settingsSidebar.tabSearch"), icon: <Search size={15} />, group: "ai" },
+    { id: "cloud", label: t("settingsSidebar.tabCloud"), icon: <Cloud size={15} />, group: "system" },
+    { id: "transfer", label: t("settingsSidebar.tabTransfer"), icon: <ArrowUpDown size={15} />, group: "system" },
+    { id: "ui", label: t("settingsSidebar.tabUi"), icon: <Monitor size={15} />, group: "system" },
+    { id: "about", label: t("settingsSidebar.tabAbout"), icon: <Info size={15} />, group: "system" },
   ];
 
   const groups = [
-    { key: "connect", label: "连接" },
-    { key: "voice", label: "语音 & 翻译" },
-    { key: "ai", label: "AI" },
-    { key: "system", label: "系统" },
+    { key: "connect", label: t("settingsSidebar.groupConnect") },
+    { key: "voice", label: t("settingsSidebar.groupVoice") },
+    { key: "ai", label: t("settingsSidebar.groupAi") },
+    { key: "system", label: t("settingsSidebar.groupSystem") },
   ];
 
   return (
@@ -1346,7 +1353,7 @@ export function SettingsView() {
             <p className="text-[10px] font-medium text-[var(--text-muted)] uppercase tracking-widest px-3 pt-3 pb-1">
               {group.label}
             </p>
-            {tabs.filter((t) => t.group === group.key).map((tab) => (
+            {tabs.filter((tb) => tb.group === group.key).map((tab) => (
               <button key={tab.id} onClick={() => setActiveTab(tab.id)}
                 className={cn(
                   "flex items-center gap-2 w-full rounded-xl px-3 py-2 text-sm transition-all duration-200",
@@ -1386,6 +1393,7 @@ export function SettingsView() {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function RecognitionSection() {
+  const { t } = useTranslation();
   const config = useAppStore((s) => s.config);
   const rec = config?.recognition;
   const updateConfig = useConfigUpdater();
@@ -1394,20 +1402,20 @@ function RecognitionSection() {
 
   return (
     <div className="max-w-2xl space-y-6">
-      <SectionHeader title="识别与翻译" description="语音识别参数、翻译语言、语气词过滤等" />
+      <SectionHeader title={t("settingsSections.recognitionTitle")} description={t("settingsSections.recognitionDesc")} />
 
       <GlassCard className="space-y-4">
-        <h3 className="text-sm font-semibold text-[var(--text-primary)]">翻译语言</h3>
+        <h3 className="text-sm font-semibold text-[var(--text-primary)]">{t("settingsSections.translationLang")}</h3>
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <Label>默认源语言</Label>
+            <Label>{t("settingsSections.defaultSourceLang")}</Label>
             <Select className="w-full" value={config?.default_source_lang || "zh-Hans"}
               onChange={(e) => updateConfig((cfg) => { cfg.default_source_lang = e.target.value; })}>
-              <option value="auto">自动检测</option><option value="zh-Hans">中文（简体）</option><option value="en">English</option><option value="ja">日本語</option>
+              <option value="auto">{t("live.autoDetect")}</option><option value="zh-Hans">中文（简体）</option><option value="en">English</option><option value="ja">日本語</option>
             </Select>
           </div>
           <div>
-            <Label>默认目标语言</Label>
+            <Label>{t("settingsSections.defaultTargetLang")}</Label>
             <Select className="w-full" value={config?.default_target_langs[0] || "en"}
               onChange={(e) => updateConfig((cfg) => { cfg.default_target_langs = [e.target.value]; })}>
               <option value="en">English</option><option value="ja">日本語</option><option value="zh-Hans">中文（简体）</option><option value="ko">한국어</option>
@@ -1417,52 +1425,52 @@ function RecognitionSection() {
       </GlassCard>
 
       <GlassCard className="space-y-4">
-        <h3 className="text-sm font-semibold text-[var(--text-primary)]">语音识别</h3>
-        <SettingRow label="语气词过滤" description="自动移除'嗯、啊、那个'等语气词">
+        <h3 className="text-sm font-semibold text-[var(--text-primary)]">{t("settingsSections.speechRecognition")}</h3>
+        <SettingRow label={t("settingsSections.fillerWords")} description={t("settingsSections.fillerWordsDesc")}>
           <Switch checked={rec.filter_modal_particles} onCheckedChange={(v) => updateConfig((cfg) => { cfg.recognition.filter_modal_particles = v; })} />
         </SettingRow>
         <div className="grid grid-cols-2 gap-4">
-          <div><Label>历史条数上限</Label>
+          <div><Label>{t("settingsSections.historyLimit")}</Label>
             <Input type="number" value={rec.max_history_items} className="w-32"
               onChange={(e) => updateConfig((cfg) => { cfg.recognition.max_history_items = Number(e.target.value) || 500; })} />
           </div>
-          <div><Label>实时最大长度</Label>
+          <div><Label>{t("settingsSections.realtimeMaxLen")}</Label>
             <Input type="number" value={rec.realtime_max_length} className="w-32"
               onChange={(e) => updateConfig((cfg) => { cfg.recognition.realtime_max_length = Number(e.target.value) || 150; })} />
           </div>
         </div>
         <div className="grid grid-cols-2 gap-4">
-          <div><Label>Chunk 时长 (ms)</Label>
+          <div><Label>{t("settingsSections.chunkDuration")}</Label>
             <Input type="number" value={rec.chunk_duration_ms} className="w-32"
               onChange={(e) => updateConfig((cfg) => { cfg.recognition.chunk_duration_ms = Number(e.target.value) || 200; })} />
           </div>
-          <div><Label>音频活动阈值</Label>
+          <div><Label>{t("settingsSections.audioActivityThreshold")}</Label>
             <Input type="number" value={rec.audio_activity_threshold} className="w-32"
               onChange={(e) => updateConfig((cfg) => { cfg.recognition.audio_activity_threshold = Number(e.target.value) || 600; })} />
           </div>
         </div>
         <div className="grid grid-cols-2 gap-4">
-          <div><Label>音频电平增益</Label>
+          <div><Label>{t("settingsSections.audioGain")}</Label>
             <Input type="number" step="0.1" value={rec.audio_level_gain} className="w-32"
               onChange={(e) => updateConfig((cfg) => { cfg.recognition.audio_level_gain = Number(e.target.value) || 2.0; })} />
           </div>
         </div>
-        <SettingRow label="显示重连标记" description="在识别流中显示重连标记">
+        <SettingRow label={t("settingsSections.showReconnectMark")} description={t("settingsSections.showReconnectMarkDesc")}>
           <Switch checked={rec.show_reconnect_marker} onCheckedChange={(v) => updateConfig((cfg) => { cfg.recognition.show_reconnect_marker = v; })} />
         </SettingRow>
       </GlassCard>
 
       <GlassCard className="space-y-4">
-        <h3 className="text-sm font-semibold text-[var(--text-primary)]">超时与静默</h3>
-        <SettingRow label="启用自动超时" description="静默超过阈值后自动停止识别">
+        <h3 className="text-sm font-semibold text-[var(--text-primary)]">{t("settingsSections.timeoutAndSilence")}</h3>
+        <SettingRow label={t("settingsSections.enableAutoTimeout")} description={t("settingsSections.enableAutoTimeoutDesc")}>
           <Switch checked={rec.enable_auto_timeout} onCheckedChange={(v) => updateConfig((cfg) => { cfg.recognition.enable_auto_timeout = v; })} />
         </SettingRow>
         <div className="grid grid-cols-2 gap-4">
-          <div><Label>初始静默超时 (秒)</Label>
+          <div><Label>{t("settingsSections.initialSilenceTimeout")}</Label>
             <Input type="number" value={rec.initial_silence_timeout_seconds} className="w-32"
               onChange={(e) => updateConfig((cfg) => { cfg.recognition.initial_silence_timeout_seconds = Number(e.target.value) || 25; })} />
           </div>
-          <div><Label>段间超时 (秒)</Label>
+          <div><Label>{t("settingsSections.segmentTimeout")}</Label>
             <Input type="number" value={rec.end_silence_timeout_seconds} className="w-32"
               onChange={(e) => updateConfig((cfg) => { cfg.recognition.end_silence_timeout_seconds = Number(e.target.value) || 1; })} />
           </div>
@@ -1470,11 +1478,11 @@ function RecognitionSection() {
       </GlassCard>
 
       <GlassCard className="space-y-4">
-        <h3 className="text-sm font-semibold text-[var(--text-primary)]">无回显重连</h3>
-        <SettingRow label="启用无回显重连" description="长时间无识别结果时自动重连">
+        <h3 className="text-sm font-semibold text-[var(--text-primary)]">{t("settingsSections.noEchoReconnect")}</h3>
+        <SettingRow label={t("settingsSections.enableNoEchoReconnect")} description={t("settingsSections.enableNoEchoReconnectDesc")}>
           <Switch checked={rec.enable_no_response_restart} onCheckedChange={(v) => updateConfig((cfg) => { cfg.recognition.enable_no_response_restart = v; })} />
         </SettingRow>
-        <div><Label>无回显超时 (秒)</Label>
+        <div><Label>{t("settingsSections.noEchoTimeout")}</Label>
           <Input type="number" value={rec.no_response_restart_seconds} className="w-32"
             onChange={(e) => updateConfig((cfg) => { cfg.recognition.no_response_restart_seconds = Number(e.target.value) || 3; })} />
         </div>
@@ -1488,6 +1496,7 @@ function RecognitionSection() {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function StorageSection() {
+  const { t } = useTranslation();
   const config = useAppStore((s) => s.config);
   const storage = config?.storage;
   const updateConfig = useConfigUpdater();
@@ -1496,18 +1505,17 @@ function StorageSection() {
 
   const handleValidateStorage = async () => {
     if (!storage?.batch_storage_connection_string?.trim()) {
-      setValidationMsg("请填写存储账号连接字符串");
+      setValidationMsg(t("settingsSections.connectionString"));
       return;
     }
     setValidating(true);
-    setValidationMsg("验证中...");
+    setValidationMsg(t("settingsSections.validating"));
     try {
-      // 通过后端验证连接字符串
       await api.validateStorageConnection(storage.batch_storage_connection_string);
-      setValidationMsg("✓ 存储账号验证成功");
+      setValidationMsg("✓ OK");
       updateConfig((cfg) => { cfg.storage.batch_storage_is_valid = true; });
     } catch (e) {
-      setValidationMsg(`✗ 验证失败: ${e}`);
+      setValidationMsg(`✗ ${e}`);
       updateConfig((cfg) => { cfg.storage.batch_storage_is_valid = false; });
     } finally {
       setValidating(false);
@@ -1518,13 +1526,13 @@ function StorageSection() {
 
   return (
     <div className="max-w-2xl space-y-6">
-      <SectionHeader title="存储与导出" description="Azure Blob 存储、录音保存、字幕导出" />
+      <SectionHeader title={t("settingsSections.storageTitle")} description={t("settingsSections.storageDesc")} />
 
       <GlassCard className="space-y-4">
-        <h3 className="text-sm font-semibold text-[var(--text-primary)]">Azure Blob 存储（批量处理）</h3>
-        <p className="text-xs text-[var(--text-muted)]">批量语音转写需要 Azure Blob 存储来上传音频和获取结果</p>
+        <h3 className="text-sm font-semibold text-[var(--text-primary)]">{t("settingsSections.blobStorage")}</h3>
+        <p className="text-xs text-[var(--text-muted)]">{t("settingsSections.blobStorageDesc")}</p>
         <div>
-          <Label>连接字符串</Label>
+          <Label>{t("settingsSections.connectionString")}</Label>
           <Input type="password" value={storage.batch_storage_connection_string}
             onChange={(e) => updateConfig((cfg) => {
               cfg.storage.batch_storage_connection_string = e.target.value;
@@ -1533,11 +1541,11 @@ function StorageSection() {
             placeholder="DefaultEndpointsProtocol=https;AccountName=...;AccountKey=...;EndpointSuffix=..." />
         </div>
         <div className="grid grid-cols-2 gap-4">
-          <div><Label>音频容器名</Label>
+          <div><Label>{t("settingsSections.audioContainer")}</Label>
             <Input value={storage.batch_audio_container_name}
               onChange={(e) => updateConfig((cfg) => { cfg.storage.batch_audio_container_name = e.target.value; })} />
           </div>
-          <div><Label>结果容器名</Label>
+          <div><Label>{t("settingsSections.resultContainer")}</Label>
             <Input value={storage.batch_result_container_name}
               onChange={(e) => updateConfig((cfg) => { cfg.storage.batch_result_container_name = e.target.value; })} />
           </div>
@@ -1545,10 +1553,10 @@ function StorageSection() {
         <div className="flex items-center gap-3">
           <Button size="sm" variant="secondary" onClick={handleValidateStorage} disabled={validating}>
             {validating ? <Loader2 size={12} className="animate-spin" /> : <TestTube size={12} />}
-            {validating ? " 验证中..." : " 验证连接"}
+            {validating ? ` ${t("settingsSections.validating")}` : ` ${t("settingsSections.validateConnection")}`}
           </Button>
           {storage.batch_storage_is_valid && (
-            <Badge variant="green">已验证</Badge>
+            <Badge variant="green">{t("settingsSections.validated")}</Badge>
           )}
           {validationMsg && (
             <span className={cn("text-xs", validationMsg.startsWith("✓") ? "text-emerald-500" : validationMsg.startsWith("✗") ? "text-red-400" : "text-[var(--text-muted)]")}>
@@ -1559,11 +1567,11 @@ function StorageSection() {
       </GlassCard>
 
       <GlassCard className="space-y-4">
-        <h3 className="text-sm font-semibold text-[var(--text-primary)]">录音</h3>
-        <SettingRow label="启用录音" description="翻译时同步录制音频">
+        <h3 className="text-sm font-semibold text-[var(--text-primary)]">{t("settingsSections.recording")}</h3>
+        <SettingRow label={t("settingsSections.enableRecording")} description={t("settingsSections.enableRecordingDesc")}>
           <Switch checked={storage.enable_recording} onCheckedChange={(v) => updateConfig((cfg) => { cfg.storage.enable_recording = v; })} />
         </SettingRow>
-        <div><Label>MP3 码率 (kbps)</Label>
+        <div><Label>{t("settingsSections.mp3Bitrate")}</Label>
           <Select className="w-40" value={String(storage.recording_mp3_bitrate_kbps)}
             onChange={(e) => updateConfig((cfg) => { cfg.storage.recording_mp3_bitrate_kbps = Number(e.target.value); })}>
             <option value="128">128</option><option value="192">192</option><option value="256">256</option><option value="320">320</option>
@@ -1572,11 +1580,11 @@ function StorageSection() {
       </GlassCard>
 
       <GlassCard className="space-y-4">
-        <h3 className="text-sm font-semibold text-[var(--text-primary)]">字幕导出</h3>
-        <SettingRow label="导出 SRT 格式" description="SubRip 字幕格式">
+        <h3 className="text-sm font-semibold text-[var(--text-primary)]">{t("settingsSections.subtitleExport")}</h3>
+        <SettingRow label={t("settingsSections.exportSrt")} description={t("settingsSections.exportSrtDesc")}>
           <Switch checked={storage.export_srt_subtitles} onCheckedChange={(v) => updateConfig((cfg) => { cfg.storage.export_srt_subtitles = v; })} />
         </SettingRow>
-        <SettingRow label="导出 VTT 格式" description="WebVTT 字幕格式">
+        <SettingRow label={t("settingsSections.exportVtt")} description={t("settingsSections.exportVttDesc")}>
           <Switch checked={storage.export_vtt_subtitles} onCheckedChange={(v) => updateConfig((cfg) => { cfg.storage.export_vtt_subtitles = v; })} />
         </SettingRow>
       </GlassCard>
@@ -1589,6 +1597,7 @@ function StorageSection() {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function AudioSection() {
+  const { t } = useTranslation();
   const config = useAppStore((s) => s.config);
   const audio = config?.audio;
   const updateConfig = useConfigUpdater();
@@ -1597,23 +1606,23 @@ function AudioSection() {
 
   return (
     <div className="max-w-2xl space-y-6">
-      <SectionHeader title="音频预处理" description="WebRTC APM 参数、设备选择" />
+      <SectionHeader title={t("settingsSections.audioTitle")} description={t("settingsSections.audioDesc")} />
 
       <GlassCard className="space-y-4">
-        <h3 className="text-sm font-semibold text-[var(--text-primary)]">设备</h3>
-        <div><Label>输入设备（麦克风）</Label>
+        <h3 className="text-sm font-semibold text-[var(--text-primary)]">{t("settingsSections.devices")}</h3>
+        <div><Label>{t("settingsSections.inputDevice")}</Label>
           <Select className="w-full" value={audio.input_device_id || ""}
             onChange={(e) => updateConfig((cfg) => { cfg.audio.input_device_id = e.target.value || undefined; })}>
-            <option value="">默认设备</option>
+            <option value="">{t("settingsSections.defaultDevice")}</option>
           </Select>
         </div>
-        <div><Label>回环采集设备（系统声音）</Label>
+        <div><Label>{t("settingsSections.loopbackDevice")}</Label>
           <Select className="w-full" value={audio.loopback_device_id || ""}
             onChange={(e) => updateConfig((cfg) => { cfg.audio.loopback_device_id = e.target.value || undefined; })}>
-            <option value="">默认输出设备</option>
+            <option value="">{t("settingsSections.defaultOutputDevice")}</option>
           </Select>
         </div>
-        <div><Label>采样率</Label>
+        <div><Label>{t("settingsSections.sampleRate")}</Label>
           <Select className="w-40" value={audio.sample_rate.toString()}
             onChange={(e) => updateConfig((cfg) => { cfg.audio.sample_rate = Number(e.target.value); })}>
             <option value="16000">16000 Hz</option>
@@ -1625,13 +1634,13 @@ function AudioSection() {
 
       <GlassCard className="space-y-4">
         <h3 className="text-sm font-semibold text-[var(--text-primary)]">WebRTC APM</h3>
-        <SettingRow label="回声消除 (AEC)" description="消除扬声器回声">
+        <SettingRow label={t("settingsSections.aec")} description={t("settingsSections.aecDesc")}>
           <Switch checked={audio.enable_aec} onCheckedChange={(v) => updateConfig((cfg) => { cfg.audio.enable_aec = v; })} />
         </SettingRow>
-        <SettingRow label="噪音抑制 (NS)" description="降低环境噪音">
+        <SettingRow label={t("settingsSections.ns")} description={t("settingsSections.nsDesc")}>
           <Switch checked={audio.enable_ns} onCheckedChange={(v) => updateConfig((cfg) => { cfg.audio.enable_ns = v; })} />
         </SettingRow>
-        <SettingRow label="自动增益 (AGC)" description="自动调整音量">
+        <SettingRow label={t("settingsSections.agc")} description={t("settingsSections.agcDesc")}>
           <Switch checked={audio.enable_agc} onCheckedChange={(v) => updateConfig((cfg) => { cfg.audio.enable_agc = v; })} />
         </SettingRow>
       </GlassCard>
@@ -1644,6 +1653,7 @@ function AudioSection() {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function InsightSection() {
+  const { t } = useTranslation();
   const config = useAppStore((s) => s.config);
   const ai = config?.ai;
   const updateConfig = useConfigUpdater();
@@ -1656,37 +1666,37 @@ function InsightSection() {
 
   return (
     <div className="max-w-2xl space-y-6">
-      <SectionHeader title="AI 洞察" description="模型选择器（端点/模型二级下拉）、系统提示词、参数" />
+      <SectionHeader title={t("settingsSections.insightTitle")} description={t("settingsSections.insightDesc")} />
 
       <GlassCard className="space-y-4">
-        <h3 className="text-sm font-semibold text-[var(--text-primary)]">模型选择</h3>
+        <h3 className="text-sm font-semibold text-[var(--text-primary)]">{t("settingsSections.modelSelection")}</h3>
         <div className="grid grid-cols-2 gap-4">
-          <ModelRefSelector label="洞察模型" value={ai.insight_model} onChange={setModelRef("insight_model")} capability="text" />
-          <ModelRefSelector label="摘要模型" value={ai.summary_model} onChange={setModelRef("summary_model")} capability="text" />
-          <ModelRefSelector label="快问模型" value={ai.quick_model} onChange={setModelRef("quick_model")} capability="text" />
-          <ModelRefSelector label="对话模型" value={ai.conversation_model} onChange={setModelRef("conversation_model")} capability="text" />
-          <ModelRefSelector label="意图识别模型" value={ai.intent_model} onChange={setModelRef("intent_model")} capability="text" />
+          <ModelRefSelector label={t("settingsSections.insightModel")} value={ai.insight_model} onChange={setModelRef("insight_model")} capability="text" />
+          <ModelRefSelector label={t("settingsSections.summaryModel")} value={ai.summary_model} onChange={setModelRef("summary_model")} capability="text" />
+          <ModelRefSelector label={t("settingsSections.quickModel")} value={ai.quick_model} onChange={setModelRef("quick_model")} capability="text" />
+          <ModelRefSelector label={t("settingsSections.conversationModel")} value={ai.conversation_model} onChange={setModelRef("conversation_model")} capability="text" />
+          <ModelRefSelector label={t("settingsSections.intentModel")} value={ai.intent_model} onChange={setModelRef("intent_model")} capability="text" />
           {/* O-09: 补齐缺失的复盘模型选择器 */}
-          <ModelRefSelector label="复盘模型" value={ai.review_model} onChange={setModelRef("review_model")} capability="text" />
+          <ModelRefSelector label={t("settingsSections.reviewModel")} value={ai.review_model} onChange={setModelRef("review_model")} capability="text" />
         </div>
       </GlassCard>
 
       <GlassCard className="space-y-4">
-        <h3 className="text-sm font-semibold text-[var(--text-primary)]">参数</h3>
-        <SettingRow label="启用推理模式 (Reasoning)" description="让模型进行更深入的思考">
+        <h3 className="text-sm font-semibold text-[var(--text-primary)]">{t("settingsSections.parameters")}</h3>
+        <SettingRow label={t("settingsSections.enableReasoning")} description={t("settingsSections.enableReasoningDesc")}>
           <Switch checked={ai.enable_reasoning} onCheckedChange={(v) => updateConfig((cfg) => { cfg.ai.enable_reasoning = v; })} />
         </SettingRow>
-        <div><Label>最大对话轮次</Label>
+        <div><Label>{t("settingsSections.maxConversationTurns")}</Label>
           <Input type="number" value={ai.max_conversation_turns} className="w-24"
             onChange={(e) => updateConfig((cfg) => { cfg.ai.max_conversation_turns = Number(e.target.value) || 20; })} />
         </div>
       </GlassCard>
 
       <GlassCard className="space-y-4">
-        <h3 className="text-sm font-semibold text-[var(--text-primary)]">系统提示词</h3>
+        <h3 className="text-sm font-semibold text-[var(--text-primary)]">{t("settingsSections.systemPrompt")}</h3>
         <Textarea rows={4} value={ai.insight_system_prompt}
           onChange={(e) => updateConfig((cfg) => { cfg.ai.insight_system_prompt = e.target.value; })}
-          placeholder="你是一个会议助手，擅长分析对话内容..." />
+          placeholder={t("settingsSections.systemPromptPlaceholder")} />
       </GlassCard>
     </div>
   );
@@ -1697,6 +1707,7 @@ function InsightSection() {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function ImageSection() {
+  const { t } = useTranslation();
   const config = useAppStore((s) => s.config);
   const media = config?.media;
   const updateConfig = useConfigUpdater();
@@ -1705,19 +1716,19 @@ function ImageSection() {
 
   return (
     <div className="max-w-2xl space-y-6">
-      <SectionHeader title="图片生成" description="gpt-image-2 / DALL-E 参数" />
+      <SectionHeader title={t("settingsSections.imageTitle")} description={t("settingsSections.imageDesc")} />
 
       <GlassCard className="space-y-4">
-        <ModelRefSelector label="图片模型" value={media.image_model}
+        <ModelRefSelector label={t("settingsSections.imageModel")} value={media.image_model}
           onChange={(ref) => updateConfig((cfg) => { cfg.media.image_model = ref; })} capability="image" />
         <div className="grid grid-cols-2 gap-4">
-          <div><Label>质量</Label>
+          <div><Label>{t("settingsSections.quality")}</Label>
             <Select className="w-full" value={media.image_quality}
               onChange={(e) => updateConfig((cfg) => { cfg.media.image_quality = e.target.value; })}>
               <option value="auto">auto</option><option value="low">low</option><option value="medium">medium</option><option value="high">high</option>
             </Select>
           </div>
-          <div><Label>输出格式</Label>
+          <div><Label>{t("settingsSections.outputFormat")}</Label>
             <Select className="w-full" value={media.image_format}
               onChange={(e) => updateConfig((cfg) => { cfg.media.image_format = e.target.value; })}>
               <option value="png">PNG</option><option value="jpeg">JPEG</option><option value="webp">WebP</option>
@@ -1725,11 +1736,11 @@ function ImageSection() {
           </div>
         </div>
         <div className="grid grid-cols-2 gap-4">
-          <div><Label>生成数量</Label>
+          <div><Label>{t("settingsSections.generateCount")}</Label>
             <Input type="number" min={1} max={5} value={media.image_count} className="w-24"
               onChange={(e) => updateConfig((cfg) => { cfg.media.image_count = Number(e.target.value) || 1; })} />
           </div>
-          <div><Label>背景</Label>
+          <div><Label>{t("settingsSections.background")}</Label>
             <Select className="w-full" value={media.image_background}
               onChange={(e) => updateConfig((cfg) => { cfg.media.image_background = e.target.value; })}>
               <option value="auto">auto</option><option value="opaque">opaque</option><option value="transparent">transparent</option>
@@ -1739,7 +1750,7 @@ function ImageSection() {
       </GlassCard>
 
       <GlassCard className="space-y-4">
-        <h3 className="text-sm font-semibold text-[var(--text-primary)]">尺寸预设</h3>
+        <h3 className="text-sm font-semibold text-[var(--text-primary)]">{t("settingsSections.sizePresets")}</h3>
         <div className="grid grid-cols-4 gap-2">
           {["1024×1024", "1792×1024", "1024×1792", "1024×768", "768×1024"].map((s) => (
             <button key={s} onClick={() => updateConfig((cfg) => { cfg.media.image_size = s.replace("×", "x"); })}
@@ -1763,6 +1774,7 @@ function ImageSection() {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function VideoSection() {
+  const { t } = useTranslation();
   const config = useAppStore((s) => s.config);
   const media = config?.media;
   const updateConfig = useConfigUpdater();
@@ -1771,18 +1783,18 @@ function VideoSection() {
 
   return (
     <div className="max-w-2xl space-y-6">
-      <SectionHeader title="视频生成" description="Sora 等模型参数" />
+      <SectionHeader title={t("settingsSections.videoTitle")} description={t("settingsSections.videoDesc")} />
       <GlassCard className="space-y-4">
-        <ModelRefSelector label="视频模型" value={media.video_model}
+        <ModelRefSelector label={t("settingsSections.videoModel")} value={media.video_model}
           onChange={(ref) => updateConfig((cfg) => { cfg.media.video_model = ref; })} capability="video" />
         <div className="grid grid-cols-2 gap-4">
-          <div><Label>宽高比</Label>
+          <div><Label>{t("settingsSections.aspectRatio")}</Label>
             <Select className="w-full" value={media.video_aspect_ratio}
               onChange={(e) => updateConfig((cfg) => { cfg.media.video_aspect_ratio = e.target.value; })}>
               <option>16:9</option><option>9:16</option><option>1:1</option><option>4:3</option><option>3:4</option>
             </Select>
           </div>
-          <div><Label>分辨率</Label>
+          <div><Label>{t("settingsSections.resolution")}</Label>
             <Select className="w-full" value={media.video_resolution}
               onChange={(e) => updateConfig((cfg) => { cfg.media.video_resolution = e.target.value; })}>
               <option>720p</option><option>1080p</option>
@@ -1790,16 +1802,16 @@ function VideoSection() {
           </div>
         </div>
         <div className="grid grid-cols-2 gap-4">
-          <div><Label>时长 (秒)</Label>
+          <div><Label>{t("settingsSections.duration")}</Label>
             <Input type="number" value={media.video_seconds} className="w-24"
               onChange={(e) => updateConfig((cfg) => { cfg.media.video_seconds = Number(e.target.value) || 5; })} />
           </div>
-          <div><Label>变体数</Label>
+          <div><Label>{t("settingsSections.variants")}</Label>
             <Input type="number" min={1} max={4} value={media.video_variants} className="w-24"
               onChange={(e) => updateConfig((cfg) => { cfg.media.video_variants = Number(e.target.value) || 1; })} />
           </div>
         </div>
-        <div><Label>轮询间隔 (毫秒)</Label>
+        <div><Label>{t("settingsSections.pollInterval")}</Label>
           <Input type="number" value={media.video_poll_interval_ms} className="w-32"
             onChange={(e) => updateConfig((cfg) => { cfg.media.video_poll_interval_ms = Number(e.target.value) || 3000; })} />
         </div>
@@ -1813,6 +1825,7 @@ function VideoSection() {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function SearchSection() {
+  const { t } = useTranslation();
   const config = useAppStore((s) => s.config);
   const ws = config?.web_search;
   const updateConfig = useConfigUpdater();
@@ -1821,51 +1834,51 @@ function SearchSection() {
 
   return (
     <div className="max-w-2xl space-y-6">
-      <SectionHeader title="网页搜索" description="AI 对话中的联网搜索能力" />
+      <SectionHeader title={t("settingsSections.searchTitle")} description={t("settingsSections.searchDesc")} />
       <GlassCard className="space-y-4">
-        <div><Label>搜索引擎</Label>
+        <div><Label>{t("settingsSections.searchEngine")}</Label>
           <Select className="w-full" value={ws.provider_id}
             onChange={(e) => updateConfig((cfg) => { cfg.web_search.provider_id = e.target.value; })}>
             <option value="bing">Bing</option><option value="google">Google</option>
             <option value="duckduckgo">DuckDuckGo</option><option value="brave">Brave</option>
-            <option value="mcp">自定义 MCP</option>
+            <option value="mcp">{t("settingsSections.customMcp")}</option>
           </Select>
         </div>
-        <div><Label>触发模式</Label>
+        <div><Label>{t("settingsSections.triggerMode")}</Label>
           <Select className="w-full" value={ws.trigger_mode}
             onChange={(e) => updateConfig((cfg) => { cfg.web_search.trigger_mode = e.target.value; })}>
-            <option value="auto">Auto — AI 判断是否需要搜索</option>
-            <option value="always">Always — 每次对话都搜索</option>
-            <option value="manual">Manual — 仅手动触发</option>
+            <option value="auto">{t("settingsSections.triggerAuto")}</option>
+            <option value="always">{t("settingsSections.triggerAlways")}</option>
+            <option value="manual">{t("settingsSections.triggerManual")}</option>
           </Select>
         </div>
-        <div><Label>最大结果数</Label>
+        <div><Label>{t("settingsSections.maxResults")}</Label>
           <Input type="number" value={ws.max_results} className="w-24"
             onChange={(e) => updateConfig((cfg) => { cfg.web_search.max_results = Number(e.target.value) || 5; })} />
         </div>
-        <SettingRow label="AI 意图分析" description="让 AI 判断用户问题是否需要联网搜索">
+        <SettingRow label={t("settingsSections.aiIntentAnalysis")} description={t("settingsSections.aiIntentAnalysisDesc")}>
           <Switch checked={ws.enable_intent_analysis} onCheckedChange={(v) => updateConfig((cfg) => { cfg.web_search.enable_intent_analysis = v; })} />
         </SettingRow>
-        <SettingRow label="结果压缩" description="对搜索结果进行摘要压缩后注入上下文">
+        <SettingRow label={t("settingsSections.resultCompression")} description={t("settingsSections.resultCompressionDesc")}>
           <Switch checked={ws.enable_result_compression} onCheckedChange={(v) => updateConfig((cfg) => { cfg.web_search.enable_result_compression = v; })} />
         </SettingRow>
       </GlassCard>
 
       <GlassCard className="space-y-4">
-        <h3 className="text-sm font-semibold text-[var(--text-primary)]">MCP 配置（自定义搜索）</h3>
-        <div><Label>MCP 端点 URL</Label>
+        <h3 className="text-sm font-semibold text-[var(--text-primary)]">{t("settingsSections.mcpConfig")}</h3>
+        <div><Label>{t("settingsSections.mcpEndpointUrl")}</Label>
           <Input value={ws.mcp_endpoint} placeholder="https://mcp-server.example.com"
             onChange={(e) => updateConfig((cfg) => { cfg.web_search.mcp_endpoint = e.target.value; })} />
         </div>
-        <div><Label>工具名称</Label>
+        <div><Label>{t("settingsSections.toolName")}</Label>
           <Input value={ws.mcp_tool_name} placeholder="web_search"
             onChange={(e) => updateConfig((cfg) => { cfg.web_search.mcp_tool_name = e.target.value; })} />
         </div>
         <div><Label>API Key</Label>
-          <Input type="password" value={ws.mcp_api_key} placeholder="可选"
+          <Input type="password" value={ws.mcp_api_key} placeholder=""
             onChange={(e) => updateConfig((cfg) => { cfg.web_search.mcp_api_key = e.target.value; })} />
         </div>
-        <SettingRow label="调试模式" description="输出搜索请求和响应日志">
+        <SettingRow label={t("settingsSections.debugMode")} description={t("settingsSections.debugModeDesc")}>
           <Switch checked={ws.debug_mode} onCheckedChange={(v) => updateConfig((cfg) => { cfg.web_search.debug_mode = v; })} />
         </SettingRow>
       </GlassCard>
@@ -1878,28 +1891,29 @@ function SearchSection() {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function CloudSection() {
+  const { t } = useTranslation();
   return (
     <div className="max-w-2xl space-y-6">
-      <SectionHeader title="云服务" description="后端网关连接与 AAD 登录" />
+      <SectionHeader title={t("settingsSections.cloudTitle")} description={t("settingsSections.cloudDesc")} />
 
       <GlassCard className="space-y-4">
-        <div><Label>服务模式</Label>
+        <div><Label>{t("settingsSections.serviceMode")}</Label>
           <Select className="w-full">
-            <option value="self_hosted">本地直连 (SelfHosted)</option>
-            <option value="cloud">云端网关 (Cloud)</option>
+            <option value="self_hosted">{t("settingsSections.selfHosted")}</option>
+            <option value="cloud">{t("settingsSections.cloudMode")}</option>
           </Select>
         </div>
-        <div><Label>后端 URL</Label><Input placeholder="https://gateway.truefluent.pro" /></div>
+        <div><Label>{t("settingsSections.backendUrl")}</Label><Input placeholder="https://gateway.truefluent.pro" /></div>
       </GlassCard>
 
       <GlassCard className="space-y-4">
-        <h3 className="text-sm font-semibold text-[var(--text-primary)]">Azure AD 登录</h3>
-        <div><Label>租户 ID (Tenant)</Label><Input placeholder="00000000-0000-0000-0000-000000000000" /></div>
-        <div><Label>客户端 ID (Client)</Label><Input placeholder="00000000-0000-0000-0000-000000000000" /></div>
+        <h3 className="text-sm font-semibold text-[var(--text-primary)]">{t("settingsSections.aadLogin")}</h3>
+        <div><Label>{t("settingsSections.tenantId")}</Label><Input placeholder="00000000-0000-0000-0000-000000000000" /></div>
+        <div><Label>{t("settingsSections.clientId")}</Label><Input placeholder="00000000-0000-0000-0000-000000000000" /></div>
         <div><Label>Scope</Label><Input placeholder="api://truefluent/.default" /></div>
         <div className="flex gap-2">
-          <Button size="sm"><Shield size={14} /> 登录</Button>
-          <Button variant="secondary" size="sm"><Zap size={14} /> 健康检查</Button>
+          <Button size="sm"><Shield size={14} /> {t("settingsSections.login")}</Button>
+          <Button variant="secondary" size="sm"><Zap size={14} /> {t("settingsSections.healthCheck")}</Button>
         </div>
       </GlassCard>
     </div>
@@ -1911,6 +1925,7 @@ function CloudSection() {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function TransferSection() {
+  const { t } = useTranslation();
   const [status, setStatus] = useState("");
 
   const handleExport = async (fullConfig: boolean) => {
@@ -1918,20 +1933,19 @@ function TransferSection() {
       const json = await api.exportConfig();
       let data = json;
       if (!fullConfig) {
-        // 仅导出端点部分
         const parsed = JSON.parse(json);
         data = JSON.stringify({ endpoints: parsed.endpoints, ai: parsed.ai, media: parsed.media }, null, 2);
       }
       const path = await dialogSave({
-        title: fullConfig ? "导出完整配置" : "导出基础 AI 配置",
+        title: fullConfig ? t("settingsSections.fullConfig") : t("settingsSections.basicAiConfig"),
         defaultPath: fullConfig ? "truefluent-config-full.json" : "truefluent-config.json",
         filters: [{ name: "JSON", extensions: ["json"] }],
       });
       if (!path) return;
       await api.writeTextFile(path, data);
-      setStatus(`✓ 已导出到 ${path}`);
+      setStatus(`✓ ${path}`);
     } catch (e) {
-      setStatus(`✗ 导出失败: ${e}`);
+      setStatus(`✗ ${e}`);
     }
   };
 
@@ -1944,19 +1958,17 @@ function TransferSection() {
         data = JSON.stringify({ endpoints: parsed.endpoints, ai: parsed.ai, media: parsed.media }, null, 2);
       }
       await navigator.clipboard.writeText(data);
-      setStatus(`✓ 已复制到剪贴板`);
+      setStatus("✓ OK");
     } catch (e) {
-      setStatus(`✗ 复制失败: ${e}`);
+      setStatus(`✗ ${e}`);
     }
   };
 
   const handleImportFromClipboard = async () => {
     try {
       const json = await navigator.clipboard.readText();
-      if (!json.trim()) { setStatus("✗ 剪贴板为空"); return; }
-      // 尝试解析验证
+      if (!json.trim()) { setStatus("✗ Empty"); return; }
       JSON.parse(json);
-      // 合并导入
       const partial = JSON.parse(json);
       const currentJson = await api.exportConfig();
       const current = JSON.parse(currentJson);
@@ -1967,16 +1979,16 @@ function TransferSection() {
       const cfg = await api.getConfig();
       useAppStore.getState().setConfig(cfg);
       await api.refreshProviders();
-      setStatus("✓ 从剪贴板导入成功");
+      setStatus("✓ OK");
     } catch (e) {
-      setStatus(`✗ 剪贴板导入失败: ${e}`);
+      setStatus(`✗ ${e}`);
     }
   };
 
   const handleImport = async (fullConfig: boolean) => {
     try {
       const path = await dialogOpen({
-        title: fullConfig ? "导入完整配置" : "导入基础 AI 配置",
+        title: fullConfig ? t("settingsSections.fullConfig") : t("settingsSections.basicAiConfig"),
         multiple: false,
         filters: [{ name: "JSON", extensions: ["json"] }],
       });
@@ -1987,7 +1999,6 @@ function TransferSection() {
       if (fullConfig) {
         await api.importConfig(json);
       } else {
-        // 合并端点部分到现有配置
         const partial = JSON.parse(json);
         const currentJson = await api.exportConfig();
         const current = JSON.parse(currentJson);
@@ -1999,40 +2010,40 @@ function TransferSection() {
       const cfg = await api.getConfig();
       useAppStore.getState().setConfig(cfg);
       await api.refreshProviders();
-      setStatus("✓ 导入成功，配置已更新");
+      setStatus("✓ OK");
     } catch (e) {
-      setStatus(`✗ 导入失败: ${e}`);
+      setStatus(`✗ ${e}`);
     }
   };
 
   return (
     <div className="max-w-2xl space-y-6">
-      <SectionHeader title="导入导出" description="配置备份与迁移" />
+      <SectionHeader title={t("settingsSections.transferTitle")} description={t("settingsSections.transferDesc")} />
 
       <GlassCard className="space-y-4">
-        <h3 className="text-sm font-semibold text-[var(--text-primary)]">基础 AI 配置</h3>
-        <p className="text-xs text-[var(--text-muted)]">仅包含端点和模型引用</p>
+        <h3 className="text-sm font-semibold text-[var(--text-primary)]">{t("settingsSections.basicAiConfig")}</h3>
+        <p className="text-xs text-[var(--text-muted)]">{t("settingsSections.basicAiConfigDesc")}</p>
         <div className="flex gap-2">
-          <Button variant="secondary" size="sm" onClick={() => handleExport(false)}><Download size={14} /> 导出</Button>
-          <Button variant="secondary" size="sm" onClick={() => handleImport(false)}><Upload size={14} /> 导入</Button>
+          <Button variant="secondary" size="sm" onClick={() => handleExport(false)}><Download size={14} /> {t("settingsSections.exportBtn")}</Button>
+          <Button variant="secondary" size="sm" onClick={() => handleImport(false)}><Upload size={14} /> {t("settingsSections.importBtn")}</Button>
         </div>
       </GlassCard>
 
       <GlassCard className="space-y-4">
-        <h3 className="text-sm font-semibold text-[var(--text-primary)]">完整配置</h3>
-        <p className="text-xs text-[var(--text-muted)]">包含所有设置、端点、主题等</p>
+        <h3 className="text-sm font-semibold text-[var(--text-primary)]">{t("settingsSections.fullConfig")}</h3>
+        <p className="text-xs text-[var(--text-muted)]">{t("settingsSections.fullConfigDesc")}</p>
         <div className="flex gap-2">
-          <Button variant="secondary" size="sm" onClick={() => handleExport(true)}><Download size={14} /> 导出全部</Button>
-          <Button variant="secondary" size="sm" onClick={() => handleImport(true)}><Upload size={14} /> 导入全部</Button>
+          <Button variant="secondary" size="sm" onClick={() => handleExport(true)}><Download size={14} /> {t("settingsSections.exportAll")}</Button>
+          <Button variant="secondary" size="sm" onClick={() => handleImport(true)}><Upload size={14} /> {t("settingsSections.importAll")}</Button>
         </div>
       </GlassCard>
 
       <GlassCard className="space-y-4">
-        <h3 className="text-sm font-semibold text-[var(--text-primary)]">配置迁移</h3>
-        <p className="text-xs text-[var(--text-muted)]">通过剪贴板快速复制配置到其他设备</p>
+        <h3 className="text-sm font-semibold text-[var(--text-primary)]">{t("settingsSections.configMigration")}</h3>
+        <p className="text-xs text-[var(--text-muted)]">{t("settingsSections.configMigrationDesc")}</p>
         <div className="flex gap-2 flex-wrap">
-          <Button variant="secondary" size="sm" onClick={() => handleExportToClipboard(true)}><Copy size={14} /> 复制AI配置</Button>
-          <Button variant="secondary" size="sm" onClick={() => handleImportFromClipboard()}><Clipboard size={14} /> 从剪贴板导入</Button>
+          <Button variant="secondary" size="sm" onClick={() => handleExportToClipboard(true)}><Copy size={14} /> {t("settingsSections.copyAiConfig")}</Button>
+          <Button variant="secondary" size="sm" onClick={() => handleImportFromClipboard()}><Clipboard size={14} /> {t("settingsSections.importFromClipboard")}</Button>
         </div>
       </GlassCard>
 
@@ -2048,6 +2059,7 @@ function TransferSection() {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function UiSection() {
+  const { t, i18n } = useTranslation();
   const themeMode = useThemeStore((s) => s.mode);
   const setMode = useThemeStore((s) => s.setMode);
   const fontSize = useThemeStore((s) => s.fontSize);
@@ -2057,10 +2069,10 @@ function UiSection() {
 
   return (
     <div className="max-w-2xl space-y-6">
-      <SectionHeader title="界面设置" description="主题、字号、语言" />
+      <SectionHeader title={t("settingsSections.uiTitle")} description={t("settingsSections.uiDesc")} />
 
       <GlassCard className="space-y-4">
-        <h3 className="text-sm font-semibold text-[var(--text-primary)]">主题</h3>
+        <h3 className="text-sm font-semibold text-[var(--text-primary)]">{t("settingsUi.themeLabel")}</h3>
         <div className="flex gap-3">
           {(["system", "light", "dark"] as ThemeMode[]).map((m) => (
             <button
@@ -2076,7 +2088,7 @@ function UiSection() {
               {m === "system" && <Monitor size={16} />}
               {m === "light" && <Sun size={16} />}
               {m === "dark" && <Moon size={16} />}
-              <span className="text-sm">{m === "system" ? "跟随系统" : m === "light" ? "浅色" : "深色"}</span>
+              <span className="text-sm">{m === "system" ? t("settingsUi.themeSystem") : m === "light" ? t("settingsUi.themeLight") : t("settingsUi.themeDark")}</span>
             </button>
           ))}
         </div>
@@ -2084,12 +2096,12 @@ function UiSection() {
 
       <GlassCard className="space-y-4">
         <div>
-          <Label>字号 ({fontSize}px)</Label>
+          <Label>{t("settingsUi.fontSizeLabel")} ({fontSize}px)</Label>
           <Input className="w-24" type="number" min={12} max={20} value={fontSize}
             onChange={(e) => setFontSize(Number(e.target.value) || 14)} />
         </div>
         <div>
-          <Label>页面切换动画 ({transitionDuration}ms)</Label>
+          <Label>{t("settingsUi.transitionLabel")} ({transitionDuration}ms)</Label>
           <div className="flex items-center gap-3">
             <input type="range" min={0} max={500} step={10} value={transitionDuration}
               onChange={(e) => setTransitionDuration(Number(e.target.value))}
@@ -2097,10 +2109,12 @@ function UiSection() {
             <Input className="w-20" type="number" min={0} max={1000} value={transitionDuration}
               onChange={(e) => setTransitionDuration(Number(e.target.value) || 0)} />
           </div>
-          <p className="text-[10px] text-[var(--text-muted)] mt-1">设为 0 可关闭动画</p>
+          <p className="text-[10px] text-[var(--text-muted)] mt-1">{t("settingsUi.transitionHint")}</p>
         </div>
-        <div><Label>界面语言</Label>
-          <Select className="w-40"><option value="zh-CN">简体中文</option><option value="en">English</option></Select>
+        <div><Label>{t("settingsUi.languageLabel")}</Label>
+          <Select className="w-40" value={i18n.language} onChange={(e) => i18n.changeLanguage(e.target.value)}>
+            <option value="zh-CN">简体中文</option><option value="en">English</option>
+          </Select>
         </div>
       </GlassCard>
     </div>
@@ -2112,32 +2126,33 @@ function UiSection() {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function AboutSection() {
+  const { t } = useTranslation();
   return (
     <div className="max-w-2xl space-y-6">
-      <SectionHeader title="关于" />
+      <SectionHeader title={t("settingsSections.aboutTitle")} />
 
       <GlassCard className="space-y-3">
         <div className="flex items-center gap-3 mb-2">
-          <span className="text-xl font-bold text-gradient">译见 Pro</span>
+          <span className="text-xl font-bold text-gradient">{t("settingsAbout.appName")}</span>
           <Badge variant="blue">v0.1.0</Badge>
         </div>
         <p className="text-sm text-[var(--text-secondary)]">
-          Tauri 2 + React 19 + Rust — 全平台 AI 翻译 & 创作工具
+          {t("settingsAbout.appDesc")}
         </p>
       </GlassCard>
 
       <GlassCard className="space-y-4">
-        <h3 className="text-sm font-semibold text-[var(--text-primary)]">技术架构</h3>
+        <h3 className="text-sm font-semibold text-[var(--text-primary)]">{t("settingsAbout.techStackTitle")}</h3>
         <div className="text-sm text-[var(--text-secondary)] space-y-1">
-          <p>前端: React 19 + TypeScript + Tailwind CSS + Radix UI</p>
-          <p>后端: Rust + Tauri 2 + reqwest (SSE streaming)</p>
-          <p>存储: SQLite (rusqlite)</p>
-          <p>Provider: OpenAI Chat / Image (可扩展)</p>
+          <p>{t("settingsAbout.techFrontend")}</p>
+          <p>{t("settingsAbout.techBackend")}</p>
+          <p>{t("settingsAbout.techStorage")}</p>
+          <p>{t("settingsAbout.techProvider")}</p>
         </div>
       </GlassCard>
 
       <GlassCard className="space-y-4">
-        <SettingRow label="自动检查更新" description="启动时检查新版本"><Switch defaultChecked /></SettingRow>
+        <SettingRow label={t("settingsSections.autoUpdate")} description={t("settingsSections.autoUpdateDesc")}><Switch defaultChecked /></SettingRow>
       </GlassCard>
     </div>
   );

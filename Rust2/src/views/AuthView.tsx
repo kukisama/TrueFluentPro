@@ -37,7 +37,7 @@ export function AuthView() {
             <FadeIn>
               <GlassCard className="py-6">
                 <div className="text-center mb-6">
-                  <h2 className="text-xl font-bold text-gradient mb-1">译见 Pro</h2>
+                  <h2 className="text-xl font-bold text-gradient mb-1">TrueFluentPro</h2>
                   <p className="text-sm text-[var(--text-muted)]">{t("auth.subtitle")}</p>
                 </div>
 

@@ -21,7 +21,7 @@ export function LiveTranslationView() {
     config, sessionId, setSessionId, showInfoBar,
   } = useAppStore();
 
-  const [sourceLang, setSourceLang] = useState("zh-Hans");
+  const [sourceLang, setSourceLang] = useState("auto");
   const [targetLang, setTargetLang] = useState("en");
   // PR-2: 从后端动态获取语言列表（分 source/target）
   const [sourceLangs, setSourceLangs] = useState<SupportedLanguage[]>([]);
@@ -89,7 +89,7 @@ export function LiveTranslationView() {
               setBookmarkedIds(prev => new Set(prev).add(seg.id));
             }
           }
-          showInfoBar(`已恢复会话 (${segments.length} 条记录)`, "info");
+          showInfoBar(t("live.sessionRestored", { count: segments.length }), "info");
         }
       } catch { /* 首次启动无活跃会话，正常 */ }
     })();
@@ -173,7 +173,7 @@ export function LiveTranslationView() {
       const promise = isCurrentlyBookmarked
         ? api.liveUnbookmarkSegment(segmentId)
         : api.liveBookmarkSegment(segmentId);
-      promise.catch(() => showInfoBar("书签操作失败", "error"));
+      promise.catch(() => showInfoBar(t("live.bookmarkFailed"), "error"));
       return; // 后端会通过 segment-updated 事件更新 bookmarkedIds
     }
     // 无 segment_id → 内存 index 模式（兼容未持久化的段落）
@@ -190,13 +190,13 @@ export function LiveTranslationView() {
       .join("\n\n");
     try {
       await navigator.clipboard.writeText(text);
-      showInfoBar("已复制全部翻译内容", "success");
-    } catch { showInfoBar("复制失败", "error"); }
+      showInfoBar(t("live.copiedAll"), "success");
+    } catch { showInfoBar(t("live.copyFailed"), "error"); }
   }, [recognizedSegments, showInfoBar]);
 
   const handleExport = useCallback(() => {
     const text = recognizedSegments
-      .map((s) => `[${s.time}]\n原文: ${s.source}\n翻译: ${s.translation}`)
+      .map((s) => `[${s.time}]\n${t("live.exportSource")}${s.source}\n${t("live.exportTranslation")}${s.translation}`)
       .join("\n---\n");
     const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -236,14 +236,14 @@ export function LiveTranslationView() {
       if (reconnectTimerRef.current) { clearTimeout(reconnectTimerRef.current); reconnectTimerRef.current = null; }
       reconnectCountRef.current = 0;
       if (sessionId) {
-        try { await api.stopRealtimeTranslation(sessionId); } catch (e) { console.error("停止失败:", e); }
+        try { await api.stopRealtimeTranslation(sessionId); } catch (e) { console.error("stop failed:", e); }
       }
       if (unlistenRef.current) { unlistenRef.current(); unlistenRef.current = null; }
       setTranslating(false);
       setSessionId(null);
       setError(null);
     } else {
-      if (!selectedSpeechEp) { setError("请先在设置中添加 Azure Speech 端点"); return; }
+      if (!selectedSpeechEp) { setError(t("live.noSpeechEndpoint")); return; }
       setError(null);
       intentionalStopRef.current = false;
       reconnectCountRef.current = 0;
@@ -269,14 +269,14 @@ export function LiveTranslationView() {
               break;
             }
             case "Error": {
-              const msg = (event.data as { message?: string }).message || "未知错误";
+              const msg = (event.data as { message?: string }).message || t("live.unknownError");
               setError(msg);
               // O-23: 非主动停止时尝试自动重连
               if (!intentionalStopRef.current && reconnectCountRef.current < MAX_RECONNECTS && !isReconnectingRef.current) {
                 isReconnectingRef.current = true;
                 reconnectCountRef.current++;
                 const delay = Math.min(2000 * reconnectCountRef.current, 10000);
-                setError(`连接中断，${delay / 1000}秒后自动重连 (${reconnectCountRef.current}/${MAX_RECONNECTS})...`);
+                setError(t("live.reconnecting", { seconds: delay / 1000, count: reconnectCountRef.current, max: MAX_RECONNECTS }));
                 reconnectTimerRef.current = setTimeout(async () => {
                   reconnectTimerRef.current = null;
                   // N-06: 先清理旧会话再重连，用守卫替代 double setTimeout
@@ -295,7 +295,7 @@ export function LiveTranslationView() {
                 isReconnectingRef.current = true;
                 reconnectCountRef.current++;
                 const delay = Math.min(2000 * reconnectCountRef.current, 10000);
-                setError(`会话已断开，${delay / 1000}秒后自动重连 (${reconnectCountRef.current}/${MAX_RECONNECTS})...`);
+                setError(t("live.sessionDisconnected", { seconds: delay / 1000, count: reconnectCountRef.current, max: MAX_RECONNECTS }));
                 reconnectTimerRef.current = setTimeout(async () => {
                   reconnectTimerRef.current = null;
                   if (unlistenRef.current) { unlistenRef.current(); unlistenRef.current = null; }
@@ -352,7 +352,7 @@ export function LiveTranslationView() {
                 {speechEndpoints.map((ep) => <option key={ep.id} value={ep.id}>🎤 {ep.name}</option>)}
               </Select>
             ) : (
-              <Badge variant="red" className="text-[10px]">未配置 Speech 端点</Badge>
+              <Badge variant="red" className="text-[10px]">{t("live.noSpeechBadge")}</Badge>
             )}
 
             {/* 音频电平指示器 */}
@@ -396,16 +396,16 @@ export function LiveTranslationView() {
           {/* 视图切换 + 操作按钮 */}
           <div className="flex items-center gap-1">
             <Button variant={viewMode === "bilingual" ? "secondary" : "ghost"} size="sm"
-              onClick={() => setViewMode("bilingual")} title="双语对照">
+              onClick={() => setViewMode("bilingual")} title={t("live.bilingual")}>
               <SplitSquareVertical size={14} />
             </Button>
             <Button variant={viewMode === "source-only" ? "secondary" : "ghost"} size="sm"
-              onClick={() => setViewMode("source-only")} title="仅原文">
-              原
+              onClick={() => setViewMode("source-only")} title={t("live.sourceOnly")}>
+              {t("live.source")}
             </Button>
             <Button variant={viewMode === "translation-only" ? "secondary" : "ghost"} size="sm"
-              onClick={() => setViewMode("translation-only")} title="仅译文">
-              译
+              onClick={() => setViewMode("translation-only")} title={t("live.translationOnly")}>
+              {t("live.translation")}
             </Button>
           </div>
 
@@ -419,25 +419,25 @@ export function LiveTranslationView() {
           <Button variant="ghost" size="sm" onClick={handleCopyAll} disabled={recognizedSegments.length === 0}>
             <Copy size={14} />
           </Button>
-          <Button variant="ghost" size="sm" onClick={handleExport} disabled={recognizedSegments.length === 0} title="导出 TXT">
+          <Button variant="ghost" size="sm" onClick={handleExport} disabled={recognizedSegments.length === 0} title={t("live.exportTxt")}>
             <Download size={14} />
           </Button>
           {/* O-22: SRT/VTT 字幕导出 */}
-          <Button variant="ghost" size="sm" onClick={handleExportSrt} disabled={recognizedSegments.length === 0} title="导出 SRT 字幕">
+          <Button variant="ghost" size="sm" onClick={handleExportSrt} disabled={recognizedSegments.length === 0} title={t("live.exportSrt")}>
             <Subtitles size={12} /><span className="text-[10px]">SRT</span>
           </Button>
-          <Button variant="ghost" size="sm" onClick={handleExportVtt} disabled={recognizedSegments.length === 0} title="导出 VTT 字幕">
+          <Button variant="ghost" size="sm" onClick={handleExportVtt} disabled={recognizedSegments.length === 0} title={t("live.exportVtt")}>
             <Subtitles size={12} /><span className="text-[10px]">VTT</span>
           </Button>
           <Button variant="ghost" size="sm" onClick={() => setShowHistory(!showHistory)}>
             <Lightbulb size={14} />
           </Button>
           <Button variant={isSubtitleOpen ? "secondary" : "ghost"} size="sm"
-            onClick={() => api.liveToggleFloatingSubtitle()} title="浮动字幕窗">
+            onClick={() => api.liveToggleFloatingSubtitle()} title={t("live.floatingSubtitle")}>
             <Subtitles size={14} />
           </Button>
           <Button variant={isInsightOpen ? "secondary" : "ghost"} size="sm"
-            onClick={() => { isInsightOpen ? api.liveHideFloatingInsight() : api.liveShowFloatingInsight(); }} title="浮动洞察窗">
+            onClick={() => { isInsightOpen ? api.liveHideFloatingInsight() : api.liveShowFloatingInsight(); }} title={t("live.floatingInsight")}>
             🧠
           </Button>
         </div>
@@ -503,15 +503,15 @@ export function LiveTranslationView() {
                       {/* 行操作按钮 */}
                       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
                         <button onClick={() => toggleBookmark(seg.originalIndices[0])} className="p-1 hover:bg-white/10 rounded"
-                          title="书签">
+                          title={t("live.bookmark")}>
                           <Bookmark size={12} className={bookmarkedIdx.has(seg.originalIndices[0]) ? "text-amber-400 fill-amber-400" : "text-[var(--text-muted)]"} />
                         </button>
                         <button
                           onClick={() => {
                             navigator.clipboard.writeText(`${seg.source}\n${seg.translation}`);
-                            showInfoBar("已复制", "success");
+                            showInfoBar(t("live.copied"), "success");
                           }}
-                          className="p-1 hover:bg-white/10 rounded" title="复制">
+                          className="p-1 hover:bg-white/10 rounded" title={t("live.copy")}>
                           <Copy size={12} className="text-[var(--text-muted)]" />
                         </button>
                       </div>
@@ -540,8 +540,8 @@ export function LiveTranslationView() {
         <div className="border-t border-[var(--border-subtle)] p-4 flex items-center justify-center gap-4"
           style={{ backgroundColor: "var(--toolbar-bg)" }}>
           <span className="text-xs text-[var(--text-muted)]">
-            {recognizedSegments.length} 条结果
-            {(bookmarkedIdx.size + bookmarkedIds.size) > 0 && ` · ${bookmarkedIdx.size + bookmarkedIds.size} 条书签`}
+            {t("live.results", { count: recognizedSegments.length })}
+            {(bookmarkedIdx.size + bookmarkedIds.size) > 0 && ` · ${t("live.bookmarks", { count: bookmarkedIdx.size + bookmarkedIds.size })}`}
           </span>
           <Button
             variant={isTranslating ? "danger" : "primary"}
@@ -550,7 +550,7 @@ export function LiveTranslationView() {
             disabled={!isTranslating && speechEndpoints.length === 0}
             className="min-w-48 gap-3"
           >
-            {isTranslating ? <><MicOff size={18} /> 停止翻译</> : <><Mic size={18} /> 开始翻译</>}
+            {isTranslating ? <><MicOff size={18} /> {t("live.stopTranslation")}</> : <><Mic size={18} /> {t("live.startTranslation")}</>}
           </Button>
         </div>
       </div>
@@ -620,6 +620,7 @@ function HistoryPanel({
   onClose: () => void;
   showInfoBar: (msg: string, type: "success" | "error" | "info") => void;
 }) {
+  const { t } = useTranslation();
   const [tab, setTab] = useState<"bookmarks" | "history">("bookmarks");
   const [sessions, setSessions] = useState<TranslationSession[]>([]);
   const [selectedSession, setSelectedSession] = useState<string | null>(null);
@@ -645,13 +646,13 @@ function HistoryPanel({
             className={`text-xs font-medium px-2 py-1 rounded ${tab === "bookmarks" ? "bg-[var(--brand-500)]/20 text-[var(--brand-400)]" : "text-[var(--text-muted)]"}`}
             onClick={() => { setTab("bookmarks"); setSelectedSession(null); }}
           >
-            书签
+            {t("live.bookmarksTab")}
           </button>
           <button
             className={`text-xs font-medium px-2 py-1 rounded ${tab === "history" ? "bg-[var(--brand-500)]/20 text-[var(--brand-400)]" : "text-[var(--text-muted)]"}`}
             onClick={() => setTab("history")}
           >
-            历史会话
+            {t("live.historyTab")}
           </button>
         </div>
         <Button variant="ghost" size="sm" onClick={onClose}>×</Button>
@@ -659,7 +660,7 @@ function HistoryPanel({
       <div className="flex-1 overflow-y-auto p-3 space-y-2">
         {tab === "bookmarks" && (
           bookmarkedIdx.size === 0 ? (
-            <p className="text-xs text-[var(--text-muted)] text-center py-8">点击 <Bookmark size={10} className="inline" /> 标记重要内容</p>
+            <p className="text-xs text-[var(--text-muted)] text-center py-8">{t("live.bookmarkHint")}</p>
           ) : (
             [...bookmarkedIdx].sort().map((idx) => {
               const seg = recognizedSegments[idx];
@@ -679,7 +680,7 @@ function HistoryPanel({
         )}
         {tab === "history" && !selectedSession && (
           sessions.length === 0 ? (
-            <p className="text-xs text-[var(--text-muted)] text-center py-8">暂无历史会话</p>
+            <p className="text-xs text-[var(--text-muted)] text-center py-8">{t("live.noHistory")}</p>
           ) : (
             sessions.map((s) => (
               <div
@@ -705,24 +706,24 @@ function HistoryPanel({
                 className="text-xs text-[var(--brand-400)] hover:underline"
                 onClick={() => { setSelectedSession(null); setHistorySegments([]); }}
               >
-                ← 返回列表
+                {t("live.backToList")}
               </button>
               <div className="flex-1" />
               <button
                 className="text-xs text-red-400 hover:underline"
                 onClick={async () => {
-                  if (confirm("确定清空此会话的所有片段？")) {
+                  if (confirm(t("live.confirmClearSession"))) {
                     await api.liveClearSessionSegments(selectedSession);
                     setHistorySegments([]);
-                    showInfoBar("已清空会话片段", "success");
+                    showInfoBar(t("live.clearedSession"), "success");
                   }
                 }}
               >
-                清空
+                {t("live.clear")}
               </button>
             </div>
             {historySegments.length === 0 ? (
-              <p className="text-xs text-[var(--text-muted)] text-center py-4">无片段</p>
+              <p className="text-xs text-[var(--text-muted)] text-center py-4">{t("live.noSegments")}</p>
             ) : (
               historySegments.map((seg) => (
                 <div key={seg.id} className="p-2 rounded-lg bg-[var(--surface-1)] text-xs space-y-1">

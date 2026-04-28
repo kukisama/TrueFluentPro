@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { open as dialogOpen } from "@tauri-apps/plugin-dialog";
 import {
@@ -31,18 +32,19 @@ import { useAudioLabStore, speakerColor } from "../stores/audiolab-store";
    PR-4: Custom Tab + StagePresets 编辑器 + 段落编辑 + 导出
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
-const TABS: { key: AudioLabTabKind; label: string; emoji: string }[] = [
-  { key: "Summary",     label: "总结",     emoji: "📋" },
-  { key: "Transcript",  label: "转录",     emoji: "📝" },
-  { key: "MindMap",     label: "导图",     emoji: "🧠" },
-  { key: "Insight",     label: "顿悟",     emoji: "💡" },
-  { key: "Research",    label: "研究",     emoji: "🔬" },
-  { key: "Podcast",     label: "播客",     emoji: "🎙" },
-  { key: "Translation", label: "翻译",     emoji: "🌐" },
-  { key: "Custom",      label: "自定义",   emoji: "⚡" },
+const TABS: { key: AudioLabTabKind; labelKey: string; emoji: string }[] = [
+  { key: "Summary",     labelKey: "audioLab.tabSummary",     emoji: "📋" },
+  { key: "Transcript",  labelKey: "audioLab.tabTranscript",  emoji: "📝" },
+  { key: "MindMap",     labelKey: "audioLab.tabMindMap",     emoji: "🧠" },
+  { key: "Insight",     labelKey: "audioLab.tabInsight",     emoji: "💡" },
+  { key: "Research",    labelKey: "audioLab.tabResearch",    emoji: "🔬" },
+  { key: "Podcast",     labelKey: "audioLab.tabPodcast",     emoji: "🎙" },
+  { key: "Translation", labelKey: "audioLab.tabTranslation", emoji: "🌐" },
+  { key: "Custom",      labelKey: "audioLab.tabCustom",      emoji: "⚡" },
 ];
 
 export function AudioLabView() {
+  const { t } = useTranslation();
   const store = useAudioLabStore();
   const audioRef = useRef<HTMLAudioElement>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -103,12 +105,12 @@ export function AudioLabView() {
   const handleImport = useCallback(async () => {
     const selected = await dialogOpen({
       multiple: true,
-      filters: [{ name: "音频文件", extensions: ["wav", "mp3", "flac", "ogg", "m4a", "aac", "wma"] }],
+      filters: [{ name: t("audioLab.audioFiles"), extensions: ["wav", "mp3", "flac", "ogg", "m4a", "aac", "wma"] }],
     });
     if (!selected) return;
     const paths = Array.isArray(selected) ? selected : [selected];
     try { await api.audiolabImportFiles(paths as string[]); store.loadFiles(); }
-    catch (err) { console.error("导入失败:", err); }
+    catch (err) { console.error("import failed:", err); }
   }, [store]);
 
   const handleDrop = useCallback(async (e: React.DragEvent) => {
@@ -118,12 +120,12 @@ export function AudioLabView() {
       .map((f) => (f as any).path as string).filter(Boolean);
     if (!paths.length) return;
     try { await api.audiolabImportFiles(paths); store.loadFiles(); }
-    catch (err) { console.error("拖放导入失败:", err); }
+    catch (err) { console.error("drop import failed:", err); }
   }, [store]);
 
   const handleDeleteFile = useCallback(async (fileId: string, deleteSource: boolean) => {
     try { await api.audiolabRemoveFile(fileId, deleteSource); store.loadFiles(); }
-    catch (err) { console.error("删除失败:", err); }
+    catch (err) { console.error("delete failed:", err); }
   }, [store]);
 
   // ── 播放控制 ──
@@ -183,7 +185,7 @@ export function AudioLabView() {
         <div className="p-2 border-b border-[var(--border-subtle)]">
           <Button variant="ghost" size="icon" className="h-8 w-8"
             onClick={() => store.setFilePanelOpen(!store.isFilePanelOpen)}
-            title={store.isFilePanelOpen ? "收起" : "展开"}>
+            title={store.isFilePanelOpen ? t("audioLab.collapse") : t("audioLab.expand")}>
             {store.isFilePanelOpen ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
           </Button>
         </div>
@@ -192,15 +194,15 @@ export function AudioLabView() {
           <>
             <div className="p-3 border-b border-[var(--border-subtle)] flex items-center gap-2">
               <FileAudio size={14} className="text-[var(--text-muted)] shrink-0" />
-              <h2 className="text-sm font-semibold text-[var(--text-primary)] flex-1">音频列表</h2>
-              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => store.loadFiles()} title="刷新">
+              <h2 className="text-sm font-semibold text-[var(--text-primary)] flex-1">{t("audioLab.audioList")}</h2>
+              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => store.loadFiles()} title={t("audioLab.refresh")}>
                 <RefreshCw size={12} />
               </Button>
             </div>
 
             <div className="p-2">
               <Button variant="secondary" className="w-full justify-center text-xs" onClick={handleImport}>
-                <FolderOpen size={12} /> 从文件加载
+                <FolderOpen size={12} /> {t("audioLab.loadFromFile")}
               </Button>
             </div>
 
@@ -208,11 +210,11 @@ export function AudioLabView() {
               <div className="flex-1 relative">
                 <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
                 <input className="w-full h-7 pl-7 pr-2 text-xs rounded bg-[var(--surface-1)] border border-[var(--border-subtle)] text-[var(--text-primary)] placeholder:text-[var(--text-placeholder)]"
-                  placeholder="搜索..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+                  placeholder={t("audioLab.search")} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
               </div>
               <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0"
                 onClick={() => setSortMode(sortMode === "time" ? "duration" : sortMode === "duration" ? "name" : "time")}
-                title={`排序: ${sortMode === "time" ? "时间" : sortMode === "duration" ? "时长" : "名称"}`}>
+                title={`${t("audioLab.sort")}: ${sortMode === "time" ? t("audioLab.sortTime") : sortMode === "duration" ? t("audioLab.sortDuration") : t("audioLab.sortName")}`}>
                 <ArrowUpDown size={12} />
               </Button>
             </div>
@@ -222,8 +224,8 @@ export function AudioLabView() {
                 {filteredFiles.length === 0 ? (
                   <div className="p-4 text-center">
                     <FileAudio size={32} className="text-[var(--text-muted)] mx-auto mb-2" />
-                    <p className="text-xs text-[var(--text-muted)]">暂无文件</p>
-                    <p className="text-[10px] text-[var(--text-placeholder)] mt-1">拖拽音频文件到此处</p>
+                    <p className="text-xs text-[var(--text-muted)]">{t("audioLab.noFiles")}</p>
+                    <p className="text-[10px] text-[var(--text-placeholder)] mt-1">{t("audioLab.dragAudioHere")}</p>
                   </div>
                 ) : filteredFiles.map((file) => (
                   <FileItem key={file.id} file={file}
@@ -266,7 +268,7 @@ export function AudioLabView() {
                 <button key={tab.key} onClick={() => store.setSelectedTab(tab.key)}
                   className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap",
                     store.selectedTab === tab.key ? "bg-brand-600/15 text-[var(--active-text)] shadow-sm" : "text-[var(--text-muted)] hover:bg-[var(--hover-bg)]")}>
-                  <span>{tab.emoji}</span><span>{tab.label}</span>
+                  <span>{tab.emoji}</span><span>{t(tab.labelKey)}</span>
                 </button>
               ))}
               {customVisibleStages.map((preset) => (
@@ -279,7 +281,7 @@ export function AudioLabView() {
                 </button>
               ))}
               <Separator orientation="vertical" className="h-5 mx-2" />
-              <Button variant="ghost" size="sm" className="text-xs" onClick={handleImport}><FolderOpen size={12} /> 打开文件</Button>
+              <Button variant="ghost" size="sm" className="text-xs" onClick={handleImport}><FolderOpen size={12} /> {t("audioLab.openFile")}</Button>
               <Button variant="ghost" size="sm" className="text-xs" onClick={() => setShowPresetsEditor(true)}><Settings2 size={12} /></Button>
             </div>
 
@@ -301,15 +303,15 @@ export function AudioLabView() {
             {store.runningTasks.length > 0 && (
               <div className="px-4 py-2 border-t border-[var(--border-subtle)] flex items-center gap-3" style={{ backgroundColor: "var(--toolbar-bg)" }}>
                 <Loader2 size={14} className="text-brand-400 animate-spin" />
-                <span className="text-xs text-[var(--text-muted)] flex-1">{store.runningTasks.length} 个任务处理中...</span>
+                <span className="text-xs text-[var(--text-muted)] flex-1">{t("audioLab.tasksRunning", { count: store.runningTasks.length })}</span>
               </div>
             )}
           </>
         ) : (
           <div className="flex-1 flex items-center justify-center">
-            <EmptyState icon={<FileAudio size={48} />} title="拖拽音频文件到此处"
-              description="或点击「从文件加载」开始分析"
-              action={<Button onClick={handleImport}><Plus size={14} /> 导入音频</Button>} />
+            <EmptyState icon={<FileAudio size={48} />} title={t("audioLab.dropAudioHere")}
+              description={t("audioLab.dropAudioDesc")}
+              action={<Button onClick={handleImport}><Plus size={14} /> {t("audioLab.importAudio")}</Button>} />
           </div>
         )}
       </div>
@@ -326,6 +328,7 @@ export function AudioLabView() {
 function FileItem({ file, isActive, onSelect, onDelete, hasRunningTask }: {
   file: AudioFile; isActive: boolean; onSelect: () => void; onDelete: (ds: boolean) => void; hasRunningTask: boolean;
 }) {
+  const { t } = useTranslation();
   const [showMenu, setShowMenu] = useState(false);
   return (
     <div className="relative">
@@ -348,9 +351,9 @@ function FileItem({ file, isActive, onSelect, onDelete, hasRunningTask }: {
       {showMenu && (
         <div className="absolute right-0 top-full z-50 mt-1 py-1 min-w-[140px] rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-2)] shadow-lg"
           onMouseLeave={() => setShowMenu(false)}>
-          <CtxBtn onClick={() => { navigator.clipboard.writeText(file.source_path); setShowMenu(false); }}>复制路径</CtxBtn>
-          <CtxBtn onClick={() => { onDelete(false); setShowMenu(false); }}>移除</CtxBtn>
-          <CtxBtn onClick={() => { onDelete(true); setShowMenu(false); }} className="text-red-400">删除源文件</CtxBtn>
+          <CtxBtn onClick={() => { navigator.clipboard.writeText(file.source_path); setShowMenu(false); }}>{t("audioLab.copyPath")}</CtxBtn>
+          <CtxBtn onClick={() => { onDelete(false); setShowMenu(false); }}>{t("audioLab.remove")}</CtxBtn>
+          <CtxBtn onClick={() => { onDelete(true); setShowMenu(false); }} className="text-red-400">{t("audioLab.deleteSource")}</CtxBtn>
         </div>
       )}
     </div>
@@ -420,6 +423,7 @@ function TabContent(p: TabProps) {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function TranscriptTab({ bundle, sessionId, currentSegmentId, onSeekToSegment, runningTasks, onRefresh }: TabProps) {
+  const { t } = useTranslation();
   const [parserKind, setParserKind] = useState("fast");
   const isTranscribing = runningTasks.some((t) => t.task_type === "audio_transcribe");
   const [ctxSegId, setCtxSegId] = useState<string | null>(null);
@@ -432,13 +436,13 @@ function TranscriptTab({ bundle, sessionId, currentSegmentId, onSeekToSegment, r
 
   const handleStart = async () => {
     try { await api.audiolabStartTranscription(sessionId, bundle.file.id, parserKind); onRefresh(); }
-    catch (err) { console.error("转录失败:", err); }
+    catch (err) { console.error("transcribe failed:", err); }
   };
 
   const handleRenameSpeaker = async (segId: string) => {
     const seg = bundle.segments.find((s) => s.id === segId);
     if (!seg || !bundle.transcript) return;
-    const name = prompt("新说话人名称", seg.speaker);
+    const name = prompt(t("audioLab.newSpeakerName"), seg.speaker);
     if (!name || name === seg.speaker) return;
     await api.audiolabRenameSpeaker(bundle.transcript.id, seg.speaker_index, name);
     onRefresh();
@@ -448,16 +452,16 @@ function TranscriptTab({ bundle, sessionId, currentSegmentId, onSeekToSegment, r
     <div className="max-w-4xl space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <h2 className="text-lg font-semibold text-[var(--text-primary)]">转录</h2>
-          {bundle.transcript && <Badge variant="green">已完成 · {bundle.segments.length} 段</Badge>}
+          <h2 className="text-lg font-semibold text-[var(--text-primary)]">{t("audioLab.tabTranscript")}</h2>
+          {bundle.transcript && <Badge variant="green">{t("audioLab.doneSegments", { count: bundle.segments.length })}</Badge>}
         </div>
         <div className="flex items-center gap-2">
           <select value={parserKind} onChange={(e) => setParserKind(e.target.value)}
             className="h-8 px-2 text-xs rounded border border-[var(--border-subtle)] bg-[var(--surface-1)] text-[var(--text-primary)]">
-            <option value="fast">快速解析</option><option value="batch">批量解析</option>
+            <option value="fast">{t("audioLab.fastParse")}</option><option value="batch">{t("audioLab.batchParse")}</option>
           </select>
           <Button size="sm" onClick={handleStart} disabled={isTranscribing}>
-            {isTranscribing ? <><Loader2 size={12} className="animate-spin" /> 转录中...</> : <><RefreshCw size={12} /> {bundle.transcript ? "重新转录" : "开始转录"}</>}
+            {isTranscribing ? <><Loader2 size={12} className="animate-spin" /> {t("audioLab.transcribing")}</> : <><RefreshCw size={12} /> {bundle.transcript ? t("audioLab.retranscribe") : t("audioLab.startTranscribe")}</>}
           </Button>
         </div>
       </div>
@@ -484,12 +488,12 @@ function TranscriptTab({ bundle, sessionId, currentSegmentId, onSeekToSegment, r
       ) : isTranscribing ? (
         <GlassCard className="p-8 flex flex-col items-center gap-3">
           <Loader2 size={32} className="text-brand-400 animate-spin" />
-          <p className="text-sm text-[var(--text-muted)]">正在转录中，请稍后回来查看...</p>
+          <p className="text-sm text-[var(--text-muted)]">{t("audioLab.transcribingCheckLater")}</p>
         </GlassCard>
       ) : (
         <GlassCard className="p-8 flex flex-col items-center gap-3">
           <FileText size={32} className="text-[var(--text-muted)]" />
-          <p className="text-sm text-[var(--text-muted)]">{bundle.transcript ? "转录完成但无段落" : "点击「开始转录」"}</p>
+          <p className="text-sm text-[var(--text-muted)]">{bundle.transcript ? t("audioLab.transcriptNoSegments") : t("audioLab.clickStartTranscribe")}</p>
         </GlassCard>
       )}
 
@@ -508,21 +512,22 @@ function SegCtxMenu({ segId, pos, segments, onClose, onRenameSpeaker, onSeek, on
   segId: string; pos: { x: number; y: number }; segments: AudioSegment[];
   onClose: () => void; onRenameSpeaker: () => void; onSeek: (ms: number) => void; onRefresh: () => void;
 }) {
+  const { t } = useTranslation();
   const seg = segments.find((s) => s.id === segId);
   if (!seg) return null;
   const handleEditTime = async () => {
-    const s = prompt("起始(ms)", String(seg.start_ms)); if (!s) return;
-    const e = prompt("结束(ms)", String(seg.end_ms)); if (!e) return;
+    const s = prompt(t("audioLab.startMs"), String(seg.start_ms)); if (!s) return;
+    const e = prompt(t("audioLab.endMs"), String(seg.end_ms)); if (!e) return;
     await api.audiolabUpdateSegment(segId, undefined, undefined, Number(s), Number(e));
     onRefresh();
   };
   return (
     <div className="fixed z-[100] py-1 min-w-[160px] rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-2)] shadow-lg"
       style={{ left: pos.x, top: pos.y }} onMouseLeave={onClose}>
-      <CtxBtn onClick={() => { navigator.clipboard.writeText(seg.text); onClose(); }}>复制文本</CtxBtn>
-      <CtxBtn onClick={() => onSeek(seg.start_ms)}>跳到此段</CtxBtn>
-      <CtxBtn onClick={onRenameSpeaker}>修改说话人</CtxBtn>
-      <CtxBtn onClick={handleEditTime}>修改时间戳</CtxBtn>
+      <CtxBtn onClick={() => { navigator.clipboard.writeText(seg.text); onClose(); }}>{t("audioLab.copyText")}</CtxBtn>
+      <CtxBtn onClick={() => onSeek(seg.start_ms)}>{t("audioLab.jumpToSegment")}</CtxBtn>
+      <CtxBtn onClick={onRenameSpeaker}>{t("audioLab.renameSpeaker")}</CtxBtn>
+      <CtxBtn onClick={handleEditTime}>{t("audioLab.editTimestamp")}</CtxBtn>
     </div>
   );
 }
@@ -532,12 +537,14 @@ function SegCtxMenu({ segId, pos, segments, onClose, onRenameSpeaker, onSeek, on
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function StageTab({ bundle, sessionId, stageKey, editingStageKey, editText, onSetEditing, onRefresh }: TabProps & { stageKey: string }) {
+  const { t } = useTranslation();
   const output = bundle.stage_outputs.find((o) => o.stage_key === stageKey);
   const isEditing = editingStageKey === stageKey;
   const isProcessing = output?.status === "Processing";
   const isReady = output?.status === "Ready";
   const hasContent = isReady && output?.content_markdown;
-  const label = TABS.find((t) => t.key === stageKey)?.label ?? stageKey;
+  const label = TABS.find((tb) => tb.key === stageKey)?.labelKey;
+  const labelText = label ? t(label) : stageKey;
 
   const handleGen = async () => { await api.audiolabStartStage(sessionId, stageKey); onRefresh(); };
   const handleSave = async () => { await api.audiolabUpdateStageContent(sessionId, stageKey, editText); onSetEditing(null); onRefresh(); };
@@ -546,18 +553,18 @@ function StageTab({ bundle, sessionId, stageKey, editingStageKey, editText, onSe
     <div className="max-w-4xl space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <h2 className="text-lg font-semibold text-[var(--text-primary)]">{label}</h2>
+          <h2 className="text-lg font-semibold text-[var(--text-primary)]">{labelText}</h2>
           {output && <Badge variant={isReady ? "green" : isProcessing ? "blue" : output.status === "Error" ? "red" : "default"}>
-            {isReady ? "已完成" : isProcessing ? "处理中" : output.status === "Error" ? "失败" : "空"}
+            {isReady ? t("audioLab.done") : isProcessing ? t("audioLab.processing") : output.status === "Error" ? t("audioLab.failed") : t("audioLab.empty")}
           </Badge>}
         </div>
         <div className="flex items-center gap-2">
           {hasContent && !isEditing && <>
-            <Button variant="ghost" size="sm" className="text-xs" onClick={() => onSetEditing(stageKey, output!.content_markdown)}><Edit3 size={12} /> 编辑</Button>
-            <Button variant="ghost" size="sm" className="text-xs" onClick={() => navigator.clipboard.writeText(output!.content_markdown)}><Copy size={12} /> 复制</Button>
+            <Button variant="ghost" size="sm" className="text-xs" onClick={() => onSetEditing(stageKey, output!.content_markdown)}><Edit3 size={12} /> {t("audioLab.edit")}</Button>
+            <Button variant="ghost" size="sm" className="text-xs" onClick={() => navigator.clipboard.writeText(output!.content_markdown)}><Copy size={12} /> {t("audioLab.copy")}</Button>
           </>}
-          {isEditing && <Button size="sm" onClick={handleSave}><Save size={12} /> 保存</Button>}
-          <Button size="sm" variant="secondary" onClick={handleGen} disabled={isProcessing}><RefreshCw size={12} /> {hasContent ? "重新生成" : "生成"}</Button>
+          {isEditing && <Button size="sm" onClick={handleSave}><Save size={12} /> {t("audioLab.save")}</Button>}
+          <Button size="sm" variant="secondary" onClick={handleGen} disabled={isProcessing}><RefreshCw size={12} /> {hasContent ? t("audioLab.regenerate") : t("audioLab.generate")}</Button>
         </div>
       </div>
       <Separator />
@@ -567,27 +574,29 @@ function StageTab({ bundle, sessionId, stageKey, editingStageKey, editText, onSe
       ) : hasContent ? (
         <GlassCard className="p-5"><pre className="text-sm text-[var(--text-primary)] whitespace-pre-wrap leading-relaxed">{output!.content_markdown}</pre></GlassCard>
       ) : isProcessing ? (
-        <GlassCard className="p-8 flex flex-col items-center gap-3"><Loader2 size={32} className="text-brand-400 animate-spin" /><p className="text-sm text-[var(--text-muted)]">正在生成{label}...</p></GlassCard>
+        <GlassCard className="p-8 flex flex-col items-center gap-3"><Loader2 size={32} className="text-brand-400 animate-spin" /><p className="text-sm text-[var(--text-muted)]">{t("audioLab.generating", { label: labelText })}</p></GlassCard>
       ) : output?.status === "Error" ? (
-        <GlassCard className="p-5 border-red-500/30"><p className="text-sm text-red-400">{output.error_message || "失败"}</p></GlassCard>
+        <GlassCard className="p-5 border-red-500/30"><p className="text-sm text-red-400">{output.error_message || t("audioLab.failed")}</p></GlassCard>
       ) : (
-        <EmptyStage label={label} hasTranscript={!!bundle.transcript} onGen={handleGen} />
+        <EmptyStage label={labelText} hasTranscript={!!bundle.transcript} onGen={handleGen} />
       )}
     </div>
   );
 }
 
 function EmptyStage({ label, hasTranscript, onGen }: { label: string; hasTranscript: boolean; onGen: () => void }) {
+  const { t } = useTranslation();
   return (
     <GlassCard className="p-8 flex flex-col items-center gap-3">
-      <p className="text-sm text-[var(--text-muted)]">{hasTranscript ? `转录已完成，可点击「生成」生成${label}。` : `请先完成音频转录。`}</p>
-      {hasTranscript && <Button size="sm" onClick={onGen}><Sparkles size={12} /> 生成</Button>}
+      <p className="text-sm text-[var(--text-muted)]">{hasTranscript ? t("audioLab.readyToGenerate", { label }) : t("audioLab.transcribeFirst")}</p>
+      {hasTranscript && <Button size="sm" onClick={onGen}><Sparkles size={12} /> {t("audioLab.generate")}</Button>}
     </GlassCard>
   );
 }
 
 // ── PR-3: MindMap ──
 function MindMapTab({ bundle, sessionId, onRefresh }: TabProps) {
+  const { t } = useTranslation();
   const output = bundle.stage_outputs.find((o) => o.stage_key === "MindMap");
   const isProc = output?.status === "Processing";
   const has = output?.status === "Ready" && output?.content_markdown;
@@ -595,43 +604,44 @@ function MindMapTab({ bundle, sessionId, onRefresh }: TabProps) {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-[var(--text-primary)]">思维导图</h2>
+        <h2 className="text-lg font-semibold text-[var(--text-primary)]">{t("audioLab.tabMindMap")}</h2>
         <div className="flex items-center gap-2">
-          <span className="text-[10px] text-[var(--text-muted)]">滚轮缩放 · 拖拽平移 · 双击复位</span>
-          <Button size="sm" variant="secondary" onClick={gen} disabled={isProc}><RefreshCw size={12} /> {has ? "重新生成" : "生成"}</Button>
+          <span className="text-[10px] text-[var(--text-muted)]">{t("audioLab.mindMapHint")}</span>
+          <Button size="sm" variant="secondary" onClick={gen} disabled={isProc}><RefreshCw size={12} /> {has ? t("audioLab.regenerate") : t("audioLab.generate")}</Button>
         </div>
       </div>
       <Separator />
       {has ? <div className="min-h-[400px]"><MindMapCanvas data={output!.content_markdown} className="min-h-[400px]" /></div>
-        : isProc ? <GlassCard className="p-8 flex flex-col items-center gap-3"><Loader2 size={32} className="text-brand-400 animate-spin" /><p className="text-sm text-[var(--text-muted)]">生成中...</p></GlassCard>
-        : <EmptyStage label="思维导图" hasTranscript={!!bundle.transcript} onGen={gen} />}
+        : isProc ? <GlassCard className="p-8 flex flex-col items-center gap-3"><Loader2 size={32} className="text-brand-400 animate-spin" /><p className="text-sm text-[var(--text-muted)]">{t("audioLab.generatingEllipsis")}</p></GlassCard>
+        : <EmptyStage label={t("audioLab.tabMindMap")} hasTranscript={!!bundle.transcript} onGen={gen} />}
     </div>
   );
 }
 
 // ── PR-3: Research ──
 function ResearchTab({ bundle, sessionId, onRefresh }: TabProps) {
+  const { t } = useTranslation();
   const [selId, setSelId] = useState<string | null>(null);
-  const sel = bundle.research_topics.find((t) => t.id === selId);
-  const addTopic = async () => { const t = prompt("标题"); if (!t) return; await api.audiolabAddResearchTopic(sessionId, t, ""); onRefresh(); };
+  const sel = bundle.research_topics.find((tp) => tp.id === selId);
+  const addTopic = async () => { const title = prompt(t("audioLab.topicTitle")); if (!title) return; await api.audiolabAddResearchTopic(sessionId, title, ""); onRefresh(); };
   const startRes = async (id: string) => { await api.audiolabStartResearch(id); onRefresh(); };
   const delTopic = async (id: string) => { await api.audiolabRemoveResearchTopic(id); if (selId === id) setSelId(null); onRefresh(); };
   return (
     <div className="max-w-5xl space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-[var(--text-primary)]">深度研究</h2>
-        <Button size="sm" onClick={addTopic}><Plus size={12} /> 添加主题</Button>
+        <h2 className="text-lg font-semibold text-[var(--text-primary)]">{t("audioLab.deepResearch")}</h2>
+        <Button size="sm" onClick={addTopic}><Plus size={12} /> {t("audioLab.addTopic")}</Button>
       </div>
       <Separator />
       {bundle.research_topics.length > 0 ? (
         <div className="flex gap-4 min-h-[300px]">
           <div className="w-[200px] space-y-1 shrink-0">
-            {bundle.research_topics.map((t) => (
-              <button key={t.id} onClick={() => setSelId(t.id)}
+            {bundle.research_topics.map((tp) => (
+              <button key={tp.id} onClick={() => setSelId(tp.id)}
                 className={cn("w-full text-left px-3 py-2 rounded-lg text-xs transition-all",
-                  selId === t.id ? "bg-brand-600/15 text-[var(--active-text)]" : "text-[var(--text-secondary)] hover:bg-[var(--hover-bg)]")}>
-                <div className="font-medium truncate">{t.title}</div>
-                <Badge variant={t.status === "completed" ? "green" : "default"}>{t.status}</Badge>
+                  selId === tp.id ? "bg-brand-600/15 text-[var(--active-text)]" : "text-[var(--text-secondary)] hover:bg-[var(--hover-bg)]")}>
+                <div className="font-medium truncate">{tp.title}</div>
+                <Badge variant={tp.status === "completed" ? "green" : "default"}>{tp.status}</Badge>
               </button>
             ))}
           </div>
@@ -641,23 +651,24 @@ function ResearchTab({ bundle, sessionId, onRefresh }: TabProps) {
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-[var(--text-primary)]">{sel.title}</h3>
                   <div className="flex gap-2">
-                    <Button size="sm" variant="secondary" onClick={() => startRes(sel.id)}><Sparkles size={12} /> 生成</Button>
+                    <Button size="sm" variant="secondary" onClick={() => startRes(sel.id)}><Sparkles size={12} /> {t("audioLab.generate")}</Button>
                     <Button size="sm" variant="ghost" onClick={() => delTopic(sel.id)}><Trash2 size={12} /></Button>
                   </div>
                 </div>
                 {sel.report_markdown ? <GlassCard className="p-4"><pre className="text-sm whitespace-pre-wrap leading-relaxed text-[var(--text-primary)]">{sel.report_markdown}</pre></GlassCard>
-                  : <p className="text-xs text-[var(--text-muted)] italic">尚未生成报告</p>}
+                  : <p className="text-xs text-[var(--text-muted)] italic">{t("audioLab.noReport")}</p>}
               </div>
-            ) : <div className="flex items-center justify-center h-full text-sm text-[var(--text-muted)]">选择主题查看</div>}
+            ) : <div className="flex items-center justify-center h-full text-sm text-[var(--text-muted)]">{t("audioLab.selectTopic")}</div>}
           </div>
         </div>
-      ) : <EmptyStage label="研究" hasTranscript={!!bundle.transcript} onGen={addTopic} />}
+      ) : <EmptyStage label={t("audioLab.tabResearch")} hasTranscript={!!bundle.transcript} onGen={addTopic} />}
     </div>
   );
 }
 
 // ── PR-3: Podcast ──
 function PodcastTab({ bundle, sessionId, onRefresh }: TabProps) {
+  const { t } = useTranslation();
   const out = bundle.stage_outputs.find((o) => o.stage_key === "PodcastScript");
   const isProc = out?.status === "Processing";
   const has = out?.status === "Ready" && out?.content_markdown;
@@ -666,22 +677,23 @@ function PodcastTab({ bundle, sessionId, onRefresh }: TabProps) {
   return (
     <div className="max-w-4xl space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-[var(--text-primary)]">播客</h2>
+        <h2 className="text-lg font-semibold text-[var(--text-primary)]">{t("audioLab.tabPodcast")}</h2>
         <div className="flex items-center gap-2">
-          {has && <Button size="sm" variant="secondary" onClick={synTts}><Mic size={12} /> 合成音频</Button>}
-          <Button size="sm" variant="secondary" onClick={genScript} disabled={isProc}><RefreshCw size={12} /> {has ? "重新生成" : "生成台本"}</Button>
+          {has && <Button size="sm" variant="secondary" onClick={synTts}><Mic size={12} /> {t("audioLab.synthesizeAudio")}</Button>}
+          <Button size="sm" variant="secondary" onClick={genScript} disabled={isProc}><RefreshCw size={12} /> {has ? t("audioLab.regenerate") : t("audioLab.generateScript")}</Button>
         </div>
       </div>
       <Separator />
       {has ? <GlassCard className="p-5"><pre className="text-sm whitespace-pre-wrap leading-relaxed text-[var(--text-primary)]">{out!.content_markdown}</pre></GlassCard>
-        : isProc ? <GlassCard className="p-8 flex flex-col items-center gap-3"><Loader2 size={32} className="text-brand-400 animate-spin" /><p className="text-sm text-[var(--text-muted)]">生成台本中...</p></GlassCard>
-        : <EmptyStage label="播客台本" hasTranscript={!!bundle.transcript} onGen={genScript} />}
+        : isProc ? <GlassCard className="p-8 flex flex-col items-center gap-3"><Loader2 size={32} className="text-brand-400 animate-spin" /><p className="text-sm text-[var(--text-muted)]">{t("audioLab.generatingScript")}</p></GlassCard>
+        : <EmptyStage label={t("audioLab.podcastScript")} hasTranscript={!!bundle.transcript} onGen={genScript} />}
     </div>
   );
 }
 
 // ── PR-3: Translation ──
 function TranslationTab({ bundle, sessionId, onRefresh }: TabProps) {
+  const { t } = useTranslation();
   const out = bundle.stage_outputs.find((o) => o.stage_key === "Translated");
   const isProc = out?.status === "Processing";
   const has = out?.status === "Ready" && out?.content_markdown;
@@ -689,8 +701,8 @@ function TranslationTab({ bundle, sessionId, onRefresh }: TabProps) {
   return (
     <div className="max-w-5xl space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-[var(--text-primary)]">翻译</h2>
-        <Button size="sm" variant="secondary" onClick={gen} disabled={isProc}><RefreshCw size={12} /> {has ? "重新生成" : "翻译"}</Button>
+        <h2 className="text-lg font-semibold text-[var(--text-primary)]">{t("audioLab.tabTranslation")}</h2>
+        <Button size="sm" variant="secondary" onClick={gen} disabled={isProc}><RefreshCw size={12} /> {has ? t("audioLab.regenerate") : t("audioLab.translate")}</Button>
       </div>
       <Separator />
       {has ? (
@@ -705,14 +717,15 @@ function TranslationTab({ bundle, sessionId, onRefresh }: TabProps) {
             );
           })}
         </div></GlassCard>
-      ) : isProc ? <GlassCard className="p-8 flex flex-col items-center gap-3"><Loader2 size={32} className="text-brand-400 animate-spin" /><p className="text-sm text-[var(--text-muted)]">翻译中...</p></GlassCard>
-        : <EmptyStage label="翻译" hasTranscript={!!bundle.transcript} onGen={gen} />}
+      ) : isProc ? <GlassCard className="p-8 flex flex-col items-center gap-3"><Loader2 size={32} className="text-brand-400 animate-spin" /><p className="text-sm text-[var(--text-muted)]">{t("audioLab.translating")}</p></GlassCard>
+        : <EmptyStage label={t("audioLab.tabTranslation")} hasTranscript={!!bundle.transcript} onGen={gen} />}
     </div>
   );
 }
 
 // ── PR-4: Custom Tab ──
 function CustomTab({ bundle, sessionId, customStageKey, stagePresets, onRefresh }: TabProps) {
+  const { t } = useTranslation();
   const store = useAudioLabStore();
   const preset = stagePresets.find((p) => p.stage === customStageKey);
   const fullKey = customStageKey ? `Custom:${customStageKey}` : null;
@@ -726,22 +739,22 @@ function CustomTab({ bundle, sessionId, customStageKey, stagePresets, onRefresh 
     <div className="max-w-4xl space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <h2 className="text-lg font-semibold text-[var(--text-primary)]">自定义阶段</h2>
+          <h2 className="text-lg font-semibold text-[var(--text-primary)]">{t("audioLab.customStage")}</h2>
           <select value={customStageKey ?? ""} onChange={(e) => store.setCustomStageKey(e.target.value || null)}
             className="h-8 px-2 text-xs rounded border border-[var(--border-subtle)] bg-[var(--surface-1)] text-[var(--text-primary)]">
-            <option value="">选择...</option>
+            <option value="">{t("audioLab.selectEllipsis")}</option>
             {customs.map((p) => <option key={p.stage} value={p.stage}>{p.display_name}</option>)}
           </select>
         </div>
-        {customStageKey && <Button size="sm" variant="secondary" onClick={gen} disabled={isProc}><RefreshCw size={12} /> {has ? "重新生成" : "生成"}</Button>}
+        {customStageKey && <Button size="sm" variant="secondary" onClick={gen} disabled={isProc}><RefreshCw size={12} /> {has ? t("audioLab.regenerate") : t("audioLab.generate")}</Button>}
       </div>
       <Separator />
-      {!customStageKey ? <GlassCard className="p-8 flex flex-col items-center gap-3"><p className="text-sm text-[var(--text-muted)]">请选择自定义阶段</p></GlassCard>
+      {!customStageKey ? <GlassCard className="p-8 flex flex-col items-center gap-3"><p className="text-sm text-[var(--text-muted)]">{t("audioLab.selectCustomStage")}</p></GlassCard>
         : has ? (isMM ? <div className="min-h-[400px]"><MindMapCanvas data={out!.content_markdown} className="min-h-[400px]" /></div>
           : <GlassCard className="p-5"><pre className="text-sm whitespace-pre-wrap leading-relaxed text-[var(--text-primary)]">{out!.content_markdown}</pre></GlassCard>)
-        : isProc ? <GlassCard className="p-8 flex flex-col items-center gap-3"><Loader2 size={32} className="text-brand-400 animate-spin" /><p className="text-sm text-[var(--text-muted)]">处理中...</p></GlassCard>
-        : <GlassCard className="p-8 flex flex-col items-center gap-3"><p className="text-sm text-[var(--text-muted)]">暂无内容</p>
-          {bundle.transcript && <Button size="sm" onClick={gen}><Sparkles size={12} /> 生成</Button>}
+        : isProc ? <GlassCard className="p-8 flex flex-col items-center gap-3"><Loader2 size={32} className="text-brand-400 animate-spin" /><p className="text-sm text-[var(--text-muted)]">{t("audioLab.processing")}</p></GlassCard>
+        : <GlassCard className="p-8 flex flex-col items-center gap-3"><p className="text-sm text-[var(--text-muted)]">{t("audioLab.noContent")}</p>
+          {bundle.transcript && <Button size="sm" onClick={gen}><Sparkles size={12} /> {t("audioLab.generate")}</Button>}
         </GlassCard>}
     </div>
   );
@@ -749,9 +762,10 @@ function CustomTab({ bundle, sessionId, customStageKey, stagePresets, onRefresh 
 
 // ── PR-4: StagePresets 编辑器抽屉 ──
 function StagePresetsDrawer({ presets, onClose }: { presets: AudioStagePreset[]; onClose: () => void }) {
+  const { t } = useTranslation();
   const [local, setLocal] = useState<AudioStagePreset[]>([...presets]);
   const add = () => {
-    const np: AudioStagePreset = { id: "", stage: `custom_${Date.now()}`, display_name: "新阶段", system_prompt: "", show_in_tab: true, include_in_batch: false, is_enabled: true, display_mode: "Markdown", sort_order: local.length };
+    const np: AudioStagePreset = { id: "", stage: `custom_${Date.now()}`, display_name: t("audioLab.newStage"), system_prompt: "", show_in_tab: true, include_in_batch: false, is_enabled: true, display_mode: "Markdown", sort_order: local.length };
     setLocal([...local, np]);
   };
   const save = async (p: AudioStagePreset) => { await api.audiolabUpsertStagePreset(p); };
@@ -763,9 +777,9 @@ function StagePresetsDrawer({ presets, onClose }: { presets: AudioStagePreset[];
       <div className="flex-1 bg-black/30" onClick={onClose} />
       <div className="w-[400px] bg-[var(--surface-1)] border-l border-[var(--border-subtle)] flex flex-col">
         <div className="p-4 border-b border-[var(--border-subtle)] flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-[var(--text-primary)]">阶段预设编辑器</h2>
+          <h2 className="text-sm font-semibold text-[var(--text-primary)]">{t("audioLab.presetEditor")}</h2>
           <div className="flex gap-2">
-            <Button size="sm" onClick={add}><Plus size={12} /> 新增</Button>
+            <Button size="sm" onClick={add}><Plus size={12} /> {t("audioLab.add")}</Button>
             <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onClose}><X size={14} /></Button>
           </div>
         </div>
@@ -778,20 +792,20 @@ function StagePresetsDrawer({ presets, onClose }: { presets: AudioStagePreset[];
                   <input className="flex-1 text-xs font-medium bg-transparent text-[var(--text-primary)] outline-none" value={p.display_name}
                     onChange={(e) => upd(p.stage, { display_name: e.target.value })} />
                   <label className="flex items-center gap-1 text-[10px] text-[var(--text-muted)]">
-                    <input type="checkbox" checked={p.is_enabled} onChange={(e) => upd(p.stage, { is_enabled: e.target.checked })} />启用
+                    <input type="checkbox" checked={p.is_enabled} onChange={(e) => upd(p.stage, { is_enabled: e.target.checked })} />{t("audioLab.enabled")}
                   </label>
                   <label className="flex items-center gap-1 text-[10px] text-[var(--text-muted)]">
                     <input type="checkbox" checked={p.show_in_tab} onChange={(e) => upd(p.stage, { show_in_tab: e.target.checked })} />Tab
                   </label>
                   <label className="flex items-center gap-1 text-[10px] text-[var(--text-muted)]">
-                    <input type="checkbox" checked={p.display_mode === "MindMap"} onChange={(e) => upd(p.stage, { display_mode: e.target.checked ? "MindMap" : "Markdown" })} />导图
+                    <input type="checkbox" checked={p.display_mode === "MindMap"} onChange={(e) => upd(p.stage, { display_mode: e.target.checked ? "MindMap" : "Markdown" })} />{t("audioLab.tabMindMap")}
                   </label>
                 </div>
                 <textarea className="w-full h-16 text-xs p-2 rounded border border-[var(--border-subtle)] bg-[var(--surface-1)] text-[var(--text-primary)] resize-y"
-                  placeholder="系统提示词..." value={p.system_prompt} onChange={(e) => upd(p.stage, { system_prompt: e.target.value })} />
+                  placeholder={t("audioLab.systemPromptPlaceholder")} value={p.system_prompt} onChange={(e) => upd(p.stage, { system_prompt: e.target.value })} />
                 <div className="flex justify-end gap-2 mt-2">
-                  <Button variant="ghost" size="sm" className="text-xs text-red-400" onClick={() => del(p.stage)}><Trash2 size={10} /> 删除</Button>
-                  <Button size="sm" className="text-xs" onClick={() => save(p)}><Save size={10} /> 保存</Button>
+                  <Button variant="ghost" size="sm" className="text-xs text-red-400" onClick={() => del(p.stage)}><Trash2 size={10} /> {t("audioLab.delete")}</Button>
+                  <Button size="sm" className="text-xs" onClick={() => save(p)}><Save size={10} /> {t("audioLab.save")}</Button>
                 </div>
               </div>
             ))}

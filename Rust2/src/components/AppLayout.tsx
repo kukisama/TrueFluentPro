@@ -38,16 +38,25 @@ const NAV_ITEMS: NavItem[] = [
   { id: "about", labelKey: "nav.about", icon: <Info size={18} />, section: "system" },
 ];
 
-const VIEW_MAP: Record<AppView, React.ReactNode> = {
-  "live-translation": <LiveTranslationView />,
-  "media-studio": <MediaStudioView />,
-  "media-center": <MediaCenterView />,
-  "audio-lab": <AudioLabView />,
+/** 需要保活的视图（切走后保留 DOM，保持 state） */
+const KEEP_ALIVE_VIEWS: AppView[] = [
+  "live-translation", "media-studio", "media-center", "audio-lab",
+];
+
+/** 不需要保活的视图（切走即销毁） */
+const DISPOSABLE_VIEW_MAP: Partial<Record<AppView, React.ReactNode>> = {
   "task-monitor": <TaskMonitorView />,
   settings: <SettingsView />,
   about: <AboutView />,
   help: <AboutView />,
   auth: <AuthView />,
+};
+
+const KEEP_ALIVE_COMPONENTS: Record<string, React.FC> = {
+  "live-translation": LiveTranslationView,
+  "media-studio": MediaStudioView,
+  "media-center": MediaCenterView,
+  "audio-lab": AudioLabView,
 };
 
 const THEME_ICONS: Record<ThemeMode, React.ReactNode> = {
@@ -56,10 +65,10 @@ const THEME_ICONS: Record<ThemeMode, React.ReactNode> = {
   dark: <Moon size={16} />,
 };
 
-const THEME_LABELS: Record<ThemeMode, string> = {
-  system: "跟随系统",
-  light: "浅色",
-  dark: "深色",
+const THEME_LABEL_KEYS: Record<ThemeMode, string> = {
+  system: "layout.themeSystem",
+  light: "layout.themeLight",
+  dark: "layout.themeDark",
 };
 
 const appWindow = getCurrentWindow();
@@ -101,7 +110,6 @@ export function AppLayout() {
 
   const themeMode = useThemeStore((s) => s.mode);
   const cycleTheme = useThemeStore((s) => s.cycleTheme);
-  const transitionDuration = useThemeStore((s) => s.transitionDuration);
 
   return (
     <div className="flex h-screen w-screen overflow-hidden" style={{ backgroundColor: "var(--surface-0)" }}>
@@ -177,7 +185,7 @@ export function AppLayout() {
                   {THEME_ICONS[themeMode]}
                 </button>
               </TooltipTrigger>
-              <TooltipContent side="right">{THEME_LABELS[themeMode]}</TooltipContent>
+              <TooltipContent side="right">{t(THEME_LABEL_KEYS[themeMode])}</TooltipContent>
             </Tooltip>
           ) : (
             <button
@@ -185,7 +193,7 @@ export function AppLayout() {
               className="flex items-center gap-2.5 w-full rounded-xl px-2.5 py-2 text-sm transition-all duration-200 text-[var(--text-muted)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-secondary)]"
             >
               {THEME_ICONS[themeMode]}
-              <span>{THEME_LABELS[themeMode]}</span>
+              <span>{t(THEME_LABEL_KEYS[themeMode])}</span>
             </button>
           )}
 
@@ -256,19 +264,26 @@ export function AppLayout() {
         <InfoBar />
 
         {/* 内容区 */}
-        <main className="flex-1 overflow-y-auto overflow-x-hidden">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={activeView}
-              initial={transitionDuration > 0 ? { opacity: 0, y: 6 } : false}
-              animate={{ opacity: 1, y: 0 }}
-              exit={transitionDuration > 0 ? { opacity: 0, y: -6 } : undefined}
-              transition={{ duration: transitionDuration / 1000, ease: "easeOut" }}
-              className="h-full"
-            >
-              {VIEW_MAP[activeView]}
-            </motion.div>
-          </AnimatePresence>
+        <main className="flex-1 overflow-y-auto overflow-x-hidden relative">
+          {/* 保活视图：始终 mounted，通过 display 控制可见性 */}
+          {KEEP_ALIVE_VIEWS.map((viewId) => {
+            const Comp = KEEP_ALIVE_COMPONENTS[viewId];
+            return (
+              <div
+                key={viewId}
+                className="h-full"
+                style={{ display: activeView === viewId ? "block" : "none" }}
+              >
+                <Comp />
+              </div>
+            );
+          })}
+          {/* 非保活视图：正常挂载/卸载 */}
+          {!KEEP_ALIVE_VIEWS.includes(activeView) && (
+            <div className="h-full">
+              {DISPOSABLE_VIEW_MAP[activeView]}
+            </div>
+          )}
         </main>
       </div>
     </div>

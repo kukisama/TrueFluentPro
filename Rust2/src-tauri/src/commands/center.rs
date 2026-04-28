@@ -201,7 +201,7 @@ pub async fn center_start_image_round(
                 let _ = db.center_update_round_status(&round_id, "completed").await;
 
                 // 保存每张图片到文件 + 数据库
-                let img_dir = data_dir.join("images");
+                let img_dir = data_dir.join("center_images");
                 let _ = std::fs::create_dir_all(&img_dir);
 
                 let mut asset_ids = Vec::new();
@@ -323,6 +323,16 @@ pub async fn center_start_video_round(
     };
     state.db.studio_upsert_task(&task).await.map_err(|e| e.to_string())?;
 
+    // 从配置获取端点信息
+    let endpoint_id = params.get("endpoint_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let ep = {
+        let config = state.config.read().await;
+        config.endpoints.iter().find(|e| e.id == endpoint_id).cloned()
+            .ok_or_else(|| format!("端点不存在: {}", endpoint_id))?
+    };
+
+    let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+
     let round_id = round.id.clone();
     let db = state.db.clone();
     let app_handle = app.clone();
@@ -330,6 +340,27 @@ pub async fn center_start_video_round(
     let round_id_ret = round.id.clone();
 
     tokio::spawn(async move {
+        use crate::providers::openai_video::OpenAiVideoProvider;
+
+        let provider = OpenAiVideoProvider::new(ep);
+        let model = params.get("model").and_then(|v| v.as_str()).unwrap_or("sora").to_string();
+        let size = params.get("size").and_then(|v| v.as_str()).unwrap_or("1920x1080").to_string();
+        let duration = params.get("duration_seconds").and_then(|v| v.as_u64()).unwrap_or(10) as u32;
+        let n = params.get("n").and_then(|v| v.as_u64()).map(|v| v as u32);
+
+        let request = VideoGenRequest {
+            prompt: prompt.clone(),
+            model,
+            endpoint_id,
+            size,
+            duration_seconds: duration,
+            api_mode: None,
+            reference_image_path: reference_path,
+            n,
+        };
+
+        let start = std::time::Instant::now();
+
         let _ = db.studio_update_task_status(&task_id, "running", None).await;
         let _ = db.center_update_round_status(&round_id, "running").await;
         let _ = app_handle.emit("center-task-update", serde_json::json!({
@@ -340,15 +371,132 @@ pub async fn center_start_video_round(
             "progress": 0.1,
         }));
 
-        let _ = db.studio_update_task_status(&task_id, "failed", Some("视频生成请通过 generate_video 命令触发")).await;
-        let _ = db.center_update_round_status(&round_id, "failed").await;
-        let _ = app_handle.emit("center-task-update", serde_json::json!({
-            "task_id": &task_id,
-            "session_id": &workspace_id,
-            "round_id": &round_id,
-            "status": "failed",
-            "error": "视频生成通道搭建中",
-        }));
+        // Phase 1: 创建视频任务
+        let video_id = match provider.create_video(&request).await {
+            Ok(id) => id,
+            Err(e) => {
+                let err_msg = format!("create_video: {e}");
+                let _ = db.studio_update_task_status(&task_id, "failed", Some(&err_msg)).await;
+                let _ = db.center_update_round_status(&round_id, "failed").await;
+                let _ = app_handle.emit("center-task-update", serde_json::json!({
+                    "task_id": &task_id, "session_id": &workspace_id, "round_id": &round_id,
+                    "status": "failed", "error": err_msg,
+                }));
+                return;
+            }
+        };
+
+        // Phase 2: 轮询（最多 10 分钟）
+        let poll_interval = std::time::Duration::from_secs(5);
+        let max_polls = 120;
+        let mut download_url = None;
+
+        for poll_i in 0..max_polls {
+            tokio::time::sleep(poll_interval).await;
+            match provider.poll_video(&video_id, &request).await {
+                Ok(result) => {
+                    let progress = 0.1 + (poll_i as f64 / max_polls as f64) * 0.7;
+                    let _ = db.studio_update_task_progress(&task_id, progress).await;
+                    let _ = app_handle.emit("center-task-update", serde_json::json!({
+                        "task_id": &task_id, "session_id": &workspace_id, "round_id": &round_id,
+                        "status": "running", "progress": progress,
+                    }));
+
+                    let s = result.status.to_lowercase();
+                    if s == "succeeded" || s == "completed" || s == "success" {
+                        download_url = result.download_url;
+                        break;
+                    } else if s == "failed" {
+                        let err_msg = "视频生成失败（远程返回 failed）";
+                        let _ = db.studio_update_task_status(&task_id, "failed", Some(err_msg)).await;
+                        let _ = db.center_update_round_status(&round_id, "failed").await;
+                        let _ = app_handle.emit("center-task-update", serde_json::json!({
+                            "task_id": &task_id, "session_id": &workspace_id, "round_id": &round_id,
+                            "status": "failed", "error": err_msg,
+                        }));
+                        return;
+                    }
+                }
+                Err(_) => continue,
+            }
+        }
+
+        let dl_url = match download_url {
+            Some(u) if !u.is_empty() => u,
+            _ => {
+                let err_msg = "视频生成超时或无下载链接";
+                let _ = db.studio_update_task_status(&task_id, "failed", Some(err_msg)).await;
+                let _ = db.center_update_round_status(&round_id, "failed").await;
+                let _ = app_handle.emit("center-task-update", serde_json::json!({
+                    "task_id": &task_id, "session_id": &workspace_id, "round_id": &round_id,
+                    "status": "failed", "error": err_msg,
+                }));
+                return;
+            }
+        };
+
+        // Phase 3: 下载
+        let vid_dir = data_dir.join("center_videos");
+        let _ = std::fs::create_dir_all(&vid_dir);
+        let fname = format!("vid_{}_{}.mp4", chrono::Utc::now().format("%Y%m%d_%H%M%S"), &task_id[..8]);
+        let output_path = vid_dir.join(&fname);
+
+        match provider.download_video(&dl_url, &output_path).await {
+            Ok(path_str) => {
+                let gen_secs = start.elapsed().as_secs_f64();
+                let _ = db.studio_update_task_result(&task_id, &path_str, Some(gen_secs), None).await;
+                let _ = db.center_update_round_status(&round_id, "completed").await;
+
+                // 创建 asset 记录（对齐图片 round 的做法：studio_insert_asset + center_add_round_asset）
+                let asset_id = uuid::Uuid::new_v4().to_string();
+                let fname = output_path.file_name().unwrap_or_default().to_string_lossy().to_string();
+                let now2 = chrono::Utc::now().to_rfc3339();
+                let file_size = std::fs::metadata(&output_path).map(|m| m.len() as i64).ok();
+                let asset = StudioAsset {
+                    asset_id: asset_id.clone(),
+                    session_id: workspace_id.clone(),
+                    group_id: round_id.clone(),
+                    kind: "video".to_string(),
+                    workflow: "generation".to_string(),
+                    file_name: fname,
+                    file_path: path_str.clone(),
+                    preview_path: String::new(),
+                    prompt_text: prompt.clone(),
+                    file_size,
+                    mime_type: Some("video/mp4".to_string()),
+                    width: None,
+                    height: None,
+                    duration_ms: Some(duration as i64 * 1000),
+                    created_at: now2.clone(),
+                    modified_at: now2,
+                    storage_scope: "workspace-relative".to_string(),
+                    derived_from_session_id: None,
+                    derived_from_session_name: None,
+                    derived_from_asset_id: None,
+                    derived_from_asset_file_name: None,
+                    derived_from_asset_kind: None,
+                    derived_from_reference_role: None,
+                };
+                let _ = db.studio_insert_asset(&asset).await;
+                let _ = db.center_add_round_asset(&round_id, &asset_id, 0).await;
+
+                let _ = app_handle.emit("center-task-update", serde_json::json!({
+                    "task_id": &task_id, "session_id": &workspace_id, "round_id": &round_id,
+                    "status": "completed", "progress": 1.0,
+                    "asset_ids": [&asset_id],
+                    "elapsed_seconds": gen_secs,
+                }));
+            }
+            Err(e) => {
+                let err_msg = format!("download: {e}");
+                let _ = db.studio_update_task_status(&task_id, "failed", Some(&err_msg)).await;
+                let _ = db.center_update_round_status(&round_id, "failed").await;
+                let _ = app_handle.emit("center-task-update", serde_json::json!({
+                    "task_id": &task_id, "session_id": &workspace_id, "round_id": &round_id,
+                    "status": "failed", "error": err_msg,
+                }));
+            }
+        }
     });
 
     Ok(serde_json::json!({

@@ -123,6 +123,7 @@ pub fn emit_subtitle_update(app: &AppHandle, source_text: &str, translated_text:
 }
 
 /// 更新洞察内容（流式）
+#[allow(dead_code)]
 pub fn emit_insight_update(app: &AppHandle, markdown: &str, streaming: bool) {
     let _ = app.emit("insight-update", serde_json::json!({
         "markdown": markdown,

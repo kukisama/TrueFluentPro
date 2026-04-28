@@ -22,9 +22,9 @@ interface SubtitlePayload {
 const FONT_SIZES = [24, 28, 32, 36, 40, 44, 48, 50];
 
 export function FloatingSubtitleApp() {
-  const [sourceText, setSourceText] = useState("等待字幕内容...");
+  const [sourceText, setSourceText] = useState("Waiting for subtitles...");
   const [translatedText, setTranslatedText] = useState("");
-  const [sourceLabel, setSourceLabel] = useState("🔊 全部字幕");
+  const [sourceLabel, setSourceLabel] = useState("🔊 All Subtitles");
   const [fontSize, setFontSize] = useState(36);
   const [bgMode, setBgMode] = useState(0); // 0=半透明黑, 1=纯黑, 2=透明
 
@@ -125,7 +125,7 @@ export function FloatingSubtitleApp() {
             padding: "1px 6px",
             cursor: "pointer",
           }}
-          title="切换背景"
+          title="Toggle background"
         >
           🎨
         </button>
@@ -146,7 +146,7 @@ export function FloatingSubtitleApp() {
             cursor: "pointer",
             lineHeight: "20px",
           }}
-          title="关闭字幕窗"
+          title="Close subtitle window"
         >
           ×
         </button>

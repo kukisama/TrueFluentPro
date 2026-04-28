@@ -1,17 +1,23 @@
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// ⚠ DEAD CODE 静音清单（2026-04-28 审查，共 60 项）
+// ⚠ WARNING 静音清单（2026-04-28 审查）
 //
-// 以下文件中已对预留代码添加了 #[allow(dead_code)]：
-//   - profile_loader.rs    : 21 个 Raw* serde 反序列化容器（匹配 JSON schema）
-//   - providers/registry.rs: 5 个预留 trait/struct/enum（detect_language,
-//                            push_audio, list_voices, VoiceInfo, Unsupported）
-//   - providers/azure_tts.rs: 2 个（build_voices_url, AzureVoice — 被预留 trait 内部使用）
-//   - storage.rs            : 1 个 impl Database 块（17 个 DAL 预建方法无调用者）
-//   - image_pipeline/catalog.rs  : 3 个 serde 容器（ImageModelDefaults 等）
-//   - image_pipeline/file_cache.rs: 1 个 impl FileIdCache（invalidate/clear/evict_expired）
+// 【A】#[allow(dead_code)] — 预留代码（功能上线后应移除标注）：
+//   - profile_loader.rs         : 21 个 Raw* serde 容器（匹配 JSON schema）
+//   - providers/registry.rs     : 5 个预留 trait/struct/enum
+//   - providers/azure_tts.rs    : 2 个（build_voices_url, AzureVoice）
+//   - storage.rs                : 1 个 impl Database 块（17 个 DAL 预建方法）
+//   - image_pipeline/catalog.rs : 3 个 serde 容器
+//   - image_pipeline/file_cache.rs: 1 个 impl FileIdCache
+//   - models.rs                 : 7 个预留 struct/enum/method
+//   - commands/floating.rs      : 1 个 emit_insight_update fn
 //
-// 当这些预留功能上线并接入 Tauri command 后，应移除对应的 allow(dead_code)。
-// 移除后若编译无新告警，说明代码已被正确消费。
+// 【B】已删除 unused imports（8 个）：
+//   translate.rs, test.rs, studio.rs, live.rs, openai_video.rs, mod.rs
+//
+// 【C】unused variables 加 _ 前缀（6 个）：
+//   media.rs, test.rs(x2), studio.rs, audiolab.rs, openai_realtime.rs
+//
+// 当预留功能上线后，移除对应 allow(dead_code) 并重新编译验证。
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 mod commands;

@@ -116,7 +116,7 @@ export function MindMapCanvas({ data, className }: MindMapCanvasProps) {
   if (!layout) {
     return (
       <div className={`flex items-center justify-center p-8 text-[var(--text-muted)] text-sm ${className || ""}`}>
-        无法解析思维导图数据
+        Unable to parse mind map data
       </div>
     );
   }

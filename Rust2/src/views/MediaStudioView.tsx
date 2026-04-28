@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Image, Video, Send, Trash2, Plus, Loader2,
   MessageSquare, X,
@@ -21,6 +22,7 @@ import { MarkdownRenderer } from "../components/MarkdownRenderer";
 const LRU_MAX = 3;
 
 export function MediaStudioView() {
+  const { t } = useTranslation();
   const config = useAppStore((s) => s.config);
   const [sessions, setSessions] = useState<StudioSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
@@ -137,14 +139,14 @@ export function MediaStudioView() {
         ]);
         setCurrentBundle(bundle); setReferenceImages(refs); setRunningTasks(tasks);
         loadedSessions.current.set(id, { bundle, refImages: refs });
-      } catch (err) { console.error("加载会话失败:", err); }
+      } catch (err) { console.error("Failed to load sessions:", err); }
     }
   }, [activeSessionId, currentBundle, referenceImages]);
 
   const handleNewSession = useCallback(async (type: string) => {
-    const nameMap: Record<string, string> = { chat: "新对话", image: "新图片", video: "新视频" };
+    const nameMap: Record<string, string> = { chat: t("studio.newChat"), image: t("studio.newImage"), video: t("studio.newVideo") };
     try {
-      const session = await api.studioCreateSession(type, nameMap[type] || "新会话");
+      const session = await api.studioCreateSession(type, nameMap[type] || t("studio.newSession"));
       setSessions(prev => [session, ...prev]);
       handleSelectSession(session.id);
     } catch (err) { console.error(err); }
@@ -230,7 +232,7 @@ export function MediaStudioView() {
       if (!result) return;
       const paths: string[] = Array.isArray(result) ? result : [result];
       if (sessionType === "video" && (referenceImages.length + paths.length) > 1) {
-        console.warn("Sora 当前仅支持 1 张参考图");
+        console.warn("Sora only supports 1 reference image");
         return;
       }
       for (const p of paths) {
@@ -257,7 +259,7 @@ export function MediaStudioView() {
       {sidebarOpen && (
         <div className="w-80 border-r border-[var(--border-subtle)] flex flex-col bg-[var(--surface-0)]">
           <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--border-subtle)]">
-            <span className="text-sm font-semibold text-[var(--text-primary)]">创作工坊</span>
+            <span className="text-sm font-semibold text-[var(--text-primary)]">{t("studio.title")}</span>
             <div className="flex items-center gap-1">
               <NewSessionMenu onCreate={handleNewSession} />
               <button onClick={() => setSidebarOpen(false)} className="p-1 rounded hover:bg-[var(--surface-2)]"><PanelLeftClose size={16} /></button>
@@ -279,7 +281,7 @@ export function MediaStudioView() {
                   {s.latest_message_preview && <span className="text-xs text-[var(--text-muted)] truncate block">{s.latest_message_preview}</span>}
                 </div>
                 <Badge variant="gray" className="text-[10px] shrink-0">
-                  {s.session_type === "chat" ? "对话" : s.session_type === "image" ? "图片" : "视频"}
+                  {s.session_type === "chat" ? t("studio.chatLabel") : s.session_type === "image" ? t("studio.imageLabel") : t("studio.videoLabel")}
                 </Badge>
                 <button onClick={(e) => { e.stopPropagation(); handleDeleteSession(s.id); }}
                   className="p-0.5 rounded hover:bg-red-500/20 shrink-0 opacity-0 group-hover:opacity-100"><Trash2 size={12} /></button>
@@ -292,12 +294,12 @@ export function MediaStudioView() {
         {!sidebarOpen && (
           <div className="flex items-center px-3 py-1.5 border-b border-[var(--border-subtle)]">
             <button onClick={() => setSidebarOpen(true)} className="p-1 rounded hover:bg-[var(--surface-2)] mr-2"><PanelLeftOpen size={16} /></button>
-            <span className="text-sm font-medium text-[var(--text-primary)]">{activeSession?.name || "创作工坊"}</span>
+            <span className="text-sm font-medium text-[var(--text-primary)]">{activeSession?.name || t("studio.title")}</span>
           </div>
         )}
         {!activeSessionId ? (
           <div className="flex-1 flex items-center justify-center">
-            <EmptyState icon={<MessageSquare size={48} />} title="选择或新建会话" description="在左侧选择一个会话，或点击 + 新建" />
+            <EmptyState icon={<MessageSquare size={48} />} title={t("studio.selectOrNew")} description={t("studio.selectOrNewDesc")} />
           </div>
         ) : (
           <>
@@ -310,7 +312,7 @@ export function MediaStudioView() {
             )}
             {(sessionType === "image" || sessionType === "video") && (
               <div className="flex items-center gap-2 px-4 py-2 border-b border-[var(--border-subtle)] bg-[var(--surface-0)]">
-                <span className="text-xs text-[var(--text-muted)]">参考图:</span>
+                <span className="text-xs text-[var(--text-muted)]">{t("studio.refImage")}</span>
                 {referenceImages.map(img => (
                   <div key={img.id} className="relative group">
                     <img src={convertFileSrc(img.file_path)} className="w-10 h-10 rounded object-cover border border-[var(--border-subtle)]" />
@@ -322,7 +324,7 @@ export function MediaStudioView() {
                   className="w-10 h-10 rounded border border-dashed border-[var(--border-subtle)] flex items-center justify-center hover:bg-[var(--surface-1)]">
                   <ImagePlus size={16} className="text-[var(--text-muted)]" />
                 </button>
-                {isVideoRefLimitExceeded && <span className="text-xs text-red-500 ml-2">Sora 当前仅支持 1 张参考图</span>}
+                {isVideoRefLimitExceeded && <span className="text-xs text-red-500 ml-2">{t("studio.soraRefLimit")}</span>}
               </div>
             )}
             {runningTasks.length > 0 && (
@@ -330,7 +332,7 @@ export function MediaStudioView() {
                 {runningTasks.map(task => (
                   <div key={task.id} className="flex items-center gap-2 text-xs">
                     <Loader2 size={12} className="animate-spin text-[var(--active-text)]" />
-                    <span className="text-[var(--text-secondary)]">{task.task_type === "image" ? "生成图片" : "生成视频"}... {Math.round((task.progress || 0) * 100)}%</span>
+                    <span className="text-[var(--text-secondary)]">{task.task_type === "image" ? t("studio.genImage") : t("studio.genVideo")}... {Math.round((task.progress || 0) * 100)}%</span>
                     <div className="flex-1 h-1 bg-[var(--surface-2)] rounded-full overflow-hidden">
                       <div className="h-full bg-brand-600 transition-all duration-300" style={{ width: `${(task.progress || 0) * 100}%` }} />
                     </div>
@@ -355,7 +357,7 @@ export function MediaStudioView() {
               <div className="flex gap-2">
                 <textarea value={input} onChange={(e) => setInput(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-                  placeholder={sessionType === "image" ? "描述你想生成的图片..." : sessionType === "video" ? "描述你想生成的视频..." : "输入消息..."}
+                  placeholder={sessionType === "image" ? t("studio.describeImage") : sessionType === "video" ? t("studio.describeVideo") : t("studio.enterMessage")}
                   className="flex-1 min-h-[40px] max-h-[120px] resize-none rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-1)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-1 focus:ring-brand-500"
                   rows={1} />
                 <Button onClick={handleSend} disabled={!input.trim() || isStreaming || isVideoRefLimitExceeded} className="shrink-0">
@@ -371,13 +373,14 @@ export function MediaStudioView() {
 }
 
 function NewSessionMenu({ onCreate }: { onCreate: (type: string) => void }) {
+  const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   return (
     <div className="relative">
       <button onClick={() => setIsOpen(!isOpen)} className="p-1 rounded hover:bg-[var(--surface-2)]"><Plus size={16} /></button>
       {isOpen && (
         <div className="absolute right-0 top-full mt-1 bg-[var(--surface-1)] border border-[var(--border-subtle)] rounded-lg shadow-lg z-50 py-1 min-w-[140px]">
-          {[{ type: "chat", icon: <MessageSquare size={14} />, label: "文本对话" }, { type: "image", icon: <Image size={14} />, label: "图片创作" }, { type: "video", icon: <Video size={14} />, label: "视频创作" }].map(item => (
+          {[{ type: "chat", icon: <MessageSquare size={14} />, label: t("studio.textChat") }, { type: "image", icon: <Image size={14} />, label: t("studio.imageCreation") }, { type: "video", icon: <Video size={14} />, label: t("studio.videoCreation") }].map(item => (
             <button key={item.type} onClick={() => { onCreate(item.type); setIsOpen(false); }}
               className="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-[var(--text-secondary)] hover:bg-[var(--surface-2)]">{item.icon} {item.label}</button>
           ))}
@@ -425,33 +428,34 @@ function MessageBubble({ message, mediaRefs, citations }: { message: StudioMessa
 
 function ImageParamsBar(props: { width: number; height: number; quality: string; format: string; count: number; background: string;
   onWidthChange: (v: number) => void; onHeightChange: (v: number) => void; onQualityChange: (v: string) => void; onFormatChange: (v: string) => void; onCountChange: (v: number) => void; onBackgroundChange: (v: string) => void; }) {
+  const { t } = useTranslation();
   const sizePresets = [{ label: "1:1 (1024)", w: 1024, h: 1024 }, { label: "16:9 (1792x1024)", w: 1792, h: 1024 }, { label: "9:16 (1024x1792)", w: 1024, h: 1792 }, { label: "4:3 (1024x768)", w: 1024, h: 768 }, { label: "3:4 (768x1024)", w: 768, h: 1024 }];
   return (
     <div className="flex flex-wrap items-center gap-3 px-4 py-2 border-b border-[var(--border-subtle)] bg-[var(--surface-0)] text-xs">
-      <label className="flex items-center gap-1">尺寸:
+      <label className="flex items-center gap-1">{t("studio.size")}
         <select value={`${props.width}x${props.height}`} onChange={e => { const [w, h] = e.target.value.split("x").map(Number); props.onWidthChange(w); props.onHeightChange(h); }}
           className="bg-[var(--surface-1)] border border-[var(--border-subtle)] rounded px-1.5 py-0.5 text-xs">
           {sizePresets.map(p => <option key={p.label} value={`${p.w}x${p.h}`}>{p.label}</option>)}
         </select>
       </label>
-      <label className="flex items-center gap-1">质量:
+      <label className="flex items-center gap-1">{t("studio.quality")}
         <select value={props.quality} onChange={e => props.onQualityChange(e.target.value)} className="bg-[var(--surface-1)] border border-[var(--border-subtle)] rounded px-1.5 py-0.5 text-xs">
-          <option value="auto">自动</option><option value="low">低</option><option value="medium">中</option><option value="high">高</option>
+          <option value="auto">{t("studio.qualityAuto")}</option><option value="low">{t("studio.qualityLow")}</option><option value="medium">{t("studio.qualityMedium")}</option><option value="high">{t("studio.qualityHigh")}</option>
         </select>
       </label>
-      <label className="flex items-center gap-1">格式:
+      <label className="flex items-center gap-1">{t("studio.format")}
         <select value={props.format} onChange={e => props.onFormatChange(e.target.value)} className="bg-[var(--surface-1)] border border-[var(--border-subtle)] rounded px-1.5 py-0.5 text-xs">
           <option value="png">PNG</option><option value="jpeg">JPEG</option><option value="webp">WebP</option>
         </select>
       </label>
-      <label className="flex items-center gap-1">数量:
+      <label className="flex items-center gap-1">{t("studio.count")}
         <select value={props.count} onChange={e => props.onCountChange(Number(e.target.value))} className="bg-[var(--surface-1)] border border-[var(--border-subtle)] rounded px-1.5 py-0.5 text-xs">
           {[1, 2, 4].map(n => <option key={n} value={n}>{n}</option>)}
         </select>
       </label>
-      <label className="flex items-center gap-1">背景:
+      <label className="flex items-center gap-1">{t("studio.background")}
         <select value={props.background} onChange={e => props.onBackgroundChange(e.target.value)} className="bg-[var(--surface-1)] border border-[var(--border-subtle)] rounded px-1.5 py-0.5 text-xs">
-          <option value="auto">自动</option><option value="transparent">透明</option><option value="opaque">不透明</option>
+          <option value="auto">{t("studio.bgAuto")}</option><option value="transparent">{t("studio.bgTransparent")}</option><option value="opaque">{t("studio.bgOpaque")}</option>
         </select>
       </label>
     </div>
@@ -459,19 +463,20 @@ function ImageParamsBar(props: { width: number; height: number; quality: string;
 }
 
 function VideoParamsBar(props: { size: string; duration: number; count: number; onSizeChange: (v: string) => void; onDurationChange: (v: number) => void; onCountChange: (v: number) => void; }) {
+  const { t } = useTranslation();
   return (
     <div className="flex items-center gap-3 px-4 py-2 border-b border-[var(--border-subtle)] bg-[var(--surface-0)] text-xs">
-      <label className="flex items-center gap-1">分辨率:
+      <label className="flex items-center gap-1">{t("studio.resolution")}
         <select value={props.size} onChange={e => props.onSizeChange(e.target.value)} className="bg-[var(--surface-1)] border border-[var(--border-subtle)] rounded px-1.5 py-0.5 text-xs">
-          <option value="1080x1920">1080x1920 (竖屏)</option><option value="1920x1080">1920x1080 (横屏)</option><option value="1080x1080">1080x1080 (方形)</option>
+          <option value="1080x1920">1080x1920 ({t("studio.resPortrait")})</option><option value="1920x1080">1920x1080 ({t("studio.resLandscape")})</option><option value="1080x1080">1080x1080 ({t("studio.resSquare")})</option>
         </select>
       </label>
-      <label className="flex items-center gap-1">时长:
+      <label className="flex items-center gap-1">{t("studio.duration")}
         <select value={props.duration} onChange={e => props.onDurationChange(Number(e.target.value))} className="bg-[var(--surface-1)] border border-[var(--border-subtle)] rounded px-1.5 py-0.5 text-xs">
-          <option value={5}>5秒</option><option value={10}>10秒</option><option value={15}>15秒</option><option value={20}>20秒</option>
+          <option value={5}>{t("studio.durationSec", {n: 5})}</option><option value={10}>{t("studio.durationSec", {n: 10})}</option><option value={15}>{t("studio.durationSec", {n: 15})}</option><option value={20}>{t("studio.durationSec", {n: 20})}</option>
         </select>
       </label>
-      <label className="flex items-center gap-1">数量:
+      <label className="flex items-center gap-1">{t("studio.count")}
         <select value={props.count} onChange={e => props.onCountChange(Number(e.target.value))} className="bg-[var(--surface-1)] border border-[var(--border-subtle)] rounded px-1.5 py-0.5 text-xs">
           {[1, 2].map(n => <option key={n} value={n}>{n}</option>)}
         </select>

@@ -241,7 +241,7 @@ pub async fn studio_chat_stream(
     let db = state.db.clone();
     let sid = session_id.clone();
     let aid = assistant_msg_id.clone();
-    let stid = stream_id.clone();
+    let _stid = stream_id.clone();
 
     // 4. 后台 spawn：流式 emit + 完成后落库
     tokio::spawn(async move {
@@ -560,7 +560,10 @@ pub async fn studio_start_video_task(
     let sid = session_id.clone();
 
     tokio::spawn(async move {
+        use crate::providers::openai_video::OpenAiVideoProvider;
+
         let start = std::time::Instant::now();
+        let provider = OpenAiVideoProvider::new(ep);
 
         let model = params.get("model").and_then(|v| v.as_str()).unwrap_or("sora").to_string();
         let endpoint_id = params.get("endpoint_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
@@ -583,193 +586,126 @@ pub async fn studio_start_video_task(
             "task_id": tid, "session_id": sid, "status": "running", "progress": 0.1,
         }));
 
-        let base_url = ep.url.trim_end_matches('/').to_string();
-        let create_url = format!("{}/openai/v1/video/generations/jobs", base_url);
-
-        let client = reqwest::Client::new();
-        let mut body = serde_json::json!({
-            "model": request.model,
-            "prompt": request.prompt,
-            "size": request.size,
-            "duration_seconds": request.duration_seconds,
-        });
-        if let Some(n) = request.n { body["n"] = serde_json::json!(n); }
-
-        let auth_value = if ep.auth_header_mode == "bearer" {
-            format!("Bearer {}", ep.api_key)
-        } else {
-            ep.api_key.clone()
-        };
-        let auth_header = if ep.auth_header_mode == "bearer" { "Authorization" } else { "api-key" };
-
-        let resp = client.post(&create_url)
-            .header(auth_header, &auth_value)
-            .header("Content-Type", "application/json")
-            .json(&body)
-            .send().await;
-
-        let resp = match resp {
-            Ok(r) => r,
+        // Phase 1: 创建视频任务
+        let video_id = match provider.create_video(&request).await {
+            Ok(id) => id,
             Err(e) => {
-                let _ = db.studio_update_task_status(&tid, "failed", Some(&e.to_string())).await;
+                let err_msg = format!("create_video: {e}");
+                let _ = db.studio_update_task_status(&tid, "failed", Some(&err_msg)).await;
                 let _ = app_handle.emit("studio-task-update", serde_json::json!({
-                    "task_id": tid, "session_id": sid, "status": "failed", "error": e.to_string(),
+                    "task_id": tid, "session_id": sid, "status": "failed", "error": err_msg,
                 }));
                 return;
             }
         };
 
-        let status_code = resp.status();
-        let resp_text = resp.text().await.unwrap_or_default();
-        if !status_code.is_success() {
-            let _ = db.studio_update_task_status(&tid, "failed", Some(&resp_text)).await;
-            let _ = app_handle.emit("studio-task-update", serde_json::json!({
-                "task_id": tid, "session_id": sid, "status": "failed", "error": resp_text,
-            }));
-            return;
-        }
-
-        let resp_json: serde_json::Value = match serde_json::from_str(&resp_text) {
-            Ok(j) => j,
-            Err(e) => {
-                let _ = db.studio_update_task_status(&tid, "failed", Some(&e.to_string())).await;
-                return;
-            }
-        };
-
-        let video_id = resp_json.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
         // 持久化 remote_video_id（用于进程崩溃恢复）
+        let api_mode_str = if request.model.contains("sora-2") || request.model == "sora" {
+            "videos"
+        } else {
+            "sora_jobs"
+        };
         {
             let now2 = chrono::Utc::now().to_rfc3339();
             let _ = db.studio_upsert_task(&StudioTask {
                 id: tid.clone(), session_id: sid.clone(), task_type: "video".to_string(),
                 status: "running".to_string(), prompt: prompt.clone(), progress: 0.2,
                 result_file_path: None, error_message: None, has_reference_input: false,
-                remote_video_id: Some(video_id.clone()), remote_video_api_mode: Some("sora_jobs".to_string()),
+                remote_video_id: Some(video_id.clone()), remote_video_api_mode: Some(api_mode_str.to_string()),
                 remote_generation_id: None, remote_download_url: None,
                 generate_seconds: None, download_seconds: None,
                 created_at: task.created_at.clone(), updated_at: now2,
             }).await;
         }
 
-        // 轮询
-        let poll_url = format!("{}/openai/v1/video/generations/jobs/{}", base_url, video_id);
-        let poll_interval = std::time::Duration::from_secs(3);
-        let max_polls = 200; // 10 分钟
-        let mut download_url = String::new();
+        // Phase 2: 轮询（最多 10 分钟）
+        let poll_interval = std::time::Duration::from_secs(5);
+        let max_polls = 120;
+        let mut download_url = None;
 
         for poll_i in 0..max_polls {
             tokio::time::sleep(poll_interval).await;
-
-            let poll_resp = client.get(&poll_url)
-                .header(auth_header, &auth_value)
-                .send().await;
-
-            let poll_resp = match poll_resp {
-                Ok(r) => r,
-                Err(_) => continue,
-            };
-
-            let poll_text = poll_resp.text().await.unwrap_or_default();
-            let poll_json: serde_json::Value = match serde_json::from_str(&poll_text) {
-                Ok(j) => j,
-                Err(_) => continue,
-            };
-
-            let vstatus = poll_json.get("status").and_then(|v| v.as_str()).unwrap_or("unknown");
-            let progress = match vstatus {
-                "running" | "in_progress" => 0.2 + (poll_i as f64 / max_polls as f64) * 0.6,
-                "succeeded" | "completed" => 1.0,
-                "failed" => {
-                    let err = poll_json.get("error").and_then(|v| v.as_str()).unwrap_or("视频生成失败");
-                    let _ = db.studio_update_task_status(&tid, "failed", Some(err)).await;
+            match provider.poll_video(&video_id, &request).await {
+                Ok(result) => {
+                    let progress = 0.2 + (poll_i as f64 / max_polls as f64) * 0.6;
+                    let _ = db.studio_update_task_progress(&tid, progress).await;
                     let _ = app_handle.emit("studio-task-update", serde_json::json!({
-                        "task_id": tid, "session_id": sid, "status": "failed", "error": err,
+                        "task_id": tid, "session_id": sid, "status": "running", "progress": progress,
                     }));
-                    return;
-                }
-                _ => 0.3,
-            };
 
-            let _ = db.studio_update_task_progress(&tid, progress).await;
-            let _ = app_handle.emit("studio-task-update", serde_json::json!({
-                "task_id": tid, "session_id": sid, "status": "running", "progress": progress,
-            }));
-
-            if vstatus == "succeeded" || vstatus == "completed" {
-                // 提取下载链接
-                if let Some(generations) = poll_json.get("generations").and_then(|v| v.as_array()) {
-                    if let Some(first) = generations.first() {
-                        download_url = first.get("url").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let s = result.status.to_lowercase();
+                    if s == "succeeded" || s == "completed" || s == "success" {
+                        download_url = result.download_url;
+                        break;
+                    } else if s == "failed" {
+                        let err_msg = "视频生成失败（远程返回 failed）";
+                        let _ = db.studio_update_task_status(&tid, "failed", Some(err_msg)).await;
+                        let _ = app_handle.emit("studio-task-update", serde_json::json!({
+                            "task_id": tid, "session_id": sid, "status": "failed", "error": err_msg,
+                        }));
+                        return;
                     }
                 }
-                // 也可能在 data.url
-                if download_url.is_empty() {
-                    download_url = poll_json.get("data").and_then(|v| v.get("url")).and_then(|v| v.as_str()).unwrap_or("").to_string();
-                }
-                break;
+                Err(_) => continue,
             }
         }
 
-        if download_url.is_empty() {
-            let _ = db.studio_update_task_status(&tid, "failed", Some("视频生成超时或无下载链接")).await;
-            let _ = app_handle.emit("studio-task-update", serde_json::json!({
-                "task_id": tid, "session_id": sid, "status": "failed", "error": "超时",
-            }));
-            return;
-        }
-
-        // 下载视频
-        let dl_start = std::time::Instant::now();
-        let dl_resp = client.get(&download_url)
-            .header(auth_header, &auth_value)
-            .send().await;
-
-        match dl_resp {
-            Ok(resp) if resp.status().is_success() => {
-                let bytes = resp.bytes().await.unwrap_or_default();
-                let vid_dir = data_dir.join("studio_videos");
-                let _ = std::fs::create_dir_all(&vid_dir);
-                let fname = format!("{}.mp4", &tid[..8]);
-                let path = vid_dir.join(&fname);
-                if std::fs::write(&path, &bytes).is_ok() {
-                    let gen_secs = start.elapsed().as_secs_f64();
-                    let dl_secs = dl_start.elapsed().as_secs_f64();
-                    let path_str = path.to_string_lossy().to_string();
-                    let _ = db.studio_update_task_result(&tid, &path_str, Some(gen_secs), Some(dl_secs)).await;
-
-                    // 创建 assistant 消息
-                    let msg_id = uuid::Uuid::new_v4().to_string();
-                    let seq = db.studio_get_max_sequence(&sid).await.unwrap_or(0) + 1;
-                    let msg = StudioMessage {
-                        id: msg_id.clone(), session_id: sid.clone(), sequence_no: seq,
-                        role: "assistant".to_string(), content_type: "video".to_string(),
-                        text: format!("[视频已生成]"), reasoning_text: String::new(),
-                        prompt_tokens: None, completion_tokens: None,
-                        generate_seconds: Some(gen_secs), download_seconds: Some(dl_secs),
-                        search_summary: None, timestamp: chrono::Utc::now().to_rfc3339(), is_deleted: false,
-                    };
-                    let _ = db.studio_append_message(&msg).await;
-                    let media_refs = vec![StudioMediaRef {
-                        id: 0, message_id: msg_id.clone(),
-                        media_path: path_str.clone(), media_kind: "video".to_string(),
-                        sort_order: 0, preview_path: None,
-                    }];
-                    let _ = db.studio_insert_media_refs(&msg_id, &media_refs).await;
-
-                    let _ = app_handle.emit("studio-task-update", serde_json::json!({
-                        "task_id": tid, "session_id": sid, "status": "completed", "progress": 1.0,
-                        "result_path": path_str,
-                    }));
-                    let _ = app_handle.emit("studio-message-new", serde_json::json!({
-                        "session_id": sid, "message": msg, "media_refs": media_refs,
-                    }));
-                }
-            }
+        let dl_url = match download_url {
+            Some(u) if !u.is_empty() => u,
             _ => {
-                let _ = db.studio_update_task_status(&tid, "failed", Some("视频下载失败")).await;
+                let _ = db.studio_update_task_status(&tid, "failed", Some("视频生成超时或无下载链接")).await;
                 let _ = app_handle.emit("studio-task-update", serde_json::json!({
-                    "task_id": tid, "session_id": sid, "status": "failed", "error": "下载失败",
+                    "task_id": tid, "session_id": sid, "status": "failed", "error": "超时",
+                }));
+                return;
+            }
+        };
+
+        // Phase 3: 下载
+        let dl_start = std::time::Instant::now();
+        let vid_dir = data_dir.join("studio_videos");
+        let _ = std::fs::create_dir_all(&vid_dir);
+        let fname = format!("{}.mp4", &tid[..8]);
+        let output_path = vid_dir.join(&fname);
+
+        match provider.download_video(&dl_url, &output_path).await {
+            Ok(path_str) => {
+                let gen_secs = start.elapsed().as_secs_f64();
+                let dl_secs = dl_start.elapsed().as_secs_f64();
+                let _ = db.studio_update_task_result(&tid, &path_str, Some(gen_secs), Some(dl_secs)).await;
+
+                // 创建 assistant 消息
+                let msg_id = uuid::Uuid::new_v4().to_string();
+                let seq = db.studio_get_max_sequence(&sid).await.unwrap_or(0) + 1;
+                let msg = StudioMessage {
+                    id: msg_id.clone(), session_id: sid.clone(), sequence_no: seq,
+                    role: "assistant".to_string(), content_type: "video".to_string(),
+                    text: format!("[视频已生成]"), reasoning_text: String::new(),
+                    prompt_tokens: None, completion_tokens: None,
+                    generate_seconds: Some(gen_secs), download_seconds: Some(dl_secs),
+                    search_summary: None, timestamp: chrono::Utc::now().to_rfc3339(), is_deleted: false,
+                };
+                let _ = db.studio_append_message(&msg).await;
+                let media_refs = vec![StudioMediaRef {
+                    id: 0, message_id: msg_id.clone(),
+                    media_path: path_str.clone(), media_kind: "video".to_string(),
+                    sort_order: 0, preview_path: None,
+                }];
+                let _ = db.studio_insert_media_refs(&msg_id, &media_refs).await;
+
+                let _ = app_handle.emit("studio-task-update", serde_json::json!({
+                    "task_id": tid, "session_id": sid, "status": "completed", "progress": 1.0,
+                    "result_path": path_str,
+                }));
+                let _ = app_handle.emit("studio-message-new", serde_json::json!({
+                    "session_id": sid, "message": msg, "media_refs": media_refs,
+                }));
+            }
+            Err(e) => {
+                let err_msg = format!("download: {e}");
+                let _ = db.studio_update_task_status(&tid, "failed", Some(&err_msg)).await;
+                let _ = app_handle.emit("studio-task-update", serde_json::json!({
+                    "task_id": tid, "session_id": sid, "status": "failed", "error": err_msg,
                 }));
             }
         }
@@ -815,25 +751,33 @@ pub async fn studio_resume_interrupted_video_tasks(
         };
 
         tokio::spawn(async move {
+            use crate::providers::openai_video::OpenAiVideoProvider;
+
             // 从配置恢复端点信息
             let config = {
                 let cfg = db2.kv_get("app_config").await.ok().flatten();
                 cfg.and_then(|j| serde_json::from_str::<AppConfig>(&j).ok()).unwrap_or_default()
             };
 
-            // 在 session_tasks 找到对应的 endpoint
-            let ep = config.endpoints.first(); // 简化: 用第一个可用端点
-            let Some(ep) = ep else { return; };
+            let Some(ep) = config.endpoints.first().cloned() else { return; };
+            let provider = OpenAiVideoProvider::new(ep);
 
-            let base_url = ep.url.trim_end_matches('/');
-            let poll_url = format!("{}/openai/v1/video/generations/jobs/{}", base_url, video_id);
-            let client = reqwest::Client::new();
-            let auth_value = if ep.auth_header_mode == "bearer" {
-                format!("Bearer {}", ep.api_key)
-            } else {
-                ep.api_key.clone()
+            // 从存储的 api_mode 恢复 VideoGenRequest（仅用于 poll_video 的路由判断）
+            let api_mode = match task.remote_video_api_mode.as_deref() {
+                Some("videos") => Some(VideoApiMode::Videos),
+                Some("sora_jobs") => Some(VideoApiMode::SoraJobs),
+                _ => None, // 回退到 detect_api_mode 默认逻辑
             };
-            let auth_header = if ep.auth_header_mode == "bearer" { "Authorization" } else { "api-key" };
+            let request = VideoGenRequest {
+                prompt: task.prompt.clone(),
+                model: "sora".to_string(), // 仅作 detect fallback
+                endpoint_id: String::new(),
+                size: "1080x1920".to_string(),
+                duration_seconds: 10,
+                api_mode,
+                reference_image_path: None,
+                n: None,
+            };
 
             tracing::info!("恢复视频轮询: task={}, video_id={}", tid, video_id);
 
@@ -841,46 +785,38 @@ pub async fn studio_resume_interrupted_video_tasks(
             for _ in 0..200 {
                 tokio::time::sleep(poll_interval).await;
 
-                let poll_resp = match client.get(&poll_url).header(auth_header, &auth_value).send().await {
-                    Ok(r) => r,
-                    Err(_) => continue,
-                };
-                let poll_text = poll_resp.text().await.unwrap_or_default();
-                let poll_json: serde_json::Value = match serde_json::from_str(&poll_text) {
-                    Ok(j) => j,
-                    Err(_) => continue,
-                };
+                match provider.poll_video(&video_id, &request).await {
+                    Ok(result) => {
+                        let s = result.status.to_lowercase();
+                        if s == "succeeded" || s == "completed" || s == "success" {
+                            if let Some(dl_url) = result.download_url {
+                                if !dl_url.is_empty() {
+                                    let data_dir = app2.path().app_data_dir().unwrap_or_default();
+                                    let vid_dir = data_dir.join("studio_videos");
+                                    let _ = std::fs::create_dir_all(&vid_dir);
+                                    let path = vid_dir.join(format!("{}.mp4", &tid[..8]));
 
-                let vstatus = poll_json.get("status").and_then(|v| v.as_str()).unwrap_or("unknown");
-                if vstatus == "succeeded" || vstatus == "completed" {
-                    let mut dl_url = String::new();
-                    if let Some(gens) = poll_json.get("generations").and_then(|v| v.as_array()) {
-                        if let Some(first) = gens.first() {
-                            dl_url = first.get("url").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        }
-                    }
-                    if !dl_url.is_empty() {
-                        if let Ok(resp) = client.get(&dl_url).header(auth_header, &auth_value).send().await {
-                            if resp.status().is_success() {
-                                let bytes = resp.bytes().await.unwrap_or_default();
-                                let data_dir = app2.path().app_data_dir().unwrap_or_default();
-                                let vid_dir = data_dir.join("studio_videos");
-                                let _ = std::fs::create_dir_all(&vid_dir);
-                                let path = vid_dir.join(format!("{}.mp4", &tid[..8]));
-                                if std::fs::write(&path, &bytes).is_ok() {
-                                    let path_str = path.to_string_lossy().to_string();
-                                    let _ = db2.studio_update_task_result(&tid, &path_str, None, None).await;
-                                    let _ = app2.emit("studio-task-update", serde_json::json!({
-                                        "task_id": tid, "session_id": sid, "status": "completed", "progress": 1.0,
-                                    }));
+                                    match provider.download_video(&dl_url, &path).await {
+                                        Ok(path_str) => {
+                                            let _ = db2.studio_update_task_result(&tid, &path_str, None, None).await;
+                                            let _ = app2.emit("studio-task-update", serde_json::json!({
+                                                "task_id": tid, "session_id": sid, "status": "completed", "progress": 1.0,
+                                            }));
+                                        }
+                                        Err(e) => {
+                                            let err_msg = format!("恢复下载失败: {e}");
+                                            let _ = db2.studio_update_task_status(&tid, "failed", Some(&err_msg)).await;
+                                        }
+                                    }
                                 }
                             }
+                            return;
+                        } else if s == "failed" {
+                            let _ = db2.studio_update_task_status(&tid, "failed", Some("视频生成失败(恢复)")).await;
+                            return;
                         }
                     }
-                    return;
-                } else if vstatus == "failed" {
-                    let _ = db2.studio_update_task_status(&tid, "failed", Some("视频生成失败(恢复)")).await;
-                    return;
+                    Err(_) => continue,
                 }
             }
             let _ = db2.studio_update_task_status(&tid, "failed", Some("恢复轮询超时")).await;

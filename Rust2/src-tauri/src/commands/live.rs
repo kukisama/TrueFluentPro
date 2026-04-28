@@ -91,57 +91,31 @@ pub async fn live_list_supported_languages(
 }
 
 /// Azure Speech SDK 翻译支持的语言列表
-/// 来源: C# SpeechTranslationService + Azure 文档
+/// 精简为中英日韩 + auto（对齐 C# ConfigViewModel.SourceLanguages）
 fn azure_speech_languages() -> Vec<SupportedLanguage> {
     vec![
         // 源语言（语音识别）使用 locale 格式
+        sl("auto", "自动检测", "source"),
         sl("zh-CN", "中文（简体）", "source"),
-        sl("zh-TW", "中文（繁體）", "source"),
-        sl("en-US", "English (US)", "source"),
+        sl("en-US", "English", "source"),
         sl("ja-JP", "日本語", "source"),
         sl("ko-KR", "한국어", "source"),
-        sl("fr-FR", "Français", "source"),
-        sl("de-DE", "Deutsch", "source"),
-        sl("es-ES", "Español", "source"),
-        sl("ru-RU", "Русский", "source"),
-        sl("pt-BR", "Português (Brasil)", "source"),
-        sl("it-IT", "Italiano", "source"),
-        sl("ar-SA", "العربية", "source"),
-        sl("hi-IN", "हिन्दी", "source"),
-        sl("th-TH", "ภาษาไทย", "source"),
-        sl("vi-VN", "Tiếng Việt", "source"),
         // 目标语言（翻译输出）使用 BCP-47 short code
         sl("zh-Hans", "中文（简体）", "target"),
-        sl("zh-Hant", "中文（繁體）", "target"),
         sl("en", "English", "target"),
         sl("ja", "日本語", "target"),
         sl("ko", "한국어", "target"),
-        sl("fr", "Français", "target"),
-        sl("de", "Deutsch", "target"),
-        sl("es", "Español", "target"),
-        sl("ru", "Русский", "target"),
-        sl("pt", "Português", "target"),
-        sl("it", "Italiano", "target"),
-        sl("ar", "العربية", "target"),
-        sl("hi", "हिन्दी", "target"),
-        sl("th", "ภาษาไทย", "target"),
-        sl("vi", "Tiếng Việt", "target"),
     ]
 }
 
-/// OpenAI Realtime API 支持的语言
+/// OpenAI Realtime API 支持的语言（精简为中英日韩）
 fn openai_realtime_languages() -> Vec<SupportedLanguage> {
     vec![
+        sl("auto", "自动检测", "source"),
         sl("zh", "中文", "both"),
         sl("en", "English", "both"),
         sl("ja", "日本語", "both"),
         sl("ko", "한국어", "both"),
-        sl("fr", "Français", "both"),
-        sl("de", "Deutsch", "both"),
-        sl("es", "Español", "both"),
-        sl("ru", "Русский", "both"),
-        sl("pt", "Português", "both"),
-        sl("it", "Italiano", "both"),
     ]
 }
 

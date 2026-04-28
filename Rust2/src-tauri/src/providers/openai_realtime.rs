@@ -143,7 +143,7 @@ impl RealtimeSpeechSlot for OpenAiRealtimeProvider {
         let session_id_clone = session_id.clone();
         let stopped_clone = stopped.clone();
         let target_lang_clone = target_lang.clone();
-        let source_lang_clone = source_lang.clone();
+        let _source_lang_clone = source_lang.clone();
 
         tokio::spawn(async move {
             let mut read = read;

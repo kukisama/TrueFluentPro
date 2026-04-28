@@ -176,7 +176,7 @@ pub async fn ai_complete_stream(
 /// O-06: 提示词优化
 #[tauri::command]
 pub async fn optimize_prompt(
-    app_handle: tauri::AppHandle,
+    _app_handle: tauri::AppHandle,
     state: State<'_, AppState>,
     prompt: String,
     endpoint_id: Option<String>,

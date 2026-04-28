@@ -374,6 +374,7 @@ impl AiEndpoint {
     }
 
     /// 取该终结点下第一个有某能力的模型
+    #[allow(dead_code)]
     pub fn first_model_with_capability(&self, cap: ModelCapability) -> Option<&AiModelEntry> {
         self.models.iter().find(|m| m.capabilities.contains(&cap))
     }
@@ -758,6 +759,7 @@ pub struct VideoGenResult {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
+#[allow(dead_code)]
 pub enum TaskStatus {
     Pending,
     Running,
@@ -769,6 +771,7 @@ pub enum TaskStatus {
 // ─── 音频实验室模型 ───
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct AudioLabSession {
     pub id: String,
     pub name: String,
@@ -780,6 +783,7 @@ pub struct AudioLabSession {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
+#[allow(dead_code)]
 pub enum AudioLabStage {
     Recording,
     Processing,
@@ -802,6 +806,7 @@ pub struct TranslationHistory {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct MediaSession {
     pub id: String,
     pub name: String,
@@ -811,6 +816,7 @@ pub struct MediaSession {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct MediaItem {
     pub id: String,
     pub prompt: String,
@@ -1426,6 +1432,7 @@ pub struct CanvasRound {
 
 /// 轮次资产关联（对应 canvas_round_assets 表）
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct CanvasRoundAsset {
     pub id: String,
     pub round_id: String,

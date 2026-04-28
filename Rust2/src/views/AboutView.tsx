@@ -31,10 +31,10 @@ export function AboutView() {
           <div className="max-w-2xl mx-auto space-y-6">
             <FadeIn>
               <GlassCard className="text-center py-8">
-                <h2 className="text-3xl font-bold text-gradient mb-2">译见 Pro</h2>
+                <h2 className="text-3xl font-bold text-gradient mb-2">{t("aboutPage.appName")}</h2>
                 <Badge variant="blue">{appInfo ? `v${appInfo.version}` : "v0.1.0"}</Badge>
                 <p className="text-sm text-[var(--text-secondary)] mt-3">
-                  全平台 AI 翻译 & 创作工具
+                  {t("aboutPage.appDesc")}
                 </p>
                 {appInfo && (
                   <p className="text-xs text-[var(--text-muted)] mt-2">
@@ -51,10 +51,10 @@ export function AboutView() {
                   {t("about.techStack")}
                 </h3>
                 <div className="text-sm text-[var(--text-secondary)] space-y-1.5">
-                  <p>前端: React 19 + TypeScript + Tailwind CSS + Radix UI + Framer Motion</p>
-                  <p>后端: Rust + Tauri 2 + reqwest (SSE streaming)</p>
-                  <p>存储: SQLite (rusqlite, bundled)</p>
-                  <p>主题: CSS 变量驱动的 dark/light 双主题</p>
+                  <p>{t("aboutPage.techFrontend")}</p>
+                  <p>{t("aboutPage.techBackend")}</p>
+                  <p>{t("aboutPage.techStorage")}</p>
+                  <p>{t("aboutPage.techTheme")}</p>
                 </div>
               </GlassCard>
             </FadeIn>
@@ -85,18 +85,18 @@ export function AboutView() {
                 <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-3">{t("about.faq")}</h3>
                 <div className="text-sm text-[var(--text-secondary)] space-y-3">
                   <div>
-                    <p className="font-medium text-[var(--text-primary)]">如何添加 AI 端点？</p>
-                    <p className="text-[var(--text-muted)]">进入 设置 → 端点管理 → 添加端点，填入 URL 和 API Key。</p>
+                    <p className="font-medium text-[var(--text-primary)]">{t("aboutPage.faqAddEndpoint")}</p>
+                    <p className="text-[var(--text-muted)]">{t("aboutPage.faqAddEndpointAnswer")}</p>
                   </div>
                   <Separator />
                   <div>
-                    <p className="font-medium text-[var(--text-primary)]">支持哪些 AI 服务？</p>
-                    <p className="text-[var(--text-muted)]">Azure OpenAI、OpenAI、任何兼容 OpenAI API 的服务（如 ollama、vLLM、DeepSeek）。</p>
+                    <p className="font-medium text-[var(--text-primary)]">{t("aboutPage.faqSupportedServices")}</p>
+                    <p className="text-[var(--text-muted)]">{t("aboutPage.faqSupportedServicesAnswer")}</p>
                   </div>
                   <Separator />
                   <div>
-                    <p className="font-medium text-[var(--text-primary)]">实时翻译需要什么？</p>
-                    <p className="text-[var(--text-muted)]">需要配置 Azure Speech 订阅。目前仅支持 Azure Cognitive Services。</p>
+                    <p className="font-medium text-[var(--text-primary)]">{t("aboutPage.faqRealtimeReq")}</p>
+                    <p className="text-[var(--text-muted)]">{t("aboutPage.faqRealtimeReqAnswer")}</p>
                   </div>
                 </div>
               </GlassCard>

@@ -47,6 +47,15 @@ export default defineConfig(function () { return __awaiter(void 0, void 0, void 
                         "@": path.resolve(__dirname, "./src"),
                     },
                 },
+                build: {
+                    rollupOptions: {
+                        input: {
+                            main: path.resolve(__dirname, "index.html"),
+                            "floating-subtitle": path.resolve(__dirname, "floating-subtitle.html"),
+                            "floating-insight": path.resolve(__dirname, "floating-insight.html"),
+                        },
+                    },
+                },
                 clearScreen: false,
                 server: {
                     port: 1420,

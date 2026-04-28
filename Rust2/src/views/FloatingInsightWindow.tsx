@@ -3,7 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 /**
- * 浮动洞察子窗口 — 1:1 对照 C# FloatingInsightWindow.axaml
+ * Floating Insight子窗口 — 1:1 对照 C# FloatingInsightWindow.axaml
  *
  * 窗口属性：transparent, no decorations, always_on_top, resizable
  * 由 Rust 后端 WebviewWindowBuilder 创建。
@@ -18,7 +18,7 @@ interface InsightPayload {
 }
 
 export function FloatingInsightApp() {
-  const [markdown, setMarkdown] = useState("等待洞察内容...");
+  const [markdown, setMarkdown] = useState("Waiting for insights...");
   const [fontSize, setFontSize] = useState(14);
   const [isStreaming, setIsStreaming] = useState(false);
 
@@ -28,7 +28,7 @@ export function FloatingInsightApp() {
       const p = event.payload;
       if (p.streaming) {
         // 流式追加
-        setMarkdown(prev => prev === "等待洞察内容..." ? p.markdown : prev + p.markdown);
+        setMarkdown(prev => prev === "Waiting for insights..." ? p.markdown : prev + p.markdown);
         setIsStreaming(true);
       } else {
         // 完整替换
@@ -81,7 +81,7 @@ export function FloatingInsightApp() {
       >
         <span style={{ fontSize: 16 }}>🧠</span>
         <span style={{ fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,0.9)", flex: 1 }}>
-          浮动洞察
+          Floating Insight
         </span>
 
         {/* 字号控制 */}
@@ -97,7 +97,7 @@ export function FloatingInsightApp() {
             padding: "1px 6px",
             cursor: "pointer",
           }}
-          title="缩小字体"
+          title="Decrease font size"
         >
           A-
         </button>
@@ -113,7 +113,7 @@ export function FloatingInsightApp() {
             padding: "1px 6px",
             cursor: "pointer",
           }}
-          title="放大字体"
+          title="Increase font size"
         >
           A+
         </button>
@@ -132,7 +132,7 @@ export function FloatingInsightApp() {
             lineHeight: "20px",
             marginLeft: 4,
           }}
-          title="关闭"
+          title="Close"
         >
           ✕
         </button>

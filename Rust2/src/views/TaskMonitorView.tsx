@@ -25,7 +25,7 @@ const SORT_COLUMNS = ["TaskId", "AudioFileName", "Stage", "Status", "SubmittedAt
 type SortColumn = typeof SORT_COLUMNS[number];
 
 export function TaskMonitorView() {
-  useTranslation();
+  const { t } = useTranslation();
 
   const [snapshot, setSnapshot] = useState<MonitorSnapshot | null>(null);
   const [settings, setSettings] = useState<MonitorSettings>({ max_transcription_concurrency: 2, max_ai_concurrency: 4, transcription_timeout_minutes: 10 });
@@ -166,7 +166,7 @@ export function TaskMonitorView() {
   }, [loadExecutions]);
 
   const handleCancelTask = useCallback(async (taskId: string) => {
-    if (!confirm("确认取消此任务？")) return;
+    if (!confirm(t("taskMonitor.confirmCancel"))) return;
     try { await api.monitorCancelTask(taskId, "user_cancel"); await loadSnapshot(); } catch (err) { console.error(err); }
   }, [loadSnapshot]);
 
@@ -175,7 +175,7 @@ export function TaskMonitorView() {
   }, [loadSnapshot]);
 
   const handleCleanup = useCallback(async () => {
-    if (!confirm("确认清理7天前已完成/取消任务？")) return;
+    if (!confirm(t("taskMonitor.confirmCleanup"))) return;
     try { await api.monitorCleanupCompleted(7); await loadSnapshot(); } catch (err) { console.error(err); }
   }, [loadSnapshot]);
 
@@ -194,13 +194,13 @@ export function TaskMonitorView() {
 
   const handleBatchCancel = useCallback(async () => {
     if (selectedIds.size === 0) return;
-    if (!confirm(`确认批量取消 ${selectedIds.size} 个任务？`)) return;
+    if (!confirm(t("taskMonitor.confirmBatchCancel", { count: selectedIds.size }))) return;
     try { await api.monitorBatchCancel([...selectedIds]); setSelectedIds(new Set()); await loadSnapshot(); } catch (err) { console.error(err); }
   }, [selectedIds, loadSnapshot]);
 
   const handleBatchDelete = useCallback(async () => {
     if (selectedIds.size === 0) return;
-    if (!confirm(`确认批量删除 ${selectedIds.size} 个任务？`)) return;
+    if (!confirm(t("taskMonitor.confirmBatchDelete", { count: selectedIds.size }))) return;
     try { await api.monitorBatchDelete([...selectedIds]); setSelectedIds(new Set()); await loadSnapshot(); } catch (err) { console.error(err); }
   }, [selectedIds, loadSnapshot]);
 
@@ -259,11 +259,11 @@ export function TaskMonitorView() {
       <div className="w-[216px] shrink-0 border-r border-[var(--border-subtle)] flex flex-col" style={{ backgroundColor: "var(--sidebar-bg)" }}>
         <div className="p-3 flex flex-col gap-3 flex-1 overflow-auto">
           <div className="flex items-center gap-1">
-            <span className="text-sm font-semibold text-[var(--text-primary)] flex-1">任务分类</span>
-            <button className="p-1 rounded hover:bg-[var(--hover-bg)]" title="刷新" onClick={() => loadSnapshot()}>
+            <span className="text-sm font-semibold text-[var(--text-primary)] flex-1">{t("taskMonitor.categories")}</span>
+            <button className="p-1 rounded hover:bg-[var(--hover-bg)]" title={t("taskMonitor.refresh")} onClick={() => loadSnapshot()}>
               <RefreshCw size={13} className={cn(loading && "animate-spin")} />
             </button>
-            <button className="p-1 rounded hover:bg-[var(--hover-bg)]" title="清理7天前已完成/取消任务" onClick={handleCleanup}>
+            <button className="p-1 rounded hover:bg-[var(--hover-bg)]" title={t("taskMonitor.cleanupTitle")} onClick={handleCleanup}>
               <Trash2 size={13} />
             </button>
           </div>
@@ -281,9 +281,9 @@ export function TaskMonitorView() {
           </div>
           <Separator />
           <div className="space-y-1.5">
-            <span className="text-[11px] font-semibold text-[var(--text-muted)]">并发设置</span>
+            <span className="text-[11px] font-semibold text-[var(--text-muted)]">{t("taskMonitor.concurrency")}</span>
             <div className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-1.5 items-center">
-              <span className="text-[11px] text-[var(--text-muted)]">转录</span>
+              <span className="text-[11px] text-[var(--text-muted)]">{t("taskMonitor.transcription")}</span>
               <input type="number" min={1} max={20} value={settings.max_transcription_concurrency}
                 onChange={e => handleSettingsChange("max_transcription_concurrency", Number(e.target.value))}
                 className="w-full h-6 px-1.5 text-[11px] rounded border border-[var(--border-medium)] bg-[var(--input-bg)] text-[var(--text-primary)]" />
@@ -295,9 +295,9 @@ export function TaskMonitorView() {
           </div>
           <Separator />
           <div className="space-y-1.5">
-            <span className="text-[11px] font-semibold text-[var(--text-muted)]">超时设置</span>
+            <span className="text-[11px] font-semibold text-[var(--text-muted)]">{t("taskMonitor.timeout")}</span>
             <div className="grid grid-cols-[auto_1fr] gap-x-2 items-center">
-              <span className="text-[11px] text-[var(--text-muted)]">转录</span>
+              <span className="text-[11px] text-[var(--text-muted)]">{t("taskMonitor.transcription")}</span>
               <input type="number" min={1} max={60} value={settings.transcription_timeout_minutes}
                 onChange={e => handleSettingsChange("transcription_timeout_minutes", Number(e.target.value))}
                 className="w-full h-6 px-1.5 text-[11px] rounded border border-[var(--border-medium)] bg-[var(--input-bg)] text-[var(--text-primary)]" />
@@ -305,12 +305,12 @@ export function TaskMonitorView() {
           </div>
           <Separator />
           <div className="space-y-1">
-            <span className="text-[11px] font-semibold text-[var(--text-muted)]">Token 用量</span>
-            <p className="text-[10px] text-[var(--text-muted)]">执行 {globalStats.total_executions} 次 · 计费 {globalStats.billable_executions} 次</p>
+            <span className="text-[11px] font-semibold text-[var(--text-muted)]">{t("taskMonitor.tokenUsage")}</span>
+            <p className="text-[10px] text-[var(--text-muted)]">{t("taskMonitor.execCount", { total: globalStats.total_executions, billable: globalStats.billable_executions })}</p>
             <p className="text-[10px] text-[var(--text-muted)]">
               {(globalStats.billable_tokens_in + globalStats.billable_tokens_out) > 0
-                ? `入 ${globalStats.billable_tokens_in.toLocaleString()} / 出 ${globalStats.billable_tokens_out.toLocaleString()}`
-                : "暂无数据"}
+                ? t("taskMonitor.tokensInOut", { tokensIn: globalStats.billable_tokens_in.toLocaleString(), tokensOut: globalStats.billable_tokens_out.toLocaleString() })
+                : t("taskMonitor.noTokenData")}
             </p>
           </div>
         </div>
@@ -320,22 +320,22 @@ export function TaskMonitorView() {
       <div className="flex-1 flex flex-col min-w-0">
         {selectedIds.size > 0 && (
           <div className="flex items-center gap-2 px-4 py-2 border-b border-[var(--border-subtle)] bg-brand-600/5 text-xs">
-            <span className="text-[var(--text-secondary)] font-medium">已选 {selectedIds.size} 个</span>
-            <Button variant="ghost" size="sm" onClick={handleBatchCancel}><XCircle size={12} /> 批量取消</Button>
-            <Button variant="ghost" size="sm" onClick={handleBatchDelete}><Trash2 size={12} /> 批量删除</Button>
-            <Button variant="ghost" size="sm" onClick={() => setSelectedIds(new Set())}>取消选择</Button>
+            <span className="text-[var(--text-secondary)] font-medium">{t("taskMonitor.selected", { count: selectedIds.size })}</span>
+            <Button variant="ghost" size="sm" onClick={handleBatchCancel}><XCircle size={12} /> {t("taskMonitor.batchCancel")}</Button>
+            <Button variant="ghost" size="sm" onClick={handleBatchDelete}><Trash2 size={12} /> {t("taskMonitor.batchDelete")}</Button>
+            <Button variant="ghost" size="sm" onClick={() => setSelectedIds(new Set())}>{t("taskMonitor.deselect")}</Button>
           </div>
         )}
         <div className="flex items-center gap-2 px-4 py-2 border-b border-[var(--border-subtle)]">
           <div className="relative flex-1 max-w-xs">
             <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
-            <input type="text" placeholder="搜索任务ID / 文件名..." value={searchText}
+            <input type="text" placeholder={t("taskMonitor.searchPlaceholder")} value={searchText}
               onChange={e => setSearchText(e.target.value)}
               className="w-full h-7 pl-7 pr-2 text-xs rounded border border-[var(--border-medium)] bg-[var(--input-bg)] text-[var(--text-primary)]" />
           </div>
           <button onClick={() => setShowFilterBar(!showFilterBar)}
             className={cn("p-1.5 rounded hover:bg-[var(--hover-bg)]", showFilterBar && "bg-brand-600/15")}><Filter size={13} /></button>
-          <button className="p-1.5 rounded hover:bg-[var(--hover-bg)]" title="导出 CSV" onClick={handleExportCsv}><Download size={13} /></button>
+          <button className="p-1.5 rounded hover:bg-[var(--hover-bg)]" title={t("taskMonitor.exportCsv")} onClick={handleExportCsv}><Download size={13} /></button>
         </div>
         {showFilterBar && (
           <div className="flex items-center gap-1.5 px-4 py-1.5 border-b border-[var(--border-subtle)] bg-[var(--surface-1)] flex-wrap">
@@ -344,17 +344,17 @@ export function TaskMonitorView() {
                 className={cn("px-2 py-0.5 rounded-full text-[10px] border transition-colors",
                   stageFilter.includes(s) ? "bg-brand-600/20 border-brand-500/50 text-[var(--active-text)]" : "border-[var(--border-subtle)] text-[var(--text-muted)]")}>{s}</button>
             ))}
-            {stageFilter.length > 0 && <button onClick={() => setStageFilter([])} className="text-[10px] text-red-400 ml-2">清除</button>}
+            {stageFilter.length > 0 && <button onClick={() => setStageFilter([])} className="text-[10px] text-red-400 ml-2">{t("taskMonitor.clearFilter")}</button>}
           </div>
         )}
         {/* 表头 */}
         <div className="grid grid-cols-[110px_1fr_90px_170px_120px_70px] gap-0 px-4 py-2 border-b border-[var(--border-subtle)]">
-          <SortableHeader label="任务ID" column="TaskId" current={sortColumn} ascending={sortAscending} onSort={handleSort} />
-          <SortableHeader label="音频" column="AudioFileName" current={sortColumn} ascending={sortAscending} onSort={handleSort} />
-          <SortableHeader label="阶段" column="Stage" current={sortColumn} ascending={sortAscending} onSort={handleSort} />
-          <span className="text-[11px] font-semibold text-[var(--text-muted)] flex items-center">状态</span>
-          <SortableHeader label="发起时间" column="SubmittedAt" current={sortColumn} ascending={sortAscending} onSort={handleSort} />
-          <span className="text-[11px] font-semibold text-[var(--text-muted)] flex items-center justify-end">耗时</span>
+          <SortableHeader label={t("taskMonitor.headerTaskId")} column="TaskId" current={sortColumn} ascending={sortAscending} onSort={handleSort} />
+          <SortableHeader label={t("taskMonitor.headerAudio")} column="AudioFileName" current={sortColumn} ascending={sortAscending} onSort={handleSort} />
+          <SortableHeader label={t("taskMonitor.headerStage")} column="Stage" current={sortColumn} ascending={sortAscending} onSort={handleSort} />
+          <span className="text-[11px] font-semibold text-[var(--text-muted)] flex items-center">{t("taskMonitor.headerStatus")}</span>
+          <SortableHeader label={t("taskMonitor.headerSubmittedAt")} column="SubmittedAt" current={sortColumn} ascending={sortAscending} onSort={handleSort} />
+          <span className="text-[11px] font-semibold text-[var(--text-muted)] flex items-center justify-end">{t("taskMonitor.headerElapsed")}</span>
         </div>
         {/* 任务列表 */}
         <ScrollArea className="flex-1">
@@ -362,7 +362,7 @@ export function TaskMonitorView() {
             <div className="flex items-center justify-center h-40">
               <div className="text-center">
                 <ListChecks size={32} className="text-[var(--text-muted)] mx-auto mb-2" />
-                <p className="text-xs text-[var(--text-muted)]">暂无任务</p>
+                <p className="text-xs text-[var(--text-muted)]">{t("taskMonitor.noTasks")}</p>
               </div>
             </div>
           ) : (
@@ -394,28 +394,28 @@ export function TaskMonitorView() {
         {selectedTask && (
           <div className="border-t border-[var(--border-subtle)] max-h-[45%] overflow-auto p-4 space-y-3" style={{ backgroundColor: "var(--card-bg)" }}>
             <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
-              <span className="font-semibold text-[var(--text-muted)]">任务ID：</span>
+              <span className="font-semibold text-[var(--text-muted)]">{t("taskMonitor.detailTaskId")}</span>
               <div className="flex items-center gap-1">
                 <span className="font-mono text-[11px]">{selectedTask.id}</span>
                 <button onClick={() => handleCopyText(selectedTask.id)} className="p-0.5 rounded hover:bg-[var(--hover-bg)]"><Copy size={10} /></button>
               </div>
-              <span className="font-semibold text-[var(--text-muted)]">音频：</span>
+              <span className="font-semibold text-[var(--text-muted)]">{t("taskMonitor.detailAudio")}</span>
               <span>{selectedTask.audio_file_name}</span>
-              <span className="font-semibold text-[var(--text-muted)]">阶段 / 状态：</span>
+              <span className="font-semibold text-[var(--text-muted)]">{t("taskMonitor.detailStageStatus")}</span>
               <div className="flex items-center gap-3">
                 <span>{selectedTask.stage_display_name}</span>
                 <span className="font-semibold">{selectedTask.status_display_name}</span>
-                {selectedTask.retry_count > 0 && <span className="text-[var(--text-muted)]">重试: {selectedTask.retry_count}</span>}
+                {selectedTask.retry_count > 0 && <span className="text-[var(--text-muted)]">{t("taskMonitor.detailRetry")} {selectedTask.retry_count}</span>}
               </div>
-              <span className="font-semibold text-[var(--text-muted)]">时间：</span>
+              <span className="font-semibold text-[var(--text-muted)]">{t("taskMonitor.detailTime")}</span>
               <div className="flex items-center gap-4">
-                <span>提交: {formatDateTime(selectedTask.submitted_at)}</span>
-                {selectedTask.started_at && <span>开始: {formatDateTime(selectedTask.started_at)}</span>}
-                <span>耗时: {selectedTask.elapsed_time}</span>
+                <span>{t("taskMonitor.detailSubmitted")} {formatDateTime(selectedTask.submitted_at)}</span>
+                {selectedTask.started_at && <span>{t("taskMonitor.detailStarted")} {formatDateTime(selectedTask.started_at)}</span>}
+                <span>{t("taskMonitor.detailElapsed")} {selectedTask.elapsed_time}</span>
               </div>
               {selectedTask.error_message && (
                 <>
-                  <span className="font-semibold text-[var(--text-muted)]">错误信息：</span>
+                  <span className="font-semibold text-[var(--text-muted)]">{t("taskMonitor.detailError")}</span>
                   <span className="text-red-400 break-all">{selectedTask.error_message}</span>
                 </>
               )}
@@ -426,12 +426,12 @@ export function TaskMonitorView() {
                 <button className="flex items-center gap-1 text-[11px] font-semibold text-[var(--text-muted)]"
                   onClick={() => setShowExecutions(!showExecutions)}>
                   {showExecutions ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-                  执行历史 ({executions.length})
+                  {t("taskMonitor.executionHistory")} ({executions.length})
                 </button>
                 {showExecutions && (
                   <div className="space-y-1">
                     <div className="grid grid-cols-[70px_70px_120px_80px_80px_1fr] text-[10px] font-semibold text-[var(--text-muted)]">
-                      <span>状态</span><span>计费</span><span>Token</span><span>耗时</span><span>时间</span><span>模型</span>
+                      <span>{t("taskMonitor.status")}</span><span>{t("taskMonitor.billable")}</span><span>{t("taskMonitor.token")}</span><span>{t("taskMonitor.headerElapsed")}</span><span>{t("taskMonitor.time")}</span><span>{t("taskMonitor.model")}</span>
                     </div>
                     {executions.map(exec => (
                       <div key={exec.id}>
@@ -452,20 +452,20 @@ export function TaskMonitorView() {
                         {selectedExecId === exec.id && exec.has_debug_data && (
                           <div className="ml-2 mt-1 mb-2 p-2 rounded border border-[var(--border-subtle)] bg-[var(--surface-1)] space-y-2">
                             <div className="flex items-center gap-2 text-[10px] font-semibold text-[var(--text-muted)]">
-                              调试数据
-                              {exec.debug_prompt && <button onClick={() => handleCopyText(exec.debug_prompt!)} className="p-0.5 rounded hover:bg-[var(--hover-bg)]" title="复制提示词"><Copy size={10} /></button>}
+                              {t("taskMonitor.debugData")}
+                              {exec.debug_prompt && <button onClick={() => handleCopyText(exec.debug_prompt!)} className="p-0.5 rounded hover:bg-[var(--hover-bg)]" title={t("taskMonitor.prompt")}><Copy size={10} /></button>}
                             </div>
                             {exec.debug_prompt && (
                               <div>
-                                <p className="text-[9px] text-[var(--text-muted)] mb-0.5">提示词</p>
+                                <p className="text-[9px] text-[var(--text-muted)] mb-0.5">{t("taskMonitor.prompt")}</p>
                                 <pre className="text-[10px] font-mono bg-[var(--surface-2)] rounded p-2 max-h-32 overflow-auto whitespace-pre-wrap">{exec.debug_prompt}</pre>
                               </div>
                             )}
                             {exec.debug_response && (
                               <div>
                                 <div className="flex items-center gap-1">
-                                  <p className="text-[9px] text-[var(--text-muted)] mb-0.5">响应</p>
-                                  <button onClick={() => handleCopyText(exec.debug_response!)} className="p-0.5 rounded hover:bg-[var(--hover-bg)]" title="复制响应"><Copy size={10} /></button>
+                                  <p className="text-[9px] text-[var(--text-muted)] mb-0.5">{t("taskMonitor.response")}</p>
+                                  <button onClick={() => handleCopyText(exec.debug_response!)} className="p-0.5 rounded hover:bg-[var(--hover-bg)]" title={t("taskMonitor.response")}><Copy size={10} /></button>
                                 </div>
                                 <pre className="text-[10px] font-mono bg-[var(--surface-2)] rounded p-2 max-h-32 overflow-auto whitespace-pre-wrap">{exec.debug_response}</pre>
                               </div>
@@ -480,10 +480,10 @@ export function TaskMonitorView() {
             )}
             <div className="flex items-center gap-2 pt-1">
               {(selectedTask.status === "Failed" || selectedTask.status === "Cancelled") && (
-                <Button size="sm" onClick={() => handleRetryTask(selectedTask.id)}><RotateCcw size={12} /> 重试</Button>
+                <Button size="sm" onClick={() => handleRetryTask(selectedTask.id)}><RotateCcw size={12} /> {t("taskMonitor.retry")}</Button>
               )}
               {(selectedTask.status === "Queued" || selectedTask.status === "Executing") && (
-                <Button variant="danger" size="sm" onClick={() => handleCancelTask(selectedTask.id)}><XCircle size={12} /> 取消</Button>
+                <Button variant="danger" size="sm" onClick={() => handleCancelTask(selectedTask.id)}><XCircle size={12} /> {t("taskMonitor.cancel")}</Button>
               )}
             </div>
           </div>
@@ -498,23 +498,23 @@ export function TaskMonitorView() {
             onClick={e => e.stopPropagation()}>
             <button className="w-full px-3 py-1.5 text-xs text-left hover:bg-[var(--hover-bg)]"
               onClick={() => { handleSelectTask(contextMenu.taskId); setContextMenu(null); }}>
-              查看详情
+              {t("taskMonitor.contextViewDetail")}
             </button>
             <button className="w-full px-3 py-1.5 text-xs text-left hover:bg-[var(--hover-bg)]"
               onClick={() => { handleCopyText(contextMenu.taskId); setContextMenu(null); }}>
-              复制任务ID
+              {t("taskMonitor.contextCopyId")}
             </button>
             <Separator />
             {["Failed", "Cancelled", "Interrupted", "Timeout"].includes(contextMenu.taskStatus) && (
             <button className="w-full px-3 py-1.5 text-xs text-left hover:bg-[var(--hover-bg)]"
               onClick={() => { handleRetryTask(contextMenu.taskId); setContextMenu(null); }}>
-              <RotateCcw size={11} className="inline mr-1" /> 重试
+              <RotateCcw size={11} className="inline mr-1" /> {t("taskMonitor.contextRetry")}
             </button>
             )}
             {["Queued", "Executing"].includes(contextMenu.taskStatus) && (
             <button className="w-full px-3 py-1.5 text-xs text-left text-red-400 hover:bg-[var(--hover-bg)]"
               onClick={() => { handleCancelTask(contextMenu.taskId); setContextMenu(null); }}>
-              <XCircle size={11} className="inline mr-1" /> 取消任务
+              <XCircle size={11} className="inline mr-1" /> {t("taskMonitor.contextCancel")}
             </button>
             )}
           </div>
@@ -528,10 +528,10 @@ export function TaskMonitorView() {
             <div className="flex items-start gap-2">
               <AlertCircle size={14} className="text-red-400 shrink-0 mt-0.5" />
               <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium text-red-400">任务失败</p>
+                <p className="text-xs font-medium text-red-400">{t("taskMonitor.taskFailed")}</p>
                 <p className="text-[10px] text-[var(--text-muted)] truncate mt-0.5">{toast.message}</p>
               </div>
-              <button onClick={() => { setToast(null); handleBucketClick("failed"); }} className="text-[10px] text-brand-400 shrink-0">查看</button>
+              <button onClick={() => { setToast(null); handleBucketClick("failed"); }} className="text-[10px] text-brand-400 shrink-0">{t("taskMonitor.view")}</button>
             </div>
           </GlassCard>
         </div>

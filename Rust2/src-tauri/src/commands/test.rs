@@ -50,7 +50,7 @@ pub async fn test_endpoint(
             plan.push((model.model_id.clone(), cap.clone()));
         }
     }
-    let total = plan.len();
+    let _total = plan.len();
 
     // 初始化 items 为 Running（全部并发，无 Pending 排队）
     let items: Vec<crate::models::EndpointTestItem> = plan
@@ -318,7 +318,7 @@ fn build_request_summary(
         "chat_completions"
     };
     let source = if profile.is_some() { "资料包" } else { "默认" };
-    let branch = if total_urls > 1 {
+    let _branch = if total_urls > 1 {
         format!("候选 {}/{}", url_idx + 1, total_urls)
     } else {
         "唯一候选".into()

@@ -79,11 +79,11 @@ export function FloatingSubtitle() {
 
   return (
     <AnimatePresence>
-      <FloatingWindow title="实时字幕" onClose={() => setVisible(false)}>
+      <FloatingWindow title="Live Subtitles" onClose={() => setVisible(false)}>
         <div className="p-3 space-y-2">
           {recent.length === 0 ? (
             <p className="text-xs text-[var(--text-muted)] text-center py-4">
-              {isTranslating ? "正在收听..." : "无字幕内容"}
+              {isTranslating ? "Listening..." : "No subtitle content"}
             </p>
           ) : (
             recent.map((seg, i) => (
