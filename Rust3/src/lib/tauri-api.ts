@@ -1,1 +1,3 @@
-// IPC contract layer — batch 1 will populate
+export * from "./types";
+export { api } from "./api";
+export type { UnlistenFn } from "./api";
