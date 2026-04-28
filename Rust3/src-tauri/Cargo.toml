@@ -34,3 +34,6 @@ tfp-media = { path = "../crates/tfp-media" }
 tfp-audiolab = { path = "../crates/tfp-audiolab" }
 tfp-search = { path = "../crates/tfp-search" }
 tfp-speech = { path = "../crates/tfp-speech" }
+
+[dev-dependencies]
+dirs = "6"
