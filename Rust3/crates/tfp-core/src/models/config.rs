@@ -3,7 +3,7 @@ use std::collections::HashMap;
 
 use super::cloud::CloudSettings;
 use super::settings::{
-    MediaSettings, RecognitionSettings, StorageSettings, WebSearchSettings,
+    BatchSettings, MediaSettings, RecognitionSettings, StorageSettings, WebSearchSettings,
 };
 
 // ── Serde default helpers ──
@@ -106,6 +106,8 @@ pub struct AppConfig {
     #[serde(default)]
     pub cloud: CloudSettings,
     #[serde(default)]
+    pub batch: BatchSettings,
+    #[serde(default)]
     pub task_engine_concurrency: Option<u32>,
     #[serde(default)]
     pub task_engine_timeout_secs: Option<u64>,
@@ -125,6 +127,7 @@ impl Default for AppConfig {
             recognition: RecognitionSettings::default(),
             web_search: WebSearchSettings::default(),
             cloud: CloudSettings::default(),
+            batch: BatchSettings::default(),
             task_engine_concurrency: None,
             task_engine_timeout_secs: None,
         }

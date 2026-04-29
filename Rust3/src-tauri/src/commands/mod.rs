@@ -15,6 +15,7 @@ pub mod studio;
 pub mod center;
 pub mod audiolab;
 pub mod auth;
+pub mod batch;
 
 pub use config::*;
 pub use provider::*;
@@ -32,3 +33,4 @@ pub use studio::*;
 pub use center::*;
 pub use audiolab::*;
 pub use auth::*;
+pub use batch::*;

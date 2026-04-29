@@ -8,6 +8,7 @@ mod audiolab;
 mod enums;
 mod cloud;
 mod common;
+mod batch;
 
 pub use config::*;
 pub use settings::*;
@@ -19,6 +20,7 @@ pub use audiolab::*;
 pub use enums::*;
 pub use cloud::*;
 pub use common::*;
+pub use batch::*;
 
 #[cfg(test)]
 mod tests {

@@ -305,6 +305,10 @@ impl TaskEngine {
                                 // T-006: Sync StudioTask status
                                 sync_studio_task_status(&db, &task, "completed", None).await;
 
+                                // T-008: Batch chain trigger — if this was a batch subtitle task,
+                                // trigger review sheet items and recompute package state.
+                                handle_batch_completion(&db, &task).await;
+
                                 sink2.emit_task_event(TaskFrontendEvent {
                                     event_type: "TaskCompleted".into(),
                                     payload: serde_json::json!({
@@ -341,6 +345,9 @@ impl TaskEngine {
 
                                     // T-006: Sync StudioTask status on final failure
                                     sync_studio_task_status(&db, &task, "failed", Some(&err_msg)).await;
+
+                                    // T-008: Batch failure — update queue item and recompute state
+                                    handle_batch_failure(&db, &task, &err_msg).await;
                                 }
                                 let exec = TaskExecutionRow {
                                     id: uuid::Uuid::new_v4().to_string(),
@@ -1274,6 +1281,83 @@ async fn sync_studio_task_status(storage: &Arc<Database>, task: &AudioTaskRow, s
     if let Some(studio_id) = parse_studio_task_id(task) {
         let _ = storage.studio_update_task_status(&studio_id, status, error).await;
     }
+}
+
+// ── T-008: Batch processing chain trigger integration ──
+
+/// Handle batch-related post-completion logic:
+/// 1. Mark queue item as completed
+/// 2. If subtitle task → trigger chain (enqueue review sheets)
+/// 3. Recompute package state
+async fn handle_batch_completion(storage: &Arc<Database>, task: &AudioTaskRow) {
+    let prompt = task.prompt_text.as_deref();
+    let pkg_id = match crate::batch_coordinator::parse_batch_package_id(prompt) {
+        Some(id) => id,
+        None => return,
+    };
+
+    // Mark queue item as completed
+    if let Some(qi_id) = crate::batch_coordinator::parse_batch_queue_item_id(prompt) {
+        let _ = storage.batch_update_queue_status(&qi_id, "completed", None).await;
+    }
+
+    // If this was a subtitle task, trigger the chain
+    if task.stage.contains("batch_speech_subtitle") || task.task_type == "Transcription" {
+        // We cannot call on_subtitle_completed here because it needs &TaskEngine,
+        // but we're inside the engine loop. Instead, we directly enqueue review items.
+        if let Ok(items) = storage.batch_get_items_by_type_and_status(&pkg_id, "review_sheet", "pending").await {
+            let now = chrono::Utc::now().to_rfc3339();
+            for item in &items {
+                let task_prompt = format!(
+                    "batch_package_id={};batch_queue_item_id={}{}",
+                    pkg_id,
+                    item.id,
+                    if !item.prompt.is_empty() {
+                        format!(";prompt={}", item.prompt)
+                    } else {
+                        String::new()
+                    }
+                );
+                let new_task = AudioTaskRow {
+                    id: uuid::Uuid::new_v4().to_string(),
+                    audio_item_id: item.file_name.clone(),
+                    stage: "batch_review_sheet".to_string(),
+                    task_type: "AiCompletion".to_string(),
+                    status: "Queued".to_string(),
+                    priority: 5,
+                    retry_count: 0,
+                    max_retries: 2,
+                    progress: 0.0,
+                    prompt_text: Some(task_prompt),
+                    result_text: None,
+                    error: None,
+                    submitted_at: now.clone(),
+                    started_at: None,
+                    completed_at: None,
+                };
+                let _ = storage.submit_task(&new_task).await;
+                let _ = storage.batch_update_queue_status(&item.id, "running", None).await;
+            }
+        }
+    }
+
+    // Recompute package state
+    let _ = crate::batch_coordinator::BatchCoordinator::recompute_package_state(storage, &pkg_id).await;
+}
+
+/// Handle batch-related post-failure logic: mark queue item failed + recompute.
+async fn handle_batch_failure(storage: &Arc<Database>, task: &AudioTaskRow, error: &str) {
+    let prompt = task.prompt_text.as_deref();
+    let pkg_id = match crate::batch_coordinator::parse_batch_package_id(prompt) {
+        Some(id) => id,
+        None => return,
+    };
+
+    if let Some(qi_id) = crate::batch_coordinator::parse_batch_queue_item_id(prompt) {
+        let _ = storage.batch_update_queue_status(&qi_id, "failed", Some(error)).await;
+    }
+
+    let _ = crate::batch_coordinator::BatchCoordinator::recompute_package_state(storage, &pkg_id).await;
 }
 
 #[cfg(test)]

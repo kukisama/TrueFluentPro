@@ -294,6 +294,19 @@ pub fn run() {
             // Image pipeline
             commands::run_image_pipeline,
             commands::get_image_model_catalog,
+            // Batch processing
+            commands::batch_create_package,
+            commands::batch_start,
+            commands::batch_stop,
+            commands::batch_pause_package,
+            commands::batch_resume_package,
+            commands::batch_remove_package,
+            commands::batch_restore_package,
+            commands::batch_get_bucket_nav,
+            commands::batch_get_packages,
+            commands::batch_get_subtasks,
+            commands::batch_regenerate_package,
+            commands::batch_regenerate_subtask,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

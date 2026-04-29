@@ -69,6 +69,10 @@ impl Database {
             conn.execute_batch(include_str!("migrations/v7.sql")).map_err(map_db_err)?;
             conn.execute("INSERT INTO schema_version VALUES(7)", []).map_err(map_db_err)?;
         }
+        if current < 8 {
+            conn.execute_batch(include_str!("migrations/v8.sql")).map_err(map_db_err)?;
+            conn.execute("INSERT INTO schema_version VALUES(8)", []).map_err(map_db_err)?;
+        }
 
         Ok(())
     }
@@ -103,6 +107,6 @@ mod tests {
         let version: i64 = conn
             .query_row("SELECT MAX(version) FROM schema_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 7);
+        assert_eq!(version, 8);
     }
 }

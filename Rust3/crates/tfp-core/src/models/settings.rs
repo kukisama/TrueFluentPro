@@ -265,3 +265,24 @@ impl Default for BatchSubtitleSplitOptions {
         }
     }
 }
+
+/// Batch processing settings (review sheets, concurrency, etc.)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BatchSettings {
+    #[serde(default)]
+    pub review_sheets: Vec<super::common::ReviewSheetPreset>,
+    #[serde(default = "default_true")]
+    pub include_subtitle: bool,
+    #[serde(default)]
+    pub subtitle_split: BatchSubtitleSplitOptions,
+}
+
+impl Default for BatchSettings {
+    fn default() -> Self {
+        Self {
+            review_sheets: Vec::new(),
+            include_subtitle: true,
+            subtitle_split: BatchSubtitleSplitOptions::default(),
+        }
+    }
+}
