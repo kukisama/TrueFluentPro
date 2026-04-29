@@ -54,4 +54,14 @@ pub(crate) mod factories {
             ..AiEndpoint::default()
         }
     }
+
+    /// Alias for azure_openai_endpoint
+    pub fn azure_endpoint(id: &str, name: &str) -> AiEndpoint {
+        azure_openai_endpoint(id, name)
+    }
+
+    /// Alias for openai_compatible_endpoint
+    pub fn openai_endpoint(id: &str, name: &str) -> AiEndpoint {
+        openai_compatible_endpoint(id, name)
+    }
 }

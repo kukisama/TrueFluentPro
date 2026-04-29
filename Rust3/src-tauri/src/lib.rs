@@ -156,6 +156,7 @@ pub fn run() {
             commands::get_supported_languages,
             commands::start_realtime_translation,
             commands::stop_realtime_translation,
+            commands::push_realtime_audio,
             // Sessions
             commands::list_sessions,
             commands::create_session,

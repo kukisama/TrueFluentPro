@@ -53,6 +53,14 @@ pub enum RealtimeEvent {
     },
     SessionStopped { session_id: String },
     Error { message: String },
+    AudioLevel { level: f64 },
+    ReconnectAttempt { attempt: u32, delay_ms: u64 },
+    ReconnectSuccess,
+    Canceled {
+        reason: String,
+        error_code: String,
+        error_details: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

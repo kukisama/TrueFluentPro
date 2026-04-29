@@ -8,11 +8,13 @@ use crate::openai_chat::OpenAiChatProvider;
 use crate::openai_image::OpenAiImageProvider;
 use crate::openai_translation::OpenAiTranslationProvider;
 use crate::openai_video::OpenAiVideoProvider;
+use crate::azure_speech::AzureSpeechProvider;
+use crate::openai_realtime::OpenAiRealtimeProvider;
 use crate::registry::ProviderRegistry;
 
 /// Register providers into the registry based on endpoint configurations.
 ///
-/// Skips disabled endpoints. Does NOT register AzureSpeech realtime or
+/// Skips disabled endpoints. Registers all available provider implementations.
 /// OpenAiRealtime providers (deferred to batch 3).
 pub fn register_providers(registry: &mut ProviderRegistry, endpoints: &[AiEndpoint]) {
     for ep in endpoints.iter().filter(|e| e.enabled) {
@@ -26,8 +28,9 @@ pub fn register_providers(registry: &mut ProviderRegistry, endpoints: &[AiEndpoi
                 registry
                     .register_text_translation(Arc::new(OpenAiTranslationProvider::new(ep.clone())));
                 registry.register_video_gen(Arc::new(OpenAiVideoProvider::new(ep.clone())));
+                registry.register_realtime_speech(Arc::new(OpenAiRealtimeProvider::new(ep.clone())));
                 tracing::info!(
-                    "Registered AI+Image+Translation+Video Provider: {} ({})",
+                    "Registered AI+Image+Translation+Video+Realtime Provider: {} ({})",
                     ep.name,
                     ep.id
                 );
@@ -35,7 +38,8 @@ pub fn register_providers(registry: &mut ProviderRegistry, endpoints: &[AiEndpoi
             EndpointType::AzureSpeech => {
                 registry.register_stt(Arc::new(AzureSttProvider::new(ep.clone())));
                 registry.register_tts(Arc::new(AzureTtsProvider::new(ep.clone())));
-                tracing::info!("Registered STT+TTS Provider: {} ({})", ep.name, ep.id);
+                registry.register_realtime_speech(Arc::new(AzureSpeechProvider::new(ep.clone())));
+                tracing::info!("Registered STT+TTS+Realtime Provider: {} ({})", ep.name, ep.id);
             }
             _ => {
                 tracing::debug!(

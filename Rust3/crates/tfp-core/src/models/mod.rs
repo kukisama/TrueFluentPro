@@ -309,12 +309,23 @@ mod tests {
             }, "Translated"),
             (RealtimeEvent::SessionStopped { session_id: "s1".into() }, "SessionStopped"),
             (RealtimeEvent::Error { message: "fail".into() }, "Error"),
+            (RealtimeEvent::AudioLevel { level: 0.75 }, "AudioLevel"),
+            (RealtimeEvent::ReconnectAttempt { attempt: 1, delay_ms: 2000 }, "ReconnectAttempt"),
+            (RealtimeEvent::ReconnectSuccess, "ReconnectSuccess"),
+            (RealtimeEvent::Canceled {
+                reason: "EndOfStream".into(),
+                error_code: "ConnectionFailure".into(),
+                error_details: "Connection was closed".into(),
+            }, "Canceled"),
         ];
         for (evt, expected_type) in variants {
             let json = serde_json::to_value(&evt).unwrap();
             let obj = json.as_object().unwrap();
             assert!(obj.contains_key("type"), "missing 'type' key for {}", expected_type);
-            assert!(obj.contains_key("data"), "missing 'data' key for {}", expected_type);
+            // Unit variants like ReconnectSuccess have no "data" key
+            if expected_type != "ReconnectSuccess" {
+                assert!(obj.contains_key("data"), "missing 'data' key for {}", expected_type);
+            }
             assert_eq!(obj["type"].as_str().unwrap(), expected_type);
         }
     }

@@ -202,6 +202,28 @@ pub async fn stop_realtime_translation(
     Ok(())
 }
 
+#[tauri::command]
+pub async fn push_realtime_audio(
+    state: State<'_, AppState>,
+    session_id: String,
+    audio_base64: String,
+) -> Result<(), String> {
+    use base64::Engine;
+    let pcm_data = base64::engine::general_purpose::STANDARD
+        .decode(&audio_base64)
+        .map_err(|e| format!("Invalid base64 audio: {e}"))?;
+
+    let sessions = state.active_speech_sessions.read().await;
+    let handle = sessions
+        .get(&session_id)
+        .ok_or_else(|| format!("Session not found: {session_id}"))?;
+
+    handle
+        .push_audio(&pcm_data)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// Extract a final segment from a RealtimeEvent — delegates to tfp_speech::segment
 fn extract_final_segment(
     event: &RealtimeEvent,

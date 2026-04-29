@@ -1,8 +1,10 @@
 //! tfp-speech — 语音/翻译域
 //!
 //! Pure functions for language lists, modal-particle filtering,
-//! and segment extraction from realtime events.
+//! segment extraction, subtitle formatting, and reconnect policies.
 
 pub mod languages;
+pub mod reconnect;
 pub mod segment;
+pub mod subtitle;
 pub mod text_filter;
