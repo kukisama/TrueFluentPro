@@ -4,7 +4,7 @@ import {
   Image, Video, Send, Trash2, Plus, Loader2,
   MessageSquare, X,
   PanelLeftClose, PanelLeftOpen, ImagePlus,
-  Pencil, GitBranch, Check, RotateCcw,
+  Pencil, GitBranch, Check, RotateCcw, Globe,
 } from "lucide-react";
 import { cn } from "../lib/utils";
 import {
@@ -15,7 +15,7 @@ import { api } from "../lib/api";
 import type {
   StudioSession, StudioMessage, StudioMediaRef,
   StudioSessionBundle, StudioTask, StudioReferenceImage,
-  StudioTaskEvent, StudioMessageDelta, StudioCitation,
+  StudioTaskEvent, StudioMessageDelta, StudioCitation, StudioSearchProgress,
 } from "../lib/types";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
@@ -56,6 +56,9 @@ export function MediaStudioView() {
   const [hasMoreMessages, setHasMoreMessages] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [enableImageGen, setEnableImageGen] = useState(false);
+  const [enableWebSearch, setEnableWebSearch] = useState(false);
+  const [webSearchProviderId, setWebSearchProviderId] = useState("duckduckgo");
+  const [searchProgress, setSearchProgress] = useState<string | null>(null);
   const [streamingImages, setStreamingImages] = useState<Map<string, { base64_data: string; content_type: string }[]>>(new Map());
   const activeSession = sessions.find(s => s.id === activeSessionId);
   const sessionType = activeSession?.session_type || "chat";
@@ -71,6 +74,7 @@ export function MediaStudioView() {
         setIsStreaming(false);
         setStreamingMsgId(null);
         setStreamingImages(new Map());
+        setSearchProgress(null);
         if (activeSessionId) {
           api.studioGetSessionBundle(activeSessionId).then(b => {
             setCurrentBundle(b);
@@ -130,6 +134,29 @@ export function MediaStudioView() {
     }).then(fn => { unlisten = fn; });
     return () => { unlisten?.(); };
   }, [activeSessionId, currentBundle]);
+
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    api.onStudioSearchProgress((e: StudioSearchProgress) => {
+      if (e.session_id !== activeSessionId) return;
+      switch (e.stage) {
+        case "intent_analyzed":
+          setSearchProgress(t("studio.searchAnalyzing"));
+          break;
+        case "search_completed":
+          setSearchProgress(
+            e.needs_search
+              ? t("studio.searchFound", { count: e.result_count ?? 0 })
+              : null
+          );
+          break;
+        case "fetching_content":
+          setSearchProgress(t("studio.searchFetching"));
+          break;
+      }
+    }).then(fn => { unlisten = fn; });
+    return () => { unlisten?.(); };
+  }, [activeSessionId, t]);
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -194,6 +221,7 @@ export function MediaStudioView() {
   const handleSendChat = useCallback(async () => {
     if (!input.trim() || !activeSessionId || isStreaming) return;
     const text = input.trim(); setInput(""); setIsStreaming(true); setStreamingText(""); setStreamingReasoning("");
+    setSearchProgress(null);
     const ep = config?.endpoints?.find(e => e.enabled);
     const endpointId = ep?.id || "";
     const model = ep?.models?.find(m => m.capabilities.includes("text"))?.model_id || "";
@@ -201,14 +229,18 @@ export function MediaStudioView() {
       ? ep?.models?.find(m => m.capabilities.includes("image"))?.deployment_name || undefined
       : undefined;
     try {
-      const resultJson = await api.studioChatStream(activeSessionId, text, endpointId, model, enableImageGen || undefined, imageDeployment);
+      const resultJson = await api.studioChatStream(
+        activeSessionId, text, endpointId, model,
+        enableImageGen || undefined, imageDeployment, undefined,
+        enableWebSearch || undefined, enableWebSearch ? webSearchProviderId : undefined,
+      );
       const result = JSON.parse(resultJson);
       if (result.user_message) {
         setCurrentBundle(prev => prev ? { ...prev, messages: [...prev.messages, result.user_message] } : prev);
       }
       setStreamingMsgId(result.assistant_message_id);
     } catch (err) { console.error("Chat stream failed:", err); setIsStreaming(false); }
-  }, [input, activeSessionId, isStreaming, config, enableImageGen]);
+  }, [input, activeSessionId, isStreaming, config, enableImageGen, enableWebSearch, webSearchProviderId]);
 
   const handleGenerateImage = useCallback(async () => {
     if (!input.trim() || !activeSessionId) return;
@@ -430,6 +462,36 @@ export function MediaStudioView() {
                     className="accent-brand-600 w-3.5 h-3.5" />
                   <span className="text-[var(--text-secondary)]">{t("studio.enableImageGen", "Enable inline image generation")}</span>
                 </label>
+                <div className="w-px h-4 bg-[var(--border-subtle)]" />
+                <button
+                  onClick={() => setEnableWebSearch(prev => !prev)}
+                  className={cn(
+                    "flex items-center gap-1.5 px-2 py-0.5 rounded-md transition-colors",
+                    enableWebSearch
+                      ? "bg-brand-600/15 text-brand-600"
+                      : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+                  )}
+                  title={t("studio.toggleWebSearch", "Toggle web search")}
+                >
+                  <Globe size={14} />
+                  <span>{t("studio.webSearch", "Web Search")}</span>
+                </button>
+                {enableWebSearch && (
+                  <select
+                    value={webSearchProviderId}
+                    onChange={e => setWebSearchProviderId(e.target.value)}
+                    className="bg-[var(--surface-1)] border border-[var(--border-subtle)] rounded px-1.5 py-0.5 text-xs text-[var(--text-secondary)]"
+                  >
+                    <option value="duckduckgo">DuckDuckGo</option>
+                    <option value="mcp">MCP</option>
+                  </select>
+                )}
+                {searchProgress && (
+                  <span className="flex items-center gap-1 text-[var(--text-muted)]">
+                    <Loader2 size={12} className="animate-spin" />
+                    {searchProgress}
+                  </span>
+                )}
               </div>
             )}
             {runningTasks.length > 0 && (

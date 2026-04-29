@@ -50,6 +50,7 @@ import type {
   StudioSessionBundle,
   StudioTaskEvent,
   StudioMessageDelta,
+  StudioSearchProgress,
   CenterWorkspace,
   CenterWorkspaceBundle,
   CanvasRound,
@@ -350,8 +351,8 @@ export const api = {
     invoke<StudioMessage[]>("studio_get_messages_before", { sessionId, beforeSequence, limit }),
   studioListRunningTasks: (sessionId: string) =>
     invoke<StudioTask[]>("studio_list_running_tasks", { sessionId }),
-  studioChatStream: (sessionId: string, text: string, endpointId: string, model: string, enableImageGen?: boolean, imageModelDeployment?: string, maxTurns?: number) =>
-    invoke<string>("studio_chat_stream", { sessionId, text, endpointId, model, enableImageGen, imageModelDeployment, maxTurns }),
+  studioChatStream: (sessionId: string, text: string, endpointId: string, model: string, enableImageGen?: boolean, imageModelDeployment?: string, maxTurns?: number, enableWebSearch?: boolean, webSearchProviderId?: string) =>
+    invoke<string>("studio_chat_stream", { sessionId, text, endpointId, model, enableImageGen, imageModelDeployment, maxTurns, enableWebSearch, webSearchProviderId }),
   studioStartImageTask: (args: {
     sessionId: string; prompt: string; params: Record<string, unknown>;
     referencePaths: string[];
@@ -380,6 +381,8 @@ export const api = {
     listen<{ session_id: string; message: StudioMessage; media_refs?: StudioMediaRef[] }>("studio-message-new", (event) => cb(event.payload)),
   onStudioMessageDelta: (cb: (e: StudioMessageDelta) => void): Promise<UnlistenFn> =>
     listen<StudioMessageDelta>("studio-message-delta", (event) => cb(event.payload)),
+  onStudioSearchProgress: (cb: (e: StudioSearchProgress) => void): Promise<UnlistenFn> =>
+    listen<StudioSearchProgress>("studio-search-progress", (event) => cb(event.payload)),
   studioEditMessage: (messageId: string, newText: string) =>
     invoke<void>("studio_edit_message", { messageId, newText }),
   studioDeleteMessage: (messageId: string) =>

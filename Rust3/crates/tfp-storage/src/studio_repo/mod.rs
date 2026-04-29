@@ -756,6 +756,20 @@ impl Database {
         }
         Ok(())
     }
+
+    /// Insert citations for a message.
+    pub async fn studio_insert_citations(&self, message_id: &str, citations: &[StudioCitation]) -> tfp_core::Result<()> {
+        if citations.is_empty() { return Ok(()); }
+        let conn = self.conn().lock().await;
+        for c in citations {
+            conn.execute(
+                "INSERT INTO studio_citations (message_id, citation_number, title, url, snippet, hostname)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![message_id, c.citation_number, c.title, c.url, c.snippet, c.hostname],
+            ).map_err(map_db_err)?;
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]

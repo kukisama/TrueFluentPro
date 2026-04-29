@@ -653,6 +653,13 @@ export interface StudioMessageDelta {
   done?: boolean;
 }
 
+export interface StudioSearchProgress {
+  session_id: string;
+  stage: "intent_analyzed" | "search_completed" | "fetching_content";
+  needs_search?: boolean;
+  result_count?: number;
+}
+
 // ── 媒体中心（对齐 Rust CenterWorkspace / CanvasRound 等）──
 
 export interface CenterWorkspace {

@@ -17,6 +17,20 @@ pub struct ChatStreamOptions {
     pub image_quality: Option<String>,
     /// Maximum conversation turns (1 turn = user+assistant pair). Default 20.
     pub max_turns: Option<usize>,
+    /// Enable web search augmentation.
+    pub enable_web_search: bool,
+    /// Which search provider to use (e.g. "duckduckgo", "mcp").
+    pub web_search_provider_id: Option<String>,
+    /// Maximum search results to fetch.
+    pub web_search_max_results: Option<usize>,
+    /// Whether to run LLM intent analysis before searching.
+    pub web_search_enable_intent: Option<bool>,
+    /// MCP endpoint URL (required for mcp provider).
+    pub web_search_mcp_endpoint: Option<String>,
+    /// MCP tool name.
+    pub web_search_mcp_tool_name: Option<String>,
+    /// MCP API key.
+    pub web_search_mcp_api_key: Option<String>,
 }
 
 impl Default for ChatStreamOptions {
@@ -27,6 +41,13 @@ impl Default for ChatStreamOptions {
             image_size: None,
             image_quality: None,
             max_turns: Some(20),
+            enable_web_search: false,
+            web_search_provider_id: None,
+            web_search_max_results: None,
+            web_search_enable_intent: None,
+            web_search_mcp_endpoint: None,
+            web_search_mcp_tool_name: None,
+            web_search_mcp_api_key: None,
         }
     }
 }
@@ -88,6 +109,73 @@ pub async fn run_studio_chat_stream(
     let max_msgs = options.max_turns.unwrap_or(20) * 2;
     if chat_messages.len() > max_msgs {
         chat_messages = chat_messages[chat_messages.len() - max_msgs..].to_vec();
+    }
+
+    // 2b. Web search augmentation
+    let mut search_summary: Option<String> = None;
+    let mut search_citations: Vec<tfp_search::SearchCitation> = Vec::new();
+
+    if options.enable_web_search {
+        sink.emit_json("studio-search-progress", serde_json::json!({
+            "session_id": session_id,
+            "stage": "intent_analyzed",
+        }));
+
+        let search_provider = tfp_search::create_provider(
+            options.web_search_provider_id.as_deref().unwrap_or("duckduckgo"),
+            options.web_search_mcp_endpoint.as_deref(),
+            options.web_search_mcp_tool_name.as_deref(),
+            options.web_search_mcp_api_key.as_deref(),
+        );
+
+        let agent = tfp_search::SearchAgent::new();
+        let agent_config = tfp_search::SearchAgentConfig {
+            max_results: options.web_search_max_results.unwrap_or(5),
+            enable_intent_analysis: options.web_search_enable_intent.unwrap_or(true),
+            endpoint_id: endpoint_id.to_string(),
+            model: model.clone(),
+        };
+
+        let agent_result = agent.run(
+            search_provider.as_ref(),
+            provider.clone(),
+            text,
+            &chat_messages,
+            &agent_config,
+        ).await;
+
+        sink.emit_json("studio-search-progress", serde_json::json!({
+            "session_id": session_id,
+            "stage": "search_completed",
+            "needs_search": agent_result.needs_search,
+            "result_count": agent_result.results.len(),
+        }));
+
+        if agent_result.needs_search && !agent_result.context_prompt.is_empty() {
+            sink.emit_json("studio-search-progress", serde_json::json!({
+                "session_id": session_id,
+                "stage": "fetching_content",
+            }));
+
+            // Prepend search context as system message
+            chat_messages.insert(0, ChatMessage {
+                role: "system".into(),
+                content: serde_json::Value::String(agent_result.context_prompt),
+            });
+
+            search_citations = agent_result.citations;
+
+            // Build search summary for display
+            let summary_parts: Vec<String> = search_citations
+                .iter()
+                .map(|c| format!("[{}] {}", c.number, c.title))
+                .collect();
+            search_summary = Some(format!(
+                "Searched {} sources: {}",
+                search_citations.len(),
+                summary_parts.join(", ")
+            ));
+        }
     }
 
     let req = CompletionRequest {
@@ -184,11 +272,28 @@ pub async fn run_studio_chat_stream(
         completion_tokens: c_tokens,
         generate_seconds: Some(gen_secs),
         download_seconds: None,
-        search_summary: None,
+        search_summary: search_summary,
         timestamp: chrono::Utc::now().to_rfc3339(),
         is_deleted: false,
     };
     let _ = db.studio_append_message(&msg).await;
+
+    // 4b. Persist search citations
+    if !search_citations.is_empty() {
+        let core_citations: Vec<tfp_core::StudioCitation> = search_citations
+            .iter()
+            .map(|c| tfp_core::StudioCitation {
+                id: 0,
+                message_id: aid.clone(),
+                citation_number: c.number as i64,
+                title: c.title.clone(),
+                url: c.url.clone(),
+                snippet: c.snippet.clone(),
+                hostname: c.hostname.clone(),
+            })
+            .collect();
+        let _ = db.studio_insert_citations(&aid, &core_citations).await;
+    }
 
     sink.emit_json("studio-message-delta", serde_json::json!({
         "session_id": &sid,
@@ -310,6 +415,10 @@ mod tests {
         assert!(opts.image_size.is_none());
         assert!(opts.image_quality.is_none());
         assert_eq!(opts.max_turns, Some(20));
+        assert!(!opts.enable_web_search);
+        assert!(opts.web_search_provider_id.is_none());
+        assert!(opts.web_search_max_results.is_none());
+        assert!(opts.web_search_enable_intent.is_none());
     }
 
     #[test]
@@ -338,9 +447,19 @@ mod tests {
             image_size: Some("1024x1024".into()),
             image_quality: Some("high".into()),
             max_turns: Some(10),
+            enable_web_search: true,
+            web_search_provider_id: Some("duckduckgo".into()),
+            web_search_max_results: Some(3),
+            web_search_enable_intent: Some(false),
+            web_search_mcp_endpoint: None,
+            web_search_mcp_tool_name: None,
+            web_search_mcp_api_key: None,
         };
         assert!(opts.enable_image_generation);
         assert_eq!(opts.image_model_deployment.as_deref(), Some("gpt-image-1"));
         assert_eq!(opts.max_turns, Some(10));
+        assert!(opts.enable_web_search);
+        assert_eq!(opts.web_search_provider_id.as_deref(), Some("duckduckgo"));
+        assert_eq!(opts.web_search_max_results, Some(3));
     }
 }

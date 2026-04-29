@@ -196,6 +196,7 @@ pub async fn studio_list_running_tasks(
 //  Chat streaming
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn studio_chat_stream(
     app: tauri::AppHandle,
@@ -207,6 +208,8 @@ pub async fn studio_chat_stream(
     enable_image_gen: Option<bool>,
     image_model_deployment: Option<String>,
     max_turns: Option<u32>,
+    enable_web_search: Option<bool>,
+    web_search_provider_id: Option<String>,
 ) -> Result<String, String> {
     // Resolve provider before spawn (RwLock guard cannot cross spawn boundary)
     let providers = state.providers.read().await;
@@ -223,12 +226,32 @@ pub async fn studio_chat_stream(
     let m = model.clone();
     let eid = endpoint_id.clone();
 
+    // Read web search settings from config for MCP parameters
+    let ws_enabled = enable_web_search.unwrap_or(false);
+    let (ws_mcp_endpoint, ws_mcp_tool_name, ws_mcp_api_key) = if ws_enabled {
+        let cfg = state.config.read().await;
+        (
+            Some(cfg.web_search.mcp_endpoint.clone()),
+            Some(cfg.web_search.mcp_tool_name.clone()),
+            Some(cfg.web_search.mcp_api_key.clone()),
+        )
+    } else {
+        (None, None, None)
+    };
+
     let options = tfp_chat::streaming::ChatStreamOptions {
         enable_image_generation: enable_image_gen.unwrap_or(false),
         image_model_deployment,
         image_size: None,
         image_quality: None,
         max_turns: max_turns.map(|v| v as usize),
+        enable_web_search: ws_enabled,
+        web_search_provider_id: web_search_provider_id,
+        web_search_max_results: None,
+        web_search_enable_intent: None,
+        web_search_mcp_endpoint: ws_mcp_endpoint,
+        web_search_mcp_tool_name: ws_mcp_tool_name,
+        web_search_mcp_api_key: ws_mcp_api_key,
     };
 
     tokio::spawn(async move {
@@ -573,6 +596,7 @@ pub async fn studio_send_edit(
         image_size: None,
         image_quality: None,
         max_turns: Some(20),
+        ..Default::default()
     };
 
     // Note: we delete the original user message and let run_studio_chat_stream
