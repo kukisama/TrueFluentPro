@@ -84,4 +84,52 @@ mod tests {
         let json2 = serde_json::to_value(&err2).unwrap();
         assert_eq!(json2, "provider error: authentication failed: bad key");
     }
+
+    #[test]
+    fn test_provider_error_display_all_variants() {
+        assert_eq!(
+            ProviderError::Network("timeout".into()).to_string(),
+            "network error: timeout"
+        );
+        assert_eq!(
+            ProviderError::Auth("bad key".into()).to_string(),
+            "authentication failed: bad key"
+        );
+        assert_eq!(
+            ProviderError::RateLimited { retry_after_ms: 5000 }.to_string(),
+            "rate limited: retry after 5000ms"
+        );
+        assert_eq!(
+            ProviderError::NotConfigured("missing".into()).to_string(),
+            "provider not configured: missing"
+        );
+        assert_eq!(
+            ProviderError::Unsupported("op".into()).to_string(),
+            "unsupported operation: op"
+        );
+        assert_eq!(
+            ProviderError::Internal("bug".into()).to_string(),
+            "internal error: bug"
+        );
+    }
+
+    #[test]
+    fn test_from_impls() {
+        // From<serde_json::Error> → AppError::Serialization
+        let bad_json: std::result::Result<serde_json::Value, _> =
+            serde_json::from_str("not valid json");
+        let serde_err = bad_json.unwrap_err();
+        let app_err: AppError = serde_err.into();
+        assert!(matches!(app_err, AppError::Serialization(_)));
+
+        // From<ProviderError> → AppError::Provider
+        let provider_err = ProviderError::Auth("forbidden".into());
+        let app_err: AppError = provider_err.into();
+        assert!(matches!(app_err, AppError::Provider(_)));
+
+        // From<std::io::Error> → AppError::Io
+        let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "file missing");
+        let app_err: AppError = io_err.into();
+        assert!(matches!(app_err, AppError::Io(_)));
+    }
 }

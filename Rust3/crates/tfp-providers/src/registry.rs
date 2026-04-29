@@ -283,4 +283,24 @@ mod tests {
         reg.clear();
         assert!(reg.get_ai_completion("mock-1").is_none());
     }
+
+    #[test]
+    fn test_provider_capability_serde() {
+        use serde_json::json;
+
+        // Serialize all 7 variants
+        assert_eq!(serde_json::to_value(&ProviderCapability::TextTranslation).unwrap(), json!("text_translation"));
+        assert_eq!(serde_json::to_value(&ProviderCapability::RealtimeSpeechTranslation).unwrap(), json!("realtime_speech_translation"));
+        assert_eq!(serde_json::to_value(&ProviderCapability::SpeechToText).unwrap(), json!("speech_to_text"));
+        assert_eq!(serde_json::to_value(&ProviderCapability::TextToSpeech).unwrap(), json!("text_to_speech"));
+        assert_eq!(serde_json::to_value(&ProviderCapability::AiCompletion).unwrap(), json!("ai_completion"));
+        assert_eq!(serde_json::to_value(&ProviderCapability::ImageGeneration).unwrap(), json!("image_generation"));
+        assert_eq!(serde_json::to_value(&ProviderCapability::VideoGeneration).unwrap(), json!("video_generation"));
+
+        // Roundtrip deserialize
+        let rt: ProviderCapability = serde_json::from_str("\"text_translation\"").unwrap();
+        assert_eq!(rt, ProviderCapability::TextTranslation);
+        let rt: ProviderCapability = serde_json::from_str("\"video_generation\"").unwrap();
+        assert_eq!(rt, ProviderCapability::VideoGeneration);
+    }
 }

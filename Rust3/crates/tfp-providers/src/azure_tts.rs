@@ -277,4 +277,74 @@ mod tests {
         assert_eq!(p.id(), "tts-ep");
         assert_eq!(p.capabilities(), vec![ProviderCapability::TextToSpeech]);
     }
+
+    #[test]
+    fn test_build_tts_and_voices_url() {
+        let p = AzureTtsProvider::new(factories::speech_endpoint("tts-ep", "TTS EP"));
+        let tts_url = p.build_tts_url();
+        assert!(tts_url.contains("eastus"));
+        assert_eq!(
+            tts_url,
+            "https://eastus.tts.speech.microsoft.com/cognitiveservices/v1"
+        );
+
+        let voices_url = p.build_voices_url();
+        assert!(voices_url.contains("eastus"));
+        assert_eq!(
+            voices_url,
+            "https://eastus.tts.speech.microsoft.com/cognitiveservices/voices/list"
+        );
+    }
+
+    #[test]
+    fn test_build_ssml_fast_rate() {
+        // format contains "fast" → rate "+20%"
+        let ssml = AzureTtsProvider::build_ssml("Hello", "en-US-JennyNeural", "fast-wav");
+        assert!(ssml.contains("+20%"));
+        assert!(!ssml.contains("+0%"));
+
+        // format without "fast" → rate "+0%"
+        let ssml = AzureTtsProvider::build_ssml("Hello", "en-US-JennyNeural", "mp3");
+        assert!(ssml.contains("+0%"));
+        assert!(!ssml.contains("+20%"));
+    }
+
+    #[test]
+    fn test_build_multi_speaker_ssml() {
+        let speakers = vec![
+            ("Alice".to_string(), "voice-a".to_string()),
+            ("Bob".to_string(), "voice-b".to_string()),
+        ];
+        let text = "Alice: Hello\nBob\u{ff1a}\u{4f60}\u{597d}\n\nUnknown line";
+        let ssml = AzureTtsProvider::build_multi_speaker_ssml(text, &speakers);
+
+        // Alice: Hello → voice-a
+        assert!(ssml.contains(r#"<voice name="voice-a">"#));
+        assert!(ssml.contains("Hello"));
+
+        // Bob：你好 (Chinese colon) → voice-b
+        assert!(ssml.contains(r#"<voice name="voice-b">"#));
+        assert!(ssml.contains("\u{4f60}\u{597d}"));
+
+        // Unknown line → default voice (voice-a)
+        assert!(ssml.contains("Unknown line"));
+
+        // empty lines are skipped
+        let lines: Vec<&str> = ssml.lines().collect();
+        assert!(!lines.iter().any(|l| l.trim().is_empty() && l.contains("voice")));
+
+        // well-formed
+        assert!(ssml.starts_with("<speak"));
+        assert!(ssml.ends_with("</speak>"));
+    }
+
+    #[test]
+    fn test_xml_escape_all_chars() {
+        let input = r#"A & B < C > D "E" 'F'"#;
+        let escaped = xml_escape(input);
+        assert_eq!(escaped, "A &amp; B &lt; C &gt; D &quot;E&quot; &apos;F&apos;");
+
+        // no-op for clean string
+        assert_eq!(xml_escape("hello"), "hello");
+    }
 }

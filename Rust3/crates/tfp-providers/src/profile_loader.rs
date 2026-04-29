@@ -272,4 +272,52 @@ mod tests {
         assert!(!oai.supports_aad);
         assert_eq!(oai.text_protocol, "chat_completions");
     }
+
+    #[test]
+    fn test_parse_endpoint_type() {
+        assert_eq!(parse_endpoint_type("AzureOpenAi"), Some(EndpointType::AzureOpenAi));
+        assert_eq!(parse_endpoint_type("ApiManagementGateway"), Some(EndpointType::ApiManagementGateway));
+        assert_eq!(parse_endpoint_type("OpenAiCompatible"), Some(EndpointType::OpenAiCompatible));
+        assert_eq!(parse_endpoint_type("AzureSpeech"), Some(EndpointType::AzureSpeech));
+        assert_eq!(parse_endpoint_type("Unknown"), None);
+        assert_eq!(parse_endpoint_type(""), None);
+    }
+
+    #[test]
+    fn test_map_auth_header() {
+        assert_eq!(map_auth_header("ApiKeyHeader"), "api_key");
+        assert_eq!(map_auth_header("Bearer"), "bearer");
+        assert_eq!(map_auth_header("Other"), "auto");
+        assert_eq!(map_auth_header(""), "auto");
+    }
+
+    #[test]
+    fn test_map_text_protocol() {
+        assert_eq!(map_text_protocol("Responses"), "responses");
+        assert_eq!(map_text_protocol("ChatCompletionsV1"), "chat_completions");
+        assert_eq!(map_text_protocol("Auto"), "auto");
+        assert_eq!(map_text_protocol("Unknown"), "chat_completions");
+    }
+
+    #[test]
+    fn test_push_and_extend_unique() {
+        let mut list = Vec::new();
+
+        // push_unique adds non-empty, non-duplicate items
+        push_unique(&mut list, "a");
+        assert_eq!(list, vec!["a"]);
+
+        // doesn't add empty string
+        push_unique(&mut list, "");
+        assert_eq!(list, vec!["a"]);
+
+        // doesn't add duplicate
+        push_unique(&mut list, "a");
+        assert_eq!(list, vec!["a"]);
+
+        // extend_unique batch dedup
+        let extras = vec!["a".into(), "b".into(), "c".into(), "b".into()];
+        extend_unique(&mut list, &extras);
+        assert_eq!(list, vec!["a", "b", "c"]);
+    }
 }

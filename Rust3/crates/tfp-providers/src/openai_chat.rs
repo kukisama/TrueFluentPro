@@ -331,6 +331,7 @@ mod tests {
     use super::*;
     use crate::test_helpers::factories;
     use tfp_core::EndpointType;
+    use crate::traits::StreamChunk;
 
     #[test]
     fn test_build_url_azure() {
@@ -365,5 +366,98 @@ mod tests {
         assert_eq!(p.id(), "ep-azure");
         assert_eq!(p.display_name(), "My Azure");
         assert_eq!(p.capabilities(), vec![ProviderCapability::AiCompletion]);
+    }
+
+    #[test]
+    fn test_parse_usage() {
+        let mut map = serde_json::Map::new();
+        map.insert("prompt_tokens".into(), json!(100));
+        map.insert("completion_tokens".into(), json!(50));
+        let chunk = parse_usage(&map, "prompt_tokens", "completion_tokens");
+        match chunk {
+            StreamChunk::Usage { prompt_tokens, completion_tokens } => {
+                assert_eq!(prompt_tokens, 100);
+                assert_eq!(completion_tokens, 50);
+            }
+            _ => panic!("Expected Usage chunk"),
+        }
+
+        // empty map → 0, 0
+        let empty = serde_json::Map::new();
+        let chunk2 = parse_usage(&empty, "prompt_tokens", "completion_tokens");
+        match chunk2 {
+            StreamChunk::Usage { prompt_tokens, completion_tokens } => {
+                assert_eq!(prompt_tokens, 0);
+                assert_eq!(completion_tokens, 0);
+            }
+            _ => panic!("Expected Usage chunk"),
+        }
+    }
+
+    #[test]
+    fn test_is_responses_api() {
+        let azure = OpenAiChatProvider::new(factories::azure_openai_endpoint("a", "A"));
+        assert!(azure.is_responses_api());
+
+        let mut apim_ep = factories::azure_openai_endpoint("b", "B");
+        apim_ep.endpoint_type = EndpointType::ApiManagementGateway;
+        let apim = OpenAiChatProvider::new(apim_ep);
+        assert!(apim.is_responses_api());
+
+        let oai = OpenAiChatProvider::new(factories::openai_compatible_endpoint("c", "C"));
+        assert!(!oai.is_responses_api());
+
+        let mut custom_ep = factories::openai_compatible_endpoint("d", "D");
+        custom_ep.endpoint_type = EndpointType::Custom;
+        let custom = OpenAiChatProvider::new(custom_ep);
+        assert!(!custom.is_responses_api());
+    }
+
+    #[test]
+    fn test_build_responses_input() {
+        use tfp_core::ChatMessage;
+
+        // empty messages → ""
+        let result = OpenAiChatProvider::build_responses_input(&[]);
+        assert_eq!(result, json!(""));
+
+        // single string content → direct string
+        let msgs = vec![ChatMessage {
+            role: "user".into(),
+            content: serde_json::Value::String("hello".into()),
+        }];
+        let result = OpenAiChatProvider::build_responses_input(&msgs);
+        assert_eq!(result, json!("hello"));
+
+        // single array content → wrapped in message object
+        let msgs = vec![ChatMessage {
+            role: "user".into(),
+            content: json!([{"type": "text", "text": "hi"}]),
+        }];
+        let result = OpenAiChatProvider::build_responses_input(&msgs);
+        assert_eq!(
+            result,
+            json!([{"type": "message", "role": "user", "content": [{"type": "text", "text": "hi"}]}])
+        );
+
+        // multiple messages → array of message objects
+        let msgs = vec![
+            ChatMessage {
+                role: "system".into(),
+                content: serde_json::Value::String("You are a helper.".into()),
+            },
+            ChatMessage {
+                role: "user".into(),
+                content: serde_json::Value::String("Hi".into()),
+            },
+        ];
+        let result = OpenAiChatProvider::build_responses_input(&msgs);
+        assert_eq!(
+            result,
+            json!([
+                {"type": "message", "role": "system", "content": "You are a helper."},
+                {"type": "message", "role": "user", "content": "Hi"}
+            ])
+        );
     }
 }

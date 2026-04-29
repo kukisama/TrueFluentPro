@@ -271,4 +271,35 @@ mod tests {
         assert_eq!(p.display_name(), "Video EP");
         assert_eq!(p.capabilities(), vec![ProviderCapability::VideoGeneration]);
     }
+
+    #[test]
+    fn test_detect_api_mode() {
+        let p = OpenAiVideoProvider::new(video_endpoint());
+
+        let mut req = VideoGenRequest {
+            prompt: "test".into(),
+            model: "custom".into(),
+            endpoint_id: "vid-ep".into(),
+            size: "1080x1920".into(),
+            duration_seconds: 10,
+            api_mode: Some(VideoApiMode::SoraJobs),
+            reference_image_path: None,
+            n: None,
+        };
+        // explicit override
+        assert_eq!(p.detect_api_mode(&req), VideoApiMode::SoraJobs);
+
+        // model = "sora" → Videos
+        req.api_mode = None;
+        req.model = "sora".into();
+        assert_eq!(p.detect_api_mode(&req), VideoApiMode::Videos);
+
+        // model contains "sora-2" → Videos
+        req.model = "sora-2-turbo".into();
+        assert_eq!(p.detect_api_mode(&req), VideoApiMode::Videos);
+
+        // unknown model → SoraJobs (default)
+        req.model = "custom-model".into();
+        assert_eq!(p.detect_api_mode(&req), VideoApiMode::SoraJobs);
+    }
 }
