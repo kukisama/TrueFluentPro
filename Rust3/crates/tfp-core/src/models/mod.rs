@@ -668,4 +668,242 @@ mod tests {
             assert!(obj.contains_key(*key), "missing field: {}", key);
         }
     }
+
+    // ── Batch 45 — AiEndpoint methods + Settings defaults + enum serde ──
+
+    fn make_endpoint(ep_type: EndpointType) -> AiEndpoint {
+        AiEndpoint {
+            id: "ep-test".into(),
+            name: "Test".into(),
+            endpoint_type: ep_type,
+            url: "https://example.com".into(),
+            api_key: String::new(),
+            api_version: None,
+            region: None,
+            models: vec![],
+            enabled: true,
+            auth_header_mode: "api_key".into(),
+            auth_mode: "api_key".into(),
+            azure_tenant_id: String::new(),
+            azure_client_id: String::new(),
+            speech_subscription_key: String::new(),
+            speech_region: String::new(),
+            speech_endpoint: String::new(),
+        }
+    }
+
+    // T-001
+    #[test]
+    fn test_ai_endpoint_is_azure() {
+        assert!(make_endpoint(EndpointType::AzureOpenAi).is_azure());
+        assert!(make_endpoint(EndpointType::ApiManagementGateway).is_azure());
+        assert!(make_endpoint(EndpointType::AzureSpeech).is_azure());
+        assert!(!make_endpoint(EndpointType::OpenAiCompatible).is_azure());
+        assert!(!make_endpoint(EndpointType::AzureTranslator).is_azure());
+        assert!(!make_endpoint(EndpointType::DeepL).is_azure());
+        assert!(!make_endpoint(EndpointType::TencentCloud).is_azure());
+        assert!(!make_endpoint(EndpointType::AlibabaCloud).is_azure());
+        assert!(!make_endpoint(EndpointType::Custom).is_azure());
+    }
+
+    // T-002
+    #[test]
+    fn test_ai_endpoint_is_speech() {
+        assert!(make_endpoint(EndpointType::AzureSpeech).is_speech());
+        assert!(!make_endpoint(EndpointType::AzureOpenAi).is_speech());
+        assert!(!make_endpoint(EndpointType::ApiManagementGateway).is_speech());
+        assert!(!make_endpoint(EndpointType::OpenAiCompatible).is_speech());
+        assert!(!make_endpoint(EndpointType::AzureTranslator).is_speech());
+        assert!(!make_endpoint(EndpointType::DeepL).is_speech());
+        assert!(!make_endpoint(EndpointType::TencentCloud).is_speech());
+        assert!(!make_endpoint(EndpointType::AlibabaCloud).is_speech());
+        assert!(!make_endpoint(EndpointType::Custom).is_speech());
+    }
+
+    #[test]
+    fn test_first_model_with_capability() {
+        let mut ep = make_endpoint(EndpointType::AzureOpenAi);
+        ep.models = vec![
+            AiModelEntry {
+                model_id: "model-a".into(),
+                display_name: "Model A".into(),
+                deployment_name: None,
+                capabilities: vec![ModelCapability::Text, ModelCapability::Image],
+            },
+            AiModelEntry {
+                model_id: "model-b".into(),
+                display_name: "Model B".into(),
+                deployment_name: None,
+                capabilities: vec![ModelCapability::Video],
+            },
+        ];
+        let text_model = ep.first_model_with_capability(ModelCapability::Text);
+        assert!(text_model.is_some());
+        assert_eq!(text_model.unwrap().model_id, "model-a");
+
+        let video_model = ep.first_model_with_capability(ModelCapability::Video);
+        assert!(video_model.is_some());
+        assert_eq!(video_model.unwrap().model_id, "model-b");
+
+        let stt_model = ep.first_model_with_capability(ModelCapability::SpeechToText);
+        assert!(stt_model.is_none());
+    }
+
+    // T-003
+    #[test]
+    fn test_effective_deployment() {
+        let with_dep = AiModelEntry {
+            model_id: "gpt-4o".into(),
+            display_name: "GPT-4o".into(),
+            deployment_name: Some("gpt-4o-dep".into()),
+            capabilities: vec![ModelCapability::Text],
+        };
+        assert_eq!(with_dep.effective_deployment(), "gpt-4o-dep");
+
+        let without_dep = AiModelEntry {
+            model_id: "gpt-4o".into(),
+            display_name: "GPT-4o".into(),
+            deployment_name: None,
+            capabilities: vec![ModelCapability::Text],
+        };
+        assert_eq!(without_dep.effective_deployment(), "gpt-4o");
+
+        let empty_dep = AiModelEntry {
+            model_id: "gpt-4o".into(),
+            display_name: "GPT-4o".into(),
+            deployment_name: Some("".into()),
+            capabilities: vec![ModelCapability::Text],
+        };
+        assert_eq!(empty_dep.effective_deployment(), "");
+    }
+
+    // T-004
+    #[test]
+    fn test_migrate_auth_no_op_when_not_auto() {
+        let mut ep = make_endpoint(EndpointType::AzureOpenAi);
+        ep.auth_header_mode = "bearer".into();
+        ep.migrate_auth_header_mode();
+        assert_eq!(ep.auth_header_mode, "bearer");
+    }
+
+    // T-005
+    #[test]
+    fn test_media_settings_default() {
+        let s = MediaSettings::default();
+        assert_eq!(s.image_quality, "auto");
+        assert_eq!(s.image_format, "png");
+        assert_eq!(s.image_size, "1024x1024");
+        assert_eq!(s.image_count, 1);
+        assert_eq!(s.video_aspect_ratio, "16:9");
+        assert_eq!(s.video_resolution, "720p");
+        assert_eq!(s.video_seconds, 5);
+        assert_eq!(s.video_poll_interval_ms, 3000);
+    }
+
+    #[test]
+    fn test_storage_settings_default() {
+        let s = StorageSettings::default();
+        assert_eq!(s.batch_audio_container_name, "truefluentpro-audio");
+        assert_eq!(s.batch_result_container_name, "truefluentpro-results");
+        assert!(s.enable_recording);
+        assert_eq!(s.recording_mp3_bitrate_kbps, 256);
+        assert!(s.export_vtt_subtitles);
+        assert!(!s.export_srt_subtitles);
+    }
+
+    #[test]
+    fn test_recognition_settings_default() {
+        let s = RecognitionSettings::default();
+        assert!(s.filter_modal_particles);
+        assert_eq!(s.max_history_items, 500);
+        assert_eq!(s.realtime_max_length, 150);
+        assert_eq!(s.chunk_duration_ms, 200);
+        assert_eq!(s.initial_silence_timeout_seconds, 25);
+        assert_eq!(s.end_silence_timeout_seconds, 1);
+        assert_eq!(s.audio_activity_threshold, 600);
+        assert!((s.audio_level_gain - 2.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_web_search_settings_default() {
+        let s = WebSearchSettings::default();
+        assert_eq!(s.provider_id, "duckduckgo");
+        assert_eq!(s.trigger_mode, "auto");
+        assert_eq!(s.max_results, 5);
+        assert!(s.enable_intent_analysis);
+        assert_eq!(s.mcp_tool_name, "web_search");
+    }
+
+    // T-006
+    #[test]
+    fn test_settings_serde_defaults_from_empty_json() {
+        let media: MediaSettings = serde_json::from_str("{}").unwrap();
+        assert_eq!(media.image_quality, "auto");
+        assert_eq!(media.video_seconds, 5);
+
+        let storage: StorageSettings = serde_json::from_str("{}").unwrap();
+        assert!(storage.enable_recording);
+        assert_eq!(storage.batch_audio_container_name, "truefluentpro-audio");
+
+        let recog: RecognitionSettings = serde_json::from_str("{}").unwrap();
+        assert_eq!(recog.chunk_duration_ms, 200);
+        assert_eq!(recog.initial_silence_timeout_seconds, 25);
+
+        let web: WebSearchSettings = serde_json::from_str("{}").unwrap();
+        assert_eq!(web.provider_id, "duckduckgo");
+        assert_eq!(web.max_results, 5);
+    }
+
+    // T-007
+    #[test]
+    fn test_video_api_mode_serde() {
+        assert_eq!(serde_json::to_value(&VideoApiMode::SoraJobs).unwrap(), "sora_jobs");
+        assert_eq!(serde_json::to_value(&VideoApiMode::Videos).unwrap(), "videos");
+        let rt: VideoApiMode = serde_json::from_str("\"sora_jobs\"").unwrap();
+        assert_eq!(rt, VideoApiMode::SoraJobs);
+        let rt2: VideoApiMode = serde_json::from_str("\"videos\"").unwrap();
+        assert_eq!(rt2, VideoApiMode::Videos);
+    }
+
+    #[test]
+    fn test_audio_device_type_serde() {
+        assert_eq!(serde_json::to_value(&AudioDeviceType::Input).unwrap(), "input");
+        assert_eq!(serde_json::to_value(&AudioDeviceType::Output).unwrap(), "output");
+        assert_eq!(serde_json::to_value(&AudioDeviceType::Loopback).unwrap(), "loopback");
+        let rt: AudioDeviceType = serde_json::from_str("\"loopback\"").unwrap();
+        assert_eq!(rt, AudioDeviceType::Loopback);
+    }
+
+    #[test]
+    fn test_test_status_serde() {
+        assert_eq!(serde_json::to_value(&TestStatus::Pending).unwrap(), "pending");
+        assert_eq!(serde_json::to_value(&TestStatus::Running).unwrap(), "running");
+        assert_eq!(serde_json::to_value(&TestStatus::Success).unwrap(), "success");
+        assert_eq!(serde_json::to_value(&TestStatus::Failed).unwrap(), "failed");
+        assert_eq!(serde_json::to_value(&TestStatus::Skipped).unwrap(), "skipped");
+        let rt: TestStatus = serde_json::from_str("\"success\"").unwrap();
+        assert_eq!(rt, TestStatus::Success);
+    }
+
+    #[test]
+    fn test_task_status_serde() {
+        assert_eq!(serde_json::to_value(&TaskStatus::Pending).unwrap(), "pending");
+        assert_eq!(serde_json::to_value(&TaskStatus::Running).unwrap(), "running");
+        assert_eq!(serde_json::to_value(&TaskStatus::Completed).unwrap(), "completed");
+        assert_eq!(serde_json::to_value(&TaskStatus::Failed).unwrap(), "failed");
+        assert_eq!(serde_json::to_value(&TaskStatus::Cancelled).unwrap(), "cancelled");
+        let rt: TaskStatus = serde_json::from_str("\"cancelled\"").unwrap();
+        assert_eq!(rt, TaskStatus::Cancelled);
+    }
+
+    #[test]
+    fn test_model_capability_serde() {
+        assert_eq!(serde_json::to_value(&ModelCapability::Text).unwrap(), "text");
+        assert_eq!(serde_json::to_value(&ModelCapability::Image).unwrap(), "image");
+        assert_eq!(serde_json::to_value(&ModelCapability::Video).unwrap(), "video");
+        assert_eq!(serde_json::to_value(&ModelCapability::SpeechToText).unwrap(), "speech_to_text");
+        assert_eq!(serde_json::to_value(&ModelCapability::TextToSpeech).unwrap(), "text_to_speech");
+        let rt: ModelCapability = serde_json::from_str("\"speech_to_text\"").unwrap();
+        assert_eq!(rt, ModelCapability::SpeechToText);
+    }
 }
