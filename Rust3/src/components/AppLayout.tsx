@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Languages, Mic, Palette, Image, ListChecks, Settings, Info,
@@ -141,11 +142,28 @@ export function AppLayout() {
   const setActiveView = useAppStore((s) => s.setActiveView);
   const collapsed = useAppStore((s) => s.sidebarCollapsed);
   const toggleSidebar = useAppStore((s) => s.toggleSidebar);
+  const setSidebarCollapsed = useAppStore((s) => s.setSidebarCollapsed);
+  const config = useAppStore((s) => s.config);
   const error = useAppStore((s) => s.error);
   const setError = useAppStore((s) => s.setError);
 
   const themeMode = useThemeStore((s) => s.mode);
   const cycleTheme = useThemeStore((s) => s.cycleTheme);
+
+  // Auto-collapse sidebar when window becomes too narrow
+  useEffect(() => {
+    const threshold = config?.ui?.auto_collapse_sidebar_width ?? 800;
+    const handleResize = () => {
+      if (window.innerWidth < threshold && !collapsed) {
+        setSidebarCollapsed(true);
+      }
+      // Note: only auto-collapse, never auto-expand (per Spec)
+    };
+    window.addEventListener("resize", handleResize);
+    // Check once on mount
+    handleResize();
+    return () => window.removeEventListener("resize", handleResize);
+  }, [config?.ui?.auto_collapse_sidebar_width, collapsed, setSidebarCollapsed]);
 
   return (
     <div className="flex h-screen w-screen overflow-hidden" style={{ backgroundColor: "var(--surface-0)" }}>

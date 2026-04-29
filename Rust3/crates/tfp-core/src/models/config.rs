@@ -366,6 +366,26 @@ impl Default for AudioConfig {
     }
 }
 
+/// Persisted position/size/opacity for a floating window.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FloatingWindowState {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+    /// Opacity value clamped to 0.3–1.0
+    pub opacity: f64,
+}
+
+impl Default for FloatingWindowState {
+    fn default() -> Self {
+        Self { x: 100.0, y: 100.0, width: 1000.0, height: 96.0, opacity: 0.75 }
+    }
+}
+
+fn default_auto_collapse_width() -> u32 { 800 }
+fn default_last_active_view() -> String { "live-translation".into() }
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UiConfig {
     pub theme: String,
@@ -374,6 +394,18 @@ pub struct UiConfig {
     pub language: String,
     #[serde(default = "default_true")]
     pub auto_update: bool,
+    /// Last active navigation view — restored on startup
+    #[serde(default = "default_last_active_view")]
+    pub last_active_view: String,
+    /// Saved state for the floating subtitle window
+    #[serde(default)]
+    pub floating_subtitle_state: Option<FloatingWindowState>,
+    /// Saved state for the floating insight window
+    #[serde(default)]
+    pub floating_insight_state: Option<FloatingWindowState>,
+    /// Window width threshold below which sidebar auto-collapses
+    #[serde(default = "default_auto_collapse_width")]
+    pub auto_collapse_sidebar_width: u32,
 }
 
 impl Default for UiConfig {
@@ -384,6 +416,10 @@ impl Default for UiConfig {
             font_size: 14,
             language: "zh-CN".into(),
             auto_update: true,
+            last_active_view: default_last_active_view(),
+            floating_subtitle_state: None,
+            floating_insight_state: None,
+            auto_collapse_sidebar_width: 800,
         }
     }
 }

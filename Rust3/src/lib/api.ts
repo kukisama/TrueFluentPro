@@ -9,6 +9,7 @@ import type {
   DiscoveredModel,
   EndpointTestProgress,
   EndpointTestReport,
+  FloatingWindowState,
   ImageGenRequest,
   ImageGenResult,
   LanguageInfo,
@@ -192,12 +193,18 @@ export const api = {
   liveClearSessionSegments: (sessionId: string) =>
     invoke<void>("live_clear_session_segments", { sessionId }),
 
-  // ── Floating windows (5) ──
+  // ── Floating windows (8) ──
   liveShowFloatingSubtitle: () => invoke<void>("live_show_floating_subtitle"),
   liveHideFloatingSubtitle: () => invoke<void>("live_hide_floating_subtitle"),
   liveToggleFloatingSubtitle: () => invoke<void>("live_toggle_floating_subtitle"),
   liveShowFloatingInsight: () => invoke<void>("live_show_floating_insight"),
   liveHideFloatingInsight: () => invoke<void>("live_hide_floating_insight"),
+  saveFloatingWindowState: (window: string, x: number, y: number, width: number, height: number, opacity: number) =>
+    invoke<void>("save_floating_window_state", { window, x, y, width, height, opacity }),
+  getFloatingWindowState: (window: string) =>
+    invoke<FloatingWindowState | null>("get_floating_window_state", { window }),
+  setFloatingWindowOpacity: (window: string, opacity: number) =>
+    invoke<void>("set_floating_window_opacity", { window, opacity }),
 
   // ── Event listeners (6) ──
   onRealtimeEvent: (cb: (e: RealtimeEvent) => void): Promise<UnlistenFn> =>

@@ -1,7 +1,7 @@
 # Rust3 充实计划 — 21 轮实施路线图
 > 创建日期：2026-04-29
 > 最后更新：2026-04-29
-> 总轮次：21 | 已完成：3 | 当前：batch-3（施工单已下发）
+> 总轮次：21 | 已完成：17 | 当前：batch-17
 
 ## 总体目标
 
@@ -63,7 +63,7 @@
 | **0** ✅ | Models 补全 | AiEndpointAndConfig.md, EnumsAndSmallModels.md | ~600 | 已完成 |
 | **1** ✅ | 图片生成多路由 | AiImageGenService.md (路由逻辑) | ~800 | 已完成 |
 | **2** ✅ | 图片编辑 + file_id 上传 | AiImageGenService.md (编辑+上传) | ~700 | 已完成 |
-| **3** 📝 | 视频生成完善 | AiVideoGenService.md | ~600 | 视频创建→轮询→下载全流程，状态机测试 |
+| **3** ✅ | 视频生成完善 | AiVideoGenService.md | ~600 | 视频创建→轮询→下载全流程，状态机测试 |
 | **4** | AI 聊天完善 + 端点连通性测试 | AiInsightService.md, EndpointBatchTestService.md | ~1300 | complete() 全参数 + 流式测试 + test_runner 报告 |
 | **5** | 配置持久化 + 模型发现计费 | SettingsImportExportService.md, EndpointTemplateService.md, AiEndpointModelDiscoveryService.md, ImageBillingHelper.md | ~1500 | 配置 round-trip + 模型发现 mock + 计费统计 |
 
@@ -132,8 +132,8 @@
 
 ## 当前进度
 
-- 当前阶段：Phase 4 — 媒体创作坊 + 中心
-- 当前批次：batch-16（施工单已下发）
-- 已完成：16/21 轮
-- 预计剩余：5 轮
-- 代码量：39,379 行 | 测试：546 个
+- 当前阶段：Phase 5 — 基础设施 + 收尾
+- 当前批次：batch-18（施工单已下发）
+- 已完成：18/21 轮
+- 预计剩余：3 轮
+- 代码量：40,228 行 | 测试：557 个

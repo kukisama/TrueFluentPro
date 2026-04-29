@@ -1185,4 +1185,62 @@ mod tests {
         assert!(!ms.default_enable_studio_reasoning);
         assert!(!ms.default_enable_studio_web_search);
     }
+
+    // ── batch-18: FloatingWindowState + UiConfig persistence ──
+
+    #[test]
+    fn test_ui_config_floating_state_serde() {
+        let mut ui = UiConfig::default();
+        ui.floating_subtitle_state = Some(FloatingWindowState {
+            x: 200.0,
+            y: 150.0,
+            width: 1000.0,
+            height: 96.0,
+            opacity: 0.8,
+        });
+        ui.floating_insight_state = Some(FloatingWindowState {
+            x: 50.0,
+            y: 300.0,
+            width: 520.0,
+            height: 400.0,
+            opacity: 0.95,
+        });
+        let json = serde_json::to_string(&ui).unwrap();
+        let restored: UiConfig = serde_json::from_str(&json).unwrap();
+        let sub = restored.floating_subtitle_state.unwrap();
+        assert_eq!(sub.x, 200.0);
+        assert_eq!(sub.opacity, 0.8);
+        let ins = restored.floating_insight_state.unwrap();
+        assert_eq!(ins.width, 520.0);
+        assert_eq!(ins.opacity, 0.95);
+    }
+
+    #[test]
+    fn test_ui_config_default_last_view() {
+        let ui = UiConfig::default();
+        assert_eq!(ui.last_active_view, "live-translation");
+        assert_eq!(ui.auto_collapse_sidebar_width, 800);
+        assert!(ui.floating_subtitle_state.is_none());
+        assert!(ui.floating_insight_state.is_none());
+    }
+
+    #[test]
+    fn test_ui_config_backwards_compatible_deserialization() {
+        // Old config without new fields should still deserialize with defaults
+        let old_json = r#"{"theme":"dark","sidebar_collapsed":false,"font_size":14,"language":"zh-CN","auto_update":true}"#;
+        let ui: UiConfig = serde_json::from_str(old_json).unwrap();
+        assert_eq!(ui.last_active_view, "live-translation");
+        assert_eq!(ui.auto_collapse_sidebar_width, 800);
+        assert!(ui.floating_subtitle_state.is_none());
+    }
+
+    #[test]
+    fn test_floating_window_state_default() {
+        let s = FloatingWindowState::default();
+        assert_eq!(s.x, 100.0);
+        assert_eq!(s.y, 100.0);
+        assert_eq!(s.width, 1000.0);
+        assert_eq!(s.height, 96.0);
+        assert_eq!(s.opacity, 0.75);
+    }
 }

@@ -166,6 +166,7 @@ pub async fn start_realtime_translation(
                     &app_for_subtitle,
                     &seg.original_text,
                     &seg.translated_text,
+                    "all",
                 );
                 let _ = db_for_spawn.live_insert_segment(&seg).await;
             }

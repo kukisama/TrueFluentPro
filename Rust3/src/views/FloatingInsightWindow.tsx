@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 /**
@@ -21,6 +22,17 @@ export function FloatingInsightApp() {
   const [markdown, setMarkdown] = useState("Waiting for insights...");
   const [fontSize, setFontSize] = useState(14);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [opacity, setOpacity] = useState(0.95);
+  const opacityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Restore saved opacity on mount
+  useEffect(() => {
+    invoke<{ x: number; y: number; width: number; height: number; opacity: number } | null>(
+      "get_floating_window_state", { window: "insight" }
+    ).then((state) => {
+      if (state?.opacity) setOpacity(state.opacity);
+    }).catch(() => {});
+  }, []);
 
   // 订阅后端 insight-update 事件
   useEffect(() => {
@@ -52,12 +64,21 @@ export function FloatingInsightApp() {
     } catch { /* best-effort */ }
   }, []);
 
+  // Debounced opacity persist
+  const handleOpacityChange = useCallback((newOpacity: number) => {
+    setOpacity(newOpacity);
+    if (opacityTimerRef.current) clearTimeout(opacityTimerRef.current);
+    opacityTimerRef.current = setTimeout(() => {
+      invoke("set_floating_window_opacity", { window: "insight", opacity: newOpacity }).catch(() => {});
+    }, 500);
+  }, []);
+
   return (
     <div
       style={{
         width: "100%",
         height: "100%",
-        background: "rgba(15, 23, 42, 0.95)",
+        background: `rgba(15, 23, 42, ${opacity})`,
         borderRadius: 8,
         border: "1px solid rgba(255,255,255,0.12)",
         overflow: "hidden",
@@ -117,6 +138,19 @@ export function FloatingInsightApp() {
         >
           A+
         </button>
+
+        {/* 透明度滑块 */}
+        <input
+          data-no-drag
+          type="range"
+          min={30}
+          max={100}
+          step={10}
+          value={Math.round(opacity * 100)}
+          onChange={(e) => handleOpacityChange(Number(e.target.value) / 100)}
+          style={{ width: 50, height: 12, cursor: "pointer", accentColor: "#60a5fa" }}
+          title={`Opacity: ${Math.round(opacity * 100)}%`}
+        />
 
         <button
           data-no-drag

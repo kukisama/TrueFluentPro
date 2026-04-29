@@ -42,6 +42,17 @@ export interface UiConfig {
   font_size: number;
   language: string;
   auto_update: boolean;
+  last_active_view: string;
+  floating_subtitle_state?: FloatingWindowState;
+  floating_insight_state?: FloatingWindowState;
+  auto_collapse_sidebar_width: number;
+}
+export interface FloatingWindowState {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  opacity: number;
 }
 export interface AiSettings {
   insight_model: ModelReference;

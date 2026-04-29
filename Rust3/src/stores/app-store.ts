@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { AppConfig, ProviderInfo, TranslationHistory } from "../lib/types";
+import { api } from "../lib/api";
 
 export type AppView =
   | "live-translation"
@@ -13,11 +14,15 @@ export type AppView =
   | "help"
   | "auth";
 
+let viewPersistTimer: ReturnType<typeof setTimeout> | null = null;
+let sidebarPersistTimer: ReturnType<typeof setTimeout> | null = null;
+
 interface AppState {
   // Navigation
   activeView: AppView;
   sidebarCollapsed: boolean;
   setActiveView: (view: AppView) => void;
+  setSidebarCollapsed: (v: boolean) => void;
   toggleSidebar: () => void;
 
   // Config
@@ -62,12 +67,47 @@ interface AppState {
   setError: (e: string | null) => void;
 }
 
+/** Debounced persist of last_active_view to backend config */
+function persistActiveView(view: string) {
+  if (viewPersistTimer) clearTimeout(viewPersistTimer);
+  viewPersistTimer = setTimeout(async () => {
+    try {
+      const config = await api.getConfig();
+      config.ui.last_active_view = view;
+      await api.updateConfig(config);
+    } catch { /* best-effort */ }
+  }, 1000);
+}
+
+/** Debounced persist of sidebar_collapsed to backend config */
+function persistSidebarCollapsed(collapsed: boolean) {
+  if (sidebarPersistTimer) clearTimeout(sidebarPersistTimer);
+  sidebarPersistTimer = setTimeout(async () => {
+    try {
+      const config = await api.getConfig();
+      config.ui.sidebar_collapsed = collapsed;
+      await api.updateConfig(config);
+    } catch { /* best-effort */ }
+  }, 1000);
+}
+
 export const useAppStore = create<AppState>((set) => ({
   // Navigation
   activeView: "media-studio",
   sidebarCollapsed: false,
-  setActiveView: (view) => set({ activeView: view }),
-  toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
+  setActiveView: (view) => {
+    set({ activeView: view });
+    persistActiveView(view);
+  },
+  setSidebarCollapsed: (v) => {
+    set({ sidebarCollapsed: v });
+    persistSidebarCollapsed(v);
+  },
+  toggleSidebar: () => set((s) => {
+    const next = !s.sidebarCollapsed;
+    persistSidebarCollapsed(next);
+    return { sidebarCollapsed: next };
+  }),
 
   // Config
   config: null,

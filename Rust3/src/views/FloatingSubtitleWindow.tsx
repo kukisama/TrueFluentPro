@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 /**
@@ -27,6 +28,17 @@ export function FloatingSubtitleApp() {
   const [sourceLabel, setSourceLabel] = useState("🔊 All Subtitles");
   const [fontSize, setFontSize] = useState(36);
   const [bgMode, setBgMode] = useState(0); // 0=半透明黑, 1=纯黑, 2=透明
+  const [opacity, setOpacity] = useState(0.75);
+  const opacityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Restore saved opacity on mount
+  useEffect(() => {
+    invoke<{ x: number; y: number; width: number; height: number; opacity: number } | null>(
+      "get_floating_window_state", { window: "subtitle" }
+    ).then((state) => {
+      if (state?.opacity) setOpacity(state.opacity);
+    }).catch(() => {});
+  }, []);
 
   // 订阅后端 subtitle-update 事件
   useEffect(() => {
@@ -54,9 +66,18 @@ export function FloatingSubtitleApp() {
     } catch { /* best-effort */ }
   }, []);
 
+  // Debounced opacity persist
+  const handleOpacityChange = useCallback((newOpacity: number) => {
+    setOpacity(newOpacity);
+    if (opacityTimerRef.current) clearTimeout(opacityTimerRef.current);
+    opacityTimerRef.current = setTimeout(() => {
+      invoke("set_floating_window_opacity", { window: "subtitle", opacity: newOpacity }).catch(() => {});
+    }, 500);
+  }, []);
+
   const bgStyles: Record<number, string> = {
-    0: "rgba(0,0,0,0.75)",
-    1: "rgba(0,0,0,0.95)",
+    0: `rgba(0,0,0,${opacity})`,
+    1: `rgba(0,0,0,${Math.min(1, opacity + 0.2)})`,
     2: "transparent",
   };
 
@@ -129,6 +150,19 @@ export function FloatingSubtitleApp() {
         >
           🎨
         </button>
+
+        {/* 透明度滑块 */}
+        <input
+          data-no-drag
+          type="range"
+          min={30}
+          max={100}
+          step={10}
+          value={Math.round(opacity * 100)}
+          onChange={(e) => handleOpacityChange(Number(e.target.value) / 100)}
+          style={{ width: 50, height: 12, cursor: "pointer", accentColor: "#60a5fa" }}
+          title={`Opacity: ${Math.round(opacity * 100)}%`}
+        />
 
         <div style={{ flex: 1 }} />
 

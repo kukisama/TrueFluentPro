@@ -2,18 +2,9 @@ import { useEffect } from "react";
 import "./lib/i18n";
 import { TooltipProvider } from "./components/ui";
 import { AppLayout } from "./components/AppLayout";
-import { useAppStore, type AppView } from "./stores/app-store";
+import { useAppStore } from "./stores/app-store";
+import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { api } from "./lib/api";
-
-const SHORTCUT_MAP: Record<string, AppView> = {
-  "1": "live-translation",
-  "2": "media-studio",
-  "3": "media-center",
-  "4": "audio-lab",
-  "5": "task-monitor",
-  "6": "batch-processing",
-  ",": "settings",
-};
 
 export default function App() {
   const setConfig = useAppStore((s) => s.setConfig);
@@ -21,6 +12,7 @@ export default function App() {
   const setError = useAppStore((s) => s.setError);
   const setActiveView = useAppStore((s) => s.setActiveView);
 
+  // Load config and providers on startup; restore last active view
   useEffect(() => {
     (async () => {
       try {
@@ -30,33 +22,18 @@ export default function App() {
         ]);
         setConfig(config);
         setProviders(providers);
+        // Restore last active view from persisted config
+        if (config.ui?.last_active_view) {
+          setActiveView(config.ui.last_active_view as any);
+        }
       } catch (e) {
         setError(String(e));
       }
     })();
-  }, [setConfig, setProviders, setError]);
+  }, [setConfig, setProviders, setError, setActiveView]);
 
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.ctrlKey && !e.altKey && !e.shiftKey) {
-        const view = SHORTCUT_MAP[e.key];
-        if (view) {
-          e.preventDefault();
-          setActiveView(view);
-        }
-      }
-      if (e.key === "F5") {
-        e.preventDefault();
-        setActiveView("live-translation");
-      }
-      if (e.key === "F6") {
-        e.preventDefault();
-        window.dispatchEvent(new CustomEvent("tfp:stop-translation"));
-      }
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [setActiveView]);
+  // Register keyboard shortcuts
+  useKeyboardShortcuts();
 
   return (
     <TooltipProvider delayDuration={200}>

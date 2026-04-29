@@ -197,6 +197,9 @@ pub fn run() {
             commands::live_toggle_floating_subtitle,
             commands::live_show_floating_insight,
             commands::live_hide_floating_insight,
+            commands::save_floating_window_state,
+            commands::get_floating_window_state,
+            commands::set_floating_window_opacity,
             // Audio library & task engine
             commands::list_audio_devices,
             commands::list_audio_items,
