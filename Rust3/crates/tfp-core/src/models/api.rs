@@ -133,6 +133,8 @@ pub struct VideoGenRequest {
 pub struct VideoGenResult {
     pub video_id: String,
     pub status: String,
+    #[serde(default)]
+    pub generation_id: Option<String>,
     pub download_url: Option<String>,
     pub file_path: Option<String>,
     pub generate_seconds: Option<f64>,
