@@ -60,12 +60,51 @@ pub async fn update_endpoint(
     state.persist_config().await
 }
 
+
 // ── Config import / export ──
+
+/// Sanitize config for export: remove AAD credentials.
+pub(crate) fn sanitize_config(config: &mut AppConfig) {
+    for ep in &mut config.endpoints {
+        ep.azure_tenant_id = String::new();
+        ep.azure_client_id = String::new();
+    }
+}
+
+/// Validate that all ModelReferences point to existing endpoints and models.
+pub(crate) fn validate_model_references(config: &mut AppConfig) {
+    let endpoint_ids: std::collections::HashSet<String> = config.endpoints.iter().map(|e| e.id.clone()).collect();
+    let refs = [
+        &mut config.ai.insight_model,
+        &mut config.ai.summary_model,
+        &mut config.ai.quick_model,
+        &mut config.ai.review_model,
+        &mut config.ai.conversation_model,
+        &mut config.ai.intent_model,
+    ];
+    for r in refs {
+        if !r.endpoint_id.is_empty() && !endpoint_ids.contains(&r.endpoint_id) {
+            *r = tfp_core::ModelReference::default();
+        }
+    }
+}
+
+/// Deduplicate endpoint IDs: if an imported endpoint has the same ID as an existing one, regenerate.
+pub(crate) fn dedup_endpoint_ids(config: &mut AppConfig) {
+    let mut seen = std::collections::HashSet::new();
+    for ep in &mut config.endpoints {
+        if !seen.insert(ep.id.clone()) {
+            ep.id = uuid::Uuid::new_v4().to_string();
+        }
+    }
+}
 
 #[tauri::command]
 pub async fn export_config(state: State<'_, AppState>) -> Result<String, String> {
     let config = state.config.read().await;
-    serde_json::to_string_pretty(&*config).map_err(|e| e.to_string())
+    let mut export = config.clone();
+    sanitize_config(&mut export);
+    serde_json::to_string_pretty(&export).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -73,14 +112,21 @@ pub async fn import_config(
     state: State<'_, AppState>,
     json: String,
 ) -> Result<(), String> {
-    let new_config: AppConfig =
+    let mut new_config: AppConfig =
         serde_json::from_str(&json).map_err(|e| format!("Invalid config JSON: {e}"))?;
+    sanitize_config(&mut new_config);
+    dedup_endpoint_ids(&mut new_config);
+    for ep in &mut new_config.endpoints {
+        ep.migrate_auth_header_mode();
+    }
+    validate_model_references(&mut new_config);
     {
         let mut config = state.config.write().await;
         *config = new_config;
     }
     state.persist_config().await
 }
+
 
 // ── Azure storage connection validation ──
 
@@ -165,5 +211,63 @@ mod tests {
         let (name, url) = result.unwrap();
         assert_eq!(name, "myaccount");
         assert_eq!(url, "https://myaccount.blob.core.chinacloudapi.cn");
+    }
+
+    #[test]
+    fn test_sanitize_clears_aad_credentials() {
+        let mut config = AppConfig::default();
+        let mut ep = tfp_core::AiEndpoint::default();
+        ep.id = "ep-1".into();
+        ep.azure_tenant_id = "secret-tenant".into();
+        ep.azure_client_id = "secret-client".into();
+        config.endpoints.push(ep);
+
+        sanitize_config(&mut config);
+
+        assert!(config.endpoints[0].azure_tenant_id.is_empty());
+        assert!(config.endpoints[0].azure_client_id.is_empty());
+    }
+
+    #[test]
+    fn test_dedup_endpoint_ids() {
+        let mut config = AppConfig::default();
+        let mut ep1 = tfp_core::AiEndpoint::default();
+        ep1.id = "dup-id".into();
+        ep1.name = "First".into();
+        let mut ep2 = tfp_core::AiEndpoint::default();
+        ep2.id = "dup-id".into();
+        ep2.name = "Second".into();
+        config.endpoints.push(ep1);
+        config.endpoints.push(ep2);
+
+        dedup_endpoint_ids(&mut config);
+
+        assert_eq!(config.endpoints[0].id, "dup-id");
+        assert_ne!(config.endpoints[1].id, "dup-id");
+        assert_eq!(config.endpoints[1].name, "Second");
+    }
+
+    #[test]
+    fn test_validate_model_references_clears_invalid() {
+        let mut config = AppConfig::default();
+        let mut ep = tfp_core::AiEndpoint::default();
+        ep.id = "ep-1".into();
+        config.endpoints.push(ep);
+
+        config.ai.insight_model = tfp_core::ModelReference {
+            endpoint_id: "ep-1".into(),
+            model_id: "gpt-4o".into(),
+        };
+        config.ai.summary_model = tfp_core::ModelReference {
+            endpoint_id: "nonexistent".into(),
+            model_id: "gpt-4o".into(),
+        };
+
+        validate_model_references(&mut config);
+
+        // Valid reference remains
+        assert_eq!(config.ai.insight_model.endpoint_id, "ep-1");
+        // Invalid reference cleared
+        assert!(config.ai.summary_model.endpoint_id.is_empty());
     }
 }

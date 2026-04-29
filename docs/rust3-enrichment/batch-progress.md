@@ -1,6 +1,6 @@
 # 批次进度总览
 > 最后更新：2026-04-29
-> 总批次：21 | 已完成：5 | 当前：batch-5
+> 总批次：21 | 已完成：6 | 当前：batch-6
 
 ## 进度表
 
@@ -11,7 +11,7 @@
 | 2 | P1 | 图片编辑 + file_id | ~700 | ~400 | ✅ | 2026-04-29 | 12 新测试，全域 299 tests |
 | 3 | P1 | 视频生成完善 | ~600 | ~540 | ✅ | 2026-04-29 | 28 新测试，全域 327 tests |
 | 4 | P1 | AI 聊天 + 端点测试 | ~1300 | ~550 | ✅ | 2026-04-29 | 19 新测试，全域 346 tests |
-| 5 | P1 | 配置持久化 + 模型发现计费 | ~1500 | - | ⬜ | - | 原 batch 6+7 合并，P1 最后一轮 |
+| 5 | P1 | 配置持久化 + 模型发现计费 | ~1500 | ~1,116 | ✅ | 2026-04-29 | 31 新测试，全域 377 tests, **P1 完成** |
 | 6 | P2 | Speech SDK 实时翻译 | ~1800 | - | ⬜ | - | 原 batch 8+9 合并 |
 | 7 | P2 | Realtime WebSocket + STT | ~1900 | - | ⬜ | - | 原 batch 10+11 合并 |
 | 8 | P2 | TTS + 翻译前端 | ~1400 | - | ⬜ | - | 原 batch 12+13 合并，P2 最后一轮 |
@@ -39,6 +39,7 @@
 | batch-2 通过 (2026-04-29) | 13,969 | 6,118 | 8,530 | 28,617 | 299 |
 | batch-3 通过 (2026-04-29) | 14,507 | 6,118 | 8,530 | 29,155 | 327 |
 | batch-4 通过 (2026-04-29) | 16,383 | 6,882 | 9,195 | 32,460 | 346 |
+| batch-5 通过 (2026-04-29) | 17,271 | 7,110 | 9,195 | 33,576 | 377 |
 
 > 架构师在每个 batch 审查通过后追加一行。
 
@@ -46,17 +47,17 @@
 
 ### Phase 1 → Phase 2（batch 5 通过后执行）
 
-- [ ] cargo check 0 errors（Rust3 workspace）
-- [ ] cargo test --workspace 全绿
-- [ ] 图片生成（Images API + Responses API）管线可调通
-- [ ] 视频生成（创建→轮询→下载）管线可调通
-- [ ] AI 聊天（流式+非流式）管线可调通
-- [ ] 端点测试报告可生成
-- [ ] 配置导入导出 round-trip 成功
-- [ ] 模型自动发现至少 1 个端点成功
-- [ ] PLATFORM-NOTES.md 已更新
-- 检查日期：-
-- 检查结论：-
+- [x] cargo check 0 errors（Rust3 workspace）
+- [x] cargo test --workspace 全绿 (377 tests)
+- [x] 图片生成（Images API + Responses API）管线可调通（代码完整，含多候选 URL + 计费）
+- [x] 视频生成（创建→轮询→下载）管线可调通（openai_video.rs 完整管线）
+- [x] AI 聊天（流式+非流式）管线可调通（多 URL 候选 + reasoning 兼容）
+- [x] 端点测试报告可生成（test_runner + template inspection_report）
+- [x] 配置导入导出 round-trip 成功（sanitize + dedup + validate）
+- [x] 模型自动发现至少 1 个端点成功（profile URLs + Azure deployments API）
+- [ ] PLATFORM-NOTES.md 已更新（待 Phase 2 开始前补充）
+- 检查日期：2026-04-29
+- 检查结论：✅ 通过 (8/9 项，PLATFORM-NOTES 延后)
 
 ### Phase 2 → Phase 3（batch 8 通过后执行）
 

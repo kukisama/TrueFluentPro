@@ -148,6 +148,9 @@ pub fn run() {
             commands::read_text_file,
             commands::get_billing_records,
             commands::get_billing_summary,
+            commands::record_image_billing,
+            commands::get_image_billing_summary,
+            commands::get_image_billing_by_endpoint,
             // Translation
             commands::translate_text,
             commands::get_supported_languages,

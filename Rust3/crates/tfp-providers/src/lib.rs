@@ -9,6 +9,7 @@ pub mod azure_stt;
 pub mod azure_tts;
 mod profile_raw;
 pub mod profile_loader;
+pub mod template_service;
 pub mod registration;
 #[cfg(test)]
 mod test_helpers;

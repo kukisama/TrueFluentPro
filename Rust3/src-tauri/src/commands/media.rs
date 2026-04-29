@@ -321,6 +321,48 @@ pub async fn get_image_model_catalog(
     Ok(tfp_media::catalog::builtin_image_models())
 }
 
+
+// ── Billing commands ──
+
+#[tauri::command]
+pub async fn record_image_billing(
+    state: State<'_, AppState>,
+    endpoint_id: String,
+    model_id: String,
+    prompt_tokens: i64,
+    completion_tokens: i64,
+    cost_usd: Option<f64>,
+) -> Result<(), String> {
+    let record = tfp_core::BillingRecord {
+        id: uuid::Uuid::new_v4().to_string(),
+        task_id: None,
+        endpoint_id,
+        model_id,
+        prompt_tokens,
+        completion_tokens,
+        cost_usd,
+        created_at: chrono::Utc::now().to_rfc3339(),
+        status: "Committed".into(),
+    };
+    state.db.insert_billing_record(&record).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_image_billing_summary(
+    state: State<'_, AppState>,
+) -> Result<tfp_core::BillingSummary, String> {
+    state.db.get_billing_ledger_summary().await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_image_billing_by_endpoint(
+    state: State<'_, AppState>,
+    endpoint_id: String,
+) -> Result<tfp_core::BillingSummary, String> {
+    state.db.get_billing_by_endpoint(&endpoint_id).await.map_err(|e| e.to_string())
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;

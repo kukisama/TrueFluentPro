@@ -8,6 +8,7 @@ pub mod monitor_repo;
 pub mod studio_repo;
 pub mod center_repo;
 pub mod audiolab_repo;
+pub mod billing_repo;
 
 pub use db::Database;
 pub use session_repo::{Session, Message};

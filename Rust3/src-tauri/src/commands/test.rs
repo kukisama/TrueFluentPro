@@ -171,28 +171,47 @@ pub async fn discover_models(
         .clone();
     drop(config);
 
-    if endpoint.endpoint_type == EndpointType::AzureOpenAi {
-        return Err(
-            "Azure OpenAI does not support model discovery via /models API. \
-             Use the Azure Portal to view available deployments."
-                .into(),
-        );
-    }
+    let profiles = tfp_providers::load_profiles();
+    let profile = find_profile(&profiles, &endpoint.endpoint_type);
 
     let base = endpoint.url.trim_end_matches('/');
 
-    // Determine URL attempt order
-    let urls = if endpoint.endpoint_type == EndpointType::ApiManagementGateway {
-        vec![
-            format!("{base}/models"),
-            format!("{base}/v1/models"),
-        ]
-    } else {
-        vec![
-            format!("{base}/v1/models"),
-            format!("{base}/models"),
-        ]
-    };
+    // Build candidate URLs from profile + fallback
+    let mut urls: Vec<String> = Vec::new();
+
+    // Try profile-defined model_discovery_urls first
+    if let Some(prof) = profile {
+        for tpl in &prof.model_discovery_urls {
+            let url = tpl.replace("{endpoint}", base);
+            // For Azure, append api-version
+            if endpoint.is_azure() {
+                let ver = endpoint.api_version.as_deref().unwrap_or("2025-03-01-preview");
+                if !url.contains("api-version") {
+                    urls.push(format!("{url}?api-version={ver}"));
+                } else {
+                    urls.push(url);
+                }
+            } else {
+                urls.push(url);
+            }
+        }
+    }
+
+    // Fallback: standard /models paths
+    if urls.is_empty() {
+        if endpoint.endpoint_type == EndpointType::AzureOpenAi {
+            // Azure: try /openai/deployments with api-version
+            let ver = endpoint.api_version.as_deref().unwrap_or("2025-03-01-preview");
+            urls.push(format!("{base}/openai/deployments?api-version={ver}"));
+            urls.push(format!("{base}/openai/models?api-version={ver}"));
+        } else if endpoint.endpoint_type == EndpointType::ApiManagementGateway {
+            urls.push(format!("{base}/models"));
+            urls.push(format!("{base}/v1/models"));
+        } else {
+            urls.push(format!("{base}/v1/models"));
+            urls.push(format!("{base}/models"));
+        }
+    }
 
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
@@ -215,7 +234,12 @@ pub async fn discover_models(
                 if status.is_success() {
                     let json: serde_json::Value =
                         resp.json().await.map_err(|e| e.to_string())?;
-                    let models = test_runner::parse_model_list(&json);
+                    // Try standard /models format first
+                    let mut models = test_runner::parse_model_list(&json);
+                    // Try Azure /deployments format
+                    if models.is_empty() {
+                        models = parse_azure_deployments(&json);
+                    }
                     if !models.is_empty() {
                         return Ok(models);
                     }
@@ -238,6 +262,37 @@ pub async fn discover_models(
 
     Err(format!("Model discovery failed: {last_error}"))
 }
+
+/// Parse Azure deployments list response into DiscoveredModel vec.
+fn parse_azure_deployments(json: &serde_json::Value) -> Vec<DiscoveredModel> {
+    let data = json.get("data").and_then(|d| d.as_array());
+    if data.is_none() {
+        return Vec::new();
+    }
+    data.unwrap()
+        .iter()
+        .filter_map(|item| {
+            let id = item.get("id").and_then(|v| v.as_str()).unwrap_or("");
+            let model = item.get("model").and_then(|v| v.as_str());
+            let status = item.get("status").and_then(|v| v.as_str());
+            if id.is_empty() {
+                return None;
+            }
+            // Skip non-succeeded deployments
+            if let Some(s) = status {
+                if s != "succeeded" {
+                    return None;
+                }
+            }
+            Some(DiscoveredModel {
+                id: id.to_string(),
+                display_name: model.map(|m| format!("{id} ({m})")),
+                owned_by: Some("azure".to_string()),
+            })
+        })
+        .collect()
+}
+
 
 #[cfg(test)]
 mod tests {
@@ -288,4 +343,28 @@ mod tests {
         let found = find_profile(&profiles, &EndpointType::AzureSpeech);
         assert!(found.is_none());
     }
+
+    #[test]
+    fn test_parse_azure_deployments() {
+        let json = serde_json::json!({
+            "data": [
+                { "id": "gpt-4o", "model": "gpt-4o-2024-08-06", "status": "succeeded" },
+                { "id": "gpt-35-turbo", "model": "gpt-35-turbo", "status": "succeeded" },
+                { "id": "failed-one", "model": "test", "status": "failed" }
+            ]
+        });
+        let models = parse_azure_deployments(&json);
+        assert_eq!(models.len(), 2);
+        assert_eq!(models[0].id, "gpt-4o");
+        assert!(models[0].display_name.as_ref().unwrap().contains("gpt-4o-2024-08-06"));
+        assert_eq!(models[0].owned_by.as_deref(), Some("azure"));
+    }
+
+    #[test]
+    fn test_parse_azure_deployments_empty() {
+        let json = serde_json::json!({});
+        let models = parse_azure_deployments(&json);
+        assert!(models.is_empty());
+    }
+
 }
