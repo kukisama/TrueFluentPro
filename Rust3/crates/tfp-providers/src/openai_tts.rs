@@ -81,14 +81,6 @@ impl ProviderMeta for OpenAiTtsProvider {
     }
 }
 
-#[derive(Deserialize)]
-struct OpenAiVoice {
-    #[serde(default)]
-    name: String,
-    #[serde(default)]
-    id: String,
-}
-
 /// Standard OpenAI voices.
 const OPENAI_VOICES: &[(&str, &str)] = &[
     ("alloy", "Alloy"),
