@@ -106,6 +106,9 @@ pub trait TextToSpeechSlot: ProviderMeta {
 pub enum StreamChunk {
     Token(String),
     Reasoning(String),
+    ReasoningSummary(String),
+    ImageGenerating,
+    ImageResult { base64_data: String, content_type: String },
     Usage {
         prompt_tokens: u32,
         completion_tokens: u32,

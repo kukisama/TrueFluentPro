@@ -210,6 +210,11 @@ mod tests {
             temperature: Some(0.7),
             max_tokens: Some(1000),
             endpoint_id: "ep1".into(),
+            reasoning_effort: None,
+            enable_image_generation: false,
+            image_model_deployment: None,
+            image_size: None,
+            image_quality: None,
         };
         let json = serde_json::to_value(&req).unwrap();
         let obj = json.as_object().unwrap();

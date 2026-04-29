@@ -74,6 +74,11 @@ impl TextTranslationSlot for OpenAiTranslationProvider {
             temperature: Some(0.3),
             max_tokens: Some(4096),
             endpoint_id: self.endpoint.id.clone(),
+            reasoning_effort: None,
+            enable_image_generation: false,
+            image_model_deployment: None,
+            image_size: None,
+            image_quality: None,
         };
 
         let resp = self.inner.complete(&comp_request).await?;
@@ -107,6 +112,11 @@ impl TextTranslationSlot for OpenAiTranslationProvider {
             temperature: Some(0.0),
             max_tokens: Some(10),
             endpoint_id: self.endpoint.id.clone(),
+            reasoning_effort: None,
+            enable_image_generation: false,
+            image_model_deployment: None,
+            image_size: None,
+            image_quality: None,
         };
 
         let resp = self.inner.complete(&comp_request).await?;

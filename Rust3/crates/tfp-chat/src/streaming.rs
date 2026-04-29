@@ -71,6 +71,11 @@ pub async fn run_studio_chat_stream(
         temperature: Some(0.7),
         max_tokens: Some(4096),
         endpoint_id: endpoint_id.to_string(),
+        reasoning_effort: None,
+        enable_image_generation: false,
+        image_model_deployment: None,
+        image_size: None,
+        image_quality: None,
     };
 
     let mut rx = provider.complete_stream(&req).await.map_err(|e| e.to_string())?;
@@ -108,6 +113,23 @@ pub async fn run_studio_chat_stream(
                 StreamChunk::Usage { prompt_tokens, completion_tokens } => {
                     p_tokens = Some(prompt_tokens as i64);
                     c_tokens = Some(completion_tokens as i64);
+                }
+                StreamChunk::ReasoningSummary(text) => {
+                    reasoning.push_str(&text);
+                }
+                StreamChunk::ImageGenerating => {
+                    sink.emit_json("studio-message-delta", serde_json::json!({
+                        "session_id": &sid,
+                        "message_id": &aid,
+                        "image_generating": true,
+                    }));
+                }
+                StreamChunk::ImageResult { base64_data, content_type } => {
+                    sink.emit_json("studio-message-delta", serde_json::json!({
+                        "session_id": &sid,
+                        "message_id": &aid,
+                        "image_result": { "base64_data": base64_data, "content_type": content_type },
+                    }));
                 }
             },
             Err(e) => {
@@ -183,6 +205,18 @@ pub async fn run_ai_stream(
                             "completion_tokens": completion_tokens,
                         },
                     }),
+                    StreamChunk::ReasoningSummary(text) => serde_json::json!({
+                        "stream_id": &sid,
+                        "reasoning_summary": text,
+                    }),
+                    StreamChunk::ImageGenerating => serde_json::json!({
+                        "stream_id": &sid,
+                        "image_generating": true,
+                    }),
+                    StreamChunk::ImageResult { base64_data, content_type } => serde_json::json!({
+                        "stream_id": &sid,
+                        "image_result": { "base64_data": base64_data, "content_type": content_type },
+                    }),
                 };
                 sink.emit_json("ai-stream-token", payload);
             }
@@ -228,6 +262,11 @@ pub async fn optimize_prompt(
         temperature: Some(0.7),
         max_tokens: Some(1000),
         endpoint_id: endpoint_id.to_string(),
+        reasoning_effort: None,
+        enable_image_generation: false,
+        image_model_deployment: None,
+        image_size: None,
+        image_quality: None,
     };
 
     let resp = provider.complete(&request).await.map_err(|e| e.to_string())?;

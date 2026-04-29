@@ -186,6 +186,11 @@ pub async fn optimize_prompt(
         temperature: Some(0.7),
         max_tokens: Some(1000),
         endpoint_id: provider.id().to_string(),
+        reasoning_effort: None,
+        enable_image_generation: false,
+        image_model_deployment: None,
+        image_size: None,
+        image_quality: None,
     };
 
     let resp = provider

@@ -77,6 +77,16 @@ pub(crate) fn build_url_candidates(
             ],
             _ => vec![format!("{base}/v1/images/generations")],
         },
+        ModelCapability::Video => match endpoint.endpoint_type {
+            EndpointType::AzureOpenAi => vec![format!(
+                "{base}/openai/v1/video/generations/jobs?api-version={api_ver}"
+            )],
+            EndpointType::ApiManagementGateway => vec![
+                format!("{base}/v1/video/generations/jobs"),
+                format!("{base}/openai/v1/video/generations/jobs?api-version={api_ver}"),
+            ],
+            _ => vec![format!("{base}/v1/video/generations/jobs")],
+        },
         _ => Vec::new(),
     }
 }
@@ -153,6 +163,25 @@ async fn test_image(
     }
 }
 
+async fn test_video(
+    client: &reqwest::Client, url: &str, model: &str,
+    endpoint: &AiEndpoint, profile: Option<&VendorProfile>,
+) -> TestResult {
+    let body = json!({"model": model, "prompt": "A tiny red dot", "size": "1280x720", "n": 1});
+    match build_authed_request(client, reqwest::Method::POST, url, endpoint, profile).json(&body).send().await {
+        Ok(r) => {
+            let status = r.status();
+            if status.is_success() {
+                (true, "Video creation OK".into(), None)
+            } else {
+                let text = r.text().await.unwrap_or_default();
+                (false, format!("HTTP {status}"), Some(text.chars().take(300).collect()))
+            }
+        }
+        Err(e) => (false, format!("Network error: {e}"), None),
+    }
+}
+
 /// Test a single (model, capability) with URL candidate fallback
 pub(crate) async fn test_single_capability(
     client: &reqwest::Client, endpoint: &AiEndpoint, profile: Option<&VendorProfile>,
@@ -164,7 +193,7 @@ pub(crate) async fn test_single_capability(
         ModelCapability::Video => "video", ModelCapability::SpeechToText => "stt",
         ModelCapability::TextToSpeech => "tts",
     };
-    if matches!(capability, ModelCapability::Video | ModelCapability::SpeechToText | ModelCapability::TextToSpeech) {
+    if matches!(capability, ModelCapability::SpeechToText | ModelCapability::TextToSpeech) {
         return EndpointTestItem {
             model_id: model_id.into(), capability: cap_str.into(),
             status: TestStatus::Skipped, summary: format!("{cap_str} test not implemented yet"),
@@ -191,6 +220,7 @@ pub(crate) async fn test_single_capability(
         let (ok, summary, detail) = match capability {
             ModelCapability::Text => test_text(client, url, deployment, endpoint, profile).await,
             ModelCapability::Image => test_image(client, url, deployment, endpoint, profile).await,
+            ModelCapability::Video => test_video(client, url, deployment, endpoint, profile).await,
             _ => unreachable!(),
         };
         if ok {
@@ -297,5 +327,38 @@ mod tests {
         let mut ep = test_ep(ApiKeyHeaderMode::Auto);
         ep.endpoint_type = EndpointType::AzureOpenAi;
         assert_eq!(resolve_auth_header(&ep, None), "api_key");
+    }
+
+    // --- T-008: Video URL candidates ---
+
+    #[test]
+    fn test_build_video_url_candidates_azure() {
+        let mut ep = test_ep(ApiKeyHeaderMode::ApiKeyHeader);
+        ep.endpoint_type = EndpointType::AzureOpenAi;
+        ep.url = "https://myresource.openai.azure.com".into();
+        ep.api_version = Some("2025-03-01-preview".into());
+        let urls = build_url_candidates(&ep, None, &ModelCapability::Video, "sora");
+        assert_eq!(urls.len(), 1);
+        assert!(urls[0].contains("/openai/v1/video/generations/jobs?api-version="));
+    }
+
+    #[test]
+    fn test_build_video_url_candidates_apim() {
+        let mut ep = test_ep(ApiKeyHeaderMode::Bearer);
+        ep.endpoint_type = EndpointType::ApiManagementGateway;
+        ep.url = "https://apim.example.com/ai01/openai".into();
+        ep.api_version = Some("2025-03-01-preview".into());
+        let urls = build_url_candidates(&ep, None, &ModelCapability::Video, "sora");
+        assert_eq!(urls.len(), 2);
+        assert!(urls[0].contains("/v1/video/generations/jobs"));
+        assert!(urls[1].contains("/openai/v1/video/generations/jobs?api-version="));
+    }
+
+    #[test]
+    fn test_build_video_url_candidates_compat() {
+        let ep = test_ep(ApiKeyHeaderMode::Bearer);
+        let urls = build_url_candidates(&ep, None, &ModelCapability::Video, "sora");
+        assert_eq!(urls.len(), 1);
+        assert_eq!(urls[0], "https://example.com/v1/video/generations/jobs");
     }
 }

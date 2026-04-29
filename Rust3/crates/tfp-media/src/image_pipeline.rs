@@ -263,6 +263,11 @@ async fn step_prompt_optimize(deps: &PipelineDeps, ctx: &mut PipelineContext) {
             temperature: Some(0.7),
             max_tokens: Some(500),
             endpoint_id: deps.endpoint.id.clone(),
+            reasoning_effort: None,
+            enable_image_generation: false,
+            image_model_deployment: None,
+            image_size: None,
+            image_quality: None,
         };
         if let Ok(resp) = ai.complete(&req).await {
             ctx.optimized_prompt = Some(resp.content.clone());

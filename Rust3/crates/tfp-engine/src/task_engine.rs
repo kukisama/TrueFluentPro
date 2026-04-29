@@ -491,6 +491,11 @@ async fn execute_task_real(
                         temperature: Some(0.7),
                         max_tokens: Some(4096),
                         endpoint_id: ep.id.clone(),
+                        reasoning_effort: None,
+                        enable_image_generation: false,
+                        image_model_deployment: None,
+                        image_size: None,
+                        image_quality: None,
                     };
 
                     let resp = ai

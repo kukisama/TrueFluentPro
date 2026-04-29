@@ -153,6 +153,16 @@ pub struct CompletionRequest {
     pub temperature: Option<f64>,
     pub max_tokens: Option<u32>,
     pub endpoint_id: String,
+    #[serde(default)]
+    pub reasoning_effort: Option<String>,
+    #[serde(default)]
+    pub enable_image_generation: bool,
+    #[serde(default)]
+    pub image_model_deployment: Option<String>,
+    #[serde(default)]
+    pub image_size: Option<String>,
+    #[serde(default)]
+    pub image_quality: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
