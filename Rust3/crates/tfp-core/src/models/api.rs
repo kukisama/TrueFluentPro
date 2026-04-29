@@ -72,15 +72,34 @@ pub struct ImageGenRequest {
     pub image_model: Option<String>,
     #[serde(default)]
     pub previous_response_id: Option<String>,
+    #[serde(default)]
+    pub reference_image_path: Option<String>,
+    #[serde(default)]
+    pub image_edit_mode: Option<super::config::ImageEditMode>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ImageGenResult {
+    #[serde(default)]
     pub url: Option<String>,
+    #[serde(default)]
     pub base64: Option<String>,
+    #[serde(default)]
     pub revised_prompt: Option<String>,
     #[serde(default)]
     pub response_id: Option<String>,
+    #[serde(default)]
+    pub request_url: String,
+    #[serde(default)]
+    pub attempted_urls: Vec<String>,
+    #[serde(default)]
+    pub generate_seconds: f64,
+    #[serde(default)]
+    pub download_seconds: f64,
+    #[serde(default)]
+    pub actual_input_tokens: Option<u32>,
+    #[serde(default)]
+    pub actual_output_tokens: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

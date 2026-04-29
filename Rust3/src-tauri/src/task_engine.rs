@@ -528,6 +528,8 @@ async fn execute_task_real(
                         text_model: None,
                         image_model: None,
                         previous_response_id: None,
+                        reference_image_path: None,
+                        image_edit_mode: None,
                     };
 
                     let results = img.generate(&request).await

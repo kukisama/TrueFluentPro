@@ -221,8 +221,21 @@ export interface ImageGenRequest {
   text_model?: string;
   image_model?: string;
   previous_response_id?: string;
+  reference_image_path?: string;
+  image_edit_mode?: 'v1_multipart' | 'v2_responses_api';
 }
-export interface ImageGenResult { url?: string; base64?: string; revised_prompt?: string; response_id?: string; }
+export interface ImageGenResult {
+  url?: string;
+  base64?: string;
+  revised_prompt?: string;
+  response_id?: string;
+  request_url: string;
+  attempted_urls: string[];
+  generate_seconds: number;
+  download_seconds: number;
+  actual_input_tokens?: number;
+  actual_output_tokens?: number;
+}
 export interface SaveImageRequest {
   base64: string;
   prompt: string;

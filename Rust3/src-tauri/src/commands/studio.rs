@@ -306,6 +306,7 @@ pub async fn studio_start_image_task(
         n: Some(n),
         endpoint_id: endpoint_id.clone(),
         text_model: None, image_model: None, previous_response_id: None,
+        reference_image_path: None, image_edit_mode: None,
     };
 
     let db = state.db.clone();

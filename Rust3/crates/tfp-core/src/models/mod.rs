@@ -234,6 +234,8 @@ mod tests {
             text_model: None,
             image_model: None,
             previous_response_id: None,
+            reference_image_path: None,
+            image_edit_mode: None,
         };
         let json = serde_json::to_value(&req).unwrap();
         let obj = json.as_object().unwrap();
