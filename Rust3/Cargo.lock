@@ -4440,6 +4440,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "tfp-core",
+ "tfp-providers",
  "tfp-storage",
  "uuid",
 ]
@@ -4473,6 +4474,7 @@ dependencies = [
  "chrono",
  "serde",
  "serde_json",
+ "tfp-audiolab",
  "tfp-core",
  "tfp-providers",
  "tfp-storage",

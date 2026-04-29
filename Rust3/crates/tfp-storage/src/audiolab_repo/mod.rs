@@ -280,6 +280,46 @@ impl Database {
         Ok(())
     }
 
+    /// Update a research topic's status and report markdown.
+    pub async fn audiolab_update_research_topic(
+        &self,
+        topic_id: &str,
+        status: &str,
+        report_markdown: Option<&str>,
+    ) -> tfp_core::Result<()> {
+        let conn = self.conn().lock().await;
+        conn.execute(
+            "UPDATE audio_research_topics SET status=?1, report_markdown=?2 WHERE id=?3",
+            params![status, report_markdown, topic_id],
+        ).map_err(map_db_err)?;
+        Ok(())
+    }
+
+    /// Get a single research topic by ID.
+    pub async fn audiolab_get_research_topic(&self, topic_id: &str) -> tfp_core::Result<Option<AudioResearchTopic>> {
+        let conn = self.conn().lock().await;
+        let mut stmt = conn.prepare(
+            "SELECT id,session_id,title,description,status,report_markdown,created_at \
+             FROM audio_research_topics WHERE id=?1"
+        ).map_err(map_db_err)?;
+        let mut rows = stmt.query_map(params![topic_id], |row| {
+            Ok(AudioResearchTopic {
+                id: row.get(0)?,
+                session_id: row.get(1)?,
+                title: row.get(2)?,
+                description: row.get(3)?,
+                status: row.get(4)?,
+                report_markdown: row.get(5)?,
+                created_at: row.get(6)?,
+            })
+        }).map_err(map_db_err)?;
+        match rows.next() {
+            Some(Ok(t)) => Ok(Some(t)),
+            Some(Err(e)) => Err(map_db_err(e)),
+            None => Ok(None),
+        }
+    }
+
     // ── Auto tags (3) ──
 
     pub async fn audiolab_get_auto_tags(&self, session_id: &str) -> tfp_core::Result<Vec<AudioAutoTag>> {

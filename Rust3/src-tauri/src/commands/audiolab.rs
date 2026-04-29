@@ -165,6 +165,11 @@ pub async fn audiolab_start_stage(
         &state.db, &session_id, "audio_stage", &format!("stage_key={}", stage_key),
     ).await?;
 
+    // Kick task engine
+    if let Some(engine) = state.task_engine.read().await.as_ref() {
+        engine.kick().await;
+    }
+
     let _ = app.emit("audiolab-task-update", serde_json::json!({
         "task_id": task.id,
         "session_id": session_id,
@@ -201,6 +206,11 @@ pub async fn audiolab_start_podcast_tts(
         &state.db, &session_id, "audio_podcast_tts", "podcast_tts",
     ).await?;
 
+    // Kick task engine
+    if let Some(engine) = state.task_engine.read().await.as_ref() {
+        engine.kick().await;
+    }
+
     let _ = app.emit("audiolab-task-update", serde_json::json!({
         "task_id": task.id,
         "session_id": session_id,
@@ -223,6 +233,11 @@ pub async fn audiolab_generate_auto_tags(
     let task = tfp_audiolab::services::submit_task(
         &state.db, &session_id, "audio_auto_tags", "generate_auto_tags",
     ).await?;
+
+    // Kick task engine
+    if let Some(engine) = state.task_engine.read().await.as_ref() {
+        engine.kick().await;
+    }
 
     let _ = app.emit("audiolab-task-update", serde_json::json!({
         "task_id": task.id,
@@ -296,6 +311,11 @@ pub async fn audiolab_start_research(
     let task = tfp_audiolab::services::submit_task(
         &state.db, &topic_id, "audio_research", &format!("topic_id={}", topic_id),
     ).await?;
+
+    // Kick task engine
+    if let Some(engine) = state.task_engine.read().await.as_ref() {
+        engine.kick().await;
+    }
 
     let _ = app.emit("audiolab-task-update", serde_json::json!({
         "task_id": task.id,

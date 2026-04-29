@@ -1,7 +1,7 @@
 use std::path::Path;
 use tfp_core::{
     AudioFile, AudioLabBundle, AudioPlaybackInfo, AudioStageOutput,
-    StudioSession, StudioTask,
+    AudioTaskRow, StudioSession, StudioTask,
 };
 use tfp_storage::Database;
 
@@ -338,6 +338,8 @@ pub async fn export_content(
 }
 
 /// Submit a task for a given session (generic audiolab task creation).
+/// Writes to both studio_tasks (for frontend) and audio_task_queue (for engine).
+/// Returns the StudioTask with studio_task_id embedded in the engine queue's prompt_text.
 pub async fn submit_task(
     db: &Database,
     session_id: &str,
@@ -348,7 +350,7 @@ pub async fn submit_task(
     let now = chrono::Utc::now().to_rfc3339();
 
     let task = StudioTask {
-        id: task_id,
+        id: task_id.clone(),
         session_id: session_id.to_string(),
         task_type: task_type.to_string(),
         status: "pending".to_string(),
@@ -364,13 +366,58 @@ pub async fn submit_task(
         generate_seconds: None,
         download_seconds: None,
         created_at: now.clone(),
-        updated_at: now,
+        updated_at: now.clone(),
     };
     db.studio_upsert_task(&task)
         .await
         .map_err(|e| e.to_string())?;
 
+    // Also submit to audio_task_queue for engine execution
+    let stage = extract_stage_from_prompt(task_type, prompt);
+    let engine_prompt = format!("{};studio_task_id={}", prompt, task_id);
+    let engine_task = AudioTaskRow {
+        id: uuid::Uuid::new_v4().to_string(),
+        audio_item_id: session_id.to_string(),
+        stage,
+        task_type: task_type.to_string(),
+        status: "Queued".to_string(),
+        priority: 0,
+        retry_count: 0,
+        max_retries: 3,
+        progress: 0.0,
+        prompt_text: Some(engine_prompt),
+        result_text: None,
+        error: None,
+        submitted_at: now,
+        started_at: None,
+        completed_at: None,
+    };
+    db.submit_task(&engine_task)
+        .await
+        .map_err(|e| e.to_string())?;
+
     Ok(task)
+}
+
+/// Extract stage name from task_type + prompt for engine DAG tracking.
+fn extract_stage_from_prompt(task_type: &str, prompt: &str) -> String {
+    match task_type {
+        "audio_stage" => {
+            // prompt format: "stage_key=SomeStage"
+            prompt
+                .strip_prefix("stage_key=")
+                .unwrap_or(prompt)
+                .split(';')
+                .next()
+                .unwrap_or("Unknown")
+                .to_string()
+        }
+        "audio_podcast_tts" => "PodcastAudio".to_string(),
+        "audio_auto_tags" => "AutoTags".to_string(),
+        "audio_research" => "Research".to_string(),
+        "audio_transcribe" => "Transcribed".to_string(),
+        _ => task_type.to_string(),
+    }
 }
 
 /// Create a stage output placeholder (status = Processing).

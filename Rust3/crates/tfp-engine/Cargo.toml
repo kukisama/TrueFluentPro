@@ -7,6 +7,7 @@ edition = "2021"
 tfp-core = { path = "../tfp-core" }
 tfp-providers = { path = "../tfp-providers" }
 tfp-storage = { path = "../tfp-storage" }
+tfp-audiolab = { path = "../tfp-audiolab" }
 tokio = { version = "1", features = ["sync", "time", "rt"] }
 tracing = "0.1"
 serde = { version = "1", features = ["derive"] }

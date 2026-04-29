@@ -14,17 +14,19 @@ use crate::prompts::{build_stage_prompt, stage_system_prompt};
 ///
 /// 1. Load transcript segments from DB
 /// 2. Build prompt from stage_key + transcript text
-/// 3. Call AI completion (streaming)
+/// 3. Call AI completion
 /// 4. Accumulate response → update stage output in DB
 ///
-/// Returns the generated markdown content.
+/// Returns (content, prompt_tokens, completion_tokens).
 pub async fn run_stage(
     db: &Database,
     session_id: &str,
     stage_key: &str,
     custom_prompt: Option<&str>,
     ai_provider: Arc<dyn AiCompletionSlot>,
-) -> Result<String, String> {
+    endpoint_id: &str,
+    model: &str,
+) -> Result<(String, u32, u32), String> {
     // 1. Load transcript
     let transcript = db
         .audiolab_get_transcript(session_id)
@@ -59,10 +61,10 @@ pub async fn run_stage(
                 content: serde_json::Value::String(user_prompt),
             },
         ],
-        model: String::new(),
+        model: model.to_string(),
         temperature: Some(0.7),
         max_tokens: Some(4096),
-        endpoint_id: String::new(),
+        endpoint_id: endpoint_id.to_string(),
         reasoning_effort: None,
         enable_image_generation: false,
         image_model_deployment: None,
@@ -76,6 +78,8 @@ pub async fn run_stage(
         .map_err(|e| format!("AI completion failed: {e}"))?;
 
     let content = response.content;
+    let prompt_tokens = response.usage.as_ref().map(|u| u.prompt_tokens).unwrap_or(0);
+    let completion_tokens = response.usage.as_ref().map(|u| u.completion_tokens).unwrap_or(0);
 
     // 4. Update stage output in DB
     let outputs = db
@@ -99,7 +103,7 @@ pub async fn run_stage(
             content_markdown: content.clone(),
             status: "Ready".to_string(),
             error_message: None,
-            model_ref: None,
+            model_ref: Some(model.to_string()),
             generated_at: Some(chrono::Utc::now().to_rfc3339()),
             custom_stage_key: None,
             custom_is_mindmap: None,
@@ -109,7 +113,7 @@ pub async fn run_stage(
             .map_err(|e| e.to_string())?;
     }
 
-    Ok(content)
+    Ok((content, prompt_tokens, completion_tokens))
 }
 
 /// Mark a stage as failed.
