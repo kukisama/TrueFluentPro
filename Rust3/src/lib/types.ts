@@ -223,6 +223,7 @@ export interface ImageGenRequest {
   previous_response_id?: string;
   reference_image_path?: string;
   image_edit_mode?: 'v1_multipart' | 'v2_responses_api';
+  uploaded_file_ids?: string[];
 }
 export interface ImageGenResult {
   url?: string;

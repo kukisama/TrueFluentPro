@@ -13,6 +13,38 @@ use crate::state::AppState;
 // ── Image generation ──
 
 #[tauri::command]
+pub async fn upload_image_file(
+    state: State<'_, AppState>,
+    endpoint_id: String,
+    file_path: String,
+) -> Result<String, String> {
+    // Read file bytes
+    let file_bytes = tokio::fs::read(&file_path)
+        .await
+        .map_err(|e| format!("Failed to read file '{file_path}': {e}"))?;
+
+    // Check FileIdCache first
+    if let Some(cached_id) = state.file_id_cache.try_get(&endpoint_id, &file_bytes) {
+        return Ok(cached_id);
+    }
+
+    // Upload via provider
+    let providers = state.providers.read().await;
+    let provider = providers
+        .get_image_gen(&endpoint_id)
+        .ok_or_else(|| format!("Image generation provider not found: {endpoint_id}"))?;
+    let file_id = provider
+        .upload_file(&file_path, &file_bytes)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // Cache the result
+    state.file_id_cache.set(&endpoint_id, &file_bytes, file_id.clone());
+
+    Ok(file_id)
+}
+
+#[tauri::command]
 pub async fn generate_image(
     state: State<'_, AppState>,
     request: ImageGenRequest,

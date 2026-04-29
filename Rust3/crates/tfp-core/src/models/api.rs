@@ -76,6 +76,9 @@ pub struct ImageGenRequest {
     pub reference_image_path: Option<String>,
     #[serde(default)]
     pub image_edit_mode: Option<super::config::ImageEditMode>,
+    /// Pre-uploaded file IDs for reference images (used by Responses API edit route)
+    #[serde(default)]
+    pub uploaded_file_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

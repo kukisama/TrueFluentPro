@@ -168,6 +168,7 @@ pub fn run() {
             commands::test_endpoint,
             commands::discover_models,
             // Image generation
+            commands::upload_image_file,
             commands::generate_image,
             commands::save_image,
             commands::list_saved_images,

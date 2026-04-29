@@ -236,6 +236,7 @@ mod tests {
             previous_response_id: None,
             reference_image_path: None,
             image_edit_mode: None,
+            uploaded_file_ids: vec![],
         };
         let json = serde_json::to_value(&req).unwrap();
         let obj = json.as_object().unwrap();

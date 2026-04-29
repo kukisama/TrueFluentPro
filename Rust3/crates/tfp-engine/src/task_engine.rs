@@ -604,6 +604,7 @@ async fn execute_task_real(
                         previous_response_id: None,
                         reference_image_path: None,
                         image_edit_mode: None,
+                        uploaded_file_ids: vec![],
                     };
 
                     let results = img

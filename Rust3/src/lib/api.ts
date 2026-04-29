@@ -133,7 +133,9 @@ export const api = {
   discoverModels: (endpointId: string) =>
     invoke<DiscoveredModel[]>("discover_models", { endpointId }),
 
-  // ── Image (3) ──
+  // ── Image (4) ──
+  uploadImageFile: (endpointId: string, filePath: string) =>
+    invoke<string>("upload_image_file", { endpointId, filePath }),
   generateImage: (request: ImageGenRequest) =>
     invoke<ImageGenResult[]>("generate_image", { request }),
   saveImage: (request: SaveImageRequest) =>

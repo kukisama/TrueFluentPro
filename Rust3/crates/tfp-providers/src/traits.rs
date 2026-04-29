@@ -133,6 +133,17 @@ pub trait ImageGenSlot: ProviderMeta {
         &self,
         request: &ImageGenRequest,
     ) -> Result<Vec<ImageGenResult>, ProviderError>;
+
+    /// Upload a file and return its file_id. Default returns Unsupported.
+    async fn upload_file(
+        &self,
+        _file_path: &str,
+        _file_bytes: &[u8],
+    ) -> Result<String, ProviderError> {
+        Err(ProviderError::Internal(
+            "File upload not supported by this provider".into(),
+        ))
+    }
 }
 
 // ── Slot 7: Video Generation ──
