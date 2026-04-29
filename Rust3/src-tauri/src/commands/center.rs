@@ -120,6 +120,10 @@ pub async fn center_start_image_round(
     params: serde_json::Value,
     reference_paths: Vec<String>,
 ) -> Result<serde_json::Value, String> {
+    // T-005: Validate reference count before proceeding
+    let existing_refs = state.db.center_count_reference_images(&workspace_id).await.unwrap_or(0);
+    tfp_media::center_validation::validate_reference_count("canvas_image", existing_refs, reference_paths.len())?;
+
     let params_json = serde_json::to_string(&params).unwrap_or_else(|_| "{}".to_string());
     let model_ref = params.get("model").and_then(|v| v.as_str()).unwrap_or("").to_string();
 
@@ -212,6 +216,12 @@ pub async fn center_start_video_round(
     params: serde_json::Value,
     reference_path: Option<String>,
 ) -> Result<serde_json::Value, String> {
+    // T-005: Validate reference count for video (max 1)
+    if reference_path.is_some() {
+        let existing_refs = state.db.center_count_reference_images(&workspace_id).await.unwrap_or(0);
+        tfp_media::center_validation::validate_reference_count("canvas_video", existing_refs, 1)?;
+    }
+
     let params_json = serde_json::to_string(&params).unwrap_or_else(|_| "{}".to_string());
     let model_ref = params.get("model").and_then(|v| v.as_str()).unwrap_or("").to_string();
 
@@ -365,6 +375,60 @@ pub async fn center_get_round_assets(
     round_id: String,
 ) -> Result<Vec<CenterAssetDetail>, String> {
     state.db.center_get_round_assets(&round_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+// ── Mode & derivation commands (T-002, T-003, T-004) ──
+
+/// Update workspace canvas_mode and media_kind.
+#[tauri::command]
+pub async fn center_update_workspace_mode(
+    state: State<'_, AppState>,
+    id: String,
+    canvas_mode: String,
+    media_kind: String,
+) -> Result<(), String> {
+    // Validate canvas_mode
+    if !["", "draw", "edit"].contains(&canvas_mode.as_str()) {
+        return Err(format!("Invalid canvas_mode '{}': must be '', 'draw', or 'edit'", canvas_mode));
+    }
+    // Validate media_kind
+    if !["", "image", "video"].contains(&media_kind.as_str()) {
+        return Err(format!("Invalid media_kind '{}': must be '', 'image', or 'video'", media_kind));
+    }
+    state.db.center_update_workspace_mode(&id, &canvas_mode, &media_kind)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Derive a new workspace from an existing asset (EditAsset flow).
+#[tauri::command]
+pub async fn center_derive_workspace(
+    state: State<'_, AppState>,
+    source_workspace_id: String,
+    source_asset_id: String,
+    kind: String,
+    name: String,
+    reference_file_path: String,
+) -> Result<CenterWorkspace, String> {
+    // Validate kind
+    if kind != "image" && kind != "video" {
+        return Err("kind must be 'image' or 'video'".to_string());
+    }
+    state.db.center_derive_workspace(
+        &source_workspace_id, &source_asset_id, &kind, &name, &reference_file_path,
+    ).await.map_err(|e| e.to_string())
+}
+
+/// Get all assets across all rounds in a workspace.
+#[tauri::command]
+pub async fn center_get_all_assets(
+    state: State<'_, AppState>,
+    workspace_id: String,
+    limit: Option<i64>,
+) -> Result<Vec<CenterAssetDetail>, String> {
+    state.db.center_get_all_assets(&workspace_id, limit.unwrap_or(200))
         .await
         .map_err(|e| e.to_string())
 }

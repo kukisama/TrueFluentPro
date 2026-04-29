@@ -266,6 +266,9 @@ pub fn run() {
             commands::center_export_assets,
             commands::center_list_running_tasks,
             commands::center_get_round_assets,
+            commands::center_update_workspace_mode,
+            commands::center_derive_workspace,
+            commands::center_get_all_assets,
             commands::video_get_capabilities,
             // AudioLab (听析中心)
             commands::audiolab_import_files,

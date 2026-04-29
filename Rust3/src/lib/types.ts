@@ -674,6 +674,14 @@ export interface CenterWorkspace {
   round_count: number;
   asset_count: number;
   has_running_task: boolean;
+  canvas_mode: string;
+  media_kind: string;
+  source_session_id?: string;
+  source_session_name?: string;
+  source_asset_id?: string;
+  source_asset_file_name?: string;
+  source_asset_kind?: string;
+  source_reference_role?: string;
 }
 
 export interface CanvasRound {
@@ -708,6 +716,18 @@ export interface CenterWorkspaceBundle {
   current_round_assets: CenterAssetDetail[];
   reference_images: StudioReferenceImage[];
   running_tasks: StudioTask[];
+  all_asset_count: number;
+  has_more_rounds: boolean;
+  round_prompts: RoundPromptSummary[];
+}
+
+export interface RoundPromptSummary {
+  round_id: string;
+  round_index: number;
+  prompt_preview: string;
+  status: string;
+  asset_count: number;
+  created_at: string;
 }
 
 export interface VideoCapabilityEntry {

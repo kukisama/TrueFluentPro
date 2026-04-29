@@ -9,4 +9,5 @@ pub mod image_pipeline;
 pub mod save_image;
 pub mod studio_service;
 pub mod center_service;
+pub mod center_validation;
 pub mod video_service;

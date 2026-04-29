@@ -4,7 +4,7 @@ use crate::db::{Database, map_db_err};
 use crate::studio_repo::map_studio_task;
 use tfp_core::{
     CenterWorkspace, CenterWorkspaceBundle, CenterAssetDetail,
-    CanvasRound, StudioReferenceImage, StudioTask,
+    CanvasRound, RoundPromptSummary, StudioReferenceImage, StudioTask,
 };
 
 impl Database {
@@ -17,7 +17,11 @@ impl Database {
                     s.last_accessed_at, s.current_round_id,
                     (SELECT COUNT(*) FROM canvas_rounds WHERE session_id = s.id) as round_count,
                     s.asset_count,
-                    (SELECT COUNT(*) FROM studio_tasks WHERE session_id = s.id AND status IN ('pending','running','polling')) as has_running
+                    (SELECT COUNT(*) FROM studio_tasks WHERE session_id = s.id AND status IN ('pending','running','polling')) as has_running,
+                    s.canvas_mode, s.media_kind,
+                    s.source_session_id, s.source_session_name,
+                    s.source_asset_id, s.source_asset_file_name,
+                    s.source_asset_kind, s.source_reference_role
              FROM studio_sessions s
              WHERE s.is_deleted = 0 AND s.session_type IN ('canvas_image','canvas_video')
              ORDER BY s.updated_at DESC LIMIT ?1 OFFSET ?2"
@@ -35,19 +39,38 @@ impl Database {
                 round_count: row.get(8)?,
                 asset_count: row.get(9)?,
                 has_running_task: row.get::<_, i64>(10)? > 0,
+                canvas_mode: row.get::<_, String>(11).unwrap_or_default(),
+                media_kind: row.get::<_, String>(12).unwrap_or_default(),
+                source_session_id: row.get(13)?,
+                source_session_name: row.get(14)?,
+                source_asset_id: row.get(15)?,
+                source_asset_file_name: row.get(16)?,
+                source_asset_kind: row.get(17)?,
+                source_reference_role: row.get(18)?,
             })
         }).map_err(map_db_err)?;
         rows.collect::<Result<Vec<_>, _>>().map_err(map_db_err)
     }
 
     pub async fn center_create_workspace(&self, kind: &str, name: &str) -> tfp_core::Result<CenterWorkspace> {
+        self.center_create_workspace_full(kind, name, "", "").await
+    }
+
+    /// Create workspace with explicit canvas_mode and media_kind
+    pub async fn center_create_workspace_full(
+        &self,
+        kind: &str,
+        name: &str,
+        canvas_mode: &str,
+        media_kind: &str,
+    ) -> tfp_core::Result<CenterWorkspace> {
         let conn = self.conn().lock().await;
         let id = uuid::Uuid::new_v4().to_string();
         let now = chrono::Utc::now().to_rfc3339();
         conn.execute(
             "INSERT INTO studio_sessions (id, session_type, name, directory_path, canvas_mode, media_kind, is_deleted, created_at, updated_at, last_accessed_at, message_count, task_count, asset_count, is_legacy_import)
-             VALUES (?1, ?2, ?3, '', '', '', 0, ?4, ?4, ?4, 0, 0, 0, 0)",
-            params![id, kind, name, now],
+             VALUES (?1, ?2, ?3, '', ?4, ?5, 0, ?6, ?6, ?6, 0, 0, 0, 0)",
+            params![id, kind, name, canvas_mode, media_kind, now],
         ).map_err(map_db_err)?;
         Ok(CenterWorkspace {
             id,
@@ -61,6 +84,14 @@ impl Database {
             round_count: 0,
             asset_count: 0,
             has_running_task: false,
+            canvas_mode: canvas_mode.to_string(),
+            media_kind: media_kind.to_string(),
+            source_session_id: None,
+            source_session_name: None,
+            source_asset_id: None,
+            source_asset_file_name: None,
+            source_asset_kind: None,
+            source_reference_role: None,
         })
     }
 
@@ -105,7 +136,11 @@ impl Database {
                     s.last_accessed_at, s.current_round_id,
                     (SELECT COUNT(*) FROM canvas_rounds WHERE session_id = s.id) as round_count,
                     s.asset_count,
-                    (SELECT COUNT(*) FROM studio_tasks WHERE session_id = s.id AND status IN ('pending','running','polling')) as has_running
+                    (SELECT COUNT(*) FROM studio_tasks WHERE session_id = s.id AND status IN ('pending','running','polling')) as has_running,
+                    s.canvas_mode, s.media_kind,
+                    s.source_session_id, s.source_session_name,
+                    s.source_asset_id, s.source_asset_file_name,
+                    s.source_asset_kind, s.source_reference_role
              FROM studio_sessions s WHERE s.id = ?1",
             params![workspace_id],
             |row| Ok(CenterWorkspace {
@@ -120,6 +155,14 @@ impl Database {
                 round_count: row.get(8)?,
                 asset_count: row.get(9)?,
                 has_running_task: row.get::<_, i64>(10)? > 0,
+                canvas_mode: row.get::<_, String>(11).unwrap_or_default(),
+                media_kind: row.get::<_, String>(12).unwrap_or_default(),
+                source_session_id: row.get(13)?,
+                source_session_name: row.get(14)?,
+                source_asset_id: row.get(15)?,
+                source_asset_file_name: row.get(16)?,
+                source_asset_kind: row.get(17)?,
+                source_reference_role: row.get(18)?,
             }),
         ).map_err(map_db_err)?;
 
@@ -197,12 +240,45 @@ impl Database {
         let running_tasks: Vec<StudioTask> = task_stmt.query_map(params![workspace_id], map_studio_task)
             .map_err(map_db_err)?.collect::<Result<Vec<_>, _>>().map_err(map_db_err)?;
 
+        // 6. All asset count (across all rounds)
+        let all_asset_count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM canvas_round_assets cra
+             JOIN canvas_rounds cr ON cra.round_id = cr.id
+             WHERE cr.session_id = ?1",
+            params![workspace_id],
+            |row| row.get(0),
+        ).unwrap_or(0);
+
+        // 7. Round prompt summaries
+        let mut summary_stmt = conn.prepare(
+            "SELECT cr.id, cr.round_index, cr.prompt, cr.status, cr.created_at,
+                    (SELECT COUNT(*) FROM canvas_round_assets WHERE round_id = cr.id) as asset_count
+             FROM canvas_rounds cr WHERE cr.session_id = ?1 ORDER BY cr.round_index ASC"
+        ).map_err(map_db_err)?;
+        let round_prompts: Vec<RoundPromptSummary> = summary_stmt.query_map(params![workspace_id], |row| {
+            let prompt: String = row.get(2)?;
+            let preview: String = prompt.chars().take(80).collect();
+            Ok(RoundPromptSummary {
+                round_id: row.get(0)?,
+                round_index: row.get(1)?,
+                prompt_preview: preview,
+                status: row.get(3)?,
+                asset_count: row.get(5)?,
+                created_at: row.get(4)?,
+            })
+        }).map_err(map_db_err)?.collect::<Result<Vec<_>, _>>().map_err(map_db_err)?;
+
+        let has_more_rounds = rounds.len() > 50; // arbitrary threshold for "more"
+
         Ok(CenterWorkspaceBundle {
             workspace: ws,
             rounds,
             current_round_assets,
             reference_images,
             running_tasks,
+            all_asset_count,
+            has_more_rounds,
+            round_prompts,
         })
     }
 
@@ -369,6 +445,151 @@ impl Database {
         } else {
             Ok(None)
         }
+    }
+
+    // ── T-002: Update workspace mode ──
+
+    /// Update canvas_mode and media_kind for a workspace.
+    pub async fn center_update_workspace_mode(&self, id: &str, canvas_mode: &str, media_kind: &str) -> tfp_core::Result<()> {
+        let conn = self.conn().lock().await;
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "UPDATE studio_sessions SET canvas_mode = ?1, media_kind = ?2, updated_at = ?3 WHERE id = ?4",
+            params![canvas_mode, media_kind, now, id],
+        ).map_err(map_db_err)?;
+        Ok(())
+    }
+
+    // ── T-003: Derive workspace from asset ──
+
+    /// Create a new workspace derived from an existing asset (EditAsset flow).
+    pub async fn center_derive_workspace(
+        &self,
+        source_workspace_id: &str,
+        source_asset_id: &str,
+        kind: &str,
+        name: &str,
+        reference_file_path: &str,
+    ) -> tfp_core::Result<CenterWorkspace> {
+        let conn = self.conn().lock().await;
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = chrono::Utc::now().to_rfc3339();
+
+        // Look up source workspace name
+        let source_session_name: String = conn.query_row(
+            "SELECT COALESCE(name, '') FROM studio_sessions WHERE id = ?1",
+            params![source_workspace_id],
+            |row| row.get(0),
+        ).unwrap_or_default();
+
+        // Look up source asset file name
+        let source_asset_file_name: String = conn.query_row(
+            "SELECT COALESCE(file_path, '') FROM studio_assets WHERE asset_id = ?1",
+            params![source_asset_id],
+            |row| {
+                let path: String = row.get(0)?;
+                Ok(path.rsplit(['/', '\\']).next().unwrap_or("").to_string())
+            },
+        ).unwrap_or_default();
+
+        // Determine media_kind from kind
+        let media_kind = if kind == "video" { "video" } else { "image" };
+        let session_type = if kind == "video" { "canvas_video" } else { "canvas_image" };
+        let reference_role = if kind == "video" { "video_last_frame" } else { "direct_image" };
+
+        // Create workspace with lineage
+        conn.execute(
+            "INSERT INTO studio_sessions (id, session_type, name, directory_path, canvas_mode, media_kind,
+             is_deleted, created_at, updated_at, last_accessed_at,
+             source_session_id, source_session_name, source_asset_id,
+             source_asset_file_name, source_asset_kind, source_reference_role,
+             message_count, task_count, asset_count, is_legacy_import)
+             VALUES (?1, ?2, ?3, '', 'edit', ?4, 0, ?5, ?5, ?5,
+                     ?6, ?7, ?8, ?9, ?10, ?11,
+                     0, 0, 0, 0)",
+            params![
+                id, session_type, name, media_kind, now,
+                source_workspace_id, source_session_name, source_asset_id,
+                source_asset_file_name, kind, reference_role,
+            ],
+        ).map_err(map_db_err)?;
+
+        // Insert reference image record
+        let ref_id = uuid::Uuid::new_v4().to_string();
+        conn.execute(
+            "INSERT INTO studio_reference_images (id, session_id, file_path, sort_order, width, height, created_at)
+             VALUES (?1, ?2, ?3, 0, NULL, NULL, ?4)",
+            params![ref_id, id, reference_file_path, now],
+        ).map_err(map_db_err)?;
+
+        Ok(CenterWorkspace {
+            id,
+            session_type: session_type.to_string(),
+            name: name.to_string(),
+            is_deleted: false,
+            created_at: now.clone(),
+            updated_at: now.clone(),
+            last_accessed_at: Some(now),
+            current_round_id: None,
+            round_count: 0,
+            asset_count: 0,
+            has_running_task: false,
+            canvas_mode: "edit".to_string(),
+            media_kind: media_kind.to_string(),
+            source_session_id: Some(source_workspace_id.to_string()),
+            source_session_name: Some(source_session_name),
+            source_asset_id: Some(source_asset_id.to_string()),
+            source_asset_file_name: Some(source_asset_file_name),
+            source_asset_kind: Some(kind.to_string()),
+            source_reference_role: Some(reference_role.to_string()),
+        })
+    }
+
+    // ── T-004: Get all assets across all rounds ──
+
+    /// Retrieve all assets across all rounds for a workspace.
+    pub async fn center_get_all_assets(&self, workspace_id: &str, limit: i64) -> tfp_core::Result<Vec<CenterAssetDetail>> {
+        let conn = self.conn().lock().await;
+        let mut stmt = conn.prepare(
+            "SELECT cra.id, cra.round_id, cra.asset_id, cra.sequence, cra.is_selected,
+                    sa.file_path, sa.preview_path, sa.kind, sa.width, sa.height, sa.duration_ms, sa.created_at
+             FROM canvas_round_assets cra
+             JOIN studio_assets sa ON sa.asset_id = cra.asset_id
+             JOIN canvas_rounds cr ON cra.round_id = cr.id
+             WHERE cr.session_id = ?1
+             ORDER BY sa.created_at DESC
+             LIMIT ?2"
+        ).map_err(map_db_err)?;
+        let rows = stmt.query_map(params![workspace_id, limit], |row| {
+            Ok(CenterAssetDetail {
+                id: row.get(0)?,
+                round_id: row.get(1)?,
+                asset_id: row.get(2)?,
+                sequence: row.get(3)?,
+                is_selected: row.get::<_, i64>(4)? != 0,
+                file_path: row.get(5)?,
+                preview_path: row.get(6)?,
+                kind: row.get(7)?,
+                width: row.get(8)?,
+                height: row.get(9)?,
+                duration_ms: row.get(10)?,
+                created_at: row.get(11)?,
+            })
+        }).map_err(map_db_err)?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(map_db_err)
+    }
+
+    // ── T-005 helper: Count reference images for a session ──
+
+    /// Count existing reference images for a workspace/session.
+    pub async fn center_count_reference_images(&self, session_id: &str) -> tfp_core::Result<usize> {
+        let conn = self.conn().lock().await;
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM studio_reference_images WHERE session_id = ?1",
+            params![session_id],
+            |row| row.get(0),
+        ).map_err(map_db_err)?;
+        Ok(count as usize)
     }
 }
 

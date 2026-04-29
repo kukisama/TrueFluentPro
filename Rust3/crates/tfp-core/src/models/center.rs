@@ -16,6 +16,22 @@ pub struct CenterWorkspace {
     pub round_count: i64,
     pub asset_count: i64,
     pub has_running_task: bool,
+    /// Draw mode: ""/"draw"/"edit"
+    pub canvas_mode: String,
+    /// Media kind: ""/"image"/"video"
+    pub media_kind: String,
+    /// Lineage: source workspace id
+    pub source_session_id: Option<String>,
+    /// Lineage: source workspace name
+    pub source_session_name: Option<String>,
+    /// Lineage: source asset id
+    pub source_asset_id: Option<String>,
+    /// Lineage: source asset file name
+    pub source_asset_file_name: Option<String>,
+    /// Lineage: source asset kind ("image"/"video")
+    pub source_asset_kind: Option<String>,
+    /// Lineage: reference role ("direct_image"/"video_last_frame")
+    pub source_reference_role: Option<String>,
 }
 
 /// 生成轮次（对应 canvas_rounds 表）
@@ -49,6 +65,23 @@ pub struct CenterWorkspaceBundle {
     pub current_round_assets: Vec<CenterAssetDetail>,
     pub reference_images: Vec<StudioReferenceImage>,
     pub running_tasks: Vec<StudioTask>,
+    /// Total asset count across all rounds
+    pub all_asset_count: i64,
+    /// Whether there are more rounds not loaded (for pagination)
+    pub has_more_rounds: bool,
+    /// Per-round prompt summaries
+    pub round_prompts: Vec<RoundPromptSummary>,
+}
+
+/// Summary of a round's prompt for timeline display
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RoundPromptSummary {
+    pub round_id: String,
+    pub round_index: i64,
+    pub prompt_preview: String,
+    pub status: String,
+    pub asset_count: i64,
+    pub created_at: String,
 }
 
 /// 资产详情（用于前端网格展示）

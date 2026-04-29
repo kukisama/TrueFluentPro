@@ -557,13 +557,23 @@ mod tests {
             round_count: 0,
             asset_count: 0,
             has_running_task: false,
+            canvas_mode: "draw".into(),
+            media_kind: "image".into(),
+            source_session_id: None,
+            source_session_name: None,
+            source_asset_id: None,
+            source_asset_file_name: None,
+            source_asset_kind: None,
+            source_reference_role: None,
         };
         let json = serde_json::to_value(&ws).unwrap();
         let obj = json.as_object().unwrap();
         for key in &[
             "id", "session_type", "name", "is_deleted", "created_at", "updated_at",
             "last_accessed_at", "current_round_id", "round_count", "asset_count",
-            "has_running_task",
+            "has_running_task", "canvas_mode", "media_kind",
+            "source_session_id", "source_session_name", "source_asset_id",
+            "source_asset_file_name", "source_asset_kind", "source_reference_role",
         ] {
             assert!(obj.contains_key(*key), "missing field: {}", key);
         }

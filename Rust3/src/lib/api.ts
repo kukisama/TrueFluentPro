@@ -435,6 +435,12 @@ export const api = {
     invoke<StudioTask[]>("center_list_running_tasks", { workspaceId }),
   centerGetRoundAssets: (roundId: string) =>
     invoke<CenterAssetDetail[]>("center_get_round_assets", { roundId }),
+  centerUpdateWorkspaceMode: (id: string, canvasMode: string, mediaKind: string) =>
+    invoke<void>("center_update_workspace_mode", { id, canvasMode, mediaKind }),
+  centerDeriveWorkspace: (sourceWorkspaceId: string, sourceAssetId: string, kind: string, name: string, referenceFilePath: string) =>
+    invoke<CenterWorkspace>("center_derive_workspace", { sourceWorkspaceId, sourceAssetId, kind, name, referenceFilePath }),
+  centerGetAllAssets: (workspaceId: string, limit?: number) =>
+    invoke<CenterAssetDetail[]>("center_get_all_assets", { workspaceId, limit }),
   videoGetCapabilities: () =>
     invoke<VideoCapabilityEntry[]>("video_get_capabilities"),
   onCenterTaskUpdate: (cb: (e: CenterTaskEvent) => void): Promise<UnlistenFn> =>

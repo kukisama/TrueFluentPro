@@ -285,13 +285,45 @@ export function MediaCenterView() {
   useEffect(() => { const h = () => setContextMenu(null); window.addEventListener("click", h); return () => window.removeEventListener("click", h); }, []);
 
   const promoteToReference = useCallback(async (assetId: string) => {
-    if (!activeTabId) return;
+    if (!activeTabId || !activeBundle) return;
     const asset = currentAssets.find((a) => a.asset_id === assetId);
     if (!asset) return;
+    // T-005/T-008: Validate reference count client-side
+    const maxRefs = currentMode === "canvas_video" ? 1 : 8;
+    if ((activeBundle.reference_images?.length ?? 0) >= maxRefs) {
+      return; // silently refuse — limit reached
+    }
     await api.studioAddReferenceImage(activeTabId, asset.file_path);
     const b = await api.centerGetWorkspaceBundle(activeTabId);
     setLoadedBundles((prev) => new Map(prev).set(activeTabId!, b));
-  }, [activeTabId, currentAssets]);
+  }, [activeTabId, activeBundle, currentAssets, currentMode]);
+
+  // T-008: Derive workspace from asset (edit flow)
+  const deriveWorkspaceFromAsset = useCallback(async (assetId: string) => {
+    if (!activeTabId || !activeWs) return;
+    const asset = currentAssets.find((a) => a.asset_id === assetId);
+    if (!asset) return;
+    const kind = asset.kind === "video" ? "video" : "image";
+    const name = `${t("mediaCenter.editOf")} ${activeWs.name}`;
+    const newWs = await api.centerDeriveWorkspace(activeTabId, assetId, kind, name, asset.file_path);
+    const updated = await api.centerListWorkspaces(50, 0);
+    setWorkspaces(updated);
+    // Open the new workspace tab
+    setOpenTabs((prev) => prev.includes(newWs.id) ? prev : [...prev, newWs.id]);
+    setActiveTabId(newWs.id);
+    const bundle = await api.centerGetWorkspaceBundle(newWs.id);
+    setLoadedBundles((prev) => new Map(prev).set(newWs.id, bundle));
+  }, [activeTabId, activeWs, currentAssets, t]);
+
+  // T-008: Load all assets for workspace (result rail)
+  const [allAssets, setAllAssets] = useState<CenterAssetDetail[]>([]);
+  const [showAllAssets, setShowAllAssets] = useState(false);
+  const loadAllAssets = useCallback(async () => {
+    if (!activeTabId) return;
+    const assets = await api.centerGetAllAssets(activeTabId, 200);
+    setAllAssets(assets);
+    setShowAllAssets(true);
+  }, [activeTabId]);
 
   const filteredWorkspaces = useMemo(() => {
     let list = workspaces;
@@ -378,6 +410,18 @@ export function MediaCenterView() {
           <>
             <div className="flex items-center justify-between px-4 h-10 border-b border-[var(--border-subtle)] shrink-0" style={{ backgroundColor: "var(--toolbar-bg)" }}>
               <div className="flex items-center gap-2">
+                {/* Canvas mode badge */}
+                {activeWs?.canvas_mode && (
+                  <Badge variant={activeWs.canvas_mode === "edit" ? "amber" : "blue"} className="text-[8px] px-1 py-0">
+                    {activeWs.canvas_mode === "edit" ? "Edit" : "Draw"}
+                  </Badge>
+                )}
+                {/* Lineage info */}
+                {activeWs?.source_session_name && (
+                  <span className="text-[10px] text-[var(--text-muted)] italic truncate max-w-[160px]">
+                    ← {activeWs.source_session_name}
+                  </span>
+                )}
                 {totalRounds > 0 && (
                   <div className="flex items-center gap-1 text-xs">
                     <button onClick={() => switchRound("prev")} disabled={activeRoundIdx <= 0} className="p-1 rounded hover:bg-[var(--hover-bg)] disabled:opacity-30"><ChevronLeft size={14} /></button>
@@ -388,6 +432,12 @@ export function MediaCenterView() {
                 {activeRound && (
                   <button onClick={() => setPrompt(activeRound.prompt)} className="text-[10px] px-2 py-0.5 rounded bg-[var(--surface-1)] text-[var(--text-muted)] hover:bg-[var(--hover-bg)]">
                     <RefreshCw size={10} className="inline mr-1" />{t("mediaCenter.reuse")}
+                  </button>
+                )}
+                {/* All assets button (result rail) */}
+                {activeBundle.all_asset_count > 0 && (
+                  <button onClick={loadAllAssets} className="text-[10px] px-2 py-0.5 rounded bg-[var(--surface-1)] text-[var(--text-muted)] hover:bg-[var(--hover-bg)]">
+                    {t("mediaCenter.allAssets")} ({activeBundle.all_asset_count})
                   </button>
                 )}
               </div>
@@ -524,6 +574,7 @@ export function MediaCenterView() {
               <button className="w-full px-3 py-1.5 text-xs text-left hover:bg-[var(--hover-bg)] flex items-center gap-2 text-red-400" onClick={async () => { if (contextMenu.assetId) { await api.centerDeleteAssets([contextMenu.assetId]); if (activeTabId) { const b = await api.centerGetWorkspaceBundle(activeTabId); setLoadedBundles((prev) => new Map(prev).set(activeTabId!, b)); } } }}><Trash2 size={12} /> {t("mediaCenter.delete")}</button>
               <button className="w-full px-3 py-1.5 text-xs text-left hover:bg-[var(--hover-bg)] flex items-center gap-2" onClick={() => { const a = currentAssets.find((x) => x.asset_id === contextMenu.assetId); if (a) navigator.clipboard.writeText(a.file_path); }}><Copy size={12} /> {t("mediaCenter.copyPath")}</button>
               <button className="w-full px-3 py-1.5 text-xs text-left hover:bg-[var(--hover-bg)] flex items-center gap-2" onClick={() => { if (contextMenu.assetId) promoteToReference(contextMenu.assetId); }}><Image size={12} /> {t("mediaCenter.setAsRef")}</button>
+              <button className="w-full px-3 py-1.5 text-xs text-left hover:bg-[var(--hover-bg)] flex items-center gap-2" onClick={() => { if (contextMenu.assetId) deriveWorkspaceFromAsset(contextMenu.assetId); }}><Sparkles size={12} /> {t("mediaCenter.editThisImage")}</button>
             </>
           )}
           {!contextMenu.assetId && activeRound && (
@@ -532,6 +583,29 @@ export function MediaCenterView() {
               <button className="w-full px-3 py-1.5 text-xs text-left hover:bg-[var(--hover-bg)] flex items-center gap-2" onClick={() => { if (activeRound) setPrompt(activeRound.prompt); }}><RefreshCw size={12} /> {t("mediaCenter.reuseParams")}</button>
             </>
           )}
+        </div>
+      )}
+
+      {/* All assets panel (result rail) */}
+      {showAllAssets && (
+        <div className="fixed inset-y-0 right-0 w-[320px] z-40 bg-[var(--surface-1)] border-l border-[var(--border-subtle)] shadow-xl flex flex-col">
+          <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--border-subtle)]">
+            <span className="text-xs font-medium text-[var(--text-primary)]">{t("mediaCenter.allAssetsTitle")} ({allAssets.length})</span>
+            <button onClick={() => setShowAllAssets(false)} className="p-1 hover:bg-[var(--hover-bg)] rounded"><X size={14} /></button>
+          </div>
+          <ScrollArea className="flex-1 p-2">
+            <div className="grid grid-cols-3 gap-1">
+              {allAssets.map((asset) => (
+                <div key={asset.id} className="aspect-square rounded overflow-hidden cursor-pointer hover:ring-1 hover:ring-brand-500" onClick={() => setPreviewAsset(asset)}>
+                  {asset.kind === "image" ? (
+                    <img src={convertFileSrc(asset.preview_path || asset.file_path)} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full bg-[var(--surface-2)] flex items-center justify-center"><Play size={16} className="text-[var(--text-muted)]" /></div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </ScrollArea>
         </div>
       )}
 
