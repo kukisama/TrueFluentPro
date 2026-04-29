@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { X, Pin, PinOff, Maximize2, Minimize2 } from "lucide-react";
 import { Button } from "./ui";
 import { useAppStore } from "../stores/app-store";
+import { useTranslation } from "react-i18next";
 
 interface FloatingWindowProps {
   title: string;
@@ -67,6 +68,7 @@ export function FloatingWindow({ title, children, onClose, className }: Floating
 
 export function FloatingSubtitle() {
   const { recognizedSegments, isTranslating } = useAppStore();
+  const { t } = useTranslation();
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
@@ -79,11 +81,11 @@ export function FloatingSubtitle() {
 
   return (
     <AnimatePresence>
-      <FloatingWindow title="Live Subtitles" onClose={() => setVisible(false)}>
+      <FloatingWindow title={t("floating.liveSubtitles")} onClose={() => setVisible(false)}>
         <div className="p-3 space-y-2">
           {recent.length === 0 ? (
             <p className="text-xs text-[var(--text-muted)] text-center py-4">
-              {isTranslating ? "Listening..." : "No subtitle content"}
+              {isTranslating ? t("floating.listening") : t("floating.noContent")}
             </p>
           ) : (
             recent.map((seg, i) => (

@@ -42,6 +42,9 @@
     "floatingSubtitle": "Floating subtitle window",
     "floatingInsight": "Floating insight window",
     "bookmark": "Bookmark",
+    "speak": "Speak",
+    "noTtsEndpoint": "No TTS endpoint configured",
+    "ttsSaved": "Speech synthesized",
     "copied": "Copied",
     "copy": "Copy",
     "confirmClearSession": "Clear all segments in this session?",
@@ -122,7 +125,9 @@
     "uiLanguage": "UI Language",
     "cloudSync": "Cloud Sync Mode",
     "cloudSyncDesc": "Relay all API requests through Rust Gateway",
-    "cloudNote": "Cloud service requires deploying Rust Gateway backend. See deployment docs."
+    "cloudNote": "Cloud service requires deploying Rust Gateway backend. See deployment docs.",
+    "autoSaved": "✓ Config auto-saved",
+    "saving": "Saving..."
   },
   "media": {
     "title": "Media Studio",
@@ -847,5 +852,13 @@
     "faqSupportedServicesAnswer": "Azure OpenAI, OpenAI, any OpenAI-compatible service (ollama, vLLM, DeepSeek).",
     "faqRealtimeReq": "What does real-time translation require?",
     "faqRealtimeReqAnswer": "An Azure Speech subscription is required. Currently only Azure Cognitive Services is supported."
+  },
+  "floating": {
+    "liveSubtitles": "Live Subtitles",
+    "listening": "Listening...",
+    "noContent": "No subtitle content"
+  },
+  "controls": {
+    "mindmapParseError": "Unable to parse mind map data"
   }
 }

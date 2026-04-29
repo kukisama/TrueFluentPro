@@ -1,5 +1,4 @@
 use async_trait::async_trait;
-use serde::Deserialize;
 
 use tfp_core::{AiEndpoint, ProviderError, VoiceInfo};
 
@@ -101,6 +100,7 @@ impl AzureTtsProvider {
 
 
     /// Build SSML with express-as style/role support (mstts namespace).
+    #[allow(dead_code)]
     pub(crate) fn build_styled_ssml(
         text: &str,
         voice: &str,
@@ -208,7 +208,7 @@ impl ProviderMeta for AzureTtsProvider {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, serde::Deserialize)]
 #[serde(rename_all = "PascalCase")]
 struct AzureVoice {
     short_name: String,

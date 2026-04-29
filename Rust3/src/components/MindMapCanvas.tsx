@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { useTranslation } from "react-i18next";
 
 interface MindMapNode {
   label: string;
@@ -104,6 +105,7 @@ function renderNodes(node: LayoutNode, elements: React.JSX.Element[], depth: num
 }
 
 export function MindMapCanvas({ data, className }: MindMapCanvasProps) {
+  const { t } = useTranslation();
   const layout = useMemo(() => {
     try {
       const parsed: MindMapNode = JSON.parse(data);
@@ -116,7 +118,7 @@ export function MindMapCanvas({ data, className }: MindMapCanvasProps) {
   if (!layout) {
     return (
       <div className={`flex items-center justify-center p-8 text-[var(--text-muted)] text-sm ${className || ""}`}>
-        Unable to parse mind map data
+        {t("controls.mindmapParseError")}
       </div>
     );
   }

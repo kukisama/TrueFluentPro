@@ -42,6 +42,9 @@
     "floatingSubtitle": "浮动字幕窗",
     "floatingInsight": "浮动洞察窗",
     "bookmark": "书签",
+    "speak": "朗读",
+    "noTtsEndpoint": "未配置 TTS 端点",
+    "ttsSaved": "语音合成完成",
     "copied": "已复制",
     "copy": "复制",
     "confirmClearSession": "确定清空此会话的所有片段？",
@@ -122,7 +125,9 @@
     "uiLanguage": "界面语言",
     "cloudSync": "云端同步模式",
     "cloudSyncDesc": "通过 Rust Gateway 中转所有 API 请求",
-    "cloudNote": "云服务需要部署 Rust Gateway 后端。详见部署文档。"
+    "cloudNote": "云服务需要部署 Rust Gateway 后端。详见部署文档。",
+    "autoSaved": "✓ 配置已自动保存",
+    "saving": "保存中..."
   },
   "media": {
     "title": "创作工坊",
@@ -847,5 +852,13 @@
     "faqSupportedServicesAnswer": "Azure OpenAI、OpenAI、任何兼容 OpenAI API 的服务（如 ollama、vLLM、DeepSeek）。",
     "faqRealtimeReq": "实时翻译需要什么？",
     "faqRealtimeReqAnswer": "需要配置 Azure Speech 订阅。目前仅支持 Azure Cognitive Services。"
+  },
+  "floating": {
+    "liveSubtitles": "实时字幕",
+    "listening": "正在监听...",
+    "noContent": "暂无字幕内容"
+  },
+  "controls": {
+    "mindmapParseError": "无法解析思维导图数据"
   }
 }

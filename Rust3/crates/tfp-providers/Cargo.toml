@@ -23,3 +23,5 @@ urlencoding = "2"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt"] }
+dirs = "5"
+rusqlite = { version = "0.32", features = ["bundled"] }

@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef } from "react";
 import { useTranslation } from "react-i18next";
+import i18n from "../lib/i18n";
 import {
   Globe, Mic, Brain, Image, Video, Volume2, FileText,
   Search, Cloud, ArrowUpDown, Monitor, Info,
@@ -118,10 +119,10 @@ export function useConfigUpdater() {
     // Debounce: cancel previous timer, start new 500ms delay
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
-      if (_globalSetSaveStatus) _globalSetSaveStatus("saving");
+      if (_globalSetSaveStatus) _globalSetSaveStatus(i18n.t("settings.saving"));
       try {
         await api.updateConfig(copy);
-        if (_globalSetSaveStatus) _globalSetSaveStatus("✓ 配置已自动保存");
+        if (_globalSetSaveStatus) _globalSetSaveStatus(i18n.t("settings.autoSaved"));
         setTimeout(() => { if (_globalSetSaveStatus) _globalSetSaveStatus(""); }, 2000);
       } catch (e) {
         if (_globalSetSaveStatus) _globalSetSaveStatus(`✗ 保存失败: ${e}`);

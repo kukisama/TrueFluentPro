@@ -493,6 +493,11 @@ export function LiveTranslationView() {
                           <Bookmark size={12} className={bookmarkedIdx.has(seg.originalIndices[0]) ? "text-amber-400 fill-amber-400" : "text-[var(--text-muted)]"} />
                         </button>
                         <button
+                          onClick={() => speakSegment(seg.translation || seg.source)}
+                          className="p-1 hover:bg-white/10 rounded" title={t("live.speak")}>
+                          <Volume2 size={12} className="text-[var(--text-muted)]" />
+                        </button>
+                        <button
                           onClick={() => {
                             navigator.clipboard.writeText(`${seg.source}\n${seg.translation}`);
                             showInfoBar(t("live.copied"), "success");

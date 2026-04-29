@@ -215,6 +215,10 @@ pub fn run() {
             commands::cleanup_expired_tasks,
             commands::list_tasks,
             commands::get_task_executions,
+            // Audio transcription & synthesis
+            commands::transcribe_audio,
+            commands::synthesize_speech,
+            commands::list_voices,
             // Monitor
             commands::monitor_get_snapshot,
             commands::monitor_set_bucket,

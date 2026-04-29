@@ -79,6 +79,8 @@ import type {
   BatchPackage,
   BatchSubtaskView,
   BatchBucketNav,
+  VoiceInfo,
+  TranscriptSegment,
 } from "./types";
 
 export type { UnlistenFn };
@@ -168,6 +170,14 @@ export const api = {
     invoke<void>("stop_realtime_translation", { sessionId }),
   listAudioDevices: () =>
     invoke<AudioDeviceInfo[]>("list_audio_devices"),
+
+  // ── Speech (3) ──
+  synthesizeSpeech: (endpointId: string, text: string, voice: string, format: string, outputPath: string) =>
+    invoke<string>("synthesize_speech", { endpointId, text, voice, format, outputPath }),
+  listVoices: (endpointId: string, locale: string) =>
+    invoke<VoiceInfo[]>("list_voices", { endpointId, locale }),
+  transcribeAudio: (endpointId: string, audioPath: string, lang: string) =>
+    invoke<TranscriptSegment[]>("transcribe_audio", { endpointId, audioPath, lang }),
 
   // ── Live translation (9) ──
   liveGetActiveSession: () =>

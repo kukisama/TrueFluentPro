@@ -4,7 +4,6 @@
 //! Uses candidate URL pattern for endpoint resolution.
 
 use async_trait::async_trait;
-use serde::Deserialize;
 
 use tfp_core::{AiEndpoint, EndpointType, ProviderError, VoiceInfo};
 
