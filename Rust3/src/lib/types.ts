@@ -956,3 +956,19 @@ export interface ModelCapabilityEntry {
   supports_input_fidelity: boolean;
   resolution_mode: string;
 }
+
+// ── TTS / STT ──
+export interface VoiceInfo {
+  id: string;
+  name: string;
+  locale: string;
+  gender: string;
+}
+
+export interface TranscriptSegment {
+  text: string;
+  start_ms: number;
+  end_ms: number;
+  confidence: number;
+  speaker?: string;
+}

@@ -66,6 +66,24 @@ export function LiveTranslationView() {
   const lastPartialRef = useRef("");
   const handleToggleRef = useRef<() => void>(() => {});
 
+  // ── Speak segment via TTS ──
+  const speakSegment = useCallback(async (text: string) => {
+    const ttsEp = (config?.endpoints ?? []).find(
+      ep => ep.enabled && (ep.endpoint_type === "azure_speech" || ep.endpoint_type === "azure_open_ai" || ep.endpoint_type === "open_ai_compatible")
+    );
+    if (!ttsEp) {
+      showInfoBar(t("live.noTtsEndpoint"), "warning");
+      return;
+    }
+    try {
+      const tmpPath = `${Date.now()}_tts.mp3`;
+      await api.synthesizeSpeech(ttsEp.id, text, "alloy", "mp3", tmpPath);
+      showInfoBar(t("live.ttsSaved"), "success");
+    } catch (e: any) {
+      showInfoBar(e?.message || String(e), "error");
+    }
+  }, [config, showInfoBar, t]);
+
   // ── 1. Language list ──
   useEffect(() => {
     api.liveListSupportedLanguages(currentProvider).then((list) => {

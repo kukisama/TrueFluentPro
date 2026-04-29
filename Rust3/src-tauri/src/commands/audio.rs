@@ -215,3 +215,47 @@ pub async fn transcribe_audio(
         .await
         .map_err(|e| format!("Transcription failed: {e}"))
 }
+
+// ── TTS Synthesis ──
+
+#[tauri::command]
+pub async fn synthesize_speech(
+    state: State<'_, AppState>,
+    endpoint_id: String,
+    text: String,
+    voice: String,
+    format: String,
+    output_path: String,
+) -> Result<String, String> {
+    let providers = state.providers.read().await;
+    let tts = providers
+        .get_tts(&endpoint_id)
+        .ok_or_else(|| format!("No TTS provider for endpoint: {endpoint_id}"))?;
+
+    let audio_data = tts
+        .synthesize(&text, &voice, &format)
+        .await
+        .map_err(|e| format!("Speech synthesis failed: {e}"))?;
+
+    tokio::fs::write(&output_path, &audio_data)
+        .await
+        .map_err(|e| format!("Failed to write audio file: {e}"))?;
+
+    Ok(output_path)
+}
+
+#[tauri::command]
+pub async fn list_voices(
+    state: State<'_, AppState>,
+    endpoint_id: String,
+    locale: String,
+) -> Result<Vec<tfp_core::VoiceInfo>, String> {
+    let providers = state.providers.read().await;
+    let tts = providers
+        .get_tts(&endpoint_id)
+        .ok_or_else(|| format!("No TTS provider for endpoint: {endpoint_id}"))?;
+
+    tts.list_voices(&locale)
+        .await
+        .map_err(|e| format!("Failed to list voices: {e}"))
+}

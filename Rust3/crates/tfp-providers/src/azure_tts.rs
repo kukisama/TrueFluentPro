@@ -99,6 +99,56 @@ impl AzureTtsProvider {
         ssml
     }
 
+
+    /// Build SSML with express-as style/role support (mstts namespace).
+    pub(crate) fn build_styled_ssml(
+        text: &str,
+        voice: &str,
+        style: Option<&str>,
+        style_degree: Option<f32>,
+        role: Option<&str>,
+        rate: Option<&str>,
+        pitch: Option<&str>,
+    ) -> String {
+        let rate_val = rate.unwrap_or("+0%");
+        let mut ssml = format!(
+            r#"<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="http://www.w3.org/2001/mstts" xml:lang="en-US">
+  <voice name="{voice}">"#
+        );
+
+        // Add express-as if style is provided
+        if let Some(style_name) = style {
+            ssml.push_str("\n    <mstts:express-as style=\"");
+            ssml.push_str(style_name);
+            ssml.push('"');
+            if let Some(degree) = style_degree {
+                ssml.push_str(&format!(" styledegree=\"{degree:.1}\""));
+            }
+            if let Some(role_name) = role {
+                ssml.push_str(&format!(" role=\"{role_name}\""));
+            }
+            ssml.push('>');
+            ssml.push_str(&format!("\n      <prosody rate=\"{rate_val}\""));
+            if let Some(p) = pitch {
+                ssml.push_str(&format!(" pitch=\"{p}\""));
+            }
+            ssml.push('>');
+            ssml.push_str(&xml_escape(text));
+            ssml.push_str("</prosody>\n    </mstts:express-as>");
+        } else {
+            ssml.push_str(&format!("\n    <prosody rate=\"{rate_val}\""));
+            if let Some(p) = pitch {
+                ssml.push_str(&format!(" pitch=\"{p}\""));
+            }
+            ssml.push('>');
+            ssml.push_str(&xml_escape(text));
+            ssml.push_str("</prosody>");
+        }
+
+        ssml.push_str("\n  </voice>\n</speak>");
+        ssml
+    }
+
     async fn send_ssml(
         &self,
         url: &str,
@@ -346,5 +396,54 @@ mod tests {
 
         // no-op for clean string
         assert_eq!(xml_escape("hello"), "hello");
+    }
+
+    #[test]
+    fn test_build_styled_ssml_with_style() {
+        let ssml = AzureTtsProvider::build_styled_ssml(
+            "Hello",
+            "en-US-JennyNeural",
+            Some("cheerful"),
+            Some(1.5),
+            None,
+            None,
+            None,
+        );
+        assert!(ssml.contains("mstts:express-as"));
+        assert!(ssml.contains(r#"style="cheerful""#));
+        assert!(ssml.contains(r#"styledegree="1.5""#));
+        assert!(ssml.contains("xmlns:mstts"));
+    }
+
+    #[test]
+    fn test_build_styled_ssml_with_role() {
+        let ssml = AzureTtsProvider::build_styled_ssml(
+            "Hi there",
+            "zh-CN-XiaoxiaoNeural",
+            Some("chat"),
+            None,
+            Some("Girl"),
+            Some("+10%"),
+            Some("+5Hz"),
+        );
+        assert!(ssml.contains(r#"role="Girl""#));
+        assert!(ssml.contains(r#"rate="+10%""#));
+        assert!(ssml.contains(r#"pitch="+5Hz""#));
+    }
+
+    #[test]
+    fn test_build_styled_ssml_no_style() {
+        let ssml = AzureTtsProvider::build_styled_ssml(
+            "Plain text",
+            "en-US-GuyNeural",
+            None,
+            None,
+            None,
+            Some("+20%"),
+            None,
+        );
+        assert!(!ssml.contains("mstts:express-as"));
+        assert!(ssml.contains(r#"rate="+20%""#));
+        assert!(ssml.contains("Plain text"));
     }
 }
