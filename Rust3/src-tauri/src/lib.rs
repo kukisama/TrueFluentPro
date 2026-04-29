@@ -307,6 +307,8 @@ pub fn run() {
             commands::batch_get_subtasks,
             commands::batch_regenerate_package,
             commands::batch_regenerate_subtask,
+            commands::validate_blob_connection,
+            commands::batch_speech_transcribe,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

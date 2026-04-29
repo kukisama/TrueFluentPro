@@ -972,3 +972,56 @@ export interface TranscriptSegment {
   confidence: number;
   speaker?: string;
 }
+
+// ── Batch processing ──
+export type BatchPackageState = "pending" | "running" | "partial" | "completed" | "failed" | "removed";
+export type BatchQueueItemType = "speech_subtitle" | "review_sheet";
+export type BatchQueueItemStatus = "pending" | "running" | "responding" | "completed" | "failed" | "paused";
+
+export interface BatchPackage {
+  id: string;
+  session_id: string;
+  audio_file_id: string;
+  display_name: string;
+  state: BatchPackageState;
+  is_paused: boolean;
+  is_removed: boolean;
+  total_count: number;
+  completed_count: number;
+  failed_count: number;
+  progress: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BatchQueueItem {
+  id: string;
+  package_id: string;
+  queue_type: BatchQueueItemType;
+  file_name: string;
+  full_path: string;
+  sheet_name: string;
+  sheet_tag: string;
+  prompt: string;
+  status: BatchQueueItemStatus;
+  progress: number;
+  status_message: string;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BatchSubtaskView {
+  title: string;
+  tag: string;
+  state: BatchPackageState;
+  status_text: string;
+  progress: number;
+  is_speech_subtask: boolean;
+}
+
+export interface BatchBucketNav {
+  key: string;
+  title: string;
+  count: number;
+}

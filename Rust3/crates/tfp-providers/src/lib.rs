@@ -15,6 +15,7 @@ mod profile_raw;
 pub mod profile_loader;
 pub mod template_service;
 pub mod registration;
+pub mod blob_storage;
 #[cfg(test)]
 mod test_helpers;
 

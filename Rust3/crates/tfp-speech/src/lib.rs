@@ -10,3 +10,4 @@ pub mod subtitle;
 pub mod text_filter;
 pub mod fast_transcription;
 pub mod batch_transcription;
+pub mod speech_batch_client;

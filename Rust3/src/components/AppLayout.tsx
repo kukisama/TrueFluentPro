@@ -2,7 +2,7 @@ import { useTranslation } from "react-i18next";
 import {
   Languages, Mic, Palette, Image, ListChecks, Settings, Info,
   PanelLeftClose, PanelLeftOpen, LogIn, X, Sun, Moon, Monitor,
-  Minus, Maximize2,
+  Minus, Maximize2, Layers,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -19,6 +19,7 @@ import { SettingsView } from "../views/SettingsView";
 import { MediaStudioView } from "../views/MediaStudioView";
 import { MediaCenterView } from "../views/MediaCenterView";
 import { AudioLabView } from "../views/AudioLabView";
+import { BatchProcessingView } from "../views/BatchProcessingView";
 
 /* ── Placeholder for views not yet implemented ── */
 
@@ -43,6 +44,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: "media-studio", labelKey: "nav.mediaStudio", icon: <Palette size={18} />, section: "core" },
   { id: "media-center", labelKey: "nav.mediaCenter", icon: <Image size={18} />, section: "core" },
   { id: "audio-lab", labelKey: "nav.audioLab", icon: <Mic size={18} />, section: "core" },
+  { id: "batch-processing", labelKey: "nav.batchProcessing", icon: <Layers size={18} />, section: "core" },
   { id: "task-monitor", labelKey: "nav.taskMonitor", icon: <ListChecks size={18} />, section: "manage" },
   { id: "settings", labelKey: "nav.settings", icon: <Settings size={18} />, section: "system" },
   { id: "about", labelKey: "nav.about", icon: <Info size={18} />, section: "system" },
@@ -56,6 +58,7 @@ const KEEP_ALIVE_VIEWS: AppView[] = [
 /** 不需要保活的视图（切走即销毁） */
 const DISPOSABLE_VIEW_MAP: Partial<Record<AppView, React.ReactNode>> = {
   "task-monitor": <TaskMonitorView />,
+  "batch-processing": <BatchProcessingView />,
   settings: <SettingsView />,
   about: <AboutView />,
   help: <AboutView />,

@@ -16,6 +16,10 @@ tokio-tungstenite = { version = "0.24", features = ["native-tls"] }
 base64 = "0.22"
 url = "2"
 uuid = { version = "1", features = ["v4"] }
+hmac = "0.12"
+sha2 = "0.10"
+chrono = "0.4"
+urlencoding = "2"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt"] }

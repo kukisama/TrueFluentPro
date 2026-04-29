@@ -74,6 +74,9 @@ import type {
   ModelCapabilityEntry,
   TaskEngineStats,
   TranslationHistory,
+  BatchPackage,
+  BatchSubtaskView,
+  BatchBucketNav,
 } from "./types";
 
 export type { UnlistenFn };
@@ -483,4 +486,38 @@ export const api = {
     invoke<void>("audiolab_export", { sessionId, target, stageKey, outputPath }),
   audiolabImportFromRealtime: (realtimeSessionId: string) =>
     invoke<string>("audiolab_import_from_realtime", { realtimeSessionId }),
+
+  // ── Batch processing ──
+  batchCreatePackage: (sessionId: string, audioFileId: string, displayName: string, includeSubtitle: boolean) =>
+    invoke<BatchPackage>("batch_create_package", { sessionId, audioFileId, displayName, includeSubtitle }),
+  batchStart: (packageIds: string[], includeSubtitle: boolean) =>
+    invoke<number>("batch_start", { packageIds, includeSubtitle }),
+  batchStop: (packageIds: string[]) =>
+    invoke<void>("batch_stop", { packageIds }),
+  batchPausePackage: (packageId: string) =>
+    invoke<void>("batch_pause_package", { packageId }),
+  batchResumePackage: (packageId: string) =>
+    invoke<void>("batch_resume_package", { packageId }),
+  batchRemovePackage: (packageId: string) =>
+    invoke<void>("batch_remove_package", { packageId }),
+  batchRestorePackage: (packageId: string) =>
+    invoke<void>("batch_restore_package", { packageId }),
+  batchGetBucketNav: () =>
+    invoke<BatchBucketNav[]>("batch_get_bucket_nav"),
+  batchGetPackages: (bucketKey: string) =>
+    invoke<BatchPackage[]>("batch_get_packages", { bucketKey }),
+  batchGetSubtasks: (packageId: string) =>
+    invoke<BatchSubtaskView[]>("batch_get_subtasks", { packageId }),
+  batchRegeneratePackage: (packageId: string) =>
+    invoke<void>("batch_regenerate_package", { packageId }),
+  batchRegenerateSubtask: (queueItemId: string) =>
+    invoke<void>("batch_regenerate_subtask", { queueItemId }),
+  validateBlobConnection: (connectionString: string) =>
+    invoke<boolean>("validate_blob_connection", { connectionString }),
+  batchSpeechTranscribe: (audioFilePath: string, locale: string) =>
+    invoke<string>("batch_speech_transcribe", { audioFilePath, locale }),
+
+  // ── Batch events ──
+  onBatchPackageUpdate: (cb: (e: { package_id: string }) => void): Promise<UnlistenFn> =>
+    listen<{ package_id: string }>("batch-package-update", (event) => cb(event.payload)),
 };

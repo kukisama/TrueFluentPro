@@ -11,6 +11,7 @@ const SHORTCUT_MAP: Record<string, AppView> = {
   "3": "media-center",
   "4": "audio-lab",
   "5": "task-monitor",
+  "6": "batch-processing",
   ",": "settings",
 };
 

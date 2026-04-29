@@ -60,7 +60,8 @@
         { "event": "audiolab-task-update" },
         { "event": "audiolab-stage-delta" },
         { "event": "task-bus-event" },
-        { "event": "task-event" }
+        { "event": "task-event" },
+        { "event": "batch-package-update" }
       ]
     }
   ]

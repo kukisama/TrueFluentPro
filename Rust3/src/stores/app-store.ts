@@ -6,6 +6,7 @@ export type AppView =
   | "media-studio"
   | "media-center"
   | "audio-lab"
+  | "batch-processing"
   | "task-monitor"
   | "settings"
   | "about"
