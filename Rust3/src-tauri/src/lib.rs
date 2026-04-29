@@ -245,6 +245,11 @@ pub fn run() {
             commands::studio_add_reference_image,
             commands::studio_delete_reference_image,
             commands::studio_list_reference_images,
+            commands::studio_edit_message,
+            commands::studio_delete_message,
+            commands::studio_send_edit,
+            commands::studio_fork_from_message,
+            commands::studio_count_messages,
             // Center (media center)
             commands::center_list_workspaces,
             commands::center_create_workspace,

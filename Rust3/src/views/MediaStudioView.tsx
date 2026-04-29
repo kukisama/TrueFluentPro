@@ -4,6 +4,7 @@ import {
   Image, Video, Send, Trash2, Plus, Loader2,
   MessageSquare, X,
   PanelLeftClose, PanelLeftOpen, ImagePlus,
+  Pencil, GitBranch, Check, RotateCcw,
 } from "lucide-react";
 import { cn } from "../lib/utils";
 import {
@@ -50,6 +51,12 @@ export function MediaStudioView() {
   const [vidCount, setVidCount] = useState(1);
   const [referenceImages, setReferenceImages] = useState<StudioReferenceImage[]>([]);
   const [runningTasks, setRunningTasks] = useState<StudioTask[]>([]);
+  const [editingMsgId, setEditingMsgId] = useState<string | null>(null);
+  const [editText, setEditText] = useState("");
+  const [hasMoreMessages, setHasMoreMessages] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [enableImageGen, setEnableImageGen] = useState(false);
+  const [streamingImages, setStreamingImages] = useState<Map<string, { base64_data: string; content_type: string }[]>>(new Map());
   const activeSession = sessions.find(s => s.id === activeSessionId);
   const sessionType = activeSession?.session_type || "chat";
 
@@ -63,6 +70,7 @@ export function MediaStudioView() {
       if (e.done) {
         setIsStreaming(false);
         setStreamingMsgId(null);
+        setStreamingImages(new Map());
         if (activeSessionId) {
           api.studioGetSessionBundle(activeSessionId).then(b => {
             setCurrentBundle(b);
@@ -75,6 +83,15 @@ export function MediaStudioView() {
       if (e.token) setStreamingText(prev => prev + e.token);
       if (e.reasoning) setStreamingReasoning(prev => prev + e.reasoning);
       if (e.message_id) setStreamingMsgId(e.message_id);
+      if (e.image_result) {
+        const msgId = e.message_id;
+        setStreamingImages(prev => {
+          const next = new Map(prev);
+          const arr = next.get(msgId) || [];
+          next.set(msgId, [...arr, e.image_result!]);
+          return next;
+        });
+      }
     }).then(fn => { unlisten = fn; });
     return () => { unlisten?.(); };
   }, [activeSessionId]);
@@ -124,6 +141,7 @@ export function MediaStudioView() {
     }
     setActiveSessionId(id);
     setStreamingText(""); setStreamingReasoning(""); setStreamingMsgId(null); setIsStreaming(false);
+    setEditingMsgId(null); setHasMoreMessages(false);
     accessOrder.current = accessOrder.current.filter(x => x !== id);
     accessOrder.current.push(id);
     while (accessOrder.current.length > LRU_MAX) {
@@ -135,10 +153,12 @@ export function MediaStudioView() {
       setCurrentBundle(cached.bundle); setReferenceImages(cached.refImages);
     } else {
       try {
-        const [bundle, refs, tasks] = await Promise.all([
+        const [bundle, refs, tasks, totalCount] = await Promise.all([
           api.studioGetSessionBundle(id), api.studioListReferenceImages(id), api.studioListRunningTasks(id),
+          api.studioCountMessages(id),
         ]);
         setCurrentBundle(bundle); setReferenceImages(refs); setRunningTasks(tasks);
+        setHasMoreMessages(bundle.messages.length < totalCount);
         loadedSessions.current.set(id, { bundle, refImages: refs });
       } catch (err) { console.error("Failed to load sessions:", err); }
     }
@@ -177,15 +197,18 @@ export function MediaStudioView() {
     const ep = config?.endpoints?.find(e => e.enabled);
     const endpointId = ep?.id || "";
     const model = ep?.models?.find(m => m.capabilities.includes("text"))?.model_id || "";
+    const imageDeployment = enableImageGen
+      ? ep?.models?.find(m => m.capabilities.includes("image"))?.deployment_name || undefined
+      : undefined;
     try {
-      const resultJson = await api.studioChatStream(activeSessionId, text, endpointId, model);
+      const resultJson = await api.studioChatStream(activeSessionId, text, endpointId, model, enableImageGen || undefined, imageDeployment);
       const result = JSON.parse(resultJson);
       if (result.user_message) {
         setCurrentBundle(prev => prev ? { ...prev, messages: [...prev.messages, result.user_message] } : prev);
       }
       setStreamingMsgId(result.assistant_message_id);
     } catch (err) { console.error("Chat stream failed:", err); setIsStreaming(false); }
-  }, [input, activeSessionId, isStreaming, config]);
+  }, [input, activeSessionId, isStreaming, config, enableImageGen]);
 
   const handleGenerateImage = useCallback(async () => {
     if (!input.trim() || !activeSessionId) return;
@@ -245,6 +268,73 @@ export function MediaStudioView() {
 
   const handleDeleteReferenceImage = useCallback(async (id: string) => {
     try { await api.studioDeleteReferenceImage(id); setReferenceImages(prev => prev.filter(r => r.id !== id)); } catch (err) { console.error(err); }
+  }, []);
+
+  const handleLoadMoreMessages = useCallback(async () => {
+    if (!activeSessionId || !currentBundle || loadingMore || !hasMoreMessages) return;
+    const firstMsg = currentBundle.messages[0];
+    if (!firstMsg) return;
+    setLoadingMore(true);
+    try {
+      const older = await api.studioGetMessagesBefore(activeSessionId, firstMsg.sequence_no, 20);
+      if (older.length === 0) { setHasMoreMessages(false); return; }
+      setCurrentBundle(prev => prev ? { ...prev, messages: [...older, ...prev.messages] } : prev);
+      if (older.length < 20) setHasMoreMessages(false);
+    } catch (err) { console.error(err); }
+    setLoadingMore(false);
+  }, [activeSessionId, currentBundle, loadingMore, hasMoreMessages]);
+
+  const handleStartEdit = useCallback((msg: StudioMessage) => {
+    setEditingMsgId(msg.id);
+    setEditText(msg.text);
+  }, []);
+
+  const handleCancelEdit = useCallback(() => {
+    setEditingMsgId(null);
+    setEditText("");
+  }, []);
+
+  const handleSaveEdit = useCallback(async () => {
+    if (!editingMsgId || !editText.trim()) { handleCancelEdit(); return; }
+    try {
+      await api.studioEditMessage(editingMsgId, editText.trim());
+      setCurrentBundle(prev => {
+        if (!prev) return prev;
+        return { ...prev, messages: prev.messages.map(m => m.id === editingMsgId ? { ...m, text: editText.trim() } : m) };
+      });
+    } catch (err) { console.error(err); }
+    handleCancelEdit();
+  }, [editingMsgId, editText, handleCancelEdit]);
+
+  const handleSendEdit = useCallback(async () => {
+    if (!editingMsgId || !editText.trim() || !activeSessionId || isStreaming) return;
+    const ep = config?.endpoints?.find(e => e.enabled);
+    const endpointId = ep?.id || "";
+    const model = ep?.models?.find(m => m.capabilities.includes("text"))?.model_id || "";
+    setIsStreaming(true); setStreamingText(""); setStreamingReasoning("");
+    handleCancelEdit();
+    try {
+      await api.studioSendEdit(activeSessionId, editingMsgId, editText.trim(), endpointId, model, enableImageGen || undefined);
+    } catch (err) { console.error(err); setIsStreaming(false); }
+  }, [editingMsgId, editText, activeSessionId, isStreaming, config, enableImageGen, handleCancelEdit]);
+
+  const handleForkFromMessage = useCallback(async (messageId: string) => {
+    if (!activeSessionId) return;
+    try {
+      const newSession = await api.studioForkFromMessage(activeSessionId, messageId);
+      setSessions(prev => [newSession, ...prev]);
+      handleSelectSession(newSession.id);
+    } catch (err) { console.error(err); }
+  }, [activeSessionId, handleSelectSession]);
+
+  const handleDeleteMessage = useCallback(async (messageId: string) => {
+    try {
+      await api.studioDeleteMessage(messageId);
+      setCurrentBundle(prev => {
+        if (!prev) return prev;
+        return { ...prev, messages: prev.messages.filter(m => m.id !== messageId) };
+      });
+    } catch (err) { console.error(err); }
   }, []);
 
   const handleSend = useCallback(() => {
@@ -333,6 +423,15 @@ export function MediaStudioView() {
                 {isVideoRefLimitExceeded && <span className="text-xs text-red-500 ml-2">{t("studio.soraRefLimit")}</span>}
               </div>
             )}
+            {sessionType === "chat" && (
+              <div className="flex items-center gap-3 px-4 py-1.5 border-b border-[var(--border-subtle)] bg-[var(--surface-0)] text-xs">
+                <label className="flex items-center gap-1.5 cursor-pointer">
+                  <input type="checkbox" checked={enableImageGen} onChange={e => setEnableImageGen(e.target.checked)}
+                    className="accent-brand-600 w-3.5 h-3.5" />
+                  <span className="text-[var(--text-secondary)]">{t("studio.enableImageGen", "Enable inline image generation")}</span>
+                </label>
+              </div>
+            )}
             {runningTasks.length > 0 && (
               <div className="px-4 py-1.5 border-b border-[var(--border-subtle)] bg-[var(--surface-0)]">
                 {runningTasks.map(task => (
@@ -347,14 +446,41 @@ export function MediaStudioView() {
               </div>
             )}
             <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+              {hasMoreMessages && (
+                <div className="flex justify-center">
+                  <Button variant="ghost" size="sm" onClick={handleLoadMoreMessages} disabled={loadingMore}>
+                    {loadingMore ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />}
+                    <span className="ml-1 text-xs">{t("studio.loadMore", "Load earlier messages")}</span>
+                  </Button>
+                </div>
+              )}
               {currentBundle?.messages.map(msg => (
-                <MessageBubble key={msg.id} message={msg} mediaRefs={currentBundle.media_refs[msg.id]} citations={currentBundle.citations[msg.id]} />
+                <MessageBubble
+                  key={msg.id}
+                  message={msg}
+                  mediaRefs={currentBundle.media_refs[msg.id]}
+                  citations={currentBundle.citations[msg.id]}
+                  isEditing={editingMsgId === msg.id}
+                  editText={editingMsgId === msg.id ? editText : ""}
+                  onEditTextChange={setEditText}
+                  onStartEdit={() => handleStartEdit(msg)}
+                  onCancelEdit={handleCancelEdit}
+                  onSaveEdit={handleSaveEdit}
+                  onSendEdit={handleSendEdit}
+                  onFork={() => handleForkFromMessage(msg.id)}
+                  onDelete={() => handleDeleteMessage(msg.id)}
+                  sessionType={sessionType}
+                />
               ))}
               {isStreaming && streamingMsgId && (
                 <div className="flex justify-start">
                   <div className="max-w-[80%] rounded-[10px_10px_10px_2px] px-4 py-3 bg-[var(--surface-1)] border border-[var(--border-subtle)]">
                     {streamingReasoning && <div className="text-xs text-[var(--text-muted)] mb-2 italic border-l-2 border-[var(--border-subtle)] pl-2">{streamingReasoning}</div>}
                     {streamingText ? <MarkdownRenderer content={streamingText} /> : <Loader2 size={16} className="animate-spin text-[var(--text-muted)]" />}
+                    {streamingImages.get(streamingMsgId)?.map((img, idx) => (
+                      <img key={idx} src={`data:${img.content_type};base64,${img.base64_data}`}
+                        className="mt-2 max-w-full rounded border border-[var(--border-subtle)]" />
+                    ))}
                   </div>
                 </div>
               )}
@@ -396,16 +522,36 @@ function NewSessionMenu({ onCreate }: { onCreate: (type: string) => void }) {
   );
 }
 
-function MessageBubble({ message, mediaRefs, citations }: { message: StudioMessage; mediaRefs?: StudioMediaRef[]; citations?: StudioCitation[] }) {
+function MessageBubble({ message, mediaRefs, citations, isEditing, editText, onEditTextChange, onStartEdit, onCancelEdit, onSaveEdit, onSendEdit, onFork, onDelete, sessionType }: {
+  message: StudioMessage; mediaRefs?: StudioMediaRef[]; citations?: StudioCitation[];
+  isEditing: boolean; editText: string; onEditTextChange: (v: string) => void;
+  onStartEdit: () => void; onCancelEdit: () => void; onSaveEdit: () => void; onSendEdit: () => void;
+  onFork: () => void; onDelete: () => void; sessionType: string;
+}) {
+  const { t } = useTranslation();
   const isUser = message.role === "user";
   return (
-    <div className={cn("flex", isUser ? "justify-end" : "justify-start")}>
-      <div className={cn("max-w-[80%] px-4 py-3 border border-[var(--border-subtle)]",
+    <div className={cn("flex group", isUser ? "justify-end" : "justify-start")}>
+      <div className={cn("max-w-[80%] px-4 py-3 border border-[var(--border-subtle)] relative",
         isUser ? "rounded-[10px_10px_2px_10px] bg-brand-600/10" : "rounded-[10px_10px_10px_2px] bg-[var(--surface-1)]")}>
         {message.reasoning_text && <div className="text-xs text-[var(--text-muted)] mb-2 italic border-l-2 border-[var(--border-subtle)] pl-2">{message.reasoning_text}</div>}
-        {message.content_type === "text" || !message.content_type ? (
-          isUser ? <p className="text-sm text-[var(--text-primary)] whitespace-pre-wrap">{message.text}</p> : <MarkdownRenderer content={message.text} />
-        ) : <p className="text-sm text-[var(--text-primary)]">{message.text}</p>}
+        {isEditing ? (
+          <div className="space-y-2">
+            <textarea value={editText} onChange={e => onEditTextChange(e.target.value)} autoFocus
+              className="w-full min-h-[60px] resize-none rounded border border-[var(--border-subtle)] bg-[var(--surface-0)] px-2 py-1.5 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-brand-500" />
+            <div className="flex gap-1.5">
+              <Button size="sm" variant="ghost" onClick={onSaveEdit}><Check size={12} /> {t("studio.save", "Save")}</Button>
+              {sessionType === "chat" && <Button size="sm" onClick={onSendEdit}><Send size={12} /> {t("studio.sendEdit", "Send")}</Button>}
+              <Button size="sm" variant="ghost" onClick={onCancelEdit}><X size={12} /> {t("studio.cancel", "Cancel")}</Button>
+            </div>
+          </div>
+        ) : (
+          <>
+            {message.content_type === "text" || !message.content_type ? (
+              isUser ? <p className="text-sm text-[var(--text-primary)] whitespace-pre-wrap">{message.text}</p> : <MarkdownRenderer content={message.text} />
+            ) : <p className="text-sm text-[var(--text-primary)]">{message.text}</p>}
+          </>
+        )}
         {mediaRefs && mediaRefs.length > 0 && (
           <div className="mt-2 grid grid-cols-2 gap-2">
             {mediaRefs.map(ref_ => (
@@ -425,6 +571,21 @@ function MessageBubble({ message, mediaRefs, citations }: { message: StudioMessa
           <div className="mt-1 text-[10px] text-[var(--text-muted)]">
             {message.generate_seconds && `${message.generate_seconds.toFixed(1)}s`}
             {message.prompt_tokens && ` · ${message.prompt_tokens}+${message.completion_tokens || 0} tokens`}
+          </div>
+        )}
+        {!isEditing && (
+          <div className="absolute -right-1 top-0 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+            {isUser && (
+              <button onClick={onStartEdit} className="p-1 rounded bg-[var(--surface-1)] border border-[var(--border-subtle)] hover:bg-[var(--surface-2)]" title={t("studio.edit", "Edit")}>
+                <Pencil size={11} className="text-[var(--text-muted)]" />
+              </button>
+            )}
+            <button onClick={onFork} className="p-1 rounded bg-[var(--surface-1)] border border-[var(--border-subtle)] hover:bg-[var(--surface-2)]" title={t("studio.fork", "Fork")}>
+              <GitBranch size={11} className="text-[var(--text-muted)]" />
+            </button>
+            <button onClick={onDelete} className="p-1 rounded bg-[var(--surface-1)] border border-[var(--border-subtle)] hover:bg-red-500/20" title={t("studio.delete", "Delete")}>
+              <Trash2 size={11} className="text-[var(--text-muted)]" />
+            </button>
           </div>
         )}
       </div>

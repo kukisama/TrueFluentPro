@@ -222,10 +222,11 @@ impl Database {
         conn.execute(
             "UPDATE studio_messages SET text = ?1, reasoning_text = ?2, prompt_tokens = ?3,
              completion_tokens = ?4, generate_seconds = ?5, download_seconds = ?6,
-             search_summary = ?7, timestamp = ?8 WHERE id = ?9",
+             search_summary = ?7, timestamp = ?8, is_deleted = ?9 WHERE id = ?10",
             params![
                 msg.text, msg.reasoning_text, msg.prompt_tokens, msg.completion_tokens,
-                msg.generate_seconds, msg.download_seconds, msg.search_summary, msg.timestamp, msg.id,
+                msg.generate_seconds, msg.download_seconds, msg.search_summary, msg.timestamp,
+                msg.is_deleted as i64, msg.id,
             ],
         ).map_err(map_db_err)?;
         Ok(())
@@ -528,6 +529,193 @@ impl Database {
         conn.execute("DELETE FROM studio_reference_images WHERE id = ?1", params![id])
             .map_err(map_db_err)?;
         Ok(())
+    }
+
+    // ── Message helpers (3) ──
+
+    /// Get a single message by ID.
+    pub async fn studio_get_message(&self, message_id: &str) -> tfp_core::Result<Option<StudioMessage>> {
+        let conn = self.conn().lock().await;
+        let mut stmt = conn.prepare(
+            "SELECT * FROM studio_messages WHERE id = ?1"
+        ).map_err(map_db_err)?;
+        let mut rows = stmt.query_map(params![message_id], map_studio_message).map_err(map_db_err)?;
+        match rows.next() {
+            Some(Ok(m)) => Ok(Some(m)),
+            Some(Err(e)) => Err(map_db_err(e)),
+            None => Ok(None),
+        }
+    }
+
+    /// Delete (hard) messages after a given sequence_no in a session.
+    pub async fn studio_delete_messages_after(&self, session_id: &str, after_sequence: i64) -> tfp_core::Result<u64> {
+        let conn = self.conn().lock().await;
+        conn.execute(
+            "DELETE FROM studio_messages WHERE session_id = ?1 AND sequence_no > ?2 AND is_deleted = 0",
+            params![session_id, after_sequence],
+        ).map_err(map_db_err)?;
+        let deleted = conn.changes() as u64;
+        // Update message_count on session
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM studio_messages WHERE session_id = ?1 AND is_deleted = 0",
+            params![session_id],
+            |row| row.get(0),
+        ).map_err(map_db_err)?;
+        let now = Utc::now().to_rfc3339();
+        conn.execute(
+            "UPDATE studio_sessions SET message_count = ?1, updated_at = ?2 WHERE id = ?3",
+            params![count, now, session_id],
+        ).map_err(map_db_err)?;
+        Ok(deleted)
+    }
+
+    /// Hard-delete a single message by ID and update session message count.
+    pub async fn studio_hard_delete_message(&self, message_id: &str) -> tfp_core::Result<()> {
+        let conn = self.conn().lock().await;
+        // Get session_id before deleting
+        let session_id: Option<String> = conn.query_row(
+            "SELECT session_id FROM studio_messages WHERE id = ?1",
+            params![message_id],
+            |row| row.get(0),
+        ).ok();
+        conn.execute("DELETE FROM studio_messages WHERE id = ?1", params![message_id])
+            .map_err(map_db_err)?;
+        if let Some(sid) = session_id {
+            conn.execute(
+                "UPDATE studio_sessions SET message_count = (SELECT COUNT(*) FROM studio_messages WHERE session_id = ?1 AND is_deleted = 0) WHERE id = ?1",
+                params![sid],
+            ).map_err(map_db_err)?;
+        }
+        Ok(())
+    }
+
+    /// Count non-deleted messages in a session.
+    pub async fn studio_count_messages(&self, session_id: &str) -> tfp_core::Result<i64> {
+        let conn = self.conn().lock().await;
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM studio_messages WHERE session_id = ?1 AND is_deleted = 0",
+            params![session_id],
+            |row| row.get(0),
+        ).map_err(map_db_err)?;
+        Ok(count)
+    }
+
+    /// Fork a session: copy messages up to a given sequence_no into a new session.
+    pub async fn studio_fork_session(
+        &self,
+        source_session_id: &str,
+        up_to_sequence: i64,
+        new_session_name: &str,
+    ) -> tfp_core::Result<StudioSession> {
+        let conn = self.conn().lock().await;
+        let now = Utc::now().to_rfc3339();
+        let new_id = uuid::Uuid::new_v4().to_string();
+
+        // 1. Create new session
+        let new_session = StudioSession {
+            id: new_id.clone(),
+            session_type: "chat".into(),
+            name: new_session_name.to_string(),
+            directory_path: String::new(),
+            canvas_mode: String::new(),
+            media_kind: String::new(),
+            is_deleted: false,
+            created_at: now.clone(),
+            updated_at: now.clone(),
+            last_accessed_at: Some(now.clone()),
+            source_session_id: Some(source_session_id.to_string()),
+            source_session_name: None,
+            source_session_directory_name: None,
+            source_asset_id: None,
+            source_asset_kind: None,
+            source_asset_file_name: None,
+            source_asset_path: None,
+            source_preview_path: None,
+            source_reference_role: None,
+            message_count: 0,
+            task_count: 0,
+            asset_count: 0,
+            latest_message_preview: None,
+            legacy_source_path: None,
+            import_batch_id: None,
+            imported_at: None,
+            is_legacy_import: false,
+        };
+        drop(conn);
+        self.studio_create_session(&new_session).await?;
+
+        // 2. Copy messages
+        let conn = self.conn().lock().await;
+        let src_msgs: Vec<StudioMessage> = {
+            let mut stmt = conn.prepare(
+                "SELECT * FROM studio_messages WHERE session_id = ?1 AND sequence_no <= ?2 AND is_deleted = 0 ORDER BY sequence_no ASC"
+            ).map_err(map_db_err)?;
+            let rows = stmt.query_map(params![source_session_id, up_to_sequence], map_studio_message).map_err(map_db_err)?;
+            let mut v = Vec::new();
+            for r in rows { v.push(r.map_err(map_db_err)?); }
+            v
+        };
+
+        let mut old_to_new: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        for msg in &src_msgs {
+            let new_msg_id = uuid::Uuid::new_v4().to_string();
+            old_to_new.insert(msg.id.clone(), new_msg_id.clone());
+            conn.execute(
+                "INSERT INTO studio_messages (
+                    id, session_id, sequence_no, role, content_type, text, reasoning_text,
+                    prompt_tokens, completion_tokens, generate_seconds, download_seconds,
+                    search_summary, timestamp, is_deleted
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, 0)",
+                params![
+                    new_msg_id, new_id, msg.sequence_no, msg.role, msg.content_type,
+                    msg.text, msg.reasoning_text, msg.prompt_tokens, msg.completion_tokens,
+                    msg.generate_seconds, msg.download_seconds, msg.search_summary, msg.timestamp,
+                ],
+            ).map_err(map_db_err)?;
+        }
+
+        // 3. Copy media refs
+        for (old_id, new_msg_id) in &old_to_new {
+            let refs: Vec<StudioMediaRef> = {
+                let mut ref_stmt = conn.prepare(
+                    "SELECT * FROM studio_media_refs WHERE message_id = ?1 ORDER BY sort_order"
+                ).map_err(map_db_err)?;
+                let rows = ref_stmt.query_map(params![old_id], |row| {
+                    Ok(StudioMediaRef {
+                        id: row.get("id")?,
+                        message_id: row.get("message_id")?,
+                        media_path: row.get("media_path")?,
+                        media_kind: row.get("media_kind")?,
+                        sort_order: row.get("sort_order")?,
+                        preview_path: row.get("preview_path")?,
+                    })
+                }).map_err(map_db_err)?;
+                let mut v = Vec::new();
+                for r in rows { v.push(r.map_err(map_db_err)?); }
+                v
+            };
+            for mr in &refs {
+                conn.execute(
+                    "INSERT INTO studio_media_refs (message_id, media_path, media_kind, sort_order, preview_path)
+                     VALUES (?1, ?2, ?3, ?4, ?5)",
+                    params![new_msg_id, mr.media_path, mr.media_kind, mr.sort_order, mr.preview_path],
+                ).map_err(map_db_err)?;
+            }
+        }
+
+        // 4. Update message count on new session
+        let msg_count = src_msgs.len() as i64;
+        conn.execute(
+            "UPDATE studio_sessions SET message_count = ?1, updated_at = ?2 WHERE id = ?3",
+            params![msg_count, now, new_id],
+        ).map_err(map_db_err)?;
+
+        drop(conn);
+
+        // Return the new session with updated count
+        let mut result = new_session;
+        result.message_count = msg_count;
+        Ok(result)
     }
 
     // ── Asset + Media refs (2) ──

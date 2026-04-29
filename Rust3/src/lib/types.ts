@@ -647,6 +647,9 @@ export interface StudioMessageDelta {
   message_id: string;
   token?: string;
   reasoning?: string;
+  image_generating?: boolean;
+  image_result?: { base64_data: string; content_type: string };
+  error?: string;
   done?: boolean;
 }
 

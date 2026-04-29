@@ -350,8 +350,8 @@ export const api = {
     invoke<StudioMessage[]>("studio_get_messages_before", { sessionId, beforeSequence, limit }),
   studioListRunningTasks: (sessionId: string) =>
     invoke<StudioTask[]>("studio_list_running_tasks", { sessionId }),
-  studioChatStream: (sessionId: string, text: string, endpointId: string, model: string) =>
-    invoke<string>("studio_chat_stream", { sessionId, text, endpointId, model }),
+  studioChatStream: (sessionId: string, text: string, endpointId: string, model: string, enableImageGen?: boolean, imageModelDeployment?: string, maxTurns?: number) =>
+    invoke<string>("studio_chat_stream", { sessionId, text, endpointId, model, enableImageGen, imageModelDeployment, maxTurns }),
   studioStartImageTask: (args: {
     sessionId: string; prompt: string; params: Record<string, unknown>;
     referencePaths: string[];
@@ -380,6 +380,16 @@ export const api = {
     listen<{ session_id: string; message: StudioMessage; media_refs?: StudioMediaRef[] }>("studio-message-new", (event) => cb(event.payload)),
   onStudioMessageDelta: (cb: (e: StudioMessageDelta) => void): Promise<UnlistenFn> =>
     listen<StudioMessageDelta>("studio-message-delta", (event) => cb(event.payload)),
+  studioEditMessage: (messageId: string, newText: string) =>
+    invoke<void>("studio_edit_message", { messageId, newText }),
+  studioDeleteMessage: (messageId: string) =>
+    invoke<void>("studio_delete_message", { messageId }),
+  studioSendEdit: (sessionId: string, messageId: string, newText: string, endpointId: string, model: string, enableImageGen?: boolean, imageModelDeployment?: string) =>
+    invoke<string>("studio_send_edit", { sessionId, messageId, newText, endpointId, model, enableImageGen, imageModelDeployment }),
+  studioForkFromMessage: (sessionId: string, messageId: string) =>
+    invoke<StudioSession>("studio_fork_from_message", { sessionId, messageId }),
+  studioCountMessages: (sessionId: string) =>
+    invoke<number>("studio_count_messages", { sessionId }),
 
   // ── 媒体中心 ──
   centerListWorkspaces: (limit?: number, offset?: number) =>

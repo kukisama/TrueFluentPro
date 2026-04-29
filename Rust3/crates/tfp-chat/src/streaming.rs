@@ -8,6 +8,29 @@ use tfp_core::{
 use tfp_providers::{AiCompletionSlot, StreamChunk};
 use tfp_storage::Database;
 
+/// Options for studio chat streaming.
+#[derive(Debug, Clone)]
+pub struct ChatStreamOptions {
+    pub enable_image_generation: bool,
+    pub image_model_deployment: Option<String>,
+    pub image_size: Option<String>,
+    pub image_quality: Option<String>,
+    /// Maximum conversation turns (1 turn = user+assistant pair). Default 20.
+    pub max_turns: Option<usize>,
+}
+
+impl Default for ChatStreamOptions {
+    fn default() -> Self {
+        Self {
+            enable_image_generation: false,
+            image_model_deployment: None,
+            image_size: None,
+            image_quality: None,
+            max_turns: Some(20),
+        }
+    }
+}
+
 /// Run a streaming chat completion.
 ///
 /// 1. Persist user message
@@ -24,6 +47,7 @@ pub async fn run_studio_chat_stream(
     text: &str,
     model: String,
     endpoint_id: &str,
+    options: ChatStreamOptions,
 ) -> Result<(StudioMessage, String), String> {
     // 1. Persist user message
     let now = chrono::Utc::now().to_rfc3339();
@@ -61,8 +85,9 @@ pub async fn run_studio_chat_stream(
             });
         }
     }
-    if chat_messages.len() > 40 {
-        chat_messages = chat_messages[chat_messages.len() - 40..].to_vec();
+    let max_msgs = options.max_turns.unwrap_or(20) * 2;
+    if chat_messages.len() > max_msgs {
+        chat_messages = chat_messages[chat_messages.len() - max_msgs..].to_vec();
     }
 
     let req = CompletionRequest {
@@ -72,10 +97,10 @@ pub async fn run_studio_chat_stream(
         max_tokens: Some(4096),
         endpoint_id: endpoint_id.to_string(),
         reasoning_effort: None,
-        enable_image_generation: false,
-        image_model_deployment: None,
-        image_size: None,
-        image_quality: None,
+        enable_image_generation: options.enable_image_generation,
+        image_model_deployment: options.image_model_deployment.clone(),
+        image_size: options.image_size.clone(),
+        image_quality: options.image_quality.clone(),
     };
 
     let mut rx = provider.complete_stream(&req).await.map_err(|e| e.to_string())?;
@@ -271,4 +296,51 @@ pub async fn optimize_prompt(
 
     let resp = provider.complete(&request).await.map_err(|e| e.to_string())?;
     Ok(resp.content)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_chat_stream_options_default() {
+        let opts = ChatStreamOptions::default();
+        assert!(!opts.enable_image_generation);
+        assert!(opts.image_model_deployment.is_none());
+        assert!(opts.image_size.is_none());
+        assert!(opts.image_quality.is_none());
+        assert_eq!(opts.max_turns, Some(20));
+    }
+
+    #[test]
+    fn test_truncate_history() {
+        // max_turns=2 means 4 messages max (2 user + 2 assistant)
+        let max_turns = 2usize;
+        let max_msgs = max_turns * 2;
+        let mut msgs: Vec<ChatMessage> = (0..10).map(|i| ChatMessage {
+            role: if i % 2 == 0 { "user".into() } else { "assistant".into() },
+            content: serde_json::Value::String(format!("msg {i}")),
+        }).collect();
+
+        if msgs.len() > max_msgs {
+            msgs = msgs[msgs.len() - max_msgs..].to_vec();
+        }
+        assert_eq!(msgs.len(), 4);
+        assert_eq!(msgs[0].content.as_str().unwrap(), "msg 6");
+        assert_eq!(msgs[3].content.as_str().unwrap(), "msg 9");
+    }
+
+    #[test]
+    fn test_chat_stream_options_custom() {
+        let opts = ChatStreamOptions {
+            enable_image_generation: true,
+            image_model_deployment: Some("gpt-image-1".into()),
+            image_size: Some("1024x1024".into()),
+            image_quality: Some("high".into()),
+            max_turns: Some(10),
+        };
+        assert!(opts.enable_image_generation);
+        assert_eq!(opts.image_model_deployment.as_deref(), Some("gpt-image-1"));
+        assert_eq!(opts.max_turns, Some(10));
+    }
 }

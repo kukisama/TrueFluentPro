@@ -204,6 +204,9 @@ pub async fn studio_chat_stream(
     text: String,
     endpoint_id: String,
     model: String,
+    enable_image_gen: Option<bool>,
+    image_model_deployment: Option<String>,
+    max_turns: Option<u32>,
 ) -> Result<String, String> {
     // Resolve provider before spawn (RwLock guard cannot cross spawn boundary)
     let providers = state.providers.read().await;
@@ -220,9 +223,17 @@ pub async fn studio_chat_stream(
     let m = model.clone();
     let eid = endpoint_id.clone();
 
+    let options = tfp_chat::streaming::ChatStreamOptions {
+        enable_image_generation: enable_image_gen.unwrap_or(false),
+        image_model_deployment,
+        image_size: None,
+        image_quality: None,
+        max_turns: max_turns.map(|v| v as usize),
+    };
+
     tokio::spawn(async move {
         let _ = tfp_chat::streaming::run_studio_chat_stream(
-            &db, sink.as_ref(), provider, &sid, &t, m, &eid,
+            &db, sink.as_ref(), provider, &sid, &t, m, &eid, options,
         ).await;
     });
 
@@ -477,6 +488,133 @@ pub async fn studio_resume_interrupted_video_tasks(
 #[cfg(test)]
 pub(crate) async fn studio_download_video(url: &str, output_path: &std::path::Path) -> Result<String, String> {
     tfp_media::video_util::download_video(url, output_path).await
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  Message editing / branching
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+#[tauri::command]
+pub async fn studio_edit_message(
+    state: State<'_, AppState>,
+    message_id: String,
+    new_text: String,
+) -> Result<(), String> {
+    let msg = state.db.studio_get_message(&message_id).await.map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Message not found: {message_id}"))?;
+    let updated = tfp_core::StudioMessage {
+        text: new_text,
+        timestamp: chrono::Utc::now().to_rfc3339(),
+        ..msg
+    };
+    state.db.studio_update_message(&updated).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn studio_delete_message(
+    state: State<'_, AppState>,
+    message_id: String,
+) -> Result<(), String> {
+    let msg = state.db.studio_get_message(&message_id).await.map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Message not found: {message_id}"))?;
+    let updated = tfp_core::StudioMessage {
+        is_deleted: true,
+        timestamp: chrono::Utc::now().to_rfc3339(),
+        ..msg
+    };
+    state.db.studio_update_message(&updated).await.map_err(|e| e.to_string())
+}
+
+#[allow(clippy::too_many_arguments)]
+#[tauri::command]
+pub async fn studio_send_edit(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    session_id: String,
+    message_id: String,
+    new_text: String,
+    endpoint_id: String,
+    model: String,
+    enable_image_gen: Option<bool>,
+    image_model_deployment: Option<String>,
+) -> Result<String, String> {
+    // 1. Get the message's sequence_no
+    let msg = state.db.studio_get_message(&message_id).await.map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Message not found: {message_id}"))?;
+    let seq = msg.sequence_no;
+
+    // 2. Update message text
+    let updated = tfp_core::StudioMessage {
+        text: new_text.clone(),
+        timestamp: chrono::Utc::now().to_rfc3339(),
+        ..msg
+    };
+    state.db.studio_update_message(&updated).await.map_err(|e| e.to_string())?;
+
+    // 3. Delete all messages after this one
+    state.db.studio_delete_messages_after(&session_id, seq).await.map_err(|e| e.to_string())?;
+
+    // 4. Re-generate via streaming
+    let providers = state.providers.read().await;
+    let provider = providers
+        .get_ai_completion(&endpoint_id)
+        .ok_or_else(|| format!("AI Provider not found: {endpoint_id}"))?;
+    drop(providers);
+
+    let db = state.db.clone();
+    let sink: Arc<dyn tfp_core::EventSink> = Arc::new(crate::tauri_event_sink::TauriEventSink::new(app));
+    let sid = session_id.clone();
+    let eid = endpoint_id.clone();
+    let m = model.clone();
+
+    let options = tfp_chat::streaming::ChatStreamOptions {
+        enable_image_generation: enable_image_gen.unwrap_or(false),
+        image_model_deployment,
+        image_size: None,
+        image_quality: None,
+        max_turns: Some(20),
+    };
+
+    // Note: we delete the original user message and let run_studio_chat_stream
+    // re-create it with the updated text, avoiding sequence_no conflicts.
+    state.db.studio_hard_delete_message(&message_id).await.map_err(|e| e.to_string())?;
+
+    let stream_id = uuid::Uuid::new_v4().to_string();
+    tokio::spawn(async move {
+        let _ = tfp_chat::streaming::run_studio_chat_stream(
+            &db, sink.as_ref(), provider, &sid, &new_text, m, &eid, options,
+        ).await;
+    });
+
+    Ok(serde_json::json!({ "stream_id": stream_id }).to_string())
+}
+
+#[tauri::command]
+pub async fn studio_fork_from_message(
+    state: State<'_, AppState>,
+    session_id: String,
+    message_id: String,
+) -> Result<StudioSession, String> {
+    let msg = state.db.studio_get_message(&message_id).await.map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Message not found: {message_id}"))?;
+    let source_name = state.db.studio_get_session(&session_id).await
+        .map_err(|e| e.to_string())?
+        .map(|s| s.name)
+        .unwrap_or_else(|| "Session".into());
+    let fork_name = format!("{source_name} (fork)");
+    state.db.studio_fork_session(&session_id, msg.sequence_no, &fork_name)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn studio_count_messages(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<i64, String> {
+    state.db.studio_count_messages(&session_id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
