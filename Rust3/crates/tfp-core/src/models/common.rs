@@ -47,6 +47,8 @@ pub struct SubtitleCue {
     pub start_ms: i64,
     pub end_ms: i64,
     pub text: String,
+    #[serde(default)]
+    pub speaker: Option<String>,
 }
 
 impl SubtitleCue {

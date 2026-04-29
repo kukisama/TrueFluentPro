@@ -236,3 +236,32 @@ impl Default for WebSearchSettings {
         }
     }
 }
+fn default_max_chars() -> u32 { 42 }
+fn default_max_duration_seconds() -> f64 { 8.0 }
+fn default_pause_split_ms() -> u32 { 600 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BatchSubtitleSplitOptions {
+    #[serde(default = "default_true")]
+    pub enable_sentence_split: bool,
+    #[serde(default)]
+    pub split_on_comma: bool,
+    #[serde(default = "default_max_chars")]
+    pub max_chars: u32,
+    #[serde(default = "default_max_duration_seconds")]
+    pub max_duration_seconds: f64,
+    #[serde(default = "default_pause_split_ms")]
+    pub pause_split_ms: u32,
+}
+
+impl Default for BatchSubtitleSplitOptions {
+    fn default() -> Self {
+        Self {
+            enable_sentence_split: true,
+            split_on_comma: false,
+            max_chars: 42,
+            max_duration_seconds: 8.0,
+            pause_split_ms: 600,
+        }
+    }
+}

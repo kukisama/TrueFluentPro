@@ -1095,14 +1095,14 @@ mod tests {
 
     #[test]
     fn test_b0_subtitle_cue_display_text() {
-        let cue = SubtitleCue { start_ms: 0, end_ms: 5000, text: "Hello world".into() };
+        let cue = SubtitleCue { start_ms: 0, end_ms: 5000, text: "Hello world".into(), speaker: None };
         assert_eq!(cue.display_text(20), "Hello world");
         assert_eq!(cue.display_text(5), "Hello\u{2026}");
     }
 
     #[test]
     fn test_b0_subtitle_cue_range_text() {
-        let cue = SubtitleCue { start_ms: 3661000, end_ms: 7322000, text: "x".into() };
+        let cue = SubtitleCue { start_ms: 3661000, end_ms: 7322000, text: "x".into(), speaker: None };
         assert_eq!(cue.range_text(), "01:01:01 \u{2192} 02:02:02");
     }
 

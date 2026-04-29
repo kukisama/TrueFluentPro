@@ -8,3 +8,5 @@ pub mod reconnect;
 pub mod segment;
 pub mod subtitle;
 pub mod text_filter;
+pub mod fast_transcription;
+pub mod batch_transcription;

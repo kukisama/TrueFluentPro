@@ -192,3 +192,26 @@ pub async fn get_task_executions(
 ) -> Result<Vec<TaskExecutionRow>, String> {
     state.db.get_task_executions(&task_id).await.map_err(|e| e.to_string())
 }
+
+// ── STT Transcription ──
+
+#[tauri::command]
+pub async fn transcribe_audio(
+    state: State<'_, AppState>,
+    endpoint_id: String,
+    audio_path: String,
+    lang: String,
+) -> Result<Vec<tfp_core::TranscriptSegment>, String> {
+    let audio_data = tokio::fs::read(&audio_path)
+        .await
+        .map_err(|e| format!("Failed to read audio file: {e}"))?;
+
+    let providers = state.providers.read().await;
+    let stt = providers
+        .get_stt(&endpoint_id)
+        .ok_or_else(|| format!("No STT provider for endpoint: {endpoint_id}"))?;
+
+    stt.transcribe(&audio_data, &lang)
+        .await
+        .map_err(|e| format!("Transcription failed: {e}"))
+}

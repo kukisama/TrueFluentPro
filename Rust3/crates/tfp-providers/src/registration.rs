@@ -10,6 +10,7 @@ use crate::openai_translation::OpenAiTranslationProvider;
 use crate::openai_video::OpenAiVideoProvider;
 use crate::azure_speech::AzureSpeechProvider;
 use crate::openai_realtime::OpenAiRealtimeProvider;
+use crate::openai_stt::OpenAiSttProvider;
 use crate::registry::ProviderRegistry;
 
 /// Register providers into the registry based on endpoint configurations.
