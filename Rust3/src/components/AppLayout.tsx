@@ -83,6 +83,29 @@ const THEME_LABEL_KEYS: Record<ThemeMode, string> = {
 
 const appWindow = getCurrentWindow();
 
+/** Invisible resize edge zones for frameless window */
+function ResizeEdges() {
+  const EDGE = 5; // px
+  const startResize = (dir: string) => (e: React.MouseEvent) => {
+    e.preventDefault();
+    appWindow.startResizeDragging(dir as any);
+  };
+  return (
+    <>
+      {/* Edges */}
+      <div style={{ position: "fixed", top: 0, left: EDGE, right: EDGE, height: EDGE, cursor: "n-resize", zIndex: 9999 }} onMouseDown={startResize("North")} />
+      <div style={{ position: "fixed", bottom: 0, left: EDGE, right: EDGE, height: EDGE, cursor: "s-resize", zIndex: 9999 }} onMouseDown={startResize("South")} />
+      <div style={{ position: "fixed", top: EDGE, left: 0, bottom: EDGE, width: EDGE, cursor: "w-resize", zIndex: 9999 }} onMouseDown={startResize("West")} />
+      <div style={{ position: "fixed", top: EDGE, right: 0, bottom: EDGE, width: EDGE, cursor: "e-resize", zIndex: 9999 }} onMouseDown={startResize("East")} />
+      {/* Corners */}
+      <div style={{ position: "fixed", top: 0, left: 0, width: EDGE, height: EDGE, cursor: "nw-resize", zIndex: 10000 }} onMouseDown={startResize("NorthWest")} />
+      <div style={{ position: "fixed", top: 0, right: 0, width: EDGE, height: EDGE, cursor: "ne-resize", zIndex: 10000 }} onMouseDown={startResize("NorthEast")} />
+      <div style={{ position: "fixed", bottom: 0, left: 0, width: EDGE, height: EDGE, cursor: "sw-resize", zIndex: 10000 }} onMouseDown={startResize("SouthWest")} />
+      <div style={{ position: "fixed", bottom: 0, right: 0, width: EDGE, height: EDGE, cursor: "se-resize", zIndex: 10000 }} onMouseDown={startResize("SouthEast")} />
+    </>
+  );
+}
+
 /** 窗口控制按钮（最小化/最大化/关闭），嵌入右上角 */
 function WindowControls() {
   return (
@@ -123,6 +146,7 @@ export function AppLayout() {
 
   return (
     <div className="flex h-screen w-screen overflow-hidden" style={{ backgroundColor: "var(--surface-0)" }}>
+      <ResizeEdges />
       {/* ── Sidebar ── */}
       <aside
         className={cn(

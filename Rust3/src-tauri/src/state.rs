@@ -3,18 +3,16 @@ use std::sync::Arc;
 
 use tokio::sync::RwLock;
 use tfp_core::AppConfig;
+use tfp_engine::{TaskEngine, TaskEventBus};
+use tfp_media::file_cache::FileIdCache;
 use tfp_providers::{ProviderRegistry, RealtimeSessionHandle};
 use tfp_storage::Database;
 
-use crate::image_pipeline::file_cache::FileIdCache;
-use crate::task_engine::TaskEngine;
-use crate::task_event_bus::TaskEventBus;
-
 /// Global application state, injected via Tauri State
 pub struct AppState {
-    pub config: RwLock<AppConfig>,
+    pub config: Arc<RwLock<AppConfig>>,
     pub db: Arc<Database>,
-    pub providers: RwLock<ProviderRegistry>,
+    pub providers: Arc<RwLock<ProviderRegistry>>,
     /// Active realtime speech translation sessions (session_id -> handle)
     pub active_speech_sessions: RwLock<HashMap<String, Box<dyn RealtimeSessionHandle>>>,
     /// AAD refresh_token cache (endpoint_id → refresh_token)
@@ -22,7 +20,7 @@ pub struct AppState {
     /// Background task scheduling engine
     pub task_engine: RwLock<Option<TaskEngine>>,
     /// Task event bus
-    pub task_event_bus: TaskEventBus,
+    pub task_event_bus: Arc<TaskEventBus>,
     /// File upload deduplication cache for image pipeline
     pub file_id_cache: Arc<FileIdCache>,
 }
@@ -48,13 +46,13 @@ impl AppState {
             .unwrap_or_default();
 
         Self {
-            config: RwLock::new(config),
+            config: Arc::new(RwLock::new(config)),
             db: Arc::new(db),
-            providers: RwLock::new(ProviderRegistry::new()),
+            providers: Arc::new(RwLock::new(ProviderRegistry::new())),
             active_speech_sessions: RwLock::new(HashMap::new()),
             refresh_tokens: RwLock::new(refresh_tokens),
             task_engine: RwLock::new(None),
-            task_event_bus: TaskEventBus::new(),
+            task_event_bus: Arc::new(TaskEventBus::new()),
             file_id_cache: Arc::new(FileIdCache::new()),
         }
     }

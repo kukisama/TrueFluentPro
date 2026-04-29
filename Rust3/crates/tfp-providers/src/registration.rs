@@ -60,17 +60,10 @@ mod tests {
             endpoint_type: ep_type,
             url: "https://example.com".into(),
             api_key: "key".into(),
-            api_version: None,
-            region: None,
-            models: vec![],
             enabled,
-            auth_header_mode: "api_key".into(),
-            auth_mode: "api_key".into(),
-            azure_tenant_id: String::new(),
-            azure_client_id: String::new(),
             speech_subscription_key: "speech-key".into(),
             speech_region: "eastus".into(),
-            speech_endpoint: String::new(),
+            ..AiEndpoint::default()
         }
     }
 

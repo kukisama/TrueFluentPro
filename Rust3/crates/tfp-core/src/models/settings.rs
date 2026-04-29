@@ -24,8 +24,15 @@ fn default_audio_gain() -> f64 { 2.0 }
 fn default_search_provider() -> String { "duckduckgo".into() }
 fn default_search_trigger() -> String { "auto".into() }
 fn default_search_max() -> u32 { 5 }
+fn default_image_model_name() -> String { "gpt-image-1".into() }
+fn default_video_model_name() -> String { "sora-2".into() }
+fn default_input_fidelity() -> String { "auto".into() }
+fn default_video_width() -> u32 { 1280 }
+fn default_video_height() -> u32 { 720 }
+fn default_max_conversation_turns() -> u32 { 20 }
+fn default_max_loaded_sessions() -> u32 { 8 }
 
-use super::config::ModelReference;
+use super::config::{ImageEditMode, ModelReference};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MediaSettings {
@@ -53,6 +60,30 @@ pub struct MediaSettings {
     pub video_variants: u32,
     #[serde(default = "default_poll_interval")]
     pub video_poll_interval_ms: u32,
+    #[serde(default = "default_image_model_name")]
+    pub image_model_name: String,
+    #[serde(default = "default_video_model_name")]
+    pub video_model_name: String,
+    #[serde(default)]
+    pub image_edit_mode: ImageEditMode,
+    #[serde(default = "default_input_fidelity")]
+    pub input_fidelity: String,
+    #[serde(default = "default_true")]
+    pub enable_chat_image_generation: bool,
+    #[serde(default = "default_video_width")]
+    pub video_width: u32,
+    #[serde(default = "default_video_height")]
+    pub video_height: u32,
+    #[serde(default)]
+    pub default_enable_studio_reasoning: bool,
+    #[serde(default)]
+    pub default_enable_studio_web_search: bool,
+    #[serde(default = "default_max_conversation_turns")]
+    pub default_max_conversation_turns: u32,
+    #[serde(default = "default_max_loaded_sessions")]
+    pub max_loaded_sessions_in_memory: u32,
+    #[serde(default)]
+    pub output_directory: String,
 }
 
 impl Default for MediaSettings {
@@ -70,6 +101,18 @@ impl Default for MediaSettings {
             video_seconds: 5,
             video_variants: 1,
             video_poll_interval_ms: 3000,
+            image_model_name: default_image_model_name(),
+            video_model_name: default_video_model_name(),
+            image_edit_mode: ImageEditMode::default(),
+            input_fidelity: default_input_fidelity(),
+            enable_chat_image_generation: true,
+            video_width: 1280,
+            video_height: 720,
+            default_enable_studio_reasoning: false,
+            default_enable_studio_web_search: false,
+            default_max_conversation_turns: 20,
+            max_loaded_sessions_in_memory: 8,
+            output_directory: String::new(),
         }
     }
 }

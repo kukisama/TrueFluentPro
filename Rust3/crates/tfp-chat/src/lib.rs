@@ -1,9 +1,6 @@
-//! tfp-chat — 聊天功能域
+//! tfp-chat — 会话流式域
+//!
+//! Studio chat streaming, AI completion streams, and prompt optimization.
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        assert!(true);
-    }
-}
+pub mod streaming;
+

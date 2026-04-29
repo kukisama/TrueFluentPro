@@ -143,7 +143,7 @@ impl AiCompletionSlot for OpenAiChatProvider {
                 b["temperature"] = json!(temp);
             }
             if let Some(max) = request.max_tokens {
-                b["max_tokens"] = json!(max);
+                b["max_completion_tokens"] = json!(max);
             }
             b
         };
@@ -249,7 +249,7 @@ impl AiCompletionSlot for OpenAiChatProvider {
                 b["temperature"] = json!(temp);
             }
             if let Some(max) = request.max_tokens {
-                b["max_tokens"] = json!(max);
+                b["max_completion_tokens"] = json!(max);
             }
             b
         };

@@ -1,22 +1,21 @@
-use tfp_core::AiEndpoint;
+use tfp_core::{AiEndpoint, ApiKeyHeaderMode};
 
 /// Apply authentication header to a reqwest RequestBuilder based on endpoint config.
 ///
-/// - `"api_key"` / `"api_key_header"` → `api-key: {api_key}` header
-/// - `"bearer"` → `Authorization: Bearer {api_key}` header
-/// - anything else (including `"auto"`) → bearer by default
+/// - `ApiKeyHeader` → `api-key: {api_key}` header
+/// - `Bearer` → `Authorization: Bearer {api_key}` header
+/// - `Auto` → bearer by default
 pub(crate) fn apply_auth(
     endpoint: &AiEndpoint,
     req: reqwest::RequestBuilder,
 ) -> reqwest::RequestBuilder {
-    match endpoint.auth_header_mode.as_str() {
-        "api_key" | "api_key_header" => req.header("api-key", &endpoint.api_key),
-        "bearer" => req.header(
+    match &endpoint.auth_header_mode {
+        ApiKeyHeaderMode::ApiKeyHeader => req.header("api-key", &endpoint.api_key),
+        ApiKeyHeaderMode::Bearer => req.header(
             "Authorization",
             format!("Bearer {}", endpoint.api_key),
         ),
-        _ => {
-            // "auto" or unknown: default to bearer
+        ApiKeyHeaderMode::Auto => {
             req.header(
                 "Authorization",
                 format!("Bearer {}", endpoint.api_key),
@@ -44,7 +43,7 @@ mod tests {
     use super::*;
     use tfp_core::EndpointType;
 
-    fn make_endpoint(auth_mode: &str) -> AiEndpoint {
+    fn make_endpoint(auth_mode: ApiKeyHeaderMode) -> AiEndpoint {
         AiEndpoint {
             id: "test".into(),
             name: "Test".into(),
@@ -55,19 +54,14 @@ mod tests {
             region: None,
             models: vec![],
             enabled: true,
-            auth_header_mode: auth_mode.into(),
-            auth_mode: "api_key".into(),
-            azure_tenant_id: String::new(),
-            azure_client_id: String::new(),
-            speech_subscription_key: String::new(),
-            speech_region: String::new(),
-            speech_endpoint: String::new(),
+            auth_header_mode: auth_mode,
+            ..AiEndpoint::default()
         }
     }
 
     #[test]
     fn test_apply_auth_api_key() {
-        let ep = make_endpoint("api_key");
+        let ep = make_endpoint(ApiKeyHeaderMode::ApiKeyHeader);
         let client = reqwest::Client::new();
         let req = apply_auth(&ep, client.get("https://example.com"));
         let built = req.build().unwrap();
@@ -79,7 +73,7 @@ mod tests {
 
     #[test]
     fn test_apply_auth_bearer() {
-        let ep = make_endpoint("bearer");
+        let ep = make_endpoint(ApiKeyHeaderMode::Bearer);
         let client = reqwest::Client::new();
         let req = apply_auth(&ep, client.get("https://example.com"));
         let built = req.build().unwrap();
@@ -91,7 +85,7 @@ mod tests {
 
     #[test]
     fn test_apply_auth_auto_defaults_to_bearer() {
-        let ep = make_endpoint("auto");
+        let ep = make_endpoint(ApiKeyHeaderMode::Auto);
         let client = reqwest::Client::new();
         let req = apply_auth(&ep, client.get("https://example.com"));
         let built = req.build().unwrap();

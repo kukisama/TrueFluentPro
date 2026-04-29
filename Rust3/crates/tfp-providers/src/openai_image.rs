@@ -276,6 +276,7 @@ impl ImageGenSlot for OpenAiImageProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tfp_core::ApiKeyHeaderMode;
 
     fn azure_endpoint() -> AiEndpoint {
         AiEndpoint {
@@ -285,16 +286,9 @@ mod tests {
             url: "https://myresource.openai.azure.com".into(),
             api_key: "key".into(),
             api_version: Some("2025-04-01-preview".into()),
-            region: None,
-            models: vec![],
             enabled: true,
-            auth_header_mode: "api_key".into(),
-            auth_mode: "api_key".into(),
-            azure_tenant_id: String::new(),
-            azure_client_id: String::new(),
-            speech_subscription_key: String::new(),
-            speech_region: String::new(),
-            speech_endpoint: String::new(),
+            auth_header_mode: ApiKeyHeaderMode::ApiKeyHeader,
+            ..AiEndpoint::default()
         }
     }
 
@@ -305,17 +299,9 @@ mod tests {
             endpoint_type: EndpointType::OpenAiCompatible,
             url: "https://api.openai.com".into(),
             api_key: "sk-xxx".into(),
-            api_version: None,
-            region: None,
-            models: vec![],
             enabled: true,
-            auth_header_mode: "bearer".into(),
-            auth_mode: "api_key".into(),
-            azure_tenant_id: String::new(),
-            azure_client_id: String::new(),
-            speech_subscription_key: String::new(),
-            speech_region: String::new(),
-            speech_endpoint: String::new(),
+            auth_header_mode: ApiKeyHeaderMode::Bearer,
+            ..AiEndpoint::default()
         }
     }
 

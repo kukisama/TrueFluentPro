@@ -4417,10 +4417,28 @@ dependencies = [
 [[package]]
 name = "tfp-audiolab"
 version = "0.1.0"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tfp-core",
+ "tfp-storage",
+ "uuid",
+]
 
 [[package]]
 name = "tfp-chat"
 version = "0.1.0"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
+ "tfp-core",
+ "tfp-providers",
+ "tfp-storage",
+ "uuid",
+]
 
 [[package]]
 name = "tfp-core"
@@ -4434,10 +4452,36 @@ dependencies = [
 [[package]]
 name = "tfp-engine"
 version = "0.1.0"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
+ "tfp-core",
+ "tfp-providers",
+ "tfp-storage",
+ "tokio",
+ "tracing",
+ "uuid",
+]
 
 [[package]]
 name = "tfp-media"
 version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "hex",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tfp-core",
+ "tfp-providers",
+ "tfp-storage",
+ "tokio",
+ "tracing",
+ "uuid",
+]
 
 [[package]]
 name = "tfp-providers"
@@ -4460,6 +4504,13 @@ version = "0.1.0"
 [[package]]
 name = "tfp-speech"
 version = "0.1.0"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
+ "tfp-core",
+ "uuid",
+]
 
 [[package]]
 name = "tfp-storage"

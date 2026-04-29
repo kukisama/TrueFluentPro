@@ -96,20 +96,20 @@ pub async fn test_endpoint(
     let start = Instant::now();
     let mut items: Vec<EndpointTestItem> = Vec::new();
 
-    // Execute tests concurrently
-    let mut handles = Vec::new();
+    // Execute tests concurrently with JoinSet — results arrive as they finish
+    let mut join_set = tokio::task::JoinSet::new();
     for (model_id, deployment, cap) in plan {
         let c = client.clone();
         let ep = endpoint.clone();
         let prof = profile.cloned();
-        handles.push(tokio::spawn(async move {
+        join_set.spawn(async move {
             test_runner::test_single_capability(&c, &ep, prof.as_ref(), &model_id, &deployment, &cap)
                 .await
-        }));
+        });
     }
 
-    for handle in handles {
-        match handle.await {
+    while let Some(result) = join_set.join_next().await {
+        match result {
             Ok(item) => {
                 items.push(item);
                 // Emit progress

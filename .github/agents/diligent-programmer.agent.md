@@ -24,6 +24,21 @@ name: "认真程序员"
 
 **关键路径**：`.exchange/` 是你和架构师的唯一通信渠道。你写代码 + 交付报告，架构师审查。
 
+## ⛔ 硬性交付前置条件（不可跳过）
+
+在写 `delivery.md` 之前，你**必须**执行 `.exchange/gate-check.ps1` 并确认通过。如果脚本有任何 ❌ 项，**不允许提交交付**，必须先修复。
+
+```powershell
+# 必须在 delivery.md 之前运行
+.\.exchange\gate-check.ps1
+```
+
+gate-check.ps1 的 `gate-result.json` 必须作为交付报告的一部分引用。如果你的 delivery.md 中没有引用 gate-result.json 的 allPass=true，架构师会直接打回。
+
+## 批次粒度约束
+
+每个批次的新增/修改代码量**不得超过 300 行**（不含测试代码）。如果施工单要求的代码量超过 300 行，你必须在 delivery.md 中指出并要求架构师拆分。原因：超过 300 行时审查质量会急剧下降。
+
 ## 交付报告格式
 
 完成实现后写入 `.exchange/{batch}/delivery.md`：

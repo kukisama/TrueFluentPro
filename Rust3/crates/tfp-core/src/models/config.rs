@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+use super::cloud::CloudSettings;
 use super::settings::{
     MediaSettings, RecognitionSettings, StorageSettings, WebSearchSettings,
 };
@@ -9,8 +10,73 @@ use super::settings::{
 
 fn default_true() -> bool { true }
 fn default_max_turns() -> u32 { 20 }
-fn default_auth_header_mode() -> String { "api_key".into() }
-fn default_auth_mode() -> String { "api_key".into() }
+
+// ── Typed enums (batch-0 T-001) ──
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum AiProviderType {
+    #[default]
+    OpenAiCompatible,
+    AzureOpenAi,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum AzureAuthMode {
+    #[default]
+    #[serde(rename = "api_key")]
+    ApiKey,
+    #[serde(rename = "aad")]
+    Aad,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ApiKeyHeaderMode {
+    #[default]
+    #[serde(rename = "api_key")]
+    ApiKeyHeader,
+    Bearer,
+    Auto,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum TextApiProtocolMode {
+    #[default]
+    Auto,
+    ChatCompletionsV1,
+    ChatCompletionsRaw,
+    Responses,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ImageApiRouteMode {
+    #[default]
+    Auto,
+    V1Images,
+    ImagesRaw,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ImageEditMode {
+    V1Multipart,
+    #[default]
+    V2ResponsesApi,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SpeechCapabilityFlag {
+    RealtimeSpeechToText,
+    BatchSpeechToText,
+    TextToSpeech,
+}
+
+// ── Core data models ──
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ModelReference {
@@ -38,6 +104,8 @@ pub struct AppConfig {
     #[serde(default)]
     pub web_search: WebSearchSettings,
     #[serde(default)]
+    pub cloud: CloudSettings,
+    #[serde(default)]
     pub task_engine_concurrency: Option<u32>,
     #[serde(default)]
     pub task_engine_timeout_secs: Option<u64>,
@@ -56,6 +124,7 @@ impl Default for AppConfig {
             storage: StorageSettings::default(),
             recognition: RecognitionSettings::default(),
             web_search: WebSearchSettings::default(),
+            cloud: CloudSettings::default(),
             task_engine_concurrency: None,
             task_engine_timeout_secs: None,
         }
@@ -113,10 +182,20 @@ pub struct AiEndpoint {
     #[serde(default)]
     pub models: Vec<AiModelEntry>,
     pub enabled: bool,
-    #[serde(default = "default_auth_header_mode")]
-    pub auth_header_mode: String,
-    #[serde(default = "default_auth_mode")]
-    pub auth_mode: String,
+    #[serde(default)]
+    pub auth_header_mode: ApiKeyHeaderMode,
+    #[serde(default)]
+    pub auth_mode: AzureAuthMode,
+    #[serde(default)]
+    pub profile_id: String,
+    #[serde(default)]
+    pub provider_type: AiProviderType,
+    #[serde(default)]
+    pub text_api_protocol_mode: TextApiProtocolMode,
+    #[serde(default)]
+    pub image_api_route_mode: ImageApiRouteMode,
+    #[serde(default)]
+    pub speech_capabilities: Vec<SpeechCapabilityFlag>,
     #[serde(default)]
     pub azure_tenant_id: String,
     #[serde(default)]
@@ -129,13 +208,41 @@ pub struct AiEndpoint {
     pub speech_endpoint: String,
 }
 
+impl Default for AiEndpoint {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            name: String::new(),
+            endpoint_type: EndpointType::default(),
+            url: String::new(),
+            api_key: String::new(),
+            api_version: None,
+            region: None,
+            models: Vec::new(),
+            enabled: false,
+            auth_header_mode: ApiKeyHeaderMode::ApiKeyHeader,
+            auth_mode: AzureAuthMode::ApiKey,
+            profile_id: String::new(),
+            provider_type: AiProviderType::default(),
+            text_api_protocol_mode: TextApiProtocolMode::default(),
+            image_api_route_mode: ImageApiRouteMode::default(),
+            speech_capabilities: Vec::new(),
+            azure_tenant_id: String::new(),
+            azure_client_id: String::new(),
+            speech_subscription_key: String::new(),
+            speech_region: String::new(),
+            speech_endpoint: String::new(),
+        }
+    }
+}
+
 impl AiEndpoint {
     pub fn migrate_auth_header_mode(&mut self) {
-        if self.auth_header_mode == "auto" {
+        if self.auth_header_mode == ApiKeyHeaderMode::Auto {
             self.auth_header_mode = if self.is_azure() {
-                "api_key".into()
+                ApiKeyHeaderMode::ApiKeyHeader
             } else {
-                "bearer".into()
+                ApiKeyHeaderMode::Bearer
             };
         }
     }
@@ -158,9 +265,10 @@ impl AiEndpoint {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum EndpointType {
+    #[default]
     AzureOpenAi,
     ApiManagementGateway,
     OpenAiCompatible,
@@ -210,6 +318,8 @@ pub struct AiModelEntry {
     pub display_name: String,
     pub deployment_name: Option<String>,
     pub capabilities: Vec<ModelCapability>,
+    #[serde(default)]
+    pub group_name: Option<String>,
 }
 
 impl AiModelEntry {

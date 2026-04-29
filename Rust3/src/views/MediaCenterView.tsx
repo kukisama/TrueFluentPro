@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Image, Video, Plus, Loader2, Download, Trash2,
   Maximize2, ChevronLeft, ChevronRight, Sparkles,
@@ -47,6 +48,7 @@ interface UndoEntry {
 const MAX_LOADED = 3;
 
 export function MediaCenterView() {
+  const { t } = useTranslation();
   const config = useAppStore((s) => s.config);
 
   const [workspaces, setWorkspaces] = useState<CenterWorkspace[]>([]);
@@ -144,7 +146,7 @@ export function MediaCenterView() {
   }, [openTabs, activeTabId]);
 
   const createWorkspace = useCallback(async (mode: CanvasMode = "canvas_image") => {
-    const name = mode === "canvas_image" ? `Image Canvas ${workspaces.length + 1}` : `Video Canvas ${workspaces.length + 1}`;
+    const name = mode === "canvas_image" ? `${t("mediaCenter.imageCanvas")} ${workspaces.length + 1}` : `${t("mediaCenter.videoCanvas")} ${workspaces.length + 1}`;
     const ws = await api.centerCreateWorkspace(mode, name);
     setWorkspaces((prev) => [ws, ...prev]);
     await openTab(ws.id);
@@ -224,12 +226,12 @@ export function MediaCenterView() {
     const dir = await dialogOpen({ directory: true });
     if (!dir) return;
     const result = await api.centerExportAssets([...selectedAssets], dir as string);
-    alert(`Exported ${result.copied} file(s)${result.failed > 0 ? `, failed ${result.failed}` : ""}`);
+    alert(t("mediaCenter.exported", { copied: result.copied }) + (result.failed > 0 ? t("mediaCenter.exportFailed", { failed: result.failed }) : ""));
   }, [selectedAssets]);
 
   const handleDeleteSelected = useCallback(async () => {
     if (selectedAssets.size === 0) return;
-    if (!confirm(`Delete ${selectedAssets.size} asset(s)?`)) return;
+    if (!confirm(t("mediaCenter.deleteConfirm", { count: selectedAssets.size }))) return;
     const ids = [...selectedAssets];
     if (activeTabId) pushUndo(activeTabId, { type: "delete_assets", assetIds: ids });
     await api.centerDeleteAssets(ids);
@@ -311,21 +313,21 @@ export function MediaCenterView() {
           <div className="flex gap-2">
             <div className="relative flex-1">
               <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
-              <input type="text" placeholder="Search..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
+              <input type="text" placeholder={t("mediaCenter.search")} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-8 pr-2 py-1.5 text-xs rounded-md border border-[var(--border-subtle)] bg-[var(--surface-1)] text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-brand-500/50" />
             </div>
-            <button onClick={() => createWorkspace("canvas_image")} className="p-1.5 rounded-md hover:bg-[var(--hover-bg)] text-[var(--text-muted)]" title="New image canvas"><Plus size={16} /></button>
+            <button onClick={() => createWorkspace("canvas_image")} className="p-1.5 rounded-md hover:bg-[var(--hover-bg)] text-[var(--text-muted)]" title={t("mediaCenter.imageCanvas")}><Plus size={16} /></button>
           </div>
           <div className="flex gap-1 text-[10px]">
             {(["all", "canvas_image", "canvas_video"] as FilterType[]).map((ft) => (
               <button key={ft} onClick={() => setFilterType(ft)} className={cn("px-2 py-0.5 rounded", filterType === ft ? "bg-brand-600/15 text-[var(--active-text)]" : "text-[var(--text-muted)] hover:bg-[var(--hover-bg)]")}>
-                {ft === "all" ? "All" : ft === "canvas_image" ? "Image" : "Video"}
+                {ft === "all" ? t("mediaCenter.all") : ft === "canvas_image" ? t("mediaCenter.image") : t("mediaCenter.video")}
               </button>
             ))}
             <span className="mx-1 text-[var(--border-medium)]">|</span>
             {(["all", "today", "7days", "30days"] as FilterTime[]).map((ft) => (
               <button key={ft} onClick={() => setFilterTime(ft)} className={cn("px-2 py-0.5 rounded", filterTime === ft ? "bg-brand-600/15 text-[var(--active-text)]" : "text-[var(--text-muted)] hover:bg-[var(--hover-bg)]")}>
-                {ft === "all" ? "All" : ft === "today" ? "Today" : ft === "7days" ? "7d" : "30d"}
+                {ft === "all" ? t("mediaCenter.all") : ft === "today" ? t("mediaCenter.today") : ft === "7days" ? t("mediaCenter.days7") : t("mediaCenter.days30")}
               </button>
             ))}
           </div>
@@ -334,17 +336,17 @@ export function MediaCenterView() {
           <div className="p-2 space-y-1">
             {filteredWorkspaces.length === 0 && (
               <div className="p-6 text-center">
-                <p className="text-xs text-[var(--text-muted)]">No workspaces</p>
+                <p className="text-xs text-[var(--text-muted)]">{t("mediaCenter.noWorkspaces")}</p>
                 <div className="flex flex-col gap-2 mt-4">
-                  <Button size="sm" onClick={() => createWorkspace("canvas_image")}><Image size={12} /> Image Canvas</Button>
-                  <Button size="sm" variant="secondary" onClick={() => createWorkspace("canvas_video")}><Video size={12} /> Video Canvas</Button>
+                  <Button size="sm" onClick={() => createWorkspace("canvas_image")}><Image size={12} /> {t("mediaCenter.imageCanvas")}</Button>
+                  <Button size="sm" variant="secondary" onClick={() => createWorkspace("canvas_video")}><Video size={12} /> {t("mediaCenter.videoCanvas")}</Button>
                 </div>
               </div>
             )}
             {filteredWorkspaces.map((ws) => (
               <button key={ws.id} onClick={() => openTab(ws.id)}
                 className={cn("w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-all group", activeTabId === ws.id ? "bg-brand-600/10 text-[var(--active-text)]" : "text-[var(--text-secondary)] hover:bg-[var(--hover-bg)]")}>
-                <Badge variant={ws.session_type === "canvas_image" ? "blue" : "amber"} className="text-[9px] px-1.5 py-0 shrink-0">{ws.session_type === "canvas_image" ? "Img" : "Vid"}</Badge>
+                <Badge variant={ws.session_type === "canvas_image" ? "blue" : "amber"} className="text-[9px] px-1.5 py-0 shrink-0">{ws.session_type === "canvas_image" ? t("mediaCenter.imgBadge") : t("mediaCenter.vidBadge")}</Badge>
                 <span className="text-xs truncate flex-1">{ws.name}</span>
                 {ws.has_running_task && <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse shrink-0" />}
                 <button onClick={(e) => { e.stopPropagation(); deleteWorkspace(ws.id); }} className="opacity-0 group-hover:opacity-100 p-0.5 hover:text-red-400 transition-opacity"><X size={12} /></button>
@@ -363,7 +365,7 @@ export function MediaCenterView() {
               return (
                 <div key={tabId} onClick={() => openTab(tabId)}
                   className={cn("flex items-center gap-1.5 px-3 py-1 text-xs cursor-pointer border-b-2 whitespace-nowrap", activeTabId === tabId ? "border-brand-500 text-[var(--active-text)]" : "border-transparent text-[var(--text-muted)] hover:text-[var(--text-secondary)]")}>
-                  <Badge variant={ws?.session_type === "canvas_image" ? "blue" : "amber"} className="text-[8px] px-1 py-0">{ws?.session_type === "canvas_image" ? "Img" : "Vid"}</Badge>
+                  <Badge variant={ws?.session_type === "canvas_image" ? "blue" : "amber"} className="text-[8px] px-1 py-0">{ws?.session_type === "canvas_image" ? t("mediaCenter.imgBadge") : t("mediaCenter.vidBadge")}</Badge>
                   <span className="max-w-[120px] truncate">{ws?.name || tabId.slice(0, 8)}</span>
                   <button onClick={(e) => { e.stopPropagation(); closeTab(tabId); }} className="ml-1 hover:text-red-400"><X size={10} /></button>
                 </div>
@@ -379,27 +381,27 @@ export function MediaCenterView() {
                 {totalRounds > 0 && (
                   <div className="flex items-center gap-1 text-xs">
                     <button onClick={() => switchRound("prev")} disabled={activeRoundIdx <= 0} className="p-1 rounded hover:bg-[var(--hover-bg)] disabled:opacity-30"><ChevronLeft size={14} /></button>
-                    <span className="text-[var(--text-secondary)]">Round {activeRoundIdx + 1}/{totalRounds}</span>
+                    <span className="text-[var(--text-secondary)]">{t("mediaCenter.round", { current: activeRoundIdx + 1, total: totalRounds })}</span>
                     <button onClick={() => switchRound("next")} disabled={activeRoundIdx >= totalRounds - 1} className="p-1 rounded hover:bg-[var(--hover-bg)] disabled:opacity-30"><ChevronRight size={14} /></button>
                   </div>
                 )}
                 {activeRound && (
                   <button onClick={() => setPrompt(activeRound.prompt)} className="text-[10px] px-2 py-0.5 rounded bg-[var(--surface-1)] text-[var(--text-muted)] hover:bg-[var(--hover-bg)]">
-                    <RefreshCw size={10} className="inline mr-1" />Reuse
+                    <RefreshCw size={10} className="inline mr-1" />{t("mediaCenter.reuse")}
                   </button>
                 )}
               </div>
               <div className="flex items-center gap-1">
                 {selectedAssets.size > 0 && (
                   <div className="flex items-center gap-2 mr-2 text-xs text-[var(--text-secondary)]">
-                    <span>{selectedAssets.size} selected</span>
-                    <button onClick={handleExport} className="px-2 py-0.5 rounded bg-brand-600/15 text-brand-500 text-[10px]"><Download size={10} className="inline mr-0.5" />Export</button>
-                    <button onClick={handleDeleteSelected} className="px-2 py-0.5 rounded bg-red-500/10 text-red-400 text-[10px]"><Trash2 size={10} className="inline mr-0.5" />Delete</button>
+                    <span>{t("mediaCenter.selected", { count: selectedAssets.size })}</span>
+                    <button onClick={handleExport} className="px-2 py-0.5 rounded bg-brand-600/15 text-brand-500 text-[10px]"><Download size={10} className="inline mr-0.5" />{t("mediaCenter.export")}</button>
+                    <button onClick={handleDeleteSelected} className="px-2 py-0.5 rounded bg-red-500/10 text-red-400 text-[10px]"><Trash2 size={10} className="inline mr-0.5" />{t("mediaCenter.delete")}</button>
                     <button onClick={deselectAll} className="px-1 py-0.5 text-[var(--text-muted)]"><X size={12} /></button>
                   </div>
                 )}
-                <button onClick={handleUndo} className="p-1.5 rounded hover:bg-[var(--hover-bg)] text-[var(--text-muted)]" title="Undo (Ctrl+Z)"><Undo2 size={14} /></button>
-                <button onClick={handleRedo} className="p-1.5 rounded hover:bg-[var(--hover-bg)] text-[var(--text-muted)]" title="Redo (Ctrl+Y)"><Redo2 size={14} /></button>
+                <button onClick={handleUndo} className="p-1.5 rounded hover:bg-[var(--hover-bg)] text-[var(--text-muted)]" title={t("mediaCenter.undo")}><Undo2 size={14} /></button>
+                <button onClick={handleRedo} className="p-1.5 rounded hover:bg-[var(--hover-bg)] text-[var(--text-muted)]" title={t("mediaCenter.redo")}><Redo2 size={14} /></button>
               </div>
             </div>
 
@@ -408,25 +410,25 @@ export function MediaCenterView() {
               <div className="w-[240px] border-r border-[var(--border-subtle)] overflow-y-auto p-3 space-y-3 shrink-0" style={{ backgroundColor: "var(--surface-0)" }}>
                 {currentMode === "canvas_image" ? (
                   <>
-                    <div><Label className="text-[10px]">Model</Label><p className="text-[10px] text-[var(--text-secondary)] mt-0.5 truncate">{imageEndpoint ? `${imageEndpoint.name} / ${imageModelId}` : "Not configured"}</p></div>
-                    <div><Label className="text-[10px]">Size</Label><Select className="w-full mt-0.5 text-xs" value={sizeIdx.toString()} onChange={(e) => setSizeIdx(Number(e.target.value))}>{SIZE_OPTIONS.map((s, i) => <option key={i} value={i}>{s.label}</option>)}</Select></div>
-                    <div><Label className="text-[10px]">Quality</Label><Select className="w-full mt-0.5 text-xs" value={quality} onChange={(e) => setQuality(e.target.value)}>{QUALITY_OPTIONS.map((q) => <option key={q} value={q}>{q}</option>)}</Select></div>
-                    <div><Label className="text-[10px]">Format</Label><Select className="w-full mt-0.5 text-xs" value={format} onChange={(e) => setFormat(e.target.value)}>{FORMAT_OPTIONS.map((f) => <option key={f} value={f}>{f}</option>)}</Select></div>
-                    <div><Label className="text-[10px]">Count</Label><Select className="w-full mt-0.5 text-xs" value={count.toString()} onChange={(e) => setCount(Number(e.target.value))}>{COUNT_OPTIONS.map((n) => <option key={n} value={n}>{n}</option>)}</Select></div>
-                    <div><Label className="text-[10px]">Background</Label><Select className="w-full mt-0.5 text-xs" value={background} onChange={(e) => setBackground(e.target.value)}>{BG_OPTIONS.map((b) => <option key={b} value={b}>{b}</option>)}</Select></div>
-                    <div><Label className="text-[10px]">Fidelity</Label><Select className="w-full mt-0.5 text-xs" value={fidelity} onChange={(e) => setFidelity(e.target.value)}>{FIDELITY_OPTIONS.map((f) => <option key={f} value={f}>{f}</option>)}</Select></div>
+                    <div><Label className="text-[10px]">{t("mediaCenter.model")}</Label><p className="text-[10px] text-[var(--text-secondary)] mt-0.5 truncate">{imageEndpoint ? `${imageEndpoint.name} / ${imageModelId}` : t("mediaCenter.notConfigured")}</p></div>
+                    <div><Label className="text-[10px]">{t("mediaCenter.size")}</Label><Select className="w-full mt-0.5 text-xs" value={sizeIdx.toString()} onChange={(e) => setSizeIdx(Number(e.target.value))}>{SIZE_OPTIONS.map((s, i) => <option key={i} value={i}>{s.label}</option>)}</Select></div>
+                    <div><Label className="text-[10px]">{t("mediaCenter.quality")}</Label><Select className="w-full mt-0.5 text-xs" value={quality} onChange={(e) => setQuality(e.target.value)}>{QUALITY_OPTIONS.map((q) => <option key={q} value={q}>{q}</option>)}</Select></div>
+                    <div><Label className="text-[10px]">{t("mediaCenter.format")}</Label><Select className="w-full mt-0.5 text-xs" value={format} onChange={(e) => setFormat(e.target.value)}>{FORMAT_OPTIONS.map((f) => <option key={f} value={f}>{f}</option>)}</Select></div>
+                    <div><Label className="text-[10px]">{t("mediaCenter.count")}</Label><Select className="w-full mt-0.5 text-xs" value={count.toString()} onChange={(e) => setCount(Number(e.target.value))}>{COUNT_OPTIONS.map((n) => <option key={n} value={n}>{n}</option>)}</Select></div>
+                    <div><Label className="text-[10px]">{t("mediaCenter.background")}</Label><Select className="w-full mt-0.5 text-xs" value={background} onChange={(e) => setBackground(e.target.value)}>{BG_OPTIONS.map((b) => <option key={b} value={b}>{b}</option>)}</Select></div>
+                    <div><Label className="text-[10px]">{t("mediaCenter.fidelity")}</Label><Select className="w-full mt-0.5 text-xs" value={fidelity} onChange={(e) => setFidelity(e.target.value)}>{FIDELITY_OPTIONS.map((f) => <option key={f} value={f}>{f}</option>)}</Select></div>
                   </>
                 ) : (
                   <>
-                    <div><Label className="text-[10px]">Aspect</Label><Select className="w-full mt-0.5 text-xs" value={aspectRatio} onChange={(e) => setAspectRatio(e.target.value)}>{ASPECT_RATIOS.map((a) => <option key={a} value={a}>{a}</option>)}</Select></div>
-                    <div><Label className="text-[10px]">Resolution</Label><Select className="w-full mt-0.5 text-xs" value={resolution} onChange={(e) => setResolution(e.target.value)}>{RESOLUTIONS.map((r) => <option key={r} value={r}>{r}</option>)}</Select></div>
-                    <div><Label className="text-[10px]">Duration</Label><Select className="w-full mt-0.5 text-xs" value={duration.toString()} onChange={(e) => setDuration(Number(e.target.value))}>{DURATIONS.map((d) => <option key={d} value={d}>{d}s</option>)}</Select></div>
-                    <div><Label className="text-[10px]">Count</Label><Select className="w-full mt-0.5 text-xs" value={videoCount.toString()} onChange={(e) => setVideoCount(Number(e.target.value))}>{[1, 2, 3, 4].map((n) => <option key={n} value={n}>{n}</option>)}</Select></div>
+                    <div><Label className="text-[10px]">{t("mediaCenter.aspect")}</Label><Select className="w-full mt-0.5 text-xs" value={aspectRatio} onChange={(e) => setAspectRatio(e.target.value)}>{ASPECT_RATIOS.map((a) => <option key={a} value={a}>{a}</option>)}</Select></div>
+                    <div><Label className="text-[10px]">{t("mediaCenter.resolution")}</Label><Select className="w-full mt-0.5 text-xs" value={resolution} onChange={(e) => setResolution(e.target.value)}>{RESOLUTIONS.map((r) => <option key={r} value={r}>{r}</option>)}</Select></div>
+                    <div><Label className="text-[10px]">{t("mediaCenter.duration")}</Label><Select className="w-full mt-0.5 text-xs" value={duration.toString()} onChange={(e) => setDuration(Number(e.target.value))}>{DURATIONS.map((d) => <option key={d} value={d}>{d}s</option>)}</Select></div>
+                    <div><Label className="text-[10px]">{t("mediaCenter.count")}</Label><Select className="w-full mt-0.5 text-xs" value={videoCount.toString()} onChange={(e) => setVideoCount(Number(e.target.value))}>{[1, 2, 3, 4].map((n) => <option key={n} value={n}>{n}</option>)}</Select></div>
                     {videoRefWarning && <p className="text-[10px] text-red-400">{videoRefWarning}</p>}
                   </>
                 )}
                 <div>
-                  <Label className="text-[10px]">References</Label>
+                  <Label className="text-[10px]">{t("mediaCenter.references")}</Label>
                   <div className="flex gap-1.5 mt-1 flex-wrap">
                     {activeBundle.reference_images.map((img) => (
                       <div key={img.id} className="relative w-10 h-10 rounded border border-[var(--border-subtle)] overflow-hidden group">
@@ -440,7 +442,7 @@ export function MediaCenterView() {
                     <button className="w-10 h-10 rounded border border-dashed border-[var(--border-medium)] flex items-center justify-center text-[var(--text-muted)] hover:border-brand-500/50"
                       onClick={async () => {
                         if (!activeTabId) return;
-                        if (currentMode === "canvas_video" && activeBundle.reference_images.length >= 1) { setVideoRefWarning("Sora only supports 1 reference"); return; }
+                        if (currentMode === "canvas_video" && activeBundle.reference_images.length >= 1) { setVideoRefWarning(t("mediaCenter.soraRefLimit")); return; }
                         setVideoRefWarning("");
                         const selected = await dialogOpen({ multiple: currentMode === "canvas_image", filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "webp", "gif", "bmp"] }] });
                         if (!selected) return;
@@ -486,18 +488,18 @@ export function MediaCenterView() {
                         ))}
                       </div>
                     ) : activeBundle.running_tasks.length > 0 ? (
-                      <div className="flex flex-col items-center justify-center h-48 gap-3"><Loader2 size={32} className="text-brand-400 animate-spin" /><p className="text-sm text-[var(--text-muted)]">Generating...</p></div>
+                      <div className="flex flex-col items-center justify-center h-48 gap-3"><Loader2 size={32} className="text-brand-400 animate-spin" /><p className="text-sm text-[var(--text-muted)]">{t("mediaCenter.generating")}</p></div>
                     ) : (
-                      <EmptyState icon={<Image size={48} />} title="Enter a prompt to start" />
+                      <EmptyState icon={<Image size={48} />} title={t("mediaCenter.startPrompt")} />
                     )}
                   </div>
                 </ScrollArea>
                 <div className="border-t border-[var(--border-subtle)] p-3" style={{ backgroundColor: "var(--toolbar-bg)" }}>
                   <div className="flex gap-2 max-w-3xl mx-auto">
-                    <Textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="Enter prompt..." className="flex-1 min-h-[36px] max-h-[100px] text-sm"
+                    <Textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder={t("mediaCenter.enterPrompt")} className="flex-1 min-h-[36px] max-h-[100px] text-sm"
                       onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (currentMode === "canvas_image") handleImageGenerate(); else handleVideoGenerate(); } }} />
                     <Button onClick={currentMode === "canvas_image" ? handleImageGenerate : handleVideoGenerate} disabled={!prompt.trim() || (currentMode === "canvas_image" && !imageEndpoint)} className="self-end" size="sm">
-                      <Sparkles size={12} /> Generate
+                      <Sparkles size={12} /> {t("mediaCenter.generate")}
                     </Button>
                   </div>
                 </div>
@@ -506,8 +508,8 @@ export function MediaCenterView() {
           </>
         ) : (
           <div className="flex-1 flex items-center justify-center">
-            <EmptyState icon={<Image size={48} />} title="Select or create a workspace" description="Choose from the sidebar or create a new canvas"
-              action={<div className="flex gap-2"><Button onClick={() => createWorkspace("canvas_image")} size="sm"><Image size={12} /> Image</Button><Button onClick={() => createWorkspace("canvas_video")} variant="secondary" size="sm"><Video size={12} /> Video</Button></div>} />
+            <EmptyState icon={<Image size={48} />} title={t("mediaCenter.selectOrCreate")} description={t("mediaCenter.selectOrCreateDesc")}
+              action={<div className="flex gap-2"><Button onClick={() => createWorkspace("canvas_image")} size="sm"><Image size={12} /> {t("mediaCenter.image")}</Button><Button onClick={() => createWorkspace("canvas_video")} variant="secondary" size="sm"><Video size={12} /> {t("mediaCenter.video")}</Button></div>} />
           </div>
         )}
       </div>
@@ -517,17 +519,17 @@ export function MediaCenterView() {
         <div className="fixed z-50 bg-[var(--surface-1)] border border-[var(--border-subtle)] rounded-lg shadow-xl py-1 min-w-[160px]" style={{ left: contextMenu.x, top: contextMenu.y }} onClick={() => setContextMenu(null)}>
           {contextMenu.assetId && (
             <>
-              <button className="w-full px-3 py-1.5 text-xs text-left hover:bg-[var(--hover-bg)] flex items-center gap-2" onClick={() => { const a = currentAssets.find((x) => x.asset_id === contextMenu.assetId); if (a) setPreviewAsset(a); }}><Maximize2 size={12} /> Preview</button>
-              <button className="w-full px-3 py-1.5 text-xs text-left hover:bg-[var(--hover-bg)] flex items-center gap-2" onClick={async () => { const dir = await dialogOpen({ directory: true }); if (dir && contextMenu.assetId) await api.centerExportAssets([contextMenu.assetId], dir as string); }}><Download size={12} /> Download</button>
-              <button className="w-full px-3 py-1.5 text-xs text-left hover:bg-[var(--hover-bg)] flex items-center gap-2 text-red-400" onClick={async () => { if (contextMenu.assetId) { await api.centerDeleteAssets([contextMenu.assetId]); if (activeTabId) { const b = await api.centerGetWorkspaceBundle(activeTabId); setLoadedBundles((prev) => new Map(prev).set(activeTabId!, b)); } } }}><Trash2 size={12} /> Delete</button>
-              <button className="w-full px-3 py-1.5 text-xs text-left hover:bg-[var(--hover-bg)] flex items-center gap-2" onClick={() => { const a = currentAssets.find((x) => x.asset_id === contextMenu.assetId); if (a) navigator.clipboard.writeText(a.file_path); }}><Copy size={12} /> Copy path</button>
-              <button className="w-full px-3 py-1.5 text-xs text-left hover:bg-[var(--hover-bg)] flex items-center gap-2" onClick={() => { if (contextMenu.assetId) promoteToReference(contextMenu.assetId); }}><Image size={12} /> Set as reference</button>
+              <button className="w-full px-3 py-1.5 text-xs text-left hover:bg-[var(--hover-bg)] flex items-center gap-2" onClick={() => { const a = currentAssets.find((x) => x.asset_id === contextMenu.assetId); if (a) setPreviewAsset(a); }}><Maximize2 size={12} /> {t("mediaCenter.preview")}</button>
+              <button className="w-full px-3 py-1.5 text-xs text-left hover:bg-[var(--hover-bg)] flex items-center gap-2" onClick={async () => { const dir = await dialogOpen({ directory: true }); if (dir && contextMenu.assetId) await api.centerExportAssets([contextMenu.assetId], dir as string); }}><Download size={12} /> {t("mediaCenter.download")}</button>
+              <button className="w-full px-3 py-1.5 text-xs text-left hover:bg-[var(--hover-bg)] flex items-center gap-2 text-red-400" onClick={async () => { if (contextMenu.assetId) { await api.centerDeleteAssets([contextMenu.assetId]); if (activeTabId) { const b = await api.centerGetWorkspaceBundle(activeTabId); setLoadedBundles((prev) => new Map(prev).set(activeTabId!, b)); } } }}><Trash2 size={12} /> {t("mediaCenter.delete")}</button>
+              <button className="w-full px-3 py-1.5 text-xs text-left hover:bg-[var(--hover-bg)] flex items-center gap-2" onClick={() => { const a = currentAssets.find((x) => x.asset_id === contextMenu.assetId); if (a) navigator.clipboard.writeText(a.file_path); }}><Copy size={12} /> {t("mediaCenter.copyPath")}</button>
+              <button className="w-full px-3 py-1.5 text-xs text-left hover:bg-[var(--hover-bg)] flex items-center gap-2" onClick={() => { if (contextMenu.assetId) promoteToReference(contextMenu.assetId); }}><Image size={12} /> {t("mediaCenter.setAsRef")}</button>
             </>
           )}
           {!contextMenu.assetId && activeRound && (
             <>
-              <button className="w-full px-3 py-1.5 text-xs text-left hover:bg-[var(--hover-bg)] flex items-center gap-2" onClick={() => { if (activeRound) navigator.clipboard.writeText(activeRound.prompt); }}><Copy size={12} /> Copy prompt</button>
-              <button className="w-full px-3 py-1.5 text-xs text-left hover:bg-[var(--hover-bg)] flex items-center gap-2" onClick={() => { if (activeRound) setPrompt(activeRound.prompt); }}><RefreshCw size={12} /> Reuse params</button>
+              <button className="w-full px-3 py-1.5 text-xs text-left hover:bg-[var(--hover-bg)] flex items-center gap-2" onClick={() => { if (activeRound) navigator.clipboard.writeText(activeRound.prompt); }}><Copy size={12} /> {t("mediaCenter.copyPrompt")}</button>
+              <button className="w-full px-3 py-1.5 text-xs text-left hover:bg-[var(--hover-bg)] flex items-center gap-2" onClick={() => { if (activeRound) setPrompt(activeRound.prompt); }}><RefreshCw size={12} /> {t("mediaCenter.reuseParams")}</button>
             </>
           )}
         </div>
@@ -544,8 +546,8 @@ export function MediaCenterView() {
               <video src={convertFileSrc(previewAsset.file_path)} controls autoPlay className="max-w-full max-h-[85vh] rounded-lg" />
             )}
             <div className="flex justify-center gap-2 mt-3">
-              <Button size="sm" variant="secondary" onClick={async () => { const dir = await dialogOpen({ directory: true }); if (dir) await api.centerExportAssets([previewAsset.asset_id], dir as string); }}><Download size={12} /> Download</Button>
-              <Button size="sm" variant="secondary" className="text-red-400" onClick={async () => { await api.centerDeleteAssets([previewAsset.asset_id]); setPreviewAsset(null); if (activeTabId) { const b = await api.centerGetWorkspaceBundle(activeTabId); setLoadedBundles((prev) => new Map(prev).set(activeTabId!, b)); } }}><Trash2 size={12} /> Delete</Button>
+              <Button size="sm" variant="secondary" onClick={async () => { const dir = await dialogOpen({ directory: true }); if (dir) await api.centerExportAssets([previewAsset.asset_id], dir as string); }}><Download size={12} /> {t("mediaCenter.download")}</Button>
+              <Button size="sm" variant="secondary" className="text-red-400" onClick={async () => { await api.centerDeleteAssets([previewAsset.asset_id]); setPreviewAsset(null); if (activeTabId) { const b = await api.centerGetWorkspaceBundle(activeTabId); setLoadedBundles((prev) => new Map(prev).set(activeTabId!, b)); } }}><Trash2 size={12} /> {t("mediaCenter.delete")}</Button>
             </div>
             {currentAssets.length > 1 && (() => {
               const curIdx = currentAssets.findIndex((a) => a.asset_id === previewAsset.asset_id);

@@ -1,11 +1,11 @@
 use std::time::SystemTime;
+use std::sync::Arc;
 
-use tauri::{Emitter, Manager, State};
+use tauri::{Manager, State};
 use tfp_core::{
     CompletionRequest, CompletionResponse, ChatMessage, ImageGenRequest, ImageGenResult,
     SaveImageRequest,
 };
-use tfp_providers::StreamChunk;
 use tfp_storage::SavedImage;
 
 use crate::state::AppState;
@@ -203,59 +203,12 @@ pub async fn ai_complete_stream(
             )
         })?;
 
-    let mut rx = provider
-        .complete_stream(&request)
-        .await
-        .map_err(|e| e.to_string())?;
-
     let stream_id = uuid::Uuid::new_v4().to_string();
     let sid = stream_id.clone();
+    let sink: Arc<dyn tfp_core::EventSink> = Arc::new(crate::tauri_event_sink::TauriEventSink::new(app));
 
     tauri::async_runtime::spawn(async move {
-        while let Some(result) = rx.recv().await {
-            match result {
-                Ok(chunk) => {
-                    let payload = match chunk {
-                        StreamChunk::Token(token) => serde_json::json!({
-                            "stream_id": &sid,
-                            "token": token,
-                        }),
-                        StreamChunk::Reasoning(text) => serde_json::json!({
-                            "stream_id": &sid,
-                            "reasoning": text,
-                        }),
-                        StreamChunk::Usage {
-                            prompt_tokens,
-                            completion_tokens,
-                        } => serde_json::json!({
-                            "stream_id": &sid,
-                            "usage": {
-                                "prompt_tokens": prompt_tokens,
-                                "completion_tokens": completion_tokens,
-                            },
-                        }),
-                    };
-                    let _ = app.emit("ai-stream-token", payload);
-                }
-                Err(e) => {
-                    let _ = app.emit(
-                        "ai-stream-token",
-                        serde_json::json!({
-                            "stream_id": &sid,
-                            "error": e.to_string(),
-                        }),
-                    );
-                    break;
-                }
-            }
-        }
-        let _ = app.emit(
-            "ai-stream-token",
-            serde_json::json!({
-                "stream_id": &sid,
-                "done": true,
-            }),
-        );
+        let _ = tfp_chat::streaming::run_ai_stream(sink.as_ref(), provider, &request, &sid).await;
     });
 
     Ok(stream_id)
@@ -281,28 +234,54 @@ pub(crate) fn format_timestamp_for_filename() -> String {
 #[tauri::command]
 pub async fn run_image_pipeline(
     app: tauri::AppHandle,
-    request: crate::image_pipeline::pipeline::PipelineRequest,
-) -> Result<crate::image_pipeline::pipeline::PipelineResult, String> {
-    crate::image_pipeline::pipeline::run_pipeline(&app, request).await
+    state: State<'_, AppState>,
+    request: tfp_media::image_pipeline::PipelineRequest,
+) -> Result<tfp_media::image_pipeline::PipelineResult, String> {
+    let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let config = state.config.read().await;
+    let endpoint = config
+        .endpoints
+        .iter()
+        .find(|ep| ep.id == request.endpoint_id)
+        .cloned()
+        .ok_or_else(|| format!("Endpoint not found: {}", request.endpoint_id))?;
+    let quick_model = config.ai.quick_model.model_id.clone();
+    drop(config);
+
+    let providers = state.providers.read().await;
+    let ai_provider = providers.get_ai_completion(&request.endpoint_id);
+    drop(providers);
+
+    let sink: Arc<dyn tfp_core::EventSink> = Arc::new(crate::tauri_event_sink::TauriEventSink::new(app));
+    let deps = tfp_media::image_pipeline::PipelineDeps {
+        endpoint,
+        file_id_cache: state.file_id_cache.clone(),
+        sink,
+        data_dir,
+        ai_provider,
+        quick_model,
+    };
+
+    tfp_media::image_pipeline::run_pipeline(&deps, request).await
 }
 
 #[tauri::command]
 pub async fn get_image_model_catalog(
     app: tauri::AppHandle,
-) -> Result<Vec<crate::image_pipeline::catalog::ModelCapabilityEntry>, String> {
+) -> Result<Vec<tfp_media::catalog::ModelCapabilityEntry>, String> {
     let resource_path = app.path().resolve("assets/image-models.json", tauri::path::BaseDirectory::Resource);
     if let Ok(path) = resource_path {
         if path.exists() {
-            return Ok(crate::image_pipeline::catalog::load_image_models_from_file(&path));
+            return Ok(tfp_media::catalog::load_image_models_from_file(&path));
         }
     }
     if let Ok(data_dir) = app.path().app_data_dir() {
         let fallback = data_dir.join("image-models.json");
         if fallback.exists() {
-            return Ok(crate::image_pipeline::catalog::load_image_models_from_file(&fallback));
+            return Ok(tfp_media::catalog::load_image_models_from_file(&fallback));
         }
     }
-    Ok(crate::image_pipeline::catalog::builtin_image_models())
+    Ok(tfp_media::catalog::builtin_image_models())
 }
 
 #[cfg(test)]

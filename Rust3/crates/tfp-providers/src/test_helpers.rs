@@ -1,6 +1,6 @@
 #[cfg(test)]
 pub(crate) mod factories {
-    use tfp_core::{AiEndpoint, EndpointType};
+    use tfp_core::{AiEndpoint, ApiKeyHeaderMode, AzureAuthMode, EndpointType};
 
     pub fn azure_openai_endpoint(id: &str, name: &str) -> AiEndpoint {
         AiEndpoint {
@@ -13,13 +13,9 @@ pub(crate) mod factories {
             region: None,
             models: vec![],
             enabled: true,
-            auth_header_mode: "api_key".into(),
-            auth_mode: "api_key".into(),
-            azure_tenant_id: String::new(),
-            azure_client_id: String::new(),
-            speech_subscription_key: String::new(),
-            speech_region: String::new(),
-            speech_endpoint: String::new(),
+            auth_header_mode: ApiKeyHeaderMode::ApiKeyHeader,
+            auth_mode: AzureAuthMode::ApiKey,
+            ..AiEndpoint::default()
         }
     }
 
@@ -34,13 +30,9 @@ pub(crate) mod factories {
             region: None,
             models: vec![],
             enabled: true,
-            auth_header_mode: "bearer".into(),
-            auth_mode: "api_key".into(),
-            azure_tenant_id: String::new(),
-            azure_client_id: String::new(),
-            speech_subscription_key: String::new(),
-            speech_region: String::new(),
-            speech_endpoint: String::new(),
+            auth_header_mode: ApiKeyHeaderMode::Bearer,
+            auth_mode: AzureAuthMode::ApiKey,
+            ..AiEndpoint::default()
         }
     }
 
@@ -55,13 +47,11 @@ pub(crate) mod factories {
             region: Some("eastus".into()),
             models: vec![],
             enabled: true,
-            auth_header_mode: "api_key".into(),
-            auth_mode: "api_key".into(),
-            azure_tenant_id: String::new(),
-            azure_client_id: String::new(),
+            auth_header_mode: ApiKeyHeaderMode::ApiKeyHeader,
+            auth_mode: AzureAuthMode::ApiKey,
             speech_subscription_key: "test-key".into(),
             speech_region: "eastus".into(),
-            speech_endpoint: String::new(),
+            ..AiEndpoint::default()
         }
     }
 }

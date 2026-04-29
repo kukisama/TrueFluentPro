@@ -299,8 +299,13 @@ export function MediaStudioView() {
           </div>
         )}
         {!activeSessionId ? (
-          <div className="flex-1 flex items-center justify-center">
+          <div className="flex-1 flex flex-col items-center justify-center gap-4">
             <EmptyState icon={<MessageSquare size={48} />} title={t("studio.selectOrNew")} description={t("studio.selectOrNewDesc")} />
+            <div className="flex gap-3">
+              <Button size="sm" onClick={() => handleNewSession("chat")}><MessageSquare size={14} /> {t("studio.textChat")}</Button>
+              <Button size="sm" variant="secondary" onClick={() => handleNewSession("image")}><Image size={14} /> {t("studio.imageCreation")}</Button>
+              <Button size="sm" variant="secondary" onClick={() => handleNewSession("video")}><Video size={14} /> {t("studio.videoCreation")}</Button>
+            </div>
           </div>
         ) : (
           <>

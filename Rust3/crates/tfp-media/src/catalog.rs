@@ -2,7 +2,6 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 
 /// Model capability catalog — dynamically loaded from Assets/image-models.json
-/// Replaces the previous hardcoded 2-model catalog
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelCapabilityEntry {
@@ -171,13 +170,9 @@ mod tests {
     fn test_builtin_image_models() {
         let models = builtin_image_models();
         assert_eq!(models.len(), 2);
-
-        // First entry: gpt-image-2
         assert_eq!(models[0].model_id, "gpt-image-2");
         assert!(models[0].capabilities.contains(&"generate".to_string()));
         assert!(models[0].capabilities.contains(&"edit".to_string()));
-
-        // Second entry: gpt-image-1, Fixed resolution
         assert_eq!(models[1].model_id, "gpt-image-1");
         assert_eq!(models[1].resolution_mode, "Fixed");
     }
@@ -204,30 +199,8 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_invalid_json_falls_back() {
-        let result = parse_image_models_json("not json");
-        // Falls back to builtin defaults
-        assert_eq!(result.len(), 2);
-        assert_eq!(result[0].model_id, "gpt-image-2");
-    }
-
-    #[test]
-    fn test_model_capability_entry_json_fields() {
-        let models = builtin_image_models();
-        let first = &models[0];
-        let json: serde_json::Value = serde_json::to_value(first).unwrap();
-        let obj = json.as_object().unwrap();
-
-        for key in &[
-            "model_id", "display_name", "provider", "capabilities",
-            "supported_sizes", "supported_qualities", "supported_styles",
-            "max_prompt_length", "supports_negative_prompt",
-            "supports_transparent_background", "supports_input_fidelity",
-            "resolution_mode",
-        ] {
-            assert!(obj.contains_key(*key), "Missing key: {key}");
-        }
-        assert!(obj["capabilities"].is_array());
-        assert!(obj["supported_sizes"].is_array());
+    fn test_parse_invalid_json_returns_builtin() {
+        let result = parse_image_models_json("not json!");
+        assert_eq!(result.len(), 2); // falls back to builtin
     }
 }

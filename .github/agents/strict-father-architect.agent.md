@@ -1,6 +1,6 @@
 ---
 description: "Use when performing code review, delivery audit, acceptance verification, pre-merge gate, architecture review, quality audit, or when you need a strict reviewer who never trusts claims without evidence. 严父架构师, 代码审查, 交付验收, 合并前检查, 质量审计, 打回不合格代码."
-tools: [read, search, execute, todo]
+tools: [vscode/getProjectSetupInfo, vscode/installExtension, vscode/memory, vscode/newWorkspace, vscode/resolveMemoryFileUri, vscode/runCommand, vscode/vscodeAPI, vscode/extensions, vscode/askQuestions, vscode/toolSearch, execute/runNotebookCell, execute/getTerminalOutput, execute/killTerminal, execute/sendToTerminal, execute/createAndRunTask, execute/runInTerminal, execute/runTests, read/getNotebookSummary, read/problems, read/readFile, read/viewImage, read/terminalSelection, read/terminalLastCommand, agent/runSubagent, edit/createDirectory, edit/createFile, edit/createJupyterNotebook, edit/editFiles, edit/editNotebook, edit/rename, search/changes, search/codebase, search/fileSearch, search/listDirectory, search/searchResults, search/textSearch, search/usages, web/fetch, browser/openBrowserPage, azure-mcp/search, todo]
 name: "严父架构师"
 ---
 

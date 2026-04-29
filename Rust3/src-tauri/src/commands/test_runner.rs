@@ -1,20 +1,23 @@
 use serde_json::json;
 use tfp_core::{
-    AiEndpoint, EndpointTestItem, EndpointType, ModelCapability, TestStatus, VendorProfile,
+    AiEndpoint, ApiKeyHeaderMode, EndpointTestItem, EndpointType, ModelCapability, TestStatus,
+    VendorProfile,
 };
 
-/// Resolve auth: endpoint override → profile default → platform fallback
+/// Resolve auth: endpoint override `->` profile default `->` platform fallback
 pub(crate) fn resolve_auth_header(endpoint: &AiEndpoint, profile: Option<&VendorProfile>) -> String {
-    let mode = &endpoint.auth_header_mode;
-    if mode != "auto" && !mode.is_empty() {
-        return mode.clone();
-    }
-    if let Some(p) = profile {
-        if !p.default_auth_header.is_empty() {
-            return p.default_auth_header.clone();
+    match &endpoint.auth_header_mode {
+        ApiKeyHeaderMode::Auto => {
+            if let Some(p) = profile {
+                if !p.default_auth_header.is_empty() {
+                    return p.default_auth_header.clone();
+                }
+            }
+            if endpoint.is_azure() { "api_key".into() } else { "bearer".into() }
         }
+        ApiKeyHeaderMode::ApiKeyHeader => "api_key".into(),
+        ApiKeyHeaderMode::Bearer => "bearer".into(),
     }
-    if endpoint.is_azure() { "api_key".into() } else { "bearer".into() }
 }
 
 /// Build an authenticated request builder
@@ -80,18 +83,43 @@ pub(crate) fn build_url_candidates(
 
 type TestResult = (bool, String, Option<String>);
 
+/// Determine if a URL targets the Responses API
+fn is_responses_url(url: &str) -> bool {
+    url.contains("/responses")
+}
+
 async fn test_text(
     client: &reqwest::Client, url: &str, model: &str,
     endpoint: &AiEndpoint, profile: Option<&VendorProfile>,
 ) -> TestResult {
-    let body = json!({"model": model, "messages": [{"role":"user","content":"Say hello in one word."}], "max_tokens": 10});
+    let is_responses = is_responses_url(url);
+    let body = if is_responses {
+        // Responses API format — no max_tokens; use max_output_tokens if needed
+        json!({"model": model, "input": "Say hello in one word.", "max_output_tokens": 20})
+    } else {
+        // Chat Completions format — use max_completion_tokens (works with newer models)
+        json!({"model": model, "messages": [{"role":"user","content":"Say hello in one word."}], "max_completion_tokens": 20})
+    };
     match build_authed_request(client, reqwest::Method::POST, url, endpoint, profile).json(&body).send().await {
         Ok(r) => {
             let status = r.status();
             if status.is_success() {
                 let text = r.text().await.unwrap_or_default();
-                let content = serde_json::from_str::<serde_json::Value>(&text).ok()
-                    .and_then(|v| v["choices"][0]["message"]["content"].as_str().map(|s| s.chars().take(100).collect::<String>()));
+                let parsed = serde_json::from_str::<serde_json::Value>(&text).ok();
+                let content = if is_responses {
+                    // Responses API: output[].content[].text
+                    parsed.as_ref()
+                        .and_then(|v| v["output"].as_array())
+                        .and_then(|arr| arr.iter().find(|o| o["type"].as_str() == Some("message")))
+                        .and_then(|msg| msg["content"].as_array())
+                        .and_then(|c| c.first())
+                        .and_then(|t| t["text"].as_str())
+                        .map(|s| s.chars().take(100).collect::<String>())
+                } else {
+                    // Chat Completions: choices[0].message.content
+                    parsed.as_ref()
+                        .and_then(|v| v["choices"][0]["message"]["content"].as_str().map(|s| s.chars().take(100).collect::<String>()))
+                };
                 (true, format!("OK: {}", content.as_deref().unwrap_or("(no content)")), None)
             } else {
                 let text = r.text().await.unwrap_or_default();
@@ -106,7 +134,11 @@ async fn test_image(
     client: &reqwest::Client, url: &str, model: &str,
     endpoint: &AiEndpoint, profile: Option<&VendorProfile>,
 ) -> TestResult {
-    let body = json!({"model": model, "prompt": "A tiny red dot", "size": "256x256", "quality": "low", "n": 1});
+    // Skip /images/edits URLs — those require an image parameter we don't have in test
+    if url.contains("/images/edits") {
+        return (true, "Image edit endpoint available (skipped active test)".into(), None);
+    }
+    let body = json!({"model": model, "prompt": "A tiny red dot", "size": "1024x1024", "quality": "low", "n": 1});
     match build_authed_request(client, reqwest::Method::POST, url, endpoint, profile).json(&body).send().await {
         Ok(r) => {
             let status = r.status();
@@ -207,16 +239,16 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    fn test_ep(auth: &str) -> AiEndpoint {
+    fn test_ep(auth: ApiKeyHeaderMode) -> AiEndpoint {
         AiEndpoint {
-            id: "test".into(), name: "Test".into(),
+            id: "test".into(),
+            name: "Test".into(),
             endpoint_type: EndpointType::OpenAiCompatible,
-            url: "https://example.com".into(), api_key: "key".into(),
-            api_version: None, region: None, models: vec![], enabled: true,
-            auth_header_mode: auth.into(), auth_mode: "api_key".into(),
-            azure_tenant_id: String::new(), azure_client_id: String::new(),
-            speech_subscription_key: String::new(), speech_region: String::new(),
-            speech_endpoint: String::new(),
+            url: "https://example.com".into(),
+            api_key: "key".into(),
+            enabled: true,
+            auth_header_mode: auth,
+            ..AiEndpoint::default()
         }
     }
 
@@ -257,12 +289,12 @@ mod tests {
 
     #[test]
     fn test_resolve_auth_header_explicit() {
-        assert_eq!(resolve_auth_header(&test_ep("bearer"), None), "bearer");
+        assert_eq!(resolve_auth_header(&test_ep(ApiKeyHeaderMode::Bearer), None), "bearer");
     }
 
     #[test]
     fn test_resolve_auth_header_auto_azure() {
-        let mut ep = test_ep("auto");
+        let mut ep = test_ep(ApiKeyHeaderMode::Auto);
         ep.endpoint_type = EndpointType::AzureOpenAi;
         assert_eq!(resolve_auth_header(&ep, None), "api_key");
     }

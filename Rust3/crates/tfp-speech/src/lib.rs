@@ -1,9 +1,8 @@
-//! tfp-speech — Speech SDK FFI（仅声明，不引入 FFI 依赖）
+//! tfp-speech — 语音/翻译域
+//!
+//! Pure functions for language lists, modal-particle filtering,
+//! and segment extraction from realtime events.
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        assert!(true);
-    }
-}
+pub mod languages;
+pub mod segment;
+pub mod text_filter;

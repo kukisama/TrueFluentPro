@@ -255,8 +255,8 @@ async fn save_token_and_notify(
         let mut config = state_ref.config.write().await;
         if let Some(ep) = config.endpoints.iter_mut().find(|e| e.id == endpoint_id) {
             ep.api_key = access_token.to_string();
-            ep.auth_mode = "aad".to_string();
-            ep.auth_header_mode = "bearer".to_string();
+            ep.auth_mode = tfp_core::AzureAuthMode::Aad;
+            ep.auth_header_mode = tfp_core::ApiKeyHeaderMode::Bearer;
             if let Some(tid) = tenant_id {
                 if !tid.is_empty() {
                     ep.azure_tenant_id = tid.to_string();
@@ -633,8 +633,8 @@ pub async fn refresh_token_silent(
         let mut config = state.config.write().await;
         if let Some(ep) = config.endpoints.iter_mut().find(|e| e.id == endpoint_id) {
             ep.api_key = new_access.clone();
-            ep.auth_mode = "aad".to_string();
-            ep.auth_header_mode = "bearer".to_string();
+            ep.auth_mode = tfp_core::AzureAuthMode::Aad;
+            ep.auth_header_mode = tfp_core::ApiKeyHeaderMode::Bearer;
             if !tenant_id.is_empty() && ep.azure_tenant_id != tenant_id {
                 ep.azure_tenant_id = tenant_id.to_string();
             }

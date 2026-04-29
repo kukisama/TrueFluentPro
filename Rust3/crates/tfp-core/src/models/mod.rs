@@ -5,6 +5,9 @@ mod live;
 mod studio;
 mod center;
 mod audiolab;
+mod enums;
+mod cloud;
+mod common;
 
 pub use config::*;
 pub use settings::*;
@@ -13,6 +16,9 @@ pub use live::*;
 pub use studio::*;
 pub use center::*;
 pub use audiolab::*;
+pub use enums::*;
+pub use cloud::*;
+pub use common::*;
 
 #[cfg(test)]
 mod tests {
@@ -59,16 +65,12 @@ mod tests {
             region: None,
             models: vec![],
             enabled: true,
-            auth_header_mode: "auto".into(),
-            auth_mode: "api_key".into(),
-            azure_tenant_id: String::new(),
-            azure_client_id: String::new(),
-            speech_subscription_key: String::new(),
-            speech_region: String::new(),
-            speech_endpoint: String::new(),
+            auth_header_mode: ApiKeyHeaderMode::Auto,
+            auth_mode: AzureAuthMode::ApiKey,
+            ..AiEndpoint::default()
         };
         azure_ep.migrate_auth_header_mode();
-        assert_eq!(azure_ep.auth_header_mode, "api_key");
+        assert_eq!(azure_ep.auth_header_mode, ApiKeyHeaderMode::ApiKeyHeader);
 
         let mut oai_ep = AiEndpoint {
             id: "ep2".into(),
@@ -80,16 +82,12 @@ mod tests {
             region: None,
             models: vec![],
             enabled: true,
-            auth_header_mode: "auto".into(),
-            auth_mode: "api_key".into(),
-            azure_tenant_id: String::new(),
-            azure_client_id: String::new(),
-            speech_subscription_key: String::new(),
-            speech_region: String::new(),
-            speech_endpoint: String::new(),
+            auth_header_mode: ApiKeyHeaderMode::Auto,
+            auth_mode: AzureAuthMode::ApiKey,
+            ..AiEndpoint::default()
         };
         oai_ep.migrate_auth_header_mode();
-        assert_eq!(oai_ep.auth_header_mode, "bearer");
+        assert_eq!(oai_ep.auth_header_mode, ApiKeyHeaderMode::Bearer);
     }
 
     #[test]
@@ -139,13 +137,14 @@ mod tests {
             region: Some("eastus".into()),
             models: vec![],
             enabled: true,
-            auth_header_mode: "api_key".into(),
-            auth_mode: "api_key".into(),
+            auth_header_mode: ApiKeyHeaderMode::ApiKeyHeader,
+            auth_mode: AzureAuthMode::ApiKey,
             azure_tenant_id: "tid".into(),
             azure_client_id: "cid".into(),
             speech_subscription_key: "sk".into(),
             speech_region: "westus".into(),
             speech_endpoint: "https://speech.example.com".into(),
+            ..AiEndpoint::default()
         };
         let json = serde_json::to_value(&ep).unwrap();
         let obj = json.as_object().unwrap();
@@ -677,18 +676,8 @@ mod tests {
             name: "Test".into(),
             endpoint_type: ep_type,
             url: "https://example.com".into(),
-            api_key: String::new(),
-            api_version: None,
-            region: None,
-            models: vec![],
             enabled: true,
-            auth_header_mode: "api_key".into(),
-            auth_mode: "api_key".into(),
-            azure_tenant_id: String::new(),
-            azure_client_id: String::new(),
-            speech_subscription_key: String::new(),
-            speech_region: String::new(),
-            speech_endpoint: String::new(),
+            ..AiEndpoint::default()
         }
     }
 
@@ -729,12 +718,14 @@ mod tests {
                 display_name: "Model A".into(),
                 deployment_name: None,
                 capabilities: vec![ModelCapability::Text, ModelCapability::Image],
+                group_name: None,
             },
             AiModelEntry {
                 model_id: "model-b".into(),
                 display_name: "Model B".into(),
                 deployment_name: None,
                 capabilities: vec![ModelCapability::Video],
+                group_name: None,
             },
         ];
         let text_model = ep.first_model_with_capability(ModelCapability::Text);
@@ -757,6 +748,7 @@ mod tests {
             display_name: "GPT-4o".into(),
             deployment_name: Some("gpt-4o-dep".into()),
             capabilities: vec![ModelCapability::Text],
+                group_name: None,
         };
         assert_eq!(with_dep.effective_deployment(), "gpt-4o-dep");
 
@@ -765,6 +757,7 @@ mod tests {
             display_name: "GPT-4o".into(),
             deployment_name: None,
             capabilities: vec![ModelCapability::Text],
+                group_name: None,
         };
         assert_eq!(without_dep.effective_deployment(), "gpt-4o");
 
@@ -773,6 +766,7 @@ mod tests {
             display_name: "GPT-4o".into(),
             deployment_name: Some("".into()),
             capabilities: vec![ModelCapability::Text],
+                group_name: None,
         };
         assert_eq!(empty_dep.effective_deployment(), "");
     }
@@ -781,9 +775,9 @@ mod tests {
     #[test]
     fn test_migrate_auth_no_op_when_not_auto() {
         let mut ep = make_endpoint(EndpointType::AzureOpenAi);
-        ep.auth_header_mode = "bearer".into();
+        ep.auth_header_mode = ApiKeyHeaderMode::Bearer;
         ep.migrate_auth_header_mode();
-        assert_eq!(ep.auth_header_mode, "bearer");
+        assert_eq!(ep.auth_header_mode, ApiKeyHeaderMode::Bearer);
     }
 
     // T-005
@@ -905,5 +899,259 @@ mod tests {
         assert_eq!(serde_json::to_value(&ModelCapability::TextToSpeech).unwrap(), "text_to_speech");
         let rt: ModelCapability = serde_json::from_str("\"speech_to_text\"").unwrap();
         assert_eq!(rt, ModelCapability::SpeechToText);
+    }
+
+    // ═══════ Batch-0 new tests (≥20) ═══════
+
+    // ── T-001: config.rs typed enums serde round-trip ──
+
+    #[test]
+    fn test_b0_ai_provider_type_serde() {
+        assert_eq!(serde_json::to_value(&AiProviderType::OpenAiCompatible).unwrap(), "open_ai_compatible");
+        assert_eq!(serde_json::to_value(&AiProviderType::AzureOpenAi).unwrap(), "azure_open_ai");
+        let rt: AiProviderType = serde_json::from_str("\"open_ai_compatible\"").unwrap();
+        assert_eq!(rt, AiProviderType::OpenAiCompatible);
+        let rt2: AiProviderType = serde_json::from_str("\"azure_open_ai\"").unwrap();
+        assert_eq!(rt2, AiProviderType::AzureOpenAi);
+    }
+
+    #[test]
+    fn test_b0_azure_auth_mode_serde() {
+        assert_eq!(serde_json::to_value(&AzureAuthMode::ApiKey).unwrap(), "api_key");
+        assert_eq!(serde_json::to_value(&AzureAuthMode::Aad).unwrap(), "aad");
+        let rt: AzureAuthMode = serde_json::from_str("\"api_key\"").unwrap();
+        assert_eq!(rt, AzureAuthMode::ApiKey);
+        let rt2: AzureAuthMode = serde_json::from_str("\"aad\"").unwrap();
+        assert_eq!(rt2, AzureAuthMode::Aad);
+    }
+
+    #[test]
+    fn test_b0_api_key_header_mode_serde() {
+        assert_eq!(serde_json::to_value(&ApiKeyHeaderMode::ApiKeyHeader).unwrap(), "api_key");
+        assert_eq!(serde_json::to_value(&ApiKeyHeaderMode::Bearer).unwrap(), "bearer");
+        assert_eq!(serde_json::to_value(&ApiKeyHeaderMode::Auto).unwrap(), "auto");
+        let rt: ApiKeyHeaderMode = serde_json::from_str("\"api_key\"").unwrap();
+        assert_eq!(rt, ApiKeyHeaderMode::ApiKeyHeader);
+        let rt2: ApiKeyHeaderMode = serde_json::from_str("\"bearer\"").unwrap();
+        assert_eq!(rt2, ApiKeyHeaderMode::Bearer);
+    }
+
+    #[test]
+    fn test_b0_text_api_protocol_mode_serde() {
+        assert_eq!(serde_json::to_value(&TextApiProtocolMode::Auto).unwrap(), "auto");
+        assert_eq!(serde_json::to_value(&TextApiProtocolMode::ChatCompletionsV1).unwrap(), "chat_completions_v1");
+        assert_eq!(serde_json::to_value(&TextApiProtocolMode::ChatCompletionsRaw).unwrap(), "chat_completions_raw");
+        assert_eq!(serde_json::to_value(&TextApiProtocolMode::Responses).unwrap(), "responses");
+        let rt: TextApiProtocolMode = serde_json::from_str("\"responses\"").unwrap();
+        assert_eq!(rt, TextApiProtocolMode::Responses);
+    }
+
+    #[test]
+    fn test_b0_image_api_route_mode_serde() {
+        assert_eq!(serde_json::to_value(&ImageApiRouteMode::Auto).unwrap(), "auto");
+        assert_eq!(serde_json::to_value(&ImageApiRouteMode::V1Images).unwrap(), "v1_images");
+        assert_eq!(serde_json::to_value(&ImageApiRouteMode::ImagesRaw).unwrap(), "images_raw");
+        let rt: ImageApiRouteMode = serde_json::from_str("\"v1_images\"").unwrap();
+        assert_eq!(rt, ImageApiRouteMode::V1Images);
+    }
+
+    #[test]
+    fn test_b0_image_edit_mode_serde() {
+        assert_eq!(serde_json::to_value(&ImageEditMode::V1Multipart).unwrap(), "v1_multipart");
+        assert_eq!(serde_json::to_value(&ImageEditMode::V2ResponsesApi).unwrap(), "v2_responses_api");
+        let rt: ImageEditMode = serde_json::from_str("\"v1_multipart\"").unwrap();
+        assert_eq!(rt, ImageEditMode::V1Multipart);
+        // Default is V2ResponsesApi
+        assert_eq!(ImageEditMode::default(), ImageEditMode::V2ResponsesApi);
+    }
+
+    #[test]
+    fn test_b0_speech_capability_flag_serde() {
+        assert_eq!(serde_json::to_value(&SpeechCapabilityFlag::RealtimeSpeechToText).unwrap(), "realtime_speech_to_text");
+        assert_eq!(serde_json::to_value(&SpeechCapabilityFlag::BatchSpeechToText).unwrap(), "batch_speech_to_text");
+        assert_eq!(serde_json::to_value(&SpeechCapabilityFlag::TextToSpeech).unwrap(), "text_to_speech");
+        let rt: SpeechCapabilityFlag = serde_json::from_str("\"text_to_speech\"").unwrap();
+        assert_eq!(rt, SpeechCapabilityFlag::TextToSpeech);
+    }
+
+    // ── T-005: enums.rs serde round-trip ──
+
+    #[test]
+    fn test_b0_processing_display_state_serde() {
+        assert_eq!(serde_json::to_value(&ProcessingDisplayState::None).unwrap(), "none");
+        assert_eq!(serde_json::to_value(&ProcessingDisplayState::Pending).unwrap(), "pending");
+        assert_eq!(serde_json::to_value(&ProcessingDisplayState::Running).unwrap(), "running");
+        assert_eq!(serde_json::to_value(&ProcessingDisplayState::Partial).unwrap(), "partial");
+        assert_eq!(serde_json::to_value(&ProcessingDisplayState::Completed).unwrap(), "completed");
+        assert_eq!(serde_json::to_value(&ProcessingDisplayState::Failed).unwrap(), "failed");
+        assert_eq!(serde_json::to_value(&ProcessingDisplayState::Removed).unwrap(), "removed");
+        let rt: ProcessingDisplayState = serde_json::from_str("\"partial\"").unwrap();
+        assert_eq!(rt, ProcessingDisplayState::Partial);
+    }
+
+    #[test]
+    fn test_b0_audio_source_mode_serde() {
+        assert_eq!(serde_json::to_value(&AudioSourceMode::DefaultMic).unwrap(), "default_mic");
+        assert_eq!(serde_json::to_value(&AudioSourceMode::CaptureDevice).unwrap(), "capture_device");
+        assert_eq!(serde_json::to_value(&AudioSourceMode::Loopback).unwrap(), "loopback");
+        let rt: AudioSourceMode = serde_json::from_str("\"loopback\"").unwrap();
+        assert_eq!(rt, AudioSourceMode::Loopback);
+    }
+
+    #[test]
+    fn test_b0_recording_mode_serde() {
+        assert_eq!(serde_json::to_value(&RecordingMode::LoopbackOnly).unwrap(), "loopback_only");
+        assert_eq!(serde_json::to_value(&RecordingMode::LoopbackWithMic).unwrap(), "loopback_with_mic");
+        assert_eq!(serde_json::to_value(&RecordingMode::MicOnly).unwrap(), "mic_only");
+        let rt: RecordingMode = serde_json::from_str("\"mic_only\"").unwrap();
+        assert_eq!(rt, RecordingMode::MicOnly);
+    }
+
+    #[test]
+    fn test_b0_service_mode_serde() {
+        assert_eq!(serde_json::to_value(&ServiceMode::SelfHosted).unwrap(), "self_hosted");
+        assert_eq!(serde_json::to_value(&ServiceMode::Cloud).unwrap(), "cloud");
+        let rt: ServiceMode = serde_json::from_str("\"cloud\"").unwrap();
+        assert_eq!(rt, ServiceMode::Cloud);
+    }
+
+    #[test]
+    fn test_b0_batch_log_level_serde() {
+        assert_eq!(serde_json::to_value(&BatchLogLevel::Off).unwrap(), "off");
+        assert_eq!(serde_json::to_value(&BatchLogLevel::FailuresOnly).unwrap(), "failures_only");
+        assert_eq!(serde_json::to_value(&BatchLogLevel::SuccessAndFailure).unwrap(), "success_and_failure");
+        let rt: BatchLogLevel = serde_json::from_str("\"failures_only\"").unwrap();
+        assert_eq!(rt, BatchLogLevel::FailuresOnly);
+    }
+
+    #[test]
+    fn test_b0_transcription_api_mode_serde() {
+        assert_eq!(serde_json::to_value(&TranscriptionApiMode::Batch).unwrap(), "batch");
+        assert_eq!(serde_json::to_value(&TranscriptionApiMode::Fast).unwrap(), "fast");
+        let rt: TranscriptionApiMode = serde_json::from_str("\"fast\"").unwrap();
+        assert_eq!(rt, TranscriptionApiMode::Fast);
+    }
+
+    // ── T-006: cloud.rs serde tests ──
+
+    #[test]
+    fn test_b0_cloud_settings_default_from_empty() {
+        let cs: CloudSettings = serde_json::from_str("{}").unwrap();
+        assert_eq!(cs.mode, ServiceMode::SelfHosted);
+        assert!(cs.backend_url.is_empty());
+        assert!(cs.aad_tenant_id.is_empty());
+    }
+
+    #[test]
+    fn test_b0_cloud_user_profile_roundtrip() {
+        let profile = CloudUserProfile {
+            user_id: "u1".into(),
+            display_name: "Test User".into(),
+            email: "user@example.com".into(),
+            subscription: "pro".into(),
+            is_admin: true,
+            quotas: std::collections::HashMap::from([
+                ("text".into(), QuotaInfo { used: 100, limit: 1000 }),
+            ]),
+        };
+        let json = serde_json::to_string(&profile).unwrap();
+        let restored: CloudUserProfile = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored.user_id, "u1");
+        assert_eq!(restored.subscription, "pro");
+        assert!(restored.is_admin);
+        assert_eq!(restored.quotas["text"].remaining(), 900);
+    }
+
+    #[test]
+    fn test_b0_quota_info_remaining() {
+        let q = QuotaInfo { used: 75, limit: 100 };
+        assert_eq!(q.remaining(), 25);
+        let q2 = QuotaInfo { used: 100, limit: 100 };
+        assert_eq!(q2.remaining(), 0);
+        let q3 = QuotaInfo { used: 120, limit: 100 };
+        assert_eq!(q3.remaining(), -20);
+    }
+
+    // ── T-007: common.rs model tests ──
+
+    #[test]
+    fn test_b0_subtitle_cue_display_text() {
+        let cue = SubtitleCue { start_ms: 0, end_ms: 5000, text: "Hello world".into() };
+        assert_eq!(cue.display_text(20), "Hello world");
+        assert_eq!(cue.display_text(5), "Hello\u{2026}");
+    }
+
+    #[test]
+    fn test_b0_subtitle_cue_range_text() {
+        let cue = SubtitleCue { start_ms: 3661000, end_ms: 7322000, text: "x".into() };
+        assert_eq!(cue.range_text(), "01:01:01 \u{2192} 02:02:02");
+    }
+
+    #[test]
+    fn test_b0_model_option_display_string() {
+        let opt = ModelOption {
+            reference: ModelReference { endpoint_id: "ep1".into(), model_id: "m1".into() },
+            endpoint_name: "Azure".into(),
+            model_display_name: "GPT-4o".into(),
+            endpoint_type: EndpointType::AzureOpenAi,
+        };
+        assert_eq!(opt.display_string(), "Azure / GPT-4o");
+    }
+
+    #[test]
+    fn test_b0_azure_tenant_info_display_string() {
+        let t1 = AzureTenantInfo { tenant_id: "tid-123".into(), display_name: "Contoso".into() };
+        assert_eq!(t1.display_string(), "Contoso (tid-123)");
+        let t2 = AzureTenantInfo { tenant_id: "tid-456".into(), display_name: String::new() };
+        assert_eq!(t2.display_string(), "tid-456");
+    }
+
+    #[test]
+    fn test_b0_review_sheet_preset_defaults() {
+        let json = r#"{"name":"N","file_tag":"T","prompt":"P"}"#;
+        let p: ReviewSheetPreset = serde_json::from_str(json).unwrap();
+        assert!(p.include_in_batch);
+        assert!(p.is_enabled);
+    }
+
+    // ── T-008: AppConfig cloud field ──
+
+    #[test]
+    fn test_b0_app_config_has_cloud_field() {
+        let config = AppConfig::default();
+        assert_eq!(config.cloud.mode, ServiceMode::SelfHosted);
+        let json = serde_json::to_value(&config).unwrap();
+        assert!(json.as_object().unwrap().contains_key("cloud"));
+    }
+
+    // ── Backward compat: empty JSON → defaults ──
+
+    #[test]
+    fn test_b0_ai_endpoint_from_minimal_json() {
+        let json = r#"{"id":"x","name":"X","endpoint_type":"azure_open_ai","url":"https://e.com","api_key":"k","models":[],"enabled":true}"#;
+        let ep: AiEndpoint = serde_json::from_str(json).unwrap();
+        assert_eq!(ep.auth_header_mode, ApiKeyHeaderMode::ApiKeyHeader);
+        assert_eq!(ep.auth_mode, AzureAuthMode::ApiKey);
+        assert_eq!(ep.provider_type, AiProviderType::OpenAiCompatible);
+        assert_eq!(ep.text_api_protocol_mode, TextApiProtocolMode::Auto);
+        assert_eq!(ep.image_api_route_mode, ImageApiRouteMode::Auto);
+        assert!(ep.speech_capabilities.is_empty());
+        assert!(ep.profile_id.is_empty());
+    }
+
+    // ── T-004: new MediaSettings fields defaults ──
+
+    #[test]
+    fn test_b0_media_settings_new_fields_defaults() {
+        let ms: MediaSettings = serde_json::from_str("{}").unwrap();
+        assert_eq!(ms.image_model_name, "gpt-image-1");
+        assert_eq!(ms.video_model_name, "sora-2");
+        assert_eq!(ms.image_edit_mode, ImageEditMode::V2ResponsesApi);
+        assert_eq!(ms.input_fidelity, "auto");
+        assert!(ms.enable_chat_image_generation);
+        assert_eq!(ms.video_width, 1280);
+        assert_eq!(ms.video_height, 720);
+        assert!(!ms.default_enable_studio_reasoning);
+        assert!(!ms.default_enable_studio_web_search);
     }
 }

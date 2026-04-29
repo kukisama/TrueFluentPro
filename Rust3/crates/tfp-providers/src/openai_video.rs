@@ -241,7 +241,7 @@ impl VideoGenSlot for OpenAiVideoProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tfp_core::EndpointType;
+    use tfp_core::{ApiKeyHeaderMode, EndpointType};
 
     fn video_endpoint() -> AiEndpoint {
         AiEndpoint {
@@ -251,16 +251,9 @@ mod tests {
             url: "https://myresource.openai.azure.com".into(),
             api_key: "key".into(),
             api_version: Some("2025-03-01-preview".into()),
-            region: None,
-            models: vec![],
             enabled: true,
-            auth_header_mode: "api_key".into(),
-            auth_mode: "api_key".into(),
-            azure_tenant_id: String::new(),
-            azure_client_id: String::new(),
-            speech_subscription_key: String::new(),
-            speech_region: String::new(),
-            speech_endpoint: String::new(),
+            auth_header_mode: ApiKeyHeaderMode::ApiKeyHeader,
+            ..AiEndpoint::default()
         }
     }
 

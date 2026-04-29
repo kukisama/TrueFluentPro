@@ -1,9 +1,8 @@
 mod commands;
 mod state;
-mod task_engine;
-mod task_event_bus;
-mod image_pipeline;
+mod tauri_event_sink;
 
+use std::sync::Arc;
 use tauri::Manager;
 use tfp_core::AiEndpoint;
 use tfp_providers::register_providers;
@@ -64,7 +63,7 @@ pub fn run() {
                     let tokens = state_ref.refresh_tokens.read().await;
                     let config = state_ref.config.read().await;
                     config.endpoints.iter()
-                        .filter(|ep| ep.auth_mode == "aad" && tokens.contains_key(&ep.id))
+                        .filter(|ep| ep.auth_mode == tfp_core::AzureAuthMode::Aad && tokens.contains_key(&ep.id))
                         .map(|ep| {
                             let tid = if ep.azure_tenant_id.is_empty() { "common".to_string() } else { ep.azure_tenant_id.clone() };
                             let cid = if ep.azure_client_id.is_empty() { "04b07795-8ddb-461a-bbee-02f9e1bf7b46".to_string() } else { ep.azure_client_id.clone() };
@@ -99,9 +98,27 @@ pub fn run() {
                 let handle = app.handle().clone();
                 let state_ref: &AppState = handle.state::<AppState>().inner();
                 let db_arc = state_ref.db.clone();
+                let config_arc = state_ref.config.clone();
+                let providers_arc = state_ref.providers.clone();
+                let bus_arc = state_ref.task_event_bus.clone();
+                let sink = Arc::new(tauri_event_sink::TauriEventSink::new(handle.clone()));
+
+                let data_dir = handle
+                    .path()
+                    .app_data_dir()
+                    .unwrap_or_else(|_| std::path::PathBuf::from("."));
+
                 let handle2 = handle.clone();
                 tauri::async_runtime::spawn(async move {
-                    let engine = task_engine::TaskEngine::start_with_app(handle2.clone(), db_arc.clone());
+                    let deps = tfp_engine::TaskEngineDeps {
+                        storage: db_arc.clone(),
+                        config: config_arc,
+                        providers: providers_arc,
+                        bus: bus_arc,
+                        sink,
+                        tts_output_dir: data_dir,
+                    };
+                    let engine = tfp_engine::TaskEngine::start(deps);
                     let st: &AppState = handle2.state::<AppState>().inner();
                     *st.task_engine.write().await = Some(engine);
                     tracing::info!("Task engine started");

@@ -38,11 +38,11 @@ tfp-core = { path = "../crates/tfp-core" }
 tfp-providers = { path = "../crates/tfp-providers" }
 tfp-storage = { path = "../crates/tfp-storage" }
 tfp-engine = { path = "../crates/tfp-engine" }
-tfp-chat = { path = "../crates/tfp-chat" }
-tfp-media = { path = "../crates/tfp-media" }
 tfp-audiolab = { path = "../crates/tfp-audiolab" }
-tfp-search = { path = "../crates/tfp-search" }
 tfp-speech = { path = "../crates/tfp-speech" }
+tfp-media = { path = "../crates/tfp-media" }
+tfp-chat = { path = "../crates/tfp-chat" }
+tfp-search = { path = "../crates/tfp-search" }
 
 [dev-dependencies]
 dirs = "6"

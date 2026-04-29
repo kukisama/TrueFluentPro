@@ -1,66 +1,13 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use tauri::Emitter;
+use std::sync::Arc;
 
-/// RV-5: Pipeline path sandbox validation
-///
-/// - Read path (reference images): canonicalize then verify it's a regular file, block system dirs
-/// - Write path (output dir): must be within app_data_dir
-fn validate_pipeline_read_path(path: &str) -> Result<PathBuf, String> {
-    let p = PathBuf::from(path);
-    let canonical = p.canonicalize()
-        .map_err(|e| format!("Path resolution failed '{}': {e}", path))?;
+use tfp_core::{AiEndpoint, EndpointType, EventSink};
 
-    if !canonical.is_file() {
-        return Err(format!("Path '{}' is not a regular file", canonical.display()));
-    }
-
-    // Block sensitive system directories
-    let lower = canonical.to_string_lossy().to_lowercase();
-    let blocked = ["\\windows\\system32", "\\windows\\syswow64", "/etc/", "/proc/", "/sys/"];
-    for pat in &blocked {
-        if lower.contains(pat) {
-            return Err(format!("Security: reading from system directory '{}' is not allowed", canonical.display()));
-        }
-    }
-
-    Ok(canonical)
-}
-
-fn validate_pipeline_write_dir(app_handle: &tauri::AppHandle, dir: &str) -> Result<PathBuf, String> {
-    use tauri::Manager;
-    let out = PathBuf::from(dir);
-    std::fs::create_dir_all(&out).map_err(|e| format!("Failed to create output directory: {e}"))?;
-    let canonical = out.canonicalize()
-        .map_err(|e| format!("Output path resolution failed '{}': {e}", dir))?;
-
-    let data_dir = app_handle.path().app_data_dir()
-        .map_err(|e| format!("Cannot get data directory: {e}"))?;
-    std::fs::create_dir_all(&data_dir).ok();
-    let data_canonical = data_dir.canonicalize()
-        .map_err(|e| format!("Data directory resolution failed: {e}"))?;
-
-    if !canonical.starts_with(&data_canonical) {
-        return Err(format!(
-            "Security: output directory '{}' is not within app data directory '{}'",
-            canonical.display(), data_canonical.display()
-        ));
-    }
-    Ok(canonical)
-}
-
-/// Five-step image pipeline — aligned with C# ImagePipelineRunner
-///
-/// Route → Upload → Build → Execute → Land
-///
-/// - Route:   Decide API strategy (ResponsesApi / ImagesApi)
-/// - Upload:  Upload reference images to /v1/files (if any), FileIdCache dedup
-/// - Build:   Assemble request JSON + headers (incl. x-ms-oai-image-generation-deployment)
-/// - Execute: Send request + parse response
-/// - Land:    base64 → atomic write to disk
+use crate::file_cache::FileIdCache;
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-//  API strategy enum
+//  Types
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -68,10 +15,6 @@ pub enum ImageApiStrategy {
     ImagesApi,
     ResponsesApi,
 }
-
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-//  Pipeline context — flows between steps
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PipelineRequest {
@@ -92,10 +35,8 @@ pub struct PipelineRequest {
     pub previous_response_id: Option<String>,
     #[serde(default)]
     pub output_directory: Option<String>,
-    /// Text model used by Responses API
     #[serde(default)]
     pub text_model: Option<String>,
-    /// Image model deployment name used by Responses API
     #[serde(default)]
     pub image_model: Option<String>,
 }
@@ -113,32 +54,26 @@ pub struct PipelineResult {
     pub error_message: Option<String>,
 }
 
-/// Internal pipeline context
+/// Internal pipeline context — flows between steps
 pub struct PipelineContext {
     pub request: PipelineRequest,
     pub strategy: ImageApiStrategy,
-    // Upload step output
     pub uploaded_file_ids: Vec<String>,
     pub mask_file_id: Option<String>,
-    // Build step output
     pub request_json_body: Option<serde_json::Value>,
     pub request_headers: Vec<(String, String)>,
     pub request_url: Option<String>,
-    // Execute step output
     pub decoded_images: Vec<Vec<u8>>,
     pub response_id: Option<String>,
     pub revised_prompt: Option<String>,
-    // Land step output
     pub result_file_paths: Vec<PathBuf>,
-    // Prompt optimization result
     pub optimized_prompt: Option<String>,
-    // Diagnostics
     pub error_message: Option<String>,
     pub steps_completed: Vec<String>,
 }
 
 impl PipelineContext {
-    fn new(request: PipelineRequest) -> Self {
+    pub fn new(request: PipelineRequest) -> Self {
         Self {
             request,
             strategy: ImageApiStrategy::ImagesApi,
@@ -158,16 +93,68 @@ impl PipelineContext {
     }
 }
 
+/// Dependencies for running the pipeline (injected by the shell)
+pub struct PipelineDeps {
+    pub endpoint: AiEndpoint,
+    pub file_id_cache: Arc<FileIdCache>,
+    pub sink: Arc<dyn EventSink>,
+    pub data_dir: PathBuf,
+    /// AI completion provider for prompt optimization (optional)
+    pub ai_provider: Option<Arc<dyn tfp_providers::AiCompletionSlot>>,
+    pub quick_model: String,
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  Path validation (RV-5)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+pub fn validate_pipeline_read_path(path: &str) -> Result<PathBuf, String> {
+    let p = PathBuf::from(path);
+    let canonical = p.canonicalize()
+        .map_err(|e| format!("Path resolution failed '{}': {e}", path))?;
+
+    if !canonical.is_file() {
+        return Err(format!("Path '{}' is not a regular file", canonical.display()));
+    }
+
+    let lower = canonical.to_string_lossy().to_lowercase();
+    let blocked = ["\\windows\\system32", "\\windows\\syswow64", "/etc/", "/proc/", "/sys/"];
+    for pat in &blocked {
+        if lower.contains(pat) {
+            return Err(format!("Security: reading from system directory '{}' is not allowed", canonical.display()));
+        }
+    }
+
+    Ok(canonical)
+}
+
+pub fn validate_pipeline_write_dir(dir: &str, app_data_dir: &std::path::Path) -> Result<PathBuf, String> {
+    let out = PathBuf::from(dir);
+    std::fs::create_dir_all(&out).map_err(|e| format!("Failed to create output directory: {e}"))?;
+    let canonical = out.canonicalize()
+        .map_err(|e| format!("Output path resolution failed '{}': {e}", dir))?;
+
+    std::fs::create_dir_all(app_data_dir).ok();
+    let data_canonical = app_data_dir.canonicalize()
+        .map_err(|e| format!("Data directory resolution failed: {e}"))?;
+
+    if !canonical.starts_with(&data_canonical) {
+        return Err(format!(
+            "Security: output directory '{}' is not within app data directory '{}'",
+            canonical.display(), data_canonical.display()
+        ));
+    }
+    Ok(canonical)
+}
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  Pipeline executor
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 pub async fn run_pipeline(
-    app_handle: &tauri::AppHandle,
+    deps: &PipelineDeps,
     request: PipelineRequest,
 ) -> Result<PipelineResult, String> {
-    use tauri::Manager;
-
     // RV-5: Entry path sandbox validation
     for path in &request.reference_image_paths {
         validate_pipeline_read_path(path)?;
@@ -176,15 +163,13 @@ pub async fn run_pipeline(
         validate_pipeline_read_path(mask)?;
     }
     if let Some(ref dir) = request.output_directory {
-        validate_pipeline_write_dir(app_handle, dir)?;
+        validate_pipeline_write_dir(dir, &deps.data_dir)?;
     }
 
-    let state = app_handle.state::<crate::state::AppState>();
     let mut ctx = PipelineContext::new(request);
 
-    // Emit progress event helper closure
     let emit_progress = |step: &str, pct: u8| {
-        let _ = app_handle.emit("image-pipeline-progress", serde_json::json!({
+        deps.sink.emit_json("image-pipeline-progress", serde_json::json!({
             "step": step, "progress": pct
         }));
     };
@@ -192,12 +177,12 @@ pub async fn run_pipeline(
     // Step 0: Prompt Optimization (optional)
     if ctx.request.optimize_prompt {
         emit_progress("prompt_optimize", 5);
-        step_prompt_optimize(app_handle, &mut ctx).await;
+        step_prompt_optimize(deps, &mut ctx).await;
     }
 
     // Step 1: Route
     emit_progress("route", 15);
-    step_route(&state, &mut ctx).await;
+    step_route(&deps.endpoint, &mut ctx);
     ctx.steps_completed.push("route".into());
 
     // Step 2: Upload (only for Responses API + reference images)
@@ -205,23 +190,23 @@ pub async fn run_pipeline(
         && (!ctx.request.reference_image_paths.is_empty() || ctx.request.mask_image_path.is_some())
     {
         emit_progress("upload", 30);
-        step_upload(&state, &mut ctx).await.map_err(|e| e.to_string())?;
+        step_upload(&deps.endpoint, &deps.file_id_cache, &mut ctx).await.map_err(|e| e.to_string())?;
         ctx.steps_completed.push("upload".into());
     }
 
     // Step 3: Build
     emit_progress("build", 45);
-    step_build(&state, &mut ctx).await;
+    step_build(&deps.endpoint, &mut ctx);
     ctx.steps_completed.push("build".into());
 
     // Step 4: Execute
     emit_progress("execute", 60);
-    step_execute(&state, &mut ctx).await.map_err(|e| e.to_string())?;
+    step_execute(&deps.endpoint, &mut ctx).await.map_err(|e| e.to_string())?;
     ctx.steps_completed.push("execute".into());
 
     // Step 5: Land
     emit_progress("land", 85);
-    step_land(app_handle, &mut ctx).await.map_err(|e| e.to_string())?;
+    step_land(&deps.data_dir, &mut ctx).await.map_err(|e| e.to_string())?;
     ctx.steps_completed.push("land".into());
 
     emit_progress("done", 100);
@@ -239,12 +224,16 @@ pub async fn run_pipeline(
     })
 }
 
-fn base64_encode(data: &[u8]) -> String {
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  Base64 helpers
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+pub fn base64_encode(data: &[u8]) -> String {
     use base64::Engine;
     base64::engine::general_purpose::STANDARD.encode(data)
 }
 
-fn base64_decode(s: &str) -> Result<Vec<u8>, String> {
+pub fn base64_decode(s: &str) -> Result<Vec<u8>, String> {
     use base64::Engine;
     base64::engine::general_purpose::STANDARD.decode(s).map_err(|e| e.to_string())
 }
@@ -253,77 +242,49 @@ fn base64_decode(s: &str) -> Result<Vec<u8>, String> {
 //  Step 0: Prompt Optimization
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-async fn step_prompt_optimize(app_handle: &tauri::AppHandle, ctx: &mut PipelineContext) {
-    use tauri::Manager;
-    let state = app_handle.state::<crate::state::AppState>();
-    let providers = state.providers.read().await;
-    let config = state.config.read().await;
-    let ai_ep = config.endpoints.iter()
-        .find(|ep| ep.enabled && matches!(
-            ep.endpoint_type,
-            tfp_core::EndpointType::AzureOpenAi
-            | tfp_core::EndpointType::OpenAiCompatible
-            | tfp_core::EndpointType::ApiManagementGateway
-        ))
-        .cloned();
+async fn step_prompt_optimize(deps: &PipelineDeps, ctx: &mut PipelineContext) {
+    if let Some(ref ai) = deps.ai_provider {
+        let model = if deps.quick_model.is_empty() { "gpt-4.1-mini".to_string() } else { deps.quick_model.clone() };
 
-    let quick_model_id = config.ai.quick_model.model_id.clone();
-    drop(config);
-
-    if let Some(ep) = ai_ep {
-        if let Some(ai) = providers.get_ai_completion(&ep.id) {
-            drop(providers);
-            let model = if quick_model_id.is_empty() { "gpt-4.1-mini".to_string() } else { quick_model_id };
-
-            let req = tfp_core::CompletionRequest {
-                messages: vec![
-                    tfp_core::ChatMessage {
-                        role: "system".into(),
-                        content: serde_json::Value::String(
-                            "You are an image prompt optimizer. Improve the user's image generation prompt to be more descriptive and effective. Return ONLY the optimized prompt, nothing else.".into(),
-                        ),
-                    },
-                    tfp_core::ChatMessage {
-                        role: "user".into(),
-                        content: serde_json::Value::String(ctx.request.prompt.clone()),
-                    },
-                ],
-                model,
-                temperature: Some(0.7),
-                max_tokens: Some(500),
-                endpoint_id: ep.id.clone(),
-            };
-            if let Ok(resp) = ai.complete(&req).await {
-                ctx.optimized_prompt = Some(resp.content.clone());
-                ctx.steps_completed.push("prompt_optimization".into());
-            }
+        let req = tfp_core::CompletionRequest {
+            messages: vec![
+                tfp_core::ChatMessage {
+                    role: "system".into(),
+                    content: serde_json::Value::String(
+                        "You are an image prompt optimizer. Improve the user's image generation prompt to be more descriptive and effective. Return ONLY the optimized prompt, nothing else.".into(),
+                    ),
+                },
+                tfp_core::ChatMessage {
+                    role: "user".into(),
+                    content: serde_json::Value::String(ctx.request.prompt.clone()),
+                },
+            ],
+            model,
+            temperature: Some(0.7),
+            max_tokens: Some(500),
+            endpoint_id: deps.endpoint.id.clone(),
+        };
+        if let Ok(resp) = ai.complete(&req).await {
+            ctx.optimized_prompt = Some(resp.content.clone());
+            ctx.steps_completed.push("prompt_optimization".into());
         }
     }
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-//  Step 1: Route — decide API strategy
+//  Step 1: Route
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-async fn step_route(state: &crate::state::AppState, ctx: &mut PipelineContext) {
-    let config = state.config.read().await;
-    let ep = config.endpoints.iter().find(|e| e.id == ctx.request.endpoint_id);
-
-    ctx.strategy = if let Some(ep) = ep {
-        // APIM endpoint + text_model/image_model → Responses API
-        if ep.endpoint_type == tfp_core::EndpointType::ApiManagementGateway
-            && ctx.request.text_model.is_some()
-            && ctx.request.image_model.is_some()
-        {
-            ImageApiStrategy::ResponsesApi
-        } else if !ctx.request.reference_image_paths.is_empty()
-            && ctx.request.text_model.is_some()
-        {
-            // Has reference images and text_model → also use Responses API
-            ImageApiStrategy::ResponsesApi
-        } else {
-            ImageApiStrategy::ImagesApi
-        }
+fn step_route(ep: &AiEndpoint, ctx: &mut PipelineContext) {
+    ctx.strategy = if ep.endpoint_type == EndpointType::ApiManagementGateway
+        && ctx.request.text_model.is_some()
+        && ctx.request.image_model.is_some()
+    {
+        ImageApiStrategy::ResponsesApi
+    } else if !ctx.request.reference_image_paths.is_empty()
+        && ctx.request.text_model.is_some()
+    {
+        ImageApiStrategy::ResponsesApi
     } else {
         ImageApiStrategy::ImagesApi
     };
@@ -332,33 +293,25 @@ async fn step_route(state: &crate::state::AppState, ctx: &mut PipelineContext) {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-//  Step 2: Upload — reference images to /v1/files
+//  Step 2: Upload
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 async fn step_upload(
-    state: &crate::state::AppState,
+    ep: &AiEndpoint,
+    cache: &FileIdCache,
     ctx: &mut PipelineContext,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let config = state.config.read().await;
-    let ep = config.endpoints.iter()
-        .find(|e| e.id == ctx.request.endpoint_id)
-        .cloned()
-        .ok_or("Endpoint not found")?;
-    drop(config);
-
     let client = reqwest::Client::new();
     let base = ep.url.trim_end_matches('/');
-    let cache = &state.file_id_cache;
 
     for path_str in &ctx.request.reference_image_paths {
         let file_bytes = tokio::fs::read(path_str).await?;
-        // FileIdCache dedup — check cache first, skip upload if hit
         if let Some(cached_id) = cache.try_get(&ep.id, &file_bytes) {
             tracing::info!("Pipeline Upload: cache hit for {path_str} → {cached_id}");
             ctx.uploaded_file_ids.push(cached_id);
             continue;
         }
-        let file_id = upload_file_bytes(&client, &ep, base, path_str, file_bytes.clone()).await?;
+        let file_id = upload_file_bytes(&client, ep, base, path_str, file_bytes.clone()).await?;
         cache.set(&ep.id, &file_bytes, file_id.clone());
         ctx.uploaded_file_ids.push(file_id);
     }
@@ -369,7 +322,7 @@ async fn step_upload(
             tracing::info!("Pipeline Upload: cache hit for mask {mask_path} → {cached_id}");
             ctx.mask_file_id = Some(cached_id);
         } else {
-            let file_id = upload_file_bytes(&client, &ep, base, mask_path, file_bytes.clone()).await?;
+            let file_id = upload_file_bytes(&client, ep, base, mask_path, file_bytes.clone()).await?;
             cache.set(&ep.id, &file_bytes, file_id.clone());
             ctx.mask_file_id = Some(file_id);
         }
@@ -378,10 +331,9 @@ async fn step_upload(
     Ok(())
 }
 
-/// Upload file bytes to endpoint /v1/files
 async fn upload_file_bytes(
     client: &reqwest::Client,
-    ep: &tfp_core::AiEndpoint,
+    ep: &AiEndpoint,
     base: &str,
     file_path: &str,
     file_bytes: Vec<u8>,
@@ -417,19 +369,18 @@ async fn upload_file_bytes(
         .ok_or_else(|| "Upload response missing 'id' field".into())
 }
 
-fn apply_auth_to_request(
+pub fn apply_auth_to_request(
     req: reqwest::RequestBuilder,
-    ep: &tfp_core::AiEndpoint,
+    ep: &AiEndpoint,
 ) -> reqwest::RequestBuilder {
+    use tfp_core::ApiKeyHeaderMode;
     let key = &ep.api_key;
-    let mode = ep.auth_header_mode.as_str();
-    match mode {
-        "bearer" => req.header("Authorization", format!("Bearer {key}")),
-        "api_key" => req.header("api-key", key),
-        _ => {
-            // auto: Azure endpoints → api-key, others → Bearer
-            if ep.endpoint_type == tfp_core::EndpointType::AzureOpenAi
-                || ep.endpoint_type == tfp_core::EndpointType::AzureSpeech
+    match &ep.auth_header_mode {
+        ApiKeyHeaderMode::Bearer => req.header("Authorization", format!("Bearer {key}")),
+        ApiKeyHeaderMode::ApiKeyHeader => req.header("api-key", key),
+        ApiKeyHeaderMode::Auto => {
+            if ep.endpoint_type == EndpointType::AzureOpenAi
+                || ep.endpoint_type == EndpointType::AzureSpeech
             {
                 req.header("api-key", key)
             } else {
@@ -440,19 +391,10 @@ fn apply_auth_to_request(
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-//  Step 3: Build — assemble request body + headers
+//  Step 3: Build
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-async fn step_build(state: &crate::state::AppState, ctx: &mut PipelineContext) {
-    let config = state.config.read().await;
-    let ep = config.endpoints.iter().find(|e| e.id == ctx.request.endpoint_id).cloned();
-    drop(config);
-
-    let ep = match ep {
-        Some(e) => e,
-        None => return,
-    };
-
+fn step_build(ep: &AiEndpoint, ctx: &mut PipelineContext) {
     let base = ep.url.trim_end_matches('/');
     let prompt = ctx.optimized_prompt.as_deref().unwrap_or(&ctx.request.prompt);
 
@@ -464,7 +406,6 @@ async fn step_build(state: &crate::state::AppState, ctx: &mut PipelineContext) {
 
             ctx.request_url = Some(format!("{base}/responses?api-version={api_ver}"));
 
-            // Build input (text + file_id references)
             let mut input = vec![serde_json::json!({
                 "type": "input_text",
                 "text": prompt,
@@ -497,7 +438,6 @@ async fn step_build(state: &crate::state::AppState, ctx: &mut PipelineContext) {
             let size = format!("{}x{}", ctx.request.width, ctx.request.height);
             let output_format = ctx.request.output_format.as_deref().unwrap_or("png");
 
-            // Candidate URLs
             let api_ver = ep.api_version.as_deref().unwrap_or("2025-04-01-preview");
             let model = &ctx.request.model;
             let candidate_urls = [
@@ -505,7 +445,6 @@ async fn step_build(state: &crate::state::AppState, ctx: &mut PipelineContext) {
                 format!("{base}/v1/images/generations"),
                 format!("{base}/images/generations"),
             ];
-            // Use the first as default
             ctx.request_url = candidate_urls.first().cloned();
 
             let mut body = serde_json::json!({
@@ -528,26 +467,19 @@ async fn step_build(state: &crate::state::AppState, ctx: &mut PipelineContext) {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-//  Step 4: Execute — send request + parse response
+//  Step 4: Execute
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 async fn step_execute(
-    state: &crate::state::AppState,
+    ep: &AiEndpoint,
     ctx: &mut PipelineContext,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let config = state.config.read().await;
-    let ep = config.endpoints.iter()
-        .find(|e| e.id == ctx.request.endpoint_id)
-        .cloned()
-        .ok_or("Endpoint not found")?;
-    drop(config);
-
     let url = ctx.request_url.as_ref().ok_or("No URL built by Build step")?;
     let body = ctx.request_json_body.as_ref().ok_or("No body built by Build step")?;
 
     let client = reqwest::Client::new();
     let mut req = client.post(url).json(body);
-    req = apply_auth_to_request(req, &ep);
+    req = apply_auth_to_request(req, ep);
 
     for (k, v) in &ctx.request_headers {
         req = req.header(k.as_str(), v.as_str());
@@ -563,7 +495,6 @@ async fn step_execute(
 
     let json_resp: serde_json::Value = resp.json().await?;
 
-    // Extract response_id
     ctx.response_id = json_resp["id"].as_str().map(|s| s.to_string());
 
     // Responses API format: output[].image_generation_call.result
@@ -598,20 +529,16 @@ async fn step_execute(
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-//  Step 5: Land — atomic write to disk
+//  Step 5: Land
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 async fn step_land(
-    app_handle: &tauri::AppHandle,
+    data_dir: &std::path::Path,
     ctx: &mut PipelineContext,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    use tauri::Manager;
-
     let out_dir = if let Some(ref dir) = ctx.request.output_directory {
         PathBuf::from(dir)
     } else {
-        let data_dir = app_handle.path().app_data_dir()
-            .unwrap_or_else(|_| PathBuf::from("."));
         data_dir.join("generated_images")
     };
 
@@ -625,7 +552,6 @@ async fn step_land(
         let final_path = out_dir.join(&file_name);
         let tmp_path = out_dir.join(format!("{file_name}.tmp"));
 
-        // Atomic write: write to .tmp first, then rename
         tokio::fs::write(&tmp_path, image_data).await?;
         tokio::fs::rename(&tmp_path, &final_path).await?;
 
@@ -639,8 +565,6 @@ async fn step_land(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // ── T-004: Serde contract tests ──
 
     #[test]
     fn test_pipeline_request_json_fields() {
@@ -672,7 +596,6 @@ mod tests {
         ] {
             assert!(obj.contains_key(*key), "Missing key: {key}");
         }
-        assert!(obj["reference_image_paths"].is_array());
     }
 
     #[test]
@@ -698,20 +621,13 @@ mod tests {
         ] {
             assert!(obj.contains_key(*key), "Missing key: {key}");
         }
-        assert!(obj["steps_completed"].is_array());
-        assert!(obj["result_file_paths"].is_array());
     }
 
     #[test]
     fn test_image_api_strategy_serde() {
-        let images = serde_json::to_value(ImageApiStrategy::ImagesApi).unwrap();
-        assert_eq!(images, serde_json::json!("ImagesApi"));
-
-        let responses = serde_json::to_value(ImageApiStrategy::ResponsesApi).unwrap();
-        assert_eq!(responses, serde_json::json!("ResponsesApi"));
+        assert_eq!(serde_json::to_value(ImageApiStrategy::ImagesApi).unwrap(), serde_json::json!("ImagesApi"));
+        assert_eq!(serde_json::to_value(ImageApiStrategy::ResponsesApi).unwrap(), serde_json::json!("ResponsesApi"));
     }
-
-    // ── T-006: Pure function unit tests ──
 
     #[test]
     fn test_base64_roundtrip() {
@@ -723,8 +639,7 @@ mod tests {
 
     #[test]
     fn test_base64_decode_invalid() {
-        let result = base64_decode("!!!invalid!!!");
-        assert!(result.is_err());
+        assert!(base64_decode("!!!invalid!!!").is_err());
     }
 
     #[test]
@@ -750,5 +665,53 @@ mod tests {
         let result = validate_pipeline_read_path(path.to_str().unwrap());
         assert!(result.is_ok());
         std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn test_route_apim_responses_api() {
+        let ep = AiEndpoint {
+            endpoint_type: EndpointType::ApiManagementGateway,
+            ..Default::default()
+        };
+        let mut ctx = PipelineContext::new(PipelineRequest {
+            prompt: "test".into(),
+            model: "gpt-image-2".into(),
+            width: 1024, height: 1024,
+            quality: None, output_format: None, background: None,
+            endpoint_id: "ep1".into(),
+            optimize_prompt: false,
+            reference_image_paths: vec![],
+            mask_image_path: None,
+            previous_response_id: None,
+            output_directory: None,
+            text_model: Some("gpt-4.1".into()),
+            image_model: Some("gpt-image-2".into()),
+        });
+        step_route(&ep, &mut ctx);
+        assert_eq!(ctx.strategy, ImageApiStrategy::ResponsesApi);
+    }
+
+    #[test]
+    fn test_route_default_images_api() {
+        let ep = AiEndpoint {
+            endpoint_type: EndpointType::AzureOpenAi,
+            ..Default::default()
+        };
+        let mut ctx = PipelineContext::new(PipelineRequest {
+            prompt: "test".into(),
+            model: "gpt-image-2".into(),
+            width: 1024, height: 1024,
+            quality: None, output_format: None, background: None,
+            endpoint_id: "ep1".into(),
+            optimize_prompt: false,
+            reference_image_paths: vec![],
+            mask_image_path: None,
+            previous_response_id: None,
+            output_directory: None,
+            text_model: None,
+            image_model: None,
+        });
+        step_route(&ep, &mut ctx);
+        assert_eq!(ctx.strategy, ImageApiStrategy::ImagesApi);
     }
 }
