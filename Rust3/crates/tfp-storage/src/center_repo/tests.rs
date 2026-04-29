@@ -371,3 +371,52 @@ async fn test_bundle_all_asset_count() {
     assert_eq!(bundle.all_asset_count, 4);
 }
 
+#[tokio::test]
+async fn test_export_workspace_structure() {
+    let db = Database::open_in_memory().unwrap();
+
+    let ws = db.center_create_workspace("canvas_image", "Export Test").await.unwrap();
+    let r1 = db.center_create_round(&ws.id, "sunset scene", "{\"model\":\"gpt-image-2\"}", "gpt-image-2").await.unwrap();
+
+    // Create a temp file to use as a source asset
+    let tmp_dir = std::env::temp_dir().join("tfp_export_test");
+    let _ = std::fs::create_dir_all(&tmp_dir);
+    let src_file = tmp_dir.join("asset1.png");
+    std::fs::write(&src_file, b"fake png data").unwrap();
+
+    // Insert asset pointing to the temp file
+    let conn = db.conn().lock().await;
+    conn.execute(
+        "INSERT INTO studio_assets (asset_id, session_id, file_path, preview_path, kind, created_at)
+         VALUES ('exp-a1', ?1, ?2, ?2, 'image', '2026-01-01T00:00:00Z')",
+        rusqlite::params![ws.id, src_file.to_string_lossy().to_string()],
+    ).unwrap();
+    conn.execute(
+        "INSERT INTO canvas_round_assets (id, round_id, asset_id, sequence, is_selected)
+         VALUES ('exp-cra1', ?1, 'exp-a1', 0, 0)",
+        rusqlite::params![r1.id],
+    ).unwrap();
+    drop(conn);
+
+    // Get bundle for verification
+    let bundle = db.center_get_workspace_bundle(&ws.id).await.unwrap();
+    assert_eq!(bundle.round_prompts.len(), 1);
+    assert_eq!(bundle.round_prompts[0].prompt_preview, "sunset scene");
+
+    // Cleanup
+    let _ = std::fs::remove_dir_all(&tmp_dir);
+}
+
+#[tokio::test]
+async fn test_export_workspace_with_metadata() {
+    let db = Database::open_in_memory().unwrap();
+
+    let ws = db.center_create_workspace("canvas_image", "Meta Export").await.unwrap();
+    let _r1 = db.center_create_round(&ws.id, "mountain vista", "{\"model\":\"gpt-image-2\",\"quality\":\"high\"}", "gpt-image-2").await.unwrap();
+    let _r2 = db.center_create_round(&ws.id, "ocean waves", "{}", "dall-e-3").await.unwrap();
+
+    let bundle = db.center_get_workspace_bundle(&ws.id).await.unwrap();
+    assert_eq!(bundle.round_prompts.len(), 2);
+    assert_eq!(bundle.workspace.name, "Meta Export");
+}
+

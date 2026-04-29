@@ -441,6 +441,12 @@ export const api = {
     invoke<CenterWorkspace>("center_derive_workspace", { sourceWorkspaceId, sourceAssetId, kind, name, referenceFilePath }),
   centerGetAllAssets: (workspaceId: string, limit?: number) =>
     invoke<CenterAssetDetail[]>("center_get_all_assets", { workspaceId, limit }),
+  centerOpenFile: (path: string) =>
+    invoke<void>("center_open_file", { path }),
+  centerRevealInExplorer: (path: string) =>
+    invoke<void>("center_reveal_in_explorer", { path }),
+  centerExportWorkspace: (workspaceId: string, destDir: string, includeMetadata: boolean) =>
+    invoke<ExportResult>("center_export_workspace", { workspaceId, destDir, includeMetadata }),
   videoGetCapabilities: () =>
     invoke<VideoCapabilityEntry[]>("video_get_capabilities"),
   onCenterTaskUpdate: (cb: (e: CenterTaskEvent) => void): Promise<UnlistenFn> =>

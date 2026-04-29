@@ -270,6 +270,9 @@ pub fn run() {
             commands::center_derive_workspace,
             commands::center_get_all_assets,
             commands::video_get_capabilities,
+            commands::center_open_file,
+            commands::center_reveal_in_explorer,
+            commands::center_export_workspace,
             // AudioLab (听析中心)
             commands::audiolab_import_files,
             commands::audiolab_list_files,

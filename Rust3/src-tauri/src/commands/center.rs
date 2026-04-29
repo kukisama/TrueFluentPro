@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::path::Path;
 use tauri::{Manager, State};
 
 use crate::state::AppState;
@@ -433,6 +434,139 @@ pub async fn center_get_all_assets(
         .map_err(|e| e.to_string())
 }
 
+// ── Shell operations (T-001) ──
+
+/// Open a file with the system's default application.
+#[tauri::command]
+pub async fn center_open_file(path: String) -> Result<(), String> {
+    let p = Path::new(&path);
+    if !p.exists() {
+        return Err(format!("File not found: {}", path));
+    }
+    open::that(&path).map_err(|e| format!("Failed to open file: {e}"))
+}
+
+/// Reveal a file in the system file explorer (select it).
+#[tauri::command]
+pub async fn center_reveal_in_explorer(path: String) -> Result<(), String> {
+    let p = Path::new(&path);
+    if !p.exists() {
+        return Err(format!("Path not found: {}", path));
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer.exe")
+            .args(["/select,", &path])
+            .spawn()
+            .map_err(|e| format!("Failed to reveal in explorer: {e}"))?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .args(["-R", &path])
+            .spawn()
+            .map_err(|e| format!("Failed to reveal in Finder: {e}"))?;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let parent = p.parent().unwrap_or(p);
+        open::that(parent.to_string_lossy().as_ref())
+            .map_err(|e| format!("Failed to open directory: {e}"))?;
+    }
+
+    Ok(())
+}
+
+// ── Export workspace (T-006) ──
+
+/// Export an entire workspace with per-round subdirectories and optional metadata.
+#[tauri::command]
+pub async fn center_export_workspace(
+    state: State<'_, AppState>,
+    workspace_id: String,
+    dest_dir: String,
+    include_metadata: bool,
+) -> Result<ExportResult, String> {
+    let dest = Path::new(&dest_dir);
+    if !dest.exists() {
+        std::fs::create_dir_all(dest).map_err(|e| format!("Failed to create directory: {e}"))?;
+    }
+
+    let bundle = state.db.center_get_workspace_bundle(&workspace_id)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let mut copied: i64 = 0;
+    let mut failed: i64 = 0;
+
+    // For each round, create subdirectory and copy assets
+    for rps in &bundle.round_prompts {
+        let round_assets = state.db.center_get_round_assets(&rps.round_id)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let preview = rps.prompt_preview.chars().take(8).collect::<String>()
+            .replace(['/', '\\', ':', '*', '?', '"', '<', '>', '|'], "_");
+        let dir_name = format!("round_{}_{}", rps.round_index, preview);
+        let round_dir = dest.join(&dir_name);
+        std::fs::create_dir_all(&round_dir)
+            .map_err(|e| format!("Failed to create round directory: {e}"))?;
+
+        for asset in &round_assets {
+            let src_path = Path::new(&asset.file_path);
+            if src_path.exists() {
+                let file_name = src_path.file_name().unwrap_or_default();
+                match std::fs::copy(src_path, round_dir.join(file_name)) {
+                    Ok(_) => copied += 1,
+                    Err(_) => failed += 1,
+                }
+            } else {
+                failed += 1;
+            }
+        }
+
+        if include_metadata {
+            // Retrieve full round info
+            let round_info = state.db.center_get_round(&rps.round_id).await.ok().flatten();
+            let meta = serde_json::json!({
+                "prompt": rps.prompt_preview,
+                "model": round_info.as_ref().map(|r| r.model_ref.as_str()).unwrap_or(""),
+                "params": round_info.as_ref().and_then(|r| serde_json::from_str::<serde_json::Value>(&r.params_json).ok()).unwrap_or(serde_json::Value::Null),
+                "status": rps.status,
+                "created_at": rps.created_at,
+                "assets": round_assets.iter().map(|a| serde_json::json!({
+                    "id": a.asset_id,
+                    "kind": a.kind,
+                    "file_name": Path::new(&a.file_path).file_name().unwrap_or_default().to_string_lossy(),
+                    "width": a.width,
+                    "height": a.height,
+                })).collect::<Vec<_>>(),
+            });
+            let meta_path = round_dir.join("meta.json");
+            let _ = std::fs::write(&meta_path, serde_json::to_string_pretty(&meta).unwrap_or_default());
+        }
+    }
+
+    // Write workspace.json at root
+    if include_metadata {
+        let ws_meta = serde_json::json!({
+            "workspace_name": bundle.workspace.name,
+            "created_at": bundle.workspace.created_at,
+            "canvas_mode": bundle.workspace.canvas_mode,
+            "media_kind": bundle.workspace.media_kind,
+            "round_count": bundle.round_prompts.len(),
+            "total_assets": copied + failed,
+            "source_session_name": bundle.workspace.source_session_name,
+            "source_asset_file_name": bundle.workspace.source_asset_file_name,
+        });
+        let ws_meta_path = dest.join("workspace.json");
+        let _ = std::fs::write(&ws_meta_path, serde_json::to_string_pretty(&ws_meta).unwrap_or_default());
+    }
+
+    Ok(ExportResult { copied, failed })
+}
+
 // ── Static data (1) ──
 
 #[tauri::command]
@@ -525,5 +659,34 @@ mod tests {
         ratios.sort();
         ratios.dedup();
         assert_eq!(ratios, vec!["16:9", "1:1", "9:16"]);
+    }
+
+    #[tokio::test]
+    async fn test_center_open_file_nonexistent() {
+        let result = center_open_file("/nonexistent/path/to/file.png".to_string()).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("File not found"));
+    }
+
+    #[tokio::test]
+    async fn test_center_reveal_in_explorer_nonexistent() {
+        let result = center_reveal_in_explorer("/nonexistent/path/to/dir".to_string()).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Path not found"));
+    }
+
+    #[tokio::test]
+    async fn test_center_open_file_existing() {
+        // Create a temp file and verify open doesn't error for path validation
+        let tmp = std::env::temp_dir().join("tfp_test_open_file.txt");
+        std::fs::write(&tmp, "test").unwrap();
+        // We can't truly test open (it opens a window), but path validation passes
+        let result = center_open_file(tmp.to_string_lossy().to_string()).await;
+        // open::that may succeed or fail depending on env, but path is valid
+        // We just check it doesn't return "File not found"
+        if let Err(ref e) = result {
+            assert!(!e.contains("File not found"));
+        }
+        let _ = std::fs::remove_file(&tmp);
     }
 }

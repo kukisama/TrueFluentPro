@@ -4,7 +4,8 @@ import {
   Image, Video, Plus, Loader2, Download, Trash2,
   Maximize2, ChevronLeft, ChevronRight, Sparkles,
   RefreshCw, X, Search, Check, Copy,
-  Undo2, Redo2, Play,
+  Undo2, Redo2, Play, ExternalLink, FolderOpen,
+  Grid, List, Layers, AlertCircle,
 } from "lucide-react";
 import { cn } from "../lib/utils";
 import {
@@ -38,6 +39,7 @@ const DURATIONS = [5, 10, 15, 20];
 type CanvasMode = "canvas_image" | "canvas_video";
 type FilterType = "all" | "canvas_image" | "canvas_video";
 type FilterTime = "all" | "today" | "7days" | "30days";
+type ViewMode = "grid" | "list" | "grouped";
 
 interface UndoEntry {
   type: "generate" | "delete_assets" | "change_prompt" | "change_params";
@@ -45,7 +47,15 @@ interface UndoEntry {
   assetIds?: string[];
 }
 
+interface DeleteTarget {
+  type: "workspace" | "assets";
+  id: string;
+  name?: string;
+  count?: number;
+}
+
 const MAX_LOADED = 3;
+const PAGE_SIZE = 20;
 
 export function MediaCenterView() {
   const { t } = useTranslation();
@@ -79,6 +89,23 @@ export function MediaCenterView() {
   const [previewAsset, setPreviewAsset] = useState<CenterAssetDetail | null>(null);
   const [videoRefWarning, setVideoRefWarning] = useState("");
 
+  // T-002: Canvas preview state
+  const [canvasAsset, setCanvasAsset] = useState<CenterAssetDetail | null>(null);
+  const [canvasElapsed, setCanvasElapsed] = useState(0);
+
+  // T-003: View mode
+  const [viewMode, setViewMode] = useState<ViewMode>("grid");
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+
+  // T-004: Pagination
+  const [wsOffset, setWsOffset] = useState(0);
+  const [hasMoreWs, setHasMoreWs] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+
+  // T-005: Delete confirmation dialog
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
+
   const canvasRef = useRef<HTMLDivElement>(null);
 
   const activeBundle = activeTabId ? loadedBundles.get(activeTabId) : undefined;
@@ -97,7 +124,11 @@ export function MediaCenterView() {
   const imageModelId = imageEndpoint?.models.find((m) => m.capabilities.includes("image"))?.model_id || "gpt-image-2";
 
   useEffect(() => {
-    api.centerListWorkspaces(50, 0).then(setWorkspaces).catch(console.error);
+    api.centerListWorkspaces(PAGE_SIZE, 0).then((ws) => {
+      setWorkspaces(ws);
+      setHasMoreWs(ws.length >= PAGE_SIZE);
+      setWsOffset(ws.length);
+    }).catch(console.error);
   }, []);
 
   useEffect(() => {
@@ -109,7 +140,11 @@ export function MediaCenterView() {
             setLoadedBundles((prev) => new Map(prev).set(ev.session_id, bundle));
           });
         }
-        api.centerListWorkspaces(50, 0).then(setWorkspaces).catch(console.error);
+        api.centerListWorkspaces(PAGE_SIZE, 0).then((ws) => {
+          setWorkspaces(ws);
+          setHasMoreWs(ws.length >= PAGE_SIZE);
+          setWsOffset(ws.length);
+        }).catch(console.error);
       }
     }).then((fn) => { unlisten = fn; });
     return () => { unlisten?.(); };
@@ -156,7 +191,26 @@ export function MediaCenterView() {
     await api.centerSoftDeleteWorkspace(id);
     setWorkspaces((prev) => prev.filter((w) => w.id !== id));
     closeTab(id);
+    setDeleteTarget(null);
   }, [closeTab]);
+
+  // T-005: Confirm delete handler
+  const confirmDelete = useCallback(async () => {
+    if (!deleteTarget) return;
+    if (deleteTarget.type === "workspace") {
+      await deleteWorkspace(deleteTarget.id);
+    } else {
+      const ids = deleteTarget.id.split(",");
+      if (activeTabId) pushUndo(activeTabId, { type: "delete_assets", assetIds: ids });
+      await api.centerDeleteAssets(ids);
+      setSelectedAssets(new Set());
+      if (activeTabId) {
+        const b = await api.centerGetWorkspaceBundle(activeTabId);
+        setLoadedBundles((prev) => new Map(prev).set(activeTabId!, b));
+      }
+    }
+    setDeleteTarget(null);
+  }, [deleteTarget, activeTabId]);
 
   const switchRound = useCallback(async (direction: "prev" | "next") => {
     if (!activeTabId || !activeBundle) return;
@@ -189,7 +243,11 @@ export function MediaCenterView() {
     setTimeout(async () => {
       const bundle = await api.centerGetWorkspaceBundle(activeTabId!);
       setLoadedBundles((prev) => new Map(prev).set(activeTabId!, bundle));
-      api.centerListWorkspaces(50, 0).then(setWorkspaces);
+      api.centerListWorkspaces(PAGE_SIZE, 0).then((ws) => {
+        setWorkspaces(ws);
+        setHasMoreWs(ws.length >= PAGE_SIZE);
+        setWsOffset(ws.length);
+      });
     }, 500);
   }, [prompt, imageEndpoint, activeTabId, sizeIdx, quality, count, format, background, imageModelId]);
 
@@ -231,13 +289,8 @@ export function MediaCenterView() {
 
   const handleDeleteSelected = useCallback(async () => {
     if (selectedAssets.size === 0) return;
-    if (!confirm(t("mediaCenter.deleteConfirm", { count: selectedAssets.size }))) return;
-    const ids = [...selectedAssets];
-    if (activeTabId) pushUndo(activeTabId, { type: "delete_assets", assetIds: ids });
-    await api.centerDeleteAssets(ids);
-    setSelectedAssets(new Set());
-    if (activeTabId) { const b = await api.centerGetWorkspaceBundle(activeTabId); setLoadedBundles((prev) => new Map(prev).set(activeTabId!, b)); }
-  }, [selectedAssets, activeTabId]);
+    setDeleteTarget({ type: "assets", id: [...selectedAssets].join(","), count: selectedAssets.size });
+  }, [selectedAssets]);
 
   const pushUndo = (wsId: string, entry: UndoEntry) => {
     setUndoStacks((prev) => { const n = new Map(prev); n.set(wsId, [...(n.get(wsId) || []), entry]); return n; });
@@ -276,13 +329,94 @@ export function MediaCenterView() {
       else if (e.ctrlKey && e.key === "a") { e.preventDefault(); selectAll(); }
       else if (e.ctrlKey && e.key === "d") { e.preventDefault(); deselectAll(); }
       else if (e.key === "Enter") { e.preventDefault(); if (currentMode === "canvas_image") handleImageGenerate(); else handleVideoGenerate(); }
+      // T-002/T-008: Arrow key navigation for canvas asset
+      else if (e.key === "ArrowLeft") { e.preventDefault(); navigateCanvasAsset("prev"); }
+      else if (e.key === "ArrowRight") { e.preventDefault(); navigateCanvasAsset("next"); }
     };
     const el = canvasRef.current;
     if (el) el.addEventListener("keydown", handler);
     return () => { if (el) el.removeEventListener("keydown", handler); };
-  }, [handleDeleteSelected, handleUndo, handleRedo, selectAll, deselectAll, handleImageGenerate, handleVideoGenerate, currentMode]);
+  }, [handleDeleteSelected, handleUndo, handleRedo, selectAll, deselectAll, handleImageGenerate, handleVideoGenerate, currentMode, canvasAsset, currentAssets]);
 
   useEffect(() => { const h = () => setContextMenu(null); window.addEventListener("click", h); return () => window.removeEventListener("click", h); }, []);
+
+  // T-002: Navigate canvas asset (← / →)
+  const navigateCanvasAsset = useCallback((direction: "prev" | "next") => {
+    if (!canvasAsset || currentAssets.length === 0) return;
+    const idx = currentAssets.findIndex((a) => a.asset_id === canvasAsset.asset_id);
+    const newIdx = direction === "prev" ? idx - 1 : idx + 1;
+    if (newIdx >= 0 && newIdx < currentAssets.length) {
+      setCanvasAsset(currentAssets[newIdx]);
+    }
+  }, [canvasAsset, currentAssets]);
+
+  // T-002: Elapsed timer for pending state
+  useEffect(() => {
+    if (!activeBundle || activeBundle.running_tasks.length === 0) {
+      setCanvasElapsed(0);
+      return;
+    }
+    const start = Date.now();
+    const interval = setInterval(() => setCanvasElapsed(Math.floor((Date.now() - start) / 1000)), 1000);
+    return () => clearInterval(interval);
+  }, [activeBundle?.running_tasks.length]);
+
+  // T-004: Load more workspaces (infinite scroll)
+  const loadMoreWorkspaces = useCallback(async () => {
+    if (!hasMoreWs || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const more = await api.centerListWorkspaces(PAGE_SIZE, wsOffset);
+      setWorkspaces((prev) => [...prev, ...more]);
+      setWsOffset((prev) => prev + more.length);
+      setHasMoreWs(more.length >= PAGE_SIZE);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [hasMoreWs, loadingMore, wsOffset]);
+
+  // T-004: IntersectionObserver for infinite scroll
+  useEffect(() => {
+    if (!sentinelRef.current || !hasMoreWs) return;
+    const observer = new IntersectionObserver(
+      (entries) => { if (entries[0]?.isIntersecting) loadMoreWorkspaces(); },
+      { rootMargin: "200px" },
+    );
+    observer.observe(sentinelRef.current);
+    return () => observer.disconnect();
+  }, [hasMoreWs, loadMoreWorkspaces]);
+
+  // T-008: Refresh workspace list + active bundle
+  const handleRefresh = useCallback(async () => {
+    const ws = await api.centerListWorkspaces(PAGE_SIZE, 0);
+    setWorkspaces(ws);
+    setHasMoreWs(ws.length >= PAGE_SIZE);
+    setWsOffset(ws.length);
+    if (activeTabId) {
+      const b = await api.centerGetWorkspaceBundle(activeTabId);
+      setLoadedBundles((prev) => new Map(prev).set(activeTabId!, b));
+    }
+  }, [activeTabId]);
+
+  // T-006: Export entire workspace
+  const handleExportWorkspace = useCallback(async () => {
+    if (!activeTabId) return;
+    const dir = await dialogOpen({ directory: true });
+    if (!dir) return;
+    const result = await api.centerExportWorkspace(activeTabId, dir as string, true);
+    alert(t("mediaCenter.exported", { copied: result.copied }) + (result.failed > 0 ? t("mediaCenter.exportFailed", { failed: result.failed }) : ""));
+  }, [activeTabId, t]);
+
+  // T-003: Toggle group collapse
+  const toggleGroupCollapse = useCallback((roundId: string) => {
+    setCollapsedGroups((prev) => {
+      const n = new Set(prev);
+      if (n.has(roundId)) n.delete(roundId); else n.add(roundId);
+      return n;
+    });
+  }, []);
 
   const promoteToReference = useCallback(async (assetId: string) => {
     if (!activeTabId || !activeBundle) return;
@@ -306,8 +440,10 @@ export function MediaCenterView() {
     const kind = asset.kind === "video" ? "video" : "image";
     const name = `${t("mediaCenter.editOf")} ${activeWs.name}`;
     const newWs = await api.centerDeriveWorkspace(activeTabId, assetId, kind, name, asset.file_path);
-    const updated = await api.centerListWorkspaces(50, 0);
+    const updated = await api.centerListWorkspaces(PAGE_SIZE, 0);
     setWorkspaces(updated);
+    setHasMoreWs(updated.length >= PAGE_SIZE);
+    setWsOffset(updated.length);
     // Open the new workspace tab
     setOpenTabs((prev) => prev.includes(newWs.id) ? prev : [...prev, newWs.id]);
     setActiveTabId(newWs.id);
@@ -381,11 +517,21 @@ export function MediaCenterView() {
                 <Badge variant={ws.session_type === "canvas_image" ? "blue" : "amber"} className="text-[9px] px-1.5 py-0 shrink-0">{ws.session_type === "canvas_image" ? t("mediaCenter.imgBadge") : t("mediaCenter.vidBadge")}</Badge>
                 <span className="text-xs truncate flex-1">{ws.name}</span>
                 {ws.has_running_task && <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse shrink-0" />}
-                <button onClick={(e) => { e.stopPropagation(); deleteWorkspace(ws.id); }} className="opacity-0 group-hover:opacity-100 p-0.5 hover:text-red-400 transition-opacity"><X size={12} /></button>
+                <button onClick={(e) => { e.stopPropagation(); setDeleteTarget({ type: "workspace", id: ws.id, name: ws.name }); }} className="opacity-0 group-hover:opacity-100 p-0.5 hover:text-red-400 transition-opacity"><X size={12} /></button>
               </button>
             ))}
+            {/* T-004: Infinite scroll sentinel */}
+            {hasMoreWs && <div ref={sentinelRef} className="h-8 flex items-center justify-center">{loadingMore && <Loader2 size={14} className="animate-spin text-[var(--text-muted)]" />}</div>}
           </div>
         </ScrollArea>
+        {/* T-008: Export workspace button at sidebar bottom */}
+        {activeTabId && (
+          <div className="p-2 border-t border-[var(--border-subtle)]">
+            <button onClick={handleExportWorkspace} className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-[var(--text-muted)] hover:bg-[var(--hover-bg)] rounded">
+              <Download size={12} /> {t("mediaCenter.exportWorkspace")}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Main area */}
@@ -450,6 +596,14 @@ export function MediaCenterView() {
                     <button onClick={deselectAll} className="px-1 py-0.5 text-[var(--text-muted)]"><X size={12} /></button>
                   </div>
                 )}
+                {/* T-003/T-008: View mode toggle */}
+                <div className="flex items-center border border-[var(--border-subtle)] rounded overflow-hidden mr-1">
+                  <button onClick={() => setViewMode("grid")} className={cn("p-1", viewMode === "grid" ? "bg-brand-600/15 text-[var(--active-text)]" : "text-[var(--text-muted)] hover:bg-[var(--hover-bg)]")} title="Grid"><Grid size={12} /></button>
+                  <button onClick={() => setViewMode("list")} className={cn("p-1", viewMode === "list" ? "bg-brand-600/15 text-[var(--active-text)]" : "text-[var(--text-muted)] hover:bg-[var(--hover-bg)]")} title="List"><List size={12} /></button>
+                  <button onClick={() => setViewMode("grouped")} className={cn("p-1", viewMode === "grouped" ? "bg-brand-600/15 text-[var(--active-text)]" : "text-[var(--text-muted)] hover:bg-[var(--hover-bg)]")} title="Grouped"><Layers size={12} /></button>
+                </div>
+                {/* T-008: Refresh button */}
+                <button onClick={handleRefresh} className="p-1.5 rounded hover:bg-[var(--hover-bg)] text-[var(--text-muted)]" title={t("mediaCenter.refresh")}><RefreshCw size={14} /></button>
                 <button onClick={handleUndo} className="p-1.5 rounded hover:bg-[var(--hover-bg)] text-[var(--text-muted)]" title={t("mediaCenter.undo")}><Undo2 size={14} /></button>
                 <button onClick={handleRedo} className="p-1.5 rounded hover:bg-[var(--hover-bg)] text-[var(--text-muted)]" title={t("mediaCenter.redo")}><Redo2 size={14} /></button>
               </div>
@@ -507,40 +661,140 @@ export function MediaCenterView() {
 
               {/* Result grid */}
               <div className="flex-1 flex flex-col min-w-0">
+                {/* T-002: Canvas preview area */}
+                {(canvasAsset || activeBundle.running_tasks.length > 0) && (
+                  <div className="relative h-[240px] border-b border-[var(--border-subtle)] bg-[var(--surface-2)] flex items-center justify-center shrink-0">
+                    {activeBundle.running_tasks.length > 0 && !canvasAsset ? (
+                      /* Pending overlay */
+                      <div className="flex flex-col items-center gap-3">
+                        <div className="w-16 h-16 rounded-full border-4 border-brand-400/30 border-t-brand-500 animate-spin" />
+                        <p className="text-sm text-[var(--text-muted)]">{t("mediaCenter.generating")}</p>
+                        <p className="text-[10px] text-[var(--text-muted)]">{canvasElapsed}s</p>
+                      </div>
+                    ) : canvasAsset && activeRound?.status === "failed" ? (
+                      /* Failed overlay */
+                      <div className="flex flex-col items-center gap-2">
+                        <AlertCircle size={32} className="text-red-400" />
+                        <p className="text-sm text-red-400">{t("mediaCenter.generationFailed")}</p>
+                      </div>
+                    ) : canvasAsset ? (
+                      /* Preview the selected asset */
+                      <>
+                        {canvasAsset.kind === "image" ? (
+                          <img src={convertFileSrc(canvasAsset.file_path)} alt="" className="max-h-full max-w-full object-contain" />
+                        ) : (
+                          <video src={convertFileSrc(canvasAsset.file_path)} controls className="max-h-full max-w-full object-contain" />
+                        )}
+                        {/* Navigation arrows */}
+                        {currentAssets.length > 1 && (() => {
+                          const idx = currentAssets.findIndex((a) => a.asset_id === canvasAsset.asset_id);
+                          return (<>
+                            {idx > 0 && <button onClick={() => setCanvasAsset(currentAssets[idx - 1])} className="absolute left-2 top-1/2 -translate-y-1/2 p-2 bg-black/50 rounded-full text-white hover:bg-black/70"><ChevronLeft size={16} /></button>}
+                            {idx < currentAssets.length - 1 && <button onClick={() => setCanvasAsset(currentAssets[idx + 1])} className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-black/50 rounded-full text-white hover:bg-black/70"><ChevronRight size={16} /></button>}
+                          </>);
+                        })()}
+                        {/* Asset counter */}
+                        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 px-2 py-0.5 bg-black/60 rounded text-[10px] text-white">
+                          {currentAssets.findIndex((a) => a.asset_id === canvasAsset.asset_id) + 1} / {currentAssets.length}
+                        </div>
+                      </>
+                    ) : null}
+                  </div>
+                )}
+                {/* Empty state when no canvas asset and no tasks */}
+                {!canvasAsset && activeBundle.running_tasks.length === 0 && currentAssets.length === 0 && (
+                  <div className="h-[240px] border-b border-[var(--border-subtle)] bg-[var(--surface-2)] flex items-center justify-center shrink-0">
+                    <EmptyState icon={<Image size={36} />} title={t("mediaCenter.startPrompt")} />
+                  </div>
+                )}
+
                 <ScrollArea className="flex-1">
                   <div className="p-4">
-                    {currentAssets.length > 0 ? (
-                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-                        {currentAssets.map((asset) => (
-                          <div key={asset.id}
-                            className={cn("relative rounded-lg border overflow-hidden group cursor-pointer transition-all", selectedAssets.has(asset.asset_id) ? "border-brand-500 ring-2 ring-brand-500/30" : "border-[var(--border-subtle)] hover:border-[var(--border-medium)]")}
-                            onClick={() => toggleSelect(asset.asset_id)}
-                            onDoubleClick={() => setPreviewAsset(asset)}
-                            onContextMenu={(e) => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, assetId: asset.asset_id }); }}>
-                            <div className="aspect-square bg-[var(--surface-2)]">
-                              {asset.kind === "image" ? (
-                                <img src={convertFileSrc(asset.file_path)} alt="" className="w-full h-full object-cover" loading="lazy" />
-                              ) : (
-                                <div className="w-full h-full flex items-center justify-center relative">
-                                  {asset.preview_path ? <img src={convertFileSrc(asset.preview_path)} alt="" className="w-full h-full object-cover" loading="lazy" /> : <Video size={24} className="text-[var(--text-muted)]" />}
-                                  <div className="absolute inset-0 flex items-center justify-center"><Play size={32} className="text-white drop-shadow-lg" /></div>
-                                </div>
-                              )}
-                            </div>
-                            <div className={cn("absolute top-2 left-2 w-5 h-5 rounded border flex items-center justify-center transition-all", selectedAssets.has(asset.asset_id) ? "bg-brand-500 border-brand-500 text-white" : "border-white/60 bg-black/30 opacity-0 group-hover:opacity-100")}>
-                              {selectedAssets.has(asset.asset_id) && <Check size={12} />}
-                            </div>
-                            <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button onClick={(e) => { e.stopPropagation(); setPreviewAsset(asset); }} className="p-1 rounded bg-black/50 text-white hover:bg-black/70"><Maximize2 size={10} /></button>
-                              <button onClick={async (e) => { e.stopPropagation(); const dir = await dialogOpen({ directory: true }); if (dir) await api.centerExportAssets([asset.asset_id], dir as string); }} className="p-1 rounded bg-black/50 text-white hover:bg-black/70"><Download size={10} /></button>
-                            </div>
+                    {viewMode === "grouped" ? (
+                      /* T-003: Grouped view */
+                      <div className="space-y-4">
+                        {activeBundle.round_prompts.map((rps) => (
+                          <div key={rps.round_id} className="border border-[var(--border-subtle)] rounded-lg overflow-hidden">
+                            <button onClick={() => toggleGroupCollapse(rps.round_id)}
+                              className="w-full flex items-center gap-2 px-3 py-2 bg-[var(--surface-1)] hover:bg-[var(--hover-bg)] text-left">
+                              <Badge variant={activeWs?.canvas_mode === "edit" ? "amber" : "blue"} className="text-[8px] px-1 py-0 shrink-0">
+                                {activeWs?.canvas_mode === "edit" ? "Edit" : "Draw"}
+                              </Badge>
+                              <span className="text-xs text-[var(--text-primary)] truncate flex-1">{rps.prompt_preview}</span>
+                              <Badge variant={rps.status === "completed" ? "green" : rps.status === "failed" ? "red" : "blue"} className="text-[8px] px-1.5 py-0">
+                                {rps.status}
+                              </Badge>
+                              <span className="text-[10px] text-[var(--text-muted)]">{rps.asset_count} {t("mediaCenter.assets")}</span>
+                              <span className="text-[10px] text-[var(--text-muted)]">{new Date(rps.created_at).toLocaleDateString()}</span>
+                              <ChevronRight size={12} className={cn("text-[var(--text-muted)] transition-transform", !collapsedGroups.has(rps.round_id) && "rotate-90")} />
+                            </button>
+                            {!collapsedGroups.has(rps.round_id) && rps.asset_count > 0 && (
+                              <GroupedRoundAssets roundId={rps.round_id} onSelect={(a) => { setCanvasAsset(a); }} onContextMenu={(e, assetId) => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, assetId }); }} />
+                            )}
                           </div>
                         ))}
+                        {activeBundle.round_prompts.length === 0 && (
+                          <EmptyState icon={<Layers size={36} />} title={t("mediaCenter.noRounds")} />
+                        )}
                       </div>
-                    ) : activeBundle.running_tasks.length > 0 ? (
-                      <div className="flex flex-col items-center justify-center h-48 gap-3"><Loader2 size={32} className="text-brand-400 animate-spin" /><p className="text-sm text-[var(--text-muted)]">{t("mediaCenter.generating")}</p></div>
+                    ) : viewMode === "list" ? (
+                      /* List view */
+                      <div className="space-y-1">
+                        {currentAssets.map((asset) => (
+                          <div key={asset.id}
+                            className={cn("flex items-center gap-3 px-3 py-2 rounded-lg border cursor-pointer", selectedAssets.has(asset.asset_id) ? "border-brand-500 bg-brand-600/5" : "border-transparent hover:bg-[var(--hover-bg)]")}
+                            onClick={() => { toggleSelect(asset.asset_id); setCanvasAsset(asset); }}
+                            onContextMenu={(e) => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, assetId: asset.asset_id }); }}>
+                            <div className="w-10 h-10 rounded overflow-hidden bg-[var(--surface-2)] shrink-0">
+                              {asset.kind === "image" ? (
+                                <img src={convertFileSrc(asset.preview_path || asset.file_path)} alt="" className="w-full h-full object-cover" />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center"><Play size={14} className="text-[var(--text-muted)]" /></div>
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs text-[var(--text-primary)] truncate">{asset.file_path.split(/[/\\]/).pop()}</p>
+                              <p className="text-[10px] text-[var(--text-muted)]">{asset.width}×{asset.height} · {asset.kind}</p>
+                            </div>
+                            <span className="text-[10px] text-[var(--text-muted)]">{new Date(asset.created_at).toLocaleTimeString()}</span>
+                          </div>
+                        ))}
+                        {currentAssets.length === 0 && activeBundle.running_tasks.length === 0 && (
+                          <EmptyState icon={<Image size={36} />} title={t("mediaCenter.startPrompt")} />
+                        )}
+                      </div>
                     ) : (
-                      <EmptyState icon={<Image size={48} />} title={t("mediaCenter.startPrompt")} />
+                      /* Grid view (default) */
+                      currentAssets.length > 0 ? (
+                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                          {currentAssets.map((asset) => (
+                            <div key={asset.id}
+                              className={cn("relative rounded-lg border overflow-hidden group cursor-pointer transition-all", selectedAssets.has(asset.asset_id) ? "border-brand-500 ring-2 ring-brand-500/30" : "border-[var(--border-subtle)] hover:border-[var(--border-medium)]")}
+                              onClick={() => { toggleSelect(asset.asset_id); setCanvasAsset(asset); }}
+                              onDoubleClick={() => setPreviewAsset(asset)}
+                              onContextMenu={(e) => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, assetId: asset.asset_id }); }}>
+                              <div className="aspect-square bg-[var(--surface-2)]">
+                                {asset.kind === "image" ? (
+                                  <img src={convertFileSrc(asset.file_path)} alt="" className="w-full h-full object-cover" loading="lazy" />
+                                ) : (
+                                  <div className="w-full h-full flex items-center justify-center relative">
+                                    {asset.preview_path ? <img src={convertFileSrc(asset.preview_path)} alt="" className="w-full h-full object-cover" loading="lazy" /> : <Video size={24} className="text-[var(--text-muted)]" />}
+                                    <div className="absolute inset-0 flex items-center justify-center"><Play size={32} className="text-white drop-shadow-lg" /></div>
+                                  </div>
+                                )}
+                              </div>
+                              <div className={cn("absolute top-2 left-2 w-5 h-5 rounded border flex items-center justify-center transition-all", selectedAssets.has(asset.asset_id) ? "bg-brand-500 border-brand-500 text-white" : "border-white/60 bg-black/30 opacity-0 group-hover:opacity-100")}>
+                                {selectedAssets.has(asset.asset_id) && <Check size={12} />}
+                              </div>
+                              <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button onClick={(e) => { e.stopPropagation(); setPreviewAsset(asset); }} className="p-1 rounded bg-black/50 text-white hover:bg-black/70"><Maximize2 size={10} /></button>
+                                <button onClick={async (e) => { e.stopPropagation(); const dir = await dialogOpen({ directory: true }); if (dir) await api.centerExportAssets([asset.asset_id], dir as string); }} className="p-1 rounded bg-black/50 text-white hover:bg-black/70"><Download size={10} /></button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : activeBundle.running_tasks.length > 0 ? null : null
+                      /* Empty state handled by canvas area above */
                     )}
                   </div>
                 </ScrollArea>
@@ -570,8 +824,12 @@ export function MediaCenterView() {
           {contextMenu.assetId && (
             <>
               <button className="w-full px-3 py-1.5 text-xs text-left hover:bg-[var(--hover-bg)] flex items-center gap-2" onClick={() => { const a = currentAssets.find((x) => x.asset_id === contextMenu.assetId); if (a) setPreviewAsset(a); }}><Maximize2 size={12} /> {t("mediaCenter.preview")}</button>
+              {/* T-007: Open file */}
+              <button className="w-full px-3 py-1.5 text-xs text-left hover:bg-[var(--hover-bg)] flex items-center gap-2" onClick={() => { const a = currentAssets.find((x) => x.asset_id === contextMenu.assetId); if (a) api.centerOpenFile(a.file_path).catch(console.error); }}><ExternalLink size={12} /> {t("mediaCenter.openFile")}</button>
+              {/* T-007: Reveal in explorer */}
+              <button className="w-full px-3 py-1.5 text-xs text-left hover:bg-[var(--hover-bg)] flex items-center gap-2" onClick={() => { const a = currentAssets.find((x) => x.asset_id === contextMenu.assetId); if (a) api.centerRevealInExplorer(a.file_path).catch(console.error); }}><FolderOpen size={12} /> {t("mediaCenter.revealInExplorer")}</button>
               <button className="w-full px-3 py-1.5 text-xs text-left hover:bg-[var(--hover-bg)] flex items-center gap-2" onClick={async () => { const dir = await dialogOpen({ directory: true }); if (dir && contextMenu.assetId) await api.centerExportAssets([contextMenu.assetId], dir as string); }}><Download size={12} /> {t("mediaCenter.download")}</button>
-              <button className="w-full px-3 py-1.5 text-xs text-left hover:bg-[var(--hover-bg)] flex items-center gap-2 text-red-400" onClick={async () => { if (contextMenu.assetId) { await api.centerDeleteAssets([contextMenu.assetId]); if (activeTabId) { const b = await api.centerGetWorkspaceBundle(activeTabId); setLoadedBundles((prev) => new Map(prev).set(activeTabId!, b)); } } }}><Trash2 size={12} /> {t("mediaCenter.delete")}</button>
+              <button className="w-full px-3 py-1.5 text-xs text-left hover:bg-[var(--hover-bg)] flex items-center gap-2 text-red-400" onClick={() => { if (contextMenu.assetId) setDeleteTarget({ type: "assets", id: contextMenu.assetId, count: 1 }); }}><Trash2 size={12} /> {t("mediaCenter.delete")}</button>
               <button className="w-full px-3 py-1.5 text-xs text-left hover:bg-[var(--hover-bg)] flex items-center gap-2" onClick={() => { const a = currentAssets.find((x) => x.asset_id === contextMenu.assetId); if (a) navigator.clipboard.writeText(a.file_path); }}><Copy size={12} /> {t("mediaCenter.copyPath")}</button>
               <button className="w-full px-3 py-1.5 text-xs text-left hover:bg-[var(--hover-bg)] flex items-center gap-2" onClick={() => { if (contextMenu.assetId) promoteToReference(contextMenu.assetId); }}><Image size={12} /> {t("mediaCenter.setAsRef")}</button>
               <button className="w-full px-3 py-1.5 text-xs text-left hover:bg-[var(--hover-bg)] flex items-center gap-2" onClick={() => { if (contextMenu.assetId) deriveWorkspaceFromAsset(contextMenu.assetId); }}><Sparkles size={12} /> {t("mediaCenter.editThisImage")}</button>
@@ -633,6 +891,64 @@ export function MediaCenterView() {
           </div>
         </div>
       )}
+
+      {/* T-005: Delete confirmation dialog */}
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center" onClick={() => setDeleteTarget(null)}>
+          <div className="bg-[var(--surface-1)] border border-[var(--border-subtle)] rounded-xl shadow-2xl p-6 max-w-sm w-full mx-4" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-sm font-medium text-[var(--text-primary)] mb-2">
+              {deleteTarget.type === "workspace" ? t("mediaCenter.deleteWorkspaceTitle") : t("mediaCenter.deleteAssetsTitle")}
+            </h3>
+            <p className="text-xs text-[var(--text-secondary)] mb-4">
+              {deleteTarget.type === "workspace"
+                ? t("mediaCenter.deleteWorkspaceDesc", { name: deleteTarget.name })
+                : t("mediaCenter.deleteAssetsDesc", { count: deleteTarget.count })}
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button size="sm" variant="secondary" onClick={() => setDeleteTarget(null)}>{t("mediaCenter.cancel")}</Button>
+              <Button size="sm" variant="danger" onClick={confirmDelete}>{t("mediaCenter.confirmDelete")}</Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── T-003: Helper component for grouped view (lazy-loads round assets) ──
+
+function GroupedRoundAssets({ roundId, onSelect, onContextMenu }: {
+  roundId: string;
+  onSelect: (asset: CenterAssetDetail) => void;
+  onContextMenu: (e: React.MouseEvent, assetId: string) => void;
+}) {
+  const [assets, setAssets] = useState<CenterAssetDetail[]>([]);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    if (!loaded) {
+      api.centerGetRoundAssets(roundId).then((a) => { setAssets(a); setLoaded(true); }).catch(console.error);
+    }
+  }, [roundId, loaded]);
+
+  if (!loaded) return <div className="p-2 flex items-center justify-center"><Loader2 size={14} className="animate-spin text-[var(--text-muted)]" /></div>;
+
+  return (
+    <div className="p-2 overflow-x-auto">
+      <div className="flex gap-2">
+        {assets.map((asset) => (
+          <div key={asset.id} className="w-16 h-16 rounded overflow-hidden shrink-0 cursor-pointer hover:ring-2 hover:ring-brand-500 transition-all"
+            onClick={() => onSelect(asset)}
+            onContextMenu={(e) => onContextMenu(e, asset.asset_id)}>
+            {asset.kind === "image" ? (
+              <img src={convertFileSrc(asset.preview_path || asset.file_path)} alt="" className="w-full h-full object-cover" />
+            ) : (
+              <div className="w-full h-full bg-[var(--surface-2)] flex items-center justify-center"><Play size={14} className="text-[var(--text-muted)]" /></div>
+            )}
+          </div>
+        ))}
+        {assets.length === 0 && <p className="text-[10px] text-[var(--text-muted)] p-2">No assets</p>}
+      </div>
     </div>
   );
 }
