@@ -138,6 +138,7 @@ pub fn run() {
             commands::export_config,
             commands::import_config,
             commands::validate_storage_connection,
+            commands::cloud_health_check,
             // Provider management
             commands::list_providers,
             commands::refresh_providers,
@@ -302,6 +303,7 @@ pub fn run() {
             commands::aad_start_device_code_flow,
             commands::aad_select_tenant,
             commands::aad_refresh_token,
+            commands::aad_logout,
             // Image pipeline
             commands::run_image_pipeline,
             commands::get_image_model_catalog,

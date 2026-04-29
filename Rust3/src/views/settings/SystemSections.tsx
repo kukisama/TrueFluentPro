@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { save as dialogSave, open as dialogOpen } from "@tauri-apps/plugin-dialog";
+import { open as shellOpen } from "@tauri-apps/plugin-shell";
 import {
-  Shield, Zap, Sun, Moon, Monitor,
-  Download, Upload, Copy, Clipboard,
+  Shield, Zap, Sun, Moon, Monitor, LogOut,
+  Download, Upload, Copy, Clipboard, ExternalLink, Loader2,
 } from "lucide-react";
 import { cn } from "../../lib/utils";
 import {
@@ -87,28 +88,95 @@ export function SearchSection() {
 
 export function CloudSection() {
   const { t } = useTranslation();
+  const config = useAppStore((s) => s.config);
+  const cloud = config?.cloud;
+  const updateConfig = useConfigUpdater();
+  const [healthResult, setHealthResult] = useState("");
+  const [healthChecking, setHealthChecking] = useState(false);
+
+  if (!cloud) return null;
+
+  const handleHealthCheck = async () => {
+    if (!cloud.backend_url?.trim()) {
+      setHealthResult(t("settingsSections.enterBackendUrl"));
+      return;
+    }
+    setHealthChecking(true);
+    setHealthResult("");
+    try {
+      const result = await api.cloudHealthCheck(cloud.backend_url);
+      setHealthResult(result);
+    } catch (e) {
+      setHealthResult(`✗ ${e}`);
+    } finally {
+      setHealthChecking(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await api.aadLogout("cloud");
+    } catch (e) {
+      console.error("Cloud logout failed:", e);
+    }
+  };
+
   return (
     <div className="max-w-2xl space-y-6">
       <SectionHeader title={t("settingsSections.cloudTitle")} description={t("settingsSections.cloudDesc")} />
 
       <GlassCard className="space-y-4">
         <div><Label>{t("settingsSections.serviceMode")}</Label>
-          <Select className="w-full">
+          <Select className="w-full" value={cloud.mode}
+            onChange={(e) => updateConfig((cfg) => { cfg.cloud.mode = e.target.value; })}>
             <option value="self_hosted">{t("settingsSections.selfHosted")}</option>
             <option value="cloud">{t("settingsSections.cloudMode")}</option>
           </Select>
         </div>
-        <div><Label>{t("settingsSections.backendUrl")}</Label><Input placeholder="https://gateway.truefluent.pro" /></div>
+        <div><Label>{t("settingsSections.backendUrl")}</Label>
+          <Input value={cloud.backend_url} placeholder="https://gateway.truefluent.pro"
+            onChange={(e) => updateConfig((cfg) => { cfg.cloud.backend_url = e.target.value; })} />
+        </div>
+        <div className="flex items-center gap-3">
+          <Button size="sm" variant="secondary" onClick={handleHealthCheck} disabled={healthChecking}>
+            {healthChecking ? <Loader2 size={12} className="animate-spin" /> : <Zap size={14} />}
+            {` ${t("settingsSections.healthCheck")}`}
+          </Button>
+          {healthResult && (
+            <span className={cn("text-xs", healthResult.startsWith("✓") ? "text-emerald-500" : "text-red-400")}>
+              {healthResult}
+            </span>
+          )}
+        </div>
       </GlassCard>
 
       <GlassCard className="space-y-4">
         <h3 className="text-sm font-semibold text-[var(--text-primary)]">{t("settingsSections.aadLogin")}</h3>
-        <div><Label>{t("settingsSections.tenantId")}</Label><Input placeholder="00000000-0000-0000-0000-000000000000" /></div>
-        <div><Label>{t("settingsSections.clientId")}</Label><Input placeholder="00000000-0000-0000-0000-000000000000" /></div>
-        <div><Label>Scope</Label><Input placeholder="api://truefluent/.default" /></div>
+        <div><Label>{t("settingsSections.tenantId")}</Label>
+          <Input value={cloud.aad_tenant_id} placeholder="00000000-0000-0000-0000-000000000000"
+            onChange={(e) => updateConfig((cfg) => { cfg.cloud.aad_tenant_id = e.target.value; })} />
+        </div>
+        <div><Label>{t("settingsSections.clientId")}</Label>
+          <Input value={cloud.aad_client_id} placeholder="00000000-0000-0000-0000-000000000000"
+            onChange={(e) => updateConfig((cfg) => { cfg.cloud.aad_client_id = e.target.value; })} />
+        </div>
+        <div><Label>Scope</Label>
+          <Input value={cloud.aad_scope} placeholder="api://truefluent/.default"
+            onChange={(e) => updateConfig((cfg) => { cfg.cloud.aad_scope = e.target.value; })} />
+        </div>
         <div className="flex gap-2">
-          <Button size="sm"><Shield size={14} /> {t("settingsSections.login")}</Button>
-          <Button variant="secondary" size="sm"><Zap size={14} /> {t("settingsSections.healthCheck")}</Button>
+          {cloud.mode === "cloud" && (
+            <>
+              <Button size="sm" onClick={() => {
+                api.aadStartDeviceCodeFlow("cloud", cloud.aad_tenant_id, cloud.aad_client_id, cloud.aad_scope || undefined);
+              }}>
+                <Shield size={14} /> {t("settingsSections.login")}
+              </Button>
+              <Button variant="secondary" size="sm" onClick={handleLogout}>
+                <LogOut size={14} /> {t("settingsSections.logout")}
+              </Button>
+            </>
+          )}
         </div>
       </GlassCard>
     </div>
@@ -321,6 +389,14 @@ export function UiSection() {
 
 export function AboutSection() {
   const { t } = useTranslation();
+  const config = useAppStore((s) => s.config);
+  const updateConfig = useConfigUpdater();
+  const [appVersion, setAppVersion] = useState("...");
+
+  useEffect(() => {
+    api.getAppInfo().then((info) => setAppVersion(info.version)).catch(() => setAppVersion("unknown"));
+  }, []);
+
   return (
     <div className="max-w-2xl space-y-6">
       <SectionHeader title={t("settingsSections.aboutTitle")} />
@@ -328,7 +404,7 @@ export function AboutSection() {
       <GlassCard className="space-y-3">
         <div className="flex items-center gap-3 mb-2">
           <span className="text-xl font-bold text-gradient">{t("settingsAbout.appName")}</span>
-          <Badge variant="blue">v0.1.0</Badge>
+          <Badge variant="blue">v{appVersion}</Badge>
         </div>
         <p className="text-sm text-[var(--text-secondary)]">
           {t("settingsAbout.appDesc")}
@@ -346,7 +422,28 @@ export function AboutSection() {
       </GlassCard>
 
       <GlassCard className="space-y-4">
-        <SettingRow label={t("settingsSections.autoUpdate")} description={t("settingsSections.autoUpdateDesc")}><Switch defaultChecked /></SettingRow>
+        <h3 className="text-sm font-semibold text-[var(--text-primary)]">{t("settingsSections.portalLinks")}</h3>
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" variant="secondary" onClick={() => shellOpen("https://portal.azure.com/#view/Microsoft_Azure_ProjectOxford/CognitiveServicesHub/~/SpeechServices")}>
+            <ExternalLink size={12} /> Azure Speech
+          </Button>
+          <Button size="sm" variant="secondary" onClick={() => shellOpen("https://portal.azure.com/#view/Microsoft_Azure_Storage/StorageAccountBlade")}>
+            <ExternalLink size={12} /> Azure Storage
+          </Button>
+          <Button size="sm" variant="secondary" onClick={() => shellOpen("https://ai.azure.com")}>
+            <ExternalLink size={12} /> Azure AI Foundry
+          </Button>
+          <Button size="sm" variant="secondary" onClick={() => shellOpen("https://github.com/kukisama/TrueFluentPro")}>
+            <ExternalLink size={12} /> GitHub
+          </Button>
+        </div>
+      </GlassCard>
+
+      <GlassCard className="space-y-4">
+        <SettingRow label={t("settingsSections.autoUpdate")} description={t("settingsSections.autoUpdateDesc")}>
+          <Switch checked={config?.ui?.auto_update ?? true}
+            onCheckedChange={(v) => updateConfig((cfg) => { cfg.ui.auto_update = v; })} />
+        </SettingRow>
       </GlassCard>
     </div>
   );

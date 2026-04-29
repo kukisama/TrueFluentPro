@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Globe, Mic, Brain, Image, Video, Volume2, FileText,
@@ -102,20 +102,41 @@ export function ModelRefSelector({
   );
 }
 
+// ── Debounced auto-save status context ──
+let _globalSetSaveStatus: ((s: string) => void) | null = null;
+
 export function useConfigUpdater() {
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   return useCallback(async (updater: (cfg: NonNullable<ReturnType<typeof useAppStore.getState>["config"]>) => void) => {
     const cfg = useAppStore.getState().config;
     if (!cfg) return;
     const copy = JSON.parse(JSON.stringify(cfg));
     updater(copy);
-    await api.updateConfig(copy);
     useAppStore.getState().setConfig(copy);
+
+    // Debounce: cancel previous timer, start new 500ms delay
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(async () => {
+      if (_globalSetSaveStatus) _globalSetSaveStatus("saving");
+      try {
+        await api.updateConfig(copy);
+        if (_globalSetSaveStatus) _globalSetSaveStatus("✓ 配置已自动保存");
+        setTimeout(() => { if (_globalSetSaveStatus) _globalSetSaveStatus(""); }, 2000);
+      } catch (e) {
+        if (_globalSetSaveStatus) _globalSetSaveStatus(`✗ 保存失败: ${e}`);
+      }
+    }, 500);
   }, []);
 }
 
 export function SettingsView() {
   const [activeTab, setActiveTab] = useState<SettingsTab>("endpoints");
+  const [saveStatus, setSaveStatus] = useState("");
   const { t } = useTranslation();
+
+  // Register global save status setter for debounced updater
+  _globalSetSaveStatus = setSaveStatus;
 
   const tabs: { id: SettingsTab; label: string; icon: React.ReactNode; group: string }[] = [
     { id: "endpoints", label: t("settingsSidebar.tabEndpoints"), icon: <Globe size={15} />, group: "connect" },
@@ -179,6 +200,16 @@ export function SettingsView() {
           {activeTab === "about" && <AboutSection />}
         </FadeIn>
       </div>
+      {saveStatus && (
+        <div className="h-7 flex items-center px-4 border-t border-[var(--border-subtle)] text-xs text-[var(--text-muted)] shrink-0"
+          style={{ backgroundColor: "var(--sidebar-bg)" }}>
+          <span className={cn(
+            saveStatus.startsWith("✓") ? "text-emerald-500" :
+            saveStatus.startsWith("✗") ? "text-red-400" :
+            "text-[var(--text-muted)]"
+          )}>{saveStatus}</span>
+        </div>
+      )}
     </div>
   );
 }

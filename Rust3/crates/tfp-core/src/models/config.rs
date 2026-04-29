@@ -372,6 +372,8 @@ pub struct UiConfig {
     pub sidebar_collapsed: bool,
     pub font_size: u32,
     pub language: String,
+    #[serde(default = "default_true")]
+    pub auto_update: bool,
 }
 
 impl Default for UiConfig {
@@ -381,6 +383,7 @@ impl Default for UiConfig {
             sidebar_collapsed: false,
             font_size: 14,
             language: "zh-CN".into(),
+            auto_update: true,
         }
     }
 }

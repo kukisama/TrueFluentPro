@@ -210,6 +210,52 @@ export function StorageSection() {
           <Switch checked={storage.export_vtt_subtitles} onCheckedChange={(v) => updateConfig((cfg) => { cfg.storage.export_vtt_subtitles = v; })} />
         </SettingRow>
       </GlassCard>
+
+      <GlassCard className="space-y-4">
+        <h3 className="text-sm font-semibold text-[var(--text-primary)]">{t("settingsSections.batchTranscription")}</h3>
+        <div><Label>{t("settingsSections.batchLogLevel")}</Label>
+          <Select className="w-48" value={String(storage.batch_log_level ?? 0)}
+            onChange={(e) => updateConfig((cfg) => { cfg.storage.batch_log_level = Number(e.target.value); })}>
+            <option value="0">{t("settingsSections.logOff")}</option>
+            <option value="1">{t("settingsSections.logFailuresOnly")}</option>
+            <option value="2">{t("settingsSections.logAll")}</option>
+          </Select>
+        </div>
+        <SettingRow label={t("settingsSections.forceRegeneration")} description={t("settingsSections.forceRegenerationDesc")}>
+          <Switch checked={storage.batch_force_regeneration ?? false}
+            onCheckedChange={(v) => updateConfig((cfg) => { cfg.storage.batch_force_regeneration = v; })} />
+        </SettingRow>
+        <SettingRow label={t("settingsSections.contextMenuForceRegen")} description={t("settingsSections.contextMenuForceRegenDesc")}>
+          <Switch checked={storage.context_menu_force_regeneration ?? false}
+            onCheckedChange={(v) => updateConfig((cfg) => { cfg.storage.context_menu_force_regeneration = v; })} />
+        </SettingRow>
+      </GlassCard>
+
+      <GlassCard className="space-y-4">
+        <h3 className="text-sm font-semibold text-[var(--text-primary)]">{t("settingsSections.subtitleSplit")}</h3>
+        <SettingRow label={t("settingsSections.enableBatchSentenceSplit")} description={t("settingsSections.enableBatchSentenceSplitDesc")}>
+          <Switch checked={storage.enable_batch_sentence_split ?? false}
+            onCheckedChange={(v) => updateConfig((cfg) => { cfg.storage.enable_batch_sentence_split = v; })} />
+        </SettingRow>
+        <SettingRow label={t("settingsSections.splitOnComma")} description={t("settingsSections.splitOnCommaDesc")}>
+          <Switch checked={storage.batch_split_on_comma ?? false}
+            onCheckedChange={(v) => updateConfig((cfg) => { cfg.storage.batch_split_on_comma = v; })} />
+        </SettingRow>
+        <div className="grid grid-cols-3 gap-4">
+          <div><Label>{t("settingsSections.maxChars")}</Label>
+            <Input type="number" min={6} max={999} value={storage.batch_max_chars ?? 24} className="w-full"
+              onChange={(e) => updateConfig((cfg) => { cfg.storage.batch_max_chars = Math.max(6, Math.min(999, Number(e.target.value) || 24)); })} />
+          </div>
+          <div><Label>{t("settingsSections.maxDuration")}</Label>
+            <Input type="number" min={1} max={99} step={0.5} value={storage.batch_max_duration ?? 6.0} className="w-full"
+              onChange={(e) => updateConfig((cfg) => { cfg.storage.batch_max_duration = Math.max(1, Math.min(99, Number(e.target.value) || 6.0)); })} />
+          </div>
+          <div><Label>{t("settingsSections.pauseSplitMs")}</Label>
+            <Input type="number" min={100} max={5000} step={50} value={storage.batch_pause_split_ms ?? 500} className="w-full"
+              onChange={(e) => updateConfig((cfg) => { cfg.storage.batch_pause_split_ms = Math.max(100, Math.min(5000, Number(e.target.value) || 500)); })} />
+          </div>
+        </div>
+      </GlassCard>
     </div>
   );
 }

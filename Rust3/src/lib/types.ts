@@ -41,6 +41,7 @@ export interface UiConfig {
   sidebar_collapsed: boolean;
   font_size: number;
   language: string;
+  auto_update: boolean;
 }
 export interface AiSettings {
   insight_model: ModelReference;
@@ -76,6 +77,14 @@ export interface StorageSettings {
   recording_mp3_bitrate_kbps: number;
   export_vtt_subtitles: boolean;
   export_srt_subtitles: boolean;
+  batch_log_level: number;
+  batch_force_regeneration: boolean;
+  context_menu_force_regeneration: boolean;
+  enable_batch_sentence_split: boolean;
+  batch_split_on_comma: boolean;
+  batch_max_chars: number;
+  batch_max_duration: number;
+  batch_pause_split_ms: number;
 }
 export interface RecognitionSettings {
   filter_modal_particles: boolean;
@@ -102,6 +111,13 @@ export interface WebSearchSettings {
   mcp_api_key: string;
   debug_mode: boolean;
 }
+export interface CloudSettings {
+  mode: string;
+  backend_url: string;
+  aad_tenant_id: string;
+  aad_client_id: string;
+  aad_scope: string;
+}
 export interface AppConfig {
   endpoints: AiEndpoint[];
   default_source_lang: string;
@@ -113,6 +129,7 @@ export interface AppConfig {
   storage: StorageSettings;
   recognition: RecognitionSettings;
   web_search: WebSearchSettings;
+  cloud: CloudSettings;
   task_engine_concurrency?: number;
   task_engine_timeout_secs?: number;
 }

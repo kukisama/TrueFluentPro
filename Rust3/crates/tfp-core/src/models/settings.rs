@@ -117,6 +117,10 @@ impl Default for MediaSettings {
     }
 }
 
+fn default_batch_max_chars() -> u32 { 24 }
+fn default_batch_max_duration() -> f64 { 6.0 }
+fn default_batch_pause_split_ms() -> u32 { 500 }
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StorageSettings {
     #[serde(default)]
@@ -135,6 +139,23 @@ pub struct StorageSettings {
     pub export_vtt_subtitles: bool,
     #[serde(default)]
     pub export_srt_subtitles: bool,
+    /// 0=Off, 1=FailuresOnly, 2=All
+    #[serde(default)]
+    pub batch_log_level: u32,
+    #[serde(default)]
+    pub batch_force_regeneration: bool,
+    #[serde(default)]
+    pub context_menu_force_regeneration: bool,
+    #[serde(default)]
+    pub enable_batch_sentence_split: bool,
+    #[serde(default)]
+    pub batch_split_on_comma: bool,
+    #[serde(default = "default_batch_max_chars")]
+    pub batch_max_chars: u32,
+    #[serde(default = "default_batch_max_duration")]
+    pub batch_max_duration: f64,
+    #[serde(default = "default_batch_pause_split_ms")]
+    pub batch_pause_split_ms: u32,
 }
 
 impl Default for StorageSettings {
@@ -148,6 +169,14 @@ impl Default for StorageSettings {
             recording_mp3_bitrate_kbps: 256,
             export_vtt_subtitles: true,
             export_srt_subtitles: false,
+            batch_log_level: 0,
+            batch_force_regeneration: false,
+            context_menu_force_regeneration: false,
+            enable_batch_sentence_split: false,
+            batch_split_on_comma: false,
+            batch_max_chars: 24,
+            batch_max_duration: 6.0,
+            batch_pause_split_ms: 500,
         }
     }
 }
@@ -284,5 +313,79 @@ impl Default for BatchSettings {
             include_subtitle: true,
             subtitle_split: BatchSubtitleSplitOptions::default(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_storage_settings_default_values() {
+        let s = StorageSettings::default();
+        assert_eq!(s.batch_log_level, 0);
+        assert!(!s.batch_force_regeneration);
+        assert!(!s.context_menu_force_regeneration);
+        assert!(!s.enable_batch_sentence_split);
+        assert!(!s.batch_split_on_comma);
+        assert_eq!(s.batch_max_chars, 24);
+        assert!((s.batch_max_duration - 6.0).abs() < f64::EPSILON);
+        assert_eq!(s.batch_pause_split_ms, 500);
+    }
+
+    #[test]
+    fn test_storage_settings_serde_roundtrip() {
+        let s = StorageSettings {
+            batch_log_level: 2,
+            batch_force_regeneration: true,
+            enable_batch_sentence_split: true,
+            batch_max_chars: 30,
+            batch_max_duration: 8.5,
+            batch_pause_split_ms: 700,
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&s).unwrap();
+        let deserialized: StorageSettings = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.batch_log_level, 2);
+        assert!(deserialized.batch_force_regeneration);
+        assert!(deserialized.enable_batch_sentence_split);
+        assert_eq!(deserialized.batch_max_chars, 30);
+        assert!((deserialized.batch_max_duration - 8.5).abs() < f64::EPSILON);
+        assert_eq!(deserialized.batch_pause_split_ms, 700);
+    }
+
+    #[test]
+    fn test_storage_settings_missing_new_fields_deserializes_defaults() {
+        let json = r#"{"batch_storage_connection_string":"","enable_recording":true}"#;
+        let s: StorageSettings = serde_json::from_str(json).unwrap();
+        assert_eq!(s.batch_log_level, 0);
+        assert!(!s.batch_force_regeneration);
+        assert_eq!(s.batch_max_chars, 24);
+        assert!((s.batch_max_duration - 6.0).abs() < f64::EPSILON);
+        assert_eq!(s.batch_pause_split_ms, 500);
+    }
+
+    #[test]
+    fn test_media_settings_default() {
+        let m = MediaSettings::default();
+        assert_eq!(m.image_quality, "auto");
+        assert_eq!(m.video_seconds, 5);
+        assert_eq!(m.max_loaded_sessions_in_memory, 8);
+    }
+
+    #[test]
+    fn test_recognition_settings_default() {
+        let r = RecognitionSettings::default();
+        assert!(r.filter_modal_particles);
+        assert_eq!(r.max_history_items, 500);
+        assert_eq!(r.initial_silence_timeout_seconds, 25);
+    }
+
+    #[test]
+    fn test_web_search_settings_default() {
+        let ws = WebSearchSettings::default();
+        assert_eq!(ws.provider_id, "duckduckgo");
+        assert_eq!(ws.trigger_mode, "auto");
+        assert_eq!(ws.max_results, 5);
     }
 }

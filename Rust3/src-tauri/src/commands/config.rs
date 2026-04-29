@@ -150,6 +150,36 @@ pub(crate) fn parse_storage_connection_info(connection_string: &str) -> Result<(
     Ok((account_name, url))
 }
 
+/// Health check against a cloud backend URL (GET {url}/healthz with 5s timeout)
+#[tauri::command]
+pub async fn cloud_health_check(url: String) -> Result<String, String> {
+    let check_url = format!("{}/healthz", url.trim_end_matches('/'));
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .build()
+        .map_err(|e| format!("HTTP client error: {e}"))?;
+
+    let start = std::time::Instant::now();
+    let resp = client.get(&check_url).send().await.map_err(|e| {
+        if e.is_timeout() {
+            "连接超时 (5s)".to_string()
+        } else if e.is_connect() {
+            format!("无法连接: {e}")
+        } else {
+            format!("请求失败: {e}")
+        }
+    })?;
+
+    let elapsed_ms = start.elapsed().as_millis();
+    let status = resp.status();
+    if status.is_success() {
+        Ok(format!("✓ OK ({elapsed_ms}ms)"))
+    } else {
+        let body = resp.text().await.unwrap_or_default();
+        Err(format!("{status} — {body}"))
+    }
+}
+
 #[tauri::command]
 pub async fn validate_storage_connection(connection_string: String) -> Result<(), String> {
     let (_account_name, url) = parse_storage_connection_info(&connection_string)?;
@@ -269,5 +299,18 @@ mod tests {
         assert_eq!(config.ai.insight_model.endpoint_id, "ep-1");
         // Invalid reference cleared
         assert!(config.ai.summary_model.endpoint_id.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_cloud_health_check_invalid_url() {
+        let result = cloud_health_check("http://127.0.0.1:1".into()).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_cloud_health_check_trailing_slash() {
+        // Should strip trailing slash before appending /healthz
+        let result = cloud_health_check("http://127.0.0.1:1/".into()).await;
+        assert!(result.is_err());
     }
 }

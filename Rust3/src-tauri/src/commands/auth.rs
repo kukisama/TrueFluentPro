@@ -696,6 +696,50 @@ async fn wait_for_callback(listener: TcpListener) -> Result<String, String> {
     }
 }
 
+/// Logout from AAD for a given endpoint: clear refresh_token, reset auth to ApiKey
+#[tauri::command]
+pub async fn aad_logout(
+    app: tauri::AppHandle,
+    endpoint_id: String,
+) -> Result<(), String> {
+    let state_ref: tauri::State<'_, AppState> = app.state();
+
+    // 1. Remove refresh_token for this endpoint
+    {
+        let mut tokens = state_ref.refresh_tokens.write().await;
+        tokens.remove(&endpoint_id);
+    }
+    let _ = state_ref.persist_refresh_tokens().await;
+
+    // 2. Reset endpoint auth fields
+    {
+        let mut config = state_ref.config.write().await;
+        if let Some(ep) = config.endpoints.iter_mut().find(|e| e.id == endpoint_id) {
+            ep.api_key = String::new();
+            ep.auth_mode = tfp_core::AzureAuthMode::ApiKey;
+            ep.auth_header_mode = tfp_core::ApiKeyHeaderMode::Auto;
+        }
+    }
+    state_ref.persist_config().await?;
+
+    // 3. Re-register providers
+    {
+        let config = state_ref.config.read().await;
+        let endpoints = config.endpoints.clone();
+        drop(config);
+        crate::register_providers_async(&state_ref, &endpoints).await;
+    }
+
+    // 4. Notify frontend
+    let _ = app.emit("aad-auth-result", serde_json::json!({
+        "endpoint_id": endpoint_id,
+        "success": true,
+        "logged_out": true,
+    }));
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

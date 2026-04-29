@@ -251,6 +251,10 @@ export const api = {
   validateStorageConnection: (connectionString: string) =>
     invoke<void>("validate_storage_connection", { connectionString }),
 
+  // ── Cloud (1) ──
+  cloudHealthCheck: (url: string) =>
+    invoke<string>("cloud_health_check", { url }),
+
   // ── Audio library (5) ──
   listAudioItems: () => invoke<AudioLibraryItem[]>("list_audio_items"),
   addAudioItem: (item: Omit<AudioLibraryItem, "id" | "created_at" | "updated_at">) =>
@@ -316,6 +320,8 @@ export const api = {
     invoke<void>("aad_select_tenant", { endpointId, tenantId, clientId, scope }),
   aadRefreshToken: (endpointId: string) =>
     invoke<void>("aad_refresh_token", { endpointId }),
+  aadLogout: (endpointId: string) =>
+    invoke<void>("aad_logout", { endpointId }),
   onAadAuthResult: (cb: (e: AadAuthResult) => void): Promise<UnlistenFn> =>
     listen<AadAuthResult>("aad-auth-result", (event) => cb(event.payload)),
   onAadTenantSelection: (cb: (e: AadTenantSelectionEvent) => void): Promise<UnlistenFn> =>
