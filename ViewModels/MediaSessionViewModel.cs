@@ -908,8 +908,6 @@ namespace TrueFluentPro.ViewModels
         {
             // 统一文字聊天模式：有文本或有附件即可发送
             return !IsChatStreaming && (!string.IsNullOrWhiteSpace(PromptText) || PendingAttachments.Count > 0);
-
-            return true;
         }
 
         private async System.Threading.Tasks.Task ConfigureScopedServiceAuthAsync(
