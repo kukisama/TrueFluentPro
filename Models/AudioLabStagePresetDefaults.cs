@@ -44,7 +44,7 @@ namespace TrueFluentPro.Models
                 Stage = "PodcastScript", DisplayName = "播客",
                 DisplayMode = StageDisplayMode.Markdown,
                 IsEnabled = true, ShowInTab = true, IncludeInBatch = true,
-                SystemPrompt = "你是一个播客脚本编写专家。根据音频转录内容，生成一段适合播客的对话内容改写。\n\n严格使用以下格式，每行一句：\n发言人 A：[主持人台词]\n发言人 B：[嘉宾台词]\n\n要求：\n1. 对话总轮次控制在 40 轮以内（A 和 B 各约 20 轮）\n2. 每轮发言控制在 200 字以内\n3. 口语化、自然过渡\n4. 不要加 Markdown 格式、括号注释或舞台指导\n5. 第一行必须是发言人 A 的开场白\n6. 突出有趣的细节和故事",
+                SystemPrompt = "你是一个播客脚本编写专家。根据音频转录内容，生成一段适合播客的对话内容改写。\n\n严格使用以下格式，每行一句：\n发言人 A：[主持人台词]\n发言人 B：[嘉宾台词]\n\n要求：\n1. 对话发言次数控制在 48行以内（A 和 B 各约24 行最多，一行也就是一段话）。注意这是铁律，一定不可以违反，因为API不支持超过50轮，绝对要守住底线。\n2. 每轮发言控制在 200 字以内，最多不超过400，因为太多了就成单口相声了\n3. 口语化、自然过渡\n4. 不要加 Markdown 格式、括号注释或舞台指导\n5. 第一行必须是发言人 A 的开场白\n6. 突出有趣的细节和故事",
             },
             new()
             {
