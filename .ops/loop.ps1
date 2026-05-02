@@ -2,15 +2,12 @@
 # 铁面督工 ↔ 执行工匠 ↔ 毒舌参谋
 #
 # 用法：.\.ops\loop.ps1 [-MaxRounds 50] [-PauseSec 3]
+# 前提：先手动对督工说第一句话创建事件，再运行本脚本
 # Ctrl+C 随时中断
 #
 # 工作原理：
-# 1. 每轮先调督工 → 督工根据文件状态决定行为
-# 2. 如果有未交付的施工单 → 调工匠
-# 3. 如果工匠交付了且未审查 → 可选调参谋
-# 4. 回到步骤 1
-#
-# 每个 agent 内部有自动启动协议，会根据 .ops/ 的文件状态判断是否轮到自己。
+#   agent 内部有自动启动协议，会扫描 .ops/ 找活跃事件（无 closure.md 的目录）
+#   本脚本只负责按顺序调用 agent，agent 自己判断是否轮到自己
 
 param(
     [int]$MaxRounds = 100,
@@ -18,10 +15,15 @@ param(
     [string]$Model = "claude-opus-4.6"
 )
 
-$logFile = Join-Path $PSScriptRoot "loop-$(Get-Date -Format 'yyyyMMdd_HHmmss').log"
-Write-Host "日志: $logFile" -ForegroundColor Magenta
-Write-Host "模型: $Model | 最大轮次: $MaxRounds | 间隔: ${PauseSec}s" -ForegroundColor Magenta
-Write-Host "Ctrl+C 中断" -ForegroundColor DarkGray
+$opsRoot = $PSScriptRoot
+$logFile = Join-Path $opsRoot "loop-$(Get-Date -Format 'yyyyMMdd_HHmmss').log"
+
+Write-Host "═══════════════════════════════════════" -ForegroundColor Cyan
+Write-Host "  三角协作自动循环" -ForegroundColor Cyan
+Write-Host "  日志: $logFile" -ForegroundColor DarkGray
+Write-Host "  模型: $Model | 最大轮次: $MaxRounds" -ForegroundColor DarkGray
+Write-Host "  Ctrl+C 中断" -ForegroundColor DarkGray
+Write-Host "═══════════════════════════════════════" -ForegroundColor Cyan
 Write-Host ""
 
 function Log($msg, $color = "White") {
@@ -32,94 +34,88 @@ function Log($msg, $color = "White") {
 }
 
 function Get-ActiveEvent {
-    $f = Join-Path $PSScriptRoot "active.txt"
-    if (Test-Path $f) {
-        $content = (Get-Content $f -Raw).Trim()
-        if ($content) { return $content }
+    # 扫描 .ops/ 下的子目录，排除有 closure.md 的
+    $dirs = Get-ChildItem $opsRoot -Directory -ErrorAction SilentlyContinue
+    $active = @()
+    foreach ($d in $dirs) {
+        if (-not (Test-Path "$($d.FullName)\closure.md")) {
+            # 确认它有 goal.md（是合法事件）
+            if (Test-Path "$($d.FullName)\goal.md") {
+                $active += $d
+            }
+        }
     }
-    return $null
+    if ($active.Count -eq 0) { return $null }
+    if ($active.Count -eq 1) { return $active[0] }
+    # 多个活跃事件：取最近修改的
+    return $active | Sort-Object LastWriteTime -Descending | Select-Object -First 1
 }
 
 function Get-LatestRound($eventDir) {
-    $rounds = Get-ChildItem "$eventDir\round-*" -Directory -ErrorAction SilentlyContinue |
+    $rounds = Get-ChildItem "$($eventDir.FullName)\round-*" -Directory -ErrorAction SilentlyContinue |
               Sort-Object Name
     return $rounds | Select-Object -Last 1
 }
 
+function Test-NeedsChallenger($eventDir, $roundName) {
+    $planFile = "$($eventDir.FullName)\plan.md"
+    if (Test-Path $planFile) {
+        $content = Get-Content $planFile -Raw
+        if ($content -match "$roundName.*🐍") { return $true }
+    }
+    return $false
+}
+
 for ($i = 1; $i -le $MaxRounds; $i++) {
-    Log "═══════════════════════════════════" "Cyan"
-    Log "  轮次 $i / $MaxRounds" "Cyan"
-    Log "═══════════════════════════════════" "Cyan"
+    Log "═══ 第 $i 轮 ═══" "Cyan"
 
     $event = Get-ActiveEvent
     if (-not $event) {
-        Log "⚠ 无活跃事件 (.ops/active.txt 为空)" "Yellow"
-        Log "请创建事件后重新运行" "Yellow"
+        Log "⚠ 无活跃事件（.ops/ 下没有未关闭的事件目录）" "Yellow"
+        Log "请先对督工说第一句话创建事件" "Yellow"
         break
     }
-
-    $eventDir = Join-Path $PSScriptRoot "events\$event"
-
-    # 检查事件是否已关闭
-    if (Test-Path "$eventDir\closure.md") {
-        Log "✅ 事件 '$event' 已关闭" "Green"
-        break
-    }
+    Log "活跃事件: $($event.Name)" "White"
 
     # 1. 督工回合
     Log "→ 铁面督工" "Yellow"
     copilot -p "继续" --agent "铁面督工" --model $Model --reasoning-effort high --yolo
     Start-Sleep $PauseSec
 
-    # 重新检查关闭状态（督工可能独自完成了简单任务）
-    if (Test-Path "$eventDir\closure.md") {
-        Log "✅ 事件 '$event' 已关闭（督工独自完成）" "Green"
+    # 检查是否已关闭（督工可能独自完成了简单任务）
+    if (Test-Path "$($event.FullName)\closure.md") {
+        Log "✅ 事件 '$($event.Name)' 已关闭" "Green"
         break
     }
 
     # 2. 检查是否需要工匠
-    $latest = Get-LatestRound $eventDir
-    if ($latest) {
-        $hasOrder = Test-Path "$($latest.FullName)\order.md"
-        $hasDelivery = Test-Path "$($latest.FullName)\delivery.md"
-        $hasVerdict = Test-Path "$($latest.FullName)\verdict.md"
+    $round = Get-LatestRound $event
+    if ($round) {
+        $hasOrder = Test-Path "$($round.FullName)\order.md"
+        $hasDelivery = Test-Path "$($round.FullName)\delivery.md"
+        $hasChallenge = Test-Path "$($round.FullName)\challenge.md"
+        $hasVerdict = Test-Path "$($round.FullName)\verdict.md"
 
         if ($hasOrder -and -not $hasDelivery) {
+            # 工匠回合
             Log "→ 执行工匠" "Green"
             copilot -p "继续" --agent "执行工匠" --model $Model --reasoning-effort high --yolo
             Start-Sleep $PauseSec
 
-            # 3. 检查是否需要参谋（工匠交付后）
-            $hasDeliveryNow = Test-Path "$($latest.FullName)\delivery.md"
-            $hasChallenge = Test-Path "$($latest.FullName)\challenge.md"
-
-            if ($hasDeliveryNow -and -not $hasChallenge) {
-                # 检查 plan.md 中是否标记了门禁
-                $planFile = "$eventDir\plan.md"
-                $roundName = $latest.Name
-                $needChallenger = $false
-
-                if (Test-Path $planFile) {
-                    $planContent = Get-Content $planFile -Raw
-                    # 如果 plan 中当前轮次行包含 🐍 标记
-                    if ($planContent -match "$roundName.*🐍") {
-                        $needChallenger = $true
-                    }
-                }
-
-                if ($needChallenger) {
-                    Log "→ 毒舌参谋（门禁触发）" "Red"
+            # 3. 检查是否需要参谋
+            $hasDeliveryNow = Test-Path "$($round.FullName)\delivery.md"
+            if ($hasDeliveryNow -and -not $hasChallenge -and -not $hasVerdict) {
+                if (Test-NeedsChallenger $event $round.Name) {
+                    Log "→ 毒舌参谋（🐍 门禁）" "Red"
                     copilot -p "继续" --agent "毒舌参谋" --model $Model --reasoning-effort high --yolo
                     Start-Sleep $PauseSec
                 } else {
-                    Log "⊘ 参谋跳过（本轮无门禁标记）" "DarkGray"
+                    Log "  参谋跳过（本轮无门禁）" "DarkGray"
                 }
             }
-        } elseif ($hasDelivery -and -not $hasVerdict) {
-            Log "⊘ 等待督工审查（下轮处理）" "DarkGray"
         }
     }
 }
 
 Log "" "White"
-Log "循环结束（共执行 $i 轮）" "Cyan"
+Log "循环结束（$i 轮）" "Cyan"
