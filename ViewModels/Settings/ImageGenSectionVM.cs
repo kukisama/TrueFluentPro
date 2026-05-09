@@ -8,6 +8,14 @@ namespace TrueFluentPro.ViewModels.Settings
 {
     public class ImageGenSectionVM : SettingsSectionBase
     {
+        public sealed class ImageEditModeOption
+        {
+            public required ImageEditMode Value { get; init; }
+            public required string DisplayName { get; init; }
+            public required string ToolTipText { get; init; }
+            public override string ToString() => DisplayName;
+        }
+
         private ModelOption? _selectedImageModel;
         private List<ModelOption> _imageModels = new();
         private bool _enableChatImageGeneration = true;
@@ -16,9 +24,10 @@ namespace TrueFluentPro.ViewModels.Settings
         private string _imageQuality = "medium";
         private string _imageFormat = "png";
         private int _imageCount = 1;
-        private ImageEditMode _imageEditMode = ImageEditMode.V2ResponsesApi;
+        private ImageEditMode _imageEditMode = ImageEditMode.V1Multipart;
         private string _imageBackground = "auto";
         private string _inputFidelity = "auto";
+        private ImageEditModeOption? _selectedImageEditModeOption;
 
         public List<ModelOption> ImageModels { get => _imageModels; set => SetProperty(ref _imageModels, value); }
         public ModelOption? SelectedImageModel
@@ -41,7 +50,21 @@ namespace TrueFluentPro.ViewModels.Settings
         public List<string> ImageQualityOptions { get; } = ["auto", "low", "medium", "high"];
         public List<string> ImageFormatOptions { get; } = ["png", "jpeg"];
         public List<int> ImageCountOptions { get; } = [1, 2, 3, 4, 5];
-        public List<ImageEditMode> ImageEditModeOptions { get; } = [ImageEditMode.V2ResponsesApi, ImageEditMode.V1Multipart];
+        public List<ImageEditModeOption> ImageEditModeOptions { get; } =
+        [
+            new()
+            {
+                Value = ImageEditMode.V1Multipart,
+                DisplayName = "edit",
+                ToolTipText = "带参考图时优先走传统 edit 接口，不走 Responses 图片工具；默认推荐，用于尽量保持原图尺寸不被安全尺寸白名单改写。"
+            },
+            new()
+            {
+                Value = ImageEditMode.V2ResponsesApi,
+                DisplayName = "response",
+                ToolTipText = "保留旧的 Responses + image_generation 改图逻辑，便于演示或对照测试；该链路在部分网关下会被限制为安全尺寸。"
+            }
+        ];
 
         public string ImageSize
         {
@@ -69,7 +92,34 @@ namespace TrueFluentPro.ViewModels.Settings
         public string ImageQuality { get => _imageQuality; set => Set(ref _imageQuality, value); }
         public string ImageFormat { get => _imageFormat; set => Set(ref _imageFormat, value); }
         public int ImageCount { get => _imageCount; set => Set(ref _imageCount, value); }
-        public ImageEditMode ImageEditMode { get => _imageEditMode; set => Set(ref _imageEditMode, value); }
+        public ImageEditMode ImageEditMode
+        {
+            get => _imageEditMode;
+            set
+            {
+                if (Set(ref _imageEditMode, value))
+                {
+                    SelectedImageEditModeOption = ImageEditModeOptions.FirstOrDefault(o => o.Value == value) ?? ImageEditModeOptions.First();
+                }
+            }
+        }
+
+        public ImageEditModeOption? SelectedImageEditModeOption
+        {
+            get => _selectedImageEditModeOption;
+            set
+            {
+                if (SetProperty(ref _selectedImageEditModeOption, value) && value != null)
+                {
+                    if (!EqualityComparer<ImageEditMode>.Default.Equals(_imageEditMode, value.Value))
+                    {
+                        _imageEditMode = value.Value;
+                        OnPropertyChanged(nameof(ImageEditMode));
+                        OnChanged();
+                    }
+                }
+            }
+        }
 
         public List<string> ImageBackgroundOptions { get; } = ["auto", "opaque", "transparent"];
         public List<string> InputFidelityOptions { get; } = ["auto", "low", "high"];
@@ -89,12 +139,14 @@ namespace TrueFluentPro.ViewModels.Settings
             _enableChatImageGeneration = media.EnableChatImageGeneration;
             _imageBackground = string.IsNullOrWhiteSpace(media.ImageBackground) ? "auto" : media.ImageBackground;
             _inputFidelity = string.IsNullOrWhiteSpace(media.InputFidelity) ? "auto" : media.InputFidelity;
+            _selectedImageEditModeOption = ImageEditModeOptions.FirstOrDefault(o => o.Value == _imageEditMode) ?? ImageEditModeOptions.First();
 
             OnPropertyChanged(nameof(ImageSize));
             OnPropertyChanged(nameof(ImageQuality));
             OnPropertyChanged(nameof(ImageFormat));
             OnPropertyChanged(nameof(ImageCount));
             OnPropertyChanged(nameof(ImageEditMode));
+            OnPropertyChanged(nameof(SelectedImageEditModeOption));
             OnPropertyChanged(nameof(EnableChatImageGeneration));
             OnPropertyChanged(nameof(ImageBackground));
             OnPropertyChanged(nameof(InputFidelity));
@@ -107,8 +159,7 @@ namespace TrueFluentPro.ViewModels.Settings
             media.ImageQuality = string.IsNullOrWhiteSpace(_imageQuality) ? "medium" : _imageQuality;
             media.ImageFormat = string.IsNullOrWhiteSpace(_imageFormat) ? "png" : _imageFormat;
             media.ImageCount = Math.Clamp(_imageCount, 1, 10);
-            // 改图模式固定为 V2ResponsesApi（file_id + Responses API），不再由用户选择
-            media.ImageEditMode = ImageEditMode.V2ResponsesApi;
+            media.ImageEditMode = _selectedImageEditModeOption?.Value ?? _imageEditMode;
             media.ImageModelRef = SelectedImageModel?.Reference;
             media.EnableChatImageGeneration = _enableChatImageGeneration;
             media.ImageBackground = string.IsNullOrWhiteSpace(_imageBackground) ? "auto" : _imageBackground;
