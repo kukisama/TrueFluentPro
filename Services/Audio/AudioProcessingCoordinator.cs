@@ -57,7 +57,7 @@ namespace TrueFluentPro.Services.Audio
             double smoothing,
             VadGateController? vadGate = null,
             ActiveSpeakerTimelineStore? timelineStore = null,
-            bool useVadGatedRecording = true,
+            bool useVadGatedRecording = false,
             Action<bool>? onContestStateChanged = null)
         {
             _preProcessor = preProcessor;

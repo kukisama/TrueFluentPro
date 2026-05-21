@@ -54,7 +54,7 @@ namespace TrueFluentPro.ViewModels.Settings
         private int _vadSwitchCooldownChunks = 10;
         private double _vadRmsEmaAlpha = 0.3;
         private bool _showActiveSpeakerTimeline = true;
-        private bool _useVadGatedRecording = true;
+        private bool _useVadGatedRecording = false;
         private List<ModelOption> _speechToTextModels = new();
         private List<ModelOption> _textToSpeechModels = new();
         private ModelOption? _selectedRealtimeTranscriptionModel;

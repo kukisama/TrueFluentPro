@@ -249,7 +249,7 @@ namespace TrueFluentPro.Models
         /// <summary>是否在主面板顶部显示发言人时间轴。</summary>
         public bool ShowActiveSpeakerTimeline { get; set; } = true;
         /// <summary>录制是否跟随 VAD 选源（只在双路时生效）。true=同一时刻只录赢家声道（更清晰），false=两路混合落盘（旧行为）。默认 true。</summary>
-        public bool UseVadGatedRecording { get; set; } = true;
+        public bool UseVadGatedRecording { get; set; } = false;
 
         public bool EnableRecording { get; set; } = true;
         public int RecordingMp3BitrateKbps { get; set; } = 256;
