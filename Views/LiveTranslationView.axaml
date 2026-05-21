@@ -429,6 +429,7 @@
                     <controls:ActiveSpeakerTimelineBar Grid.Row="0"
                                                        Margin="6,6,6,2"
                                                        Store="{Binding ActiveSpeakerTimeline}"
+                                                       IsLive="{Binding IsTranslating}"
                                                        IsVisible="{Binding ShowActiveSpeakerTimeline}"/>
                     <DockPanel Grid.Row="1" Margin="5">
                         <TextBlock Text="实时翻译" FontWeight="Bold" DockPanel.Dock="Left"/>

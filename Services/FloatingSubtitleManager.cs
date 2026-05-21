@@ -85,6 +85,14 @@ namespace TrueFluentPro.Services
             }
         }
 
+        public void UpdateSubtitle(string subtitle, Audio.VadGateController.ActiveSource source)
+        {
+            if (_isWindowOpen && _syncService != null)
+            {
+                _syncService.UpdateSubtitle(subtitle, source);
+            }
+        }
+
         private void OnWindowClosed(object? sender, EventArgs e)
         {
             _isWindowOpen = false;

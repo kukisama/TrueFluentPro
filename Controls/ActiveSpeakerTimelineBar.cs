@@ -20,6 +20,9 @@ namespace TrueFluentPro.Controls
         public static readonly StyledProperty<double> WindowSecondsProperty =
             AvaloniaProperty.Register<ActiveSpeakerTimelineBar, double>(nameof(WindowSeconds), 60.0);
 
+        public static readonly StyledProperty<bool> IsLiveProperty =
+            AvaloniaProperty.Register<ActiveSpeakerTimelineBar, bool>(nameof(IsLive), true);
+
         public ActiveSpeakerTimelineStore? Store
         {
             get => GetValue(StoreProperty);
@@ -32,6 +35,15 @@ namespace TrueFluentPro.Controls
             set => SetValue(WindowSecondsProperty, value);
         }
 
+        /// <summary>
+        /// 是否处于"实时"状态。false 时停止滚动、冻结时间基准在最后一帧，并停掉刷新计时器。
+        /// </summary>
+        public bool IsLive
+        {
+            get => GetValue(IsLiveProperty);
+            set => SetValue(IsLiveProperty, value);
+        }
+
         private static readonly IBrush MicBrush = new SolidColorBrush(Color.Parse("#3B82F6"));
         private static readonly IBrush LoopBrush = new SolidColorBrush(Color.Parse("#EF4444"));
         private static readonly IBrush MicDimBrush = new SolidColorBrush(Color.FromArgb(40, 0x3B, 0x82, 0xF6));
@@ -42,6 +54,7 @@ namespace TrueFluentPro.Controls
         private static readonly Pen GridPen = new(new SolidColorBrush(Color.FromArgb(40, 0x88, 0x88, 0x88)), 0.5);
 
         private DispatcherTimer? _timer;
+        private DateTime? _frozenNow;
 
         public ActiveSpeakerTimelineBar()
         {
@@ -55,7 +68,7 @@ namespace TrueFluentPro.Controls
             base.OnAttachedToVisualTree(e);
             _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
             _timer.Tick += (_, _) => InvalidateVisual();
-            _timer.Start();
+            if (IsLive) _timer.Start();
         }
 
         protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
@@ -63,6 +76,30 @@ namespace TrueFluentPro.Controls
             base.OnDetachedFromVisualTree(e);
             _timer?.Stop();
             _timer = null;
+        }
+
+        protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+        {
+            base.OnPropertyChanged(change);
+            if (change.Property == IsLiveProperty)
+            {
+                var live = change.GetNewValue<bool>();
+                if (live)
+                {
+                    // 重新开始：清空冻结时间，丢弃旧数据让用户从空白开始
+                    _frozenNow = null;
+                    Store?.Clear();
+                    _timer?.Start();
+                    InvalidateVisual();
+                }
+                else
+                {
+                    // 停止：把当前时间锁定为冻结基准，停掉计时器
+                    _frozenNow = DateTime.UtcNow;
+                    _timer?.Stop();
+                    InvalidateVisual();
+                }
+            }
         }
 
         public override void Render(DrawingContext context)
@@ -99,7 +136,7 @@ namespace TrueFluentPro.Controls
             if (store == null) return;
 
             var windowSec = Math.Max(5.0, WindowSeconds);
-            var now = DateTime.UtcNow;
+            var now = _frozenNow ?? DateTime.UtcNow;
             var start = now - TimeSpan.FromSeconds(windowSec);
             var samples = store.GetRange(start, now);
             if (samples.Count == 0) return;

@@ -1,18 +1,21 @@
 <Window xmlns="https://github.com/avaloniaui"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:vm="using:TrueFluentPro.ViewModels"
+    xmlns:icons="using:Projektanker.Icons.Avalonia"
     x:Class="TrueFluentPro.Views.FloatingSubtitleWindow"
-    x:DataType="vm:FloatingSubtitleViewModel" Title="Floating Subtitle" Width="1000"
-    Height="96"
-    MinWidth="1000"
-    MaxWidth="1000"
-    MinHeight="96"
-    MaxHeight="96"
+    x:DataType="vm:FloatingSubtitleViewModel" Title="Floating Subtitle"
+    Width="1000"
+    Height="120"
+    MinWidth="520"
+    MaxWidth="2400"
+    MinHeight="80"
+    MaxHeight="360"
     SystemDecorations="None"
     WindowStartupLocation="Manual"
     Topmost="True"
-    CanResize="False"
+    CanResize="True"
     Background="Transparent"
+    TransparencyLevelHint="Transparent"
     ExtendClientAreaToDecorationsHint="True"
     ExtendClientAreaChromeHints="NoChrome"
     ExtendClientAreaTitleBarHeightHint="-1">
@@ -21,38 +24,96 @@
         <Style Selector="Window">
             <Setter Property="BorderThickness" Value="0" />
         </Style>
+
+        <!-- 字幕主容器 -->
+        <Style Selector="Border#MainBorder">
+            <Setter Property="Cursor" Value="SizeAll" />
+        </Style>
+
+        <!-- 悬浮工具条：默认隐藏，鼠标进入字幕才淡入 -->
+        <Style Selector="Border#HoverToolbar">
+            <Setter Property="Opacity" Value="0" />
+            <Setter Property="IsHitTestVisible" Value="False" />
+            <Setter Property="Transitions">
+                <Transitions>
+                    <DoubleTransition Property="Opacity" Duration="0:0:0.18" />
+                </Transitions>
+            </Setter>
+        </Style>
+        <Style Selector="Border#MainBorder:pointerover Border#HoverToolbar">
+            <Setter Property="Opacity" Value="1" />
+            <Setter Property="IsHitTestVisible" Value="True" />
+        </Style>
+
+        <!-- 右下角 resize 把手：默认隐藏，hover 时显形 -->
+        <Style Selector="Border#ResizeGrip">
+            <Setter Property="Opacity" Value="0" />
+            <Setter Property="Transitions">
+                <Transitions>
+                    <DoubleTransition Property="Opacity" Duration="0:0:0.18" />
+                </Transitions>
+            </Setter>
+        </Style>
+        <Style Selector="Border#MainBorder:pointerover Border#ResizeGrip">
+            <Setter Property="Opacity" Value="0.85" />
+        </Style>
+
+        <!-- 来源彩色小点 -->
+        <Style Selector="Ellipse.source-dot">
+            <Setter Property="Width" Value="8" />
+            <Setter Property="Height" Value="8" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <!-- 来源说话人图标（喇叭/麦克风/字幕） -->
+        <Style Selector="icons|Icon.source-icon">
+            <Setter Property="FontSize" Value="16" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <!-- 工具条小按钮 -->
+        <Style Selector="Button.toolbar-btn">
+            <Setter Property="Width" Value="28" />
+            <Setter Property="Height" Value="28" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Background" Value="#33FFFFFF" />
+            <Setter Property="Foreground" Value="#F8FAFC" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="CornerRadius" Value="14" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Cursor" Value="Hand" />
+        </Style>
+        <Style Selector="Button.toolbar-btn:pointerover">
+            <Setter Property="Background" Value="#66FFFFFF" />
+        </Style>
+        <Style Selector="Button.toolbar-btn:pressed">
+            <Setter Property="Background" Value="#88FFFFFF" />
+        </Style>
+        <Style Selector="Button.toolbar-btn icons|Icon">
+            <Setter Property="FontSize" Value="12" />
+        </Style>
     </Window.Styles>
 
     <Border Name="MainBorder"
         Background="{Binding BackgroundBrush}"
-        CornerRadius="8"
-        BorderThickness="2"
-        BorderBrush="{Binding SourceBorderBrush}"
-        Margin="4"
+        CornerRadius="18"
+        BorderThickness="0"
+        Margin="10"
+        BoxShadow="0 8 28 0 #66000000, 0 2 6 0 #44000000"
         PointerPressed="OnSurfacePointerPressed">
 
         <Grid>
-            <Grid Margin="10,0,10,0" ColumnDefinitions="Auto,Auto,*">
-                <Border Grid.Column="0"
-                    Background="#80000000"
-                    CornerRadius="12"
-                    Width="24"
-                    Height="24"
-                    VerticalAlignment="Center"
-                    Margin="0,0,8,0">
-                    <Path Fill="White"
-                        HorizontalAlignment="Center"
-                        VerticalAlignment="Center"
-                        Data="M14,3.23V5.29C16.89,6.15 19,8.83 19,12C19,15.17 16.89,17.85 14,18.71V20.77C18.5,19.84 22,16.24 22,12C22,7.76 18.5,4.16 14,3.23M16.5,12C16.5,10.23 15.5,8.71 14,7.97V16C15.5,15.29 16.5,13.76 16.5,12M3,9V15H7L12,20V4L7,9H3Z"
-                        Width="16"
-                        Height="16" />
-                </Border>
+            <!-- 字幕主体 -->
+            <Grid Margin="18,8,18,10" ColumnDefinitions="Auto,*">
+                <icons:Icon Grid.Column="0"
+                            Classes="source-icon"
+                            Value="{Binding SourceIconValue}"
+                            Foreground="{Binding SourceIconBrush}"
+                            Margin="0,0,12,0"/>
 
-                <TextBlock Grid.Column="1" Text="{Binding SourceLabel}"
-                    FontSize="11" Foreground="#A0FFFFFF"
-                    VerticalAlignment="Center" Margin="0,0,8,0"/>
-
-                <Border Grid.Column="2" Name="SubtitleHost"
+                <Border Grid.Column="1" Name="SubtitleHost"
                     Background="Transparent"
                     Padding="0,2,0,4"
                     ClipToBounds="True">
@@ -66,10 +127,66 @@
                         ClipToBounds="False"
                         HorizontalAlignment="Stretch"
                         VerticalAlignment="Center"
-                        TextAlignment="Center" />
+                        TextAlignment="Center"
+                        RenderOptions.TextRenderingMode="Antialias"
+                        Effect="{Binding TextShadowEffect}" />
                 </Border>
             </Grid>
 
+            <!-- 右上角悬浮工具条 -->
+            <Border Name="HoverToolbar"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Top"
+                    Margin="0,-6,8,0"
+                    Background="#A0202833"
+                    CornerRadius="16"
+                    Padding="4">
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                    <Button Classes="toolbar-btn"
+                            Click="OnDecreaseFontSize"
+                            ToolTip.Tip="减小字号">
+                        <icons:Icon Value="fa-solid fa-minus"/>
+                    </Button>
+                    <Button Classes="toolbar-btn"
+                            Click="OnIncreaseFontSize"
+                            ToolTip.Tip="增大字号">
+                        <icons:Icon Value="fa-solid fa-plus"/>
+                    </Button>
+                    <Button Classes="toolbar-btn"
+                            Click="OnResetFontSize"
+                            ToolTip.Tip="重置字号">
+                        <icons:Icon Value="fa-solid fa-rotate-left"/>
+                    </Button>
+                    <Button Classes="toolbar-btn"
+                            Click="OnToggleClickThrough"
+                            ToolTip.Tip="点击穿透（鼠标穿过字幕条不挡操作；再次点击此处恢复）">
+                        <icons:Icon Value="fa-solid fa-hand-pointer"/>
+                    </Button>
+                    <Button Classes="toolbar-btn"
+                            Click="OnCloseClick"
+                            ToolTip.Tip="关闭字幕窗口">
+                        <icons:Icon Value="fa-solid fa-xmark"/>
+                    </Button>
+                </StackPanel>
+            </Border>
+
+            <!-- 右下角 resize 把手 -->
+            <Border Name="ResizeGrip"
+                    Width="22" Height="22"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Bottom"
+                    Margin="0,0,4,4"
+                    Background="Transparent"
+                    Cursor="BottomRightCorner"
+                    PointerPressed="OnResizePointerPressed"
+                    ToolTip.Tip="拖动调整字幕条尺寸">
+                <Path Fill="#CCFFFFFF"
+                      Stretch="Uniform"
+                      Margin="4"
+                      Data="M 0 12 L 12 0 M 4 12 L 12 4 M 8 12 L 12 8"
+                      Stroke="#CCFFFFFF"
+                      StrokeThickness="1.5"/>
+            </Border>
         </Grid>
     </Border>
 </Window>

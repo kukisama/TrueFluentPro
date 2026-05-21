@@ -1092,7 +1092,7 @@ namespace TrueFluentPro.ViewModels
                 // 通用浮动字幕（不区分来源）
                 if (_floatingSubtitleManager?.IsWindowOpen == true && !string.IsNullOrEmpty(CurrentTranslated))
                 {
-                    _floatingSubtitleManager.UpdateSubtitle(CurrentTranslated);
+                    _floatingSubtitleManager.UpdateSubtitle(CurrentTranslated, item.Source);
                 }
 
                 // 按来源分发到对应的浮动窗口
@@ -1100,13 +1100,13 @@ namespace TrueFluentPro.ViewModels
                     && _floatingMicSubtitleManager?.IsWindowOpen == true
                     && !string.IsNullOrEmpty(CurrentTranslated))
                 {
-                    _floatingMicSubtitleManager.UpdateSubtitle(CurrentTranslated);
+                    _floatingMicSubtitleManager.UpdateSubtitle(CurrentTranslated, item.Source);
                 }
                 else if (item.Source == VadGateController.ActiveSource.Loopback
                     && _floatingLoopbackSubtitleManager?.IsWindowOpen == true
                     && !string.IsNullOrEmpty(CurrentTranslated))
                 {
-                    _floatingLoopbackSubtitleManager.UpdateSubtitle(CurrentTranslated);
+                    _floatingLoopbackSubtitleManager.UpdateSubtitle(CurrentTranslated, item.Source);
                 }
             });
         }

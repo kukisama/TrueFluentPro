@@ -127,6 +127,7 @@
                     <Button Name="ReviewNavButton"
                             Classes="shell-nav-action"
                             Click="ReviewNavButton_Click"
+                            IsVisible="False"
                             ToolTip.Tip="复盘洞察 (Ctrl+2)"
                             AutomationProperties.Name="复盘洞察 (Ctrl+2)">
                         <Grid ColumnDefinitions="20,*" ColumnSpacing="10">
@@ -144,6 +145,7 @@
                     <Button Name="BatchNavButton"
                             Classes="shell-nav-action"
                             Click="BatchNavButton_Click"
+                            IsVisible="False"
                             ToolTip.Tip="批量字幕 (Ctrl+3)"
                             AutomationProperties.Name="批量字幕 (Ctrl+3)">
                         <Grid ColumnDefinitions="20,*" ColumnSpacing="10">
