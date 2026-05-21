@@ -28,6 +28,7 @@ namespace TrueFluentPro.ViewModels
                 if (SetProperty(ref _currentOriginal, value))
                 {
                     OnPropertyChanged(nameof(DisplayedText));
+                    OnPropertyChanged(nameof(IsLiveDisplayEmpty));
                 }
             }
         }
@@ -93,6 +94,7 @@ namespace TrueFluentPro.ViewModels
                 if (SetProperty(ref _currentTranslated, value))
                 {
                     OnPropertyChanged(nameof(DisplayedText));
+                    OnPropertyChanged(nameof(IsLiveDisplayEmpty));
                 }
             }
         }
@@ -113,6 +115,7 @@ namespace TrueFluentPro.ViewModels
                 OnPropertyChanged(nameof(IsSingleView));
                 OnPropertyChanged(nameof(DisplayedText));
                 OnPropertyChanged(nameof(DisplayPlaceholder));
+                OnPropertyChanged(nameof(IsLiveDisplayEmpty));
             }
         }
 
@@ -286,7 +289,19 @@ namespace TrueFluentPro.ViewModels
 
         public string TranslationToggleButtonText => IsTranslating ? "停止翻译" : "开始翻译";
 
-        public IBrush TranslationToggleButtonBackground => IsTranslating ? Brushes.Red : Brushes.Green;
+        public IBrush TranslationToggleButtonBackground
+        {
+            get
+            {
+                if (IsTranslating) return new SolidColorBrush(Color.Parse("#EF4444"));
+                var app = Application.Current;
+                if (app != null && app.TryGetResource("PrimaryBrush", app.ActualThemeVariant, out var brush) && brush is IBrush ib)
+                {
+                    return ib;
+                }
+                return new SolidColorBrush(Color.Parse("#2563EB"));
+            }
+        }
 
         public IBrush TranslationToggleButtonForeground => Brushes.White;
 
@@ -456,8 +471,38 @@ namespace TrueFluentPro.ViewModels
         public ObservableCollection<TranslationItem> History
         {
             get => _history;
-            set => SetProperty(ref _history, value);
+            set
+            {
+                if (_history != null)
+                {
+                    _history.CollectionChanged -= OnHistoryCollectionChanged;
+                }
+                if (SetProperty(ref _history, value))
+                {
+                    if (_history != null)
+                    {
+                        _history.CollectionChanged += OnHistoryCollectionChanged;
+                    }
+                    OnPropertyChanged(nameof(HasAnyHistory));
+                    OnPropertyChanged(nameof(IsHistoryEmpty));
+                }
+            }
         }
+
+        private void OnHistoryCollectionChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+        {
+            OnPropertyChanged(nameof(HasAnyHistory));
+            OnPropertyChanged(nameof(IsHistoryEmpty));
+        }
+
+        /// <summary>当前实时翻译显示区是否为空（用于空状态占位图）。</summary>
+        public bool IsLiveDisplayEmpty => string.IsNullOrWhiteSpace(DisplayedText);
+
+        /// <summary>历史记录列表是否非空。</summary>
+        public bool HasAnyHistory => _history != null && _history.Count > 0;
+
+        /// <summary>历史记录列表是否为空（用于空状态占位图）。</summary>
+        public bool IsHistoryEmpty => !HasAnyHistory;
 
         public const string NavTagLive = "live";
         public const string NavTagReview = "review";

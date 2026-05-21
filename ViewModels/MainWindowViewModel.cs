@@ -114,6 +114,7 @@ namespace TrueFluentPro.ViewModels
             _config = new AzureSpeechConfig();
             AppLogService.Initialize(() => _config.BatchLogLevel);
             _history = new ObservableCollection<TranslationItem>();
+            _history.CollectionChanged += OnHistoryCollectionChanged;
 
             ConfigVM = new ConfigViewModel(
                 configService,
