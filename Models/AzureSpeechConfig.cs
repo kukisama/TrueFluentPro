@@ -445,12 +445,15 @@ namespace TrueFluentPro.Models
                         Capabilities = ep.SpeechCapabilities != SpeechCapability.None
                             ? ep.SpeechCapabilities
                             : SpeechCapability.RealtimeSpeechToText | SpeechCapability.BatchSpeechToText,
+                        AuthMode = AzureAuthMode.ApiKey,
                         SubscriptionName = ep.Name,
                         SubscriptionKey = ep.SpeechSubscriptionKey ?? "",
                         ServiceRegion = region,
                         Endpoint = ep.SpeechEndpoint ?? "",
                     });
                 }
+
+                AddFoundrySpeechResources(result);
 
                 // 保留非 Microsoft 资源（如 AiSpeech）
                 result.AddRange(SpeechResources
@@ -463,7 +466,9 @@ namespace TrueFluentPro.Models
             // 旧体系回退（未迁移的配置）
             if (SpeechResources.Count > 0)
             {
-                return SpeechResources.Select(resource => resource.Clone()).ToList();
+                var result = SpeechResources.Select(resource => resource.Clone()).ToList();
+                AddFoundrySpeechResources(result);
+                return result;
             }
 
             var legacyResources = new List<SpeechResource>();
@@ -480,6 +485,7 @@ namespace TrueFluentPro.Models
             {
                 legacyResources.Add(legacyAiResource);
             }
+            AddFoundrySpeechResources(legacyResources);
 
             return legacyResources;
         }
@@ -641,6 +647,7 @@ namespace TrueFluentPro.Models
                     Capabilities = ep.SpeechCapabilities != SpeechCapability.None
                         ? ep.SpeechCapabilities
                         : SpeechCapability.RealtimeSpeechToText | SpeechCapability.BatchSpeechToText,
+                    AuthMode = AzureAuthMode.ApiKey,
                     SubscriptionName = ep.Name,
                     SubscriptionKey = ep.SpeechSubscriptionKey ?? "",
                     ServiceRegion = region,
@@ -730,6 +737,37 @@ namespace TrueFluentPro.Models
                 ActiveSpeechResourceId = activeEndpointId;
 
             SpeechSubscriptionsMigratedToEndpoints = true;
+        }
+
+        private void AddFoundrySpeechResources(List<SpeechResource> result)
+        {
+            foreach (var ep in Endpoints.Where(ep => ep.IsEnabled
+                         && ep.EndpointType == EndpointApiType.AzureOpenAi
+                         && ep.AuthMode == AzureAuthMode.AAD))
+            {
+                if (!FoundrySpeechEndpointResolver.TryResolve(ep, out var derived, out _) || derived == null)
+                {
+                    continue;
+                }
+
+                result.Add(new SpeechResource
+                {
+                    Id = FoundrySpeechEndpointResolver.BuildSpeechResourceId(ep.Id),
+                    Name = $"{ep.Name} / Foundry Speech",
+                    Vendor = SpeechVendorType.Microsoft,
+                    ConnectorType = SpeechConnectorType.MicrosoftSpeech,
+                    AuthMode = AzureAuthMode.AAD,
+                    AadEndpointId = ep.Id,
+                    IsEnabled = ep.IsEnabled,
+                    Capabilities = SpeechCapability.RealtimeSpeechToText
+                                   | SpeechCapability.BatchSpeechToText
+                                   | SpeechCapability.TextToSpeech,
+                    SubscriptionName = ep.Name,
+                    SubscriptionKey = string.Empty,
+                    ServiceRegion = derived.Region,
+                    Endpoint = derived.ResourceEndpoint,
+                });
+            }
         }
     }
 }

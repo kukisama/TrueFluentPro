@@ -10,6 +10,7 @@ namespace TrueFluentPro.Services
         public ModelRuntimeResolution? AiRuntime { get; init; }
 
         public bool IsMicrosoftSpeech => Resource.ConnectorType == SpeechConnectorType.MicrosoftSpeech;
+        public bool IsAadMicrosoftSpeech => IsMicrosoftSpeech && Resource.AuthMode == AzureAuthMode.AAD;
         public bool IsAiSpeech => Resource.ConnectorType == SpeechConnectorType.AiSpeech;
     }
 
@@ -68,6 +69,24 @@ namespace TrueFluentPro.Services
             switch (resource.ConnectorType)
             {
                 case SpeechConnectorType.MicrosoftSpeech:
+                    if (resource.AuthMode == AzureAuthMode.AAD)
+                    {
+                        if (string.IsNullOrWhiteSpace(resource.AadEndpointId)
+                            || string.IsNullOrWhiteSpace(resource.Endpoint)
+                            || string.IsNullOrWhiteSpace(resource.ServiceRegion))
+                        {
+                            errorMessage = $"语音资源“{resource.Name}”的 AAD Foundry Speech 连接信息不完整。";
+                            return false;
+                        }
+
+                        runtime = new SpeechResourceRuntimeResolution
+                        {
+                            Resource = resource,
+                            Capability = capability
+                        };
+                        return true;
+                    }
+
                     if (!resource.TryCreateAzureSubscription(out var subscription)
                         || subscription == null
                         || !subscription.IsValid())

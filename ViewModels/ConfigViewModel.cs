@@ -417,6 +417,13 @@ namespace TrueFluentPro.ViewModels
                 return;
             }
 
+            if (activeResource.AuthMode == AzureAuthMode.AAD)
+            {
+                SubscriptionValidationState = SubscriptionValidationState.Valid;
+                SubscriptionValidationStatusMessage = $"✓ AAD Foundry Speech 资源可用：{activeResource.GetDisplayName()}";
+                return;
+            }
+
             if (!_config.TryGetActiveMicrosoftSpeechSubscriptionForRealtime(out var subscription, out var readinessMessage))
             {
                 SubscriptionValidationState = activeResource == null

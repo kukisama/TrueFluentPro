@@ -386,7 +386,7 @@ namespace TrueFluentPro.ViewModels.Settings
         private void UpdateDerivedSpeechInfo()
         {
             var ep = SelectedAadEndpoint;
-            if (ep == null || string.IsNullOrWhiteSpace(ep.Region))
+            if (ep == null || !FoundrySpeechEndpointResolver.TryParseBaseUrl(ep.Url, out var subdomain, out var isChinaCloud, out _))
             {
                 DerivedRegion = "";
                 DerivedSttUrl = "";
@@ -394,20 +394,14 @@ namespace TrueFluentPro.ViewModels.Settings
                 return;
             }
 
-            DerivedRegion = ep.Region;
-
-            // 根据域名判断国际版/中国区
-            var baseUrl = ep.Url?.ToLowerInvariant() ?? "";
-            if (baseUrl.Contains(".azure.cn"))
-            {
-                DerivedSttUrl = $"https://{ep.Region}.stt.speech.azure.cn";
-                DerivedTtsUrl = $"https://{ep.Region}.tts.speech.azure.cn";
-            }
-            else
-            {
-                DerivedSttUrl = $"https://{ep.Region}.stt.speech.microsoft.com";
-                DerivedTtsUrl = $"https://{ep.Region}.tts.speech.microsoft.com";
-            }
+            var region = !string.IsNullOrWhiteSpace(ep.Region)
+                ? ep.Region
+                : FoundrySpeechEndpointResolver.ParseRegion(ep.Url) ?? "";
+            var suffix = isChinaCloud ? "cognitiveservices.azure.cn" : "cognitiveservices.azure.com";
+            var resourceEndpoint = $"https://{subdomain}.{suffix}";
+            DerivedRegion = region;
+            DerivedSttUrl = $"{resourceEndpoint}/speechtotext/transcriptions:transcribe?api-version=2025-10-15";
+            DerivedTtsUrl = $"{resourceEndpoint}/tts/cognitiveservices/v1";
         }
 
         // ═══ 从 Foundry URL 解析区域 ═══
@@ -419,58 +413,17 @@ namespace TrueFluentPro.ViewModels.Settings
         /// </summary>
         /// <summary>从 Foundry / Cognitive Services URL 提取资源子域名（完整），如 "myresource-eastus2"</summary>
         public static string? ParseSubdomainFromFoundryUrl(string? baseUrl)
-            => ParseSubdomainCore(baseUrl);
+            => FoundrySpeechEndpointResolver.ParseSubdomain(baseUrl);
 
         /// <summary>从 Foundry / Cognitive Services URL 提取区域名，如 "eastus2"</summary>
         public static string? ParseRegionFromFoundryUrl(string? baseUrl)
         {
-            var subdomain = ParseSubdomainCore(baseUrl);
-            if (subdomain == null) return null;
-            var lastDash = subdomain.LastIndexOf('-');
-            return lastDash >= 0 ? subdomain[(lastDash + 1)..] : subdomain;
+            return FoundrySpeechEndpointResolver.ParseRegion(baseUrl);
         }
 
         /// <summary>判断 URL 是否属于 Azure 中国云</summary>
         public static bool IsAzureChinaUrl(string? baseUrl)
-        {
-            if (string.IsNullOrWhiteSpace(baseUrl)) return false;
-            return baseUrl.Contains(".azure.cn", StringComparison.OrdinalIgnoreCase);
-        }
-
-        private static string? ParseSubdomainCore(string? baseUrl)
-        {
-            if (string.IsNullOrWhiteSpace(baseUrl)) return null;
-
-            try
-            {
-                var url = baseUrl.Trim();
-                if (!url.StartsWith("http", StringComparison.OrdinalIgnoreCase))
-                    url = "https://" + url;
-
-                var uri = new Uri(url);
-                var host = uri.Host.ToLowerInvariant();
-
-                string? subdomain = null;
-                if (host.EndsWith(".openai.azure.com"))
-                    subdomain = host[..^".openai.azure.com".Length];
-                else if (host.EndsWith(".services.ai.azure.com"))
-                    subdomain = host[..^".services.ai.azure.com".Length];
-                else if (host.EndsWith(".cognitiveservices.azure.com"))
-                    subdomain = host[..^".cognitiveservices.azure.com".Length];
-                else if (host.EndsWith(".openai.azure.cn"))
-                    subdomain = host[..^".openai.azure.cn".Length];
-                else if (host.EndsWith(".services.ai.azure.cn"))
-                    subdomain = host[..^".services.ai.azure.cn".Length];
-                else if (host.EndsWith(".cognitiveservices.azure.cn"))
-                    subdomain = host[..^".cognitiveservices.azure.cn".Length];
-
-                return string.IsNullOrWhiteSpace(subdomain) ? null : subdomain;
-            }
-            catch
-            {
-                return null;
-            }
-        }
+            => FoundrySpeechEndpointResolver.IsAzureChinaUrl(baseUrl);
 
         private void SelectModelOption(ModelReference? reference, List<ModelOption> options,
             Action<ModelOption?> setter, string propertyName)
@@ -494,7 +447,7 @@ namespace TrueFluentPro.ViewModels.Settings
 
             try
             {
-                var auth = BuildTtsAuthContext();
+                var auth = await BuildTtsAuthContextAsync();
                 var voices = await _ttsService.ListVoicesAsync(auth);
 
                 await Dispatcher.UIThread.InvokeAsync(() =>
@@ -591,41 +544,56 @@ namespace TrueFluentPro.ViewModels.Settings
             return shortName;
         }
 
-        private SpeechSynthesisService.TtsAuthContext BuildTtsAuthContext()
+        private async Task<SpeechSynthesisService.TtsAuthContext> BuildTtsAuthContextAsync()
         {
             var config = _configProvider?.Invoke() ?? new AzureSpeechConfig();
 
             if (config.AudioLabSpeechMode == 0 && _tokenProviderStore != null)
             {
-                var provider = _tokenProviderStore.GetProvider("ai");
-                if (provider != null && provider.IsLoggedIn)
+                var endpoint = config.Endpoints.FirstOrDefault(e =>
+                    string.Equals(e.Id, config.AudioLabAadEndpointId, StringComparison.OrdinalIgnoreCase));
+                var resolveError = string.Empty;
+                if (endpoint != null && FoundrySpeechEndpointResolver.TryResolve(endpoint, out var derived, out resolveError) && derived != null)
                 {
-                    var tokenTask = provider.GetTokenAsync(CancellationToken.None);
-                    var token = tokenTask.IsCompleted ? tokenTask.Result : tokenTask.GetAwaiter().GetResult();
-
-                    var speechRes = FindSpeechResource(config, SpeechCapability.TextToSpeech);
-                    if (speechRes != null && !string.IsNullOrWhiteSpace(speechRes.Endpoint))
+                    var provider = await _tokenProviderStore.GetAuthenticatedProviderAsync(
+                        FoundrySpeechEndpointResolver.BuildEndpointProfileKey(endpoint.Id),
+                        endpoint.AzureTenantId,
+                        endpoint.AzureClientId).ConfigureAwait(false);
+                    if (provider != null)
                     {
-                        var endpoint = speechRes.Endpoint.TrimEnd('/');
-                        var isCustomDomain = endpoint.Contains(".cognitiveservices.azure.", StringComparison.OrdinalIgnoreCase);
-                        var resourceId = speechRes.Id;
-                        var bearerValue = $"aad#{resourceId}#{token}";
+                        var token = await provider.GetTokenAsync(CancellationToken.None).ConfigureAwait(false);
+                        AudioLabRouteAuditLog.Info(
+                            $"TTS.Auth.Settings route='FoundryAadCustomDomain' endpointName='{AudioLabRouteAuditLog.Safe(endpoint.Name)}' sourceUrl='{AudioLabRouteAuditLog.Safe(endpoint.BaseUrl)}' baseUrl='{AudioLabRouteAuditLog.Safe(derived.ResourceEndpoint)}' auth='AAD'");
 
                         return new SpeechSynthesisService.TtsAuthContext
                         {
-                            AadBearerValue = bearerValue,
-                            BaseUrl = endpoint,
-                            IsCustomDomainEndpoint = isCustomDomain,
+                            AadBearerValue = token,
+                            BaseUrl = derived.ResourceEndpoint,
+                            IsCustomDomainEndpoint = true,
                         };
                     }
                 }
+
+                throw new InvalidOperationException(string.IsNullOrWhiteSpace(resolveError)
+                    ? "无法从当前 AAD Foundry 终结点推导 TTS 地址。请检查听析中心选择的 AAD 终结点。"
+                    : resolveError);
             }
 
             {
-                var speechRes = FindSpeechResource(config, SpeechCapability.TextToSpeech);
+                var speechRes = ResolveSelectedSpeechResource(config);
                 if (speechRes != null && !string.IsNullOrWhiteSpace(speechRes.SubscriptionKey))
                 {
-                    var region = speechRes.ServiceRegion;
+                    var region = !string.IsNullOrWhiteSpace(speechRes.ServiceRegion)
+                        ? speechRes.ServiceRegion
+                        : AzureSubscription.ParseRegionFromEndpoint(speechRes.Endpoint) ?? "";
+                    if (string.IsNullOrWhiteSpace(region))
+                    {
+                        throw new InvalidOperationException($"传统 Speech TTS 配置错误：已选择“{speechRes.Name}”，但无法解析区域。请检查该 Speech 终结点。不会回退到其他资源。");
+                    }
+
+                    AudioLabRouteAuditLog.Info(
+                        $"TTS.Auth.Settings route='SpeechKeySelectedEndpoint' endpointName='{AudioLabRouteAuditLog.Safe(speechRes.Name)}' endpoint='{AudioLabRouteAuditLog.Safe(speechRes.Endpoint)}' baseUrl='https://{AudioLabRouteAuditLog.Safe(region)}.tts.speech.microsoft.com' auth='Key'");
+
                     return new SpeechSynthesisService.TtsAuthContext
                     {
                         SubscriptionKey = speechRes.SubscriptionKey,
@@ -635,18 +603,19 @@ namespace TrueFluentPro.ViewModels.Settings
                 }
             }
 
-            throw new InvalidOperationException("无法建立 TTS 认证。请在设置中配置语音资源（AAD 或 API Key）。");
+            throw new InvalidOperationException("传统 Speech TTS 配置错误：听析中心未选择可用的 Speech 终结点，或所选终结点缺少 Key。不会回退到其他资源。");
         }
 
-        private static SpeechResource? FindSpeechResource(AzureSpeechConfig config, SpeechCapability capability)
+        private static SpeechResource? ResolveSelectedSpeechResource(AzureSpeechConfig config)
         {
-            var exact = config.SpeechResources?
-                .FirstOrDefault(r => r.IsEnabled && r.Capabilities.HasFlag(capability));
-            if (exact != null) return exact;
-            return config.SpeechResources?
+            if (string.IsNullOrWhiteSpace(config.AudioLabSpeechEndpointId))
+                return null;
+
+            return config.GetEffectiveSpeechResources()
                 .FirstOrDefault(r => r.IsEnabled
-                    && r.Vendor == SpeechVendorType.Microsoft
-                    && !string.IsNullOrWhiteSpace(r.SubscriptionKey));
+                    && r.ConnectorType == SpeechConnectorType.MicrosoftSpeech
+                    && r.AuthMode == AzureAuthMode.ApiKey
+                    && string.Equals(r.Id, config.AudioLabSpeechEndpointId, StringComparison.OrdinalIgnoreCase));
         }
     }
 

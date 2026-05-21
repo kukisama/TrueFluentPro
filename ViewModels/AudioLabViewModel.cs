@@ -1055,6 +1055,8 @@ namespace TrueFluentPro.ViewModels
                 ? $"https://{subdomain}.cognitiveservices.azure.cn"
                 : $"https://{subdomain}.cognitiveservices.azure.com";
             var batchEndpoint = $"{cognitiveHost}/speechtotext/v3.1/transcriptions";
+            AudioLabRouteAuditLog.Info(
+                $"STT.Batch route='FoundryAadCustomDomain' endpointName='{AudioLabRouteAuditLog.Safe(endpoint.Name)}' sourceUrl='{AudioLabRouteAuditLog.Safe(endpoint.BaseUrl)}' url='{AudioLabRouteAuditLog.Safe(batchEndpoint)}' auth='AAD'");
 
             session.StatusMessage = "转录：提交批量任务...";
             await InvokeIfActiveAsync(session, () => StatusMessage = session.StatusMessage);
@@ -1095,18 +1097,10 @@ namespace TrueFluentPro.ViewModels
 
             if (subscription == null || !subscription.IsValid())
             {
-                if (!_speechResourceRuntimeResolver.TryResolveActive(config, SpeechCapability.BatchSpeechToText, out var resolution, out var resolveError)
-                    || resolution == null)
-                {
-                    throw new InvalidOperationException(string.IsNullOrWhiteSpace(resolveError)
-                        ? "未配置语音转写资源，请在「设置 → 听析中心」中选择语音终结点。"
-                        : resolveError);
-                }
-                if (resolution.MicrosoftSubscription != null)
-                    subscription = resolution.MicrosoftSubscription;
-                else
-                    throw new InvalidOperationException("当前语音资源不支持批量转录。请在「设置 → 听析中心」中选择传统语音终结点或切换到 AAD 模式。");
+                throw new InvalidOperationException("传统 Speech 批量转录配置错误：听析中心未选择可用的 Speech 终结点，或所选终结点缺少 Key/区域。不会回退到首页语音资源或 Foundry 资源。");
             }
+            AudioLabRouteAuditLog.Info(
+                $"STT.Batch route='SpeechKeySelectedEndpoint' endpointName='{AudioLabRouteAuditLog.Safe(subscription.Name)}' endpoint='{AudioLabRouteAuditLog.Safe(subscription.Endpoint)}' region='{AudioLabRouteAuditLog.Safe(subscription.GetEffectiveRegion())}' auth='Key'");
 
             if (!config.BatchStorageIsValid || string.IsNullOrWhiteSpace(config.BatchStorageConnectionString))
                 throw new InvalidOperationException("存储账号未配置或未验证，批量转录需要 Azure Blob Storage。请在「设置 → 录音与存储」中配置。");
@@ -1160,6 +1154,8 @@ namespace TrueFluentPro.ViewModels
                 ? $"https://{subdomain}.cognitiveservices.azure.cn"
                 : $"https://{subdomain}.cognitiveservices.azure.com";
             var fastEndpoint = $"{cognitiveHost}/speechtotext/transcriptions:transcribe?api-version=2025-10-15";
+            AudioLabRouteAuditLog.Info(
+                $"STT.Fast route='FoundryAadCustomDomain' endpointName='{AudioLabRouteAuditLog.Safe(endpoint.Name)}' sourceUrl='{AudioLabRouteAuditLog.Safe(endpoint.BaseUrl)}' url='{AudioLabRouteAuditLog.Safe(fastEndpoint)}' auth='AAD' llmSpeech='{config.AudioLabEnableLlmSpeech}'");
 
             session.StatusMessage = config.AudioLabEnableLlmSpeech ? "LLM Speech 增强转录：准备中..." : "快速转录：准备中...";
             await InvokeIfActiveAsync(session, () => StatusMessage = session.StatusMessage);
@@ -1202,18 +1198,10 @@ namespace TrueFluentPro.ViewModels
 
             if (subscription == null || !subscription.IsValid())
             {
-                if (!_speechResourceRuntimeResolver.TryResolveActive(config, SpeechCapability.BatchSpeechToText, out var resolution, out var resolveError)
-                    || resolution == null)
-                {
-                    throw new InvalidOperationException(string.IsNullOrWhiteSpace(resolveError)
-                        ? "未配置语音转写资源，请在「设置 → 听析中心」中选择语音终结点。"
-                        : resolveError);
-                }
-                if (resolution.MicrosoftSubscription != null)
-                    subscription = resolution.MicrosoftSubscription;
-                else
-                    throw new InvalidOperationException("当前语音资源不支持转录。请在「设置 → 听析中心」中选择传统语音终结点或切换到 AAD 模式。");
+                throw new InvalidOperationException("传统 Speech 快速转录配置错误：听析中心未选择可用的 Speech 终结点，或所选终结点缺少 Key/区域。不会回退到首页语音资源或 Foundry 资源。");
             }
+            AudioLabRouteAuditLog.Info(
+                $"STT.Fast route='SpeechKeySelectedEndpoint' endpointName='{AudioLabRouteAuditLog.Safe(subscription.Name)}' endpoint='{AudioLabRouteAuditLog.Safe(subscription.Endpoint)}' region='{AudioLabRouteAuditLog.Safe(subscription.GetEffectiveRegion())}' auth='Key' llmSpeech='{config.AudioLabEnableLlmSpeech}'");
 
             session.StatusMessage = config.AudioLabEnableLlmSpeech ? "LLM Speech 增强转录：准备中..." : "快速转录：准备中...";
             await InvokeIfActiveAsync(session, () => StatusMessage = session.StatusMessage);

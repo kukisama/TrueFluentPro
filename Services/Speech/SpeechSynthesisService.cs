@@ -114,6 +114,8 @@ namespace TrueFluentPro.Services.Speech
             }
 
             var url = BuildUrl(auth, "cognitiveservices/voices/list");
+            AudioLabRouteAuditLog.Info(
+                $"TTS.Voices route='{GetRouteName(auth)}' baseUrl='{AudioLabRouteAuditLog.Safe(auth.BaseUrl)}' url='{AudioLabRouteAuditLog.Safe(url)}' auth='{GetAuthName(auth)}'");
             using var request = CreateAuthenticatedRequest(HttpMethod.Get, url, auth);
             using var response = await _httpClient.SendAsync(request, ct);
             response.EnsureSuccessStatusCode();
@@ -136,6 +138,8 @@ namespace TrueFluentPro.Services.Speech
                 throw new ArgumentException("SSML 内容不能为空。", nameof(ssml));
 
             var url = BuildUrl(auth, "cognitiveservices/v1");
+            AudioLabRouteAuditLog.Info(
+                $"TTS.Synthesize route='{GetRouteName(auth)}' baseUrl='{AudioLabRouteAuditLog.Safe(auth.BaseUrl)}' url='{AudioLabRouteAuditLog.Safe(url)}' auth='{GetAuthName(auth)}' format='{AudioLabRouteAuditLog.Safe(outputFormat)}'");
             using var request = CreateAuthenticatedRequest(HttpMethod.Post, url, auth);
 
             request.Content = new StringContent(ssml, Encoding.UTF8, "application/ssml+xml");
@@ -301,6 +305,16 @@ namespace TrueFluentPro.Services.Speech
             var safe = Regex.Replace(key, @"[^a-zA-Z0-9\-\.]", "_");
             return Path.Combine(PathManager.Instance.AppDataPath, "cache", $"tts-voices-{safe}.json");
         }
+
+        private static string GetRouteName(TtsAuthContext auth)
+            => auth.IsCustomDomainEndpoint ? "FoundryAadCustomDomain" : "SpeechKeyPublicRegion";
+
+        private static string GetAuthName(TtsAuthContext auth)
+            => !string.IsNullOrWhiteSpace(auth.AadBearerValue)
+                ? "AAD"
+                : !string.IsNullOrWhiteSpace(auth.SubscriptionKey)
+                    ? "Key"
+                    : "None";
 
         private static bool TryReadVoicesFromDiskCache(string key, out List<VoiceInfo> voices)
         {

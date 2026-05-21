@@ -345,7 +345,7 @@ namespace TrueFluentPro.Services
             var config = await _configService.LoadConfigAsync();
 
             reportProgress("建立 TTS 认证...");
-            var ttsAuth = BuildTtsAuthContext(config);
+            var ttsAuth = await BuildTtsAuthContextAsync(config, ct);
 
             reportProgress("加载语音列表...");
             var voices = await _ttsService.ListVoicesAsync(ttsAuth, forceRefresh: false, ct);
@@ -372,36 +372,55 @@ namespace TrueFluentPro.Services
         /// 从配置构建 TTS 认证上下文（AAD 或 API Key）。
         /// 逻辑与 ControlPanel.BuildTtsAuthContext 对齐。
         /// </summary>
-        private Speech.SpeechSynthesisService.TtsAuthContext BuildTtsAuthContext(AzureSpeechConfig config)
+        private async Task<Speech.SpeechSynthesisService.TtsAuthContext> BuildTtsAuthContextAsync(AzureSpeechConfig config, CancellationToken ct)
         {
             // AAD 模式
             if (config.AudioLabSpeechMode == 0)
             {
-                var provider = _azureTokenProviderStore.GetProvider("ai");
-                if (provider != null && provider.IsLoggedIn)
+                var endpoint = config.Endpoints.FirstOrDefault(e =>
+                    string.Equals(e.Id, config.AudioLabAadEndpointId, StringComparison.OrdinalIgnoreCase));
+                var resolveError = string.Empty;
+                if (endpoint != null && FoundrySpeechEndpointResolver.TryResolve(endpoint, out var derived, out resolveError) && derived != null)
                 {
-                    var token = provider.GetTokenAsync(CancellationToken.None).GetAwaiter().GetResult();
-                    var speechRes = FindSpeechResource(config, SpeechCapability.TextToSpeech);
-                    if (speechRes != null && !string.IsNullOrWhiteSpace(speechRes.Endpoint))
+                    var provider = await _azureTokenProviderStore.GetAuthenticatedProviderAsync(
+                        FoundrySpeechEndpointResolver.BuildEndpointProfileKey(endpoint.Id),
+                        endpoint.AzureTenantId,
+                        endpoint.AzureClientId).ConfigureAwait(false);
+                    if (provider != null)
                     {
-                        var endpoint = speechRes.Endpoint.TrimEnd('/');
-                        var isCustomDomain = endpoint.Contains(".cognitiveservices.azure.", StringComparison.OrdinalIgnoreCase);
+                        var token = await provider.GetTokenAsync(ct).ConfigureAwait(false);
+                        AudioLabRouteAuditLog.Info(
+                            $"TTS.Auth.Queue route='FoundryAadCustomDomain' endpointName='{AudioLabRouteAuditLog.Safe(endpoint.Name)}' sourceUrl='{AudioLabRouteAuditLog.Safe(endpoint.BaseUrl)}' baseUrl='{AudioLabRouteAuditLog.Safe(derived.ResourceEndpoint)}' auth='AAD'");
                         return new Speech.SpeechSynthesisService.TtsAuthContext
                         {
-                            AadBearerValue = $"aad#{speechRes.Id}#{token}",
-                            BaseUrl = endpoint,
-                            IsCustomDomainEndpoint = isCustomDomain,
+                            AadBearerValue = token,
+                            BaseUrl = derived.ResourceEndpoint,
+                            IsCustomDomainEndpoint = true,
                         };
                     }
                 }
+
+                throw new InvalidOperationException(string.IsNullOrWhiteSpace(resolveError)
+                    ? "无法从当前 AAD Foundry 终结点推导 TTS 地址。请检查听析中心选择的 AAD 终结点。"
+                    : resolveError);
             }
 
             // 传统 API Key 模式
             {
-                var speechRes = FindSpeechResource(config, SpeechCapability.TextToSpeech);
+                var speechRes = ResolveSelectedSpeechResource(config);
                 if (speechRes != null && !string.IsNullOrWhiteSpace(speechRes.SubscriptionKey))
                 {
-                    var region = speechRes.ServiceRegion;
+                    var region = !string.IsNullOrWhiteSpace(speechRes.ServiceRegion)
+                        ? speechRes.ServiceRegion
+                        : AzureSubscription.ParseRegionFromEndpoint(speechRes.Endpoint) ?? "";
+                    if (string.IsNullOrWhiteSpace(region))
+                    {
+                        throw new InvalidOperationException($"传统 Speech TTS 配置错误：已选择“{speechRes.Name}”，但无法解析区域。请检查该 Speech 终结点。不会回退到其他资源。");
+                    }
+
+                    AudioLabRouteAuditLog.Info(
+                        $"TTS.Auth.Queue route='SpeechKeySelectedEndpoint' endpointName='{AudioLabRouteAuditLog.Safe(speechRes.Name)}' endpoint='{AudioLabRouteAuditLog.Safe(speechRes.Endpoint)}' baseUrl='https://{AudioLabRouteAuditLog.Safe(region)}.tts.speech.microsoft.com' auth='Key'");
+
                     return new Speech.SpeechSynthesisService.TtsAuthContext
                     {
                         SubscriptionKey = speechRes.SubscriptionKey,
@@ -411,18 +430,19 @@ namespace TrueFluentPro.Services
                 }
             }
 
-            throw new InvalidOperationException("无法建立 TTS 认证。请在设置中配置语音资源（AAD 或 API Key）。");
+            throw new InvalidOperationException("传统 Speech TTS 配置错误：听析中心未选择可用的 Speech 终结点，或所选终结点缺少 Key。不会回退到其他资源。");
         }
 
-        private static SpeechResource? FindSpeechResource(AzureSpeechConfig config, SpeechCapability capability)
+        private static SpeechResource? ResolveSelectedSpeechResource(AzureSpeechConfig config)
         {
-            var exact = config.SpeechResources?
-                .FirstOrDefault(r => r.IsEnabled && r.Capabilities.HasFlag(capability));
-            if (exact != null) return exact;
-            return config.SpeechResources?
+            if (string.IsNullOrWhiteSpace(config.AudioLabSpeechEndpointId))
+                return null;
+
+            return config.GetEffectiveSpeechResources()
                 .FirstOrDefault(r => r.IsEnabled
-                    && r.Vendor == SpeechVendorType.Microsoft
-                    && !string.IsNullOrWhiteSpace(r.SubscriptionKey));
+                    && r.ConnectorType == SpeechConnectorType.MicrosoftSpeech
+                    && r.AuthMode == AzureAuthMode.ApiKey
+                    && string.Equals(r.Id, config.AudioLabSpeechEndpointId, StringComparison.OrdinalIgnoreCase));
         }
 
         /// <summary>
@@ -745,6 +765,8 @@ namespace TrueFluentPro.Services
                 ? $"https://{subdomain}.cognitiveservices.azure.cn"
                 : $"https://{subdomain}.cognitiveservices.azure.com";
             var batchEndpoint = $"{cognitiveHost}/speechtotext/v3.1/transcriptions";
+            AudioLabRouteAuditLog.Info(
+                $"STT.Batch.Queue route='FoundryAadCustomDomain' endpointName='{AudioLabRouteAuditLog.Safe(endpoint.Name)}' sourceUrl='{AudioLabRouteAuditLog.Safe(endpoint.BaseUrl)}' url='{AudioLabRouteAuditLog.Safe(batchEndpoint)}' auth='AAD'");
 
             reportProgress("转录：上传完成，提交批量转录任务...");
             var (cues, rawJson) = await SpeechBatchApiClient.BatchTranscribeSpeechToCuesAsync(
@@ -785,18 +807,10 @@ namespace TrueFluentPro.Services
 
             if (subscription == null || !subscription.IsValid())
             {
-                if (!_speechResourceRuntimeResolver.TryResolveActive(config, SpeechCapability.BatchSpeechToText, out var resolution, out var resolveError)
-                    || resolution == null)
-                {
-                    throw new InvalidOperationException(string.IsNullOrWhiteSpace(resolveError)
-                        ? "未配置语音转写资源。"
-                        : resolveError);
-                }
-                if (resolution.MicrosoftSubscription != null)
-                    subscription = resolution.MicrosoftSubscription;
-                else
-                    throw new InvalidOperationException("当前语音资源不支持批量转录。");
+                throw new InvalidOperationException("传统 Speech 批量转录配置错误：听析中心未选择可用的 Speech 终结点，或所选终结点缺少 Key/区域。不会回退到首页语音资源或 Foundry 资源。");
             }
+            AudioLabRouteAuditLog.Info(
+                $"STT.Batch.Queue route='SpeechKeySelectedEndpoint' endpointName='{AudioLabRouteAuditLog.Safe(subscription.Name)}' endpoint='{AudioLabRouteAuditLog.Safe(subscription.Endpoint)}' region='{AudioLabRouteAuditLog.Safe(subscription.GetEffectiveRegion())}' auth='Key'");
 
             if (!config.BatchStorageIsValid || string.IsNullOrWhiteSpace(config.BatchStorageConnectionString))
                 throw new InvalidOperationException("存储账号未配置，批量转录需要 Azure Blob Storage。");
@@ -852,6 +866,8 @@ namespace TrueFluentPro.Services
                 ? $"https://{subdomain}.cognitiveservices.azure.cn"
                 : $"https://{subdomain}.cognitiveservices.azure.com";
             var fastEndpoint = $"{cognitiveHost}/speechtotext/transcriptions:transcribe?api-version=2025-10-15";
+            AudioLabRouteAuditLog.Info(
+                $"STT.Fast.Queue route='FoundryAadCustomDomain' endpointName='{AudioLabRouteAuditLog.Safe(endpoint.Name)}' sourceUrl='{AudioLabRouteAuditLog.Safe(endpoint.BaseUrl)}' url='{AudioLabRouteAuditLog.Safe(fastEndpoint)}' auth='AAD' llmSpeech='{config.AudioLabEnableLlmSpeech}'");
 
             reportProgress(config.AudioLabEnableLlmSpeech ? "LLM Speech 增强转录：上传音频并等待结果..." : "快速转录：上传音频并等待结果...");
             var (cues, rawJson) = await SpeechFastTranscriptionClient.FastTranscribeToCuesAsync(
@@ -894,18 +910,10 @@ namespace TrueFluentPro.Services
 
             if (subscription == null || !subscription.IsValid())
             {
-                if (!_speechResourceRuntimeResolver.TryResolveActive(config, SpeechCapability.BatchSpeechToText, out var resolution, out var resolveError)
-                    || resolution == null)
-                {
-                    throw new InvalidOperationException(string.IsNullOrWhiteSpace(resolveError)
-                        ? "未配置语音转写资源。"
-                        : resolveError);
-                }
-                if (resolution.MicrosoftSubscription != null)
-                    subscription = resolution.MicrosoftSubscription;
-                else
-                    throw new InvalidOperationException("当前语音资源不支持转录。");
+                throw new InvalidOperationException("传统 Speech 快速转录配置错误：听析中心未选择可用的 Speech 终结点，或所选终结点缺少 Key/区域。不会回退到首页语音资源或 Foundry 资源。");
             }
+            AudioLabRouteAuditLog.Info(
+                $"STT.Fast.Queue route='SpeechKeySelectedEndpoint' endpointName='{AudioLabRouteAuditLog.Safe(subscription.Name)}' endpoint='{AudioLabRouteAuditLog.Safe(subscription.Endpoint)}' region='{AudioLabRouteAuditLog.Safe(subscription.GetEffectiveRegion())}' auth='Key' llmSpeech='{config.AudioLabEnableLlmSpeech}'");
 
             reportProgress(config.AudioLabEnableLlmSpeech ? "LLM Speech 增强转录：上传音频并等待结果..." : "快速转录：上传音频并等待结果...");
             var (cues, rawJson) = await SpeechFastTranscriptionClient.FastTranscribeToCuesAsync(

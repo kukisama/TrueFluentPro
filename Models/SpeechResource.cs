@@ -40,6 +40,8 @@ namespace TrueFluentPro.Models
         public SpeechConnectorType ConnectorType { get; set; } = SpeechConnectorType.MicrosoftSpeech;
         public bool IsEnabled { get; set; } = true;
         public SpeechCapability Capabilities { get; set; } = SpeechCapability.None;
+        public AzureAuthMode AuthMode { get; set; } = AzureAuthMode.ApiKey;
+        public string AadEndpointId { get; set; } = "";
 
         // 兼容微软 Speech 资源的连接信息。后续若扩展更多传统 speech 厂商，可再抽成独立详情模型。
         public string SubscriptionName { get; set; } = "";
@@ -62,6 +64,7 @@ namespace TrueFluentPro.Models
                 ConnectorType = SpeechConnectorType.MicrosoftSpeech,
                 IsEnabled = true,
                 Capabilities = SpeechCapability.RealtimeSpeechToText | SpeechCapability.BatchSpeechToText,
+                AuthMode = AzureAuthMode.ApiKey,
                 SubscriptionName = subscription.Name?.Trim() ?? "",
                 SubscriptionKey = subscription.SubscriptionKey?.Trim() ?? "",
                 ServiceRegion = subscription.GetEffectiveRegion(),
@@ -103,6 +106,7 @@ namespace TrueFluentPro.Models
                 ConnectorType = SpeechConnectorType.AiSpeech,
                 IsEnabled = true,
                 Capabilities = capabilities,
+                AuthMode = AzureAuthMode.ApiKey,
                 RealtimeSpeechToTextModelRef = CloneReference(realtimeModelRef),
                 BatchSpeechToTextModelRef = CloneReference(batchModelRef),
                 TextToSpeechModelRef = CloneReference(ttsModelRef)
@@ -162,6 +166,8 @@ namespace TrueFluentPro.Models
                 ConnectorType = ConnectorType,
                 IsEnabled = IsEnabled,
                 Capabilities = Capabilities,
+                AuthMode = AuthMode,
+                AadEndpointId = AadEndpointId,
                 SubscriptionName = SubscriptionName,
                 SubscriptionKey = SubscriptionKey,
                 ServiceRegion = ServiceRegion,
