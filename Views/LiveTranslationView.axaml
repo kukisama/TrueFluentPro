@@ -36,6 +36,71 @@
             <Setter Property="BorderBrush" Value="{DynamicResource PrimaryDarkBrush}" />
             <Setter Property="Foreground" Value="White" />
         </Style>
+
+        <!-- Segmented Control：底色槽 + 滑动指示器层 + 三段拼接，主题感知 -->
+        <Style Selector="Border.seg-audio-track">
+            <Setter Property="Background" Value="{DynamicResource SurfaceAltBrush}" />
+            <Setter Property="CornerRadius" Value="10" />
+            <Setter Property="Padding" Value="3" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderSubtleBrush}" />
+        </Style>
+        <!-- 滑动指示器：跟随选中项的 Margin 平滑移动 -->
+        <Style Selector="Border.seg-indicator">
+            <Setter Property="Width" Value="68" />
+            <Setter Property="HorizontalAlignment" Value="Left" />
+            <Setter Property="VerticalAlignment" Value="Stretch" />
+            <Setter Property="Background" Value="{DynamicResource PrimaryBrush}" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="IsHitTestVisible" Value="False" />
+            <Setter Property="BoxShadow" Value="0 1 4 0 #28000000" />
+            <Setter Property="Transitions">
+                <Transitions>
+                    <ThicknessTransition Property="Margin" Duration="0:0:0.28" Easing="CubicEaseOut"/>
+                    <BrushTransition Property="Background" Duration="0:0:0.2"/>
+                </Transitions>
+            </Setter>
+        </Style>
+        <Style Selector="ToggleButton.seg-audio">
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Width" Value="68" />
+            <Setter Property="MinHeight" Value="30" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Transitions">
+                <Transitions>
+                    <BrushTransition Property="Foreground" Duration="0:0:0.2"/>
+                </Transitions>
+            </Setter>
+        </Style>
+        <!-- 透明按钮：滑动指示器在底层负责高亮，按钮不再有自己的背景 -->
+        <Style Selector="ToggleButton.seg-audio /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="CornerRadius" Value="8" />
+        </Style>
+        <Style Selector="ToggleButton.seg-audio:pointerover:not(:checked) /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource SurfaceHoverBrush}" />
+        </Style>
+        <Style Selector="ToggleButton.seg-audio:checked">
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="ToggleButton.seg-audio:pressed /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="TextBlock.seg-label">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}" />
+            <Setter Property="Margin" Value="2,0,0,4" />
+        </Style>
         <!-- 3.4 SegmentedControl 显示模式样式 -->
         <Style Selector="ToggleButton.segment-btn">
             <Setter Property="Padding" Value="10,3" />
@@ -214,19 +279,57 @@
                                           HorizontalAlignment="Stretch"
                                           ToolTip.Tip="选择系统回环设备（选'无'表示不采集系统回环）"/>
                             </StackPanel>
-                            <StackPanel Spacing="4">
-                                <TextBlock Text="录制来源" FontWeight="SemiBold" FontSize="12"/>
-                                <StackPanel Orientation="Horizontal" Spacing="8">
-                                    <ToggleButton Content="仅环回"
-                                                  Classes="audio-pill"
-                                                  IsChecked="{Binding AudioDevices.IsRecordingLoopbackOnly, Mode=TwoWay}"/>
-                                    <ToggleButton Content="环回+麦克风"
-                                                  Classes="audio-pill"
-                                                  IsChecked="{Binding AudioDevices.IsRecordingLoopbackMix, Mode=TwoWay}"/>
-                                    <ToggleButton Content="仅麦克风"
-                                                  Classes="audio-pill"
-                                                  IsChecked="{Binding AudioDevices.IsRecordingMicOnly, Mode=TwoWay}"/>
-                                </StackPanel>
+                            <StackPanel Spacing="2">
+                                <TextBlock Classes="seg-label" Text="识别音源"/>
+                                <Border Classes="seg-audio-track" HorizontalAlignment="Left">
+                                    <Panel>
+                                        <Border Classes="seg-indicator"
+                                                Margin="{Binding AudioDevices.RecognitionIndicatorMargin}"/>
+                                        <StackPanel Orientation="Horizontal" Spacing="0">
+                                            <ToggleButton Classes="seg-audio"
+                                                          ToolTip.Tip="仅环回（识别系统输出，不采集麦克风）"
+                                                          IsChecked="{Binding AudioDevices.IsRecognitionLoopbackOnly, Mode=TwoWay}">
+                                                <TextBlock Text="🔊" FontSize="15"/>
+                                            </ToggleButton>
+                                            <ToggleButton Classes="seg-audio"
+                                                          ToolTip.Tip="环回 + 麦克风（默认，双路识别）"
+                                                          IsChecked="{Binding AudioDevices.IsRecognitionLoopbackMix, Mode=TwoWay}">
+                                                <TextBlock Text="🔊  🎤" FontSize="14"/>
+                                            </ToggleButton>
+                                            <ToggleButton Classes="seg-audio"
+                                                          ToolTip.Tip="仅麦克风（识别麦克风，不采集系统输出）"
+                                                          IsChecked="{Binding AudioDevices.IsRecognitionMicOnly, Mode=TwoWay}">
+                                                <TextBlock Text="🎤" FontSize="15"/>
+                                            </ToggleButton>
+                                        </StackPanel>
+                                    </Panel>
+                                </Border>
+                            </StackPanel>
+                            <StackPanel Spacing="2">
+                                <TextBlock Classes="seg-label" Text="录制来源"/>
+                                <Border Classes="seg-audio-track" HorizontalAlignment="Left">
+                                    <Panel>
+                                        <Border Classes="seg-indicator"
+                                                Margin="{Binding AudioDevices.RecordingIndicatorMargin}"/>
+                                        <StackPanel Orientation="Horizontal" Spacing="0">
+                                            <ToggleButton Classes="seg-audio"
+                                                          ToolTip.Tip="仅录制系统输出（不混入麦克风）"
+                                                          IsChecked="{Binding AudioDevices.IsRecordingLoopbackOnly, Mode=TwoWay}">
+                                                <TextBlock Text="🔊" FontSize="15"/>
+                                            </ToggleButton>
+                                            <ToggleButton Classes="seg-audio"
+                                                          ToolTip.Tip="录制系统输出 + 麦克风（默认）"
+                                                          IsChecked="{Binding AudioDevices.IsRecordingLoopbackMix, Mode=TwoWay}">
+                                                <TextBlock Text="🔊  🎤" FontSize="14"/>
+                                            </ToggleButton>
+                                            <ToggleButton Classes="seg-audio"
+                                                          ToolTip.Tip="仅录制麦克风"
+                                                          IsChecked="{Binding AudioDevices.IsRecordingMicOnly, Mode=TwoWay}">
+                                                <TextBlock Text="🎤" FontSize="15"/>
+                                            </ToggleButton>
+                                        </StackPanel>
+                                    </Panel>
+                                </Border>
                             </StackPanel>
                             <Button Content="刷新设备" HorizontalAlignment="Stretch"
                                     Command="{Binding AudioDevices.RefreshAudioDevicesCommand}"
@@ -287,8 +390,12 @@
             </Grid.ColumnDefinitions>
             <!-- 左侧实时翻译区域 -->
             <Border Grid.Column="0" Classes="app-card" BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="1">
-                <Grid RowDefinitions="Auto,*,Auto">
-                    <DockPanel Grid.Row="0" Margin="5">
+                <Grid RowDefinitions="Auto,Auto,*,Auto">
+                    <controls:ActiveSpeakerTimelineBar Grid.Row="0"
+                                                       Margin="6,6,6,2"
+                                                       Store="{Binding ActiveSpeakerTimeline}"
+                                                       IsVisible="{Binding ShowActiveSpeakerTimeline}"/>
+                    <DockPanel Grid.Row="1" Margin="5">
                         <TextBlock Text="实时翻译" FontWeight="Bold" DockPanel.Dock="Left"/>
                         <StackPanel Orientation="Horizontal" Spacing="2" HorizontalAlignment="Right">
                             <ToggleButton Content="原文" Classes="segment-btn"
@@ -303,7 +410,7 @@
                         </StackPanel>
                     </DockPanel>
 
-                    <Grid Grid.Row="1" Margin="5">
+                    <Grid Grid.Row="2" Margin="5">
                         <Border Classes="sub-card" BorderBrush="{DynamicResource SubCardBorderBrush}" BorderThickness="1" CornerRadius="6" IsVisible="{Binding IsSingleView}">
                             <controls:ConfigurableTextEditor x:Name="UnifiedEditor"
                                                              Text="{Binding DisplayedText, Mode=TwoWay}"
@@ -347,7 +454,8 @@
                                                 <Expander.Header>
                                                     <StackPanel Spacing="2">
                                                         <DockPanel>
-                                                            <TextBlock Text="{Binding SourceDisplayLabel}" DockPanel.Dock="Left" Margin="0,0,4,0" FontSize="13"/>
+                                                            <TextBlock Text="{Binding SourceDisplayLabel}" DockPanel.Dock="Left" Margin="0,0,4,0" FontSize="13"
+                                                                       Foreground="{Binding SourceDisplayColor}"/>
                                                             <TextBlock Text="{Binding Timestamp, StringFormat=\{0:yyyy-MM-dd HH:mm:ss\}}" FontWeight="Bold" DockPanel.Dock="Left"/>
                                                             <TextBlock Text="{Binding TranslatedText}" Foreground="{DynamicResource PrimaryBrush}"
                                                                        TextTrimming="CharacterEllipsis" Margin="8,0,0,0"/>

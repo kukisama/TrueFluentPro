@@ -694,6 +694,9 @@ namespace TrueFluentPro.ViewModels
             service.OnReconnectTriggered += OnReconnectTriggered;
             service.OnAudioLevelUpdated += OnAudioLevelUpdated;
             service.OnDiagnosticsUpdated += OnDiagnosticsUpdated;
+
+            // 暴露发言人时间轴（仅 SpeechTranslationService 提供）
+            ActiveSpeakerTimeline = (service as SpeechTranslationService)?.ActiveSpeakerTimeline;
         }
 
         private void DetachTranslationService(IRealtimeTranslationService service)
@@ -704,6 +707,8 @@ namespace TrueFluentPro.ViewModels
             service.OnReconnectTriggered -= OnReconnectTriggered;
             service.OnAudioLevelUpdated -= OnAudioLevelUpdated;
             service.OnDiagnosticsUpdated -= OnDiagnosticsUpdated;
+
+            ActiveSpeakerTimeline = null;
         }
 
         private async void StopTranslation()

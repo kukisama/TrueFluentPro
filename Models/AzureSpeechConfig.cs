@@ -214,12 +214,12 @@ namespace TrueFluentPro.Models
         /// <summary>MAS 子开关：降噪 (NS)。仅 EnableMasAudioProcessing=true 时生效。</summary>
         public bool MasNoiseSuppressionEnabled { get; set; } = true;
 
-        public AudioSourceMode AudioSourceMode { get; set; } = AudioSourceMode.DefaultMic;
+        public AudioSourceMode AudioSourceMode { get; set; } = AudioSourceMode.CaptureDevice;
         public string SelectedAudioDeviceId { get; set; } = "";
         public string SelectedOutputDeviceId { get; set; } = "";
         public RecordingMode RecordingMode { get; set; } = RecordingMode.LoopbackWithMic;
         public bool UseInputForRecognition { get; set; } = true;
-        public bool UseOutputForRecognition { get; set; } = false;
+        public bool UseOutputForRecognition { get; set; } = true;
 
         public int ChunkDurationMs { get; set; } = 200;
 
@@ -234,6 +234,22 @@ namespace TrueFluentPro.Models
         public int VadSafetyValveChunks { get; set; } = 15;
         /// <summary>两人同时开口时优先谁：0=Loopback（对方），1=Mic（我）。</summary>
         public int VadConflictPriority { get; set; } = 0;
+
+        // ── VAD 高级仲裁（2026-05 新增）──
+        /// <summary>仲裁模式：0=静态优先级（旧行为），1=响度大者优先（默认），2=响度差超阈值才切。</summary>
+        public int VadArbitrationMode { get; set; } = 1;
+        /// <summary>响度差阈值（dB），用于 LoudestWithMargin 模式。默认 3.0。</summary>
+        public double VadTieMarginDb { get; set; } = 3.0;
+        /// <summary>最小说话防抖：候选源需连续 N 帧过门限才锁定。默认 3。</summary>
+        public int VadMinSpeechChunks { get; set; } = 3;
+        /// <summary>切换冷却帧数：上次切换后多少帧内不允许再切，防乒乓。默认 10。</summary>
+        public int VadSwitchCooldownChunks { get; set; } = 10;
+        /// <summary>RMS EMA 平滑系数（0~1，0=关闭平滑）。默认 0.3。</summary>
+        public double VadRmsEmaAlpha { get; set; } = 0.3;
+        /// <summary>是否在主面板顶部显示发言人时间轴。</summary>
+        public bool ShowActiveSpeakerTimeline { get; set; } = true;
+        /// <summary>录制是否跟随 VAD 选源（只在双路时生效）。true=同一时刻只录赢家声道（更清晰），false=两路混合落盘（旧行为）。默认 true。</summary>
+        public bool UseVadGatedRecording { get; set; } = true;
 
         public bool EnableRecording { get; set; } = true;
         public int RecordingMp3BitrateKbps { get; set; } = 256;

@@ -77,6 +77,7 @@ namespace TrueFluentPro.Models
                     _source = value;
                     OnPropertyChanged();
                     OnPropertyChanged(nameof(SourceDisplayLabel));
+                    OnPropertyChanged(nameof(SourceDisplayColor));
                 }
             }
         }
@@ -87,6 +88,14 @@ namespace TrueFluentPro.Models
             VadGateController.ActiveSource.Mic => "\U0001f3a4",
             VadGateController.ActiveSource.Loopback => "\U0001f50a",
             _ => ""
+        };
+
+        /// <summary>来源颜色（与时间轴一致）：Mic=蓝，Loopback=红。</summary>
+        public string SourceDisplayColor => _source switch
+        {
+            VadGateController.ActiveSource.Mic => "#3B82F6",
+            VadGateController.ActiveSource.Loopback => "#EF4444",
+            _ => "Transparent"
         };
 
         public event PropertyChangedEventHandler? PropertyChanged;

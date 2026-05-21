@@ -3,8 +3,38 @@ using System;
 namespace TrueFluentPro.Services.Audio
 {
     /// <summary>
+    /// 仲裁模式：双方都过门限时如何选 active speaker。
+    /// </summary>
+    public enum VadArbitrationMode
+    {
+        /// <summary>静态优先级（旧行为）：永远按 conflictPriority 选。</summary>
+        StaticPriority = 0,
+        /// <summary>响度大者优先（平滑后比较）。</summary>
+        Loudest = 1,
+        /// <summary>响度差超过阈值才认为某方更响，否则回退静态优先级。</summary>
+        LoudestWithMargin = 2,
+    }
+
+    /// <summary>
+    /// 每次 Update 返回的运行时快照（供 UI 时间轴 / 日志使用）。
+    /// </summary>
+    public readonly record struct ActiveSpeakerSnapshot(
+        VadGateController.ActiveSource ActiveSource,
+        double MicRms,
+        double LoopbackRms,
+        double MicEmaRms,
+        double LoopbackEmaRms,
+        double MicDb,
+        double LoopbackDb,
+        bool MicActive,
+        bool LoopbackActive,
+        bool JustSwitched,
+        bool IsLocked);
+
+    /// <summary>
     /// 句级 VAD 门控：双路音频（麦克风 + 环回）场景下，
     /// 根据 RMS 能量判断谁在说话，句级锁定后只送一路给识别器。
+    /// 升级（2026-05）：EMA 平滑 / 响度仲裁 / 切换冷却 / 最小说话防抖。
     /// </summary>
     public sealed class VadGateController
     {
@@ -14,15 +44,34 @@ namespace TrueFluentPro.Services.Audio
         private readonly int _interruptionThreshold;
         private readonly int _safetyValveChunks;
         private readonly ActiveSource _conflictPriority;
+        private readonly VadArbitrationMode _arbitrationMode;
+        private readonly double _tieMarginDb;
+        private readonly int _minSpeechChunks;
+        private readonly int _switchCooldownChunks;
+        private readonly double _emaAlpha;
         private readonly Action<string>? _log;
 
         private ActiveSource _lockedSource = ActiveSource.None;
         private int _interruptionCount;
         private int _silentChunks;
 
+        // 平滑后的 RMS（EMA）
+        private double _micEma;
+        private double _loopEma;
+
+        // 候选源连续活跃帧计数器（最小说话防抖）
+        private ActiveSource _candidateSource = ActiveSource.None;
+        private int _candidateChunks;
+
+        // 上次切换 / 锁定 之后过了多少帧（冷却控制）
+        private int _framesSinceLastSwitch = int.MaxValue / 2;
+
         public ActiveSource Current => _lockedSource;
 
         public bool IsLocked => _lockedSource != ActiveSource.None;
+
+        public double MicEmaRms => _micEma;
+        public double LoopbackEmaRms => _loopEma;
 
         /// <summary>
         /// 创建 VAD 门控器。
@@ -37,29 +86,79 @@ namespace TrueFluentPro.Services.Audio
             int interruptionThreshold = 3,
             int safetyValveChunks = 15,
             ActiveSource conflictPriority = ActiveSource.Loopback,
-            Action<string>? log = null)
+            Action<string>? log = null,
+            VadArbitrationMode arbitrationMode = VadArbitrationMode.Loudest,
+            double tieMarginDb = 3.0,
+            int minSpeechChunks = 3,
+            int switchCooldownChunks = 10,
+            double rmsEmaAlpha = 0.3)
         {
             _voiceThreshold = Math.Clamp(voiceThreshold, 0.001, 0.5);
             _interruptionThreshold = Math.Clamp(interruptionThreshold, 1, 50);
             _safetyValveChunks = Math.Clamp(safetyValveChunks, 5, 100);
             _conflictPriority = conflictPriority == ActiveSource.None ? ActiveSource.Loopback : conflictPriority;
+            _arbitrationMode = arbitrationMode;
+            _tieMarginDb = Math.Clamp(tieMarginDb, 0.0, 24.0);
+            _minSpeechChunks = Math.Clamp(minSpeechChunks, 1, 30);
+            _switchCooldownChunks = Math.Clamp(switchCooldownChunks, 0, 100);
+            _emaAlpha = Math.Clamp(rmsEmaAlpha, 0.0, 1.0);
             _log = log;
         }
 
         /// <summary>
-        /// 每个 audio chunk 调用一次，返回本次应送给识别器的来源。
+        /// 旧 API：每个 audio chunk 调用一次，返回本次应送给识别器的来源。
+        /// 内部委托给 <see cref="UpdateDetailed"/>。
         /// </summary>
         public ActiveSource Update(double micRms, double loopbackRms)
-        {
-            var micActive = micRms >= _voiceThreshold;
-            var loopActive = loopbackRms >= _voiceThreshold;
+            => UpdateDetailed(micRms, loopbackRms).ActiveSource;
 
-            if (IsLocked)
+        /// <summary>
+        /// 新 API：返回完整的运行时快照，便于 UI 时间轴 / 诊断日志使用。
+        /// </summary>
+        public ActiveSpeakerSnapshot UpdateDetailed(double micRms, double loopbackRms)
+        {
+            // 1. EMA 平滑
+            if (_emaAlpha <= 0)
             {
-                return UpdateLocked(micActive, loopActive);
+                _micEma = micRms;
+                _loopEma = loopbackRms;
+            }
+            else
+            {
+                _micEma = _emaAlpha * micRms + (1 - _emaAlpha) * _micEma;
+                _loopEma = _emaAlpha * loopbackRms + (1 - _emaAlpha) * _loopEma;
             }
 
-            return UpdateUnlocked(micActive, loopActive);
+            var micActive = _micEma >= _voiceThreshold;
+            var loopActive = _loopEma >= _voiceThreshold;
+
+            var previousLocked = _lockedSource;
+            ActiveSource next = IsLocked
+                ? UpdateLocked(micActive, loopActive)
+                : UpdateUnlocked(micActive, loopActive);
+
+            var justSwitched = next != ActiveSource.None && next != previousLocked;
+            if (justSwitched)
+            {
+                _framesSinceLastSwitch = 0;
+            }
+            else if (_framesSinceLastSwitch < int.MaxValue / 2)
+            {
+                _framesSinceLastSwitch++;
+            }
+
+            return new ActiveSpeakerSnapshot(
+                ActiveSource: next,
+                MicRms: micRms,
+                LoopbackRms: loopbackRms,
+                MicEmaRms: _micEma,
+                LoopbackEmaRms: _loopEma,
+                MicDb: RmsToDb(_micEma),
+                LoopbackDb: RmsToDb(_loopEma),
+                MicActive: micActive,
+                LoopbackActive: loopActive,
+                JustSwitched: justSwitched,
+                IsLocked: next != ActiveSource.None);
         }
 
         /// <summary>
@@ -84,6 +183,11 @@ namespace TrueFluentPro.Services.Audio
             _lockedSource = ActiveSource.None;
             _interruptionCount = 0;
             _silentChunks = 0;
+            _candidateSource = ActiveSource.None;
+            _candidateChunks = 0;
+            _framesSinceLastSwitch = int.MaxValue / 2;
+            _micEma = 0;
+            _loopEma = 0;
         }
 
         private ActiveSource UpdateLocked(bool micActive, bool loopActive)
@@ -91,11 +195,12 @@ namespace TrueFluentPro.Services.Audio
             var lockedIsActive = _lockedSource == ActiveSource.Mic ? micActive : loopActive;
             var otherIsActive = _lockedSource == ActiveSource.Mic ? loopActive : micActive;
 
-            // 打断检测：锁定方沉默 + 对方持续有声
+            // 打断检测：锁定方沉默 + 对方持续有声，且过了切换冷却期
             if (!lockedIsActive && otherIsActive)
             {
                 _interruptionCount++;
-                if (_interruptionCount >= _interruptionThreshold)
+                if (_interruptionCount >= _interruptionThreshold &&
+                    _framesSinceLastSwitch >= _switchCooldownChunks)
                 {
                     var other = _lockedSource == ActiveSource.Mic
                         ? ActiveSource.Loopback
@@ -134,22 +239,62 @@ namespace TrueFluentPro.Services.Audio
             // 两路都静音
             if (!micActive && !loopActive)
             {
+                ResetCandidate();
                 return ActiveSource.None;
             }
 
-            // 只有一方有声
+            // 选出候选源
+            ActiveSource candidate;
             if (micActive && !loopActive)
             {
-                return Lock(ActiveSource.Mic);
+                candidate = ActiveSource.Mic;
             }
-
-            if (loopActive && !micActive)
+            else if (loopActive && !micActive)
             {
-                return Lock(ActiveSource.Loopback);
+                candidate = ActiveSource.Loopback;
+            }
+            else
+            {
+                // 两方同时有声 → 仲裁
+                candidate = ArbitrateBothActive();
             }
 
-            // 两方同时有声 → 按优先级
-            return Lock(_conflictPriority);
+            // 最小说话防抖：候选源必须连续 N 帧才真正锁
+            if (_candidateSource == candidate)
+            {
+                _candidateChunks++;
+            }
+            else
+            {
+                _candidateSource = candidate;
+                _candidateChunks = 1;
+            }
+
+            if (_candidateChunks >= _minSpeechChunks)
+            {
+                return Lock(candidate);
+            }
+
+            return ActiveSource.None;
+        }
+
+        private ActiveSource ArbitrateBothActive()
+        {
+            switch (_arbitrationMode)
+            {
+                case VadArbitrationMode.Loudest:
+                    return _micEma >= _loopEma ? ActiveSource.Mic : ActiveSource.Loopback;
+
+                case VadArbitrationMode.LoudestWithMargin:
+                    var diffDb = RmsToDb(_micEma) - RmsToDb(_loopEma);
+                    if (diffDb >= _tieMarginDb) return ActiveSource.Mic;
+                    if (-diffDb >= _tieMarginDb) return ActiveSource.Loopback;
+                    return _conflictPriority;
+
+                case VadArbitrationMode.StaticPriority:
+                default:
+                    return _conflictPriority;
+            }
         }
 
         private ActiveSource Lock(ActiveSource source)
@@ -157,6 +302,7 @@ namespace TrueFluentPro.Services.Audio
             _lockedSource = source;
             _interruptionCount = 0;
             _silentChunks = 0;
+            ResetCandidate();
             _log?.Invoke($"[VAD门控] 锁定 → {source}");
             return source;
         }
@@ -166,6 +312,19 @@ namespace TrueFluentPro.Services.Audio
             _lockedSource = ActiveSource.None;
             _interruptionCount = 0;
             _silentChunks = 0;
+            ResetCandidate();
+        }
+
+        private void ResetCandidate()
+        {
+            _candidateSource = ActiveSource.None;
+            _candidateChunks = 0;
+        }
+
+        private static double RmsToDb(double rms)
+        {
+            if (rms <= 1e-6) return -120.0;
+            return 20.0 * Math.Log10(rms);
         }
 
         /// <summary>计算 PCM16 单声道数据的 RMS（归一化到 0~1）。</summary>

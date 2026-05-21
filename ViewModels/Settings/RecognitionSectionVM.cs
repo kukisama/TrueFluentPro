@@ -48,6 +48,13 @@ namespace TrueFluentPro.ViewModels.Settings
         private int _vadInterruptionChunks = 3;
         private int _vadSafetyValveChunks = 15;
         private int _vadConflictPriority;
+        private int _vadArbitrationMode = 1;
+        private double _vadTieMarginDb = 3.0;
+        private int _vadMinSpeechChunks = 3;
+        private int _vadSwitchCooldownChunks = 10;
+        private double _vadRmsEmaAlpha = 0.3;
+        private bool _showActiveSpeakerTimeline = true;
+        private bool _useVadGatedRecording = true;
         private List<ModelOption> _speechToTextModels = new();
         private List<ModelOption> _textToSpeechModels = new();
         private ModelOption? _selectedRealtimeTranscriptionModel;
@@ -107,6 +114,13 @@ namespace TrueFluentPro.ViewModels.Settings
         public int VadInterruptionChunks { get => _vadInterruptionChunks; set => Set(ref _vadInterruptionChunks, value); }
         public int VadSafetyValveChunks { get => _vadSafetyValveChunks; set => Set(ref _vadSafetyValveChunks, value); }
         public int VadConflictPriority { get => _vadConflictPriority; set => Set(ref _vadConflictPriority, value); }
+        public int VadArbitrationMode { get => _vadArbitrationMode; set => Set(ref _vadArbitrationMode, value); }
+        public double VadTieMarginDb { get => _vadTieMarginDb; set => Set(ref _vadTieMarginDb, value); }
+        public int VadMinSpeechChunks { get => _vadMinSpeechChunks; set => Set(ref _vadMinSpeechChunks, value); }
+        public int VadSwitchCooldownChunks { get => _vadSwitchCooldownChunks; set => Set(ref _vadSwitchCooldownChunks, value); }
+        public double VadRmsEmaAlpha { get => _vadRmsEmaAlpha; set => Set(ref _vadRmsEmaAlpha, value); }
+        public bool ShowActiveSpeakerTimeline { get => _showActiveSpeakerTimeline; set => Set(ref _showActiveSpeakerTimeline, value); }
+        public bool UseVadGatedRecording { get => _useVadGatedRecording; set => Set(ref _useVadGatedRecording, value); }
         public List<ModelOption> SpeechToTextModels { get => _speechToTextModels; set => SetProperty(ref _speechToTextModels, value); }
         public List<ModelOption> TextToSpeechModels { get => _textToSpeechModels; set => SetProperty(ref _textToSpeechModels, value); }
         public bool HasSpeechToTextModels => SpeechToTextModels.Count > 0;
@@ -154,6 +168,13 @@ namespace TrueFluentPro.ViewModels.Settings
             VadInterruptionChunks = config.VadInterruptionChunks;
             VadSafetyValveChunks = config.VadSafetyValveChunks;
             VadConflictPriority = config.VadConflictPriority;
+            VadArbitrationMode = config.VadArbitrationMode;
+            VadTieMarginDb = config.VadTieMarginDb;
+            VadMinSpeechChunks = config.VadMinSpeechChunks;
+            VadSwitchCooldownChunks = config.VadSwitchCooldownChunks;
+            VadRmsEmaAlpha = config.VadRmsEmaAlpha;
+            ShowActiveSpeakerTimeline = config.ShowActiveSpeakerTimeline;
+            UseVadGatedRecording = config.UseVadGatedRecording;
             RefreshWebRtcPluginStatus(manual: false);
         }
 
@@ -197,6 +218,13 @@ namespace TrueFluentPro.ViewModels.Settings
             config.VadInterruptionChunks = Math.Clamp(VadInterruptionChunks, 1, 50);
             config.VadSafetyValveChunks = Math.Clamp(VadSafetyValveChunks, 5, 100);
             config.VadConflictPriority = Math.Clamp(VadConflictPriority, 0, 1);
+            config.VadArbitrationMode = Math.Clamp(VadArbitrationMode, 0, 2);
+            config.VadTieMarginDb = Math.Clamp(VadTieMarginDb, 0.0, 20.0);
+            config.VadMinSpeechChunks = Math.Clamp(VadMinSpeechChunks, 1, 20);
+            config.VadSwitchCooldownChunks = Math.Clamp(VadSwitchCooldownChunks, 0, 100);
+            config.VadRmsEmaAlpha = Math.Clamp(VadRmsEmaAlpha, 0.0, 1.0);
+            config.ShowActiveSpeakerTimeline = ShowActiveSpeakerTimeline;
+            config.UseVadGatedRecording = UseVadGatedRecording;
             config.RealtimeTranscriptionModelRef = SelectedRealtimeTranscriptionModel?.Reference;
             config.BatchTranscriptionModelRef = SelectedBatchTranscriptionModel?.Reference;
             config.TextToSpeechModelRef = SelectedTextToSpeechModel?.Reference;

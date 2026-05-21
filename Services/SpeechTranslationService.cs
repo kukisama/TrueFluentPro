@@ -11,6 +11,7 @@ using Microsoft.CognitiveServices.Speech.Audio;
 using Microsoft.CognitiveServices.Speech.Translation;
 using TrueFluentPro.Models;
 using TrueFluentPro.Services.Audio;
+using TrueFluentPro.Helpers;
 
 namespace TrueFluentPro.Services
 {
@@ -56,6 +57,10 @@ namespace TrueFluentPro.Services
         private AudioConfig? _audioConfig;
         private WasapiPcm16AudioSource? _naudioSource;
         private AudioProcessingCoordinator? _audioCoordinator;
+        private readonly ActiveSpeakerTimelineStore _activeSpeakerTimeline = new();
+
+        /// <summary>当前活跃的发言人时间轴。引用稳定（构造时即创建），启动时仅 Clear。</summary>
+        public ActiveSpeakerTimelineStore ActiveSpeakerTimeline => _activeSpeakerTimeline;
         private readonly object _audioSourceSwapLock = new();
         private readonly object _liveRoutingDebounceLock = new();
         private readonly object _liveRoutingApplyLock = new();
@@ -187,7 +192,15 @@ namespace TrueFluentPro.Services
             }
             catch (Exception ex)
             {
-                OnStatusChanged?.Invoke(this, $"启动翻译失败: {ex.Message}");
+                if (VcRuntimeChecker.IsSpeechCoreDllMissing(ex) || !VcRuntimeChecker.IsX64Installed())
+                {
+                    OnStatusChanged?.Invoke(this, VcRuntimeChecker.BuildFriendlyMessage());
+                    VcRuntimeChecker.TryOpenDownloadPage();
+                }
+                else
+                {
+                    OnStatusChanged?.Invoke(this, $"启动翻译失败: {ex.Message}");
+                }
                 await CleanupAudioAsync().ConfigureAwait(false);
                 _isTranslating = false;
                 return false;
@@ -823,7 +836,8 @@ namespace TrueFluentPro.Services
                     _config.ChunkDurationMs,
                     enableLoopback,
                     enableMic,
-                    emitCapturedFrames: true);
+                    emitCapturedFrames: true,
+                    log: _auditLog);
 
                 _auditLog?.Invoke($"[翻译流] 识别热重建 开始 原因={reason} 目标[回环:{enableLoopback},麦:{enableMic}] 旧拓扑[回环:{oldSource.HasLoopbackCapture},麦:{oldSource.HasMicCapture}] 输入设备ID='{_config.SelectedAudioDeviceId}' 输出设备ID='{_config.SelectedOutputDeviceId}'");
 
@@ -878,7 +892,8 @@ namespace TrueFluentPro.Services
                 _config.ChunkDurationMs,
                 captureLoopback,
                 captureMic,
-                emitCapturedFrames: true);
+                emitCapturedFrames: true,
+                log: _auditLog);
             _recognizeInputDeviceIdInUse = _config.SelectedAudioDeviceId ?? "";
             _recognizeOutputDeviceIdInUse = _config.SelectedOutputDeviceId ?? "";
             _naudioSource.CapturedAudioFrameReady += OnCapturedAudioFrameReady;
@@ -921,18 +936,27 @@ namespace TrueFluentPro.Services
 
                 // 双路模式下按配置创建 VAD 门控器
                 VadGateController? vadGate = null;
+                ActiveSpeakerTimelineStore? timelineStore = null;
                 if (_config.EnableVadGating && recognizeLoopback && recognizeMic)
                 {
                     var conflictPriority = _config.VadConflictPriority == 1
                         ? VadGateController.ActiveSource.Mic
                         : VadGateController.ActiveSource.Loopback;
+                    var arbitrationMode = (VadArbitrationMode)Math.Clamp(_config.VadArbitrationMode, 0, 2);
                     vadGate = new VadGateController(
                         voiceThreshold: _config.VadVoiceThreshold,
                         interruptionThreshold: _config.VadInterruptionChunks,
                         safetyValveChunks: _config.VadSafetyValveChunks,
                         conflictPriority: conflictPriority,
-                        log: _auditLog);
-                    _auditLog?.Invoke($"[翻译流] VAD门控已启用 阈值={_config.VadVoiceThreshold} 打断={_config.VadInterruptionChunks}chunks 安全阀={_config.VadSafetyValveChunks}chunks 冲突优先={conflictPriority}");
+                        log: _auditLog,
+                        arbitrationMode: arbitrationMode,
+                        tieMarginDb: _config.VadTieMarginDb,
+                        minSpeechChunks: _config.VadMinSpeechChunks,
+                        switchCooldownChunks: _config.VadSwitchCooldownChunks,
+                        rmsEmaAlpha: _config.VadRmsEmaAlpha);
+                    timelineStore = _activeSpeakerTimeline;
+                    timelineStore.Clear();
+                    _auditLog?.Invoke($"[翻译流] VAD门控已启用 阈值={_config.VadVoiceThreshold} 打断={_config.VadInterruptionChunks}chunks 安全阀={_config.VadSafetyValveChunks}chunks 冲突优先={conflictPriority} 仲裁={arbitrationMode} 容差={_config.VadTieMarginDb}dB 防抖={_config.VadMinSpeechChunks}chunks 冷却={_config.VadSwitchCooldownChunks}chunks EMAα={_config.VadRmsEmaAlpha}");
                 }
 
                 _audioCoordinator = new AudioProcessingCoordinator(
@@ -948,7 +972,9 @@ namespace TrueFluentPro.Services
                     minGain,
                     maxGain,
                     smoothing,
-                    vadGate: vadGate);
+                    vadGate: vadGate,
+                    timelineStore: timelineStore,
+                    useVadGatedRecording: _config.UseVadGatedRecording);
 
                 _naudioSource.StartAsync().GetAwaiter().GetResult();
 

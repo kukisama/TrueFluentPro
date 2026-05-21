@@ -1,5 +1,0 @@
-/target
-Cargo.lock
-*.pdb
-# Generated FFI bindings (rebuilt by build.rs)
-crates/speech-sdk/src/ffi/bindings.rs
