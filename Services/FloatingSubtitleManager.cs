@@ -93,6 +93,15 @@ namespace TrueFluentPro.Services
             }
         }
 
+        /// <summary>从音频管线推送的"争抢窗口"状态：进入/退出。</summary>
+        public void UpdateContestState(bool active)
+        {
+            if (_isWindowOpen && _syncService != null)
+            {
+                _syncService.UpdateContestState(active);
+            }
+        }
+
         private void OnWindowClosed(object? sender, EventArgs e)
         {
             _isWindowOpen = false;

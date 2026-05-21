@@ -120,7 +120,35 @@ namespace TrueFluentPro.ViewModels.Settings
         public int VadSwitchCooldownChunks { get => _vadSwitchCooldownChunks; set => Set(ref _vadSwitchCooldownChunks, value); }
         public double VadRmsEmaAlpha { get => _vadRmsEmaAlpha; set => Set(ref _vadRmsEmaAlpha, value); }
         public bool ShowActiveSpeakerTimeline { get => _showActiveSpeakerTimeline; set => Set(ref _showActiveSpeakerTimeline, value); }
-        public bool UseVadGatedRecording { get => _useVadGatedRecording; set => Set(ref _useVadGatedRecording, value); }
+        public bool UseVadGatedRecording
+        {
+            get => _useVadGatedRecording;
+            set
+            {
+                if (Set(ref _useVadGatedRecording, value))
+                {
+                    OnPropertyChanged(nameof(RecordingMixModeIndex));
+                }
+            }
+        }
+
+        /// <summary>
+        /// 双路同时录音的混音模式选择（与 UseVadGatedRecording 互为镜像，供 ComboBox 绑定）：
+        /// 0 = 简单混音（无脑合并麦克风+环回，最可靠，无切换感）。
+        /// 1 = VAD 智能（安静期单方独占清晰；争抢期自动混合保留双方）。
+        /// </summary>
+        public int RecordingMixModeIndex
+        {
+            get => _useVadGatedRecording ? 1 : 0;
+            set
+            {
+                var target = value == 1;
+                if (_useVadGatedRecording == target) return;
+                _useVadGatedRecording = target;
+                OnPropertyChanged(nameof(UseVadGatedRecording));
+                OnPropertyChanged();
+            }
+        }
         public List<ModelOption> SpeechToTextModels { get => _speechToTextModels; set => SetProperty(ref _speechToTextModels, value); }
         public List<ModelOption> TextToSpeechModels { get => _textToSpeechModels; set => SetProperty(ref _textToSpeechModels, value); }
         public bool HasSpeechToTextModels => SpeechToTextModels.Count > 0;

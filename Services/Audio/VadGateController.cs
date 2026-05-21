@@ -18,6 +18,8 @@ namespace TrueFluentPro.Services.Audio
     /// <summary>
     /// 每次 Update 返回的运行时快照（供 UI 时间轴 / 日志使用）。
     /// </summary>
+    /// <param name="IsContested">是否进入"争抢窗口"：对方能量明显高于锁定方但未到双输出阈值。</param>
+    /// <param name="IsDualOutput">是否进入"双输出"硬上限态：争抢持续过久未分胜负，录音应混合保留双方。</param>
     public readonly record struct ActiveSpeakerSnapshot(
         VadGateController.ActiveSource ActiveSource,
         double MicRms,
@@ -29,7 +31,9 @@ namespace TrueFluentPro.Services.Audio
         bool MicActive,
         bool LoopbackActive,
         bool JustSwitched,
-        bool IsLocked);
+        bool IsLocked,
+        bool IsContested = false,
+        bool IsDualOutput = false);
 
     /// <summary>
     /// 句级 VAD 门控：双路音频（麦克风 + 环回）场景下，
@@ -49,6 +53,11 @@ namespace TrueFluentPro.Services.Audio
         private readonly int _minSpeechChunks;
         private readonly int _switchCooldownChunks;
         private readonly double _emaAlpha;
+        // 争抢窗口参数
+        private readonly double _contestTriggerRatio;
+        private readonly int _contestTriggerFrames;
+        private readonly int _dualOutputTimeoutFrames;
+        private readonly int _dualOutputExitSilenceFrames;
         private readonly Action<string>? _log;
 
         private ActiveSource _lockedSource = ActiveSource.None;
@@ -65,6 +74,13 @@ namespace TrueFluentPro.Services.Audio
 
         // 上次切换 / 锁定 之后过了多少帧（冷却控制）
         private int _framesSinceLastSwitch = int.MaxValue / 2;
+
+        // 争抢状态机
+        private int _challengerActiveFrames;       // 挑战方持续强于锁定方的帧数
+        private int _contestedFramesAccumulated;   // 已进入 contested 后累计的帧数（决定何时升 dualOutput）
+        private int _silenceFramesInDual;          // dualOutput 期间某方静音的累计帧数
+        private bool _isContested;
+        private bool _isDualOutput;
 
         public ActiveSource Current => _lockedSource;
 
@@ -91,7 +107,11 @@ namespace TrueFluentPro.Services.Audio
             double tieMarginDb = 3.0,
             int minSpeechChunks = 3,
             int switchCooldownChunks = 10,
-            double rmsEmaAlpha = 0.3)
+            double rmsEmaAlpha = 0.3,
+            double contestTriggerRatio = 1.5,
+            int contestTriggerFrames = 4,
+            int dualOutputTimeoutFrames = 80,
+            int dualOutputExitSilenceFrames = 50)
         {
             _voiceThreshold = Math.Clamp(voiceThreshold, 0.001, 0.5);
             _interruptionThreshold = Math.Clamp(interruptionThreshold, 1, 50);
@@ -102,6 +122,10 @@ namespace TrueFluentPro.Services.Audio
             _minSpeechChunks = Math.Clamp(minSpeechChunks, 1, 30);
             _switchCooldownChunks = Math.Clamp(switchCooldownChunks, 0, 100);
             _emaAlpha = Math.Clamp(rmsEmaAlpha, 0.0, 1.0);
+            _contestTriggerRatio = Math.Clamp(contestTriggerRatio, 1.0, 10.0);
+            _contestTriggerFrames = Math.Clamp(contestTriggerFrames, 1, 50);
+            _dualOutputTimeoutFrames = Math.Clamp(dualOutputTimeoutFrames, 10, 500);
+            _dualOutputExitSilenceFrames = Math.Clamp(dualOutputExitSilenceFrames, 5, 200);
             _log = log;
         }
 
@@ -141,11 +165,15 @@ namespace TrueFluentPro.Services.Audio
             if (justSwitched)
             {
                 _framesSinceLastSwitch = 0;
+                // 切换或重新锁定时清争抢状态
+                ResetContest();
             }
             else if (_framesSinceLastSwitch < int.MaxValue / 2)
             {
                 _framesSinceLastSwitch++;
             }
+
+            EvaluateContest(micActive, loopActive);
 
             return new ActiveSpeakerSnapshot(
                 ActiveSource: next,
@@ -158,7 +186,9 @@ namespace TrueFluentPro.Services.Audio
                 MicActive: micActive,
                 LoopbackActive: loopActive,
                 JustSwitched: justSwitched,
-                IsLocked: next != ActiveSource.None);
+                IsLocked: next != ActiveSource.None,
+                IsContested: _isContested,
+                IsDualOutput: _isDualOutput);
         }
 
         /// <summary>
@@ -182,6 +212,103 @@ namespace TrueFluentPro.Services.Audio
         {
             _lockedSource = ActiveSource.None;
             _interruptionCount = 0;
+            _silentChunks = 0;
+            _candidateSource = ActiveSource.None;
+            _candidateChunks = 0;
+            _framesSinceLastSwitch = int.MaxValue / 2;
+            _micEma = 0;
+            _loopEma = 0;
+            ResetContest();
+        }
+
+        private void ResetContest()
+        {
+            _challengerActiveFrames = 0;
+            _contestedFramesAccumulated = 0;
+            _silenceFramesInDual = 0;
+            _isContested = false;
+            _isDualOutput = false;
+        }
+
+        /// <summary>
+        /// 锁定态下评估"挑战方能量是否显著强过当前锁定方"，从而进入 / 退出 contested / dualOutput 态。
+        /// 录音管线据此决定是否混合双路；识别管线仍走单路赢家，避免改 ASR 会话。
+        /// </summary>
+        private void EvaluateContest(bool micActive, bool loopActive)
+        {
+            if (!IsLocked)
+            {
+                ResetContest();
+                return;
+            }
+
+            var lockedRms = _lockedSource == ActiveSource.Mic ? _micEma : _loopEma;
+            var otherRms = _lockedSource == ActiveSource.Mic ? _loopEma : _micEma;
+
+            // dualOutput 状态：任一方持续静音足够久就退出
+            if (_isDualOutput)
+            {
+                if (!micActive || !loopActive)
+                {
+                    _silenceFramesInDual++;
+                    if (_silenceFramesInDual >= _dualOutputExitSilenceFrames)
+                    {
+                        _log?.Invoke($"[VAD门控] DualOutput 退出，回到单方 {_lockedSource}");
+                        _isDualOutput = false;
+                        _isContested = false;
+                        _challengerActiveFrames = 0;
+                        _contestedFramesAccumulated = 0;
+                        _silenceFramesInDual = 0;
+                    }
+                }
+                else
+                {
+                    _silenceFramesInDual = 0;
+                }
+                return;
+            }
+
+            // contested 状态：累计帧数，到阈值升级为 dualOutput；锁定方明显反超则退出
+            if (_isContested)
+            {
+                _contestedFramesAccumulated++;
+
+                var lockedDominates = lockedRms > otherRms * _contestTriggerRatio || otherRms < _voiceThreshold;
+                if (lockedDominates)
+                {
+                    _log?.Invoke($"[VAD门控] 争抢结束，{_lockedSource} 胜出 lockedRms={lockedRms:F4} otherRms={otherRms:F4}");
+                    _isContested = false;
+                    _challengerActiveFrames = 0;
+                    _contestedFramesAccumulated = 0;
+                    return;
+                }
+
+                if (_contestedFramesAccumulated >= _dualOutputTimeoutFrames)
+                {
+                    _isDualOutput = true;
+                    _silenceFramesInDual = 0;
+                    _log?.Invoke($"[VAD门控] 争抢持续 {_contestedFramesAccumulated} 帧未分胜负，升级 DualOutput（录音将混合双路）");
+                }
+                return;
+            }
+
+            // 未 contested：检测对方是否持续强于锁定方
+            var challengerStronger = otherRms > lockedRms * _contestTriggerRatio && otherRms >= _voiceThreshold;
+            if (challengerStronger)
+            {
+                _challengerActiveFrames++;
+                if (_challengerActiveFrames >= _contestTriggerFrames)
+                {
+                    _isContested = true;
+                    _contestedFramesAccumulated = 0;
+                    var challenger = _lockedSource == ActiveSource.Mic ? ActiveSource.Loopback : ActiveSource.Mic;
+                    _log?.Invoke($"[VAD门控] 进入争抢窗口 锁定={_lockedSource} 挑战={challenger} lockedRms={lockedRms:F4} otherRms={otherRms:F4}");
+                }
+            }
+            else
+            {
+                _challengerActiveFrames = 0;
+            }
             _silentChunks = 0;
             _candidateSource = ActiveSource.None;
             _candidateChunks = 0;

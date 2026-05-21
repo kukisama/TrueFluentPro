@@ -112,6 +112,8 @@ namespace TrueFluentPro.Services
         public event EventHandler<string>? OnReconnectTriggered;
         public event EventHandler<double>? OnAudioLevelUpdated;
         public event EventHandler<string>? OnDiagnosticsUpdated;
+        /// <summary>VAD 争抢窗口开/关变化（true=进入争抢/双输出，false=回到单方锁定）。</summary>
+        public event EventHandler<bool>? OnContestStateChanged;
         public RealtimeConnectorFamily ConnectorFamily => RealtimeConnectorFamily.MicrosoftSpeechSdk;
 
         public SpeechTranslationService(AzureSpeechConfig config, IAzureTokenProviderStore? azureTokenProviderStore = null, Action<string>? auditLog = null)
@@ -974,7 +976,8 @@ namespace TrueFluentPro.Services
                     smoothing,
                     vadGate: vadGate,
                     timelineStore: timelineStore,
-                    useVadGatedRecording: _config.UseVadGatedRecording);
+                    useVadGatedRecording: _config.UseVadGatedRecording,
+                    onContestStateChanged: active => OnContestStateChanged?.Invoke(this, active));
 
                 _naudioSource.StartAsync().GetAwaiter().GetResult();
 

@@ -317,8 +317,14 @@
                     </StackPanel>
                     <CheckBox Content="在主面板顶部显示发言人时间轴"
                               IsChecked="{Binding ShowActiveSpeakerTimeline, Mode=TwoWay}"/>
-                    <CheckBox Content="录音也跟随 VAD 选源（双路时同一时刻只录赢家声道，更清晰；关闭=两路混合落盘）"
-                              IsChecked="{Binding UseVadGatedRecording, Mode=TwoWay}"/>
+                    <StackPanel Spacing="5">
+                        <TextBlock Text="双路同时录音的混音模式" FontWeight="SemiBold"/>
+                        <ComboBox SelectedIndex="{Binding RecordingMixModeIndex, Mode=TwoWay}"
+                                  Width="480" HorizontalAlignment="Left">
+                            <ComboBoxItem Content="简单混音 — 无脑合并麦克风+环回（最可靠，无切换感）"/>
+                            <ComboBoxItem Content="VAD 智能 — 安静期单方独占清晰、争抢期自动混合保留双方（实验）"/>
+                        </ComboBox>
+                    </StackPanel>
                 </StackPanel>
             </StackPanel>
 

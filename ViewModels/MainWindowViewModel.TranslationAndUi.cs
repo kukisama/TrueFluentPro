@@ -742,6 +742,12 @@ namespace TrueFluentPro.ViewModels
 
             // 暴露发言人时间轴（仅 SpeechTranslationService 提供）
             ActiveSpeakerTimeline = (service as SpeechTranslationService)?.ActiveSpeakerTimeline;
+
+            // VAD 争抢窗口事件（仅 SpeechTranslationService 暴露），转发到浮动字幕
+            if (service is SpeechTranslationService speechSvc)
+            {
+                speechSvc.OnContestStateChanged += OnVadContestStateChanged;
+            }
         }
 
         private void DetachTranslationService(IRealtimeTranslationService service)
@@ -753,7 +759,24 @@ namespace TrueFluentPro.ViewModels
             service.OnAudioLevelUpdated -= OnAudioLevelUpdated;
             service.OnDiagnosticsUpdated -= OnDiagnosticsUpdated;
 
+            if (service is SpeechTranslationService speechSvc)
+            {
+                speechSvc.OnContestStateChanged -= OnVadContestStateChanged;
+            }
+
             ActiveSpeakerTimeline = null;
+        }
+
+        private void OnVadContestStateChanged(object? sender, bool active)
+        {
+            try
+            {
+                _floatingSubtitleManager?.UpdateContestState(active);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"OnVadContestStateChanged 转发失败: {ex.Message}");
+            }
         }
 
         private async void StopTranslation()

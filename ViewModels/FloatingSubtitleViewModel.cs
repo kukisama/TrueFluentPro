@@ -58,12 +58,25 @@ namespace TrueFluentPro.ViewModels
             _ => new SolidColorBrush(Color.Parse("#FFCBD5E1"))                                          // 亮灰
         };
 
+        /// <summary>副轨图标：固定使用闪电，提示当前处于争抢期（录音已混合保留）。</summary>
+        public string SecondaryIconValue => "fa-solid fa-bolt";
+
+        /// <summary>副轨图标颜色（琥珀色，与争抢提示一致）。</summary>
+        public IBrush SecondaryIconBrush => new SolidColorBrush(Color.Parse("#FFFBBF24"));
+
+        /// <summary>副轨是否显示：仅综合窗口 + 当前处于争抢窗口 + 已锁定到某方。</summary>
+        public bool IsSecondaryVisible =>
+            SourceFilter == VadGateController.ActiveSource.None
+            && _syncService.IsContestActive
+            && EffectiveSource != VadGateController.ActiveSource.None;
+
         public FloatingSubtitleViewModel(SubtitleSyncService syncService,
             VadGateController.ActiveSource sourceFilter = VadGateController.ActiveSource.None)
         {
             _syncService = syncService;
             SourceFilter = sourceFilter;
             _syncService.SubtitleUpdated += OnSubtitleUpdated;
+            _syncService.ContestStateChanged += OnContestStateChanged;
         }        public string SubtitleText
         {
             get => _subtitleText;
@@ -236,9 +249,20 @@ namespace TrueFluentPro.ViewModels
             if (SourceFilter == VadGateController.ActiveSource.None)
             {
                 OnPropertyChanged(nameof(SourceIconValue));
-                OnPropertyChanged(nameof(SourceIconBrush));
+                OnPropertyChanged(nameof(SecondaryIconValue));
+                OnPropertyChanged(nameof(SecondaryIconBrush));
             }
-        }        private string ProcessSubtitleText(string text)
+        }
+
+        private void OnContestStateChanged(bool active)
+        {
+            // 争抢窗口开/关：通知副轨可见性与图标
+            OnPropertyChanged(nameof(IsSecondaryVisible));
+            OnPropertyChanged(nameof(SecondaryIconValue));
+            OnPropertyChanged(nameof(SecondaryIconBrush));
+        }
+
+        private string ProcessSubtitleText(string text)
         {
             if (string.IsNullOrWhiteSpace(text))
                 return "等待字幕内容...";
@@ -249,6 +273,7 @@ namespace TrueFluentPro.ViewModels
             if (string.IsNullOrEmpty(text))
                 return "等待字幕内容...";
 
+                _syncService.ContestStateChanged -= OnContestStateChanged;
             text = System.Text.RegularExpressions.Regex.Replace(text, @"\s+", " ");
 
             return text;

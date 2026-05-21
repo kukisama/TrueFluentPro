@@ -105,15 +105,15 @@
         PointerPressed="OnSurfacePointerPressed">
 
         <Grid>
-            <!-- 字幕主体 -->
-            <Grid Margin="18,8,18,10" ColumnDefinitions="Auto,*">
-                <icons:Icon Grid.Column="0"
+            <!-- 字幕主体（始终单行，零浪费） -->
+            <Grid Margin="18,8,18,10" ColumnDefinitions="Auto,*" RowDefinitions="Auto">
+                <icons:Icon Grid.Row="0" Grid.Column="0"
                             Classes="source-icon"
                             Value="{Binding SourceIconValue}"
                             Foreground="{Binding SourceIconBrush}"
                             Margin="0,0,12,0"/>
 
-                <Border Grid.Column="1" Name="SubtitleHost"
+                <Border Grid.Row="0" Grid.Column="1" Name="SubtitleHost"
                     Background="Transparent"
                     Padding="0,2,0,4"
                     ClipToBounds="True">
@@ -132,6 +132,19 @@
                         Effect="{Binding TextShadowEffect}" />
                 </Border>
             </Grid>
+
+            <!-- 争抢角标：仅争抢窗口出现的浮动闪电图标，叠加在左上角，不影响主字幕布局 -->
+            <icons:Icon
+                Classes="source-icon"
+                Value="{Binding SecondaryIconValue}"
+                Foreground="{Binding SecondaryIconBrush}"
+                HorizontalAlignment="Left"
+                VerticalAlignment="Top"
+                Margin="8,-6,0,0"
+                FontSize="14"
+                Opacity="0.9"
+                IsHitTestVisible="False"
+                IsVisible="{Binding IsSecondaryVisible}"/>
 
             <!-- 右上角悬浮工具条 -->
             <Border Name="HoverToolbar"
