@@ -44,6 +44,7 @@ namespace TrueFluentPro.Services
         private static readonly Regex MultiSpaceRegex = new(@"\s+", RegexOptions.Compiled);
         private static readonly Regex MultiCommaRegex = new(@"[，,]\s*[，,]", RegexOptions.Compiled);
         private AzureSpeechConfig _config;
+        private readonly IAzureTokenProviderStore? _azureTokenProviderStore;
         private readonly Action<string>? _auditLog;
         private TranslationRecognizer? _recognizer;
         private bool _isTranslating; private string _currentSessionFilePath = string.Empty;
@@ -108,9 +109,10 @@ namespace TrueFluentPro.Services
         public event EventHandler<string>? OnDiagnosticsUpdated;
         public RealtimeConnectorFamily ConnectorFamily => RealtimeConnectorFamily.MicrosoftSpeechSdk;
 
-        public SpeechTranslationService(AzureSpeechConfig config, Action<string>? auditLog = null)
+        public SpeechTranslationService(AzureSpeechConfig config, IAzureTokenProviderStore? azureTokenProviderStore = null, Action<string>? auditLog = null)
         {
             _config = config;
+            _azureTokenProviderStore = azureTokenProviderStore;
             _auditLog = auditLog;
             _isTranslating = false;
             _autoGainProcessor = CreateAutoGainProcessor();
@@ -157,7 +159,7 @@ namespace TrueFluentPro.Services
                 ResetManagedReconnectState();
                 _currentRunStamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
                 _sessionStartUtc = DateTime.UtcNow;
-                var speechConfig = CreateSpeechConfig();
+                var speechConfig = await CreateSpeechConfigAsync();
                 _audioConfig = CreateAudioConfigAndStartSource();
                 InitializeSubtitleWriters();
                 StartFileWriterTask();
@@ -1003,26 +1005,39 @@ namespace TrueFluentPro.Services
             };
         }
 
-        private SpeechTranslationConfig CreateSpeechConfig()
+        private async Task<SpeechTranslationConfig> CreateSpeechConfigAsync()
         {
-            if (!_config.TryGetActiveMicrosoftSpeechSubscriptionForRealtime(out var activeSubscription, out var message) ||
-                activeSubscription == null)
+            var activeResource = _config.GetActiveSpeechResource();
+            if (activeResource == null || !activeResource.IsEnabled)
             {
-                throw new InvalidOperationException(message);
+                throw new InvalidOperationException("未选择可用的语音资源。");
             }
 
             SpeechTranslationConfig speechConfig;
 
-            if (activeSubscription.IsChinaEndpoint)
+            if (activeResource.AuthMode == AzureAuthMode.AAD)
             {
-                var host = new Uri(activeSubscription.GetCognitiveServicesHost());
-                speechConfig = SpeechTranslationConfig.FromHost(host, activeSubscription.SubscriptionKey);
+                speechConfig = await CreateAadSpeechConfigAsync(activeResource).ConfigureAwait(false);
             }
             else
             {
-                speechConfig = SpeechTranslationConfig.FromSubscription(
-                    activeSubscription.SubscriptionKey,
-                    activeSubscription.GetEffectiveRegion());
+                if (!_config.TryGetActiveMicrosoftSpeechSubscriptionForRealtime(out var activeSubscription, out var message) ||
+                    activeSubscription == null)
+                {
+                    throw new InvalidOperationException(message);
+                }
+
+                if (activeSubscription.IsChinaEndpoint)
+                {
+                    var host = new Uri(activeSubscription.GetCognitiveServicesHost());
+                    speechConfig = SpeechTranslationConfig.FromHost(host, activeSubscription.SubscriptionKey);
+                }
+                else
+                {
+                    speechConfig = SpeechTranslationConfig.FromSubscription(
+                        activeSubscription.SubscriptionKey,
+                        activeSubscription.GetEffectiveRegion());
+                }
             }
             if (!IsAutoDetectSourceLanguage())
             {
@@ -1058,6 +1073,44 @@ namespace TrueFluentPro.Services
             }
 
             return speechConfig;
+        }
+
+        private async Task<SpeechTranslationConfig> CreateAadSpeechConfigAsync(SpeechResource activeResource)
+        {
+            if (_azureTokenProviderStore == null)
+            {
+                throw new InvalidOperationException("当前实时翻译服务未初始化 AAD 认证管理器。请重启应用后重试。");
+            }
+
+            if (string.IsNullOrWhiteSpace(activeResource.AadEndpointId))
+            {
+                throw new InvalidOperationException($"语音资源“{activeResource.Name}”缺少 AAD 来源终结点。请重新选择 Foundry Speech 资源。");
+            }
+
+            var endpoint = _config.Endpoints.FirstOrDefault(e =>
+                string.Equals(e.Id, activeResource.AadEndpointId, StringComparison.OrdinalIgnoreCase));
+            if (endpoint == null)
+            {
+                throw new InvalidOperationException($"语音资源“{activeResource.Name}”引用的 Foundry 终结点已不存在。请重新配置。");
+            }
+
+            if (!FoundrySpeechEndpointResolver.TryResolve(endpoint, out var derived, out var resolveError) || derived == null)
+            {
+                throw new InvalidOperationException(resolveError);
+            }
+
+            var provider = await _azureTokenProviderStore.GetAuthenticatedProviderAsync(
+                FoundrySpeechEndpointResolver.BuildEndpointProfileKey(endpoint.Id),
+                endpoint.AzureTenantId,
+                endpoint.AzureClientId).ConfigureAwait(false);
+
+            if (provider?.Credential == null)
+            {
+                throw new InvalidOperationException($"Foundry 终结点“{endpoint.Name}”的 AAD 登录已失效，请先在终结点设置中重新登录。");
+            }
+
+            _auditLog?.Invoke($"[翻译流] 使用 AAD Foundry Speech endpoint='{derived.ResourceEndpoint}' region='{derived.Region}' sourceEndpoint='{endpoint.Name}'");
+            return SpeechTranslationConfig.FromEndpoint(new Uri(derived.ResourceEndpoint), provider.Credential);
         }
 
         private void OnCapturedAudioFrameReady(CapturedAudioFrame frame)
@@ -1433,7 +1486,7 @@ namespace TrueFluentPro.Services
                 }
                 _recognizer = null;
 
-                var speechConfig = CreateSpeechConfig();
+                var speechConfig = await CreateSpeechConfigAsync().ConfigureAwait(false);
                 _recognizer = CreateTranslationRecognizer(speechConfig, _audioConfig);
 
                 _recognizer.Recognized += OnRecognized;
