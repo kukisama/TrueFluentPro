@@ -1,8 +1,10 @@
 using System;
 using System.ComponentModel;
 using System.Globalization;
+using System.Runtime.InteropServices;
 using System.Text;
 using Avalonia;
+using Avalonia.Animation;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -13,20 +15,34 @@ using TrueFluentPro.ViewModels;
 namespace TrueFluentPro.Views
 {    public partial class FloatingSubtitleWindow : Window
     {
-        private const double MinAutoFontSize = 26;
-        private const double MaxAutoFontSize = 52;
+        private const double MinAutoFontSize = 18;
+        private const double MaxAutoFontSize = 96;
         private const double LineHeightScale = 1.14;
         private const int LatinTargetDisplayUnits = 34;
         private const int CjkTargetDisplayUnits = 22;
         private readonly TranslateTransform _subtitleTranslate = new();
         private FloatingSubtitleViewModel? _subscribedViewModel;
+        // 当前已锁定的字号（本句开始时计算，整句期间不再上调，避免抖动）
+        private double _lockedFontSize;
+        private int _lockedTextLength;
 
         public FloatingSubtitleWindow()
         {
             InitializeComponent();
 
             SubtitleTextBlock.RenderTransform = _subtitleTranslate;
-            
+
+            // 文本横向平移加缓动 → 溢出时丝滑左滑，不再瞬移
+            _subtitleTranslate.Transitions = new Transitions
+            {
+                new DoubleTransition
+                {
+                    Property = TranslateTransform.XProperty,
+                    Duration = TimeSpan.FromMilliseconds(240),
+                    Easing = new Avalonia.Animation.Easings.CubicEaseOut()
+                }
+            };
+
             SetInitialPosition();
             UpdateSubtitleLayout();
         }
@@ -68,6 +84,10 @@ namespace TrueFluentPro.Views
             {
                 UpdateSubtitleLayout();
             }
+            else if (e.PropertyName == nameof(FloatingSubtitleViewModel.IsClickThrough))
+            {
+                ApplyClickThrough();
+            }
         }
 
         private void SetInitialPosition()
@@ -103,25 +123,48 @@ namespace TrueFluentPro.Views
                 return;
             }
 
-            var availableWidth = Math.Max(420, SubtitleHost.Bounds.Width - SubtitleHost.Padding.Left - SubtitleHost.Padding.Right);
-            var availableHeight = Math.Max(48, SubtitleHost.Bounds.Height - SubtitleHost.Padding.Top - SubtitleHost.Padding.Bottom);
-            var targetDisplayUnits = GetTargetDisplayUnits(text);
-            var fontSize = GetStableSingleLineFontSize(text, availableWidth, availableHeight, viewModel.FontScaleBias, targetDisplayUnits);
+            var availableWidth = Math.Max(280, SubtitleHost.Bounds.Width - SubtitleHost.Padding.Left - SubtitleHost.Padding.Right);
+            var availableHeight = Math.Max(36, SubtitleHost.Bounds.Height - SubtitleHost.Padding.Top - SubtitleHost.Padding.Bottom);
+
+            // 字号策略：单行模式下以高度为基准，按 bias 微调。整段会话只允许"收缩"，文本明显缩短或 bias 变化时才重算 → 避免抖动。
+            var singleLineHeightFont = ClampFont(Math.Max(1, availableHeight) * 0.62 / LineHeightScale * viewModel.FontScaleBias);
+            var trimmedLen = NormalizeText(text).Length;
+            var isNewSentence = trimmedLen == 0
+                                || _lockedFontSize <= 0
+                                || trimmedLen < _lockedTextLength - 6
+                                || Math.Abs(_lockedFontSize - singleLineHeightFont) > 4;
+
+            double singleLineFont;
+            if (isNewSentence)
+            {
+                singleLineFont = singleLineHeightFont;
+                _lockedFontSize = singleLineHeightFont;
+            }
+            else
+            {
+                singleLineFont = _lockedFontSize;
+            }
+            _lockedTextLength = trimmedLen;
             var normalizedText = NormalizeText(text);
 
             viewModel.UpdateFormattedSubtitleText(normalizedText);
-            SubtitleTextBlock.FontSize = fontSize;
-            SubtitleTextBlock.LineHeight = Math.Round(fontSize * LineHeightScale, MidpointRounding.AwayFromZero);
-            SubtitleTextBlock.LetterSpacing = GetLetterSpacing(text, fontSize);
-            SubtitleTextBlock.Margin = CreateTextMargin(fontSize);
 
-            var textWidth = MeasureSubtitleTextWidth(availableHeight);
-            var overflowWidth = Math.Max(0, textWidth - availableWidth);
-            var isOverflowing = overflowWidth > 0.5;
+            // 永远单行 + 右锚定滑窗：保证流式追加场景下，最新尾部始终可见。
+            // （双行 wrap 会把头部固定显示、把新文字截掉，与字幕场景冲突。）
+            SubtitleTextBlock.TextWrapping = TextWrapping.NoWrap;
+            SubtitleTextBlock.MaxLines = 1;
+            SubtitleTextBlock.FontSize = singleLineFont;
+            SubtitleTextBlock.LineHeight = Math.Round(singleLineFont * LineHeightScale, MidpointRounding.AwayFromZero);
+            SubtitleTextBlock.LetterSpacing = GetLetterSpacing(text, singleLineFont);
+            SubtitleTextBlock.Margin = CreateTextMargin(singleLineFont);
+
+            var singleLineTextWidth = MeasureSubtitleTextWidth(availableHeight);
+            var singleLineOverflow = Math.Max(0, singleLineTextWidth - availableWidth);
+            var isOverflowing = singleLineOverflow > 0.5;
 
             SubtitleTextBlock.HorizontalAlignment = isOverflowing ? HorizontalAlignment.Left : HorizontalAlignment.Center;
             SubtitleTextBlock.TextAlignment = isOverflowing ? TextAlignment.Left : TextAlignment.Center;
-            _subtitleTranslate.X = isOverflowing ? -overflowWidth : 0;
+            _subtitleTranslate.X = isOverflowing ? -singleLineOverflow : 0;
         }
 
         private double MeasureSubtitleTextWidth(double availableHeight)
@@ -304,6 +347,49 @@ namespace TrueFluentPro.Views
             {
                 vm.ToggleTransparency();
             }
+        }
+
+        private void OnToggleClickThrough(object? sender, RoutedEventArgs e)
+        {
+            if (DataContext is FloatingSubtitleViewModel vm)
+            {
+                vm.ToggleClickThrough();
+            }
+        }
+
+        // ============== Windows 点击穿透（WS_EX_TRANSPARENT） ==============
+        private const int GWL_EXSTYLE = -20;
+        private const int WS_EX_LAYERED = 0x00080000;
+        private const int WS_EX_TRANSPARENT = 0x00000020;
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
+
+        private void ApplyClickThrough()
+        {
+            if (!OperatingSystem.IsWindows()) return;
+            var handle = TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
+            if (handle == IntPtr.Zero) return;
+            var enabled = (DataContext as FloatingSubtitleViewModel)?.IsClickThrough == true;
+            var ex = GetWindowLong(handle, GWL_EXSTYLE);
+            if (enabled)
+            {
+                ex |= WS_EX_LAYERED | WS_EX_TRANSPARENT;
+            }
+            else
+            {
+                ex &= ~WS_EX_TRANSPARENT;
+            }
+            SetWindowLong(handle, GWL_EXSTYLE, ex);
+        }
+
+        protected override void OnOpened(EventArgs e)
+        {
+            base.OnOpened(e);
+            ApplyClickThrough();
         }
 
         private void OnCloseClick(object? sender, RoutedEventArgs e)

@@ -87,7 +87,7 @@ namespace TrueFluentPro.Services
 
             if (runtime.IsMicrosoftSpeech)
             {
-                service = new SpeechTranslationService(config, auditLog);
+                service = new SpeechTranslationService(config, _azureTokenProviderStore, auditLog);
                 return true;
             }
 

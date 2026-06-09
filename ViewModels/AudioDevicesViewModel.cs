@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Input;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Threading;
 using TrueFluentPro.Models;
@@ -213,6 +214,49 @@ namespace TrueFluentPro.ViewModels
             }
         }
 
+        // ── 识别音源 三态（与录制独立） ──
+        public bool IsRecognitionLoopbackOnly
+        {
+            get
+            {
+                var c = _configProvider();
+                return c.AudioSourceMode == AudioSourceMode.Loopback
+                    || (c.AudioSourceMode == AudioSourceMode.CaptureDevice && c.UseOutputForRecognition && !c.UseInputForRecognition);
+            }
+            set { if (value) SetRecognitionMode(loopback: true, mic: false); }
+        }
+
+        public bool IsRecognitionLoopbackMix
+        {
+            get
+            {
+                var c = _configProvider();
+                return c.AudioSourceMode == AudioSourceMode.CaptureDevice
+                    && c.UseInputForRecognition && c.UseOutputForRecognition;
+            }
+            set { if (value) SetRecognitionMode(loopback: true, mic: true); }
+        }
+
+        public bool IsRecognitionMicOnly
+        {
+            get
+            {
+                var c = _configProvider();
+                return c.AudioSourceMode == AudioSourceMode.DefaultMic
+                    || (c.AudioSourceMode == AudioSourceMode.CaptureDevice && c.UseInputForRecognition && !c.UseOutputForRecognition);
+            }
+            set { if (value) SetRecognitionMode(loopback: false, mic: true); }
+        }
+
+        // ── 滑动指示器：每段固定宽度，指示器通过 Margin 左偏移实现位置过渡 ──
+        public const double SegmentWidth = 68;
+        public int RecognitionSelectedIndex =>
+            IsRecognitionLoopbackOnly ? 0 : (IsRecognitionLoopbackMix ? 1 : (IsRecognitionMicOnly ? 2 : 1));
+        public int RecordingSelectedIndex =>
+            IsRecordingLoopbackOnly ? 0 : (IsRecordingLoopbackMix ? 1 : (IsRecordingMicOnly ? 2 : 1));
+        public Thickness RecognitionIndicatorMargin => new(SegmentWidth * RecognitionSelectedIndex, 0, 0, 0);
+        public Thickness RecordingIndicatorMargin => new(SegmentWidth * RecordingSelectedIndex, 0, 0, 0);
+
         public void SetAudioLevel(double level)
         {
             AudioLevel = level;
@@ -254,6 +298,13 @@ namespace TrueFluentPro.ViewModels
             OnPropertyChanged(nameof(IsRecordingLoopbackOnly));
             OnPropertyChanged(nameof(IsRecordingLoopbackMix));
             OnPropertyChanged(nameof(IsRecordingMicOnly));
+            OnPropertyChanged(nameof(RecordingSelectedIndex));
+            OnPropertyChanged(nameof(RecordingIndicatorMargin));
+            OnPropertyChanged(nameof(IsRecognitionLoopbackOnly));
+            OnPropertyChanged(nameof(IsRecognitionLoopbackMix));
+            OnPropertyChanged(nameof(IsRecognitionMicOnly));
+            OnPropertyChanged(nameof(RecognitionSelectedIndex));
+            OnPropertyChanged(nameof(RecognitionIndicatorMargin));
             OnPropertyChanged(nameof(IsInputRecognitionEnabled));
             OnPropertyChanged(nameof(IsOutputRecognitionEnabled));
             OnPropertyChanged(nameof(IsInputDeviceUiEnabled));
@@ -555,6 +606,59 @@ namespace TrueFluentPro.ViewModels
             OnPropertyChanged(nameof(IsRecordingLoopbackOnly));
             OnPropertyChanged(nameof(IsRecordingLoopbackMix));
             OnPropertyChanged(nameof(IsRecordingMicOnly));
+            OnPropertyChanged(nameof(RecordingSelectedIndex));
+            OnPropertyChanged(nameof(RecordingIndicatorMargin));
+            PipelineConfigChanged?.Invoke();
+        }
+
+        private void SetRecognitionMode(bool loopback, bool mic)
+        {
+            var config = _configProvider();
+            // 计算目标 AudioSourceMode + 两个 bool
+            AudioSourceMode targetMode;
+            if (loopback && mic) targetMode = AudioSourceMode.CaptureDevice;
+            else if (loopback) targetMode = AudioSourceMode.Loopback;
+            else targetMode = AudioSourceMode.DefaultMic;
+
+            if (config.AudioSourceMode == targetMode
+                && config.UseInputForRecognition == mic
+                && config.UseOutputForRecognition == loopback)
+            {
+                return;
+            }
+
+            config.AudioSourceMode = targetMode;
+            config.UseInputForRecognition = mic;
+            config.UseOutputForRecognition = loopback;
+            _audioSourceModeIndex = AudioSourceModeToIndex(targetMode);
+
+            var label = loopback && mic ? "环回+麦克风" : loopback ? "仅环回" : "仅麦克风";
+
+            if (_isTranslatingProvider())
+            {
+                var applied = _tryApplyLiveAudioRouting();
+                _statusSetter(applied
+                    ? $"识别音源已切换为“{label}”，已立即生效。"
+                    : $"识别音源已切换为“{label}”，将于下次开始翻译时生效。");
+            }
+            else
+            {
+                _translationServiceUpdater(config);
+                _statusSetter($"识别音源已切换为“{label}”。");
+            }
+
+            LogAudioModeSnapshot("识别模式已切换");
+            _configSaver("RecognitionModeChanged");
+            OnPropertyChanged(nameof(AudioSourceModeIndex));
+            OnPropertyChanged(nameof(IsRecognitionLoopbackOnly));
+            OnPropertyChanged(nameof(IsRecognitionLoopbackMix));
+            OnPropertyChanged(nameof(IsRecognitionMicOnly));
+            OnPropertyChanged(nameof(RecognitionSelectedIndex));
+            OnPropertyChanged(nameof(RecognitionIndicatorMargin));
+            OnPropertyChanged(nameof(IsInputRecognitionEnabled));
+            OnPropertyChanged(nameof(IsOutputRecognitionEnabled));
+            OnPropertyChanged(nameof(IsInputDeviceUiEnabled));
+            OnPropertyChanged(nameof(IsOutputDeviceUiEnabled));
             PipelineConfigChanged?.Invoke();
         }
 

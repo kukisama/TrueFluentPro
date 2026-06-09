@@ -49,6 +49,8 @@ namespace TrueFluentPro.Services
         /// </summary>
         public bool IsLoggedIn => _credential != null;
 
+        public TokenCredential? Credential => _credential;
+
         /// <summary>
         /// 已登录的用户名（如果有）
         /// </summary>

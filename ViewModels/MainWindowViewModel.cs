@@ -3,6 +3,7 @@ using System.Collections.ObjectModel;
 using System.Windows.Input;
 using TrueFluentPro.Models;
 using TrueFluentPro.Services;
+using TrueFluentPro.Services.Audio;
 using TrueFluentPro.Services.Cloud;
 using System.Threading.Tasks;
 using Avalonia;
@@ -43,6 +44,17 @@ namespace TrueFluentPro.ViewModels
         private string _currentTranslated = "";
         private ObservableCollection<TranslationItem> _history;
         private IRealtimeTranslationService? _translationService;
+        private ActiveSpeakerTimelineStore? _activeSpeakerTimeline;
+
+        /// <summary>当前活跃的发言人时间轴（仅 SpeechTranslationService 双路 VAD 模式下有效）。</summary>
+        public ActiveSpeakerTimelineStore? ActiveSpeakerTimeline
+        {
+            get => _activeSpeakerTimeline;
+            private set => SetProperty(ref _activeSpeakerTimeline, value);
+        }
+
+        /// <summary>是否在主面板顶部显示发言人时间轴（来自配置）。</summary>
+        public bool ShowActiveSpeakerTimeline => _config?.ShowActiveSpeakerTimeline ?? true;
         private Window? _mainWindow;
         private ConfigurationService _configService;
         private TextEditorType _editorType = TextEditorType.Advanced;
@@ -102,6 +114,7 @@ namespace TrueFluentPro.ViewModels
             _config = new AzureSpeechConfig();
             AppLogService.Initialize(() => _config.BatchLogLevel);
             _history = new ObservableCollection<TranslationItem>();
+            _history.CollectionChanged += OnHistoryCollectionChanged;
 
             ConfigVM = new ConfigViewModel(
                 configService,

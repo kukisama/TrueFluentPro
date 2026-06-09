@@ -275,6 +275,56 @@
                             <ComboBoxItem Content="我 (麦克风)"/>
                         </ComboBox>
                     </StackPanel>
+
+                    <!-- 高级仲裁（2026-05 新增） -->
+                    <StackPanel Spacing="5" Margin="0,6,0,0">
+                        <TextBlock Text="仲裁模式" FontWeight="SemiBold"/>
+                        <ComboBox MinWidth="200"
+                                  HorizontalAlignment="Left"
+                                  SelectedIndex="{Binding VadArbitrationMode, Mode=TwoWay}">
+                            <ComboBoxItem Content="静态优先级（旧行为）"/>
+                            <ComboBoxItem Content="响度大者优先（推荐）"/>
+                            <ComboBoxItem Content="响度差超阈值才切（防乒乓）"/>
+                        </ComboBox>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <StackPanel Spacing="5">
+                            <TextBlock Text="响度差阈值 (dB)"/>
+                            <NumericUpDown Value="{Binding VadTieMarginDb, Mode=TwoWay}"
+                                           Minimum="0" Maximum="20" Width="120" FormatString="F1"
+                                           Increment="0.5"
+                                           HorizontalAlignment="Left"/>
+                        </StackPanel>
+                        <StackPanel Spacing="5">
+                            <TextBlock Text="说话防抖 (chunk)"/>
+                            <NumericUpDown Value="{Binding VadMinSpeechChunks, Mode=TwoWay}"
+                                           Minimum="1" Maximum="20" Width="120" FormatString="F0"
+                                           HorizontalAlignment="Left"/>
+                        </StackPanel>
+                        <StackPanel Spacing="5">
+                            <TextBlock Text="切换冷却 (chunk)"/>
+                            <NumericUpDown Value="{Binding VadSwitchCooldownChunks, Mode=TwoWay}"
+                                           Minimum="0" Maximum="100" Width="120" FormatString="F0"
+                                           HorizontalAlignment="Left"/>
+                        </StackPanel>
+                        <StackPanel Spacing="5">
+                            <TextBlock Text="EMA 平滑 α"/>
+                            <NumericUpDown Value="{Binding VadRmsEmaAlpha, Mode=TwoWay}"
+                                           Minimum="0" Maximum="1" Width="120" FormatString="F2"
+                                           Increment="0.05"
+                                           HorizontalAlignment="Left"/>
+                        </StackPanel>
+                    </StackPanel>
+                    <CheckBox Content="在主面板顶部显示发言人时间轴"
+                              IsChecked="{Binding ShowActiveSpeakerTimeline, Mode=TwoWay}"/>
+                    <StackPanel Spacing="5">
+                        <TextBlock Text="双路同时录音的混音模式" FontWeight="SemiBold"/>
+                        <ComboBox SelectedIndex="{Binding RecordingMixModeIndex, Mode=TwoWay}"
+                                  Width="480" HorizontalAlignment="Left">
+                            <ComboBoxItem Content="简单混音 — 无脑合并麦克风+环回（最可靠，无切换感）"/>
+                            <ComboBoxItem Content="VAD 智能 — 安静期单方独占清晰、争抢期自动混合保留双方（实验）"/>
+                        </ComboBox>
+                    </StackPanel>
                 </StackPanel>
             </StackPanel>
 

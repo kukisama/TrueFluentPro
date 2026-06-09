@@ -28,6 +28,7 @@ namespace TrueFluentPro.ViewModels
                 if (SetProperty(ref _currentOriginal, value))
                 {
                     OnPropertyChanged(nameof(DisplayedText));
+                    OnPropertyChanged(nameof(IsLiveDisplayEmpty));
                 }
             }
         }
@@ -93,6 +94,7 @@ namespace TrueFluentPro.ViewModels
                 if (SetProperty(ref _currentTranslated, value))
                 {
                     OnPropertyChanged(nameof(DisplayedText));
+                    OnPropertyChanged(nameof(IsLiveDisplayEmpty));
                 }
             }
         }
@@ -113,6 +115,7 @@ namespace TrueFluentPro.ViewModels
                 OnPropertyChanged(nameof(IsSingleView));
                 OnPropertyChanged(nameof(DisplayedText));
                 OnPropertyChanged(nameof(DisplayPlaceholder));
+                OnPropertyChanged(nameof(IsLiveDisplayEmpty));
             }
         }
 
@@ -286,7 +289,19 @@ namespace TrueFluentPro.ViewModels
 
         public string TranslationToggleButtonText => IsTranslating ? "停止翻译" : "开始翻译";
 
-        public IBrush TranslationToggleButtonBackground => IsTranslating ? Brushes.Red : Brushes.Green;
+        public IBrush TranslationToggleButtonBackground
+        {
+            get
+            {
+                if (IsTranslating) return new SolidColorBrush(Color.Parse("#EF4444"));
+                var app = Application.Current;
+                if (app != null && app.TryGetResource("PrimaryBrush", app.ActualThemeVariant, out var brush) && brush is IBrush ib)
+                {
+                    return ib;
+                }
+                return new SolidColorBrush(Color.Parse("#2563EB"));
+            }
+        }
 
         public IBrush TranslationToggleButtonForeground => Brushes.White;
 
@@ -456,8 +471,38 @@ namespace TrueFluentPro.ViewModels
         public ObservableCollection<TranslationItem> History
         {
             get => _history;
-            set => SetProperty(ref _history, value);
+            set
+            {
+                if (_history != null)
+                {
+                    _history.CollectionChanged -= OnHistoryCollectionChanged;
+                }
+                if (SetProperty(ref _history, value))
+                {
+                    if (_history != null)
+                    {
+                        _history.CollectionChanged += OnHistoryCollectionChanged;
+                    }
+                    OnPropertyChanged(nameof(HasAnyHistory));
+                    OnPropertyChanged(nameof(IsHistoryEmpty));
+                }
+            }
         }
+
+        private void OnHistoryCollectionChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+        {
+            OnPropertyChanged(nameof(HasAnyHistory));
+            OnPropertyChanged(nameof(IsHistoryEmpty));
+        }
+
+        /// <summary>当前实时翻译显示区是否为空（用于空状态占位图）。</summary>
+        public bool IsLiveDisplayEmpty => string.IsNullOrWhiteSpace(DisplayedText);
+
+        /// <summary>历史记录列表是否非空。</summary>
+        public bool HasAnyHistory => _history != null && _history.Count > 0;
+
+        /// <summary>历史记录列表是否为空（用于空状态占位图）。</summary>
+        public bool IsHistoryEmpty => !HasAnyHistory;
 
         public const string NavTagLive = "live";
         public const string NavTagReview = "review";
@@ -694,6 +739,15 @@ namespace TrueFluentPro.ViewModels
             service.OnReconnectTriggered += OnReconnectTriggered;
             service.OnAudioLevelUpdated += OnAudioLevelUpdated;
             service.OnDiagnosticsUpdated += OnDiagnosticsUpdated;
+
+            // 暴露发言人时间轴（仅 SpeechTranslationService 提供）
+            ActiveSpeakerTimeline = (service as SpeechTranslationService)?.ActiveSpeakerTimeline;
+
+            // VAD 争抢窗口事件（仅 SpeechTranslationService 暴露），转发到浮动字幕
+            if (service is SpeechTranslationService speechSvc)
+            {
+                speechSvc.OnContestStateChanged += OnVadContestStateChanged;
+            }
         }
 
         private void DetachTranslationService(IRealtimeTranslationService service)
@@ -704,6 +758,25 @@ namespace TrueFluentPro.ViewModels
             service.OnReconnectTriggered -= OnReconnectTriggered;
             service.OnAudioLevelUpdated -= OnAudioLevelUpdated;
             service.OnDiagnosticsUpdated -= OnDiagnosticsUpdated;
+
+            if (service is SpeechTranslationService speechSvc)
+            {
+                speechSvc.OnContestStateChanged -= OnVadContestStateChanged;
+            }
+
+            ActiveSpeakerTimeline = null;
+        }
+
+        private void OnVadContestStateChanged(object? sender, bool active)
+        {
+            try
+            {
+                _floatingSubtitleManager?.UpdateContestState(active);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"OnVadContestStateChanged 转发失败: {ex.Message}");
+            }
         }
 
         private async void StopTranslation()
@@ -1042,7 +1115,7 @@ namespace TrueFluentPro.ViewModels
                 // 通用浮动字幕（不区分来源）
                 if (_floatingSubtitleManager?.IsWindowOpen == true && !string.IsNullOrEmpty(CurrentTranslated))
                 {
-                    _floatingSubtitleManager.UpdateSubtitle(CurrentTranslated);
+                    _floatingSubtitleManager.UpdateSubtitle(CurrentTranslated, item.Source);
                 }
 
                 // 按来源分发到对应的浮动窗口
@@ -1050,13 +1123,13 @@ namespace TrueFluentPro.ViewModels
                     && _floatingMicSubtitleManager?.IsWindowOpen == true
                     && !string.IsNullOrEmpty(CurrentTranslated))
                 {
-                    _floatingMicSubtitleManager.UpdateSubtitle(CurrentTranslated);
+                    _floatingMicSubtitleManager.UpdateSubtitle(CurrentTranslated, item.Source);
                 }
                 else if (item.Source == VadGateController.ActiveSource.Loopback
                     && _floatingLoopbackSubtitleManager?.IsWindowOpen == true
                     && !string.IsNullOrEmpty(CurrentTranslated))
                 {
-                    _floatingLoopbackSubtitleManager.UpdateSubtitle(CurrentTranslated);
+                    _floatingLoopbackSubtitleManager.UpdateSubtitle(CurrentTranslated, item.Source);
                 }
             });
         }

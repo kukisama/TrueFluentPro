@@ -146,14 +146,7 @@ public partial class MainWindow : Window
                 SelectNavItemByIndex(0);
                 e.Handled = true;
                 break;
-            case Key.D2 when ctrl:
-                SelectNavItemByIndex(1);
-                e.Handled = true;
-                break;
-            case Key.D3 when ctrl:
-                SelectNavItemByIndex(2);
-                e.Handled = true;
-                break;
+            // Ctrl+2 / Ctrl+3 原指向复盘洞察 / 批量字幕，入口已隐藏，快捷键一并停用
             case Key.D4 when ctrl:
                 SelectNavItemByIndex(3);
                 e.Handled = true;

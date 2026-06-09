@@ -908,8 +908,6 @@ namespace TrueFluentPro.ViewModels
         {
             // 统一文字聊天模式：有文本或有附件即可发送
             return !IsChatStreaming && (!string.IsNullOrWhiteSpace(PromptText) || PendingAttachments.Count > 0);
-
-            return true;
         }
 
         private async System.Threading.Tasks.Task ConfigureScopedServiceAuthAsync(
@@ -2874,6 +2872,23 @@ namespace TrueFluentPro.ViewModels
 
             try
             {
+                if (intentResult.Intent == Services.WebSearch.IntentAnalysisService.IntentType.Image
+                    && imageIntentReady
+                    && imageAttachments.Count > 0
+                    && chatImageRuntime != null
+                    && _genConfig.ImageEditMode == ImageEditMode.V1Multipart)
+                {
+                    aiMessage.Text = "🎨 已识别为带图改图，正在使用 edit 接口生成...";
+                    await ExecuteChatImageEditViaLegacyEditAsync(
+                        aiMessage,
+                        chatImageRuntime,
+                        contextContent,
+                        imageAttachments,
+                        ct,
+                        reasoningRequested);
+                    return;
+                }
+
                 await runtimeService.StreamChatAsync(
                     runtimeRequest,
                     "你是一个有帮助的AI助手。请用中文回答用户的问题。",
@@ -3054,6 +3069,90 @@ namespace TrueFluentPro.ViewModels
             if (hasContent)
                 return "✅ 思考：已收到推理内容";
             return "⚠️ 思考：已请求但服务端未返回推理内容（模型可能不支持 reasoning）";
+        }
+
+        private async System.Threading.Tasks.Task ExecuteChatImageEditViaLegacyEditAsync(
+            ChatMessageViewModel aiMessage,
+            ModelRuntimeResolution imageRuntime,
+            string prompt,
+            IReadOnlyList<ChatAttachmentInfo> imageAttachments,
+            CancellationToken ct,
+            bool reasoningRequested)
+        {
+            var imageConfig = imageRuntime.CreateRequestConfig();
+
+            var referencePaths = imageAttachments
+                .Where(a => !string.IsNullOrWhiteSpace(a.FilePath) && File.Exists(a.FilePath))
+                .Select(a => a.FilePath)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (referencePaths.Count == 0)
+            {
+                throw new InvalidOperationException("未找到可用参考图，无法走 edit 改图链路。");
+            }
+
+            var primaryReferencePath = referencePaths[0];
+            if (!ImageCropService.TryGetImageSize(primaryReferencePath, out var originalWidth, out var originalHeight)
+                || originalWidth <= 0
+                || originalHeight <= 0)
+            {
+                throw new InvalidOperationException("无法读取参考图原始尺寸，无法按原图尺寸发起 edit 改图。");
+            }
+
+            var originalSize = $"{originalWidth}x{originalHeight}";
+
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            var imageService = await CreateScopedImageServiceAsync(imageRuntime, ct);
+            var effectiveConfig = new MediaGenConfig
+            {
+                ImageModel = imageRuntime.ModelId,
+                ImageSize = originalSize,
+                ImageQuality = _genConfig.ImageQuality,
+                ImageFormat = _genConfig.ImageFormat,
+                ImageCount = _genConfig.ImageCount,
+                ImageBackground = _genConfig.ImageBackground,
+                InputFidelity = _genConfig.InputFidelity,
+                ImageEditMode = ImageEditMode.V1Multipart
+            };
+            var outputDir = _pathResolver?.GetNewResourceDirectory("image") ?? SessionDirectory;
+            var result = await imageService.GenerateAndSaveImagesAsync(
+                imageConfig,
+                prompt,
+                effectiveConfig,
+                outputDir,
+                ct,
+                referencePaths,
+                p => Dispatcher.UIThread.Post(() =>
+                {
+                    var elapsed = stopwatch.Elapsed.TotalSeconds;
+                    aiMessage.Text = p switch
+                    {
+                        < 50 => $"🎨 edit 改图中（按原图尺寸 {originalSize}）... 已等待 {elapsed:F0}s",
+                        < 96 => $"📥 edit 下载中 {p}% · {elapsed:F0}s",
+                        < 100 => "💾 正在保存 edit 改图结果...",
+                        _ => "✅ edit 改图完成"
+                    };
+                }));
+
+            stopwatch.Stop();
+
+            Dispatcher.UIThread.Post(() =>
+            {
+                aiMessage.MediaPaths.Clear();
+                foreach (var path in result.FilePaths)
+                {
+                    aiMessage.MediaPaths.Add(path);
+                }
+
+                aiMessage.Text = $"🎨 已按 edit 接口改图 {result.FilePaths.Count} 张（生成 {result.GenerateSeconds:F1}s + 下载 {result.DownloadSeconds:F1}s）。本次已显式按原图尺寸传参：{originalSize}。";
+
+                aiMessage.ReasoningText = string.Empty;
+                aiMessage.ReasoningStatusText = BuildReasoningStatusText(reasoningRequested, false);
+                aiMessage.IsLoading = false;
+                aiMessage.IsStreamingDone = true;
+                aiMessage.IsReasoningExpanded = false;
+            });
         }
 
         /// <summary>将附件内容展开并合并到 prompt 中（内部使用，用户看不到展开内容）</summary>

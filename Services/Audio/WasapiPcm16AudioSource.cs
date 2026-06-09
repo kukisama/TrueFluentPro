@@ -38,6 +38,10 @@ namespace TrueFluentPro.Services.Audio
         private byte[]? _silenceChunkTemplate;
         private readonly bool _interleavedDualChannel;
         private readonly bool _emitCapturedFrames;
+        private readonly Action<string>? _log;
+        private long _loopbackBytesReceived;
+        private long _micBytesReceived;
+        private int _diagFrameCounter;
 
         public WaveFormat OutputWaveFormat { get; }
 
@@ -60,7 +64,8 @@ namespace TrueFluentPro.Services.Audio
             bool enableMic,
             int sampleRate = 16000,
             bool interleavedDualChannel = false,
-            bool emitCapturedFrames = false)
+            bool emitCapturedFrames = false,
+            Action<string>? log = null)
         {
             _loopbackDeviceId = string.IsNullOrWhiteSpace(loopbackDeviceId) ? null : loopbackDeviceId;
             _micDeviceId = string.IsNullOrWhiteSpace(micDeviceId) ? null : micDeviceId;
@@ -71,6 +76,7 @@ namespace TrueFluentPro.Services.Audio
             _micTargetVolume = _micCurrentVolume;
             _interleavedDualChannel = interleavedDualChannel && enableLoopback && enableMic;
             _emitCapturedFrames = emitCapturedFrames;
+            _log = log;
             var channels = _interleavedDualChannel ? 2 : 1;
             OutputWaveFormat = new WaveFormat(Math.Clamp(sampleRate, 8000, 48000), 16, channels);
         }
@@ -94,6 +100,8 @@ namespace TrueFluentPro.Services.Audio
             var wantsLoopback = _loopbackCurrentVolume > 0.0001f;
             var wantsMic = _micCurrentVolume > 0.0001f;
 
+            _log?.Invoke($"[音源诊断] StartAsync 期望[环回={wantsLoopback} 麦={wantsMic}] 配置环回ID='{_loopbackDeviceId}' 配置麦ID='{_micDeviceId}' 解析环回设备='{loopbackDevice?.FriendlyName ?? "(null)"}' (ID={loopbackDevice?.ID ?? "(null)"}) 解析麦设备='{micDevice?.FriendlyName ?? "(null)"}' (ID={micDevice?.ID ?? "(null)"}) 输出格式={OutputWaveFormat.SampleRate}Hz/{OutputWaveFormat.BitsPerSample}bit/{OutputWaveFormat.Channels}ch");
+
             if ((wantsLoopback || wantsMic) && loopbackDevice == null && micDevice == null)
             {
                 throw new InvalidOperationException("Unable to resolve audio device.");
@@ -102,6 +110,7 @@ namespace TrueFluentPro.Services.Audio
             if (loopbackDevice != null && _loopbackCurrentVolume > 0.0001f)
             {
                 _loopbackCapture = new WasapiLoopbackCapture(loopbackDevice);
+                _log?.Invoke($"[音源诊断] WasapiLoopbackCapture 已创建 设备='{loopbackDevice.FriendlyName}' 原生格式={_loopbackCapture.WaveFormat.SampleRate}Hz/{_loopbackCapture.WaveFormat.BitsPerSample}bit/{_loopbackCapture.WaveFormat.Channels}ch encoding={_loopbackCapture.WaveFormat.Encoding}");
                 _loopbackBuffer = new BufferedWaveProvider(_loopbackCapture.WaveFormat)
                 {
                     DiscardOnBufferOverflow = true,
@@ -116,6 +125,7 @@ namespace TrueFluentPro.Services.Audio
             if (micDevice != null && _micCurrentVolume > 0.0001f)
             {
                 _micCapture = new WasapiCapture(micDevice);
+                _log?.Invoke($"[音源诊断] WasapiCapture 已创建 设备='{micDevice.FriendlyName}' 原生格式={_micCapture.WaveFormat.SampleRate}Hz/{_micCapture.WaveFormat.BitsPerSample}bit/{_micCapture.WaveFormat.Channels}ch encoding={_micCapture.WaveFormat.Encoding}");
                 _micBuffer = new BufferedWaveProvider(_micCapture.WaveFormat)
                 {
                     DiscardOnBufferOverflow = true,
@@ -279,6 +289,12 @@ namespace TrueFluentPro.Services.Audio
             }
 
             _loopbackBuffer.AddSamples(e.Buffer, 0, e.BytesRecorded);
+            var prev = System.Threading.Interlocked.Add(ref _loopbackBytesReceived, e.BytesRecorded) - e.BytesRecorded;
+            // 第一次收到数据 / 每收到累计 ~10s（按 192KB/s 估算约 1.92MB）打一次
+            if (prev == 0 || (prev / 2_000_000) != ((prev + e.BytesRecorded) / 2_000_000))
+            {
+                _log?.Invoke($"[音源诊断] 环回 OnDataAvailable 累计字节={prev + e.BytesRecorded} 本次={e.BytesRecorded}");
+            }
             _dataAvailableEvent.Set();
         }
 
@@ -290,6 +306,11 @@ namespace TrueFluentPro.Services.Audio
             }
 
             _micBuffer.AddSamples(e.Buffer, 0, e.BytesRecorded);
+            var prev = System.Threading.Interlocked.Add(ref _micBytesReceived, e.BytesRecorded) - e.BytesRecorded;
+            if (prev == 0 || (prev / 2_000_000) != ((prev + e.BytesRecorded) / 2_000_000))
+            {
+                _log?.Invoke($"[音源诊断] 麦克 OnDataAvailable 累计字节={prev + e.BytesRecorded} 本次={e.BytesRecorded}");
+            }
             _dataAvailableEvent.Set();
         }
 
@@ -441,6 +462,18 @@ namespace TrueFluentPro.Services.Audio
                 {
                     Pcm16AudioMixer.ApplyGainInPlace(micChunk, _micCurrentVolume);
                     Pcm16AudioMixer.ApplyGainInPlace(loopChunk, _loopbackCurrentVolume);
+                }
+
+                // 每秒（按 chunkDurationMs 计 5 次/s 默认）抽样一次诊断
+                var counter = System.Threading.Interlocked.Increment(ref _diagFrameCounter);
+                var sampleEvery = Math.Max(1, 1000 / _chunkDurationMs);
+                if (counter % sampleEvery == 0)
+                {
+                    var micRms = VadGateController.ComputeRmsPcm16(micChunk);
+                    var loopRms = VadGateController.ComputeRmsPcm16(loopChunk);
+                    var micPeak = Pcm16Peak(micChunk);
+                    var loopPeak = Pcm16Peak(loopChunk);
+                    _log?.Invoke($"[音源诊断] 帧#{counter} mic[bytes={micChunk.Length} rms={micRms:F4} peak={micPeak} vol={_micCurrentVolume:F2}] loop[bytes={loopChunk.Length} rms={loopRms:F4} peak={loopPeak} vol={_loopbackCurrentVolume:F2}]");
                 }
 
                 CapturedAudioFrameReady?.Invoke(new CapturedAudioFrame(micChunk, loopChunk, OutputWaveFormat.SampleRate));
@@ -612,6 +645,19 @@ namespace TrueFluentPro.Services.Audio
             var mux = new MultiplexingSampleProvider(new[] { provider }, 1);
             mux.ConnectInputToOutput(0, 0);
             return mux;
+        }
+
+        private static int Pcm16Peak(byte[] buf)
+        {
+            if (buf == null || buf.Length < 2) return 0;
+            int peak = 0;
+            for (int i = 0; i + 1 < buf.Length; i += 2)
+            {
+                short s = (short)(buf[i] | (buf[i + 1] << 8));
+                int abs = s < 0 ? -s : s;
+                if (abs > peak) peak = abs;
+            }
+            return peak;
         }
 
         private static MMDevice? GetDevice(MMDeviceEnumerator enumerator, string? deviceId, DataFlow flow)

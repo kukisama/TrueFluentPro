@@ -17,7 +17,7 @@ namespace TrueFluentPro.Models
         public string ImageQuality { get; set; } = "medium";
         public string ImageFormat { get; set; } = "png";
         public int ImageCount { get; set; } = 1;
-        public ImageEditMode ImageEditMode { get; set; } = ImageEditMode.V2ResponsesApi;
+        public ImageEditMode ImageEditMode { get; set; } = ImageEditMode.V1Multipart;
 
         /// <summary>
         /// 图片背景模式：auto（默认）、opaque、transparent。

@@ -14,6 +14,7 @@ using TrueFluentPro.Services.EndpointTesting;
 using TrueFluentPro.Services.Storage;
 using TrueFluentPro.Services.WebSearch;
 using TrueFluentPro.ViewModels;
+using TrueFluentPro.Helpers;
 
 namespace TrueFluentPro;
 
@@ -53,6 +54,23 @@ public partial class App : Application
         }
 
         _ = Task.Run(InitializeSqliteStorage);
+
+        // 启动时检测 VC++ 2015-2022 运行库；缺失时仅写日志，避免在启动早期弹窗影响主流程。
+        // 真正用户触发语音功能时还会再次提示并自动打开下载页（见 SpeechTranslationService）。
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                if (!VcRuntimeChecker.IsX64Installed())
+                {
+                    Debug.WriteLine($"[VcRuntimeChecker] 缺少 VC++ 2015-2022 (x64)，请安装：{VcRuntimeChecker.DownloadUrlX64}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[VcRuntimeChecker] 检测异常：{ex.Message}");
+            }
+        });
 
         base.OnFrameworkInitializationCompleted();
     }

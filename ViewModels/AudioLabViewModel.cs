@@ -1055,6 +1055,8 @@ namespace TrueFluentPro.ViewModels
                 ? $"https://{subdomain}.cognitiveservices.azure.cn"
                 : $"https://{subdomain}.cognitiveservices.azure.com";
             var batchEndpoint = $"{cognitiveHost}/speechtotext/v3.1/transcriptions";
+            AudioLabRouteAuditLog.Info(
+                $"STT.Batch route='FoundryAadCustomDomain' endpointName='{AudioLabRouteAuditLog.Safe(endpoint.Name)}' sourceUrl='{AudioLabRouteAuditLog.Safe(endpoint.BaseUrl)}' url='{AudioLabRouteAuditLog.Safe(batchEndpoint)}' auth='AAD'");
 
             session.StatusMessage = "转录：提交批量任务...";
             await InvokeIfActiveAsync(session, () => StatusMessage = session.StatusMessage);
@@ -1095,18 +1097,10 @@ namespace TrueFluentPro.ViewModels
 
             if (subscription == null || !subscription.IsValid())
             {
-                if (!_speechResourceRuntimeResolver.TryResolveActive(config, SpeechCapability.BatchSpeechToText, out var resolution, out var resolveError)
-                    || resolution == null)
-                {
-                    throw new InvalidOperationException(string.IsNullOrWhiteSpace(resolveError)
-                        ? "未配置语音转写资源，请在「设置 → 听析中心」中选择语音终结点。"
-                        : resolveError);
-                }
-                if (resolution.MicrosoftSubscription != null)
-                    subscription = resolution.MicrosoftSubscription;
-                else
-                    throw new InvalidOperationException("当前语音资源不支持批量转录。请在「设置 → 听析中心」中选择传统语音终结点或切换到 AAD 模式。");
+                throw new InvalidOperationException("传统 Speech 批量转录配置错误：听析中心未选择可用的 Speech 终结点，或所选终结点缺少 Key/区域。不会回退到首页语音资源或 Foundry 资源。");
             }
+            AudioLabRouteAuditLog.Info(
+                $"STT.Batch route='SpeechKeySelectedEndpoint' endpointName='{AudioLabRouteAuditLog.Safe(subscription.Name)}' endpoint='{AudioLabRouteAuditLog.Safe(subscription.Endpoint)}' region='{AudioLabRouteAuditLog.Safe(subscription.GetEffectiveRegion())}' auth='Key'");
 
             if (!config.BatchStorageIsValid || string.IsNullOrWhiteSpace(config.BatchStorageConnectionString))
                 throw new InvalidOperationException("存储账号未配置或未验证，批量转录需要 Azure Blob Storage。请在「设置 → 录音与存储」中配置。");
@@ -1160,6 +1154,8 @@ namespace TrueFluentPro.ViewModels
                 ? $"https://{subdomain}.cognitiveservices.azure.cn"
                 : $"https://{subdomain}.cognitiveservices.azure.com";
             var fastEndpoint = $"{cognitiveHost}/speechtotext/transcriptions:transcribe?api-version=2025-10-15";
+            AudioLabRouteAuditLog.Info(
+                $"STT.Fast route='FoundryAadCustomDomain' endpointName='{AudioLabRouteAuditLog.Safe(endpoint.Name)}' sourceUrl='{AudioLabRouteAuditLog.Safe(endpoint.BaseUrl)}' url='{AudioLabRouteAuditLog.Safe(fastEndpoint)}' auth='AAD' llmSpeech='{config.AudioLabEnableLlmSpeech}'");
 
             session.StatusMessage = config.AudioLabEnableLlmSpeech ? "LLM Speech 增强转录：准备中..." : "快速转录：准备中...";
             await InvokeIfActiveAsync(session, () => StatusMessage = session.StatusMessage);
@@ -1202,18 +1198,10 @@ namespace TrueFluentPro.ViewModels
 
             if (subscription == null || !subscription.IsValid())
             {
-                if (!_speechResourceRuntimeResolver.TryResolveActive(config, SpeechCapability.BatchSpeechToText, out var resolution, out var resolveError)
-                    || resolution == null)
-                {
-                    throw new InvalidOperationException(string.IsNullOrWhiteSpace(resolveError)
-                        ? "未配置语音转写资源，请在「设置 → 听析中心」中选择语音终结点。"
-                        : resolveError);
-                }
-                if (resolution.MicrosoftSubscription != null)
-                    subscription = resolution.MicrosoftSubscription;
-                else
-                    throw new InvalidOperationException("当前语音资源不支持转录。请在「设置 → 听析中心」中选择传统语音终结点或切换到 AAD 模式。");
+                throw new InvalidOperationException("传统 Speech 快速转录配置错误：听析中心未选择可用的 Speech 终结点，或所选终结点缺少 Key/区域。不会回退到首页语音资源或 Foundry 资源。");
             }
+            AudioLabRouteAuditLog.Info(
+                $"STT.Fast route='SpeechKeySelectedEndpoint' endpointName='{AudioLabRouteAuditLog.Safe(subscription.Name)}' endpoint='{AudioLabRouteAuditLog.Safe(subscription.Endpoint)}' region='{AudioLabRouteAuditLog.Safe(subscription.GetEffectiveRegion())}' auth='Key' llmSpeech='{config.AudioLabEnableLlmSpeech}'");
 
             session.StatusMessage = config.AudioLabEnableLlmSpeech ? "LLM Speech 增强转录：准备中..." : "快速转录：准备中...";
             await InvokeIfActiveAsync(session, () => StatusMessage = session.StatusMessage);
@@ -1267,7 +1255,7 @@ namespace TrueFluentPro.ViewModels
                 var aiService = await CreateAuthenticatedInsightServiceAsync(runtimeRequest, endpoint, token);
                 var transcript = FormatTranscriptForAi(session.Segments);
 
-                const string systemPrompt = "你是一个专业的音频内容分析助手。请根据转录文本生成简洁的 Markdown 总结。\n\n## 概要\n用一段话概括核心内容（50-100字），标注关键时间范围。\n\n## 关键要点\n提炼 3-5 个最重要的发现或观点，每条一句话，标注 [MM:SS]。\n\n## 行动建议\n如果有值得跟进的建议或结论，列出 2-3 条。\n\n## 关键词\n提取 3-5 个关键词。\n\n注意：时间戳格式统一用 [MM:SS]，内容要简洁，不要重复。";
+                var systemPrompt = AudioLabStagePresetDefaults.GetCustomPrompt(config.AudioLabStagePresets, "Summarized");
                 var userContent = $"以下是音频转录内容：\n\n{transcript}";
 
                 var sb = new StringBuilder();
@@ -1356,7 +1344,7 @@ namespace TrueFluentPro.ViewModels
                 var aiService = await CreateAuthenticatedInsightServiceAsync(runtimeRequest, endpoint, token);
                 var transcript = FormatTranscriptForAi(session.Segments);
 
-                const string systemPrompt = "你是一个结构化分析专家。根据音频转录文本生成思维导图的 JSON 结构。\n你必须严格输出有效 JSON，不要输出任何其他内容（不要 markdown 代码块标记）。\n格式：\n{\"label\":\"主题\",\"children\":[{\"label\":\"分支1\",\"children\":[{\"label\":\"要点1\"},{\"label\":\"要点2\"}]}]}\n层级不超过 3 层，每个分支不超过 5 个子节点。";
+                var systemPrompt = AudioLabStagePresetDefaults.GetCustomPrompt(config.AudioLabStagePresets, "MindMap");
                 var userContent = $"请根据以下转录内容生成思维导图结构：\n\n{transcript}";
 
                 var sb = new StringBuilder();
@@ -1453,8 +1441,8 @@ namespace TrueFluentPro.ViewModels
             if (TrySubmitToQueue(AudioLifecycleStage.Insight, "顿悟")) return;
             var session = _activeSession;
             if (session == null) return;
-            await GenerateAiContentSessionAsync(session, "顿悟",
-                "你是一个深度思考专家。根据音频转录内容，提供深层洞察和顿悟。\n请从以下角度分析：\n1. **隐含假设**：说话者可能不自知的假设\n2. **潜在矛盾**：观点之间的冲突\n3. **深层模式**：反复出现的主题或思维模式\n4. **未说出的内容**：重要但被忽略的方面\n5. **关联启发**：与其他领域的联系\n\n以 Markdown 格式输出，标注时间戳 [HH:MM:SS]。",
+            var insightPrompt = AudioLabStagePresetDefaults.GetCustomPrompt(_configProvider().AudioLabStagePresets, "Insight");
+            await GenerateAiContentSessionAsync(session, "顿悟", insightPrompt,
                 (s, result) =>
                 {
                     s.InsightMarkdown = result;
@@ -1472,8 +1460,8 @@ namespace TrueFluentPro.ViewModels
             if (TrySubmitToQueue(AudioLifecycleStage.PodcastScript, "播客")) return;
             var session = _activeSession;
             if (session == null) return;
-            await GenerateAiContentSessionAsync(session, "播客",
-                "你是一个播客脚本编写专家。根据音频转录内容，生成一段适合播客的对话内容改写。\n\n严格使用以下格式，每行一句：\n发言人 A：[主持人台词]\n发言人 B：[嘉宾台词]\n\n要求：\n1. 对话总轮次控制在 40 轮以内（A 和 B 各约 20 轮）\n2. 每轮发言控制在 200 字以内\n3. 口语化、自然过渡\n4. 不要加 Markdown 格式、括号注释或舞台指导\n5. 第一行必须是发言人 A 的开场白\n6. 突出有趣的细节和故事",
+            var podcastPrompt = AudioLabStagePresetDefaults.GetCustomPrompt(_configProvider().AudioLabStagePresets, "PodcastScript");
+            await GenerateAiContentSessionAsync(session, "播客", podcastPrompt,
                 (s, result) =>
                 {
                     s.PodcastMarkdown = result;
@@ -1582,10 +1570,13 @@ namespace TrueFluentPro.ViewModels
                 var transcript = FormatTranscriptForAi(session.Segments);
 
                 // Phase 1: 生成研究课题
+                var researchPlanPrompt = AudioLabStagePresetDefaults.GetCustomPrompt(config.AudioLabStagePresets, "ResearchPlan");
+                if (string.IsNullOrWhiteSpace(researchPlanPrompt))
+                    researchPlanPrompt = "你是一个学术研究规划专家。根据音频转录内容，提出 3-5 个值得深入研究的课题。每个课题一行，格式为纯文本标题。不要编号，不要其他格式。";
                 var planSb = new StringBuilder();
                 await aiService.StreamChatAsync(
                     runtimeRequest,
-                    "你是一个学术研究规划专家。根据音频转录内容，提出 3-5 个值得深入研究的课题。每个课题一行，格式为纯文本标题。不要编号，不要其他格式。",
+                    researchPlanPrompt,
                     $"请根据以下内容提出研究课题：\n\n{transcript}",
                     chunk => planSb.Append(chunk),
                     token, AiChatProfile.Quick);
@@ -1616,10 +1607,11 @@ namespace TrueFluentPro.ViewModels
 
                 // Phase 2: 生成研究报告
                 var selectedTopics = string.Join("\n", topicLines);
+                var researchReportPrompt = AudioLabStagePresetDefaults.GetCustomPrompt(config.AudioLabStagePresets, "Research");
                 var reportSb = new StringBuilder();
                 await aiService.StreamChatAsync(
                     runtimeRequest,
-                    "你是一个深度研究分析师。用户提供了音频转录内容和研究课题列表。请针对每个课题展开深度分析，包括核心论点和支撑证据、不同视角和反驳、与现有知识体系的关联、进一步研究建议。以 Markdown 格式输出，使用标题分隔各课题。引用时标注 [HH:MM:SS]。",
+                    researchReportPrompt,
                     $"研究课题：\n{selectedTopics}\n\n音频转录内容：\n{transcript}",
                     chunk =>
                     {
