@@ -68,6 +68,7 @@ struct App {
     tts_out_path: String,
     tts_ssml: String,
     voices_locale: String,
+    keyword_model_path: String,
     logs: Vec<String>,
     cmd_tx: Sender<Command>,
     log_rx: Receiver<LogLine>,
@@ -109,6 +110,7 @@ impl App {
             tts_out_path: String::new(),
             tts_ssml: "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='zh-CN'><voice name='zh-CN-XiaoxiaoNeural'>大家好<bookmark mark='mid'/>，这是 <emphasis level='strong'>SSML</emphasis> 合成测试。</voice></speak>".into(),
             voices_locale: "zh-CN".into(),
+            keyword_model_path: String::new(),
             logs: vec!["就绪。请选择资源并点击「创建配置」。".into()],
             cmd_tx,
             log_rx,
@@ -369,6 +371,24 @@ impl eframe::App for App {
                         });
                     }
                 }
+                if ui.button("④⁹ 会话转写 WAV（区分说话人 speaker_id）").clicked() {
+                    let path = self.wav_path.trim().to_string();
+                    if path.is_empty() {
+                        self.push_log("[错误] 请填写 WAV 文件路径");
+                    } else {
+                        self.push_log(format!("→ 会话转写 WAV：{path}"));
+                        self.send(Command::TranscribeConversationWav(path));
+                    }
+                }
+                if ui.button("⑤⁰ 诊断自测（内存日志包裹识别）").clicked() {
+                    let path = self.wav_path.trim().to_string();
+                    if path.is_empty() {
+                        self.push_log("[错误] 请填写 WAV 文件路径");
+                    } else {
+                        self.push_log(format!("→ 诊断自测：{path}"));
+                        self.send(Command::DiagnosticsSelfTest(path));
+                    }
+                }
 
                 ui.separator();
                 ui.label("⑤ 语音合成（TTS）文本：");
@@ -439,6 +459,22 @@ impl eframe::App for App {
                     let locale = self.voices_locale.trim().to_string();
                     self.push_log("→ 查询嗓音列表…");
                     self.send(Command::ListVoices { locale });
+                }
+
+                ui.separator();
+                ui.horizontal(|ui| {
+                    ui.label("唤醒词模型(.table)：");
+                    ui.text_edit_singleline(&mut self.keyword_model_path);
+                });
+                ui.small("需本地 .table 唤醒词模型 + 麦克风（手动测试）");
+                if ui.button("④⁸ 关键词(唤醒词)识别").clicked() {
+                    let model_path = self.keyword_model_path.trim().to_string();
+                    if model_path.is_empty() {
+                        self.push_log("[提示] 请先填写 .table 唤醒词模型路径");
+                    } else {
+                        self.push_log("→ 关键词识别…");
+                        self.send(Command::RecognizeKeyword { model_path });
+                    }
                 }
 
                 ui.separator();
@@ -602,6 +638,8 @@ fn run_selftest(args: &[String]) {
             path: wav_path.clone(),
             reference_text: "事件回调自测包含词边界与口型".to_string(),
         },
+        Command::TranscribeConversationWav(wav_path.clone()),
+        Command::DiagnosticsSelfTest(wav_path.clone()),
         Command::SelfTestClosedLoop,
     ];
 

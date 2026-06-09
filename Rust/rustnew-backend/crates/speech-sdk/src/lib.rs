@@ -46,3 +46,4 @@ pub mod error;
 pub mod common;
 pub mod audio;
 pub mod speech;
+pub mod diagnostics;

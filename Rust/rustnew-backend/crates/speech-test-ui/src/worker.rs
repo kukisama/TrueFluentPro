@@ -7,10 +7,12 @@ use std::sync::mpsc::{Receiver, Sender};
 use std::thread::{self, JoinHandle};
 
 use speech_sdk::audio::{AudioConfig, AudioStreamFormat, PushAudioInputStream};
+use speech_sdk::diagnostics::MemoryLogger;
 use speech_sdk::speech::{
-    AutoDetectSourceLanguageConfig, Connection, GradingSystem, Granularity, PhraseListGrammar,
-    PronunciationAssessmentConfig, PronunciationAssessmentResult, SpeechConfig, SpeechRecognizer,
-    SpeechSynthesizer, SpeechTranslationConfig, TranslationRecognizer,
+    AutoDetectSourceLanguageConfig, Connection, ConversationTranscriber, GradingSystem, Granularity,
+    KeywordRecognitionModel, KeywordRecognizer, PhraseListGrammar, PronunciationAssessmentConfig,
+    PronunciationAssessmentResult, SpeechConfig, SpeechRecognizer, SpeechSynthesizer,
+    SpeechTranslationConfig, TranslationRecognizer,
 };
 
 /// 一行日志（worker → UI）。
@@ -55,6 +57,12 @@ pub enum Command {
     RecognizeWavWithConnection(String),
     /// 发音评估：以参考文本评估 WAV 发音，输出准确/流利/完整/总分。
     AssessPronunciation { path: String, reference_text: String },
+    /// 关键词（唤醒词）识别：用麦克风 + .table 模型侦听唤醒词（需手动）。
+    RecognizeKeyword { model_path: String },
+    /// 会话转写：在 WAV 中区分说话人并转写（每条结果带 speaker_id）。
+    TranscribeConversationWav(String),
+    /// 诊断自测：用内存日志包裹一次 WAV 识别，报告采集到的日志行数。
+    DiagnosticsSelfTest(String),
     /// TTS：合成到默认扬声器（会发声，仅 GUI 手动）。
     SynthesizeToSpeaker { text: String },
     /// 闭环自测：TTS 合成固定文字到临时 WAV，再用 STT 识别回来。
@@ -175,6 +183,9 @@ impl Worker {
             Command::AssessPronunciation { path, reference_text } => {
                 self.assess_pronunciation(&path, &reference_text)
             }
+            Command::RecognizeKeyword { model_path } => self.recognize_keyword(&model_path),
+            Command::TranscribeConversationWav(path) => self.transcribe_conversation_wav(&path),
+            Command::DiagnosticsSelfTest(path) => self.diagnostics_self_test(&path),
             Command::SynthesizeToSpeaker { text } => self.synthesize_to_speaker(&text),
             Command::SelfTestClosedLoop => self.self_test_closed_loop(),
         }
@@ -698,6 +709,169 @@ impl Worker {
             "✓ Connection 测试结束（connected={}，disconnected={}）",
             connected.load(Ordering::Relaxed),
             disconnected.load(Ordering::Relaxed)
+        ));
+    }
+
+    /// 关键词（唤醒词）识别：用麦克风 + .table 模型侦听唤醒词。
+    fn recognize_keyword(&mut self, model_path: &str) {
+        let model = match KeywordRecognitionModel::from_file(model_path) {
+            Ok(m) => m,
+            Err(e) => {
+                self.log(format!("[错误] 加载唤醒词模型失败：{e:?}"));
+                return;
+            }
+        };
+
+        let audio = match AudioConfig::from_default_microphone_input() {
+            Ok(a) => a,
+            Err(e) => {
+                self.log(format!("[错误] 打开麦克风失败：{e:?}"));
+                return;
+            }
+        };
+
+        let recognizer = match KeywordRecognizer::from_audio_config(&audio) {
+            Ok(r) => r,
+            Err(e) => {
+                self.log(format!("[错误] 创建关键词识别器失败：{e:?}"));
+                return;
+            }
+        };
+
+        self.log(format!("→ 关键词识别：侦听唤醒词（模型 {model_path}），请对麦克风说出唤醒词…"));
+        match pollster::block_on(recognizer.recognize_once_async(&model)) {
+            Ok(result) => {
+                self.log(format!(
+                    "✓ 命中唤醒词：{}（reason={:?}）",
+                    result.text, result.reason
+                ));
+            }
+            Err(e) => self.log(format!("[错误] 关键词识别失败：{e:?}")),
+        }
+        let _ = recognizer.stop();
+    }
+
+    /// 会话转写：在 WAV 中区分说话人并转写，每条结果带 speaker_id。
+    fn transcribe_conversation_wav(&mut self, path: &str) {
+        use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+        use std::sync::Arc;
+
+        let (config, lang) = match self.build_stt_config() {
+            Ok(v) => v,
+            Err(e) => {
+                self.log(format!("[错误] {e}"));
+                return;
+            }
+        };
+        let audio = match AudioConfig::from_wav_file_input(path) {
+            Ok(a) => a,
+            Err(e) => {
+                self.log(format!("[错误] 打开 WAV 失败：{e:?}"));
+                return;
+            }
+        };
+        let mut transcriber = match ConversationTranscriber::from_config(&config, &audio) {
+            Ok(t) => t,
+            Err(e) => {
+                self.log(format!("[错误] 创建会话转写器失败：{e:?}"));
+                return;
+            }
+        };
+
+        let done = Arc::new(AtomicBool::new(false));
+        let count = Arc::new(AtomicU32::new(0));
+
+        let tx = self.log_tx.clone();
+        let c = count.clone();
+        let _ = transcriber.set_transcribed_cb(move |ev| {
+            if !ev.result.text.is_empty() {
+                let n = c.fetch_add(1, Ordering::Relaxed) + 1;
+                let _ = tx.send(LogLine(format!(
+                    "[转写#{n}] [{}] {}",
+                    ev.speaker_id, ev.result.text
+                )));
+            }
+        });
+        let tx = self.log_tx.clone();
+        let d = done.clone();
+        let _ = transcriber.set_canceled_cb(move |details| {
+            if !details.is_empty() {
+                let _ = tx.send(LogLine(format!("[取消] {details}")));
+            }
+            d.store(true, Ordering::Relaxed);
+        });
+        let tx = self.log_tx.clone();
+        let d = done.clone();
+        let _ = transcriber.set_session_stopped_cb(move || {
+            let _ = tx.send(LogLine("[会话] 已停止".into()));
+            d.store(true, Ordering::Relaxed);
+        });
+
+        self.log(format!("→ 会话转写 WAV（语言 {lang}）：{path}"));
+        if let Err(e) = pollster::block_on(transcriber.start_transcribing_async()) {
+            self.log(format!("[错误] 启动会话转写失败：{e:?}"));
+            return;
+        }
+        Self::wait_done(&done, 30);
+        if let Err(e) = pollster::block_on(transcriber.stop_transcribing_async()) {
+            self.log(format!("[警告] 停止会话转写：{e:?}"));
+        }
+        self.log(format!(
+            "✓ 会话转写结束，共 {} 个分段",
+            count.load(Ordering::Relaxed)
+        ));
+    }
+
+    /// 诊断自测：内存日志包裹一次 WAV 识别，报告采集到的日志行数并转储。
+    fn diagnostics_self_test(&mut self, path: &str) {
+        MemoryLogger::start();
+        self.log("→ 诊断自测：已开启内存日志，执行一次 STT 识别…");
+
+        let (config, lang) = match self.build_stt_config() {
+            Ok(v) => v,
+            Err(e) => {
+                MemoryLogger::stop();
+                self.log(format!("[错误] {e}"));
+                return;
+            }
+        };
+        let audio = match AudioConfig::from_wav_file_input(path) {
+            Ok(a) => a,
+            Err(e) => {
+                MemoryLogger::stop();
+                self.log(format!("[错误] 打开 WAV 失败：{e:?}"));
+                return;
+            }
+        };
+        let recognizer = match SpeechRecognizer::from_config(&config, &audio) {
+            Ok(r) => r,
+            Err(e) => {
+                MemoryLogger::stop();
+                self.log(format!("[错误] 创建识别器失败：{e:?}"));
+                return;
+            }
+        };
+        self.log(format!("  （识别语言 {lang}）"));
+        match pollster::block_on(recognizer.recognize_once_async()) {
+            Ok(result) => self.log(format!("  识别结果：{}", result.text)),
+            Err(e) => self.log(format!("[警告] 识别失败：{e:?}")),
+        }
+
+        let count = MemoryLogger::line_count();
+        let dump_path = std::env::temp_dir()
+            .join("tfp_selftest_diag.log")
+            .to_string_lossy()
+            .into_owned();
+        let dumped = MemoryLogger::dump(&dump_path, "", false, false).is_ok();
+        MemoryLogger::stop();
+
+        self.log(format!(
+            "✓ 诊断自测结束：内存日志采集 {count} 行{}",
+            if dumped {
+                format!("，已转储到 {dump_path}")
+            } else {
+                "（转储失败）".to_string()
+            }
         ));
     }
 

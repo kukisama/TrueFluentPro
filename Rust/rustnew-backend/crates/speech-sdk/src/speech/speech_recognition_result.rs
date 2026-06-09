@@ -98,4 +98,20 @@ impl SpeechRecognitionResult {
             "",
         )
     }
+
+    /// 会话转写中的说话人标识（如 "Guest-1"）；非转写结果时返回空串。
+    pub fn speaker_id(&self) -> Result<String> {
+        unsafe {
+            let mut buffer = vec![0u8; 256];
+            let ret = crate::ffi::conversation_transcription_result_get_speaker_id(
+                self.handle.inner(),
+                buffer.as_mut_ptr() as *mut std::os::raw::c_char,
+                buffer.len() as u32,
+            );
+            convert_err(ret, "SpeechRecognitionResult: get_speaker_id error")?;
+            Ok(CStr::from_ptr(buffer.as_ptr() as *const std::os::raw::c_char)
+                .to_string_lossy()
+                .into_owned())
+        }
+    }
 }

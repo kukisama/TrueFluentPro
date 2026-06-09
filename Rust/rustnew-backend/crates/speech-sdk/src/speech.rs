@@ -11,6 +11,8 @@ mod language_config;
 mod phrase_list_grammar;
 mod connection;
 mod pronunciation_assessment;
+mod keyword_recognizer;
+mod conversation_transcriber;
 mod session_event;
 mod recognition_event;
 
@@ -40,6 +42,10 @@ pub use self::phrase_list_grammar::PhraseListGrammar;
 pub use self::connection::Connection;
 pub use self::pronunciation_assessment::{
     GradingSystem, Granularity, PronunciationAssessmentConfig, PronunciationAssessmentResult,
+};
+pub use self::keyword_recognizer::{KeywordRecognitionModel, KeywordRecognizer};
+pub use self::conversation_transcriber::{
+    ConversationTranscriber, ConversationTranscriptionEventArgs,
 };
 pub use self::session_event::SessionEvent;
 pub use self::recognition_event::RecognitionEvent;
