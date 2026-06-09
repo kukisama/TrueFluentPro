@@ -7,6 +7,11 @@ artifacts/
 # Rust build output
 **/target/
 rustbackend/data/
+
+# Rust: 仅发布 rustnew-backend（SDK 与测试程序），其余暂不发布
+/Rust/*
+!/Rust/rustnew-backend/
+
 Docs/
 .github/copilot-instructions.md
 
@@ -45,4 +50,3 @@ logs/
 # Temporary files
 *.tmp
 *.temp
-rust/
