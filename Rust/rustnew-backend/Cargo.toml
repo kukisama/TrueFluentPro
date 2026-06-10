@@ -1,8 +1,41 @@
 [workspace]
-members = ["crates/speech-sdk", "crates/speech-test-ui"]
+members = [
+    "crates/speech-sdk",
+    "crates/speech-test-ui",
+    "crates/core",
+    "crates/desktop",
+]
 resolver = "2"
 
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
+
+[workspace.dependencies]
+# 内部 crate
+tfp-core = { path = "crates/core" }
+speech-sdk = { path = "crates/speech-sdk" }
+
+# 序列化
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# 异步运行时
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "fs"] }
+
+# 错误处理
+anyhow = "1"
+thiserror = "2"
+
+# 日志
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# HTTP（AI Provider 调用）
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+
+# 杂项
+chrono = { version = "0.4", features = ["serde"] }
+futures = "0.3"
+dirs = "5"

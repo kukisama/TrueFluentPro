@@ -1,0 +1,990 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light" data-lang="zh">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>译见 Pro — Rust + Tauri UI 设计稿</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
+<style>
+/* ============================================================
+   设计令牌 —— 1:1 取自 C# App.axaml 的 Light / Dark 主题
+   ============================================================ */
+:root {
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-pill: 999px;
+  --font: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
+  --mono: "Cascadia Code", "Consolas", monospace;
+}
+
+/* ===== Light 主题 ===== */
+html[data-theme="light"] {
+  --page-bg: #F3F5F8;
+  --nav-bg: #F6F7F9;
+  --card-bg: #FFFFFF;
+  --card-border: #E2E8F0;
+  --subcard-bg: #F8FAFC;
+  --subcard-border: #E5E7EB;
+  --surface-hover: #F1F5F9;
+  --surface-alt: #F5F5F5;
+  --shell-nav-selected: #EDF3FC;
+  --border-subtle: #E5E7EB;
+  --border-strong: #CBD5E1;
+  --divider: #E2E8F0;
+  --primary: #2563EB;
+  --primary-dark: #1D4ED8;
+  --accent: #1976D2;
+  --text-primary: #111827;
+  --text-muted: #666666;
+  --text-subtle: #888888;
+  --text-placeholder: #AAAAAA;
+  --timestamp: #999999;
+  --success: #16A34A;
+  --indicator-green: #4CAF50;
+  --warning: #E65100;
+  --error: #B00020;
+  --rec-red: #D84343;
+  --shadow-card: 0 8px 24px 0 rgba(15,23,42,0.07);
+  --tag-bg: #DCEBFF;
+  --tag-text: #1D4ED8;
+}
+
+/* ===== Dark 主题 ===== */
+html[data-theme="dark"] {
+  --page-bg: #151A20;
+  --nav-bg: #181E25;
+  --card-bg: #1D242D;
+  --card-border: #313A45;
+  --subcard-bg: #222B35;
+  --subcard-border: #38424F;
+  --surface-hover: #333333;
+  --surface-alt: #2D2D2D;
+  --shell-nav-selected: #1A2744;
+  --border-subtle: #3E3E3E;
+  --border-strong: #555555;
+  --divider: #404040;
+  --primary: #60A5FA;
+  --primary-dark: #3B82F6;
+  --accent: #42A5F5;
+  --text-primary: #E5E7EB;
+  --text-muted: #9CA3AF;
+  --text-subtle: #8B8B8B;
+  --text-placeholder: #666666;
+  --timestamp: #777777;
+  --success: #22C55E;
+  --indicator-green: #66BB6A;
+  --warning: #FFAB40;
+  --error: #EF5350;
+  --rec-red: #EF5350;
+  --shadow-card: 0 8px 24px 0 rgba(0,0,0,0.35);
+  --tag-bg: #1E3A5F;
+  --tag-text: #93C5FD;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  font-family: var(--font);
+  background: #0b0d10;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 模拟桌面窗口外壳 */
+.app-window {
+  width: 1440px;
+  height: 860px;
+  background: var(--page-bg);
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 30px 80px rgba(0,0,0,0.55);
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--card-border);
+}
+
+/* 标题栏 */
+.titlebar {
+  height: 38px;
+  flex: 0 0 38px;
+  background: var(--nav-bg);
+  border-bottom: 1px solid var(--card-border);
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  gap: 10px;
+  user-select: none;
+}
+.titlebar .dots { display: flex; gap: 8px; }
+.titlebar .dots i { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+.dot-close { background: #ff5f57; }
+.dot-min { background: #febc2e; }
+.dot-max { background: #28c840; }
+.titlebar .title { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.titlebar .title .pro { color: var(--accent); }
+.titlebar .spacer { flex: 1; }
+.titlebar .win-ctrl { font-size: 12px; color: var(--text-subtle); display: flex; gap: 18px; }
+
+.app-body { flex: 1; display: flex; min-height: 0; }
+
+/* ============================================================
+   左侧导航栏 (Shell Nav Rail)
+   ============================================================ */
+.nav-rail {
+  width: 52px;
+  flex: 0 0 52px;
+  background: var(--nav-bg);
+  border-right: 1px solid var(--card-border);
+  display: flex;
+  flex-direction: column;
+  padding: 8px 0;
+  transition: width .18s ease;
+}
+.nav-rail.expanded { width: 188px; flex-basis: 188px; }
+.nav-rail .nav-top { display: flex; flex-direction: column; }
+.nav-rail .nav-mid { flex: 1; display: flex; flex-direction: column; margin-top: 4px; }
+.nav-rail .nav-bottom { display: flex; flex-direction: column; }
+
+.nav-btn {
+  min-height: 40px;
+  margin: 0 6px 6px 6px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  color: var(--text-primary);
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.nav-btn i { width: 20px; text-align: center; font-size: 15px; flex: 0 0 20px; }
+.nav-btn .label { opacity: 0; width: 0; transition: opacity .12s; }
+.nav-rail.expanded .nav-btn .label { opacity: 1; width: auto; }
+.nav-btn:hover { background: var(--surface-hover); }
+.nav-btn.selected { background: var(--shell-nav-selected); }
+.nav-btn.selected i, .nav-btn.selected .label { color: var(--accent); font-weight: 600; }
+.nav-toggle { width: 40px; height: 40px; margin: 0 6px 8px 6px; justify-content: center; padding: 0; }
+
+/* ============================================================
+   页面主机
+   ============================================================ */
+.page-host { flex: 1; min-width: 0; position: relative; display: flex; flex-direction: column; }
+.view { display: none; flex: 1; min-height: 0; flex-direction: column; }
+.view.active { display: flex; }
+
+/* 通用卡片 */
+.card {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+}
+.subcard {
+  background: var(--subcard-bg);
+  border: 1px solid var(--subcard-border);
+  border-radius: 6px;
+}
+.toolbar-surface { background: var(--nav-bg); border-color: var(--card-border); }
+
+/* 通用控件 */
+.lbl { font-size: 14px; color: var(--text-primary); }
+.lbl-sm { font-size: 11px; color: var(--text-subtle); }
+.combo {
+  height: 36px; padding: 0 10px; border-radius: 6px;
+  border: 1px solid var(--card-border); background: var(--card-bg);
+  color: var(--text-primary); font-size: 13px; font-family: var(--font);
+  display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+}
+.combo i.caret { font-size: 9px; color: var(--text-subtle); margin-left: auto; }
+.vdiv { width: 1px; height: 20px; background: var(--border-subtle); }
+.btn {
+  height: 36px; padding: 0 12px; border-radius: 6px;
+  border: 1px solid var(--card-border); background: var(--card-bg);
+  color: var(--text-primary); font-size: 13px; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 6px; font-family: var(--font);
+}
+.btn:hover { background: var(--surface-hover); }
+.btn.primary { background: var(--primary); color: #fff; border-color: var(--primary); }
+.btn.danger { background: var(--rec-red); color: #fff; border-color: var(--rec-red); }
+.btn.ghost { background: transparent; border-color: transparent; }
+.btn.ghost:hover { background: var(--surface-hover); }
+.btn.sm { height: 28px; font-size: 12px; padding: 0 10px; }
+
+.lamp { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+.lamp.green { background: var(--indicator-green); box-shadow: 0 0 6px var(--indicator-green); }
+.lamp.red { background: var(--error); }
+.lamp.amber { background: var(--warning); }
+
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
+.rec-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--rec-red); animation: pulse 1.2s infinite; }
+
+/* ============================================================
+   实时翻译视图
+   ============================================================ */
+.lt-toolbar {
+  min-height: 56px;
+  border-bottom: 1px solid var(--card-border);
+  padding: 10px 14px;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+  background: var(--nav-bg);
+}
+.lt-toolbar .arrow { font-size: 16px; font-weight: 700; color: var(--text-muted); }
+
+.lt-body { flex: 1; display: flex; gap: 10px; padding: 12px; min-height: 0; }
+.lt-left { flex: 3; min-width: 0; display: flex; flex-direction: column; padding: 8px; }
+.lt-right { flex: 2; min-width: 0; display: flex; flex-direction: column; }
+.lt-splitter { width: 4px; align-self: stretch; cursor: col-resize; border-radius: 2px; }
+.lt-splitter:hover { background: var(--card-border); }
+
+.lt-card-head { display: flex; align-items: center; padding: 5px 6px; }
+.lt-card-head .title { font-weight: 700; color: var(--text-primary); }
+.lt-card-head .spacer { flex: 1; }
+.segment-group { display: flex; gap: 2px; }
+.seg-btn {
+  padding: 3px 12px; border-radius: 4px; font-size: 12px; cursor: pointer;
+  border: 1px solid var(--border-subtle); background: var(--surface-alt); color: var(--text-primary);
+}
+.seg-btn.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+
+.editor-area { flex: 1; margin: 4px 6px 6px; display: flex; flex-direction: column; min-height: 0; }
+.empty-state { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; }
+.empty-illu {
+  width: 96px; height: 96px; border-radius: 48px; background: var(--surface-alt);
+  display: flex; align-items: center; justify-content: center;
+}
+.empty-illu i { font-size: 40px; color: var(--primary); }
+.empty-title { font-size: 15px; font-weight: 700; }
+.empty-sub { font-size: 12px; color: var(--text-subtle); max-width: 320px; text-align: center; line-height: 1.5; }
+
+/* 双语行 */
+.bi-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding: 4px; }
+.bi-row { padding: 10px 12px; }
+.bi-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.bi-src-tag { font-size: 11px; font-weight: 600; }
+.bi-src-tag.mic { color: var(--error); }
+.bi-src-tag.loop { color: var(--accent); }
+.bi-time { font-size: 11px; color: var(--timestamp); }
+.bi-orig { font-size: 14px; color: var(--text-primary); line-height: 1.55; margin-bottom: 4px; }
+.bi-trans { font-size: 14px; color: var(--primary); line-height: 1.55; font-weight: 500; }
+.bi-live { border: 1px dashed var(--primary); }
+
+/* 右侧 Tab */
+.tab-head { display: flex; gap: 4px; padding: 8px 10px 0; border-bottom: 1px solid var(--card-border); }
+.tab-btn { padding: 8px 14px; font-size: 13px; cursor: pointer; color: var(--text-subtle); border-bottom: 2px solid transparent; }
+.tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+.tab-body { flex: 1; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 8px; }
+
+.hist-item { padding: 8px; }
+.hist-head { display: flex; align-items: center; gap: 6px; }
+.hist-expander { font-size: 11px; color: var(--text-subtle); }
+.hist-src { font-size: 13px; }
+.hist-src.mic { color: var(--error); }
+.hist-src.loop { color: var(--accent); }
+.hist-ts { font-size: 12px; font-weight: 700; }
+.hist-preview-trans { font-size: 12px; color: var(--primary); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hist-preview-orig { font-size: 12px; color: var(--text-subtle); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 洞察 Tab */
+.insight-status { font-size: 12px; padding: 4px 8px; }
+.insight-status.ok { color: var(--success); }
+.insight-status.bad { color: var(--error); }
+.preset-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { padding: 4px 10px; border-radius: var(--radius-pill); border: 1px solid var(--card-border); background: var(--card-bg); font-size: 12px; cursor: pointer; }
+.chip:hover { background: var(--surface-hover); }
+.input-row { display: flex; gap: 6px; }
+.txt-input {
+  flex: 1; height: 32px; padding: 0 8px; border-radius: 6px; font-size: 12px;
+  border: 1px solid var(--card-border); background: var(--card-bg); color: var(--text-primary); font-family: var(--font);
+}
+.insight-result { flex: 1; min-height: 120px; padding: 12px; font-size: 13px; line-height: 1.6; color: var(--text-muted); }
+.insight-result h4 { color: var(--text-primary); margin-bottom: 6px; font-size: 13px; }
+.insight-result ul { margin-left: 18px; }
+.insight-result .ts { color: var(--accent); font-family: var(--mono); font-size: 11px; }
+
+.lt-footer {
+  border-top: 1px solid var(--card-border); padding: 8px 14px;
+  display: flex; align-items: center; gap: 8px; background: var(--nav-bg);
+}
+.lt-footer .spacer { flex: 1; }
+.lt-footer .status { font-size: 11px; color: var(--text-subtle); }
+
+/* 音频电平 */
+.level-meter { width: 84px; height: 22px; border: 1px solid var(--border-strong); border-radius: 6px; display: flex; align-items: flex-end; gap: 1px; padding: 2px; overflow: hidden; }
+.level-meter .bar { width: 2px; background: var(--success); opacity: .85; border-radius: 1px; }
+
+/* ============================================================
+   听析中心视图
+   ============================================================ */
+.al-body { flex: 1; display: flex; min-height: 0; }
+.al-filepanel {
+  width: 220px; flex: 0 0 220px; background: var(--card-bg);
+  border-right: 1px solid var(--card-border); display: flex; flex-direction: column;
+}
+.al-fp-head { display: flex; align-items: center; gap: 10px; padding: 14px 16px 8px; }
+.al-fp-head i { opacity: .6; }
+.al-fp-head .title { font-size: 13px; font-weight: 700; }
+.al-fp-head .spacer { flex: 1; }
+.al-fp-load { margin: 4px 12px 8px; }
+.al-filelist { flex: 1; overflow-y: auto; padding: 0 8px; }
+.al-file { display: flex; align-items: center; gap: 8px; padding: 9px 10px; border-radius: 8px; cursor: pointer; font-size: 12px; }
+.al-file i { opacity: .5; }
+.al-file:hover { background: var(--surface-hover); }
+.al-file.active { background: var(--primary); color: #fff; }
+.al-file.active i { opacity: .9; }
+
+.al-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.al-breadcrumb { padding: 16px 16px 4px; font-size: 13px; opacity: .7; }
+.al-player { margin: 0 16px; padding: 12px 14px; border-radius: 8px; display: flex; align-items: center; gap: 12px; }
+.al-player .pbtn { width: 34px; height: 34px; border-radius: 50%; border: none; background: transparent; color: var(--text-primary); cursor: pointer; font-size: 15px; }
+.al-player .pbtn:hover { background: var(--surface-hover); }
+.al-player .pbtn.play { background: var(--primary); color: #fff; }
+.al-progress { flex: 1; height: 4px; border-radius: 2px; background: var(--border-subtle); position: relative; }
+.al-progress .fill { position: absolute; left: 0; top: 0; bottom: 0; width: 38%; background: var(--primary); border-radius: 2px; }
+.al-progress .knob { position: absolute; left: 38%; top: 50%; width: 12px; height: 12px; border-radius: 50%; background: var(--primary); transform: translate(-50%,-50%); }
+.al-time { font-size: 12px; opacity: .8; min-width: 92px; text-align: center; }
+
+.al-tabs { display: flex; align-items: center; gap: 4px; padding: 12px 16px 8px; flex-wrap: wrap; }
+.al-tab { padding: 8px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; display: flex; gap: 6px; align-items: center; }
+.al-tab:hover { background: var(--surface-hover); }
+.al-tab.active { background: var(--shell-nav-selected); color: var(--accent); font-weight: 600; }
+.al-tab .emoji { font-size: 14px; }
+.al-tabs .spacer { flex: 1; }
+
+.al-content { flex: 1; overflow-y: auto; padding: 4px 16px 16px; display: flex; }
+.al-transcript { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+.seg-item { padding: 10px 12px; border-radius: 6px; cursor: pointer; }
+.seg-item:hover { background: var(--surface-hover); }
+.seg-item.current { background: var(--shell-nav-selected); }
+.seg-meta { display: flex; gap: 8px; margin-bottom: 4px; }
+.seg-meta .time { font-size: 10px; color: var(--text-subtle); }
+.seg-meta .spk { font-size: 10px; color: var(--text-subtle); font-weight: 700; }
+.seg-text { font-size: 13px; line-height: 1.55; }
+
+/* 听析中心右侧控制面板 */
+.al-control { width: 260px; flex: 0 0 260px; border-left: 1px solid var(--card-border); overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 14px; }
+.cp-card { padding: 12px; }
+.cp-card .h { font-size: 14px; font-weight: 700; margin-bottom: 8px; }
+.stage { padding: 7px 10px; border-radius: 6px; font-size: 12px; margin-bottom: 6px; border: 1px solid transparent; }
+.stage.done { background: rgba(80,184,108,.13); border-color: rgba(80,184,108,.5); color: var(--success); }
+.stage.pending { background: rgba(232,145,58,.13); border-color: rgba(232,145,58,.5); color: var(--warning); }
+.section-label { font-size: 12px; color: var(--text-subtle); margin-bottom: 4px; }
+
+/* ============================================================
+   任务监控视图
+   ============================================================ */
+.tm-body { flex: 1; display: flex; min-height: 0; }
+.tm-nav { width: 216px; flex: 0 0 216px; background: var(--nav-bg); border-right: 1px solid var(--card-border); padding: 16px 12px; overflow-y: auto; }
+.tm-nav .head { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.tm-nav .head .title { font-size: 16px; font-weight: 700; flex: 1; }
+.tm-bucket { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 10px; cursor: pointer; font-size: 13px; margin-bottom: 4px; }
+.tm-bucket:hover { background: var(--surface-hover); }
+.tm-bucket.active { background: var(--primary); color: #fff; }
+.tm-bucket i { width: 18px; text-align: center; }
+.tm-bucket .name { flex: 1; }
+.tm-badge { font-size: 10px; padding: 2px 8px; border-radius: 10px; background: var(--surface-hover); color: var(--text-subtle); }
+.tm-bucket.active .tm-badge { background: rgba(255,255,255,.22); color: #fff; font-weight: 600; }
+.tm-badge.danger { background: #DC3545; color: #fff; font-weight: 600; }
+.tm-section { margin-top: 18px; }
+.tm-section .st { font-size: 12px; font-weight: 700; color: var(--text-subtle); margin-bottom: 8px; }
+.tm-num-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.tm-num-row .k { font-size: 12px; color: var(--text-subtle); width: 42px; text-align: right; }
+.tm-num { flex: 1; height: 30px; border: 1px solid var(--card-border); border-radius: 6px; background: var(--card-bg); display: flex; align-items: center; padding: 0 8px; font-size: 12px; justify-content: space-between; }
+.tm-num .steppers { color: var(--text-subtle); font-size: 9px; display: flex; flex-direction: column; }
+.tm-stat { font-size: 11px; color: var(--text-subtle); line-height: 1.7; }
+
+.tm-main { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 12px 16px; }
+.tm-thead, .tm-trow { display: grid; grid-template-columns: 110px 1fr 90px 150px 120px 70px; gap: 8px; align-items: center; }
+.tm-thead { padding: 0 8px 8px; }
+.tm-thead .col { font-size: 11px; font-weight: 700; color: var(--text-subtle); cursor: pointer; }
+.tm-thead .col.right { text-align: right; }
+.tm-list { flex: 1; overflow-y: auto; }
+.tm-trow { padding: 7px 8px; border-radius: 6px; font-size: 12px; min-height: 32px; cursor: pointer; }
+.tm-trow:hover { background: var(--surface-hover); }
+.tm-trow.selected { background: var(--shell-nav-selected); }
+.tm-id { font-family: var(--mono); color: var(--text-subtle); font-size: 11px; }
+.tm-audio { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tm-stage { display: flex; align-items: center; gap: 6px; }
+.tm-stage .pipe { width: 4px; height: 14px; border-radius: 2px; }
+.tm-status { font-weight: 600; }
+.tm-time, .tm-elapsed { color: var(--text-subtle); font-size: 11px; }
+.tm-elapsed { text-align: right; }
+.status-success { color: var(--success); }
+.status-running { color: var(--accent); }
+.status-error { color: var(--error); }
+.status-pending { color: var(--warning); }
+
+.tm-detail { padding: 16px; margin-top: 8px; }
+.tm-detail .row { display: flex; gap: 16px; margin-bottom: 6px; font-size: 12px; }
+.tm-detail .k { font-weight: 700; color: var(--text-subtle); min-width: 76px; }
+.tm-detail .mono { font-family: var(--mono); font-size: 11px; }
+.tm-detail .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 10px; }
+
+/* 占位视图 */
+.stub { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; color: var(--text-subtle); }
+.stub i { font-size: 56px; opacity: .4; }
+.stub .t { font-size: 16px; }
+
+/* ============================================================
+   浮动控制条 (主题/语言切换) —— 仅设计稿用
+   ============================================================ */
+.demo-bar {
+  position: fixed; top: 20px; right: 24px; z-index: 100;
+  display: flex; gap: 8px; background: rgba(20,24,30,.85); backdrop-filter: blur(8px);
+  padding: 8px 10px; border-radius: 10px; border: 1px solid rgba(255,255,255,.1);
+}
+.demo-bar button {
+  font-size: 12px; color: #e5e7eb; background: rgba(255,255,255,.08);
+  border: 1px solid rgba(255,255,255,.12); border-radius: 6px; padding: 6px 10px; cursor: pointer;
+  display: flex; align-items: center; gap: 6px;
+}
+.demo-bar button:hover { background: rgba(255,255,255,.16); }
+.demo-bar .seg { display: flex; gap: 2px; }
+.demo-bar .seg button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+</style>
+</head>
+<body>
+
+<!-- 设计稿控制条 -->
+<div class="demo-bar">
+  <div class="seg" id="themeSeg">
+    <button data-theme-val="light" class="on"><i class="fa-solid fa-sun"></i> Light</button>
+    <button data-theme-val="dark"><i class="fa-solid fa-moon"></i> Dark</button>
+  </div>
+  <div class="seg" id="langSeg">
+    <button data-lang-val="zh" class="on">中文</button>
+    <button data-lang-val="en">EN</button>
+  </div>
+</div>
+
+<div class="app-window">
+  <!-- 标题栏 -->
+  <div class="titlebar">
+    <div class="dots"><i class="dot-close"></i><i class="dot-min"></i><i class="dot-max"></i></div>
+    <div class="title" data-i18n="app.title">译见 <span class="pro">Pro</span></div>
+    <div class="spacer"></div>
+    <div class="win-ctrl"><i class="fa-solid fa-minus"></i><i class="fa-regular fa-square"></i><i class="fa-solid fa-xmark"></i></div>
+  </div>
+
+  <div class="app-body">
+    <!-- ===== 导航栏 ===== -->
+    <nav class="nav-rail expanded" id="navRail">
+      <div class="nav-top">
+        <button class="nav-btn nav-toggle" id="navToggle" title="展开/收起导航"><i class="fa-solid fa-bars"></i></button>
+      </div>
+      <div class="nav-mid">
+        <button class="nav-btn selected" data-view="live"><i class="fa-solid fa-microphone-lines"></i><span class="label" data-i18n="nav.live">实时翻译</span></button>
+        <button class="nav-btn" data-view="studio"><i class="fa-regular fa-images"></i><span class="label" data-i18n="nav.studio">创作工坊</span></button>
+        <button class="nav-btn" data-view="media"><i class="fa-solid fa-photo-film"></i><span class="label" data-i18n="nav.media">媒体中心</span></button>
+        <button class="nav-btn" data-view="audiolab"><i class="fa-solid fa-headphones"></i><span class="label" data-i18n="nav.audiolab">听析中心</span></button>
+        <button class="nav-btn" data-view="tasks"><i class="fa-solid fa-list-check"></i><span class="label" data-i18n="nav.tasks">任务监控</span></button>
+      </div>
+      <div class="nav-bottom">
+        <button class="nav-btn" id="themeNavBtn"><i class="fa-solid fa-circle-half-stroke"></i><span class="label" data-i18n="nav.theme">主题</span></button>
+        <button class="nav-btn"><i class="fa-solid fa-gear"></i><span class="label" data-i18n="nav.settings">设置</span></button>
+      </div>
+    </nav>
+
+    <!-- ===== 页面主机 ===== -->
+    <div class="page-host">
+
+      <!-- ===================== 实时翻译 ===================== -->
+      <section class="view active" id="view-live">
+        <!-- 工具栏 -->
+        <div class="lt-toolbar toolbar-surface">
+          <span class="lbl" data-i18n="lt.speechRes">语音资源:</span>
+          <span class="combo" style="width:160px"><span data-i18n="lt.resName">东南亚 (国际版)</span><i class="fa-solid fa-chevron-down caret"></i></span>
+          <span class="lamp green" title="已连接"></span>
+          <span class="vdiv"></span>
+
+          <span class="lbl" data-i18n="lt.srcLang">源语言:</span>
+          <span class="combo" style="width:108px"><span data-i18n="lang.auto">自动识别</span><i class="fa-solid fa-chevron-down caret"></i></span>
+          <span class="arrow">→</span>
+          <span class="lbl" data-i18n="lt.tgtLang">目标语言:</span>
+          <span class="combo" style="width:108px"><span data-i18n="lang.zh">中文</span><i class="fa-solid fa-chevron-down caret"></i></span>
+          <span class="vdiv"></span>
+
+          <button class="btn danger" id="ltToggle"><i class="fa-solid fa-stop"></i> <span data-i18n="lt.stop">停止翻译</span></button>
+          <span class="rec-dot"></span>
+          <span class="vdiv"></span>
+
+          <button class="btn"><i class="fa-solid fa-headphones"></i> <span data-i18n="lt.audioDevice">音频设备</span></button>
+
+          <div class="subcard" style="padding:6px 8px; font-size:11px; opacity:.85;" data-i18n="lt.pipeline">麦克风 + 环回 (识别中)</div>
+          <div class="level-meter">
+            <div class="bar" style="height:5px"></div><div class="bar" style="height:9px"></div>
+            <div class="bar" style="height:14px"></div><div class="bar" style="height:7px"></div>
+            <div class="bar" style="height:12px"></div><div class="bar" style="height:16px"></div>
+            <div class="bar" style="height:10px"></div><div class="bar" style="height:6px"></div>
+            <div class="bar" style="height:13px"></div><div class="bar" style="height:8px"></div>
+          </div>
+        </div>
+
+        <!-- 主体 -->
+        <div class="lt-body">
+          <!-- 左：实时翻译卡片 -->
+          <div class="card lt-left">
+            <div class="lt-card-head">
+              <span class="title" data-i18n="lt.liveTitle">实时翻译</span>
+              <span class="spacer"></span>
+              <div class="segment-group">
+                <span class="seg-btn" data-i18n="lt.viewOrig">原文</span>
+                <span class="seg-btn" data-i18n="lt.viewTrans">译文</span>
+                <span class="seg-btn active" data-i18n="lt.viewBi">双语</span>
+              </div>
+            </div>
+            <div class="editor-area">
+              <div class="bi-list">
+                <div class="subcard bi-row">
+                  <div class="bi-meta"><span class="bi-src-tag loop" data-i18n="src.system">系统音</span><span class="bi-time">14:32:08</span></div>
+                  <div class="bi-orig">So the quarterly numbers came in higher than we expected, mainly driven by the APAC region.</div>
+                  <div class="bi-trans">所以本季度的数据比我们预期的要高，主要是受亚太地区的推动。</div>
+                </div>
+                <div class="subcard bi-row">
+                  <div class="bi-meta"><span class="bi-src-tag mic" data-i18n="src.mic">麦克风</span><span class="bi-time">14:32:15</span></div>
+                  <div class="bi-orig">对，我这边补充一下，亚太区主要是新签了三个企业客户。</div>
+                  <div class="bi-trans">Right, let me add to that — the APAC growth came mainly from three new enterprise clients we signed.</div>
+                </div>
+                <div class="subcard bi-row bi-live">
+                  <div class="bi-meta"><span class="bi-src-tag loop" data-i18n="src.system">系统音</span><span class="bi-time">14:32:23</span><span class="rec-dot" style="width:8px;height:8px"></span></div>
+                  <div class="bi-orig">And looking ahead to next quarter, we should focus on retention rather than—</div>
+                  <div class="bi-trans">展望下个季度，我们应该把重点放在客户留存上，而不是——</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="lt-splitter"></div>
+
+          <!-- 右：历史/洞察 -->
+          <div class="card lt-right">
+            <div class="tab-head">
+              <div class="tab-btn" data-lttab="hist" data-i18n="lt.tabHistory">历史记录</div>
+              <div class="tab-btn active" data-lttab="insight" data-i18n="lt.tabInsight">洞察</div>
+            </div>
+
+            <!-- 历史 -->
+            <div class="tab-body" id="lttab-hist" style="display:none">
+              <div class="subcard hist-item">
+                <div class="hist-head">
+                  <span class="hist-expander"><i class="fa-solid fa-plus"></i></span>
+                  <span class="hist-src loop" data-i18n="src.system">系统音</span>
+                  <span class="hist-ts">14:31:42</span>
+                </div>
+                <div class="hist-preview-trans">欢迎大家参加本次季度业务回顾会议。</div>
+                <div class="hist-preview-orig">Welcome everyone to our quarterly business review meeting.</div>
+              </div>
+              <div class="subcard hist-item">
+                <div class="hist-head">
+                  <span class="hist-expander"><i class="fa-solid fa-plus"></i></span>
+                  <span class="hist-src mic" data-i18n="src.mic">麦克风</span>
+                  <span class="hist-ts">14:31:58</span>
+                </div>
+                <div class="hist-preview-trans">Thanks, glad to be here. Let me share my screen.</div>
+                <div class="hist-preview-orig">谢谢，很高兴参加。我来共享一下屏幕。</div>
+              </div>
+            </div>
+
+            <!-- 洞察 -->
+            <div class="tab-body" id="lttab-insight">
+              <div class="insight-status ok"><i class="fa-solid fa-circle-check"></i> <span data-i18n="lt.aiReady">AI 服务已就绪</span></div>
+              <div class="preset-row">
+                <span class="chip" data-i18n="preset.summary">会议摘要</span>
+                <span class="chip" data-i18n="preset.knowledge">知识点提取</span>
+                <span class="chip" data-i18n="preset.complaint">客户投诉识别</span>
+                <span class="chip" data-i18n="preset.actions">行动项提取</span>
+                <span class="chip" data-i18n="preset.emotion">情绪分析</span>
+              </div>
+              <div class="input-row">
+                <input class="txt-input" data-i18n-ph="lt.askPh" placeholder="输入自定义分析问题..." />
+                <button class="btn primary sm" data-i18n="lt.send">发送</button>
+              </div>
+              <div class="subcard insight-result">
+                <h4 data-i18n="insight.h">会议摘要</h4>
+                <ul>
+                  <li data-i18n="insight.p1">本季度业绩超预期，主要由亚太区驱动 <span class="ts">[14:32:08]</span></li>
+                  <li data-i18n="insight.p2">亚太区增长来自新签三家企业客户 <span class="ts">[14:32:15]</span></li>
+                  <li data-i18n="insight.p3">下季度战略重点：客户留存优先于拉新 <span class="ts">[14:32:23]</span></li>
+                </ul>
+              </div>
+              <div class="subcard" style="padding:8px 10px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                <span class="lbl-sm" data-i18n="lt.autoInsight">自动洞察:</span>
+                <span class="combo sm" style="height:28px;font-size:12px;width:110px"><span data-i18n="lt.autoTimer">定时循环</span><i class="fa-solid fa-chevron-down caret"></i></span>
+                <span class="lbl-sm" data-i18n="lt.interval">间隔(秒):</span>
+                <span class="tm-num" style="width:56px;height:28px">30</span>
+                <button class="btn sm" data-i18n="lt.enable">开启</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 底栏 -->
+        <div class="lt-footer">
+          <button class="btn sm"><i class="fa-solid fa-trash-can"></i> <span data-i18n="lt.clearHist">清空历史</span></button>
+          <button class="btn sm"><i class="fa-solid fa-folder-open"></i> <span data-i18n="lt.viewHist">查看历史</span></button>
+          <span class="vdiv"></span>
+          <button class="btn sm primary"><i class="fa-solid fa-closed-captioning"></i> <span data-i18n="lt.subtitle">字幕</span></button>
+          <button class="btn sm"><i class="fa-solid fa-brain"></i> <span data-i18n="lt.floatInsight">浮动洞察</span></button>
+          <span class="spacer"></span>
+          <span class="status" data-i18n="lt.statusMsg">识别中 · 已处理 12 段 · 东南亚 (southeastasia)</span>
+        </div>
+      </section>
+
+      <!-- ===================== 听析中心 ===================== -->
+      <section class="view" id="view-audiolab">
+        <div class="al-body">
+          <!-- 文件面板 -->
+          <aside class="al-filepanel">
+            <div class="al-fp-head">
+              <i class="fa-solid fa-list-ul"></i>
+              <span class="title" data-i18n="al.audioList">音频列表</span>
+              <span class="spacer"></span>
+              <i class="fa-solid fa-arrows-rotate" style="font-size:11px;opacity:.6;cursor:pointer"></i>
+            </div>
+            <button class="btn al-fp-load"><i class="fa-solid fa-folder-open"></i> <span data-i18n="al.loadFile">从文件加载</span></button>
+            <div class="al-filelist">
+              <div class="al-file active"><i class="fa-solid fa-file-audio"></i><span>Q2-业务回顾会议.mp3</span></div>
+              <div class="al-file"><i class="fa-solid fa-file-audio"></i><span>产品评审-0608.wav</span></div>
+              <div class="al-file"><i class="fa-solid fa-file-audio"></i><span>客户访谈-赵总.m4a</span></div>
+              <div class="al-file"><i class="fa-solid fa-file-audio"></i><span>周会纪要-0605.mp3</span></div>
+            </div>
+          </aside>
+
+          <!-- 主内容 -->
+          <div class="al-main">
+            <div class="al-breadcrumb" data-i18n="al.breadcrumb">媒体库 › 会议 › 2026-06-10</div>
+            <div class="subcard al-player">
+              <i class="fa-solid fa-music" style="opacity:.6"></i>
+              <button class="pbtn"><i class="fa-solid fa-backward-step"></i></button>
+              <button class="pbtn play"><i class="fa-solid fa-pause"></i></button>
+              <button class="pbtn"><i class="fa-solid fa-forward-step"></i></button>
+              <div class="al-progress"><div class="fill"></div><div class="knob"></div></div>
+              <div class="al-time">04:08 / 10:45</div>
+              <span class="combo sm" style="height:28px;font-size:12px"><span>1.0X</span><i class="fa-solid fa-chevron-down caret"></i></span>
+            </div>
+
+            <div class="al-tabs">
+              <div class="al-tab"><span class="emoji">📋</span><span data-i18n="al.tabSummary">总结</span></div>
+              <div class="al-tab active"><span class="emoji">📝</span><span data-i18n="al.tabTranscript">转录</span></div>
+              <div class="al-tab"><span class="emoji">🧠</span><span data-i18n="al.tabMindmap">导图</span></div>
+              <div class="al-tab"><span class="emoji">💡</span><span data-i18n="al.tabInsight">顿悟</span></div>
+              <div class="al-tab"><span class="emoji">🔬</span><span data-i18n="al.tabResearch">研究</span></div>
+              <div class="al-tab"><span class="emoji">🎙</span><span data-i18n="al.tabPodcast">播客</span></div>
+              <div class="al-tab"><span class="emoji">🌐</span><span data-i18n="al.tabTranslate">翻译</span></div>
+              <span class="spacer"></span>
+              <button class="btn ghost sm"><i class="fa-solid fa-folder-open"></i> <span data-i18n="al.openFile">打开文件</span></button>
+            </div>
+
+            <div class="al-content">
+              <div class="al-transcript">
+                <div class="seg-item current">
+                  <div class="seg-meta"><span class="time">00:12 - 00:34</span><span class="spk" data-i18n="al.speaker1">发言人 1</span><span>🔊</span></div>
+                  <div class="seg-text">欢迎大家参加本次季度业务回顾会议，今天主要看三个方面：营收、增长来源和下季度规划。</div>
+                </div>
+                <div class="seg-item">
+                  <div class="seg-meta"><span class="time">00:35 - 01:02</span><span class="spk" data-i18n="al.speaker2">发言人 2</span></div>
+                  <div class="seg-text">本季度总营收比上季度增长了 18%，超出了我们年初定的目标，亚太区贡献了大部分增量。</div>
+                </div>
+                <div class="seg-item">
+                  <div class="seg-meta"><span class="time">01:03 - 01:40</span><span class="spk" data-i18n="al.speaker1">发言人 1</span></div>
+                  <div class="seg-text">亚太区的增长具体来自哪里？是老客户续约还是新客户？</div>
+                </div>
+                <div class="seg-item">
+                  <div class="seg-meta"><span class="time">01:41 - 02:25</span><span class="spk" data-i18n="al.speaker2">发言人 2</span></div>
+                  <div class="seg-text">主要是新签的三家企业客户，单笔金额都比较大。续约率维持在 92% 左右，比较健康。</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 控制面板 -->
+          <aside class="al-control">
+            <div class="subcard cp-card">
+              <div class="h" data-i18n="al.lifecycle">生命周期</div>
+              <div class="stage done">① <span data-i18n="al.stage1">转录</span></div>
+              <div class="stage done">② <span data-i18n="al.stage2">AI 总结</span></div>
+              <div class="stage done">③ <span data-i18n="al.stage3">思维导图</span></div>
+              <div class="stage pending">④ <span data-i18n="al.stage4">顿悟分析</span></div>
+              <div class="stage pending">⑤ <span data-i18n="al.stage5">深度研究</span></div>
+              <div class="stage pending">⑥ <span data-i18n="al.stage6">播客台本</span></div>
+              <div class="stage pending">⑦ <span data-i18n="al.stage7">翻译</span></div>
+              <button class="btn" style="width:100%;margin-top:8px" data-i18n="al.autofill">自动补齐缺失</button>
+            </div>
+            <div class="subcard cp-card">
+              <div class="h" data-i18n="al.podcastVoice">播客语音</div>
+              <div class="section-label" data-i18n="al.language">语言</div>
+              <span class="combo" style="width:100%;margin-bottom:8px"><span data-i18n="al.allLang">全部语言</span><i class="fa-solid fa-chevron-down caret"></i></span>
+              <div class="section-label" data-i18n="al.speaker1">发言人 1</div>
+              <span class="combo" style="width:100%;margin-bottom:8px"><span>Xiaoxiao (zh-CN)</span><i class="fa-solid fa-chevron-down caret"></i></span>
+              <button class="btn primary" style="width:100%" data-i18n="al.synth">合成播客音频</button>
+            </div>
+            <div class="subcard cp-card">
+              <div class="tm-stat" data-i18n="al.statusReady">就绪 · 转录 / 总结 / 导图 已完成</div>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <!-- ===================== 任务监控 ===================== -->
+      <section class="view" id="view-tasks">
+        <div class="tm-body">
+          <!-- 左侧分类 -->
+          <aside class="tm-nav">
+            <div class="head">
+              <span class="title" data-i18n="tm.title">任务分类</span>
+              <i class="fa-solid fa-arrows-rotate" style="opacity:.6;cursor:pointer"></i>
+              <i class="fa-regular fa-trash-can" style="opacity:.6;cursor:pointer"></i>
+            </div>
+            <div class="tm-bucket"><i class="fa-solid fa-inbox"></i><span class="name" data-i18n="tm.pending">待处理</span><span class="tm-badge">3</span></div>
+            <div class="tm-bucket active"><i class="fa-solid fa-spinner"></i><span class="name" data-i18n="tm.running">进行中</span><span class="tm-badge">2</span></div>
+            <div class="tm-bucket"><i class="fa-solid fa-circle-check"></i><span class="name" data-i18n="tm.done">已完成</span><span class="tm-badge">28</span></div>
+            <div class="tm-bucket"><i class="fa-solid fa-triangle-exclamation"></i><span class="name" data-i18n="tm.failed">失败</span><span class="tm-badge danger">1</span></div>
+
+            <div class="tm-section">
+              <div class="st" data-i18n="tm.concurrency">并发设置</div>
+              <div class="tm-num-row"><span class="k" data-i18n="tm.transcribe">转录</span><span class="tm-num">3 <span class="steppers"><i class="fa-solid fa-caret-up"></i><i class="fa-solid fa-caret-down"></i></span></span></div>
+              <div class="tm-num-row"><span class="k">AI</span><span class="tm-num">2 <span class="steppers"><i class="fa-solid fa-caret-up"></i><i class="fa-solid fa-caret-down"></i></span></span></div>
+            </div>
+            <div class="tm-section">
+              <div class="st" data-i18n="tm.timeout">超时设置</div>
+              <div class="tm-num-row"><span class="k" data-i18n="tm.transcribe">转录</span><span class="tm-num">15 <span data-i18n="tm.min" style="font-size:11px;opacity:.6">分钟</span></span></div>
+            </div>
+            <div class="tm-section">
+              <div class="st" data-i18n="tm.tokenUsage">Token 用量</div>
+              <div class="tm-stat" data-i18n="tm.execStat">执行 64 次 · 计费 31 次</div>
+              <div class="tm-stat" data-i18n="tm.tokenStat">总耗: 248,512 tokens</div>
+            </div>
+          </aside>
+
+          <!-- 右侧主体 -->
+          <div class="tm-main">
+            <div class="tm-thead">
+              <span class="col" data-i18n="tm.colId">任务ID</span>
+              <span class="col" data-i18n="tm.colAudio">音频</span>
+              <span class="col" data-i18n="tm.colStage">阶段</span>
+              <span class="col" data-i18n="tm.colStatus">状态</span>
+              <span class="col" data-i18n="tm.colTime">发起时间</span>
+              <span class="col right" data-i18n="tm.colElapsed">耗时</span>
+            </div>
+            <div class="tm-list">
+              <div class="tm-trow selected">
+                <span class="tm-id">01HX9F2A</span>
+                <span class="tm-audio">Q2-业务回顾会议.mp3</span>
+                <span class="tm-stage"><span class="pipe" style="background:var(--accent)"></span><span data-i18n="tm.stageTranscribe">转录</span></span>
+                <span class="tm-status status-running" data-i18n="tm.stRunning">进行中</span>
+                <span class="tm-time">14:30:12</span>
+                <span class="tm-elapsed">01:23</span>
+              </div>
+              <div class="tm-trow">
+                <span class="tm-id">01HX9E7B</span>
+                <span class="tm-audio">产品评审-0608.wav</span>
+                <span class="tm-stage"><span class="pipe" style="background:var(--primary)"></span><span data-i18n="tm.stageAi">AI总结</span></span>
+                <span class="tm-status status-running" data-i18n="tm.stRunning">进行中</span>
+                <span class="tm-time">14:28:55</span>
+                <span class="tm-elapsed">02:41</span>
+              </div>
+              <div class="tm-trow">
+                <span class="tm-id">01HX9C1D</span>
+                <span class="tm-audio">客户访谈-赵总.m4a</span>
+                <span class="tm-stage"><span class="pipe" style="background:var(--success)"></span><span data-i18n="tm.stageDone">完成</span></span>
+                <span class="tm-status status-success" data-i18n="tm.stSuccess">成功</span>
+                <span class="tm-time">14:12:03</span>
+                <span class="tm-elapsed">03:18</span>
+              </div>
+              <div class="tm-trow">
+                <span class="tm-id">01HX9A8E</span>
+                <span class="tm-audio">周会纪要-0605.mp3</span>
+                <span class="tm-stage"><span class="pipe" style="background:var(--error)"></span><span data-i18n="tm.stageAi">AI总结</span></span>
+                <span class="tm-status status-error" data-i18n="tm.stError">失败</span>
+                <span class="tm-time">13:58:41</span>
+                <span class="tm-elapsed">00:47</span>
+              </div>
+            </div>
+
+            <!-- 详情 -->
+            <div class="card tm-detail">
+              <div class="row"><span class="k" data-i18n="tm.dId">任务ID：</span><span class="mono">01HX9F2A-3C5D-7E9F</span></div>
+              <div class="row"><span class="k" data-i18n="tm.dAudio">音频：</span><span>Q2-业务回顾会议.mp3</span></div>
+              <div class="row"><span class="k" data-i18n="tm.dStage">阶段 / 状态：</span><span><span data-i18n="tm.stageTranscribe">转录</span> · <b class="status-running" data-i18n="tm.stRunning">进行中</b> · <span class="tm-time" data-i18n="tm.retry">重试: 0</span></span></div>
+              <div class="row"><span class="k" data-i18n="tm.dTime">时间：</span><span class="tm-time"><span data-i18n="tm.submit">提交</span>: 06-10 14:30:12 &nbsp; <span data-i18n="tm.start">开始</span>: 06-10 14:30:14 &nbsp; <span data-i18n="tm.elapsed">耗时</span>: 00:01:23</span></div>
+              <div class="actions">
+                <button class="btn sm" data-i18n="tm.retryBtn">重试</button>
+                <button class="btn sm" data-i18n="tm.cancelBtn">取消</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 占位视图 -->
+      <section class="view" id="view-studio">
+        <div class="stub"><i class="fa-regular fa-images"></i><div class="t" data-i18n="stub.studio">创作工坊（图像/视频生成）— 后续实现</div></div>
+      </section>
+      <section class="view" id="view-media">
+        <div class="stub"><i class="fa-solid fa-photo-film"></i><div class="t" data-i18n="stub.media">媒体中心 — 后续实现</div></div>
+      </section>
+
+    </div>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   i18n 字典 (中 / 英) —— Rust 端将用 rust-i18n / fluent 等价实现
+   ============================================================ */
+const I18N = {
+  zh: {
+    "app.title": "译见 <span class='pro'>Pro</span>",
+    "nav.live": "实时翻译", "nav.studio": "创作工坊", "nav.media": "媒体中心",
+    "nav.audiolab": "听析中心", "nav.tasks": "任务监控", "nav.theme": "主题", "nav.settings": "设置",
+    "lt.speechRes": "语音资源:", "lt.resName": "东南亚 (国际版)", "lt.srcLang": "源语言:", "lt.tgtLang": "目标语言:",
+    "lang.auto": "自动识别", "lang.zh": "中文", "lt.stop": "停止翻译", "lt.start": "开始翻译",
+    "lt.audioDevice": "音频设备", "lt.pipeline": "麦克风 + 环回 (识别中)",
+    "lt.liveTitle": "实时翻译", "lt.viewOrig": "原文", "lt.viewTrans": "译文", "lt.viewBi": "双语",
+    "src.system": "系统音", "src.mic": "麦克风",
+    "lt.tabHistory": "历史记录", "lt.tabInsight": "洞察", "lt.aiReady": "AI 服务已就绪",
+    "preset.summary": "会议摘要", "preset.knowledge": "知识点提取", "preset.complaint": "客户投诉识别",
+    "preset.actions": "行动项提取", "preset.emotion": "情绪分析",
+    "lt.askPh": "输入自定义分析问题...", "lt.send": "发送",
+    "insight.h": "会议摘要",
+    "insight.p1": "本季度业绩超预期，主要由亚太区驱动",
+    "insight.p2": "亚太区增长来自新签三家企业客户",
+    "insight.p3": "下季度战略重点：客户留存优先于拉新",
+    "lt.autoInsight": "自动洞察:", "lt.autoTimer": "定时循环", "lt.interval": "间隔(秒):", "lt.enable": "开启",
+    "lt.clearHist": "清空历史", "lt.viewHist": "查看历史", "lt.subtitle": "字幕", "lt.floatInsight": "浮动洞察",
+    "lt.statusMsg": "识别中 · 已处理 12 段 · 东南亚 (southeastasia)",
+    "al.audioList": "音频列表", "al.loadFile": "从文件加载", "al.breadcrumb": "媒体库 › 会议 › 2026-06-10",
+    "al.tabSummary": "总结", "al.tabTranscript": "转录", "al.tabMindmap": "导图", "al.tabInsight": "顿悟",
+    "al.tabResearch": "研究", "al.tabPodcast": "播客", "al.tabTranslate": "翻译", "al.openFile": "打开文件",
+    "al.speaker1": "发言人 1", "al.speaker2": "发言人 2",
+    "al.lifecycle": "生命周期", "al.stage1": "转录", "al.stage2": "AI 总结", "al.stage3": "思维导图",
+    "al.stage4": "顿悟分析", "al.stage5": "深度研究", "al.stage6": "播客台本", "al.stage7": "翻译",
+    "al.autofill": "自动补齐缺失", "al.podcastVoice": "播客语音", "al.language": "语言",
+    "al.allLang": "全部语言", "al.synth": "合成播客音频", "al.statusReady": "就绪 · 转录 / 总结 / 导图 已完成",
+    "tm.title": "任务分类", "tm.pending": "待处理", "tm.running": "进行中", "tm.done": "已完成", "tm.failed": "失败",
+    "tm.concurrency": "并发设置", "tm.transcribe": "转录", "tm.timeout": "超时设置", "tm.min": "分钟",
+    "tm.tokenUsage": "Token 用量", "tm.execStat": "执行 64 次 · 计费 31 次", "tm.tokenStat": "总耗: 248,512 tokens",
+    "tm.colId": "任务ID", "tm.colAudio": "音频", "tm.colStage": "阶段", "tm.colStatus": "状态",
+    "tm.colTime": "发起时间", "tm.colElapsed": "耗时",
+    "tm.stageTranscribe": "转录", "tm.stageAi": "AI总结", "tm.stageDone": "完成",
+    "tm.stRunning": "进行中", "tm.stSuccess": "成功", "tm.stError": "失败",
+    "tm.dId": "任务ID：", "tm.dAudio": "音频：", "tm.dStage": "阶段 / 状态：", "tm.dTime": "时间：",
+    "tm.retry": "重试: 0", "tm.submit": "提交", "tm.start": "开始", "tm.elapsed": "耗时",
+    "tm.retryBtn": "重试", "tm.cancelBtn": "取消",
+    "stub.studio": "创作工坊（图像/视频生成）— 后续实现", "stub.media": "媒体中心 — 后续实现"
+  },
+  en: {
+    "app.title": "Yijian <span class='pro'>Pro</span>",
+    "nav.live": "Live", "nav.studio": "Studio", "nav.media": "Media",
+    "nav.audiolab": "Audio Lab", "nav.tasks": "Tasks", "nav.theme": "Theme", "nav.settings": "Settings",
+    "lt.speechRes": "Speech:", "lt.resName": "Southeast Asia (Global)", "lt.srcLang": "Source:", "lt.tgtLang": "Target:",
+    "lang.auto": "Auto Detect", "lang.zh": "Chinese", "lt.stop": "Stop", "lt.start": "Start",
+    "lt.audioDevice": "Audio Devices", "lt.pipeline": "Mic + Loopback (listening)",
+    "lt.liveTitle": "Live Translation", "lt.viewOrig": "Source", "lt.viewTrans": "Target", "lt.viewBi": "Bilingual",
+    "src.system": "System", "src.mic": "Mic",
+    "lt.tabHistory": "History", "lt.tabInsight": "Insights", "lt.aiReady": "AI service ready",
+    "preset.summary": "Meeting Summary", "preset.knowledge": "Key Points", "preset.complaint": "Complaints",
+    "preset.actions": "Action Items", "preset.emotion": "Sentiment",
+    "lt.askPh": "Ask a custom question...", "lt.send": "Send",
+    "insight.h": "Meeting Summary",
+    "insight.p1": "Quarterly results beat expectations, driven mainly by APAC",
+    "insight.p2": "APAC growth came from three newly signed enterprise clients",
+    "insight.p3": "Next quarter focus: retention over acquisition",
+    "lt.autoInsight": "Auto Insight:", "lt.autoTimer": "Interval Loop", "lt.interval": "Every (s):", "lt.enable": "On",
+    "lt.clearHist": "Clear", "lt.viewHist": "Open Folder", "lt.subtitle": "Captions", "lt.floatInsight": "Float Insight",
+    "lt.statusMsg": "Listening · 12 segments · Southeast Asia (southeastasia)",
+    "al.audioList": "Audio Files", "al.loadFile": "Load File", "al.breadcrumb": "Library › Meetings › 2026-06-10",
+    "al.tabSummary": "Summary", "al.tabTranscript": "Transcript", "al.tabMindmap": "Mind Map", "al.tabInsight": "Insight",
+    "al.tabResearch": "Research", "al.tabPodcast": "Podcast", "al.tabTranslate": "Translate", "al.openFile": "Open File",
+    "al.speaker1": "Speaker 1", "al.speaker2": "Speaker 2",
+    "al.lifecycle": "Lifecycle", "al.stage1": "Transcribe", "al.stage2": "AI Summary", "al.stage3": "Mind Map",
+    "al.stage4": "Insight", "al.stage5": "Research", "al.stage6": "Podcast Script", "al.stage7": "Translate",
+    "al.autofill": "Auto-fill Missing", "al.podcastVoice": "Podcast Voice", "al.language": "Language",
+    "al.allLang": "All Languages", "al.synth": "Synthesize Audio", "al.statusReady": "Ready · Transcript / Summary / Map done",
+    "tm.title": "Task Buckets", "tm.pending": "Pending", "tm.running": "Running", "tm.done": "Completed", "tm.failed": "Failed",
+    "tm.concurrency": "Concurrency", "tm.transcribe": "STT", "tm.timeout": "Timeout", "tm.min": "min",
+    "tm.tokenUsage": "Token Usage", "tm.execStat": "64 runs · 31 billed", "tm.tokenStat": "Total: 248,512 tokens",
+    "tm.colId": "Task ID", "tm.colAudio": "Audio", "tm.colStage": "Stage", "tm.colStatus": "Status",
+    "tm.colTime": "Submitted", "tm.colElapsed": "Elapsed",
+    "tm.stageTranscribe": "STT", "tm.stageAi": "AI Sum", "tm.stageDone": "Done",
+    "tm.stRunning": "Running", "tm.stSuccess": "Success", "tm.stError": "Failed",
+    "tm.dId": "Task ID:", "tm.dAudio": "Audio:", "tm.dStage": "Stage / Status:", "tm.dTime": "Time:",
+    "tm.retry": "Retries: 0", "tm.submit": "Submit", "tm.start": "Start", "tm.elapsed": "Elapsed",
+    "tm.retryBtn": "Retry", "tm.cancelBtn": "Cancel",
+    "stub.studio": "Studio (image/video generation) — coming soon", "stub.media": "Media Center — coming soon"
+  }
+};
+
+function applyLang(lang) {
+  document.documentElement.setAttribute("data-lang", lang);
+  document.documentElement.setAttribute("lang", lang === "zh" ? "zh-CN" : "en");
+  const dict = I18N[lang];
+  document.querySelectorAll("[data-i18n]").forEach(el => {
+    const key = el.getAttribute("data-i18n");
+    if (dict[key] !== undefined) el.innerHTML = dict[key];
+  });
+  document.querySelectorAll("[data-i18n-ph]").forEach(el => {
+    const key = el.getAttribute("data-i18n-ph");
+    if (dict[key] !== undefined) el.setAttribute("placeholder", dict[key]);
+  });
+}
+function applyTheme(theme) { document.documentElement.setAttribute("data-theme", theme); }
+
+/* 主题切换 */
+document.querySelectorAll("#themeSeg button").forEach(b => b.addEventListener("click", () => {
+  document.querySelectorAll("#themeSeg button").forEach(x => x.classList.remove("on"));
+  b.classList.add("on"); applyTheme(b.dataset.themeVal);
+}));
+document.getElementById("themeNavBtn").addEventListener("click", () => {
+  const cur = document.documentElement.getAttribute("data-theme");
+  const next = cur === "light" ? "dark" : "light";
+  applyTheme(next);
+  document.querySelectorAll("#themeSeg button").forEach(x => x.classList.toggle("on", x.dataset.themeVal === next));
+});
+/* 语言切换 */
+document.querySelectorAll("#langSeg button").forEach(b => b.addEventListener("click", () => {
+  document.querySelectorAll("#langSeg button").forEach(x => x.classList.remove("on"));
+  b.classList.add("on"); applyLang(b.dataset.langVal);
+}));
+/* 视图切换 */
+document.querySelectorAll(".nav-btn[data-view]").forEach(b => b.addEventListener("click", () => {
+  document.querySelectorAll(".nav-btn[data-view]").forEach(x => x.classList.remove("selected"));
+  b.classList.add("selected");
+  document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
+  document.getElementById("view-" + b.dataset.view).classList.add("active");
+}));
+/* 导航折叠 */
+document.getElementById("navToggle").addEventListener("click", () => {
+  document.getElementById("navRail").classList.toggle("expanded");
+});
+/* 实时翻译右侧 Tab */
+document.querySelectorAll(".tab-btn[data-lttab]").forEach(b => b.addEventListener("click", () => {
+  document.querySelectorAll(".tab-btn[data-lttab]").forEach(x => x.classList.remove("active"));
+  b.classList.add("active");
+  document.getElementById("lttab-hist").style.display = b.dataset.lttab === "hist" ? "flex" : "none";
+  document.getElementById("lttab-insight").style.display = b.dataset.lttab === "insight" ? "flex" : "none";
+}));
+/* 听析中心 Tab */
+document.querySelectorAll(".al-tab").forEach(b => b.addEventListener("click", () => {
+  document.querySelectorAll(".al-tab").forEach(x => x.classList.remove("active"));
+  b.classList.add("active");
+}));
+/* 视图切换段控件 */
+document.querySelectorAll(".segment-group .seg-btn").forEach(b => b.addEventListener("click", () => {
+  b.parentElement.querySelectorAll(".seg-btn").forEach(x => x.classList.remove("active"));
+  b.classList.add("active");
+}));
+
+applyLang("zh");
+applyTheme("light");
+</script>
+</body>
+</html>

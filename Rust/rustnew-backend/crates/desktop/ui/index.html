@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light" data-lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>译见 Pro</title>
+  <link rel="stylesheet" href="vendor/fontawesome/css/all.min.css" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<div class="app-window">
+  <div class="app-body">
+    <!-- ===== 导航栏 ===== -->
+    <nav class="nav-rail expanded" id="navRail">
+      <div class="nav-top">
+        <div class="nav-brand">
+          <span class="logo">译</span>
+          <span class="brand-text" data-i18n="app.title">译见 <span class="pro">Pro</span></span>
+        </div>
+        <button class="nav-btn nav-toggle" id="navToggle" title="展开/收起导航"><i class="fa-solid fa-bars"></i></button>
+      </div>
+      <div class="nav-mid">
+        <button class="nav-btn selected" data-view="live"><i class="fa-solid fa-microphone-lines"></i><span class="label" data-i18n="nav.live">实时翻译</span></button>
+        <button class="nav-btn" data-view="studio"><i class="fa-regular fa-images"></i><span class="label" data-i18n="nav.studio">创作工坊</span></button>
+        <button class="nav-btn" data-view="media"><i class="fa-solid fa-photo-film"></i><span class="label" data-i18n="nav.media">媒体中心</span></button>
+        <button class="nav-btn" data-view="audiolab"><i class="fa-solid fa-headphones"></i><span class="label" data-i18n="nav.audiolab">听析中心</span></button>
+        <button class="nav-btn" data-view="tasks"><i class="fa-solid fa-list-check"></i><span class="label" data-i18n="nav.tasks">任务监控</span></button>
+      </div>
+      <div class="nav-bottom">
+        <button class="nav-btn" id="themeNavBtn"><i class="fa-solid fa-circle-half-stroke"></i><span class="label" data-i18n="nav.theme">主题</span></button>
+        <button class="nav-btn" data-view="settings"><i class="fa-solid fa-gear"></i><span class="label" data-i18n="nav.settings">设置</span></button>
+      </div>
+    </nav>
+
+    <!-- ===== 页面主机 ===== -->
+    <div class="page-host">
+
+      <!-- ===================== 实时翻译 ===================== -->
+      <section class="view active" id="view-live">
+        <!-- 工具栏 -->
+        <div class="lt-toolbar toolbar-surface">
+          <span class="lbl" data-i18n="lt.speechRes">语音资源:</span>
+          <select class="combo-select" id="ltResource" style="min-width:180px"></select>
+          <span class="lamp" id="ltResLamp" title=""></span>
+          <span class="vdiv"></span>
+
+          <span class="lbl" data-i18n="lt.srcLang">源语言:</span>
+          <select class="combo-select" id="ltSource" style="width:128px"></select>
+          <span class="arrow">→</span>
+          <span class="lbl" data-i18n="lt.tgtLang">目标语言:</span>
+          <select class="combo-select" id="ltTarget" style="width:128px"></select>
+          <span class="vdiv"></span>
+
+          <button class="btn primary" id="ltToggle"><i class="fa-solid fa-microphone-lines"></i> <span id="ltToggleLabel" data-i18n="lt.start">开始翻译</span></button>
+          <span class="rec-dot" id="ltRecDot" style="display:none"></span>
+        </div>
+
+        <!-- 主体 -->
+        <div class="lt-body">
+          <!-- 左：实时翻译卡片 -->
+          <div class="card lt-left">
+            <div class="lt-card-head">
+              <span class="title" data-i18n="lt.liveTitle">实时翻译</span>
+              <span class="spacer"></span>
+              <div class="segment-group" id="ltViewMode">
+                <span class="seg-btn" data-mode="orig" data-i18n="lt.viewOrig">原文</span>
+                <span class="seg-btn" data-mode="trans" data-i18n="lt.viewTrans">译文</span>
+                <span class="seg-btn active" data-mode="bi" data-i18n="lt.viewBi">双语</span>
+              </div>
+            </div>
+            <div class="editor-area">
+              <div class="bi-list" id="ltList" data-mode="bi">
+                <div class="lt-empty" id="ltEmpty" data-i18n="lt.emptyHint">点击「开始翻译」后，识别与翻译结果会实时显示在这里。</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="lt-splitter"></div>
+
+          <!-- 右：历史/洞察 -->
+          <div class="card lt-right">
+            <div class="tab-head">
+              <div class="tab-btn active" data-lttab="hist" data-i18n="lt.tabHistory">历史记录</div>
+              <div class="tab-btn" data-lttab="insight" data-i18n="lt.tabInsight">洞察</div>
+            </div>
+
+            <!-- 历史 -->
+            <div class="tab-body" id="lttab-hist">
+              <div id="ltHistList" class="hist-wrap"></div>
+              <div class="lt-empty" id="ltHistEmpty" data-i18n="lt.histEmpty">暂无历史记录。</div>
+            </div>
+
+            <!-- 洞察 -->
+            <div class="tab-body" id="lttab-insight" style="display:none">
+              <div class="insight-status" data-i18n="lt.insightSoon">AI 洞察分析功能将在后续版本接入。</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 底栏 -->
+        <div class="lt-footer">
+          <button class="btn sm" id="ltClearHist"><i class="fa-solid fa-trash-can"></i> <span data-i18n="lt.clearHist">清空历史</span></button>
+          <button class="btn sm" id="ltRefreshHist"><i class="fa-solid fa-rotate"></i> <span data-i18n="lt.refreshHist">刷新历史</span></button>
+          <span class="spacer"></span>
+          <span class="status" id="ltStatus" data-i18n="lt.statusIdle">空闲</span>
+        </div>
+      </section>
+
+      <!-- ===================== 听析中心 ===================== -->
+      <section class="view" id="view-audiolab">
+        <div class="al-body">
+          <!-- 文件面板 -->
+          <aside class="al-filepanel">
+            <div class="al-fp-head">
+              <i class="fa-solid fa-list-ul"></i>
+              <span class="title" data-i18n="al.audioList">音频列表</span>
+              <span class="spacer"></span>
+              <i class="fa-solid fa-arrows-rotate" style="font-size:11px;opacity:.6;cursor:pointer"></i>
+            </div>
+            <button class="btn al-fp-load"><i class="fa-solid fa-folder-open"></i> <span data-i18n="al.loadFile">从文件加载</span></button>
+            <div class="al-filelist">
+              <div class="al-file active"><i class="fa-solid fa-file-audio"></i><span>Q2-业务回顾会议.mp3</span></div>
+              <div class="al-file"><i class="fa-solid fa-file-audio"></i><span>产品评审-0608.wav</span></div>
+              <div class="al-file"><i class="fa-solid fa-file-audio"></i><span>客户访谈-赵总.m4a</span></div>
+              <div class="al-file"><i class="fa-solid fa-file-audio"></i><span>周会纪要-0605.mp3</span></div>
+            </div>
+          </aside>
+
+          <!-- 主内容 -->
+          <div class="al-main">
+            <div class="al-breadcrumb" data-i18n="al.breadcrumb">媒体库 › 会议 › 2026-06-10</div>
+            <div class="subcard al-player">
+              <i class="fa-solid fa-music" style="opacity:.6"></i>
+              <button class="pbtn"><i class="fa-solid fa-backward-step"></i></button>
+              <button class="pbtn play"><i class="fa-solid fa-pause"></i></button>
+              <button class="pbtn"><i class="fa-solid fa-forward-step"></i></button>
+              <div class="al-progress"><div class="fill"></div><div class="knob"></div></div>
+              <div class="al-time">04:08 / 10:45</div>
+              <span class="combo sm" style="height:28px;font-size:12px"><span>1.0X</span><i class="fa-solid fa-chevron-down caret"></i></span>
+            </div>
+
+            <div class="al-tabs">
+              <div class="al-tab"><span class="emoji">📋</span><span data-i18n="al.tabSummary">总结</span></div>
+              <div class="al-tab active"><span class="emoji">📝</span><span data-i18n="al.tabTranscript">转录</span></div>
+              <div class="al-tab"><span class="emoji">🧠</span><span data-i18n="al.tabMindmap">导图</span></div>
+              <div class="al-tab"><span class="emoji">💡</span><span data-i18n="al.tabInsight">顿悟</span></div>
+              <div class="al-tab"><span class="emoji">🔬</span><span data-i18n="al.tabResearch">研究</span></div>
+              <div class="al-tab"><span class="emoji">🎙</span><span data-i18n="al.tabPodcast">播客</span></div>
+              <div class="al-tab"><span class="emoji">🌐</span><span data-i18n="al.tabTranslate">翻译</span></div>
+              <span class="spacer"></span>
+              <button class="btn ghost sm"><i class="fa-solid fa-folder-open"></i> <span data-i18n="al.openFile">打开文件</span></button>
+            </div>
+
+            <div class="al-content">
+              <div class="al-transcript">
+                <div class="seg-item current">
+                  <div class="seg-meta"><span class="time">00:12 - 00:34</span><span class="spk" data-i18n="al.speaker1">发言人 1</span><span>🔊</span></div>
+                  <div class="seg-text">欢迎大家参加本次季度业务回顾会议，今天主要看三个方面：营收、增长来源和下季度规划。</div>
+                </div>
+                <div class="seg-item">
+                  <div class="seg-meta"><span class="time">00:35 - 01:02</span><span class="spk" data-i18n="al.speaker2">发言人 2</span></div>
+                  <div class="seg-text">本季度总营收比上季度增长了 18%，超出了我们年初定的目标，亚太区贡献了大部分增量。</div>
+                </div>
+                <div class="seg-item">
+                  <div class="seg-meta"><span class="time">01:03 - 01:40</span><span class="spk" data-i18n="al.speaker1">发言人 1</span></div>
+                  <div class="seg-text">亚太区的增长具体来自哪里？是老客户续约还是新客户？</div>
+                </div>
+                <div class="seg-item">
+                  <div class="seg-meta"><span class="time">01:41 - 02:25</span><span class="spk" data-i18n="al.speaker2">发言人 2</span></div>
+                  <div class="seg-text">主要是新签的三家企业客户，单笔金额都比较大。续约率维持在 92% 左右，比较健康。</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 控制面板 -->
+          <aside class="al-control">
+            <div class="subcard cp-card">
+              <div class="h" data-i18n="al.lifecycle">生命周期</div>
+              <div class="stage done">① <span data-i18n="al.stage1">转录</span></div>
+              <div class="stage done">② <span data-i18n="al.stage2">AI 总结</span></div>
+              <div class="stage done">③ <span data-i18n="al.stage3">思维导图</span></div>
+              <div class="stage pending">④ <span data-i18n="al.stage4">顿悟分析</span></div>
+              <div class="stage pending">⑤ <span data-i18n="al.stage5">深度研究</span></div>
+              <div class="stage pending">⑥ <span data-i18n="al.stage6">播客台本</span></div>
+              <div class="stage pending">⑦ <span data-i18n="al.stage7">翻译</span></div>
+              <button class="btn" style="width:100%;margin-top:8px" data-i18n="al.autofill">自动补齐缺失</button>
+            </div>
+            <div class="subcard cp-card">
+              <div class="h" data-i18n="al.podcastVoice">播客语音</div>
+              <div class="section-label" data-i18n="al.language">语言</div>
+              <span class="combo" style="width:100%;margin-bottom:8px"><span data-i18n="al.allLang">全部语言</span><i class="fa-solid fa-chevron-down caret"></i></span>
+              <div class="section-label" data-i18n="al.speaker1">发言人 1</div>
+              <span class="combo" style="width:100%;margin-bottom:8px"><span>Xiaoxiao (zh-CN)</span><i class="fa-solid fa-chevron-down caret"></i></span>
+              <button class="btn primary" style="width:100%" data-i18n="al.synth">合成播客音频</button>
+            </div>
+            <div class="subcard cp-card">
+              <div class="tm-stat" data-i18n="al.statusReady">就绪 · 转录 / 总结 / 导图 已完成</div>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <!-- ===================== 任务监控 ===================== -->
+      <section class="view" id="view-tasks">
+        <div class="tm-body">
+          <!-- 左侧分类 -->
+          <aside class="tm-nav">
+            <div class="head">
+              <span class="title" data-i18n="tm.title">任务分类</span>
+              <i class="fa-solid fa-arrows-rotate" style="opacity:.6;cursor:pointer"></i>
+              <i class="fa-regular fa-trash-can" style="opacity:.6;cursor:pointer"></i>
+            </div>
+            <div class="tm-bucket"><i class="fa-solid fa-inbox"></i><span class="name" data-i18n="tm.pending">待处理</span><span class="tm-badge">3</span></div>
+            <div class="tm-bucket active"><i class="fa-solid fa-spinner"></i><span class="name" data-i18n="tm.running">进行中</span><span class="tm-badge">2</span></div>
+            <div class="tm-bucket"><i class="fa-solid fa-circle-check"></i><span class="name" data-i18n="tm.done">已完成</span><span class="tm-badge">28</span></div>
+            <div class="tm-bucket"><i class="fa-solid fa-triangle-exclamation"></i><span class="name" data-i18n="tm.failed">失败</span><span class="tm-badge danger">1</span></div>
+
+            <div class="tm-section">
+              <div class="st" data-i18n="tm.concurrency">并发设置</div>
+              <div class="tm-num-row"><span class="k" data-i18n="tm.transcribe">转录</span><span class="tm-num">3 <span class="steppers"><i class="fa-solid fa-caret-up"></i><i class="fa-solid fa-caret-down"></i></span></span></div>
+              <div class="tm-num-row"><span class="k">AI</span><span class="tm-num">2 <span class="steppers"><i class="fa-solid fa-caret-up"></i><i class="fa-solid fa-caret-down"></i></span></span></div>
+            </div>
+            <div class="tm-section">
+              <div class="st" data-i18n="tm.timeout">超时设置</div>
+              <div class="tm-num-row"><span class="k" data-i18n="tm.transcribe">转录</span><span class="tm-num">15 <span data-i18n="tm.min" style="font-size:11px;opacity:.6">分钟</span></span></div>
+            </div>
+            <div class="tm-section">
+              <div class="st" data-i18n="tm.tokenUsage">Token 用量</div>
+              <div class="tm-stat" data-i18n="tm.execStat">执行 64 次 · 计费 31 次</div>
+              <div class="tm-stat" data-i18n="tm.tokenStat">总耗: 248,512 tokens</div>
+            </div>
+          </aside>
+
+          <!-- 右侧主体 -->
+          <div class="tm-main">
+            <div class="tm-thead">
+              <span class="col" data-i18n="tm.colId">任务ID</span>
+              <span class="col" data-i18n="tm.colAudio">音频</span>
+              <span class="col" data-i18n="tm.colStage">阶段</span>
+              <span class="col" data-i18n="tm.colStatus">状态</span>
+              <span class="col" data-i18n="tm.colTime">发起时间</span>
+              <span class="col right" data-i18n="tm.colElapsed">耗时</span>
+            </div>
+            <div class="tm-list">
+              <div class="tm-trow selected">
+                <span class="tm-id">01HX9F2A</span>
+                <span class="tm-audio">Q2-业务回顾会议.mp3</span>
+                <span class="tm-stage"><span class="pipe" style="background:var(--accent)"></span><span data-i18n="tm.stageTranscribe">转录</span></span>
+                <span class="tm-status status-running" data-i18n="tm.stRunning">进行中</span>
+                <span class="tm-time">14:30:12</span>
+                <span class="tm-elapsed">01:23</span>
+              </div>
+              <div class="tm-trow">
+                <span class="tm-id">01HX9E7B</span>
+                <span class="tm-audio">产品评审-0608.wav</span>
+                <span class="tm-stage"><span class="pipe" style="background:var(--primary)"></span><span data-i18n="tm.stageAi">AI总结</span></span>
+                <span class="tm-status status-running" data-i18n="tm.stRunning">进行中</span>
+                <span class="tm-time">14:28:55</span>
+                <span class="tm-elapsed">02:41</span>
+              </div>
+              <div class="tm-trow">
+                <span class="tm-id">01HX9C1D</span>
+                <span class="tm-audio">客户访谈-赵总.m4a</span>
+                <span class="tm-stage"><span class="pipe" style="background:var(--success)"></span><span data-i18n="tm.stageDone">完成</span></span>
+                <span class="tm-status status-success" data-i18n="tm.stSuccess">成功</span>
+                <span class="tm-time">14:12:03</span>
+                <span class="tm-elapsed">03:18</span>
+              </div>
+              <div class="tm-trow">
+                <span class="tm-id">01HX9A8E</span>
+                <span class="tm-audio">周会纪要-0605.mp3</span>
+                <span class="tm-stage"><span class="pipe" style="background:var(--error)"></span><span data-i18n="tm.stageAi">AI总结</span></span>
+                <span class="tm-status status-error" data-i18n="tm.stError">失败</span>
+                <span class="tm-time">13:58:41</span>
+                <span class="tm-elapsed">00:47</span>
+              </div>
+            </div>
+
+            <!-- 详情 -->
+            <div class="card tm-detail">
+              <div class="row"><span class="k" data-i18n="tm.dId">任务ID：</span><span class="mono">01HX9F2A-3C5D-7E9F</span></div>
+              <div class="row"><span class="k" data-i18n="tm.dAudio">音频：</span><span>Q2-业务回顾会议.mp3</span></div>
+              <div class="row"><span class="k" data-i18n="tm.dStage">阶段 / 状态：</span><span><span data-i18n="tm.stageTranscribe">转录</span> · <b class="status-running" data-i18n="tm.stRunning">进行中</b> · <span class="tm-time" data-i18n="tm.retry">重试: 0</span></span></div>
+              <div class="row"><span class="k" data-i18n="tm.dTime">时间：</span><span class="tm-time"><span data-i18n="tm.submit">提交</span>: 06-10 14:30:12 &nbsp; <span data-i18n="tm.start">开始</span>: 06-10 14:30:14 &nbsp; <span data-i18n="tm.elapsed">耗时</span>: 00:01:23</span></div>
+              <div class="actions">
+                <button class="btn sm" data-i18n="tm.retryBtn">重试</button>
+                <button class="btn sm" data-i18n="tm.cancelBtn">取消</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================== 设置 ===================== -->
+      <section class="view" id="view-settings">
+        <div class="settings-wrap">
+          <div class="card settings-card">
+            <div class="settings-h" data-i18n="set.general">通用</div>
+            <div class="settings-row">
+              <span class="settings-k" data-i18n="set.uiLang">界面语言</span>
+              <select class="combo-select" id="setUiLang" style="width:160px">
+                <option value="zh" data-i18n="set.langZh">中文</option>
+                <option value="en" data-i18n="set.langEn">English</option>
+              </select>
+            </div>
+            <div class="settings-row">
+              <span class="settings-k" data-i18n="set.theme">主题</span>
+              <select class="combo-select" id="setTheme" style="width:160px">
+                <option value="light" data-i18n="set.themeLight">浅色</option>
+                <option value="dark" data-i18n="set.themeDark">深色</option>
+              </select>
+            </div>
+            <div class="settings-row">
+              <span class="settings-k" data-i18n="set.filterParticles">过滤句末语气词</span>
+              <label class="switch"><input type="checkbox" id="setFilterParticles" /><span class="slider"></span></label>
+            </div>
+          </div>
+
+          <div class="card settings-card">
+            <div class="settings-h">
+              <span data-i18n="set.speechRes">语音资源</span>
+              <span class="spacer"></span>
+              <button class="btn sm" id="setAddRes"><i class="fa-solid fa-plus"></i> <span data-i18n="set.addRes">新增</span></button>
+            </div>
+            <div id="setResList" class="set-res-list"></div>
+            <div class="lt-empty" id="setResEmpty" data-i18n="set.noRes">尚未配置语音资源。点击「新增」添加 Microsoft 语音密钥。</div>
+
+            <!-- 编辑表单 -->
+            <div class="set-res-form" id="setResForm" style="display:none">
+              <input type="hidden" id="resId" />
+              <div class="settings-row">
+                <span class="settings-k" data-i18n="set.resName">名称</span>
+                <input class="txt-input" id="resName" data-i18n-ph="set.resNamePh" placeholder="例如：东南亚 (国际版)" />
+              </div>
+              <div class="settings-row">
+                <span class="settings-k" data-i18n="set.resKey">订阅密钥</span>
+                <input class="txt-input" id="resKey" type="password" autocomplete="off" placeholder="Subscription Key" />
+              </div>
+              <div class="settings-row">
+                <span class="settings-k" data-i18n="set.resRegion">区域</span>
+                <input class="txt-input" id="resRegion" placeholder="例如：southeastasia" />
+              </div>
+              <div class="settings-row">
+                <span class="settings-k" data-i18n="set.resEndpoint">终结点 (可选)</span>
+                <input class="txt-input" id="resEndpoint" placeholder="https://... 或 wss://... (中国区/自定义)" />
+              </div>
+              <div class="set-res-actions">
+                <button class="btn primary sm" id="resSave" data-i18n="set.save">保存</button>
+                <button class="btn sm" id="resCancel" data-i18n="set.cancel">取消</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 占位视图 -->
+      <section class="view" id="view-studio">
+        <div class="stub"><i class="fa-regular fa-images"></i><div class="t" data-i18n="stub.studio">创作工坊（图像/视频生成）— 后续实现</div></div>
+      </section>
+      <section class="view" id="view-media">
+        <div class="stub"><i class="fa-solid fa-photo-film"></i><div class="t" data-i18n="stub.media">媒体中心 — 后续实现</div></div>
+      </section>
+
+    </div>
+  </div>
+</div>
+
+<script type="module" src="main.js"></script>
+</body>
+</html>

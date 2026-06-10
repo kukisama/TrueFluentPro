@@ -1,0 +1,23 @@
+[package]
+name = "tfp-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "译见 Pro 核心：AI/Speech Provider 抽象、配置、任务模型"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+reqwest = { workspace = true }
+tokio = { workspace = true }
+chrono = { workspace = true }
+futures = { workspace = true }
+dirs = { workspace = true }
+async-trait = "0.1"
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full"] }
