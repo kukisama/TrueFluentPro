@@ -28,7 +28,13 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
 anyhow = { workspace = true }
+thiserror = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 chrono = { workspace = true }
 pollster = "0.3"
+cpal = { workspace = true }
+
+# 系统回环采集（仅 Windows，WASAPI loopback）
+[target.'cfg(windows)'.dependencies]
+wasapi = "0.23"

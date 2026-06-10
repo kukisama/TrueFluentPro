@@ -52,6 +52,11 @@
           <select class="combo-select" id="ltTarget" style="width:128px"></select>
           <span class="vdiv"></span>
 
+          <span class="lbl" data-i18n="lt.inputDevice">输入设备:</span>
+          <select class="combo-select" id="ltInputDevice" style="min-width:180px" title=""></select>
+          <button class="btn ghost" id="ltRefreshDevices" title="刷新设备列表"><i class="fa-solid fa-rotate"></i></button>
+          <span class="vdiv"></span>
+
           <button class="btn primary" id="ltToggle"><i class="fa-solid fa-microphone-lines"></i> <span id="ltToggleLabel" data-i18n="lt.start">开始翻译</span></button>
           <span class="rec-dot" id="ltRecDot" style="display:none"></span>
         </div>
@@ -319,6 +324,84 @@
           </div>
 
           <div class="card settings-card">
+            <div class="settings-h" data-i18n="set.audio">音频与录音</div>
+            <div class="settings-row">
+              <span class="settings-k" data-i18n="set.audioSource">识别音源</span>
+              <select class="combo-select" id="setAudioSource" style="width:240px">
+                <option value="defaultMic" data-i18n="set.srcDefaultMic">默认麦克风</option>
+                <option value="captureDevice" data-i18n="set.srcCaptureDevice">指定输入设备</option>
+                <option value="loopback" data-i18n="set.srcLoopback">系统回环（捕获系统音频）</option>
+              </select>
+            </div>
+            <div class="settings-row">
+              <span class="settings-k" data-i18n="set.mixMode">混音模式</span>
+              <select class="combo-select" id="setMixMode" style="width:240px">
+                <option value="downmixMono" data-i18n="set.mixDownmix">下混单声道</option>
+                <option value="micOnly" data-i18n="set.mixMicOnly">仅麦克风</option>
+                <option value="loopbackOnly" data-i18n="set.mixLoopbackOnly">仅回环</option>
+              </select>
+            </div>
+            <div class="settings-row">
+              <span class="settings-k" data-i18n="set.micGain">麦克风增益</span>
+              <input class="txt-input" id="setMicGain" type="number" min="0" max="4" step="0.1" style="width:100px" />
+            </div>
+            <div class="settings-row">
+              <span class="settings-k" data-i18n="set.loopbackGain">回环增益</span>
+              <input class="txt-input" id="setLoopbackGain" type="number" min="0" max="4" step="0.1" style="width:100px" />
+            </div>
+            <div class="settings-row">
+              <span class="settings-k" data-i18n="set.recogFormat">识别采样率</span>
+              <select class="combo-select" id="setRecogRate" style="width:140px">
+                <option value="16000">16000 Hz</option>
+                <option value="8000">8000 Hz</option>
+              </select>
+            </div>
+
+            <div class="settings-h" style="margin-top:14px" data-i18n="set.recorder">录音</div>
+            <div class="settings-row">
+              <span class="settings-k" data-i18n="set.recContainer">录音格式</span>
+              <select class="combo-select" id="setRecContainer" style="width:140px">
+                <option value="mp3">MP3</option>
+                <option value="wav">WAV</option>
+              </select>
+            </div>
+            <div class="settings-row">
+              <span class="settings-k" data-i18n="set.recSampleRate">录音采样率</span>
+              <select class="combo-select" id="setRecRate" style="width:140px">
+                <option value="48000">48000 Hz</option>
+                <option value="44100">44100 Hz</option>
+                <option value="16000">16000 Hz</option>
+              </select>
+            </div>
+            <div class="settings-row">
+              <span class="settings-k" data-i18n="set.recChannels">声道</span>
+              <select class="combo-select" id="setRecChannels" style="width:140px">
+                <option value="2" data-i18n="set.chStereo">立体声</option>
+                <option value="1" data-i18n="set.chMono">单声道</option>
+              </select>
+            </div>
+            <div class="settings-row" id="rowMp3Bitrate">
+              <span class="settings-k" data-i18n="set.mp3Bitrate">MP3 码率</span>
+              <select class="combo-select" id="setMp3Bitrate" style="width:140px">
+                <option value="320">320 kbps</option>
+                <option value="256">256 kbps</option>
+                <option value="192">192 kbps</option>
+                <option value="128">128 kbps</option>
+              </select>
+            </div>
+
+            <div class="settings-h" style="margin-top:14px" data-i18n="set.recTest">录音测试（独立，不依赖云）</div>
+            <div class="settings-row">
+              <span class="settings-k" data-i18n="set.recPath">输出文件</span>
+              <input class="txt-input" id="setRecPath" style="min-width:280px" placeholder="C:\\temp\\loopback-test.mp3" />
+            </div>
+            <div class="set-res-actions">
+              <button class="btn primary sm" id="setRecToggle"><i class="fa-solid fa-circle"></i> <span id="setRecToggleLabel" data-i18n="set.recStart">开始录音</span></button>
+              <span class="status" id="setRecStatus" data-i18n="set.recIdle">空闲</span>
+            </div>
+          </div>
+
+          <div class="card settings-card">
             <div class="settings-h">
               <span data-i18n="set.speechRes">语音资源</span>
               <span class="spacer"></span>
@@ -352,6 +435,65 @@
               </div>
             </div>
           </div>
+
+          <div class="card settings-card">
+            <div class="settings-h">
+              <span data-i18n="set.aiEndpoints">AI 终结点</span>
+              <span class="spacer"></span>
+              <button class="btn sm" id="setAddEp"><i class="fa-solid fa-plus"></i> <span data-i18n="set.addEp">新增</span></button>
+            </div>
+            <div id="setEpList" class="set-res-list"></div>
+            <div class="lt-empty" id="setEpEmpty" data-i18n="set.noEp">尚未配置 AI 终结点。点击「新增」选择厂商资料包创建。</div>
+
+            <!-- 厂商资料包选择器 -->
+            <div class="set-res-form" id="setEpPicker" style="display:none">
+              <div class="settings-row"><span class="settings-k" data-i18n="set.pickProfile">选择厂商</span></div>
+              <div id="epProfileList" class="ep-profile-list"></div>
+              <div class="set-res-actions">
+                <button class="btn sm" id="epPickerCancel" data-i18n="set.cancel">取消</button>
+              </div>
+            </div>
+
+            <!-- 终结点编辑表单 -->
+            <div class="set-res-form" id="setEpForm" style="display:none">
+              <input type="hidden" id="epId" />
+              <input type="hidden" id="epProfileId" />
+              <input type="hidden" id="epKind" />
+              <div class="settings-row">
+                <span class="settings-k" data-i18n="set.epProfile">厂商资料包</span>
+                <span class="settings-v" id="epProfileLabel">—</span>
+              </div>
+              <div class="settings-row">
+                <span class="settings-k" data-i18n="set.epName">名称</span>
+                <input class="txt-input" id="epName" placeholder="例如：我的 Azure OpenAI" />
+              </div>
+              <div class="settings-row" id="epRowBaseUrl">
+                <span class="settings-k" data-i18n="set.epBaseUrl">基础地址</span>
+                <input class="txt-input" id="epBaseUrl" placeholder="https://your-resource.openai.azure.com" />
+              </div>
+              <div class="settings-row">
+                <span class="settings-k" id="epKeyLabel" data-i18n="set.epApiKey">API Key</span>
+                <input class="txt-input" id="epApiKey" type="password" autocomplete="off" placeholder="API Key" />
+              </div>
+              <div class="settings-row" id="epRowApiVersion">
+                <span class="settings-k" data-i18n="set.epApiVersion">API 版本</span>
+                <input class="txt-input" id="epApiVersion" placeholder="2024-02-01" />
+              </div>
+              <div class="settings-row" id="epRowRegion" style="display:none">
+                <span class="settings-k" data-i18n="set.epRegion">区域</span>
+                <input class="txt-input" id="epRegion" placeholder="例如：southeastasia" />
+              </div>
+              <div class="settings-row" id="epRowSpeechEndpoint" style="display:none">
+                <span class="settings-k" data-i18n="set.epSpeechEndpoint">语音终结点 (可选)</span>
+                <input class="txt-input" id="epSpeechEndpoint" placeholder="https://... 或 wss://..." />
+              </div>
+              <div class="ep-behavior" id="epBehavior"></div>
+              <div class="set-res-actions">
+                <button class="btn primary sm" id="epSave" data-i18n="set.save">保存</button>
+                <button class="btn sm" id="epCancel" data-i18n="set.cancel">取消</button>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -364,6 +506,21 @@
       </section>
 
     </div>
+  </div>
+</div>
+
+<!-- 终结点连通性测试结果窗体 -->
+<div class="ep-test-overlay" id="epTestOverlay" style="display:none">
+  <div class="ep-test-dialog">
+    <div class="ep-test-head">
+      <div>
+        <div class="ep-test-title" id="epTestTitle" data-i18n="set.epTestTitle">终结点实时测试</div>
+        <div class="ep-test-sub" id="epTestSummary"></div>
+      </div>
+      <button class="btn sm" id="epTestClose" data-i18n="set.close">关闭</button>
+    </div>
+    <div class="ep-test-note" data-i18n="set.epTestNote">仅测试当前终结点；按资料包声明的 URL 候选发起极短文本请求，验证地址 / 鉴权 / 路由是否打通。图片 / 语音 / 视频 / AAD 暂未接入。</div>
+    <div class="ep-test-list" id="epTestList"></div>
   </div>
 </div>
 

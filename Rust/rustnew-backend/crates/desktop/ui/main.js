@@ -5,13 +5,15 @@
 
 import { invoke, setTheme, setLang, initCore } from "./core.js";
 import { initLive, applyLiveConfig, setLiveRunning, loadHistory } from "./live.js";
-import { initSettings, applySettingsConfig, loadSpeechResources } from "./settings.js";
+import { initSettings, applySettingsConfig, loadSpeechResources, loadAiEndpoints } from "./settings.js";
+import { initAudioPanel, loadAudioPanel } from "./audiopanel.js";
 
 async function boot() {
   // 1. 绑定各模块自身的 DOM 事件
   initCore();
   initLive();
   initSettings();
+  initAudioPanel();
 
   // 2. 读取后端配置
   let cfg = null;
@@ -31,6 +33,8 @@ async function boot() {
 
   // 4. 拉取动态数据
   await loadSpeechResources();
+  await loadAiEndpoints();
+  await loadAudioPanel();
   await loadHistory();
 
   // 5. 同步实时翻译运行态

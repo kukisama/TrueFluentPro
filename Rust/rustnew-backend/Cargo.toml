@@ -39,3 +39,6 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 chrono = { version = "0.4", features = ["serde"] }
 futures = "0.3"
 dirs = "5"
+
+# 音频设备枚举（跨平台：Windows WASAPI / macOS CoreAudio / Linux ALSA）
+cpal = "0.15"

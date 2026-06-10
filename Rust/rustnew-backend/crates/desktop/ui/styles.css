@@ -480,3 +480,39 @@ body {
 .set-res-actions { display: flex; gap: 8px; margin-top: 8px; }
 .txt-input { height: 34px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--card-border); background: var(--card-bg); color: var(--text-primary); font-size: 13px; font-family: var(--font); }
 .txt-input:focus { outline: none; border-color: var(--primary); }
+
+/* AI 终结点：厂商资料包选择器 + 行为摘要 */
+.ep-profile-list { display: flex; flex-direction: column; gap: 8px; margin: 8px 0; }
+.ep-profile-card { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--card-border); border-radius: 6px; background: var(--subcard-bg); cursor: pointer; transition: border-color .15s, background .15s; }
+.ep-profile-card:hover { border-color: var(--primary); background: var(--card-bg); }
+.ep-profile-card .ep-glyph { font-size: 20px; line-height: 1; width: 28px; text-align: center; }
+.ep-profile-card .ep-pname { font-size: 13px; font-weight: 600; }
+.ep-profile-card .ep-psub { font-size: 11px; color: var(--text-subtle); }
+.ep-behavior { margin-top: 8px; font-size: 11px; color: var(--text-subtle); line-height: 1.5; }
+.settings-v { font-size: 13px; color: var(--text-primary); }
+
+/* 终结点连通性测试结果窗体 */
+.ep-test-overlay { position: fixed; inset: 0; z-index: 200; display: flex; align-items: center; justify-content: center; background: rgba(10,14,20,.55); backdrop-filter: blur(4px); }
+.ep-test-dialog { width: 720px; max-width: 92vw; max-height: 84vh; display: flex; flex-direction: column; background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 12px; box-shadow: 0 18px 48px rgba(0,0,0,.35); overflow: hidden; }
+.ep-test-head { display: flex; align-items: flex-start; gap: 12px; padding: 16px 18px 10px; border-bottom: 1px solid var(--card-border); }
+.ep-test-head .btn { margin-left: auto; }
+.ep-test-title { font-size: 15px; font-weight: 700; }
+.ep-test-sub { margin-top: 4px; font-size: 12px; color: var(--text-subtle); }
+.ep-test-note { padding: 10px 18px; font-size: 11px; color: var(--text-subtle); line-height: 1.5; background: var(--subcard-bg); border-bottom: 1px solid var(--card-border); }
+.ep-test-list { padding: 14px 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+.ep-test-item { border: 1px solid var(--card-border); border-left-width: 3px; border-radius: 8px; padding: 10px 12px; background: var(--subcard-bg); }
+.ep-test-item.ok { border-left-color: #16A34A; }
+.ep-test-item.fail { border-left-color: #DC2626; }
+.ep-test-item.skip { border-left-color: #94A3B8; }
+.eti-head { display: flex; align-items: center; gap: 8px; }
+.eti-badge { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: var(--radius-pill); }
+.eti-badge.ok { color: #16A34A; background: rgba(22,163,74,.12); }
+.eti-badge.fail { color: #DC2626; background: rgba(220,38,38,.12); }
+.eti-badge.skip { color: #64748B; background: rgba(148,163,184,.16); }
+.eti-title { font-size: 13px; font-weight: 600; }
+.eti-dur { margin-left: auto; font-size: 11px; color: var(--text-subtle); }
+.eti-summary { margin-top: 6px; font-size: 12px; color: var(--text-primary); line-height: 1.5; }
+.eti-url { margin-top: 8px; }
+.eti-url-k { font-size: 11px; color: var(--text-subtle); }
+.eti-url-v { margin-top: 2px; font-size: 11px; font-family: var(--font-mono, monospace); word-break: break-all; padding: 6px 8px; border: 1px solid var(--card-border); border-radius: 6px; background: var(--card-bg); }
+.eti-details { margin-top: 8px; font-size: 11px; color: var(--text-subtle); line-height: 1.5; white-space: pre-wrap; word-break: break-word; }

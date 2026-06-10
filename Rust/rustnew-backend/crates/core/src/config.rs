@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use crate::audio::AudioSettings;
 use crate::endpoint::{AiEndpoint, ModelReference};
 use crate::error::{CoreError, Result};
 use crate::speech_resource::SpeechResource;
@@ -175,6 +176,9 @@ pub struct AppConfig {
     /// 当前激活的语音资源 ID
     #[serde(default)]
     pub active_speech_resource_id: String,
+    /// 音频设备与采集路由设置
+    #[serde(default)]
+    pub audio: AudioSettings,
 }
 
 impl AppConfig {

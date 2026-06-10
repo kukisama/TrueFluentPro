@@ -2,6 +2,7 @@
 
 use crate::error::{convert_err, Result};
 use crate::ffi::{
+    audio_config_create_audio_input_from_a_microphone,
     audio_config_create_audio_input_from_default_microphone,
     audio_config_create_audio_input_from_wav_file_name,
     audio_config_create_audio_input_from_stream,
@@ -26,6 +27,33 @@ impl AudioConfig {
             let mut handle: MaybeUninit<SPXAUDIOCONFIGHANDLE> = MaybeUninit::uninit();
             let ret = audio_config_create_audio_input_from_default_microphone(handle.as_mut_ptr());
             convert_err(ret, "AudioConfig::from_default_microphone_input error")?;
+            Ok(AudioConfig {
+                handle: SmartHandle::create("AudioConfig", handle.assume_init(), audio_config_release),
+            })
+        }
+    }
+
+    /// Create an AudioConfig from a specific microphone by its platform device name.
+    ///
+    /// ⚠️ 据官方文档（how-to-select-audio-input-devices），`FromMicrophoneInput`
+    /// **接受的是设备「友好名」，而不是设备 ID**：
+    /// - Windows：友好名，如 `Microphone (Realtek(R) Audio)`（**不是** `{0.0.1...}` 这种端点 ID）；
+    /// - Linux：ALSA 设备名，如 `hw:1,0`；
+    /// - macOS：CoreAudio 设备 UID，如 `BuiltInMicrophoneDevice`。
+    ///
+    /// 传空串等价于默认麦克风。
+    pub fn from_microphone_input(device_name: &str) -> Result<AudioConfig> {
+        if device_name.trim().is_empty() {
+            return Self::from_default_microphone_input();
+        }
+        unsafe {
+            let c_name = CString::new(device_name)?;
+            let mut handle: MaybeUninit<SPXAUDIOCONFIGHANDLE> = MaybeUninit::uninit();
+            let ret = audio_config_create_audio_input_from_a_microphone(
+                handle.as_mut_ptr(),
+                c_name.as_ptr(),
+            );
+            convert_err(ret, "AudioConfig::from_microphone_input error")?;
             Ok(AudioConfig {
                 handle: SmartHandle::create("AudioConfig", handle.assume_init(), audio_config_release),
             })

@@ -3,7 +3,7 @@
 #Requires -Version 5.1
 $ErrorActionPreference = "Stop"
 
-$workspace = Join-Path $PSScriptRoot "rustnew-backend"
+$workspace = $PSScriptRoot
 
 Write-Host "==> 构建 speech-sdk (release)..." -ForegroundColor Cyan
 Push-Location $workspace

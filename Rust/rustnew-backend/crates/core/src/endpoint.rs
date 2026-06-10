@@ -129,6 +129,9 @@ pub struct AiEndpoint {
     pub kind: EndpointKind,
     #[serde(default)]
     pub provider_type: AiProviderType,
+    /// 绑定的厂商资料包 id（对齐 C# `AiEndpoint.ProfileId`）。
+    #[serde(default)]
+    pub profile_id: String,
 
     // --- 连接信息 ---
     #[serde(default)]
@@ -177,6 +180,7 @@ impl Default for AiEndpoint {
             is_enabled: true,
             kind: EndpointKind::default(),
             provider_type: AiProviderType::default(),
+            profile_id: String::new(),
             base_url: String::new(),
             api_key: String::new(),
             api_version: String::new(),

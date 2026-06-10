@@ -146,6 +146,60 @@ export function applyLiveConfig(cfg) {
   fillSelect(document.getElementById("ltTarget"), TARGET_LANGS, tgt);
 }
 
+/* ---------------- 输入设备 ---------------- */
+// 选中设备名 -> 持久化到后端 audio 设置（sourceMode 随之切换）。
+async function loadInputDevices() {
+  if (!invoke) return;
+  const sel = document.getElementById("ltInputDevice");
+  if (!sel) return;
+  try {
+    const [devices, settings] = await Promise.all([
+      invoke("list_audio_input_devices"),
+      invoke("get_audio_settings").catch(() => null),
+    ]);
+    sel.innerHTML = "";
+    // 默认麦克风项
+    const def = document.createElement("option");
+    def.value = "";
+    def.textContent = tr("lt.defaultMic");
+    sel.appendChild(def);
+    for (const d of devices || []) {
+      const opt = document.createElement("option");
+      opt.value = d.deviceId;
+      opt.textContent = d.displayName;
+      sel.appendChild(opt);
+    }
+    // 还原已保存选择
+    const saved =
+      settings && settings.sourceMode === "captureDevice"
+        ? settings.selectedInputDeviceId || ""
+        : "";
+    sel.value = [...sel.options].some(o => o.value === saved) ? saved : "";
+  } catch (e) {
+    console.error("load input devices failed", e);
+  }
+}
+
+async function onInputDeviceChange() {
+  if (!invoke) return;
+  const sel = document.getElementById("ltInputDevice");
+  if (!sel) return;
+  const id = sel.value;
+  try {
+    const cur = (await invoke("get_audio_settings").catch(() => null)) || {};
+    // 保留其它字段（混音/增益/识别格式/录音设置），仅改设备与音源模式。
+    const next = {
+      ...cur,
+      sourceMode: id ? "captureDevice" : "defaultMic",
+      selectedInputDeviceId: id,
+    };
+    await invoke("set_audio_settings", { audio: next });
+  } catch (e) {
+    setStatus(String(e), true);
+    console.error("set audio settings failed", e);
+  }
+}
+
 /* ---------------- 初始化 ---------------- */
 export function initLive() {
   // 右侧 Tab：历史 / 洞察
@@ -174,6 +228,13 @@ export function initLive() {
   // 资源下拉切换 → 激活（逻辑在 settings.js）
   const resSel = document.getElementById("ltResource");
   if (resSel) resSel.addEventListener("change", () => activateRes(resSel.value));
+
+  // 输入设备下拉 + 刷新
+  const devSel = document.getElementById("ltInputDevice");
+  if (devSel) devSel.addEventListener("change", onInputDeviceChange);
+  const devRefresh = document.getElementById("ltRefreshDevices");
+  if (devRefresh) devRefresh.addEventListener("click", loadInputDevices);
+  loadInputDevices();
 
   // 历史按钮
   const clearBtn = document.getElementById("ltClearHist");

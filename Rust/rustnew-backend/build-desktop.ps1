@@ -4,7 +4,7 @@
 #Requires -Version 5.1
 $ErrorActionPreference = "Stop"
 
-$workspace = Join-Path $PSScriptRoot "rustnew-backend"
+$workspace = $PSScriptRoot
 $desktopDir = Join-Path $workspace "crates\desktop"
 
 # 检测 tauri-cli

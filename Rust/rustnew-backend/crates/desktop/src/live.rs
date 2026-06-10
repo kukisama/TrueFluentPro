@@ -8,9 +8,9 @@
 //!   （`rusqlite::Connection` 非 Send，不能跨线程共享，故单独起线程持有）。
 //!
 //! 跨平台：麦克风采集走 `AudioConfig::from_default_microphone_input()`，
-//! 在 Windows / macOS / Linux 通用。系统声卡回环（捕获系统音频）目前仅
-//! Windows（WASAPI）支持，留待后续通过 push stream 实现，故此处抽象出
-//! [`AudioSource`]，当前仅落地 [`AudioSource::Microphone`]。
+//! 在 Windows / macOS / Linux 通用。系统声卡回环（捕获系统音频）通过
+//! [`crate::audio_loopback`] 抽象出的 `LoopbackCapture` 落地：Windows 走
+//! WASAPI render-loopback，把 16k/16bit/单声道 PCM 写入 push stream 供识别。
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{channel, Receiver, Sender};
@@ -18,20 +18,26 @@ use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 
 use serde::Serialize;
-use speech_sdk::audio::AudioConfig;
+use speech_sdk::audio::{AudioConfig, AudioStreamFormat, PushAudioInputStream};
 use speech_sdk::speech::{SpeechTranslationConfig, TranslationRecognizer};
 use tauri::{AppHandle, Emitter};
 use tfp_core::storage::{self, TranslationRecord};
 
-/// 音频来源（为跨平台预留）。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AudioSource {
-    /// 默认麦克风（全平台）。
-    Microphone,
-    /// 系统声卡回环（仅 Windows，后续实现）。
-    #[allow(dead_code)]
-    SystemLoopback,
+use crate::audio_loopback::{
+    create_loopback_capture, LoopbackFormat, LoopbackHandle, LOOPBACK_BITS, LOOPBACK_CHANNELS,
+    LOOPBACK_SAMPLE_RATE,
+};
+
+/// 一次实时翻译会话：识别器 + （回环模式下的）采集句柄。
+///
+/// 停止时必须**先停识别器、再停采集**，避免采集线程持有的 push stream
+/// 在识别器仍在读取时被释放。
+struct LiveSession {
+    recognizer: TranslationRecognizer,
+    /// 回环采集句柄（仅回环模式存在）。
+    loopback: Option<Box<dyn LoopbackHandle>>,
 }
+
 
 /// 启动一次实时翻译所需的参数。
 #[derive(Debug, Clone)]
@@ -45,6 +51,10 @@ pub struct StartParams {
     /// 目标语言（如 `zh-Hans`）。
     pub target_lang: String,
     pub filter_modal_particles: bool,
+    /// 选中的输入设备「友好名」（空串=默认麦克风）。仅在非回环模式下生效。
+    pub input_device_name: String,
+    /// 是否使用系统回环作为识别音源（当前未实现回环采集，置 true 时回退默认麦克风并提示）。
+    pub use_loopback: bool,
 }
 
 /// UI → 引擎线程命令。
@@ -180,18 +190,18 @@ fn engine_loop(
     db_tx: Sender<DbMsg>,
     running: Arc<AtomicBool>,
 ) {
-    let mut recognizer: Option<TranslationRecognizer> = None;
+    let mut session: Option<LiveSession> = None;
     while let Ok(cmd) = rx.recv() {
         match cmd {
             LiveCommand::Start(params) => {
-                stop_recognition(&app, &running, &mut recognizer);
-                if let Err(e) = start_recognition(&app, &db_tx, &running, &mut recognizer, *params) {
+                stop_recognition(&app, &running, &mut session);
+                if let Err(e) = start_recognition(&app, &db_tx, &running, &mut session, *params) {
                     emit_status(&app, "error", &e);
                 }
             }
-            LiveCommand::Stop => stop_recognition(&app, &running, &mut recognizer),
+            LiveCommand::Stop => stop_recognition(&app, &running, &mut session),
             LiveCommand::Shutdown => {
-                stop_recognition(&app, &running, &mut recognizer);
+                stop_recognition(&app, &running, &mut session);
                 break;
             }
         }
@@ -203,7 +213,7 @@ fn start_recognition(
     app: &AppHandle,
     db_tx: &Sender<DbMsg>,
     running: &Arc<AtomicBool>,
-    slot: &mut Option<TranslationRecognizer>,
+    slot: &mut Option<LiveSession>,
     params: StartParams,
 ) -> Result<(), String> {
     let source_lang = resolve_source_lang(&params.source_lang, &params.target_lang);
@@ -218,9 +228,35 @@ fn start_recognition(
         .add_target_language(&target_lang)
         .map_err(|e| format!("添加目标语言失败：{e:?}"))?;
 
-    // 2. 音频（默认麦克风，跨平台）
-    let audio = AudioConfig::from_default_microphone_input()
-        .map_err(|e| format!("打开麦克风失败：{e:?}"))?;
+    // 2. 音频音源选择
+    //    回环：用 WASAPI render-loopback 把系统音频以 16k/16bit/单声道 PCM 写入
+    //          push stream（采集句柄随会话保存，停止时先停识别再停采集）。
+    //    非回环：input_device_name 为空 => 默认麦克风；非空 => 按友好名打开指定麦克风。
+    let source_label = if params.use_loopback { "loopback" } else { "mic" };
+    // 回环模式下，采集器与 push stream 先暂存，待识别启动后再开始喂数据，避免积压。
+    let mut pending_loopback: Option<(Box<dyn crate::audio_loopback::LoopbackCapture>, PushAudioInputStream)> = None;
+    let audio = if params.use_loopback {
+        let capture = create_loopback_capture()
+            .ok_or_else(|| "当前平台不支持系统回环采集".to_string())?;
+        let format = AudioStreamFormat::from_pcm(
+            LOOPBACK_SAMPLE_RATE,
+            LOOPBACK_BITS as u8,
+            LOOPBACK_CHANNELS as u8,
+        )
+        .map_err(|e| format!("创建回环音频格式失败：{e:?}"))?;
+        let stream = PushAudioInputStream::create(&format)
+            .map_err(|e| format!("创建回环推流失败：{e:?}"))?;
+        let audio = AudioConfig::from_stream(&stream)
+            .map_err(|e| format!("绑定回环推流失败：{e:?}"))?;
+        pending_loopback = Some((capture, stream));
+        audio
+    } else if params.input_device_name.trim().is_empty() {
+        AudioConfig::from_default_microphone_input()
+            .map_err(|e| format!("打开麦克风失败：{e:?}"))?
+    } else {
+        AudioConfig::from_microphone_input(&params.input_device_name)
+            .map_err(|e| format!("打开指定麦克风「{}」失败：{e:?}", params.input_device_name))?
+    };
 
     // 3. 识别器
     let mut recognizer = TranslationRecognizer::from_config(&config, &audio)
@@ -232,6 +268,7 @@ fn start_recognition(
     {
         let app = app.clone();
         let (src, tgt) = (source_lang.clone(), target_lang.clone());
+        let source = source_label.to_string();
         let _ = recognizer.set_recognizing_cb(move |ev| {
             let original = ev.result.base.text.clone();
             if original.trim().is_empty() {
@@ -248,7 +285,7 @@ fn start_recognition(
                     target_lang: tgt.clone(),
                     is_partial: true,
                     created_at: now_rfc3339(),
-                    source: "mic".into(),
+                    source: source.clone(),
                 },
             );
         });
@@ -259,6 +296,7 @@ fn start_recognition(
         let app = app.clone();
         let db_tx = db_tx.clone();
         let (src, tgt) = (source_lang.clone(), target_lang.clone());
+        let source = source_label.to_string();
         let _ = recognizer.set_recognized_cb(move |ev| {
             let original = ev.result.base.text.clone();
             if original.trim().is_empty() {
@@ -284,7 +322,7 @@ fn start_recognition(
                     target_lang: tgt.clone(),
                     is_partial: false,
                     created_at: rec.created_at.clone(),
-                    source: "mic".into(),
+                    source: source.clone(),
                 },
             );
             let _ = db_tx.send(DbMsg::Insert(Box::new(rec)));
@@ -317,21 +355,48 @@ fn start_recognition(
     pollster::block_on(recognizer.start_continuous_recognition_async())
         .map_err(|e| format!("启动连续识别失败：{e:?}"))?;
 
+    // 5. 回环模式：识别已就绪后再开始采集，把 PCM 写入 push stream。
+    //    push stream 为 Send，直接 move 进采集回调（单一所有者，运行在采集线程）。
+    let loopback_handle = if let Some((capture, stream)) = pending_loopback {
+        match capture.start(
+            LoopbackFormat::recognition(),
+            Box::new(move |bytes| {
+                let _ = stream.write(bytes);
+            }),
+        ) {
+            Ok(handle) => Some(handle),
+            Err(e) => {
+                // 采集启动失败：回滚已启动的识别器，避免空跑。
+                let _ = pollster::block_on(recognizer.stop_continuous_recognition_async());
+                return Err(format!("启动回环采集失败：{e}"));
+            }
+        }
+    } else {
+        None
+    };
+
     running.store(true, Ordering::SeqCst);
     emit_status(app, "started", &format!("{source_lang} → {target_lang}"));
-    *slot = Some(recognizer);
+    *slot = Some(LiveSession {
+        recognizer,
+        loopback: loopback_handle,
+    });
     Ok(())
 }
 
-/// 停止并释放 recognizer。
+/// 停止并释放会话：先停识别器，再停采集（释放 push stream）。
 fn stop_recognition(
     app: &AppHandle,
     running: &Arc<AtomicBool>,
-    slot: &mut Option<TranslationRecognizer>,
+    slot: &mut Option<LiveSession>,
 ) {
-    if let Some(mut recognizer) = slot.take() {
-        if let Err(e) = pollster::block_on(recognizer.stop_continuous_recognition_async()) {
+    if let Some(mut session) = slot.take() {
+        if let Err(e) = pollster::block_on(session.recognizer.stop_continuous_recognition_async()) {
             tracing::warn!(error = ?e, "停止连续识别失败");
+        }
+        // 识别器已停，再停采集线程，确保 push stream 不会在识别期间被释放。
+        if let Some(handle) = session.loopback.take() {
+            handle.stop();
         }
         running.store(false, Ordering::SeqCst);
         emit_status(app, "stopped", "");
@@ -366,15 +431,48 @@ fn resolve_source_lang(source: &str, target: &str) -> String {
 }
 
 /// 构建 `SpeechTranslationConfig`。
+///
+/// 对齐 C# `SpeechTranslationService.CreateSpeechConfigAsync`：
+/// - 中国区：用 `wss://<region>.stt.speech.azure.cn` host；
+/// - 非中国区（API Key 模式）：**优先用区域** `from_subscription(key, region)`，
+///   终结点字段只作区域来源；管理/认知服务域名（`*.api.cognitive.microsoft.com`、
+///   `*.cognitiveservices.azure.com`）不是语音识别端点，不能直接喂 `from_endpoint`；
+/// - 仅当填的是**真正的自定义语音端点**（wss/stt/tts.speech 等）才用 `from_endpoint`。
 fn build_config(p: &StartParams) -> speech_sdk::error::Result<SpeechTranslationConfig> {
     if p.is_china {
         let host = format!("wss://{}.stt.speech.azure.cn", p.region);
         SpeechTranslationConfig::from_host_with_subscription(&host, &p.key)
+    } else if is_custom_speech_endpoint(&p.endpoint) {
+        SpeechTranslationConfig::from_endpoint_with_subscription(&p.endpoint, &p.key)
+    } else if !p.region.trim().is_empty() {
+        SpeechTranslationConfig::from_subscription(&p.key, &p.region)
     } else if !p.endpoint.trim().is_empty() {
+        // 无区域可用时的兜底：尽量用终结点（可能是私有/自定义端点）
         SpeechTranslationConfig::from_endpoint_with_subscription(&p.endpoint, &p.key)
     } else {
         SpeechTranslationConfig::from_subscription(&p.key, &p.region)
     }
+}
+
+/// 判断是否为「真正的自定义语音端点」。
+///
+/// 只有 speech 专用端点（`wss://`、`*.stt.speech.*`、`*.tts.speech.*`、
+/// `*.speech.microsoft.com`）才直接喂给 SDK 的 `from_endpoint`；
+/// 认知服务管理域名（`*.api.cognitive.microsoft.com`、`*.cognitiveservices.azure.com`）
+/// 不是识别端点，应改走 `from_subscription(key, region)`。
+fn is_custom_speech_endpoint(endpoint: &str) -> bool {
+    let e = endpoint.trim().to_ascii_lowercase();
+    if e.is_empty() {
+        return false;
+    }
+    if e.contains("api.cognitive.microsoft.com") || e.contains("cognitiveservices.azure.com") {
+        return false;
+    }
+    e.starts_with("wss://")
+        || e.starts_with("ws://")
+        || e.contains(".stt.speech.")
+        || e.contains(".tts.speech.")
+        || e.contains("speech.microsoft.com")
 }
 
 /// 句末语气词过滤（best-effort，对应 C# FilterModalParticles 的轻量版）。
@@ -413,4 +511,36 @@ fn emit_status(app: &AppHandle, state: &str, message: &str) {
             message: message.to_string(),
         },
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_custom_speech_endpoint;
+
+    #[test]
+    fn management_endpoint_is_not_custom_speech() {
+        // 截图里用户填的就是这个管理域名 → 不应直接喂 from_endpoint
+        assert!(!is_custom_speech_endpoint(
+            "https://southeastasia.api.cognitive.microsoft.com"
+        ));
+        assert!(!is_custom_speech_endpoint(
+            "https://myres.cognitiveservices.azure.com"
+        ));
+    }
+
+    #[test]
+    fn empty_endpoint_is_not_custom_speech() {
+        assert!(!is_custom_speech_endpoint(""));
+        assert!(!is_custom_speech_endpoint("   "));
+    }
+
+    #[test]
+    fn real_speech_endpoint_is_custom() {
+        assert!(is_custom_speech_endpoint(
+            "wss://southeastasia.stt.speech.microsoft.com/speech/universal/v2"
+        ));
+        assert!(is_custom_speech_endpoint(
+            "https://southeastasia.tts.speech.microsoft.com"
+        ));
+    }
 }

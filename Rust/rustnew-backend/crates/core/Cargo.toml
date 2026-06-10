@@ -18,6 +18,7 @@ futures = { workspace = true }
 dirs = { workspace = true }
 async-trait = "0.1"
 rusqlite = { version = "0.32", features = ["bundled"] }
+mp3lame-encoder = "0.2"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
