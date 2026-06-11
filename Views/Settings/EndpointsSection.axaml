@@ -173,8 +173,91 @@
                                    IsVisible="{Binding SpeechTestResult, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                     </StackPanel>
 
-                    <!-- ═══ AI 终结点面板（非 Speech 类型） ═══ -->
-                    <StackPanel Spacing="8" IsVisible="{Binding !IsSelectedEndpointSpeech}">
+                    <!-- ═══ 讯飞 / 百度实时语音专属面板 ═══ -->
+                    <StackPanel Spacing="8" IsVisible="{Binding IsSelectedEndpointThirdPartyRealtime}">
+                        <TextBlock Classes="field-note"
+                                   Text="{Binding SelectedEndpoint.EndpointTypeSubtitle}"
+                                   TextWrapping="Wrap"/>
+
+                        <Border Background="#0F3B82F6" CornerRadius="6" Padding="10,8">
+                            <TextBlock Classes="field-note" TextWrapping="Wrap"
+                                       Text="识别凭据用于实时语音转写；机器翻译凭据可单独配置（留空则实时翻译仅显示原文）。"/>
+                        </Border>
+
+                        <!-- 识别（ASR）凭据 -->
+                        <TextBlock Text="识别凭据（实时语音转写）" FontWeight="SemiBold"/>
+                        <StackPanel Spacing="5">
+                            <TextBlock Text="AppId"/>
+                            <TextBox Text="{Binding SelectedEndpoint.AppId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                     Watermark="语音应用 AppId"
+                                     Width="420" MaxWidth="420" HorizontalAlignment="Left"/>
+                        </StackPanel>
+                        <StackPanel Spacing="5">
+                            <TextBlock Text="{Binding SelectedEndpoint.AsrApiKeyLabel}"/>
+                            <TextBox Text="{Binding SelectedEndpoint.ApiKey, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                     Watermark="识别服务密钥"
+                                     PasswordChar="*"
+                                     Width="420" MaxWidth="420" HorizontalAlignment="Left"/>
+                        </StackPanel>
+                        <StackPanel Spacing="5" IsVisible="{Binding SelectedEndpoint.IsXunfeiRtasrEndpoint}">
+                            <TextBlock Text="ApiSecret（可选）"/>
+                            <TextBox Text="{Binding SelectedEndpoint.ApiSecret, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                     Watermark="部分服务需要，可留空"
+                                     PasswordChar="*"
+                                     Width="420" MaxWidth="420" HorizontalAlignment="Left"/>
+                        </StackPanel>
+
+                        <!-- 机器翻译凭据 -->
+                        <TextBlock Text="机器翻译凭据（可选）" FontWeight="SemiBold" Margin="0,6,0,0"/>
+                        <StackPanel Spacing="5">
+                            <TextBlock Text="翻译 AppId"/>
+                            <TextBox Text="{Binding SelectedEndpoint.TranslateAppId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                     Watermark="机器翻译 AppId（留空则复用识别 AppId）"
+                                     Width="420" MaxWidth="420" HorizontalAlignment="Left"/>
+                        </StackPanel>
+                        <StackPanel Spacing="5" IsVisible="{Binding SelectedEndpoint.IsXunfeiRtasrEndpoint}">
+                            <TextBlock Text="翻译 ApiKey"/>
+                            <TextBox Text="{Binding SelectedEndpoint.TranslateApiKey, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                     Watermark="NiuTrans ApiKey"
+                                     PasswordChar="*"
+                                     Width="420" MaxWidth="420" HorizontalAlignment="Left"/>
+                        </StackPanel>
+                        <StackPanel Spacing="5" IsVisible="{Binding SelectedEndpoint.IsBaiduRealtimeAsrEndpoint}">
+                            <TextBlock Text="{Binding SelectedEndpoint.TranslateApiKeyLabel}"/>
+                            <TextBox Text="{Binding SelectedEndpoint.TranslateApiKey, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                     Watermark="百度翻译开放平台 大模型文本翻译 API Key"
+                                     PasswordChar="*"
+                                     Width="420" MaxWidth="420" HorizontalAlignment="Left"/>
+                        </StackPanel>
+                        <StackPanel Spacing="5">
+                            <TextBlock Text="{Binding SelectedEndpoint.TranslateSecretLabel}"/>
+                            <TextBox Text="{Binding SelectedEndpoint.TranslateApiSecret, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                     Watermark="机器翻译密钥"
+                                     PasswordChar="*"
+                                     Width="420" MaxWidth="420" HorizontalAlignment="Left"/>
+                        </StackPanel>
+
+                        <Border Background="#0F3B82F6" CornerRadius="6" Padding="10,8"
+                                IsVisible="{Binding SelectedEndpoint.IsBaiduRealtimeAsrEndpoint}">
+                            <TextBlock Classes="field-note" TextWrapping="Wrap"
+                                       Text="百度识别与翻译是两个独立平台：识别用百度智能云（AppId + API Key）；翻译用百度翻译开放平台（翻译 AppId + 翻译 ApiKey 大模型 或 翻译 SecretKey 通用，二者择一即可，留空则仅显示原文）。"/>
+                        </Border>
+
+                        <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,4,0,0">
+                            <Button Padding="8,4" FontSize="11"
+                                    Command="{Binding TestThirdPartyRealtimeCommand}">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <icons:Icon Value="fa-solid fa-flask-vial" FontSize="11"/>
+                                    <TextBlock Text="测试连接" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+                        <TextBlock Classes="field-note" Text="{Binding SpeechTestResult}" TextWrapping="Wrap"
+                                   IsVisible="{Binding SpeechTestResult, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                    </StackPanel>
+
+                    <!-- ═══ AI 终结点面板（非 Speech / 非第三方实时语音） ═══ -->
+                    <StackPanel Spacing="8" IsVisible="{Binding IsSelectedEndpointAiGeneric}">
                     <StackPanel Spacing="5">
                         <TextBlock Text="API 地址"/>
                         <TextBox Text="{Binding SelectedEndpoint.BaseUrl, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"

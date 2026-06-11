@@ -469,11 +469,19 @@ namespace TrueFluentPro.Models
                     });
                 }
 
+                // 第三方实时语音厂商（讯飞 / 百度）从终结点派生
+                foreach (var ep in Endpoints.Where(ep => ep.IsThirdPartyRealtimeSpeechEndpoint))
+                {
+                    result.Add(BuildRealtimeVendorSpeechResource(ep));
+                }
+
                 AddFoundrySpeechResources(result);
 
-                // 保留非 Microsoft 资源（如 AiSpeech）
+                // 保留其它非 Microsoft、且非讯飞/百度的资源（如 AiSpeech）
                 result.AddRange(SpeechResources
-                    .Where(r => r.ConnectorType != SpeechConnectorType.MicrosoftSpeech)
+                    .Where(r => r.ConnectorType != SpeechConnectorType.MicrosoftSpeech
+                             && r.ConnectorType != SpeechConnectorType.XunfeiRtasr
+                             && r.ConnectorType != SpeechConnectorType.BaiduRealtimeAsr)
                     .Select(r => r.Clone()));
 
                 return result;
@@ -627,6 +635,31 @@ namespace TrueFluentPro.Models
         }
 
         /// <summary>
+        /// 从讯飞 / 百度实时语音终结点派生出对应的 SpeechResource。
+        /// 凭证字段与 AiEndpoint 同名，直接透传。
+        /// </summary>
+        public static SpeechResource BuildRealtimeVendorSpeechResource(AiEndpoint ep)
+        {
+            var isXunfei = ep.EndpointType == EndpointApiType.XunfeiRtasr;
+            return new SpeechResource
+            {
+                Id = ep.Id,
+                Name = ep.Name,
+                Vendor = isXunfei ? SpeechVendorType.Xunfei : SpeechVendorType.Baidu,
+                ConnectorType = isXunfei ? SpeechConnectorType.XunfeiRtasr : SpeechConnectorType.BaiduRealtimeAsr,
+                IsEnabled = ep.IsEnabled,
+                Capabilities = SpeechCapability.RealtimeSpeechToText,
+                AuthMode = AzureAuthMode.ApiKey,
+                AppId = ep.AppId ?? "",
+                ApiKey = ep.ApiKey ?? "",
+                ApiSecret = ep.ApiSecret ?? "",
+                TranslateAppId = ep.TranslateAppId ?? "",
+                TranslateApiKey = ep.TranslateApiKey ?? "",
+                TranslateApiSecret = ep.TranslateApiSecret ?? "",
+            };
+        }
+
+        /// <summary>
         /// 将 Endpoints 中的 AzureSpeech 类型同步回 SpeechResources，
         /// 保证依赖旧 SpeechResource 的业务（SpeechTranslationService 等）继续工作。
         /// </summary>
@@ -639,7 +672,12 @@ namespace TrueFluentPro.Models
                 .Where(ep => ep.EndpointType == EndpointApiType.AzureSpeech)
                 .ToList();
 
-            if (speechEndpoints.Count == 0 && SpeechResources.All(r => r.ConnectorType == SpeechConnectorType.MicrosoftSpeech))
+            var thirdPartyEndpoints = Endpoints
+                .Where(ep => ep.IsThirdPartyRealtimeSpeechEndpoint)
+                .ToList();
+
+            if (speechEndpoints.Count == 0 && thirdPartyEndpoints.Count == 0
+                && SpeechResources.All(r => r.ConnectorType == SpeechConnectorType.MicrosoftSpeech))
             {
                 SpeechResources.Clear();
                 return;
@@ -671,9 +709,17 @@ namespace TrueFluentPro.Models
                 });
             }
 
-            // 保留非 MicrosoftSpeech 类型的资源（如 AiSpeech）
+            // 第三方实时语音厂商（讯飞 / 百度）从终结点派生
+            foreach (var ep in thirdPartyEndpoints)
+            {
+                rebuilt.Add(BuildRealtimeVendorSpeechResource(ep));
+            }
+
+            // 保留其它非 MicrosoftSpeech、且非讯飞/百度的资源（如 AiSpeech）
             var nonMicrosoftResources = SpeechResources
-                .Where(r => r.ConnectorType != SpeechConnectorType.MicrosoftSpeech)
+                .Where(r => r.ConnectorType != SpeechConnectorType.MicrosoftSpeech
+                         && r.ConnectorType != SpeechConnectorType.XunfeiRtasr
+                         && r.ConnectorType != SpeechConnectorType.BaiduRealtimeAsr)
                 .ToList();
             rebuilt.AddRange(nonMicrosoftResources);
 

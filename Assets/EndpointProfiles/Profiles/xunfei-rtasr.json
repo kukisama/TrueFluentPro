@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "id": "builtin.xunfei.rtasr",
+  "vendor": "讯飞",
+  "basePolicyId": "platform.xunfei-rtasr",
+  "endpointType": "XunfeiRtasr",
+  "displayName": "讯飞实时语音",
+  "subtitle": "讯飞 RTASR 实时语音转写 + NiuTrans 机器翻译",
+  "glyph": "🎙️",
+  "summary": "使用讯飞开放平台的实时语音转写（RTASR，WebSocket）做语音识别，并以讯飞 NiuTrans 机器翻译完成译文，适合实时翻译场景。识别用 AppId+ApiKey，翻译用独立的 AppId+ApiKey+ApiSecret。",
+  "defaultNamePrefix": "讯飞实时语音",
+  "iconAssetPath": "Assets/EndpointProfiles/Icons/xunfei.svg",
+  "tags": ["builtin", "xunfei", "speech", "realtime"],
+  "capabilities": {
+    "mode": "AllowOnly",
+    "allowed": ["SpeechToText"],
+    "disabled": []
+  },
+  "overrides": {
+    "defaults": {},
+    "auth": {
+      "defaultMode": "ApiKey",
+      "allowedModes": ["ApiKey"],
+      "defaultApiKeyHeaderMode": "ApiKeyHeader",
+      "allowedApiKeyHeaderModes": ["ApiKeyHeader"]
+    },
+    "capabilities": {
+      "mode": "AllowOnly",
+      "allowed": ["SpeechToText"],
+      "disabled": []
+    },
+    "routes": {},
+    "version": {}
+  },
+  "fallbacks": {},
+  "specialPolicies": {
+    "allowApimSubscriptionKeyQueryRetry": false,
+    "allowPreviewFallback": false
+  },
+  "defaults": {
+    "providerType": "OpenAiCompatible",
+    "authMode": "ApiKey",
+    "apiKeyHeaderMode": "ApiKeyHeader",
+    "textApiProtocolMode": "Auto",
+    "imageApiRouteMode": "Auto",
+    "defaultApiVersion": ""
+  }
+}

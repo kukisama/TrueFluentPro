@@ -1,4 +1,6 @@
 using System;
+using System.Threading;
+using System.Threading.Tasks;
 using TrueFluentPro.Models;
 
 namespace TrueFluentPro.Services
@@ -12,6 +14,15 @@ namespace TrueFluentPro.Services
             Action<string>? auditLog,
             out IRealtimeTranslationService? service,
             out string errorMessage);
+
+        /// <summary>
+        /// 对指定的讯飞 / 百度实时语音资源做握手探活（不开麦克风、不发送音频），
+        /// 用于配置页与批量测试的连通性验证。
+        /// </summary>
+        Task<RealtimeProbeResult> ProbeThirdPartyRealtimeAsync(
+            AzureSpeechConfig config,
+            SpeechResource resource,
+            CancellationToken cancellationToken);
     }
 
     public sealed class RealtimeTranslationServiceFactory : IRealtimeTranslationServiceFactory
@@ -53,6 +64,18 @@ namespace TrueFluentPro.Services
                 return true;
             }
 
+            if (runtime.IsXunfeiRtasr)
+            {
+                connectorFamily = RealtimeConnectorFamily.XunfeiRtasr;
+                return true;
+            }
+
+            if (runtime.IsBaiduRealtimeAsr)
+            {
+                connectorFamily = RealtimeConnectorFamily.BaiduRealtimeAsr;
+                return true;
+            }
+
             if (runtime.AiRuntime == null)
             {
                 errorMessage = $"语音资源“{runtime.Resource.Name}”缺少可用的 Realtime AI 运行时。";
@@ -91,6 +114,18 @@ namespace TrueFluentPro.Services
                 return true;
             }
 
+            if (runtime.IsXunfeiRtasr)
+            {
+                service = new XunfeiRealtimeTranslationService(config, _speechResourceRuntimeResolver, auditLog);
+                return true;
+            }
+
+            if (runtime.IsBaiduRealtimeAsr)
+            {
+                service = new BaiduRealtimeTranslationService(config, _speechResourceRuntimeResolver, auditLog);
+                return true;
+            }
+
             if (runtime.AiRuntime == null)
             {
                 errorMessage = $"语音资源“{runtime.Resource.Name}”缺少可用的 Realtime AI 运行时。";
@@ -116,6 +151,26 @@ namespace TrueFluentPro.Services
                 _azureTokenProviderStore,
                 auditLog);
             return true;
+        }
+
+        public async Task<RealtimeProbeResult> ProbeThirdPartyRealtimeAsync(
+            AzureSpeechConfig config,
+            SpeechResource resource,
+            CancellationToken cancellationToken)
+        {
+            CascadedRealtimeTranslationServiceBase? probe = resource.ConnectorType switch
+            {
+                SpeechConnectorType.XunfeiRtasr => new XunfeiRealtimeTranslationService(config, _speechResourceRuntimeResolver, null),
+                SpeechConnectorType.BaiduRealtimeAsr => new BaiduRealtimeTranslationService(config, _speechResourceRuntimeResolver, null),
+                _ => null
+            };
+
+            if (probe == null)
+            {
+                return new RealtimeProbeResult(false, "该资源不是讯飞 / 百度实时语音类型，无法探活。", string.Empty, null);
+            }
+
+            return await probe.ProbeConnectionAsync(resource, cancellationToken).ConfigureAwait(false);
         }
     }
 }

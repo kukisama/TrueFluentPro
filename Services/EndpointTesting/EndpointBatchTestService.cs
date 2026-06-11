@@ -21,6 +21,7 @@ public sealed class EndpointBatchTestService : IEndpointBatchTestService
     private readonly IAzureTokenProviderStore _azureTokenProviderStore;
     private readonly IAiAudioTranscriptionService _aiAudioTranscriptionService;
     private readonly IRealtimeConnectionSpecResolver _realtimeConnectionSpecResolver;
+    private readonly IRealtimeTranslationServiceFactory _realtimeTranslationServiceFactory;
 
     private static readonly ModelCapability[] CapabilityOrder =
     [
@@ -36,11 +37,13 @@ public sealed class EndpointBatchTestService : IEndpointBatchTestService
     public EndpointBatchTestService(
         IAzureTokenProviderStore azureTokenProviderStore,
         IAiAudioTranscriptionService aiAudioTranscriptionService,
-        IRealtimeConnectionSpecResolver realtimeConnectionSpecResolver)
+        IRealtimeConnectionSpecResolver realtimeConnectionSpecResolver,
+        IRealtimeTranslationServiceFactory realtimeTranslationServiceFactory)
     {
         _azureTokenProviderStore = azureTokenProviderStore;
         _aiAudioTranscriptionService = aiAudioTranscriptionService;
         _realtimeConnectionSpecResolver = realtimeConnectionSpecResolver;
+        _realtimeTranslationServiceFactory = realtimeTranslationServiceFactory;
     }
 
     public async Task<EndpointBatchTestReport> TestSelectedEndpointAsync(
@@ -72,6 +75,32 @@ public sealed class EndpointBatchTestService : IEndpointBatchTestService
             var disabledItem = CreateSkippedItem(order++, endpoint.Id, GetEndpointName(endpoint), endpoint.EndpointTypeDisplayName, "整体", "", "当前选中的终结点已停用，未执行测试。", "如需验证连通性，请先启用该终结点后再运行测试。");
             immediateItems.Add(disabledItem);
             progressItems.Add(ToProgressItem(disabledItem));
+            ReportProgress(progress, startedAt, endpoint, progressItems, false);
+        }
+        else if (endpoint.IsThirdPartyRealtimeSpeechEndpoint)
+        {
+            // 讯飞 / 百度实时语音：独立握手探活，不走按模型循环的能力测试。
+            var probePending = new EndpointBatchTestProgressItem
+            {
+                Order = order,
+                EndpointId = endpoint.Id,
+                EndpointName = GetEndpointName(endpoint),
+                EndpointTypeName = endpoint.EndpointTypeDisplayName,
+                CapabilityName = "实时语音转写",
+                ModelId = "实时语音",
+                State = EndpointBatchTestLiveState.Running,
+                Summary = "正在握手探活...",
+                Details = "仅做 WebSocket 握手探活，不采集麦克风、不发送音频。",
+                RequestUrlText = string.Empty,
+                RequestSummary = string.Empty,
+                Duration = TimeSpan.Zero
+            };
+            progressItems.Add(probePending);
+            ReportProgress(progress, startedAt, endpoint, progressItems, false);
+
+            var probeItem = await TestThirdPartyRealtimeSpeechAsync(order++, config, endpoint, cancellationToken);
+            immediateItems.Add(probeItem);
+            ReplaceProgressItem(progressItems, ToProgressItem(probeItem));
             ReportProgress(progress, startedAt, endpoint, progressItems, false);
         }
         else
@@ -485,6 +514,55 @@ public sealed class EndpointBatchTestService : IEndpointBatchTestService
             stopwatch.Elapsed,
             BuildRealtimeProbeSummary(probeResult.ResponsePreview),
             BuildRealtimeProbeDetails(spec, probeResult));
+    }
+
+    /// <summary>
+    /// 讯飞 / 百度实时语音终结点的独立连通性测试：建立 WebSocket 并完成握手探活，
+    /// 不采集麦克风、不发送音频。译文凭据仅做存在性提示，不参与连通性判定。
+    /// </summary>
+    private async Task<EndpointBatchTestItem> TestThirdPartyRealtimeSpeechAsync(int order, AzureSpeechConfig config, AiEndpoint endpoint, CancellationToken cancellationToken)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        var endpointName = GetEndpointName(endpoint);
+        var endpointTypeName = endpoint.EndpointTypeDisplayName;
+        const string capabilityName = "实时语音转写";
+        const string testNote = "测试说明：仅做 WebSocket 握手探活，不采集麦克风、不发送音频。";
+
+        if (string.IsNullOrWhiteSpace(endpoint.AppId) || string.IsNullOrWhiteSpace(endpoint.ApiKey))
+        {
+            stopwatch.Stop();
+            var keyHint = endpoint.EndpointType == EndpointApiType.BaiduRealtimeAsr
+                ? "请先填写 AppId 与 AppKey 后再测试。"
+                : "请先填写 AppId 与 ApiKey 后再测试。";
+            return CreateFailedItem(order, endpoint.Id, endpointName, endpointTypeName, capabilityName, "实时语音", string.Empty, testNote, stopwatch.Elapsed, "缺少识别凭据。", keyHint);
+        }
+
+        var resource = AzureSpeechConfig.BuildRealtimeVendorSpeechResource(endpoint);
+
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutCts.CancelAfter(TimeSpan.FromSeconds(15));
+
+        var probe = await _realtimeTranslationServiceFactory.ProbeThirdPartyRealtimeAsync(config, resource, timeoutCts.Token);
+        stopwatch.Stop();
+
+        var requestUrlText = probe.Uri != null ? $"WS {probe.Uri}" : "WS（未建立连接）";
+
+        if (!probe.IsSuccess)
+        {
+            return CreateFailedItem(order, endpoint.Id, endpointName, endpointTypeName, capabilityName, "实时语音", requestUrlText, testNote, stopwatch.Elapsed, "实时语音连通性测试失败。", probe.Message);
+        }
+
+        var hasTranslateCred = !string.IsNullOrWhiteSpace(endpoint.TranslateAppId)
+                               || !string.IsNullOrWhiteSpace(endpoint.TranslateApiSecret)
+                               || !string.IsNullOrWhiteSpace(endpoint.TranslateApiKey);
+        var translateNote = hasTranslateCred
+            ? "✅ 已配置机器翻译凭据"
+            : "⚠️ 未配置机器翻译凭据，实时翻译将仅显示原文";
+        var details = string.IsNullOrWhiteSpace(probe.ResponsePreview)
+            ? translateNote
+            : $"服务端首帧：{probe.ResponsePreview}\n\n{translateNote}";
+
+        return CreateSuccessItem(order, endpoint.Id, endpointName, endpointTypeName, capabilityName, "实时语音", requestUrlText, testNote, stopwatch.Elapsed, probe.Message, details);
     }
 
     private async Task<EndpointBatchTestItem> TestVideoAsync(int order, ModelRuntimeResolution runtime, CapabilityTestPlan plan, string endpointName, string endpointTypeName, MediaGenConfig sourceConfig, Stopwatch stopwatch, CancellationToken cancellationToken)

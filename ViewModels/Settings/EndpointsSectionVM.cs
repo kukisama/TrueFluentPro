@@ -6,6 +6,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Input;
+using Microsoft.Extensions.DependencyInjection;
 using TrueFluentPro.Helpers;
 using TrueFluentPro.Models;
 using TrueFluentPro.Services;
@@ -41,6 +42,7 @@ namespace TrueFluentPro.ViewModels.Settings
             RemoveEndpointCommand = new RelayCommand(_ => RemoveEndpoint(), _ => SelectedEndpoint != null);
             DiscoverModelsCommand = new RelayCommand(async _ => await DiscoverModelsAsync(), _ => SelectedEndpoint != null && !IsDiscoveringModels);
             TestSpeechCommand = new RelayCommand(async _ => await TestSpeechEndpointAsync(), _ => SelectedEndpoint?.IsSpeechEndpoint == true);
+            TestThirdPartyRealtimeCommand = new RelayCommand(async _ => await TestThirdPartyRealtimeEndpointAsync(), _ => SelectedEndpoint?.IsThirdPartyRealtimeSpeechEndpoint == true);
         }
 
         public ObservableCollection<AiEndpoint> Endpoints { get => _endpoints; set => SetProperty(ref _endpoints, value); }
@@ -57,6 +59,7 @@ namespace TrueFluentPro.ViewModels.Settings
                     ((RelayCommand)RemoveEndpointCommand).RaiseCanExecuteChanged();
                     ((RelayCommand)DiscoverModelsCommand).RaiseCanExecuteChanged();
                     ((RelayCommand)TestSpeechCommand).RaiseCanExecuteChanged();
+                    ((RelayCommand)TestThirdPartyRealtimeCommand).RaiseCanExecuteChanged();
                     OnPropertyChanged(nameof(SelectedEndpointModels));
                     OnPropertyChanged(nameof(SelectedEndpointAuthMode));
                     OnPropertyChanged(nameof(SelectedEndpointApiKeyHeaderMode));
@@ -71,6 +74,8 @@ namespace TrueFluentPro.ViewModels.Settings
                     OnPropertyChanged(nameof(ShowEmptyState));
                     OnPropertyChanged(nameof(IsSelectedEndpointAzure));
                     OnPropertyChanged(nameof(IsSelectedEndpointSpeech));
+                    OnPropertyChanged(nameof(IsSelectedEndpointThirdPartyRealtime));
+                    OnPropertyChanged(nameof(IsSelectedEndpointAiGeneric));
                     SpeechTestResult = "";
                     ClearDiscoveredModels();
                 }
@@ -86,6 +91,10 @@ namespace TrueFluentPro.ViewModels.Settings
         public bool HasDiscoveredModels => DiscoveredModelIds.Count > 0;
         public bool IsSelectedEndpointAzure => SelectedEndpoint?.IsAzureEndpoint == true;
         public bool IsSelectedEndpointSpeech => SelectedEndpoint?.IsSpeechEndpoint == true;
+        public bool IsSelectedEndpointThirdPartyRealtime => SelectedEndpoint?.IsThirdPartyRealtimeSpeechEndpoint == true;
+        // AI 通用终结点：既非 Azure Speech，也非讯飞/百度实时语音。
+        public bool IsSelectedEndpointAiGeneric =>
+            SelectedEndpoint != null && !IsSelectedEndpointSpeech && !IsSelectedEndpointThirdPartyRealtime;
         public string SpeechTestResult { get => _speechTestResult; set => SetProperty(ref _speechTestResult, value); }
         public bool CanSelectedEndpointUseAad => SelectedEndpoint != null
             && _endpointTemplateService.GetTemplate(SelectedEndpoint).SupportsAad;
@@ -209,6 +218,7 @@ namespace TrueFluentPro.ViewModels.Settings
         public ICommand RemoveEndpointCommand { get; }
         public ICommand DiscoverModelsCommand { get; }
         public ICommand TestSpeechCommand { get; }
+        public ICommand TestThirdPartyRealtimeCommand { get; }
         public event Action<string>? StatusRequested;
 
         /// <summary>内部访问配置，由宿主注入</summary>
@@ -513,6 +523,40 @@ namespace TrueFluentPro.ViewModels.Settings
             SpeechTestResult = isValid
                 ? $"✓ {message} — {sw.ElapsedMilliseconds}ms"
                 : $"✗ {message}";
+        }
+
+        private async Task TestThirdPartyRealtimeEndpointAsync()
+        {
+            if (SelectedEndpoint is not { IsThirdPartyRealtimeSpeechEndpoint: true } ep)
+                return;
+
+            if (string.IsNullOrWhiteSpace(ep.AppId) || string.IsNullOrWhiteSpace(ep.ApiKey))
+            {
+                SpeechTestResult = ep.EndpointType == EndpointApiType.BaiduRealtimeAsr
+                    ? "✗ 请填写 AppId 与 AppKey"
+                    : "✗ 请填写 AppId 与 ApiKey";
+                return;
+            }
+
+            SpeechTestResult = "测试中...";
+
+            try
+            {
+                var factory = App.Services.GetRequiredService<IRealtimeTranslationServiceFactory>();
+                var resource = AzureSpeechConfig.BuildRealtimeVendorSpeechResource(ep);
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                var result = await factory.ProbeThirdPartyRealtimeAsync(Config, resource, cts.Token);
+                sw.Stop();
+
+                SpeechTestResult = result.IsSuccess
+                    ? $"✓ {result.Message} — {sw.ElapsedMilliseconds}ms"
+                    : $"✗ {result.Message}";
+            }
+            catch (Exception ex)
+            {
+                SpeechTestResult = $"✗ {ex.Message}";
+            }
         }
 
         internal void SyncEndpointsToConfig()

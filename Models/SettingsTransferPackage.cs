@@ -47,6 +47,12 @@ namespace TrueFluentPro.Models
         public string SubscriptionKey { get; set; } = "";
         public string ServiceRegion { get; set; } = "";
         public string Endpoint { get; set; } = "";
+        public string AppId { get; set; } = "";
+        public string ApiKey { get; set; } = "";
+        public string ApiSecret { get; set; } = "";
+        public string TranslateAppId { get; set; } = "";
+        public string TranslateApiKey { get; set; } = "";
+        public string TranslateApiSecret { get; set; } = "";
         public ModelReference? RealtimeSpeechToTextModelRef { get; set; }
         public ModelReference? BatchSpeechToTextModelRef { get; set; }
         public ModelReference? TextToSpeechModelRef { get; set; }
@@ -83,6 +89,13 @@ namespace TrueFluentPro.Models
         public string SpeechRegion { get; set; } = "";
         public string SpeechEndpoint { get; set; } = "";
         public SpeechCapability SpeechCapabilities { get; set; } = SpeechCapability.None;
+
+        // --- 第三方实时语音（讯飞/百度）专属凭据 ---
+        public string AppId { get; set; } = "";
+        public string ApiSecret { get; set; } = "";
+        public string TranslateAppId { get; set; } = "";
+        public string TranslateApiKey { get; set; } = "";
+        public string TranslateApiSecret { get; set; } = "";
     }
 
     public class TransferAiModel

@@ -7,6 +7,8 @@ namespace TrueFluentPro.Services
     {
         MicrosoftSpeechSdk,
         OpenAiRealtimeWebSocket,
+        XunfeiRtasr,
+        BaiduRealtimeAsr,
         Custom
     }
 

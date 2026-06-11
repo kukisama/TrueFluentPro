@@ -82,6 +82,12 @@ namespace TrueFluentPro.Services
                         SubscriptionKey = resource.SubscriptionKey,
                         ServiceRegion = resource.ServiceRegion,
                         Endpoint = resource.Endpoint,
+                        AppId = resource.AppId,
+                        ApiKey = resource.ApiKey,
+                        ApiSecret = resource.ApiSecret,
+                        TranslateAppId = resource.TranslateAppId,
+                        TranslateApiKey = resource.TranslateApiKey,
+                        TranslateApiSecret = resource.TranslateApiSecret,
                         RealtimeSpeechToTextModelRef = CloneReference(resource.RealtimeSpeechToTextModelRef),
                         BatchSpeechToTextModelRef = CloneReference(resource.BatchSpeechToTextModelRef),
                         TextToSpeechModelRef = CloneReference(resource.TextToSpeechModelRef)
@@ -121,7 +127,12 @@ namespace TrueFluentPro.Services
                     SpeechSubscriptionKey = endpoint.SpeechSubscriptionKey,
                     SpeechRegion = endpoint.SpeechRegion,
                     SpeechEndpoint = endpoint.SpeechEndpoint,
-                    SpeechCapabilities = endpoint.SpeechCapabilities
+                    SpeechCapabilities = endpoint.SpeechCapabilities,
+                    AppId = endpoint.AppId,
+                    ApiSecret = endpoint.ApiSecret,
+                    TranslateAppId = endpoint.TranslateAppId,
+                    TranslateApiKey = endpoint.TranslateApiKey,
+                    TranslateApiSecret = endpoint.TranslateApiSecret
                 }).ToList(),
                 ModelSelections = new TransferModelSelections
                 {
@@ -168,6 +179,12 @@ namespace TrueFluentPro.Services
                     SubscriptionKey = resource.SubscriptionKey?.Trim() ?? "",
                     ServiceRegion = resource.ServiceRegion?.Trim() ?? "",
                     Endpoint = resource.Endpoint?.Trim() ?? "",
+                    AppId = resource.AppId?.Trim() ?? "",
+                    ApiKey = resource.ApiKey?.Trim() ?? "",
+                    ApiSecret = resource.ApiSecret?.Trim() ?? "",
+                    TranslateAppId = resource.TranslateAppId?.Trim() ?? "",
+                    TranslateApiKey = resource.TranslateApiKey?.Trim() ?? "",
+                    TranslateApiSecret = resource.TranslateApiSecret?.Trim() ?? "",
                     RealtimeSpeechToTextModelRef = CloneReference(resource.RealtimeSpeechToTextModelRef),
                     BatchSpeechToTextModelRef = CloneReference(resource.BatchSpeechToTextModelRef),
                     TextToSpeechModelRef = CloneReference(resource.TextToSpeechModelRef)
@@ -307,7 +324,12 @@ namespace TrueFluentPro.Services
                     SpeechSubscriptionKey = endpoint.SpeechSubscriptionKey?.Trim() ?? "",
                     SpeechRegion = endpoint.SpeechRegion?.Trim() ?? "",
                     SpeechEndpoint = endpoint.SpeechEndpoint?.Trim() ?? "",
-                    SpeechCapabilities = endpoint.SpeechCapabilities
+                    SpeechCapabilities = endpoint.SpeechCapabilities,
+                    AppId = endpoint.AppId?.Trim() ?? "",
+                    ApiSecret = endpoint.ApiSecret?.Trim() ?? "",
+                    TranslateAppId = endpoint.TranslateAppId?.Trim() ?? "",
+                    TranslateApiKey = endpoint.TranslateApiKey?.Trim() ?? "",
+                    TranslateApiSecret = endpoint.TranslateApiSecret?.Trim() ?? ""
                 });
             }
 
@@ -380,6 +402,8 @@ namespace TrueFluentPro.Services
             {
                 EndpointApiType.AzureOpenAi => "builtin.microsoft.azure-openai",
                 EndpointApiType.ApiManagementGateway => "builtin.microsoft.apim-gateway",
+                EndpointApiType.XunfeiRtasr => "builtin.xunfei.rtasr",
+                EndpointApiType.BaiduRealtimeAsr => "builtin.baidu.realtime-asr",
                 _ => "builtin.openai.compatible"
             };
 

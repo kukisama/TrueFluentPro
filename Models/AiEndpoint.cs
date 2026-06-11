@@ -61,6 +61,13 @@ namespace TrueFluentPro.Models
                     OnPropertyChanged(nameof(EndpointTypeBadgeBackground));
                     OnPropertyChanged(nameof(EndpointTypeSubtitle));
                     OnPropertyChanged(nameof(EndpointTypeIconAssetPath));
+                    OnPropertyChanged(nameof(IsSpeechEndpoint));
+                    OnPropertyChanged(nameof(IsXunfeiRtasrEndpoint));
+                    OnPropertyChanged(nameof(IsBaiduRealtimeAsrEndpoint));
+                    OnPropertyChanged(nameof(IsThirdPartyRealtimeSpeechEndpoint));
+                    OnPropertyChanged(nameof(AsrApiKeyLabel));
+                    OnPropertyChanged(nameof(TranslateApiKeyLabel));
+                    OnPropertyChanged(nameof(TranslateSecretLabel));
                 }
             }
         }
@@ -141,7 +148,52 @@ namespace TrueFluentPro.Models
         }
         public SpeechCapability SpeechCapabilities { get => _speechCapabilities; set => SetProperty(ref _speechCapabilities, value); }
 
+        // --- 第三方实时语音厂商（讯飞 / 百度）专属凭证字段 ---
+        // 说明：ASR 主密钥复用 ApiKey；AppId/ApiSecret 为多段签名需要；
+        // Translate* 为机器翻译（讯飞 NiuTrans / 百度通用翻译）独立凭证。
+        private string _appId = "";
+        private string _apiSecret = "";
+        private string _translateAppId = "";
+        private string _translateApiKey = "";
+        private string _translateApiSecret = "";
+        public string AppId { get => _appId; set => SetProperty(ref _appId, value); }
+        public string ApiSecret { get => _apiSecret; set => SetProperty(ref _apiSecret, value); }
+        public string TranslateAppId { get => _translateAppId; set => SetProperty(ref _translateAppId, value); }
+        public string TranslateApiKey { get => _translateApiKey; set => SetProperty(ref _translateApiKey, value); }
+        public string TranslateApiSecret { get => _translateApiSecret; set => SetProperty(ref _translateApiSecret, value); }
+
         public bool IsSpeechEndpoint => EndpointType == EndpointApiType.AzureSpeech;
+
+        /// <summary>讯飞实时语音终结点</summary>
+        public bool IsXunfeiRtasrEndpoint => EndpointType == EndpointApiType.XunfeiRtasr;
+
+        /// <summary>百度实时语音终结点</summary>
+        public bool IsBaiduRealtimeAsrEndpoint => EndpointType == EndpointApiType.BaiduRealtimeAsr;
+
+        /// <summary>是否为第三方实时语音厂商（讯飞 / 百度）终结点</summary>
+        public bool IsThirdPartyRealtimeSpeechEndpoint =>
+            EndpointType is EndpointApiType.XunfeiRtasr or EndpointApiType.BaiduRealtimeAsr;
+
+        /// <summary>识别凭据主密钥的界面标签（讯飞为 ApiKey，百度为 API Key）。</summary>
+        public string AsrApiKeyLabel => EndpointType switch
+        {
+            EndpointApiType.BaiduRealtimeAsr => "API Key（识别）",
+            _ => "ApiKey"
+        };
+
+        /// <summary>机器翻译 ApiKey 的界面标签（讯飞为 NiuTrans ApiKey，百度为大模型翻译 ApiKey）。</summary>
+        public string TranslateApiKeyLabel => EndpointType switch
+        {
+            EndpointApiType.BaiduRealtimeAsr => "翻译 ApiKey（大模型，可选）",
+            _ => "翻译 ApiKey"
+        };
+
+        /// <summary>机器翻译密钥的界面标签（讯飞为翻译 ApiSecret，百度为翻译 SecretKey）。</summary>
+        public string TranslateSecretLabel => EndpointType switch
+        {
+            EndpointApiType.BaiduRealtimeAsr => "翻译 SecretKey（通用，可选）",
+            _ => "翻译 ApiSecret"
+        };
 
         public string SpeechRegionHint
         {
@@ -170,6 +222,8 @@ namespace TrueFluentPro.Models
             EndpointApiType.AzureOpenAi => "Azure OpenAI",
             EndpointApiType.ApiManagementGateway => "APIM 网关",
             EndpointApiType.AzureSpeech => "Azure Speech",
+            EndpointApiType.XunfeiRtasr => "讯飞实时语音",
+            EndpointApiType.BaiduRealtimeAsr => "百度实时语音",
             _ => "OpenAI Compatible"
         };
 
@@ -178,6 +232,8 @@ namespace TrueFluentPro.Models
             EndpointApiType.AzureOpenAi => "☰",
             EndpointApiType.ApiManagementGateway => "⇆",
             EndpointApiType.AzureSpeech => "🎤",
+            EndpointApiType.XunfeiRtasr => "🎙️",
+            EndpointApiType.BaiduRealtimeAsr => "🎙️",
             _ => "✦"
         };
 
@@ -186,6 +242,8 @@ namespace TrueFluentPro.Models
             EndpointApiType.AzureOpenAi => "AZ",
             EndpointApiType.ApiManagementGateway => "AP",
             EndpointApiType.AzureSpeech => "SP",
+            EndpointApiType.XunfeiRtasr => "XF",
+            EndpointApiType.BaiduRealtimeAsr => "BD",
             _ => "OA"
         };
 
@@ -194,6 +252,8 @@ namespace TrueFluentPro.Models
             EndpointApiType.AzureOpenAi => "#0078D4",
             EndpointApiType.ApiManagementGateway => "#6D28D9",
             EndpointApiType.AzureSpeech => "#F9A825",
+            EndpointApiType.XunfeiRtasr => "#1E40AF",
+            EndpointApiType.BaiduRealtimeAsr => "#2932E1",
             _ => "#10A37F"
         };
 
@@ -202,6 +262,8 @@ namespace TrueFluentPro.Models
             EndpointApiType.AzureOpenAi => "官方 Azure OpenAI / Foundry",
             EndpointApiType.ApiManagementGateway => "Azure API Management 网关",
             EndpointApiType.AzureSpeech => "Azure 认知服务语音资源",
+            EndpointApiType.XunfeiRtasr => "讯飞实时语音转写 + 机器翻译",
+            EndpointApiType.BaiduRealtimeAsr => "百度实时语音识别 + 机器翻译",
             _ => "标准 OpenAI / 兼容服务"
         };
 
@@ -210,6 +272,8 @@ namespace TrueFluentPro.Models
             EndpointApiType.AzureOpenAi => "/Assets/EndpointProfiles/Icons/azure-openai.svg",
             EndpointApiType.ApiManagementGateway => "/Assets/EndpointProfiles/Icons/apim-gateway.svg",
             EndpointApiType.AzureSpeech => "/Assets/EndpointProfiles/Icons/azure-speech.svg",
+            EndpointApiType.XunfeiRtasr => "/Assets/EndpointProfiles/Icons/xunfei.svg",
+            EndpointApiType.BaiduRealtimeAsr => "/Assets/EndpointProfiles/Icons/baidu.svg",
             _ => "/Assets/EndpointProfiles/Icons/openai-compatible.svg"
         };
 

@@ -14,7 +14,9 @@ namespace TrueFluentPro.Models
         OpenAiCompatible,
         AzureOpenAi,
         ApiManagementGateway,
-        AzureSpeech
+        AzureSpeech,
+        XunfeiRtasr,
+        BaiduRealtimeAsr
     }
 
     public enum AiChatProfile

@@ -21,6 +21,8 @@ namespace TrueFluentPro.Models
         OpenAI,
         Tencent,
         Alibaba,
+        Xunfei,
+        Baidu,
         Other
     }
 
@@ -29,7 +31,9 @@ namespace TrueFluentPro.Models
     {
         MicrosoftSpeech,
         AiSpeech,
-        CustomSpeech
+        CustomSpeech,
+        XunfeiRtasr,
+        BaiduRealtimeAsr
     }
 
     public class SpeechResource
@@ -53,6 +57,14 @@ namespace TrueFluentPro.Models
         public ModelReference? RealtimeSpeechToTextModelRef { get; set; }
         public ModelReference? BatchSpeechToTextModelRef { get; set; }
         public ModelReference? TextToSpeechModelRef { get; set; }
+
+        // 第三方厂商语音包（讯飞/百度）凭据。ASR 与机器翻译可能使用不同的服务密钥。
+        public string AppId { get; set; } = "";          // ASR 应用 AppId（讯飞 RTASR / 百度实时语音）
+        public string ApiKey { get; set; } = "";         // 讯飞 RTASR ApiKey / 百度实时语音 AppKey
+        public string ApiSecret { get; set; } = "";      // 预留（讯飞部分服务需要）
+        public string TranslateAppId { get; set; } = ""; // 机器翻译 AppId（讯飞 NiuTrans / 百度翻译）
+        public string TranslateApiKey { get; set; } = "";    // 讯飞 NiuTrans ApiKey
+        public string TranslateApiSecret { get; set; } = ""; // 讯飞 NiuTrans ApiSecret / 百度翻译 SecretKey
 
         public static SpeechResource CreateMicrosoftResource(AzureSubscription subscription, int index)
         {
@@ -117,6 +129,10 @@ namespace TrueFluentPro.Models
 
         public const string LegacyAiResourceId = "legacy-ai-speech-default";
 
+        public bool IsThirdPartyVendorResource
+            => ConnectorType == SpeechConnectorType.XunfeiRtasr
+               || ConnectorType == SpeechConnectorType.BaiduRealtimeAsr;
+
         public bool HasCapability(SpeechCapability capability)
             => (Capabilities & capability) == capability;
 
@@ -172,6 +188,12 @@ namespace TrueFluentPro.Models
                 SubscriptionKey = SubscriptionKey,
                 ServiceRegion = ServiceRegion,
                 Endpoint = Endpoint,
+                AppId = AppId,
+                ApiKey = ApiKey,
+                ApiSecret = ApiSecret,
+                TranslateAppId = TranslateAppId,
+                TranslateApiKey = TranslateApiKey,
+                TranslateApiSecret = TranslateApiSecret,
                 RealtimeSpeechToTextModelRef = CloneReference(RealtimeSpeechToTextModelRef),
                 BatchSpeechToTextModelRef = CloneReference(BatchSpeechToTextModelRef),
                 TextToSpeechModelRef = CloneReference(TextToSpeechModelRef)

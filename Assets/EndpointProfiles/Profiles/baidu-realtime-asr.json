@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "id": "builtin.baidu.realtime-asr",
+  "vendor": "百度",
+  "basePolicyId": "platform.baidu-realtime-asr",
+  "endpointType": "BaiduRealtimeAsr",
+  "displayName": "百度实时语音",
+  "subtitle": "百度实时语音识别 + 通用翻译",
+  "glyph": "🎙️",
+  "summary": "使用百度智能云的实时语音识别（WebSocket）做语音识别，并以百度通用翻译完成译文，适合实时翻译场景。识别用 AppId+AppKey，翻译用独立的 AppId+SecretKey。",
+  "defaultNamePrefix": "百度实时语音",
+  "iconAssetPath": "Assets/EndpointProfiles/Icons/baidu.svg",
+  "tags": ["builtin", "baidu", "speech", "realtime"],
+  "capabilities": {
+    "mode": "AllowOnly",
+    "allowed": ["SpeechToText"],
+    "disabled": []
+  },
+  "overrides": {
+    "defaults": {},
+    "auth": {
+      "defaultMode": "ApiKey",
+      "allowedModes": ["ApiKey"],
+      "defaultApiKeyHeaderMode": "ApiKeyHeader",
+      "allowedApiKeyHeaderModes": ["ApiKeyHeader"]
+    },
+    "capabilities": {
+      "mode": "AllowOnly",
+      "allowed": ["SpeechToText"],
+      "disabled": []
+    },
+    "routes": {},
+    "version": {}
+  },
+  "fallbacks": {},
+  "specialPolicies": {
+    "allowApimSubscriptionKeyQueryRetry": false,
+    "allowPreviewFallback": false
+  },
+  "defaults": {
+    "providerType": "OpenAiCompatible",
+    "authMode": "ApiKey",
+    "apiKeyHeaderMode": "ApiKeyHeader",
+    "textApiProtocolMode": "Auto",
+    "imageApiRouteMode": "Auto",
+    "defaultApiVersion": ""
+  }
+}

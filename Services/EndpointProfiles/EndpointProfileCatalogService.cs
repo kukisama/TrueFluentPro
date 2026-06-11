@@ -22,7 +22,9 @@ public sealed class EndpointProfileCatalogService : IEndpointProfileCatalogServi
         "avares://TrueFluentPro/Assets/EndpointProfiles/Profiles/azure-openai.json",
         "avares://TrueFluentPro/Assets/EndpointProfiles/Profiles/apim-gateway.json",
         "avares://TrueFluentPro/Assets/EndpointProfiles/Profiles/openai-compatible.json",
-        "avares://TrueFluentPro/Assets/EndpointProfiles/Profiles/azure-speech.json"
+        "avares://TrueFluentPro/Assets/EndpointProfiles/Profiles/azure-speech.json",
+        "avares://TrueFluentPro/Assets/EndpointProfiles/Profiles/xunfei-rtasr.json",
+        "avares://TrueFluentPro/Assets/EndpointProfiles/Profiles/baidu-realtime-asr.json"
     ];
 
     private const string InventoryAsset = "avares://TrueFluentPro/Assets/EndpointProfiles/inventory.json";

@@ -12,6 +12,8 @@ namespace TrueFluentPro.Services
         public bool IsMicrosoftSpeech => Resource.ConnectorType == SpeechConnectorType.MicrosoftSpeech;
         public bool IsAadMicrosoftSpeech => IsMicrosoftSpeech && Resource.AuthMode == AzureAuthMode.AAD;
         public bool IsAiSpeech => Resource.ConnectorType == SpeechConnectorType.AiSpeech;
+        public bool IsXunfeiRtasr => Resource.ConnectorType == SpeechConnectorType.XunfeiRtasr;
+        public bool IsBaiduRealtimeAsr => Resource.ConnectorType == SpeechConnectorType.BaiduRealtimeAsr;
     }
 
     public interface ISpeechResourceRuntimeResolver
@@ -132,6 +134,34 @@ namespace TrueFluentPro.Services
                         Resource = resource,
                         Capability = capability,
                         AiRuntime = aiRuntime
+                    };
+                    return true;
+
+                case SpeechConnectorType.XunfeiRtasr:
+                    if (string.IsNullOrWhiteSpace(resource.AppId) || string.IsNullOrWhiteSpace(resource.ApiKey))
+                    {
+                        errorMessage = $"讯飞语音资源“{resource.Name}”缺少 AppId 或 RTASR ApiKey。";
+                        return false;
+                    }
+
+                    runtime = new SpeechResourceRuntimeResolution
+                    {
+                        Resource = resource,
+                        Capability = capability
+                    };
+                    return true;
+
+                case SpeechConnectorType.BaiduRealtimeAsr:
+                    if (string.IsNullOrWhiteSpace(resource.AppId) || string.IsNullOrWhiteSpace(resource.ApiKey))
+                    {
+                        errorMessage = $"百度语音资源“{resource.Name}”缺少 AppId 或 AppKey。";
+                        return false;
+                    }
+
+                    runtime = new SpeechResourceRuntimeResolution
+                    {
+                        Resource = resource,
+                        Capability = capability
                     };
                     return true;
 
