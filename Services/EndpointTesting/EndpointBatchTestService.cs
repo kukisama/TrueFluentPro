@@ -79,14 +79,17 @@ public sealed class EndpointBatchTestService : IEndpointBatchTestService
         }
         else if (endpoint.IsThirdPartyRealtimeSpeechEndpoint)
         {
-            // 讯飞 / 百度实时语音：独立握手探活，不走按模型循环的能力测试。
-            var probePending = new EndpointBatchTestProgressItem
+            // 讯飞 / 百度实时语音：识别（握手探活）与机器翻译分两部分，并发测试，互不阻塞。
+            var asrOrder = order++;
+            var transOrder = order++;
+
+            var asrPending = new EndpointBatchTestProgressItem
             {
-                Order = order,
+                Order = asrOrder,
                 EndpointId = endpoint.Id,
                 EndpointName = GetEndpointName(endpoint),
                 EndpointTypeName = endpoint.EndpointTypeDisplayName,
-                CapabilityName = "实时语音转写",
+                CapabilityName = "实时语音识别",
                 ModelId = "实时语音",
                 State = EndpointBatchTestLiveState.Running,
                 Summary = "正在握手探活...",
@@ -95,13 +98,38 @@ public sealed class EndpointBatchTestService : IEndpointBatchTestService
                 RequestSummary = string.Empty,
                 Duration = TimeSpan.Zero
             };
-            progressItems.Add(probePending);
+            var transPending = new EndpointBatchTestProgressItem
+            {
+                Order = transOrder,
+                EndpointId = endpoint.Id,
+                EndpointName = GetEndpointName(endpoint),
+                EndpointTypeName = endpoint.EndpointTypeDisplayName,
+                CapabilityName = "机器翻译",
+                ModelId = "机器翻译",
+                State = EndpointBatchTestLiveState.Running,
+                Summary = "正在测试翻译...",
+                Details = "翻译一小段示例文本以验证翻译凭据。",
+                RequestUrlText = string.Empty,
+                RequestSummary = string.Empty,
+                Duration = TimeSpan.Zero
+            };
+            progressItems.Add(asrPending);
+            progressItems.Add(transPending);
             ReportProgress(progress, startedAt, endpoint, progressItems, false);
 
-            var probeItem = await TestThirdPartyRealtimeSpeechAsync(order++, config, endpoint, cancellationToken);
-            immediateItems.Add(probeItem);
-            ReplaceProgressItem(progressItems, ToProgressItem(probeItem));
-            ReportProgress(progress, startedAt, endpoint, progressItems, false);
+            // 两个探活并发启动，谁先完成谁先刷新进度。
+            var asrTask = TestThirdPartyRealtimeSpeechAsync(asrOrder, config, endpoint, cancellationToken);
+            var transTask = TestThirdPartyRealtimeTranslationAsync(transOrder, config, endpoint, cancellationToken);
+            var remaining = new List<Task<EndpointBatchTestItem>> { asrTask, transTask };
+            while (remaining.Count > 0)
+            {
+                var done = await Task.WhenAny(remaining);
+                remaining.Remove(done);
+                var item = await done;
+                immediateItems.Add(item);
+                ReplaceProgressItem(progressItems, ToProgressItem(item));
+                ReportProgress(progress, startedAt, endpoint, progressItems, false);
+            }
         }
         else
         {
@@ -517,15 +545,16 @@ public sealed class EndpointBatchTestService : IEndpointBatchTestService
     }
 
     /// <summary>
-    /// 讯飞 / 百度实时语音终结点的独立连通性测试：建立 WebSocket 并完成握手探活，
-    /// 不采集麦克风、不发送音频。译文凭据仅做存在性提示，不参与连通性判定。
+    /// <summary>
+    /// 讯飞 / 百度实时语音终结点的识别连通性测试：建立 WebSocket 并完成握手探活，
+    /// 不采集麦克风、不发送音频。翻译部分由 <see cref="TestThirdPartyRealtimeTranslationAsync"/> 独立测试。
     /// </summary>
     private async Task<EndpointBatchTestItem> TestThirdPartyRealtimeSpeechAsync(int order, AzureSpeechConfig config, AiEndpoint endpoint, CancellationToken cancellationToken)
     {
         var stopwatch = Stopwatch.StartNew();
         var endpointName = GetEndpointName(endpoint);
         var endpointTypeName = endpoint.EndpointTypeDisplayName;
-        const string capabilityName = "实时语音转写";
+        const string capabilityName = "实时语音识别";
         const string testNote = "测试说明：仅做 WebSocket 握手探活，不采集麦克风、不发送音频。";
 
         if (string.IsNullOrWhiteSpace(endpoint.AppId) || string.IsNullOrWhiteSpace(endpoint.ApiKey))
@@ -552,17 +581,54 @@ public sealed class EndpointBatchTestService : IEndpointBatchTestService
             return CreateFailedItem(order, endpoint.Id, endpointName, endpointTypeName, capabilityName, "实时语音", requestUrlText, testNote, stopwatch.Elapsed, "实时语音连通性测试失败。", probe.Message);
         }
 
+        var details = string.IsNullOrWhiteSpace(probe.ResponsePreview)
+            ? "握手成功。"
+            : $"服务端首帧：{probe.ResponsePreview}";
+
+        return CreateSuccessItem(order, endpoint.Id, endpointName, endpointTypeName, capabilityName, "实时语音", requestUrlText, testNote, stopwatch.Elapsed, probe.Message, details);
+    }
+
+    /// <summary>
+    /// 讯飞 / 百度实时语音终结点的机器翻译连通性测试：翻译一小段示例文本以验证翻译凭据。
+    /// 与识别测试相互独立，可并发执行。未配置翻译凭据时返回跳过项（实时翻译将仅显示原文）。
+    /// </summary>
+    private async Task<EndpointBatchTestItem> TestThirdPartyRealtimeTranslationAsync(int order, AzureSpeechConfig config, AiEndpoint endpoint, CancellationToken cancellationToken)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        var endpointName = GetEndpointName(endpoint);
+        var endpointTypeName = endpoint.EndpointTypeDisplayName;
+        const string capabilityName = "机器翻译";
+        const string testNote = "测试说明：翻译一小段示例文本，验证机器翻译凭据是否可用。";
+
         var hasTranslateCred = !string.IsNullOrWhiteSpace(endpoint.TranslateAppId)
                                || !string.IsNullOrWhiteSpace(endpoint.TranslateApiSecret)
                                || !string.IsNullOrWhiteSpace(endpoint.TranslateApiKey);
-        var translateNote = hasTranslateCred
-            ? "✅ 已配置机器翻译凭据"
-            : "⚠️ 未配置机器翻译凭据，实时翻译将仅显示原文";
-        var details = string.IsNullOrWhiteSpace(probe.ResponsePreview)
-            ? translateNote
-            : $"服务端首帧：{probe.ResponsePreview}\n\n{translateNote}";
+        if (!hasTranslateCred)
+        {
+            stopwatch.Stop();
+            return CreateSkippedItem(order, endpoint.Id, endpointName, endpointTypeName, capabilityName, "机器翻译",
+                "未配置机器翻译凭据。",
+                "实时翻译将仅显示原文。如需译文，请填写机器翻译凭据后再测试。");
+        }
 
-        return CreateSuccessItem(order, endpoint.Id, endpointName, endpointTypeName, capabilityName, "实时语音", requestUrlText, testNote, stopwatch.Elapsed, probe.Message, details);
+        var resource = AzureSpeechConfig.BuildRealtimeVendorSpeechResource(endpoint);
+
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutCts.CancelAfter(TimeSpan.FromSeconds(15));
+
+        var probe = await _realtimeTranslationServiceFactory.ProbeThirdPartyTranslationAsync(config, resource, timeoutCts.Token);
+        stopwatch.Stop();
+
+        if (!probe.IsSuccess)
+        {
+            return CreateFailedItem(order, endpoint.Id, endpointName, endpointTypeName, capabilityName, "机器翻译", string.Empty, testNote, stopwatch.Elapsed, "机器翻译连通性测试失败。", probe.Message);
+        }
+
+        var details = string.IsNullOrWhiteSpace(probe.ResponsePreview)
+            ? "翻译成功。"
+            : $"翻译示例：{probe.ResponsePreview}";
+
+        return CreateSuccessItem(order, endpoint.Id, endpointName, endpointTypeName, capabilityName, "机器翻译", string.Empty, testNote, stopwatch.Elapsed, probe.Message, details);
     }
 
     private async Task<EndpointBatchTestItem> TestVideoAsync(int order, ModelRuntimeResolution runtime, CapabilityTestPlan plan, string endpointName, string endpointTypeName, MediaGenConfig sourceConfig, Stopwatch stopwatch, CancellationToken cancellationToken)

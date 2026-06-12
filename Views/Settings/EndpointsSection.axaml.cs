@@ -55,6 +55,24 @@ public partial class EndpointsSection : UserControl
         EndpointAadLoginPanel.ClientId = ep.AzureClientId;
     }
 
+    private void OpenUrl_Click(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Control { Tag: string url } && !string.IsNullOrWhiteSpace(url))
+        {
+            try
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url)
+                {
+                    UseShellExecute = true
+                });
+            }
+            catch
+            {
+                // 打开浏览器失败时静默忽略，避免影响设置界面
+            }
+        }
+    }
+
     private async void CreateEndpoint_Click(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not EndpointsSectionVM vm)

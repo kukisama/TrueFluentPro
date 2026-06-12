@@ -23,6 +23,15 @@ namespace TrueFluentPro.Services
             AzureSpeechConfig config,
             SpeechResource resource,
             CancellationToken cancellationToken);
+
+        /// <summary>
+        /// 对指定的讯飞 / 百度实时语音资源做翻译链路探活：翻译一小段示例文本，
+        /// 验证机器翻译凭据是否可用。
+        /// </summary>
+        Task<RealtimeProbeResult> ProbeThirdPartyTranslationAsync(
+            AzureSpeechConfig config,
+            SpeechResource resource,
+            CancellationToken cancellationToken);
     }
 
     public sealed class RealtimeTranslationServiceFactory : IRealtimeTranslationServiceFactory
@@ -171,6 +180,26 @@ namespace TrueFluentPro.Services
             }
 
             return await probe.ProbeConnectionAsync(resource, cancellationToken).ConfigureAwait(false);
+        }
+
+        public async Task<RealtimeProbeResult> ProbeThirdPartyTranslationAsync(
+            AzureSpeechConfig config,
+            SpeechResource resource,
+            CancellationToken cancellationToken)
+        {
+            CascadedRealtimeTranslationServiceBase? probe = resource.ConnectorType switch
+            {
+                SpeechConnectorType.XunfeiRtasr => new XunfeiRealtimeTranslationService(config, _speechResourceRuntimeResolver, null),
+                SpeechConnectorType.BaiduRealtimeAsr => new BaiduRealtimeTranslationService(config, _speechResourceRuntimeResolver, null),
+                _ => null
+            };
+
+            if (probe == null)
+            {
+                return new RealtimeProbeResult(false, "该资源不是讯飞 / 百度实时语音类型，无法探活翻译。", string.Empty, null);
+            }
+
+            return await probe.ProbeTranslationAsync(resource, cancellationToken).ConfigureAwait(false);
         }
     }
 }

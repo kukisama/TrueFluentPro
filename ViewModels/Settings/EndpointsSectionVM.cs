@@ -42,7 +42,6 @@ namespace TrueFluentPro.ViewModels.Settings
             RemoveEndpointCommand = new RelayCommand(_ => RemoveEndpoint(), _ => SelectedEndpoint != null);
             DiscoverModelsCommand = new RelayCommand(async _ => await DiscoverModelsAsync(), _ => SelectedEndpoint != null && !IsDiscoveringModels);
             TestSpeechCommand = new RelayCommand(async _ => await TestSpeechEndpointAsync(), _ => SelectedEndpoint?.IsSpeechEndpoint == true);
-            TestThirdPartyRealtimeCommand = new RelayCommand(async _ => await TestThirdPartyRealtimeEndpointAsync(), _ => SelectedEndpoint?.IsThirdPartyRealtimeSpeechEndpoint == true);
         }
 
         public ObservableCollection<AiEndpoint> Endpoints { get => _endpoints; set => SetProperty(ref _endpoints, value); }
@@ -59,7 +58,6 @@ namespace TrueFluentPro.ViewModels.Settings
                     ((RelayCommand)RemoveEndpointCommand).RaiseCanExecuteChanged();
                     ((RelayCommand)DiscoverModelsCommand).RaiseCanExecuteChanged();
                     ((RelayCommand)TestSpeechCommand).RaiseCanExecuteChanged();
-                    ((RelayCommand)TestThirdPartyRealtimeCommand).RaiseCanExecuteChanged();
                     OnPropertyChanged(nameof(SelectedEndpointModels));
                     OnPropertyChanged(nameof(SelectedEndpointAuthMode));
                     OnPropertyChanged(nameof(SelectedEndpointApiKeyHeaderMode));
@@ -218,7 +216,6 @@ namespace TrueFluentPro.ViewModels.Settings
         public ICommand RemoveEndpointCommand { get; }
         public ICommand DiscoverModelsCommand { get; }
         public ICommand TestSpeechCommand { get; }
-        public ICommand TestThirdPartyRealtimeCommand { get; }
         public event Action<string>? StatusRequested;
 
         /// <summary>内部访问配置，由宿主注入</summary>
@@ -523,40 +520,6 @@ namespace TrueFluentPro.ViewModels.Settings
             SpeechTestResult = isValid
                 ? $"✓ {message} — {sw.ElapsedMilliseconds}ms"
                 : $"✗ {message}";
-        }
-
-        private async Task TestThirdPartyRealtimeEndpointAsync()
-        {
-            if (SelectedEndpoint is not { IsThirdPartyRealtimeSpeechEndpoint: true } ep)
-                return;
-
-            if (string.IsNullOrWhiteSpace(ep.AppId) || string.IsNullOrWhiteSpace(ep.ApiKey))
-            {
-                SpeechTestResult = ep.EndpointType == EndpointApiType.BaiduRealtimeAsr
-                    ? "✗ 请填写 AppId 与 AppKey"
-                    : "✗ 请填写 AppId 与 ApiKey";
-                return;
-            }
-
-            SpeechTestResult = "测试中...";
-
-            try
-            {
-                var factory = App.Services.GetRequiredService<IRealtimeTranslationServiceFactory>();
-                var resource = AzureSpeechConfig.BuildRealtimeVendorSpeechResource(ep);
-                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
-                var sw = System.Diagnostics.Stopwatch.StartNew();
-                var result = await factory.ProbeThirdPartyRealtimeAsync(Config, resource, cts.Token);
-                sw.Stop();
-
-                SpeechTestResult = result.IsSuccess
-                    ? $"✓ {result.Message} — {sw.ElapsedMilliseconds}ms"
-                    : $"✗ {result.Message}";
-            }
-            catch (Exception ex)
-            {
-                SpeechTestResult = $"✗ {ex.Message}";
-            }
         }
 
         internal void SyncEndpointsToConfig()

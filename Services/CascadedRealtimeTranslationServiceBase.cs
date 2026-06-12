@@ -284,6 +284,49 @@ namespace TrueFluentPro.Services
             }
         }
 
+        /// <summary>
+        /// 翻译链路探活：直接调用派生类真实的 <see cref="TranslateAsync"/> 翻译一小段示例文本，
+        /// 验证机器翻译凭据是否可用。不连接 WebSocket、不开麦克风。
+        /// </summary>
+        public async Task<RealtimeProbeResult> ProbeTranslationAsync(SpeechResource resource, CancellationToken cancellationToken)
+        {
+            var sample = GetTranslationProbeSample();
+            string? lastStatus = null;
+            void Capture(object? _, string msg) => lastStatus = msg;
+            OnStatusChanged += Capture;
+            try
+            {
+                var translated = await TranslateAsync(resource, sample, cancellationToken).ConfigureAwait(false);
+
+                // 翻译失败时派生类约定返回原文；据此区分“成功”与“未翻译”。
+                if (string.IsNullOrWhiteSpace(translated)
+                    || string.Equals(translated.Trim(), sample, StringComparison.Ordinal))
+                {
+                    var reason = string.IsNullOrWhiteSpace(lastStatus)
+                        ? $"未返回有效译文（原文：{sample}）"
+                        : lastStatus!;
+                    return new RealtimeProbeResult(false, $"{VendorDisplayName} 翻译失败：{reason}", translated ?? string.Empty, null);
+                }
+
+                return new RealtimeProbeResult(true, $"{sample} → {Truncate(translated, 60)}", translated, null);
+            }
+            catch (Exception ex)
+            {
+                return new RealtimeProbeResult(false, $"{VendorDisplayName} 翻译异常：{ex.Message}", string.Empty, null);
+            }
+            finally
+            {
+                OnStatusChanged -= Capture;
+            }
+        }
+
+        /// <summary>翻译探活使用的示例文本，按源语言选取，便于得到可读的译文反馈。</summary>
+        protected virtual string GetTranslationProbeSample()
+        {
+            var src = (_config.SourceLanguage ?? string.Empty).ToLowerInvariant();
+            return src.StartsWith("en") ? "hello" : "你好";
+        }
+
         // ===== IRealtimeTranslationService 实现 =====
 
         public async Task<bool> StartTranslationAsync()

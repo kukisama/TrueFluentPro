@@ -362,20 +362,24 @@ namespace TrueFluentPro.Services
             return null;
         }
 
-        /// <summary>按源语言映射百度实时识别 dev_pid（普通话=15361，英语=17361）。</summary>
+        /// <summary>
+        /// 按源语言映射百度实时识别 dev_pid。取值依据官方文档（开放平台模型，加强标点）：
+        /// 15372=中文普通话，17372=英语。
+        /// 见 https://cloud.baidu.com/doc/SPEECH/s/jlbxejt2i
+        /// </summary>
         private static int MapDevPid(string? sourceLanguage)
         {
             if (string.IsNullOrWhiteSpace(sourceLanguage))
             {
-                return 15361;
+                return 15372;
             }
 
             var lower = sourceLanguage.ToLowerInvariant();
             return lower switch
             {
-                _ when lower.StartsWith("en") => 17361, // 英语
-                _ when lower.StartsWith("zh") => 15361, // 普通话
-                _ => 15361
+                _ when lower.StartsWith("en") => 17372, // 英语（加强标点）
+                _ when lower.StartsWith("zh") => 15372, // 中文普通话（加强标点）
+                _ => 15372
             };
         }
 
