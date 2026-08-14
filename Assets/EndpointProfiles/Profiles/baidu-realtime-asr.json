@@ -7,6 +7,8 @@
   "displayName": "百度实时语音",
   "subtitle": "百度实时语音识别 + 通用翻译",
   "glyph": "🎙️",
+  "monogram": "BD",
+  "badgeBackground": "#2932E1",
   "summary": "使用百度智能云的实时语音识别（WebSocket）做语音识别，并以百度通用翻译完成译文，适合实时翻译场景。识别用 AppId+AppKey，翻译用独立的 AppId+SecretKey。",
   "defaultNamePrefix": "百度实时语音",
   "iconAssetPath": "Assets/EndpointProfiles/Icons/baidu.svg",

@@ -36,6 +36,30 @@ namespace TrueFluentPro.Models
         BaiduRealtimeAsr
     }
 
+    /// <summary>
+    /// 第三方实时语音资源的「翻译厂商」选择（与识别厂商解耦）。
+    /// 当前仅讯飞/百度级联线读取；微软线自带翻译，忽略此设置。
+    /// Llm 为预留值，第一版不在 UI 选项中暴露。
+    /// </summary>
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public enum SpeechTranslationVendor
+    {
+        /// <summary>跟随识别同厂商（讯飞→NiuTrans，百度→百度翻译）。</summary>
+        FollowAsr,
+
+        /// <summary>百度翻译开放平台。</summary>
+        Baidu,
+
+        /// <summary>讯飞 NiuTrans。</summary>
+        Xunfei,
+
+        /// <summary>不翻译，仅显示原文。</summary>
+        None,
+
+        /// <summary>预留：LLM 翻译（第一版未接入）。</summary>
+        Llm
+    }
+
     public class SpeechResource
     {
         public string Id { get; set; } = Guid.NewGuid().ToString();
@@ -65,6 +89,9 @@ namespace TrueFluentPro.Models
         public string TranslateAppId { get; set; } = ""; // 机器翻译 AppId（讯飞 NiuTrans / 百度翻译）
         public string TranslateApiKey { get; set; } = "";    // 讯飞 NiuTrans ApiKey
         public string TranslateApiSecret { get; set; } = ""; // 讯飞 NiuTrans ApiSecret / 百度翻译 SecretKey
+
+        // 翻译厂商选择（ASR/MT 解耦）：默认跟随识别同厂商。仅讯飞/百度级联线读取。
+        public SpeechTranslationVendor TranslateVendor { get; set; } = SpeechTranslationVendor.FollowAsr;
 
         public static SpeechResource CreateMicrosoftResource(AzureSubscription subscription, int index)
         {
@@ -194,6 +221,7 @@ namespace TrueFluentPro.Models
                 TranslateAppId = TranslateAppId,
                 TranslateApiKey = TranslateApiKey,
                 TranslateApiSecret = TranslateApiSecret,
+                TranslateVendor = TranslateVendor,
                 RealtimeSpeechToTextModelRef = CloneReference(RealtimeSpeechToTextModelRef),
                 BatchSpeechToTextModelRef = CloneReference(BatchSpeechToTextModelRef),
                 TextToSpeechModelRef = CloneReference(TextToSpeechModelRef)

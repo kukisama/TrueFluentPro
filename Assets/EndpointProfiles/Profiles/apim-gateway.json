@@ -7,6 +7,8 @@
     "displayName": "APIM 网关",
     "subtitle": "通过 Azure API Management 暴露的 OpenAI 兼容入口",
     "glyph": "⇄",
+    "monogram": "AP",
+    "badgeBackground": "#6D28D9",
     "summary": "文本优先 /responses，API Key 优先走 api-key Header，图片优先自动试 deployments、/v1/images 与 /images。",
     "defaultNamePrefix": "APIM 网关",
     "iconAssetPath": "Assets/EndpointProfiles/Icons/apim-gateway.svg",

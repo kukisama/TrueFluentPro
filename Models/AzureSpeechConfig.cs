@@ -636,11 +636,44 @@ namespace TrueFluentPro.Models
 
         /// <summary>
         /// 从讯飞 / 百度实时语音终结点派生出对应的 SpeechResource。
-        /// 凭证字段与 AiEndpoint 同名，直接透传。
+        /// 识别（ASR）取当前厂商对应的独立凭据；机器翻译（MT）取「生效翻译厂商」对应的独立凭据，
+        /// 两块互不串值（积木自洽）。
         /// </summary>
         public static SpeechResource BuildRealtimeVendorSpeechResource(AiEndpoint ep)
         {
             var isXunfei = ep.EndpointType == EndpointApiType.XunfeiRtasr;
+
+            // 识别凭据：按识别厂商（= 终结点类型）取对应积木。
+            string asrAppId, asrApiKey, asrApiSecret;
+            if (isXunfei)
+            {
+                asrAppId = ep.XunfeiAsrAppId ?? "";
+                asrApiKey = ep.XunfeiAsrApiKey ?? "";
+                asrApiSecret = ep.XunfeiAsrApiSecret ?? "";
+            }
+            else
+            {
+                asrAppId = ep.BaiduAsrAppId ?? "";
+                asrApiKey = ep.BaiduAsrApiKey ?? "";
+                asrApiSecret = "";
+            }
+
+            // 机器翻译凭据：按生效翻译厂商取对应积木。
+            string mtAppId = "", mtApiKey = "", mtApiSecret = "";
+            switch (ep.EffectiveTranslateVendor)
+            {
+                case SpeechTranslationVendor.Xunfei:
+                    mtAppId = ep.XunfeiMtAppId ?? "";
+                    mtApiKey = ep.XunfeiMtApiKey ?? "";
+                    mtApiSecret = ep.XunfeiMtApiSecret ?? "";
+                    break;
+                case SpeechTranslationVendor.Baidu:
+                    mtAppId = ep.BaiduMtAppId ?? "";
+                    mtApiKey = ep.BaiduMtApiKey ?? "";
+                    mtApiSecret = ep.BaiduMtSecretKey ?? "";
+                    break;
+            }
+
             return new SpeechResource
             {
                 Id = ep.Id,
@@ -650,12 +683,13 @@ namespace TrueFluentPro.Models
                 IsEnabled = ep.IsEnabled,
                 Capabilities = SpeechCapability.RealtimeSpeechToText,
                 AuthMode = AzureAuthMode.ApiKey,
-                AppId = ep.AppId ?? "",
-                ApiKey = ep.ApiKey ?? "",
-                ApiSecret = ep.ApiSecret ?? "",
-                TranslateAppId = ep.TranslateAppId ?? "",
-                TranslateApiKey = ep.TranslateApiKey ?? "",
-                TranslateApiSecret = ep.TranslateApiSecret ?? "",
+                AppId = asrAppId,
+                ApiKey = asrApiKey,
+                ApiSecret = asrApiSecret,
+                TranslateAppId = mtAppId,
+                TranslateApiKey = mtApiKey,
+                TranslateApiSecret = mtApiSecret,
+                TranslateVendor = ep.TranslateVendor,
             };
         }
 
@@ -745,6 +779,18 @@ namespace TrueFluentPro.Models
         /// 将旧的 Subscriptions / SpeechResources 一次性迁移到 Endpoints（AzureSpeech 类型）。
         /// 迁移完成后设置标记，后续启动不再重复执行。
         /// </summary>
+        /// <summary>
+        /// 将所有终结点的旧版扁平凭据迁移到按厂商独立存储的字段（幂等）。
+        /// 解决改版后讯飞 / 百度第三方实时语音凭据“丢失”的问题。
+        /// </summary>
+        public void EnsureEndpointVendorCredentialsMigrated()
+        {
+            foreach (var ep in Endpoints)
+            {
+                ep.MigrateLegacyCredentials();
+            }
+        }
+
         public void EnsureSpeechSubscriptionsMigratedToEndpoints()
         {
             if (SpeechSubscriptionsMigratedToEndpoints)

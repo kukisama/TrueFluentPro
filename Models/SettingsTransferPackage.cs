@@ -53,6 +53,7 @@ namespace TrueFluentPro.Models
         public string TranslateAppId { get; set; } = "";
         public string TranslateApiKey { get; set; } = "";
         public string TranslateApiSecret { get; set; } = "";
+        public SpeechTranslationVendor TranslateVendor { get; set; } = SpeechTranslationVendor.FollowAsr;
         public ModelReference? RealtimeSpeechToTextModelRef { get; set; }
         public ModelReference? BatchSpeechToTextModelRef { get; set; }
         public ModelReference? TextToSpeechModelRef { get; set; }
@@ -90,12 +91,19 @@ namespace TrueFluentPro.Models
         public string SpeechEndpoint { get; set; } = "";
         public SpeechCapability SpeechCapabilities { get; set; } = SpeechCapability.None;
 
-        // --- 第三方实时语音（讯飞/百度）专属凭据 ---
-        public string AppId { get; set; } = "";
-        public string ApiSecret { get; set; } = "";
-        public string TranslateAppId { get; set; } = "";
-        public string TranslateApiKey { get; set; } = "";
-        public string TranslateApiSecret { get; set; } = "";
+        // --- 第三方实时语音（讯飞/百度）专属凭据：ASR 与 MT 双块、各厂商独立存储 ---
+        public string XunfeiAsrAppId { get; set; } = "";
+        public string XunfeiAsrApiKey { get; set; } = "";
+        public string XunfeiAsrApiSecret { get; set; } = "";
+        public string BaiduAsrAppId { get; set; } = "";
+        public string BaiduAsrApiKey { get; set; } = "";
+        public string XunfeiMtAppId { get; set; } = "";
+        public string XunfeiMtApiKey { get; set; } = "";
+        public string XunfeiMtApiSecret { get; set; } = "";
+        public string BaiduMtAppId { get; set; } = "";
+        public string BaiduMtApiKey { get; set; } = "";
+        public string BaiduMtSecretKey { get; set; } = "";
+        public SpeechTranslationVendor TranslateVendor { get; set; } = SpeechTranslationVendor.FollowAsr;
     }
 
     public class TransferAiModel

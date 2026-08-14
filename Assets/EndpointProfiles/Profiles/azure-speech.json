@@ -7,6 +7,8 @@
   "displayName": "Azure Speech",
   "subtitle": "Azure 认知服务语音资源（传统 Speech SDK 密钥）",
   "glyph": "🎤",
+  "monogram": "SP",
+  "badgeBackground": "#F9A825",
   "summary": "使用 Azure 认知服务语音资源的订阅密钥与区域终结点，支持实时语音识别、批量转写和语音合成。",
   "defaultNamePrefix": "Azure Speech",
   "iconAssetPath": "Assets/EndpointProfiles/Icons/azure-speech.svg",

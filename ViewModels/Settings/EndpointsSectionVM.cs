@@ -48,6 +48,56 @@ namespace TrueFluentPro.ViewModels.Settings
         public ObservableCollection<string> DiscoveredModelIds { get => _discoveredModelIds; set => SetProperty(ref _discoveredModelIds, value); }
         public IReadOnlyList<EndpointTemplateDefinition> EndpointTypeOptions => _endpointTemplateService.GetTemplates();
 
+        /// <summary>
+        /// 新建终结点对话框的可选项：把微软语音 / 讯飞 / 百度三类语音模板折叠为单一「语音服务」入口，
+        /// 厂商在创建后于详情面板的下拉里选择。其余 AI 终结点类型保持原样。
+        /// </summary>
+        public IReadOnlyList<EndpointTemplateDefinition> EndpointCreateOptions
+        {
+            get
+            {
+                var list = new List<EndpointTemplateDefinition>();
+                foreach (var template in _endpointTemplateService.GetTemplates())
+                {
+                    if (IsSpeechApiType(template.Type))
+                        continue;
+                    list.Add(template);
+                }
+                list.Add(SpeechServiceCreateTemplate);
+                return list;
+            }
+        }
+
+        private static bool IsSpeechApiType(EndpointApiType type) =>
+            type is EndpointApiType.AzureSpeech or EndpointApiType.XunfeiRtasr or EndpointApiType.BaiduRealtimeAsr;
+
+        /// <summary>统一「语音服务」创建项。默认厂商为微软（AzureSpeech），创建后可在面板内切换。</summary>
+        private static readonly EndpointTemplateDefinition SpeechServiceCreateTemplate = new()
+        {
+            Type = EndpointApiType.AzureSpeech,
+            DisplayName = "语音服务",
+            Subtitle = "微软 / 讯飞 / 百度，创建后可在面板内切换厂商",
+            Glyph = "🎤",
+            IconAssetPath = "Assets/EndpointProfiles/Icons/azure-speech.svg",
+        };
+
+        /// <summary>语音服务的「厂商」下拉可选项。直接映射到底层 EndpointApiType。</summary>
+        public static IReadOnlyList<SpeechVendorOption> SpeechVendorOptions { get; } = new List<SpeechVendorOption>
+        {
+            new(EndpointApiType.AzureSpeech, "微软 Azure"),
+            new(EndpointApiType.XunfeiRtasr, "讯飞"),
+            new(EndpointApiType.BaiduRealtimeAsr, "百度"),
+        };
+
+        /// <summary>第三方实时语音终结点的「翻译厂商」可选项（ASR/MT 解耦）。第一版不暴露 LLM 翻译。</summary>
+        public static IReadOnlyList<TranslateVendorOption> TranslateVendorOptions { get; } = new List<TranslateVendorOption>
+        {
+            new(SpeechTranslationVendor.FollowAsr, "跟随识别（同厂商）"),
+            new(SpeechTranslationVendor.Baidu, "百度翻译"),
+            new(SpeechTranslationVendor.Xunfei, "讯飞 NiuTrans"),
+            new(SpeechTranslationVendor.None, "不翻译（仅原文）"),
+        };
+
         public AiEndpoint? SelectedEndpoint
         {
             get => _selectedEndpoint;
@@ -73,6 +123,8 @@ namespace TrueFluentPro.ViewModels.Settings
                     OnPropertyChanged(nameof(IsSelectedEndpointAzure));
                     OnPropertyChanged(nameof(IsSelectedEndpointSpeech));
                     OnPropertyChanged(nameof(IsSelectedEndpointThirdPartyRealtime));
+                    OnPropertyChanged(nameof(IsSelectedEndpointAnySpeech));
+                    OnPropertyChanged(nameof(SelectedSpeechVendor));
                     OnPropertyChanged(nameof(IsSelectedEndpointAiGeneric));
                     SpeechTestResult = "";
                     ClearDiscoveredModels();
@@ -90,9 +142,42 @@ namespace TrueFluentPro.ViewModels.Settings
         public bool IsSelectedEndpointAzure => SelectedEndpoint?.IsAzureEndpoint == true;
         public bool IsSelectedEndpointSpeech => SelectedEndpoint?.IsSpeechEndpoint == true;
         public bool IsSelectedEndpointThirdPartyRealtime => SelectedEndpoint?.IsThirdPartyRealtimeSpeechEndpoint == true;
+        // 任意语音服务（微软 / 讯飞 / 百度）：用于控制「语音厂商」下拉的可见性。
+        public bool IsSelectedEndpointAnySpeech => IsSelectedEndpointSpeech || IsSelectedEndpointThirdPartyRealtime;
         // AI 通用终结点：既非 Azure Speech，也非讯飞/百度实时语音。
         public bool IsSelectedEndpointAiGeneric =>
             SelectedEndpoint != null && !IsSelectedEndpointSpeech && !IsSelectedEndpointThirdPartyRealtime;
+
+        /// <summary>
+        /// 语音服务的「厂商」选择：直接映射到底层 EndpointApiType（微软=AzureSpeech / 讯飞=XunfeiRtasr / 百度=BaiduRealtimeAsr）。
+        /// 切换时重新应用对应资料包模板，后续运行时路由与面板字段可见性自动复用原有逻辑。
+        /// </summary>
+        public EndpointApiType SelectedSpeechVendor
+        {
+            get => SelectedEndpoint?.EndpointType ?? EndpointApiType.AzureSpeech;
+            set
+            {
+                if (SelectedEndpoint == null || SelectedEndpoint.EndpointType == value)
+                    return;
+                if (value is not (EndpointApiType.AzureSpeech or EndpointApiType.XunfeiRtasr or EndpointApiType.BaiduRealtimeAsr))
+                    return;
+
+                _endpointTemplateService.ApplyTemplate(SelectedEndpoint, value);
+
+                OnPropertyChanged(nameof(SelectedSpeechVendor));
+                OnPropertyChanged(nameof(IsSelectedEndpointSpeech));
+                OnPropertyChanged(nameof(IsSelectedEndpointThirdPartyRealtime));
+                OnPropertyChanged(nameof(IsSelectedEndpointAnySpeech));
+                OnPropertyChanged(nameof(IsSelectedEndpointAiGeneric));
+                OnPropertyChanged(nameof(SelectedEndpointTypeSummary));
+                ((RelayCommand)TestSpeechCommand).RaiseCanExecuteChanged();
+                SpeechTestResult = "";
+
+                SyncEndpointsToConfig();
+                EndpointsChanged?.Invoke();
+                OnChanged();
+            }
+        }
         public string SpeechTestResult { get => _speechTestResult; set => SetProperty(ref _speechTestResult, value); }
         public bool CanSelectedEndpointUseAad => SelectedEndpoint != null
             && _endpointTemplateService.GetTemplate(SelectedEndpoint).SupportsAad;
@@ -680,7 +765,10 @@ namespace TrueFluentPro.ViewModels.Settings
 
         private string BuildDefaultEndpointName(EndpointApiType type)
         {
-            var prefix = _endpointTemplateService.GetTemplate(type).DefaultNamePrefix;
+            // 语音服务（微软/讯飞/百度）在创建入口已统一，默认名统一用「语音服务」前缀。
+            var prefix = IsSpeechApiType(type)
+                ? "语音服务"
+                : _endpointTemplateService.GetTemplate(type).DefaultNamePrefix;
             var used = Endpoints
                 .Count(endpoint => endpoint.Name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
             return $"{prefix} {used + 1}";
@@ -775,5 +863,35 @@ namespace TrueFluentPro.ViewModels.Settings
             return int.TryParse(input[..i], out value);
         }
 
+    }
+
+    /// <summary>翻译厂商下拉项：枚举值 + 中文显示名。</summary>
+    public class TranslateVendorOption
+    {
+        public TranslateVendorOption(SpeechTranslationVendor value, string display)
+        {
+            Value = value;
+            Display = display;
+        }
+
+        public SpeechTranslationVendor Value { get; }
+        public string Display { get; }
+
+        public override string ToString() => Display;
+    }
+
+    /// <summary>语音厂商下拉项：底层 EndpointApiType + 中文显示名。</summary>
+    public class SpeechVendorOption
+    {
+        public SpeechVendorOption(EndpointApiType value, string display)
+        {
+            Value = value;
+            Display = display;
+        }
+
+        public EndpointApiType Value { get; }
+        public string Display { get; }
+
+        public override string ToString() => Display;
     }
 }

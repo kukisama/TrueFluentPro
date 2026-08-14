@@ -63,6 +63,7 @@ namespace TrueFluentPro.Services
                 {
                     config.EnsureSpeechResourcesBackfilledFromLegacy();
                     config.EnsureSpeechSubscriptionsMigratedToEndpoints();
+                    config.EnsureEndpointVendorCredentialsMigrated();
                     PathManager.Instance.SetSessionsPath(config.SessionDirectoryOverride);
                     return config;
                 }
@@ -82,6 +83,7 @@ namespace TrueFluentPro.Services
                 {
                     backupConfig.EnsureSpeechResourcesBackfilledFromLegacy();
                     backupConfig.EnsureSpeechSubscriptionsMigratedToEndpoints();
+                    backupConfig.EnsureEndpointVendorCredentialsMigrated();
                     System.Diagnostics.Debug.WriteLine($"主配置加载失败，已回退到备份配置: {_backupConfigFilePath}");
                     PathManager.Instance.SetSessionsPath(backupConfig.SessionDirectoryOverride);
                     LastLoadReport = new ConfigurationLoadReport
@@ -127,6 +129,7 @@ namespace TrueFluentPro.Services
             {
                 config.EnsureSpeechResourcesBackfilledFromLegacy();
                 config.EnsureSpeechSubscriptionsMigratedToEndpoints();
+                config.EnsureEndpointVendorCredentialsMigrated();
                 Directory.CreateDirectory(Path.GetDirectoryName(_configFilePath)!);
 
                 var tempFilePath = _configFilePath + ".tmp";

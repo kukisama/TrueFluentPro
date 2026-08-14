@@ -7,6 +7,8 @@
   "displayName": "OpenAI Compatible",
   "subtitle": "原生 OpenAI 或第三方兼容服务（含普通代理）",
   "glyph": "◎",
+  "monogram": "OA",
+  "badgeBackground": "#10A37F",
   "summary": "默认按标准 OpenAI 兼容接口处理：文本走 /v1/chat/completions，图片走 /v1/images，API Key 默认走 Authorization: Bearer。",
   "defaultNamePrefix": "OpenAI Compatible",
   "iconAssetPath": "Assets/EndpointProfiles/Icons/openai-compatible.svg",

@@ -557,7 +557,9 @@ public sealed class EndpointBatchTestService : IEndpointBatchTestService
         const string capabilityName = "实时语音识别";
         const string testNote = "测试说明：仅做 WebSocket 握手探活，不采集麦克风、不发送音频。";
 
-        if (string.IsNullOrWhiteSpace(endpoint.AppId) || string.IsNullOrWhiteSpace(endpoint.ApiKey))
+        var resource = AzureSpeechConfig.BuildRealtimeVendorSpeechResource(endpoint);
+
+        if (string.IsNullOrWhiteSpace(resource.AppId) || string.IsNullOrWhiteSpace(resource.ApiKey))
         {
             stopwatch.Stop();
             var keyHint = endpoint.EndpointType == EndpointApiType.BaiduRealtimeAsr
@@ -565,8 +567,6 @@ public sealed class EndpointBatchTestService : IEndpointBatchTestService
                 : "请先填写 AppId 与 ApiKey 后再测试。";
             return CreateFailedItem(order, endpoint.Id, endpointName, endpointTypeName, capabilityName, "实时语音", string.Empty, testNote, stopwatch.Elapsed, "缺少识别凭据。", keyHint);
         }
-
-        var resource = AzureSpeechConfig.BuildRealtimeVendorSpeechResource(endpoint);
 
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeoutCts.CancelAfter(TimeSpan.FromSeconds(15));
@@ -600,9 +600,11 @@ public sealed class EndpointBatchTestService : IEndpointBatchTestService
         const string capabilityName = "机器翻译";
         const string testNote = "测试说明：翻译一小段示例文本，验证机器翻译凭据是否可用。";
 
-        var hasTranslateCred = !string.IsNullOrWhiteSpace(endpoint.TranslateAppId)
-                               || !string.IsNullOrWhiteSpace(endpoint.TranslateApiSecret)
-                               || !string.IsNullOrWhiteSpace(endpoint.TranslateApiKey);
+        var resource = AzureSpeechConfig.BuildRealtimeVendorSpeechResource(endpoint);
+
+        var hasTranslateCred = !string.IsNullOrWhiteSpace(resource.TranslateAppId)
+                               || !string.IsNullOrWhiteSpace(resource.TranslateApiSecret)
+                               || !string.IsNullOrWhiteSpace(resource.TranslateApiKey);
         if (!hasTranslateCred)
         {
             stopwatch.Stop();
@@ -610,8 +612,6 @@ public sealed class EndpointBatchTestService : IEndpointBatchTestService
                 "未配置机器翻译凭据。",
                 "实时翻译将仅显示原文。如需译文，请填写机器翻译凭据后再测试。");
         }
-
-        var resource = AzureSpeechConfig.BuildRealtimeVendorSpeechResource(endpoint);
 
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeoutCts.CancelAfter(TimeSpan.FromSeconds(15));

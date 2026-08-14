@@ -88,6 +88,7 @@ namespace TrueFluentPro.Services
                         TranslateAppId = resource.TranslateAppId,
                         TranslateApiKey = resource.TranslateApiKey,
                         TranslateApiSecret = resource.TranslateApiSecret,
+                        TranslateVendor = resource.TranslateVendor,
                         RealtimeSpeechToTextModelRef = CloneReference(resource.RealtimeSpeechToTextModelRef),
                         BatchSpeechToTextModelRef = CloneReference(resource.BatchSpeechToTextModelRef),
                         TextToSpeechModelRef = CloneReference(resource.TextToSpeechModelRef)
@@ -128,11 +129,18 @@ namespace TrueFluentPro.Services
                     SpeechRegion = endpoint.SpeechRegion,
                     SpeechEndpoint = endpoint.SpeechEndpoint,
                     SpeechCapabilities = endpoint.SpeechCapabilities,
-                    AppId = endpoint.AppId,
-                    ApiSecret = endpoint.ApiSecret,
-                    TranslateAppId = endpoint.TranslateAppId,
-                    TranslateApiKey = endpoint.TranslateApiKey,
-                    TranslateApiSecret = endpoint.TranslateApiSecret
+                    XunfeiAsrAppId = endpoint.XunfeiAsrAppId,
+                    XunfeiAsrApiKey = endpoint.XunfeiAsrApiKey,
+                    XunfeiAsrApiSecret = endpoint.XunfeiAsrApiSecret,
+                    BaiduAsrAppId = endpoint.BaiduAsrAppId,
+                    BaiduAsrApiKey = endpoint.BaiduAsrApiKey,
+                    XunfeiMtAppId = endpoint.XunfeiMtAppId,
+                    XunfeiMtApiKey = endpoint.XunfeiMtApiKey,
+                    XunfeiMtApiSecret = endpoint.XunfeiMtApiSecret,
+                    BaiduMtAppId = endpoint.BaiduMtAppId,
+                    BaiduMtApiKey = endpoint.BaiduMtApiKey,
+                    BaiduMtSecretKey = endpoint.BaiduMtSecretKey,
+                    TranslateVendor = endpoint.TranslateVendor
                 }).ToList(),
                 ModelSelections = new TransferModelSelections
                 {
@@ -185,6 +193,7 @@ namespace TrueFluentPro.Services
                     TranslateAppId = resource.TranslateAppId?.Trim() ?? "",
                     TranslateApiKey = resource.TranslateApiKey?.Trim() ?? "",
                     TranslateApiSecret = resource.TranslateApiSecret?.Trim() ?? "",
+                    TranslateVendor = resource.TranslateVendor,
                     RealtimeSpeechToTextModelRef = CloneReference(resource.RealtimeSpeechToTextModelRef),
                     BatchSpeechToTextModelRef = CloneReference(resource.BatchSpeechToTextModelRef),
                     TextToSpeechModelRef = CloneReference(resource.TextToSpeechModelRef)
@@ -325,11 +334,18 @@ namespace TrueFluentPro.Services
                     SpeechRegion = endpoint.SpeechRegion?.Trim() ?? "",
                     SpeechEndpoint = endpoint.SpeechEndpoint?.Trim() ?? "",
                     SpeechCapabilities = endpoint.SpeechCapabilities,
-                    AppId = endpoint.AppId?.Trim() ?? "",
-                    ApiSecret = endpoint.ApiSecret?.Trim() ?? "",
-                    TranslateAppId = endpoint.TranslateAppId?.Trim() ?? "",
-                    TranslateApiKey = endpoint.TranslateApiKey?.Trim() ?? "",
-                    TranslateApiSecret = endpoint.TranslateApiSecret?.Trim() ?? ""
+                    XunfeiAsrAppId = endpoint.XunfeiAsrAppId?.Trim() ?? "",
+                    XunfeiAsrApiKey = endpoint.XunfeiAsrApiKey?.Trim() ?? "",
+                    XunfeiAsrApiSecret = endpoint.XunfeiAsrApiSecret?.Trim() ?? "",
+                    BaiduAsrAppId = endpoint.BaiduAsrAppId?.Trim() ?? "",
+                    BaiduAsrApiKey = endpoint.BaiduAsrApiKey?.Trim() ?? "",
+                    XunfeiMtAppId = endpoint.XunfeiMtAppId?.Trim() ?? "",
+                    XunfeiMtApiKey = endpoint.XunfeiMtApiKey?.Trim() ?? "",
+                    XunfeiMtApiSecret = endpoint.XunfeiMtApiSecret?.Trim() ?? "",
+                    BaiduMtAppId = endpoint.BaiduMtAppId?.Trim() ?? "",
+                    BaiduMtApiKey = endpoint.BaiduMtApiKey?.Trim() ?? "",
+                    BaiduMtSecretKey = endpoint.BaiduMtSecretKey?.Trim() ?? "",
+                    TranslateVendor = endpoint.TranslateVendor
                 });
             }
 

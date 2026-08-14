@@ -125,13 +125,13 @@ namespace TrueFluentPro.Services
 
             if (runtime.IsXunfeiRtasr)
             {
-                service = new XunfeiRealtimeTranslationService(config, _speechResourceRuntimeResolver, auditLog);
+                service = new RealtimeSpeech.CascadedRealtimeSpeechService(config, _speechResourceRuntimeResolver, auditLog);
                 return true;
             }
 
             if (runtime.IsBaiduRealtimeAsr)
             {
-                service = new BaiduRealtimeTranslationService(config, _speechResourceRuntimeResolver, auditLog);
+                service = new RealtimeSpeech.CascadedRealtimeSpeechService(config, _speechResourceRuntimeResolver, auditLog);
                 return true;
             }
 

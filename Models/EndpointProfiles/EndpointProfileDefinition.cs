@@ -16,6 +16,8 @@ public sealed class EndpointProfileDefinition
     public string DisplayName { get; set; } = "";
     public string Subtitle { get; set; } = "";
     public string Glyph { get; set; } = "";
+    public string Monogram { get; set; } = "";
+    public string BadgeBackground { get; set; } = "";
     public string Summary { get; set; } = "";
     public string DefaultNamePrefix { get; set; } = "";
     public string IconAssetPath { get; set; } = "";

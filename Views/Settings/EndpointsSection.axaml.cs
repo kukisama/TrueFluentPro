@@ -22,6 +22,10 @@ public partial class EndpointsSection : UserControl
 {
     private EndpointsSectionVM? _boundVm;
 
+    // 在 RefreshCapToggleState 内用代码设置 ToggleButton.IsChecked 时为 true，
+    // 用于抑制 CapToggle_Checked/CapToggle_Unchecked 把模型能力误写/清空（防止刷新过程中的重入清空）。
+    private bool _suppressCapToggleEvents;
+
     public EndpointsSection()
     {
         InitializeComponent();
@@ -82,7 +86,7 @@ public partial class EndpointsSection : UserControl
         if (owner == null)
             return;
 
-        var dialog = new EndpointCreateDialog(vm.EndpointTypeOptions);
+        var dialog = new EndpointCreateDialog(vm.EndpointCreateOptions);
         var result = await dialog.ShowDialog<EndpointCreateDialogResult?>(owner);
         if (result == null)
             return;
@@ -101,6 +105,21 @@ public partial class EndpointsSection : UserControl
 
         await clipboard.SetTextAsync(endpoint.ApiKey ?? string.Empty);
         vm.NotifyStatus("已复制 API 密钥");
+    }
+
+    // 通用密钥复制：按钮 Tag 绑定到对应字段的值（语音订阅密钥 / 识别 / 翻译凭据等）。
+    private async void CopyText_Click(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Control { Tag: string text })
+            return;
+
+        var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+        if (clipboard == null)
+            return;
+
+        await clipboard.SetTextAsync(text);
+        if (DataContext is EndpointsSectionVM vm)
+            vm.NotifyStatus("已复制密钥");
     }
 
     private async void ShowEndpointInfo_Click(object? sender, RoutedEventArgs e)
@@ -181,6 +200,7 @@ public partial class EndpointsSection : UserControl
 
     private void CapToggle_Checked(object? sender, RoutedEventArgs e)
     {
+        if (_suppressCapToggleEvents) return;
         if (sender is not ToggleButton toggle) return;
         var panel = toggle.Parent as StackPanel;
         if (panel?.Tag is not AiModelEntry model) return;
@@ -211,6 +231,7 @@ public partial class EndpointsSection : UserControl
 
     private void CapToggle_Unchecked(object? sender, RoutedEventArgs e)
     {
+        if (_suppressCapToggleEvents) return;
         if (sender is not ToggleButton toggle) return;
         var panel = toggle.Parent as StackPanel;
         if (panel?.Tag is not AiModelEntry model) return;
@@ -234,12 +255,22 @@ public partial class EndpointsSection : UserControl
         var allowed = EndpointCapabilityPolicyResolver.GetAllowedCapabilities(endpoint.ProfileId, endpoint.EndpointType)
             .ToHashSet();
 
-        foreach (var toggle in panel.Children.OfType<ToggleButton>())
+        // 以下程序化设置 IsChecked 会同步触发 Checked/Unchecked 事件，
+        // 必须抑制其写回逻辑，否则循环中途会把 model.Capabilities 误清为 None。
+        _suppressCapToggleEvents = true;
+        try
         {
-            var tag = toggle.Tag?.ToString() ?? "";
-            var cap = ParseCapability(tag);
-            toggle.IsEnabled = cap == ModelCapability.None || allowed.Contains(cap);
-            toggle.IsChecked = model.Capabilities == cap && cap != ModelCapability.None;
+            foreach (var toggle in panel.Children.OfType<ToggleButton>())
+            {
+                var tag = toggle.Tag?.ToString() ?? "";
+                var cap = ParseCapability(tag);
+                toggle.IsEnabled = cap == ModelCapability.None || allowed.Contains(cap);
+                toggle.IsChecked = model.Capabilities == cap && cap != ModelCapability.None;
+            }
+        }
+        finally
+        {
+            _suppressCapToggleEvents = false;
         }
 
         if (model.Capabilities != ModelCapability.None && !allowed.Contains(model.Capabilities))

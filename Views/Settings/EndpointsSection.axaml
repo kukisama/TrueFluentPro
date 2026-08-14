@@ -33,6 +33,24 @@
             <Style Selector="TextBlock.hyperlink:pointerover">
                 <Setter Property="Foreground" Value="#1D4ED8"/>
             </Style>
+            <!-- 子标题旁的信息浮窗图标 -->
+            <Style Selector="icons|Icon.info-hint">
+                <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+                <Setter Property="Cursor" Value="Help"/>
+                <Setter Property="VerticalAlignment" Value="Center"/>
+                <Setter Property="Margin" Value="2,0,0,0"/>
+            </Style>
+            <Style Selector="icons|Icon.info-hint:pointerover">
+                <Setter Property="Foreground" Value="#2563EB"/>
+            </Style>
+            <!-- 凭据行标签：纯文字，悬停显示提示 -->
+            <Style Selector="TextBlock.cred-label">
+                <Setter Property="VerticalAlignment" Value="Center"/>
+                <Setter Property="Cursor" Value="Help"/>
+            </Style>
+            <Style Selector="TextBlock.cred-label:pointerover">
+                <Setter Property="Foreground" Value="#2563EB"/>
+            </Style>
         </Border.Styles>
         <StackPanel Spacing="12">
             <TextBlock Text="AI 终结点管理" Theme="{StaticResource SubtitleTextBlockStyle}"/>
@@ -149,26 +167,64 @@
                                  HorizontalAlignment="Left"/>
                     </StackPanel>
 
+                    <!-- ═══ 语音服务厂商选择（微软 / 讯飞 / 百度共用）═══ -->
+                    <StackPanel Spacing="5" IsVisible="{Binding IsSelectedEndpointAnySpeech}">
+                        <StackPanel Orientation="Horizontal" Spacing="2">
+                            <TextBlock Text="语音厂商" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                            <icons:Icon Value="fa-solid fa-circle-info" FontSize="12" Classes="info-hint">
+                                <ToolTip.Tip>
+                                    <TextBlock TextWrapping="Wrap" MaxWidth="320"
+                                               Text="选择该终结点使用的语音厂商，切换后下方凭据字段会随之变化。各厂商凭据独立保存，互不影响。"/>
+                                </ToolTip.Tip>
+                            </icons:Icon>
+                        </StackPanel>
+                        <ComboBox ItemsSource="{x:Static vm:EndpointsSectionVM.SpeechVendorOptions}"
+                                  SelectedValue="{Binding SelectedSpeechVendor, Mode=TwoWay}"
+                                  SelectedValueBinding="{Binding Value}"
+                                  Width="420" MaxWidth="420" HorizontalAlignment="Left"/>
+                    </StackPanel>
+
                     <!-- ═══ Azure Speech 专属面板 ═══ -->
                     <StackPanel Spacing="8" IsVisible="{Binding IsSelectedEndpointSpeech}">
-                        <StackPanel Spacing="5">
-                            <TextBlock Text="Speech 终结点"
-                                       ToolTip.Tip="{Binding SelectedEndpoint.SpeechRegionHint}"/>
-                            <TextBox Text="{Binding SelectedEndpoint.SpeechEndpoint, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                     Watermark="例如: https://eastasia.api.cognitive.microsoft.com"
-                                     Width="420"
-                                     MaxWidth="420"
-                                     HorizontalAlignment="Left"/>
+                        <StackPanel Orientation="Horizontal" Spacing="2">
+                            <TextBlock Text="订阅凭据" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                            <icons:Icon Value="fa-solid fa-circle-info" FontSize="12" Classes="info-hint">
+                                <ToolTip.Tip>
+                                    <TextBlock TextWrapping="Wrap" MaxWidth="320"
+                                               Text="{Binding SelectedEndpoint.AsrCredentialHint}"/>
+                                </ToolTip.Tip>
+                            </icons:Icon>
                         </StackPanel>
-                        <StackPanel Spacing="5">
-                            <TextBlock Text="订阅密钥"/>
-                            <TextBox Text="{Binding SelectedEndpoint.SpeechSubscriptionKey, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                        <Grid ColumnDefinitions="110,360,Auto" ColumnSpacing="8" HorizontalAlignment="Left">
+                            <TextBlock Grid.Column="0" Text="Speech 终结点" Classes="cred-label">
+                                <ToolTip.Tip>
+                                    <TextBlock TextWrapping="Wrap" MaxWidth="300"
+                                               Text="{Binding SelectedEndpoint.SpeechRegionHint}"/>
+                                </ToolTip.Tip>
+                            </TextBlock>
+                            <TextBox Grid.Column="1"
+                                     Text="{Binding SelectedEndpoint.SpeechEndpoint, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                     Watermark="例如: https://eastasia.api.cognitive.microsoft.com"/>
+                            <Panel Grid.Column="2" Width="36"/>
+                        </Grid>
+                        <Grid ColumnDefinitions="110,360,Auto" ColumnSpacing="8" HorizontalAlignment="Left">
+                            <TextBlock Grid.Column="0" Text="订阅密钥" Classes="cred-label">
+                                <ToolTip.Tip>
+                                    <TextBlock TextWrapping="Wrap" MaxWidth="300"
+                                               Text="Azure 语音服务订阅密钥，在 Azure 门户「语音服务」资源 →「密钥和终结点」页获取，必填。"/>
+                                </ToolTip.Tip>
+                            </TextBlock>
+                            <TextBox Grid.Column="1"
+                                     Text="{Binding SelectedEndpoint.SpeechSubscriptionKey, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                      Watermark="Azure Speech 订阅密钥"
-                                     PasswordChar="*"
-                                     Width="420"
-                                     MaxWidth="420"
-                                     HorizontalAlignment="Left"/>
-                        </StackPanel>
+                                     PasswordChar="*"/>
+                            <Button Grid.Column="2" Width="36" Height="32"
+                                    ToolTip.Tip="复制密钥"
+                                    Tag="{Binding SelectedEndpoint.SpeechSubscriptionKey}"
+                                    Click="CopyText_Click">
+                                <icons:Icon Value="fa-regular fa-copy" FontSize="13"/>
+                            </Button>
+                        </Grid>
                         <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,4,0,0">
                             <Button Padding="8,4" FontSize="11"
                                     Command="{Binding TestSpeechCommand}">
@@ -184,59 +240,257 @@
 
                     <!-- ═══ 讯飞 / 百度实时语音专属面板 ═══ -->
                     <StackPanel Spacing="8" IsVisible="{Binding IsSelectedEndpointThirdPartyRealtime}">
-                        <TextBlock Classes="field-note"
-                                   Text="{Binding SelectedEndpoint.EndpointTypeSubtitle}"
-                                   TextWrapping="Wrap"/>
 
-                        <Border Background="#0F3B82F6" CornerRadius="6" Padding="10,8">
-                            <TextBlock Classes="field-note" TextWrapping="Wrap"
-                                       Text="识别凭据用于实时语音转写；机器翻译凭据可单独配置（留空则实时翻译仅显示原文）。"/>
-                        </Border>
-
-                        <!-- 识别（ASR）凭据 -->
-                        <TextBlock Text="识别凭据（实时语音转写）" FontWeight="SemiBold"/>
-                        <StackPanel Spacing="5">
-                            <TextBlock Text="AppId"/>
-                            <TextBox Text="{Binding SelectedEndpoint.AppId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                     Watermark="语音应用 AppId"
-                                     Width="420" MaxWidth="420" HorizontalAlignment="Left"/>
-                        </StackPanel>
-                        <StackPanel Spacing="5">
-                            <TextBlock Text="{Binding SelectedEndpoint.AsrApiKeyLabel}"/>
-                            <TextBox Text="{Binding SelectedEndpoint.ApiKey, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                     Watermark="识别服务密钥"
-                                     PasswordChar="*"
-                                     Width="420" MaxWidth="420" HorizontalAlignment="Left"/>
-                        </StackPanel>
-                        <StackPanel Spacing="5" IsVisible="{Binding SelectedEndpoint.IsXunfeiRtasrEndpoint}">
-                            <TextBlock Text="ApiSecret（可选）"/>
-                            <TextBox Text="{Binding SelectedEndpoint.ApiSecret, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                     Watermark="部分服务需要，可留空"
-                                     PasswordChar="*"
-                                     Width="420" MaxWidth="420" HorizontalAlignment="Left"/>
+                        <!-- ── 识别（ASR）凭据：每个厂商独立一块 ── -->
+                        <StackPanel Orientation="Horizontal" Spacing="2">
+                            <TextBlock Text="识别凭据（实时语音转写）" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                            <icons:Icon Value="fa-solid fa-circle-info" FontSize="12" Classes="info-hint">
+                                <ToolTip.Tip>
+                                    <StackPanel MaxWidth="340" Spacing="4">
+                                        <TextBlock TextWrapping="Wrap" FontWeight="SemiBold"
+                                                   Text="{Binding SelectedEndpoint.EndpointTypeSubtitle}"/>
+                                        <TextBlock TextWrapping="Wrap"
+                                                   Text="{Binding SelectedEndpoint.AsrCredentialHint}"/>
+                                    </StackPanel>
+                                </ToolTip.Tip>
+                            </icons:Icon>
                         </StackPanel>
 
-                        <!-- 机器翻译凭据 -->
-                        <TextBlock Text="机器翻译凭据（可选）" FontWeight="SemiBold" Margin="0,6,0,0"/>
-                        <StackPanel Spacing="5">
-                            <TextBlock Text="翻译 AppId"/>
-                            <TextBox Text="{Binding SelectedEndpoint.TranslateAppId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                     Watermark="机器翻译 AppId（留空则复用识别 AppId）"
-                                     Width="420" MaxWidth="420" HorizontalAlignment="Left"/>
+                        <!-- 讯飞识别 -->
+                        <StackPanel Spacing="6" IsVisible="{Binding SelectedEndpoint.IsXunfeiRtasrEndpoint}">
+                            <Grid ColumnDefinitions="110,360,Auto" ColumnSpacing="8" HorizontalAlignment="Left">
+                                <TextBlock Grid.Column="0" Text="AppId" Classes="cred-label">
+                                    <ToolTip.Tip>
+                                        <TextBlock TextWrapping="Wrap" MaxWidth="300"
+                                                   Text="讯飞开放平台语音应用的 AppId，在控制台「我的应用」中查看，必填。"/>
+                                    </ToolTip.Tip>
+                                </TextBlock>
+                                <TextBox Grid.Column="1"
+                                         Text="{Binding SelectedEndpoint.XunfeiAsrAppId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                         Watermark="讯飞语音应用 AppId"/>
+                                <Panel Grid.Column="2" Width="36"/>
+                            </Grid>
+                            <Grid ColumnDefinitions="110,360,Auto" ColumnSpacing="8" HorizontalAlignment="Left">
+                                <TextBlock Grid.Column="0" Text="ApiKey" Classes="cred-label">
+                                    <ToolTip.Tip>
+                                        <TextBlock TextWrapping="Wrap" MaxWidth="300"
+                                                   Text="讯飞实时语音转写（RTASR）的 ApiKey，用于鉴权，必填。"/>
+                                    </ToolTip.Tip>
+                                </TextBlock>
+                                <TextBox Grid.Column="1"
+                                         Text="{Binding SelectedEndpoint.XunfeiAsrApiKey, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                         Watermark="讯飞 RTASR ApiKey"
+                                         PasswordChar="*"/>
+                                <Button Grid.Column="2" Width="36" Height="32"
+                                        ToolTip.Tip="复制密钥"
+                                        Tag="{Binding SelectedEndpoint.XunfeiAsrApiKey}"
+                                        Click="CopyText_Click">
+                                    <icons:Icon Value="fa-regular fa-copy" FontSize="13"/>
+                                </Button>
+                            </Grid>
+                            <Grid ColumnDefinitions="110,360,Auto" ColumnSpacing="8" HorizontalAlignment="Left">
+                                <TextBlock Grid.Column="0" Text="ApiSecret" Classes="cred-label">
+                                    <ToolTip.Tip>
+                                        <TextBlock TextWrapping="Wrap" MaxWidth="300"
+                                                   Text="可选：部分服务类型需要的 ApiSecret；若你的服务无需则可留空。"/>
+                                    </ToolTip.Tip>
+                                </TextBlock>
+                                <TextBox Grid.Column="1"
+                                         Text="{Binding SelectedEndpoint.XunfeiAsrApiSecret, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                         Watermark="部分服务需要，可留空"
+                                         PasswordChar="*"/>
+                                <Button Grid.Column="2" Width="36" Height="32"
+                                        ToolTip.Tip="复制密钥"
+                                        Tag="{Binding SelectedEndpoint.XunfeiAsrApiSecret}"
+                                        Click="CopyText_Click">
+                                    <icons:Icon Value="fa-regular fa-copy" FontSize="13"/>
+                                </Button>
+                            </Grid>
                         </StackPanel>
-                        <StackPanel Spacing="5" IsVisible="{Binding SelectedEndpoint.IsXunfeiRtasrEndpoint}">
-                            <TextBlock Text="翻译 ApiKey"/>
-                            <TextBox Text="{Binding SelectedEndpoint.TranslateApiKey, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                     Watermark="NiuTrans ApiKey"
-                                     PasswordChar="*"
-                                     Width="420" MaxWidth="420" HorizontalAlignment="Left"/>
+
+                        <!-- 百度识别 -->
+                        <StackPanel Spacing="6" IsVisible="{Binding SelectedEndpoint.IsBaiduRealtimeAsrEndpoint}">
+                            <Grid ColumnDefinitions="110,360,Auto" ColumnSpacing="8" HorizontalAlignment="Left">
+                                <TextBlock Grid.Column="0" Text="AppId" Classes="cred-label">
+                                    <ToolTip.Tip>
+                                        <TextBlock TextWrapping="Wrap" MaxWidth="300"
+                                                   Text="百度语音应用的 AppId（纯数字），在百度智能云「语音技术 → 应用列表」创建应用后获得，必填。"/>
+                                    </ToolTip.Tip>
+                                </TextBlock>
+                                <TextBox Grid.Column="1"
+                                         Text="{Binding SelectedEndpoint.BaiduAsrAppId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                         Watermark="百度语音应用 AppId（数字）"/>
+                                <Panel Grid.Column="2" Width="36"/>
+                            </Grid>
+                            <Grid ColumnDefinitions="110,360,Auto" ColumnSpacing="8" HorizontalAlignment="Left">
+                                <TextBlock Grid.Column="0" Text="API Key" Classes="cred-label">
+                                    <ToolTip.Tip>
+                                        <TextBlock TextWrapping="Wrap" MaxWidth="300"
+                                                   Text="识别用 API Key（AppKey），与 AppId 在同一应用详情页获取，必填。"/>
+                                    </ToolTip.Tip>
+                                </TextBlock>
+                                <TextBox Grid.Column="1"
+                                         Text="{Binding SelectedEndpoint.BaiduAsrApiKey, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                         Watermark="百度实时语音 AppKey"
+                                         PasswordChar="*"/>
+                                <Button Grid.Column="2" Width="36" Height="32"
+                                        ToolTip.Tip="复制密钥"
+                                        Tag="{Binding SelectedEndpoint.BaiduAsrApiKey}"
+                                        Click="CopyText_Click">
+                                    <icons:Icon Value="fa-regular fa-copy" FontSize="13"/>
+                                </Button>
+                            </Grid>
                         </StackPanel>
-                        <StackPanel Spacing="5">
-                            <TextBlock Text="{Binding SelectedEndpoint.TranslateSecretLabel}"/>
-                            <TextBox Text="{Binding SelectedEndpoint.TranslateApiSecret, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                     Watermark="机器翻译密钥"
-                                     PasswordChar="*"
-                                     Width="420" MaxWidth="420" HorizontalAlignment="Left"/>
+
+                        <!-- ── 机器翻译（MT）凭据：每个厂商独立一块 ── -->
+                        <Separator Margin="0,10,0,4"/>
+                        <StackPanel Orientation="Horizontal" Spacing="2" Margin="0,6,0,0">
+                            <TextBlock Text="机器翻译凭据（可选）" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                            <icons:Icon Value="fa-solid fa-circle-info" FontSize="12" Classes="info-hint">
+                                <ToolTip.Tip>
+                                    <TextBlock TextWrapping="Wrap" MaxWidth="320"
+                                               Text="{Binding SelectedEndpoint.MtCredentialHint}"/>
+                                </ToolTip.Tip>
+                            </icons:Icon>
+                        </StackPanel>
+                        <Grid ColumnDefinitions="110,360,Auto" ColumnSpacing="8" HorizontalAlignment="Left">
+                            <TextBlock Grid.Column="0" Text="翻译厂商" Classes="cred-label">
+                                <ToolTip.Tip>
+                                    <TextBlock TextWrapping="Wrap" MaxWidth="300"
+                                               Text="选择实时字幕的机器翻译厂商；选「不翻译」则仅显示识别原文。"/>
+                                </ToolTip.Tip>
+                            </TextBlock>
+                            <ComboBox Grid.Column="1"
+                                      ItemsSource="{x:Static vm:EndpointsSectionVM.TranslateVendorOptions}"
+                                      SelectedValue="{Binding SelectedEndpoint.TranslateVendor, Mode=TwoWay}"
+                                      SelectedValueBinding="{Binding Value}"
+                                      HorizontalAlignment="Stretch"/>
+                            <Panel Grid.Column="2" Width="36"/>
+                        </Grid>
+
+                        <!-- 讯飞翻译（NiuTrans） -->
+                        <StackPanel Spacing="6" IsVisible="{Binding SelectedEndpoint.IsTranslateXunfei}">
+                            <Grid ColumnDefinitions="110,360,Auto" ColumnSpacing="8" HorizontalAlignment="Left">
+                                <TextBlock Grid.Column="0" Text="翻译 AppId" Classes="cred-label">
+                                    <ToolTip.Tip>
+                                        <TextBlock TextWrapping="Wrap" MaxWidth="300"
+                                                   Text="讯飞 NiuTrans 机器翻译 AppId；留空则复用上方识别 AppId。"/>
+                                    </ToolTip.Tip>
+                                </TextBlock>
+                                <TextBox Grid.Column="1"
+                                         Text="{Binding SelectedEndpoint.XunfeiMtAppId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                         Watermark="留空则复用识别 AppId"/>
+                                <Panel Grid.Column="2" Width="36"/>
+                            </Grid>
+                            <Grid ColumnDefinitions="110,360,Auto" ColumnSpacing="8" HorizontalAlignment="Left">
+                                <TextBlock Grid.Column="0" Text="翻译 ApiKey" Classes="cred-label">
+                                    <ToolTip.Tip>
+                                        <TextBlock TextWrapping="Wrap" MaxWidth="300"
+                                                   Text="NiuTrans 翻译 ApiKey，启用讯飞翻译时必填。"/>
+                                    </ToolTip.Tip>
+                                </TextBlock>
+                                <TextBox Grid.Column="1"
+                                         Text="{Binding SelectedEndpoint.XunfeiMtApiKey, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                         Watermark="NiuTrans ApiKey"
+                                         PasswordChar="*"/>
+                                <Button Grid.Column="2" Width="36" Height="32"
+                                        ToolTip.Tip="复制密钥"
+                                        Tag="{Binding SelectedEndpoint.XunfeiMtApiKey}"
+                                        Click="CopyText_Click">
+                                    <icons:Icon Value="fa-regular fa-copy" FontSize="13"/>
+                                </Button>
+                            </Grid>
+                            <Grid ColumnDefinitions="110,360,Auto" ColumnSpacing="8" HorizontalAlignment="Left">
+                                <TextBlock Grid.Column="0" Text="翻译 ApiSecret" Classes="cred-label">
+                                    <ToolTip.Tip>
+                                        <TextBlock TextWrapping="Wrap" MaxWidth="300"
+                                                   Text="NiuTrans 翻译 ApiSecret，启用讯飞翻译时必填。"/>
+                                    </ToolTip.Tip>
+                                </TextBlock>
+                                <TextBox Grid.Column="1"
+                                         Text="{Binding SelectedEndpoint.XunfeiMtApiSecret, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                         Watermark="NiuTrans ApiSecret"
+                                         PasswordChar="*"/>
+                                <Button Grid.Column="2" Width="36" Height="32"
+                                        ToolTip.Tip="复制密钥"
+                                        Tag="{Binding SelectedEndpoint.XunfeiMtApiSecret}"
+                                        Click="CopyText_Click">
+                                    <icons:Icon Value="fa-regular fa-copy" FontSize="13"/>
+                                </Button>
+                            </Grid>
+                        </StackPanel>
+
+                        <!-- 百度翻译 -->
+                        <StackPanel Spacing="6" IsVisible="{Binding SelectedEndpoint.IsTranslateBaidu}">
+                            <Grid ColumnDefinitions="110,360,Auto" ColumnSpacing="8" HorizontalAlignment="Left">
+                                <TextBlock Grid.Column="0" Text="翻译 AppId" Classes="cred-label">
+                                    <ToolTip.Tip>
+                                        <TextBlock TextWrapping="Wrap" MaxWidth="300"
+                                                   Text="百度翻译开放平台 AppId；留空则复用上方识别 AppId。"/>
+                                    </ToolTip.Tip>
+                                </TextBlock>
+                                <TextBox Grid.Column="1"
+                                         Text="{Binding SelectedEndpoint.BaiduMtAppId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                         Watermark="留空则复用识别 AppId"/>
+                                <Panel Grid.Column="2" Width="36"/>
+                            </Grid>
+                            <Grid ColumnDefinitions="110,360,Auto" ColumnSpacing="8" HorizontalAlignment="Left">
+                                <TextBlock Grid.Column="0" Text="翻译 ApiKey" Classes="cred-label">
+                                    <ToolTip.Tip>
+                                        <TextBlock TextWrapping="Wrap" MaxWidth="300"
+                                                   Text="百度大模型翻译 ApiKey（优先使用）。与下方 SecretKey 二选一即可，无需都填。"/>
+                                    </ToolTip.Tip>
+                                </TextBlock>
+                                <TextBox Grid.Column="1"
+                                         Text="{Binding SelectedEndpoint.BaiduMtApiKey, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                         Watermark="大模型翻译 ApiKey（优先）"
+                                         PasswordChar="*"/>
+                                <Button Grid.Column="2" Width="36" Height="32"
+                                        ToolTip.Tip="复制密钥"
+                                        Tag="{Binding SelectedEndpoint.BaiduMtApiKey}"
+                                        Click="CopyText_Click">
+                                    <icons:Icon Value="fa-regular fa-copy" FontSize="13"/>
+                                </Button>
+                            </Grid>
+                            <Grid ColumnDefinitions="110,360,Auto" ColumnSpacing="8" HorizontalAlignment="Left">
+                                <TextBlock Grid.Column="0" Text="翻译 SecretKey" Classes="cred-label">
+                                    <ToolTip.Tip>
+                                        <TextBlock TextWrapping="Wrap" MaxWidth="300"
+                                                   Text="百度通用翻译 SecretKey（回退方案）。若已填大模型 ApiKey 可留空。"/>
+                                    </ToolTip.Tip>
+                                </TextBlock>
+                                <TextBox Grid.Column="1"
+                                         Text="{Binding SelectedEndpoint.BaiduMtSecretKey, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                         Watermark="通用翻译 SecretKey（回退）"
+                                         PasswordChar="*"/>
+                                <Button Grid.Column="2" Width="36" Height="32"
+                                        ToolTip.Tip="复制密钥"
+                                        Tag="{Binding SelectedEndpoint.BaiduMtSecretKey}"
+                                        Click="CopyText_Click">
+                                    <icons:Icon Value="fa-regular fa-copy" FontSize="13"/>
+                                </Button>
+                            </Grid>
+                        </StackPanel>
+
+
+                        <StackPanel Orientation="Horizontal" Spacing="8"
+                                    IsVisible="{Binding SelectedEndpoint.IsXunfeiRtasrEndpoint}">
+                            <Button Padding="10,5"
+                                    Tag="https://console.xfyun.cn/services/rta"
+                                    Click="OpenUrl_Click">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <icons:Icon Value="fa-solid fa-microphone" FontSize="14"/>
+                                    <TextBlock Text="讯飞开放平台（语音转写）" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
+                            <Button Padding="10,5"
+                                    Tag="https://www.xfyun.cn/services/niutrans"
+                                    Click="OpenUrl_Click">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <icons:Icon Value="fa-solid fa-language" FontSize="14"/>
+                                    <TextBlock Text="讯飞机器翻译（NiuTrans）" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
                         </StackPanel>
 
                         <StackPanel Orientation="Horizontal" Spacing="8"
@@ -259,8 +513,6 @@
                             </Button>
                         </StackPanel>
 
-                        <TextBlock Classes="field-note"
-                                   Text="测试连接请点击右上角 ⓘ 图标，识别与翻译会分两部分并发测试。"/>
                     </StackPanel>
 
                     <!-- ═══ AI 终结点面板（非 Speech / 非第三方实时语音） ═══ -->
