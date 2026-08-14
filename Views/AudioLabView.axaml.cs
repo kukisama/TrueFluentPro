@@ -17,6 +17,7 @@ namespace TrueFluentPro.Views
     {
         private AudioLabViewModel? ViewModel => DataContext as AudioLabViewModel;
         private bool _initialized;
+        private bool _isExportPickerOpen;
 
         /// <summary>与 MainWindow CompactNavWidth 同值。</summary>
         private const double CompactPanelWidth = 52;
@@ -184,6 +185,45 @@ namespace TrueFluentPro.Views
                 var path = files[0].TryGetLocalPath();
                 if (!string.IsNullOrEmpty(path))
                     ViewModel?.LoadAudioFile(path);
+            }
+        }
+
+        // ── 通用导出 ─────────────────────────────────────────
+        private async void ExportCurrent_Click(object? sender, RoutedEventArgs e)
+        {
+            var topLevel = TopLevel.GetTopLevel(this);
+            var viewModel = ViewModel;
+            if (_isExportPickerOpen || topLevel == null || viewModel == null || string.IsNullOrWhiteSpace(viewModel.CurrentFilePath))
+                return;
+
+            _isExportPickerOpen = true;
+            try
+            {
+                var folders = await topLevel.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+                {
+                    Title = "选择导出目录",
+                    AllowMultiple = false
+                });
+
+                var directory = folders.FirstOrDefault()?.TryGetLocalPath();
+                if (!string.IsNullOrWhiteSpace(directory))
+                {
+                    await viewModel.ExportCurrentTabAsync(directory);
+                }
+                else if (folders.Count > 0)
+                {
+                    viewModel.StatusMessage = "导出失败：当前仅支持选择本地目录。";
+                    viewModel.HasExportFeedback = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                viewModel.StatusMessage = $"选择导出目录失败：{ex.Message}";
+                viewModel.HasExportFeedback = true;
+            }
+            finally
+            {
+                _isExportPickerOpen = false;
             }
         }
 

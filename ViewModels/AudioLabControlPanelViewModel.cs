@@ -240,9 +240,12 @@ namespace TrueFluentPro.ViewModels
         /// <summary>
         /// 外部传入播客台本后触发合成。
         /// </summary>
-        public async Task SynthesizePodcastAsync(string? podcastScript = null)
+        public async Task SynthesizePodcastAsync(string? podcastScript = null, string? targetAudioItemId = null)
         {
-            if (string.IsNullOrWhiteSpace(CurrentAudioItemId)) return;
+            var audioItemId = string.IsNullOrWhiteSpace(targetAudioItemId)
+                ? CurrentAudioItemId
+                : targetAudioItemId;
+            if (string.IsNullOrWhiteSpace(audioItemId)) return;
             if (IsBusy)
             {
                 StatusMessage = "控制面板正忙，无法自动合成播客音频。请稍后手动点击「合成音频」。";
@@ -250,7 +253,7 @@ namespace TrueFluentPro.ViewModels
             }
 
             // 如果没传入脚本，尝试从缓存读
-            podcastScript ??= _pipeline.TryLoadCachedContent(CurrentAudioItemId, AudioLifecycleStage.PodcastScript);
+            podcastScript ??= _pipeline.TryLoadCachedContent(audioItemId, AudioLifecycleStage.PodcastScript);
             if (string.IsNullOrWhiteSpace(podcastScript))
             {
                 StatusMessage = "没有可用的播客台本。请先生成播客脚本。";
@@ -278,16 +281,19 @@ namespace TrueFluentPro.ViewModels
                 var outputDir = Path.Combine(PathManager.Instance.AppDataPath, "podcast-audio");
 
                 var path = await _pipeline.SynthesizePodcastAsync(
-                    auth, CurrentAudioItemId, podcastScript, profiles,
+                    auth, audioItemId, podcastScript, profiles,
                     outputFormat, outputDir, _cts.Token);
 
                 await Dispatcher.UIThread.InvokeAsync(() =>
                 {
-                    PodcastAudioPath = path;
-                    HasPodcastAudioFile = true;
-                    HasPodcastAudio = true;
-                    StatusMessage = $"播客音频已生成：{Path.GetFileName(path)}";
-                    PodcastAudioSynthesized?.Invoke(path);
+                    if (string.Equals(CurrentAudioItemId, audioItemId, StringComparison.OrdinalIgnoreCase))
+                    {
+                        PodcastAudioPath = path;
+                        HasPodcastAudioFile = true;
+                        HasPodcastAudio = true;
+                        StatusMessage = $"播客音频已生成：{Path.GetFileName(path)}";
+                    }
+                    PodcastAudioSynthesized?.Invoke(audioItemId, path);
                 });
             }
             catch (OperationCanceledException)
@@ -341,8 +347,8 @@ namespace TrueFluentPro.ViewModels
         /// <summary>请求自动补齐缺失阶段 — 由 AudioLabViewModel 订阅处理。</summary>
         public event Action? AutoFillMissingRequested;
 
-        /// <summary>播客音频合成完成 — 传递生成的文件路径。</summary>
-        public event Action<string>? PodcastAudioSynthesized;
+        /// <summary>播客音频合成完成 — 传递所属音频 ID 与生成文件路径。</summary>
+        public event Action<string, string>? PodcastAudioSynthesized;
 
         // ── 认证上下文构建 ─────────────────────────────
 

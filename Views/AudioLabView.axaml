@@ -335,6 +335,17 @@
                             </StackPanel>
                         </Button>
 
+                        <Button Padding="8,6"
+                                ToolTip.Tip="将当前能力的内容导出到所选目录"
+                                Click="ExportCurrent_Click"
+                                IsEnabled="{Binding CurrentFilePath.Length}"
+                                Background="Transparent" BorderThickness="0">
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <icons:Icon Value="fa-solid fa-download" FontSize="12"/>
+                                <TextBlock Text="导出" FontSize="12"/>
+                            </StackPanel>
+                        </Button>
+
                         <!-- 生命周期进度展开按钮 -->
                         <Button Padding="8,6" ToolTip.Tip="查看处理进度"
                                 Background="Transparent" BorderThickness="0"
@@ -800,11 +811,12 @@
                 Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
                 BorderBrush="{DynamicResource CardBorderBrush}"
                 BorderThickness="0,1,0,0"
-                IsVisible="{Binding HasActiveProcessing}">
+                IsVisible="{Binding ShowFooterStatus}">
             <Grid ColumnDefinitions="Auto,*,Auto">
                 <ProgressBar Grid.Column="0" IsIndeterminate="True"
                              Width="80" Height="3" Margin="0,0,12,0"
-                             VerticalAlignment="Center"/>
+                             VerticalAlignment="Center"
+                             IsVisible="{Binding ShowFooterProgress}"/>
                 <TextBlock Grid.Column="1" Text="{Binding StatusMessage}"
                            FontSize="12" Opacity="0.7"
                            VerticalAlignment="Center"

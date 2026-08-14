@@ -196,9 +196,15 @@ namespace TrueFluentPro.Services
                     : outputFormat.Contains("opus") ? ".opus"
                     : outputFormat.Contains("ogg") ? ".ogg"
                     : ".audio";
-            var fileName = $"podcast_{DateTime.Now:yyyyMMdd_HHmmss}{ext}";
+            var safeAudioId = new string(audioItemId.Where(char.IsLetterOrDigit).Take(16).ToArray());
+            if (string.IsNullOrWhiteSpace(safeAudioId)) safeAudioId = "audio";
+            var fileName = $"podcast_{safeAudioId}_{DateTime.Now:yyyyMMdd_HHmmssfff}_{Guid.NewGuid():N}{ext}";
             var outputPath = Path.Combine(outputDirectory, fileName);
-            await File.WriteAllBytesAsync(outputPath, audioBytes, ct);
+            await using (var output = new FileStream(
+                outputPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, useAsync: true))
+            {
+                await output.WriteAsync(audioBytes, ct);
+            }
 
             // 保存到生命周期
             var configJson = JsonSerializer.Serialize(new

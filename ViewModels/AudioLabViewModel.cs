@@ -41,6 +41,7 @@ namespace TrueFluentPro.ViewModels
         private readonly Func<AzureSpeechConfig> _configProvider;
         private readonly ConfigurationService _configService;
         private readonly AudioLifecyclePipelineService _pipeline;
+        private readonly AudioLabExportService _exportService = new();
         private readonly IAudioTaskQueueService? _queueService;
         private readonly ITaskEventBus? _eventBus;
 
@@ -264,7 +265,27 @@ namespace TrueFluentPro.ViewModels
         partial void OnIsGeneratingChanged(bool value)
         {
             OnPropertyChanged(nameof(HasActiveProcessing));
+            OnPropertyChanged(nameof(ShowFooterStatus));
+            OnPropertyChanged(nameof(ShowFooterProgress));
         }
+
+        [ObservableProperty]
+        private bool _isExporting;
+
+        [ObservableProperty]
+        private bool _hasExportFeedback;
+
+        public bool ShowFooterStatus => HasActiveProcessing || IsExporting || HasExportFeedback;
+        public bool ShowFooterProgress => HasActiveProcessing || IsExporting;
+
+        partial void OnIsExportingChanged(bool value)
+        {
+            OnPropertyChanged(nameof(ShowFooterStatus));
+            OnPropertyChanged(nameof(ShowFooterProgress));
+        }
+
+        partial void OnHasExportFeedbackChanged(bool value)
+            => OnPropertyChanged(nameof(ShowFooterStatus));
 
         [ObservableProperty]
         private string _statusMessage = "就绪";
@@ -341,7 +362,11 @@ namespace TrueFluentPro.ViewModels
             private set
             {
                 if (SetProperty(ref _hasActiveQueueTasks, value))
+                {
                     OnPropertyChanged(nameof(HasActiveProcessing));
+                    OnPropertyChanged(nameof(ShowFooterStatus));
+                    OnPropertyChanged(nameof(ShowFooterProgress));
+                }
             }
         }
 
@@ -577,6 +602,127 @@ namespace TrueFluentPro.ViewModels
                 LoadAudioFile(value.FullPath);
         }
 
+        /// <summary>将当前标签页的可用产物导出到用户选择的目录。</summary>
+        public async Task ExportCurrentTabAsync(string exportDirectory, CancellationToken cancellationToken = default)
+        {
+            if (IsExporting) return;
+            if (string.IsNullOrWhiteSpace(CurrentFilePath))
+            {
+                StatusMessage = "请先加载音频文件。";
+                HasExportFeedback = true;
+                return;
+            }
+
+            var exportSession = _activeSession;
+            void SetExportStatus(string message, bool showFeedback)
+            {
+                if (exportSession != null)
+                    exportSession.StatusMessage = message;
+                if (ReferenceEquals(_activeSession, exportSession))
+                {
+                    StatusMessage = message;
+                    HasExportFeedback = showFeedback;
+                }
+            }
+
+            IsExporting = true;
+            HasExportFeedback = false;
+            try
+            {
+                SetExportStatus("正在导出当前内容...", showFeedback: false);
+                var customPreset = _mergedPresets.FirstOrDefault(p => p.Stage == CustomStageKey);
+                var request = SelectedTab switch
+                {
+                    AudioLabTabKind.Summary => new AudioLabExportRequest
+                    {
+                        Kind = AudioLabExportKind.Summary,
+                        SourceAudioPath = CurrentFilePath,
+                        MarkdownContent = IsSummaryEditing ? SummaryEditText : SummaryMarkdown
+                    },
+                    AudioLabTabKind.Transcript => new AudioLabExportRequest
+                    {
+                        Kind = AudioLabExportKind.Transcript,
+                        SourceAudioPath = CurrentFilePath,
+                        TranscriptSegments = Segments.ToList()
+                    },
+                    AudioLabTabKind.MindMap => new AudioLabExportRequest
+                    {
+                        Kind = AudioLabExportKind.MindMap,
+                        SourceAudioPath = CurrentFilePath,
+                        MindMapRoot = MindMapRoot
+                    },
+                    AudioLabTabKind.Insight => new AudioLabExportRequest
+                    {
+                        Kind = AudioLabExportKind.Insight,
+                        SourceAudioPath = CurrentFilePath,
+                        MarkdownContent = InsightMarkdown
+                    },
+                    AudioLabTabKind.Research => new AudioLabExportRequest
+                    {
+                        Kind = AudioLabExportKind.Research,
+                        SourceAudioPath = CurrentFilePath,
+                        MarkdownContent = BuildResearchExportMarkdown()
+                    },
+                    AudioLabTabKind.Podcast => new AudioLabExportRequest
+                    {
+                        Kind = AudioLabExportKind.Podcast,
+                        SourceAudioPath = CurrentFilePath,
+                        MarkdownContent = PodcastMarkdown,
+                        AdditionalAudioPath = PodcastAudioPath
+                    },
+                    AudioLabTabKind.Translation => new AudioLabExportRequest
+                    {
+                        Kind = AudioLabExportKind.Translation,
+                        SourceAudioPath = CurrentFilePath,
+                        MarkdownContent = TranslationMarkdown
+                    },
+                    AudioLabTabKind.Custom => new AudioLabExportRequest
+                    {
+                        Kind = AudioLabExportKind.Custom,
+                        SourceAudioPath = CurrentFilePath,
+                        DisplayName = customPreset?.DisplayName ?? CustomStageKey,
+                        MarkdownContent = CustomStageContent,
+                        MindMapRoot = IsCustomStageMindMap ? CustomStageMindMapRoot : null
+                    },
+                    _ => throw new InvalidOperationException("当前能力暂不支持导出。")
+                };
+
+                var result = await _exportService.ExportAsync(exportDirectory, request, cancellationToken);
+                SetExportStatus($"已导出 {result.ExportedFiles.Count} 个文件到：{exportDirectory}", showFeedback: true);
+            }
+            catch (OperationCanceledException)
+            {
+                SetExportStatus("导出已取消。", showFeedback: true);
+            }
+            catch (Exception ex)
+            {
+                SetExportStatus($"导出失败：{ex.Message}", showFeedback: true);
+            }
+            finally
+            {
+                IsExporting = false;
+            }
+        }
+
+        private string BuildResearchExportMarkdown()
+        {
+            var builder = new StringBuilder();
+            if (ResearchTopics.Count > 0)
+            {
+                builder.AppendLine("# 研究方向").AppendLine();
+                foreach (var topic in ResearchTopics)
+                    builder.Append("- ").AppendLine(topic.Title);
+            }
+
+            if (!string.IsNullOrWhiteSpace(ResearchReportMarkdown))
+            {
+                if (builder.Length > 0) builder.AppendLine();
+                builder.Append(ResearchReportMarkdown.Trim());
+            }
+
+            return builder.ToString();
+        }
+
         // ── 加载音频 ──────────────────────────────────────────
         public void LoadAudioFile(string filePath)
         {
@@ -598,6 +744,7 @@ namespace TrueFluentPro.ViewModels
             CurrentFilePath = session.FilePath;
             CurrentFileName = Path.GetFileName(session.FilePath);
             BreadcrumbText = $"听析中心 / {CurrentFileName}";
+            HasExportFeedback = false;
 
             Playback.LoadAudio(filePath);
 
@@ -1470,7 +1617,7 @@ namespace TrueFluentPro.ViewModels
                     _pipeline.SaveStageContent(audioItemId, AudioLifecycleStage.PodcastScript, result);
                     ControlPanel.RefreshLifecycleStatus();
                     // 台本完整就绪后自动触发 TTS 合成（自动加载语音、检查配置、提示失败原因）
-                    _ = AutoTriggerPodcastTtsAsync(result);
+                    _ = AutoTriggerPodcastTtsAsync(result, audioItemId);
                 },
                 text => PodcastMarkdown = text);
         }
@@ -1481,7 +1628,7 @@ namespace TrueFluentPro.ViewModels
         /// 台本完成后自动触发 TTS 合成。自动加载语音（如尚未加载）、
         /// 检查发言人配置、合成音频，每个失败路径均有明确状态提示。
         /// </summary>
-        private async Task AutoTriggerPodcastTtsAsync(string podcastScript)
+        private async Task AutoTriggerPodcastTtsAsync(string podcastScript, string audioItemId)
         {
             // 1. 确保语音列表已加载
             if (!ControlPanel.VoicesLoaded)
@@ -1517,7 +1664,7 @@ namespace TrueFluentPro.ViewModels
             // 4. 执行合成
             try
             {
-                await ControlPanel.SynthesizePodcastAsync(podcastScript);
+                await ControlPanel.SynthesizePodcastAsync(podcastScript, audioItemId);
             }
             catch (Exception ex)
             {
@@ -2239,8 +2386,10 @@ namespace TrueFluentPro.ViewModels
             PodcastPlayback.Dispose();
         }
 
-        private void OnPodcastAudioSynthesized(string path)
+        private void OnPodcastAudioSynthesized(string audioItemId, string path)
         {
+            if (!string.Equals(_currentAudioItemId, audioItemId, StringComparison.OrdinalIgnoreCase))
+                return;
             PodcastAudioPath = path;
             HasPodcastAudioFile = true;
             PodcastPlayback.LoadAudio(path);
