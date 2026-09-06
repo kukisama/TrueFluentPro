@@ -11,7 +11,8 @@ namespace TrueFluentPro.Services
         AudioLifecycleStage Stage,
         AudioTaskStatus OldStatus,
         AudioTaskStatus NewStatus,
-        string? ErrorMessage = null
+        string? ErrorMessage = null,
+        string? StageKey = null
     );
 
     /// <summary>任务进度更新事件数据（不改变状态，仅更新进度描述）。</summary>
@@ -19,7 +20,8 @@ namespace TrueFluentPro.Services
         string TaskId,
         string AudioItemId,
         AudioLifecycleStage Stage,
-        string ProgressMessage
+        string ProgressMessage,
+        string? StageKey = null
     );
 
     /// <summary>

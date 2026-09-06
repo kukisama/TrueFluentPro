@@ -32,6 +32,13 @@
             <Setter Property="CornerRadius" Value="6"/>
         </Style>
 
+        <!-- 内容区导出按钮 -->
+        <Style Selector="Button.export-action">
+            <Setter Property="Padding" Value="8,4"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+        </Style>
+
         <!-- Tab 按钮样式 -->
         <Style Selector="RadioButton.tab-button">
             <Setter Property="Padding" Value="12,8"/>
@@ -335,17 +342,6 @@
                             </StackPanel>
                         </Button>
 
-                        <Button Padding="8,6"
-                                ToolTip.Tip="将当前能力的内容导出到所选目录"
-                                Click="ExportCurrent_Click"
-                                IsEnabled="{Binding CurrentFilePath.Length}"
-                                Background="Transparent" BorderThickness="0">
-                            <StackPanel Orientation="Horizontal" Spacing="4">
-                                <icons:Icon Value="fa-solid fa-download" FontSize="12"/>
-                                <TextBlock Text="导出" FontSize="12"/>
-                            </StackPanel>
-                        </Button>
-
                         <!-- 生命周期进度展开按钮 -->
                         <Button Padding="8,6" ToolTip.Tip="查看处理进度"
                                 Background="Transparent" BorderThickness="0"
@@ -400,6 +396,15 @@
                                             <StackPanel Orientation="Horizontal" Spacing="4">
                                                 <icons:Icon Value="fa-solid fa-pen-to-square" FontSize="12"/>
                                                 <TextBlock FontSize="12" Text="编辑"/>
+                                            </StackPanel>
+                                        </Button>
+                                        <Button Classes="export-action"
+                                                Click="ExportCurrent_Click"
+                                                IsEnabled="{Binding !IsExporting}"
+                                                ToolTip.Tip="导出当前总结">
+                                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                                <icons:Icon Value="fa-solid fa-download" FontSize="12"/>
+                                                <TextBlock FontSize="12" Text="导出"/>
                                             </StackPanel>
                                         </Button>
                                     </StackPanel>
@@ -472,6 +477,15 @@
                                         <TextBlock FontSize="12" Text="重新转录"/>
                                     </StackPanel>
                                 </Button>
+                                <Button Classes="export-action"
+                                        Click="ExportCurrent_Click"
+                                        IsEnabled="{Binding !IsExporting}"
+                                        ToolTip.Tip="导出录音稿和原始音频">
+                                    <StackPanel Orientation="Horizontal" Spacing="4">
+                                        <icons:Icon Value="fa-solid fa-download" FontSize="12"/>
+                                        <TextBlock FontSize="12" Text="导出"/>
+                                    </StackPanel>
+                                </Button>
                             </StackPanel>
                             <ListBox Name="TranscriptListBox"
                                      ItemsSource="{Binding Segments}"
@@ -524,6 +538,15 @@
                                             <TextBlock FontSize="12" Text="重新生成"/>
                                         </StackPanel>
                                     </Button>
+                                    <Button Classes="export-action"
+                                            Click="ExportCurrent_Click"
+                                            IsEnabled="{Binding !IsExporting}"
+                                            ToolTip.Tip="导出导图图片和 Markdown">
+                                        <StackPanel Orientation="Horizontal" Spacing="4">
+                                            <icons:Icon Value="fa-solid fa-download" FontSize="12"/>
+                                            <TextBlock FontSize="12" Text="导出"/>
+                                        </StackPanel>
+                                    </Button>
                                 </StackPanel>
                                 <Border ClipToBounds="True">
                                     <controls:MindMapCanvas Root="{Binding MindMapRoot}"/>
@@ -562,15 +585,26 @@
                         <!-- Tab: 顿悟 -->
                         <ScrollViewer IsVisible="{Binding SelectedTab, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static vm:AudioLabTabKind.Insight}}">
                             <StackPanel Spacing="12" Margin="0,0,0,24">
-                                <Button Padding="8,4" HorizontalAlignment="Right"
-                                        Command="{Binding GenerateInsightCommand}"
-                                        Background="Transparent" BorderThickness="0"
-                                        ToolTip.Tip="重新生成顿悟">
-                                    <StackPanel Orientation="Horizontal" Spacing="4">
-                                        <icons:Icon Value="fa-solid fa-arrows-rotate" FontSize="12"/>
-                                        <TextBlock FontSize="12" Text="重新生成"/>
-                                    </StackPanel>
-                                </Button>
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="4">
+                                    <Button Padding="8,4"
+                                            Command="{Binding GenerateInsightCommand}"
+                                            Background="Transparent" BorderThickness="0"
+                                            ToolTip.Tip="重新生成顿悟">
+                                        <StackPanel Orientation="Horizontal" Spacing="4">
+                                            <icons:Icon Value="fa-solid fa-arrows-rotate" FontSize="12"/>
+                                            <TextBlock FontSize="12" Text="重新生成"/>
+                                        </StackPanel>
+                                    </Button>
+                                    <Button Classes="export-action"
+                                            Click="ExportCurrent_Click"
+                                            IsEnabled="{Binding !IsExporting}"
+                                            ToolTip.Tip="导出当前顿悟分析">
+                                        <StackPanel Orientation="Horizontal" Spacing="4">
+                                            <icons:Icon Value="fa-solid fa-download" FontSize="12"/>
+                                            <TextBlock FontSize="12" Text="导出"/>
+                                        </StackPanel>
+                                    </Button>
+                                </StackPanel>
                                 <controls:ChatMarkdownBlock Markdown="{Binding InsightMarkdown}"/>
                                 <!-- 空状态/处理中提示 -->
                                 <StackPanel HorizontalAlignment="Center" Spacing="8" Margin="0,40"
@@ -609,6 +643,15 @@
                                         <StackPanel Orientation="Horizontal" Spacing="4">
                                             <icons:Icon Value="fa-solid fa-arrows-rotate" FontSize="12"/>
                                             <TextBlock FontSize="12" Text="生成研究"/>
+                                        </StackPanel>
+                                    </Button>
+                                    <Button Classes="export-action"
+                                            Click="ExportCurrent_Click"
+                                            IsEnabled="{Binding !IsExporting}"
+                                            ToolTip.Tip="导出当前研究报告">
+                                        <StackPanel Orientation="Horizontal" Spacing="4">
+                                            <icons:Icon Value="fa-solid fa-download" FontSize="12"/>
+                                            <TextBlock FontSize="12" Text="导出"/>
                                         </StackPanel>
                                     </Button>
                                 </StackPanel>
@@ -655,15 +698,26 @@
                         <!-- Tab: 播客 -->
                         <ScrollViewer IsVisible="{Binding SelectedTab, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static vm:AudioLabTabKind.Podcast}}">
                             <StackPanel Spacing="12" Margin="0,0,0,24">
-                                <Button Padding="8,4" HorizontalAlignment="Right"
-                                        Command="{Binding GeneratePodcastCommand}"
-                                        Background="Transparent" BorderThickness="0"
-                                        ToolTip.Tip="重新生成播客脚本">
-                                    <StackPanel Orientation="Horizontal" Spacing="4">
-                                        <icons:Icon Value="fa-solid fa-arrows-rotate" FontSize="12"/>
-                                        <TextBlock FontSize="12" Text="重新生成"/>
-                                    </StackPanel>
-                                </Button>
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="4">
+                                    <Button Padding="8,4"
+                                            Command="{Binding GeneratePodcastCommand}"
+                                            Background="Transparent" BorderThickness="0"
+                                            ToolTip.Tip="重新生成播客脚本">
+                                        <StackPanel Orientation="Horizontal" Spacing="4">
+                                            <icons:Icon Value="fa-solid fa-arrows-rotate" FontSize="12"/>
+                                            <TextBlock FontSize="12" Text="重新生成"/>
+                                        </StackPanel>
+                                    </Button>
+                                    <Button Classes="export-action"
+                                            Click="ExportCurrent_Click"
+                                            IsEnabled="{Binding !IsExporting}"
+                                            ToolTip.Tip="导出播客台本和音频">
+                                        <StackPanel Orientation="Horizontal" Spacing="4">
+                                            <icons:Icon Value="fa-solid fa-download" FontSize="12"/>
+                                            <TextBlock FontSize="12" Text="导出"/>
+                                        </StackPanel>
+                                    </Button>
+                                </StackPanel>
                                 <controls:ChatMarkdownBlock Markdown="{Binding PodcastMarkdown}"/>
                                 <!-- 空状态/处理中提示 -->
                                 <StackPanel HorizontalAlignment="Center" Spacing="8" Margin="0,40"
@@ -694,15 +748,26 @@
                         <!-- Tab: 翻译 -->
                         <ScrollViewer IsVisible="{Binding SelectedTab, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static vm:AudioLabTabKind.Translation}}">
                             <StackPanel Spacing="12" Margin="0,0,0,24">
-                                <Button Padding="8,4" HorizontalAlignment="Right"
-                                        Command="{Binding GenerateTranslationCommand}"
-                                        Background="Transparent" BorderThickness="0"
-                                        ToolTip.Tip="重新生成翻译">
-                                    <StackPanel Orientation="Horizontal" Spacing="4">
-                                        <icons:Icon Value="fa-solid fa-arrows-rotate" FontSize="12"/>
-                                        <TextBlock FontSize="12" Text="重新生成"/>
-                                    </StackPanel>
-                                </Button>
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="4">
+                                    <Button Padding="8,4"
+                                            Command="{Binding GenerateTranslationCommand}"
+                                            Background="Transparent" BorderThickness="0"
+                                            ToolTip.Tip="重新生成翻译">
+                                        <StackPanel Orientation="Horizontal" Spacing="4">
+                                            <icons:Icon Value="fa-solid fa-arrows-rotate" FontSize="12"/>
+                                            <TextBlock FontSize="12" Text="重新生成"/>
+                                        </StackPanel>
+                                    </Button>
+                                    <Button Classes="export-action"
+                                            Click="ExportCurrent_Click"
+                                            IsEnabled="{Binding !IsExporting}"
+                                            ToolTip.Tip="导出当前翻译稿">
+                                        <StackPanel Orientation="Horizontal" Spacing="4">
+                                            <icons:Icon Value="fa-solid fa-download" FontSize="12"/>
+                                            <TextBlock FontSize="12" Text="导出"/>
+                                        </StackPanel>
+                                    </Button>
+                                </StackPanel>
                                 <controls:ChatMarkdownBlock Markdown="{Binding TranslationMarkdown}"/>
                                 <!-- 空状态/处理中提示 -->
                                 <StackPanel HorizontalAlignment="Center" Spacing="8" Margin="0,40"
@@ -731,9 +796,30 @@
                         </ScrollViewer>
 
                         <!-- Tab: 自定义阶段（动态内容，支持 Markdown / 导图模式） -->
-                        <Panel IsVisible="{Binding IsCustomStageSelected}">
+                        <Grid RowDefinitions="Auto,*" IsVisible="{Binding IsCustomStageSelected}">
+                            <StackPanel Grid.Row="0" Orientation="Horizontal" HorizontalAlignment="Right"
+                                        Spacing="4" Margin="0,0,0,8">
+                                <Button Padding="8,4"
+                                        Command="{Binding RegenerateCustomStageCommand}"
+                                        Background="Transparent" BorderThickness="0"
+                                        ToolTip.Tip="重新生成当前提示词套件">
+                                    <StackPanel Orientation="Horizontal" Spacing="4">
+                                        <icons:Icon Value="fa-solid fa-arrows-rotate" FontSize="12"/>
+                                        <TextBlock FontSize="12" Text="重新生成"/>
+                                    </StackPanel>
+                                </Button>
+                                <Button Classes="export-action"
+                                        Click="ExportCurrent_Click"
+                                        IsEnabled="{Binding !IsExporting}"
+                                        ToolTip.Tip="导出当前提示词套件结果">
+                                    <StackPanel Orientation="Horizontal" Spacing="4">
+                                        <icons:Icon Value="fa-solid fa-download" FontSize="12"/>
+                                        <TextBlock FontSize="12" Text="导出"/>
+                                    </StackPanel>
+                                </Button>
+                            </StackPanel>
                             <!-- Markdown 模式 -->
-                            <ScrollViewer IsVisible="{Binding !IsCustomStageMindMap}">
+                            <ScrollViewer Grid.Row="1" IsVisible="{Binding !IsCustomStageMindMap}">
                                 <StackPanel Spacing="12" Margin="0,0,0,24">
                                     <controls:ChatMarkdownBlock Markdown="{Binding CustomStageContent}"/>
                                     <StackPanel HorizontalAlignment="Center" Spacing="4" Margin="0,40"
@@ -748,7 +834,7 @@
                                 </StackPanel>
                             </ScrollViewer>
                             <!-- 导图模式 -->
-                            <DockPanel IsVisible="{Binding IsCustomStageMindMap}">
+                            <DockPanel Grid.Row="1" IsVisible="{Binding IsCustomStageMindMap}">
                                 <TextBlock DockPanel.Dock="Top" Text="滚轮缩放 · 拖拽平移 · 双击复位"
                                            FontSize="10" Opacity="0.35" HorizontalAlignment="Right" Margin="0,0,0,8"/>
                                 <Border ClipToBounds="True"
@@ -762,7 +848,7 @@
                                                Opacity="0.4" FontSize="13" HorizontalAlignment="Center"/>
                                 </StackPanel>
                             </DockPanel>
-                        </Panel>
+                        </Grid>
                     </Panel>
                 </Border>
             </Grid>

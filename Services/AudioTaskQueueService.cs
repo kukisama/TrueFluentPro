@@ -16,6 +16,9 @@ namespace TrueFluentPro.Services
         /// <summary>提交单个任务，返回 task_id。若已存在 Pending/Running 的同 (audio, stage) 任务则返回已有 task_id。</summary>
         string Submit(string audioItemId, AudioLifecycleStage stage, int priority = 0);
 
+        /// <summary>按字符串 Stage 提交单个任务，供自定义提示词套件使用。</summary>
+        string Submit(string audioItemId, string stageKey, int priority = 0);
+
         /// <summary>为音频自动提交所有缺失阶段的任务（按 DAG 依赖）。</summary>
         List<string> SubmitAll(string audioItemId);
 
@@ -55,22 +58,30 @@ namespace TrueFluentPro.Services
         private readonly IAudioTaskRepository _taskRepo;
         private readonly IAudioLifecycleRepository _lifecycleRepo;
         private readonly ITaskEventBus _eventBus;
+        private readonly IAudioTaskExecutor _executor;
 
         public event Action? NewTaskEnqueued;
 
         public AudioTaskQueueService(
             IAudioTaskRepository taskRepo,
             IAudioLifecycleRepository lifecycleRepo,
-            ITaskEventBus eventBus)
+            ITaskEventBus eventBus,
+            IAudioTaskExecutor executor)
         {
             _taskRepo = taskRepo;
             _lifecycleRepo = lifecycleRepo;
             _eventBus = eventBus;
+            _executor = executor;
         }
 
         public string Submit(string audioItemId, AudioLifecycleStage stage, int priority = 0)
+            => Submit(audioItemId, stage.ToString(), priority);
+
+        public string Submit(string audioItemId, string stageKey, int priority = 0)
         {
-            var stageStr = stage.ToString();
+            if (string.IsNullOrWhiteSpace(stageKey))
+                throw new ArgumentException("任务 Stage 不能为空。", nameof(stageKey));
+            var stageStr = stageKey.Trim();
 
             // 去重检查：同一 (audio, stage) 是否已有 Pending/Running 任务
             var existing = _taskRepo.FindActiveTask(audioItemId, stageStr);
@@ -88,11 +99,23 @@ namespace TrueFluentPro.Services
                 SubmittedAt = DateTime.Now,
             };
 
-            _taskRepo.Insert(record);
+            if (!_taskRepo.TryInsertIfNoActiveTask(record))
+                return _taskRepo.FindActiveTask(audioItemId, stageStr)?.TaskId
+                    ?? throw new InvalidOperationException($"任务 {stageStr} 并发入队失败，请重试。");
 
-            _eventBus.Publish(new TaskStatusChangedEvent(
-                taskId, audioItemId, stage,
-                AudioTaskStatus.Pending, AudioTaskStatus.Pending));
+            if (Enum.TryParse<AudioLifecycleStage>(stageStr, ignoreCase: true, out var stage))
+            {
+                _eventBus.Publish(new TaskStatusChangedEvent(
+                    taskId, audioItemId, stage,
+                    AudioTaskStatus.Pending, AudioTaskStatus.Pending));
+            }
+            else
+            {
+                _eventBus.Publish(new TaskStatusChangedEvent(
+                    taskId, audioItemId, AudioLifecycleStage.Summarized,
+                    AudioTaskStatus.Pending, AudioTaskStatus.Pending,
+                    StageKey: stageStr));
+            }
 
             // 通知执行器有新任务
             NewTaskEnqueued?.Invoke();
@@ -160,7 +183,16 @@ namespace TrueFluentPro.Services
                     SubmittedAt = DateTime.Now,
                 };
 
-                _taskRepo.Insert(record);
+                if (!_taskRepo.TryInsertIfNoActiveTask(record))
+                {
+                    var concurrent = _taskRepo.FindActiveTask(audioItemId, stageStr);
+                    if (concurrent != null)
+                    {
+                        taskIdMap[stage] = concurrent.TaskId;
+                        taskIds.Add(concurrent.TaskId);
+                    }
+                    continue;
+                }
                 taskIdMap[stage] = taskId;
                 taskIds.Add(taskId);
 
@@ -199,7 +231,7 @@ namespace TrueFluentPro.Services
                         deps.Add(depId);
 
                     var customTaskId = UlidGenerator.NewUlid();
-                    _taskRepo.Insert(new AudioTaskRecord
+                    var customRecord = new AudioTaskRecord
                     {
                         TaskId = customTaskId,
                         AudioItemId = audioItemId,
@@ -208,8 +240,19 @@ namespace TrueFluentPro.Services
                         Priority = 0,
                         DependsOn = deps.Count > 0 ? JsonSerializer.Serialize(deps) : null,
                         SubmittedAt = DateTime.Now,
-                    });
+                    };
+                    if (!_taskRepo.TryInsertIfNoActiveTask(customRecord))
+                    {
+                        var concurrent = _taskRepo.FindActiveTask(audioItemId, customStage);
+                        if (concurrent != null)
+                            taskIds.Add(concurrent.TaskId);
+                        continue;
+                    }
                     taskIds.Add(customTaskId);
+                    _eventBus.Publish(new TaskStatusChangedEvent(
+                        customTaskId, audioItemId, AudioLifecycleStage.Summarized,
+                        AudioTaskStatus.Pending, AudioTaskStatus.Pending,
+                        StageKey: customStage));
                 }
             }
 
@@ -228,15 +271,33 @@ namespace TrueFluentPro.Services
             if (task.Status != AudioTaskStatus.Pending && task.Status != AudioTaskStatus.Running)
                 return;
 
-            var oldStatus = task.Status;
-            _taskRepo.MarkCancelled(taskId);
+            if (task.Status == AudioTaskStatus.Running)
+            {
+                _executor.CancelTask(taskId);
+                return;
+            }
+
+            if (!_taskRepo.TryMarkCancelled(taskId, AudioTaskStatus.Pending))
+            {
+                var current = _taskRepo.GetById(taskId);
+                if (current?.Status == AudioTaskStatus.Running)
+                    _executor.CancelTask(taskId);
+                return;
+            }
 
             if (Enum.TryParse<AudioLifecycleStage>(task.Stage, out var stage))
             {
                 _eventBus.Publish(new TaskStatusChangedEvent(
                     taskId, task.AudioItemId, stage,
-                    oldStatus, AudioTaskStatus.Cancelled));
+                    AudioTaskStatus.Pending, AudioTaskStatus.Cancelled));
             }
+                    else
+                    {
+                    _eventBus.Publish(new TaskStatusChangedEvent(
+                        taskId, task.AudioItemId, AudioLifecycleStage.Summarized,
+                        AudioTaskStatus.Pending, AudioTaskStatus.Cancelled,
+                        StageKey: task.Stage));
+                    }
         }
 
         public void CancelAllForAudio(string audioItemId)
@@ -282,6 +343,13 @@ namespace TrueFluentPro.Services
                     taskId, task.AudioItemId, stage,
                     task.Status, AudioTaskStatus.Pending));
             }
+                    else
+                    {
+                    _eventBus.Publish(new TaskStatusChangedEvent(
+                        taskId, task.AudioItemId, AudioLifecycleStage.Summarized,
+                        task.Status, AudioTaskStatus.Pending,
+                        StageKey: task.Stage));
+                    }
 
             NewTaskEnqueued?.Invoke();
             return taskId;

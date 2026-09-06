@@ -304,6 +304,8 @@ public partial class MainWindow : Window
                         configService,
                         pipeline,
                         controlPanelVm,
+                        App.Services.GetRequiredService<IAudioLabExportService>(),
+                        App.Services.GetRequiredService<IDesktopFolderLauncher>(),
                         App.Services.GetRequiredService<IAudioTaskQueueService>(),
                         App.Services.GetRequiredService<ITaskEventBus>());
                 }

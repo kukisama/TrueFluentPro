@@ -13,6 +13,9 @@ namespace TrueFluentPro.Services.Storage
         /// <summary>插入一条新任务。</summary>
         void Insert(AudioTaskRecord record);
 
+        /// <summary>仅当同音频同阶段不存在 Pending/Running 任务时插入，返回是否成功。</summary>
+        bool TryInsertIfNoActiveTask(AudioTaskRecord record);
+
         /// <summary>根据 task_id 获取任务。</summary>
         AudioTaskRecord? GetById(string taskId);
 
@@ -34,17 +37,20 @@ namespace TrueFluentPro.Services.Storage
         /// <summary>更新任务的进度描述消息。</summary>
         void UpdateProgressMessage(string taskId, string? progressMessage);
 
-        /// <summary>将任务标记为 Running（设置 started_at）。</summary>
-        void MarkRunning(string taskId);
+        /// <summary>仅当任务仍为 Pending 时原子标记为 Running；返回是否认领成功。</summary>
+        bool TryMarkRunning(string taskId);
 
-        /// <summary>将任务标记为 Completed（设置 completed_at，清空 progress_message）。</summary>
-        void MarkCompleted(string taskId);
+        /// <summary>仅当任务为 Running 时标记 Completed，返回是否更新成功。</summary>
+        bool TryMarkCompleted(string taskId);
 
-        /// <summary>将任务标记为 Failed（设置 completed_at + error_message，清空 progress_message）。</summary>
-        void MarkFailed(string taskId, string errorMessage);
+        /// <summary>仅当任务为 Running 时标记 Failed，返回是否更新成功。</summary>
+        bool TryMarkFailed(string taskId, string errorMessage);
 
-        /// <summary>将任务标记为 Cancelled。</summary>
-        void MarkCancelled(string taskId);
+        /// <summary>仅当任务处于指定状态时标记 Cancelled，返回是否更新成功。</summary>
+        bool TryMarkCancelled(string taskId, AudioTaskStatus expectedStatus);
+
+        /// <summary>仅当任务为 Running 时重置为 Pending 并增加重试次数。</summary>
+        bool TryRetryRunning(string taskId);
 
         /// <summary>重试任务（重置为 Pending，增加 retry_count）。</summary>
         void Retry(string taskId);
@@ -109,6 +115,30 @@ INSERT INTO audio_task_queue (
 );";
             BindParams(cmd, r);
             cmd.ExecuteNonQuery();
+        }
+
+        public bool TryInsertIfNoActiveTask(AudioTaskRecord r)
+        {
+            using var conn = _db.CreateConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = @"
+INSERT INTO audio_task_queue (
+    task_id, audio_item_id, stage, status, priority,
+    depends_on, error_message, progress_message, retry_count,
+    submitted_at, started_at, completed_at, submitted_by
+)
+SELECT
+    @tid, @aid, @stage, @status, @pri,
+    @deps, @err, @prog, @retry,
+    @sub_at, @start_at, @comp_at, @sub_by
+WHERE NOT EXISTS (
+    SELECT 1 FROM audio_task_queue
+    WHERE audio_item_id = @aid
+      AND stage = @stage
+      AND status IN ('Pending', 'Running')
+);";
+            BindParams(cmd, r);
+            return cmd.ExecuteNonQuery() == 1;
         }
 
         public AudioTaskRecord? GetById(string taskId)
@@ -204,57 +234,71 @@ WHERE task_id = @tid;";
             cmd.ExecuteNonQuery();
         }
 
-        public void MarkRunning(string taskId)
+        public bool TryMarkRunning(string taskId)
         {
             using var conn = _db.CreateConnection();
             using var cmd = conn.CreateCommand();
             cmd.CommandText = @"
 UPDATE audio_task_queue
 SET status = 'Running', started_at = @t
-WHERE task_id = @tid;";
+WHERE task_id = @tid AND status = 'Pending';";
             cmd.Parameters.AddWithValue("@tid", taskId);
             cmd.Parameters.AddWithValue("@t", Db.Ts(DateTime.Now));
-            cmd.ExecuteNonQuery();
+            return cmd.ExecuteNonQuery() == 1;
         }
 
-        public void MarkCompleted(string taskId)
+        public bool TryMarkCompleted(string taskId)
         {
             using var conn = _db.CreateConnection();
             using var cmd = conn.CreateCommand();
             cmd.CommandText = @"
 UPDATE audio_task_queue
 SET status = 'Completed', completed_at = @t, progress_message = NULL
-WHERE task_id = @tid;";
+WHERE task_id = @tid AND status = 'Running';";
             cmd.Parameters.AddWithValue("@tid", taskId);
             cmd.Parameters.AddWithValue("@t", Db.Ts(DateTime.Now));
-            cmd.ExecuteNonQuery();
+            return cmd.ExecuteNonQuery() == 1;
         }
 
-        public void MarkFailed(string taskId, string errorMessage)
+        public bool TryMarkFailed(string taskId, string errorMessage)
         {
             using var conn = _db.CreateConnection();
             using var cmd = conn.CreateCommand();
             cmd.CommandText = @"
 UPDATE audio_task_queue
 SET status = 'Failed', completed_at = @t, error_message = @err, progress_message = NULL
-WHERE task_id = @tid;";
+WHERE task_id = @tid AND status = 'Running';";
             cmd.Parameters.AddWithValue("@tid", taskId);
             cmd.Parameters.AddWithValue("@t", Db.Ts(DateTime.Now));
             cmd.Parameters.AddWithValue("@err", errorMessage);
-            cmd.ExecuteNonQuery();
+            return cmd.ExecuteNonQuery() == 1;
         }
 
-        public void MarkCancelled(string taskId)
+        public bool TryMarkCancelled(string taskId, AudioTaskStatus expectedStatus)
         {
             using var conn = _db.CreateConnection();
             using var cmd = conn.CreateCommand();
             cmd.CommandText = @"
 UPDATE audio_task_queue
 SET status = 'Cancelled', completed_at = @t, progress_message = NULL
-WHERE task_id = @tid;";
+WHERE task_id = @tid AND status = @expected;";
             cmd.Parameters.AddWithValue("@tid", taskId);
             cmd.Parameters.AddWithValue("@t", Db.Ts(DateTime.Now));
-            cmd.ExecuteNonQuery();
+            cmd.Parameters.AddWithValue("@expected", expectedStatus.ToString());
+            return cmd.ExecuteNonQuery() == 1;
+        }
+
+        public bool TryRetryRunning(string taskId)
+        {
+            using var conn = _db.CreateConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = @"
+UPDATE audio_task_queue
+SET status = 'Pending', error_message = NULL, progress_message = NULL, started_at = NULL,
+    completed_at = NULL, retry_count = retry_count + 1
+WHERE task_id = @tid AND status = 'Running';";
+            cmd.Parameters.AddWithValue("@tid", taskId);
+            return cmd.ExecuteNonQuery() == 1;
         }
 
         public void Retry(string taskId)

@@ -36,6 +36,16 @@ namespace TrueFluentPro.Models
         /// <summary>内容展示模式：Markdown / Transcript / MindMap。</summary>
         public StageDisplayMode DisplayMode { get; set; } = StageDisplayMode.Markdown;
 
+        /// <summary>内置生命周期 Stage 不允许在控制界面改名或删除。</summary>
+        [System.Text.Json.Serialization.JsonIgnore]
+        public bool IsBuiltInStage => System.Enum.TryParse<AudioLifecycleStage>(Stage, true, out _);
+
+        [System.Text.Json.Serialization.JsonIgnore]
+        public bool IsStageKeyEditable => !IsBuiltInStage;
+
+        [System.Text.Json.Serialization.JsonIgnore]
+        public bool CanRemove => !IsBuiltInStage;
+
         /// <summary>用于 ComboBox SelectedIndex 绑定（0=Markdown, 1=导图）。</summary>
         [System.Text.Json.Serialization.JsonIgnore]
         public int DisplayModeIndex

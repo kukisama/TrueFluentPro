@@ -41,7 +41,8 @@ namespace TrueFluentPro.ViewModels
         private readonly Func<AzureSpeechConfig> _configProvider;
         private readonly ConfigurationService _configService;
         private readonly AudioLifecyclePipelineService _pipeline;
-        private readonly AudioLabExportService _exportService = new();
+        private readonly IAudioLabExportService _exportService;
+        private readonly IDesktopFolderLauncher _folderLauncher;
         private readonly IAudioTaskQueueService? _queueService;
         private readonly ITaskEventBus? _eventBus;
 
@@ -398,6 +399,7 @@ namespace TrueFluentPro.ViewModels
                 OnPropertyChanged(nameof(IsCustomStageSelected));
                 OnPropertyChanged(nameof(IsCustomStageMindMap));
                 RefreshCustomStageMindMap();
+                ((RelayCommand)RegenerateCustomStageCommand).RaiseCanExecuteChanged();
             }
         }
 
@@ -410,7 +412,8 @@ namespace TrueFluentPro.ViewModels
             get
             {
                 if (string.IsNullOrEmpty(_customStageKey)) return false;
-                var preset = _mergedPresets.FirstOrDefault(p => p.Stage == _customStageKey);
+                var preset = _mergedPresets.FirstOrDefault(p =>
+                    string.Equals(p.Stage, _customStageKey, StringComparison.OrdinalIgnoreCase));
                 return preset?.DisplayMode == StageDisplayMode.MindMap;
             }
         }
@@ -431,14 +434,14 @@ namespace TrueFluentPro.ViewModels
             }
         }
 
-        private static readonly HashSet<string> KnownStages = new()
-        {
-            "Summarized", "MindMap", "Insight", "Research", "PodcastScript", "Translated"
-        };
+        private static readonly HashSet<string> KnownStages = new(
+            Enum.GetNames<AudioLifecycleStage>(),
+            StringComparer.OrdinalIgnoreCase);
 
         private bool IsStageTabVisible(string stage)
         {
-            var preset = _mergedPresets.FirstOrDefault(p => p.Stage == stage);
+            var preset = _mergedPresets.FirstOrDefault(p =>
+                string.Equals(p.Stage, stage, StringComparison.OrdinalIgnoreCase));
             return preset != null && preset.IsEnabled && preset.ShowInTab;
         }
 
@@ -507,6 +510,7 @@ namespace TrueFluentPro.ViewModels
         public ICommand GenerateResearchCommand { get; }
         public ICommand GeneratePodcastCommand { get; }
         public ICommand GenerateTranslationCommand { get; }
+        public ICommand RegenerateCustomStageCommand { get; }
         public ICommand StopGenerationCommand { get; }
 
         /// <summary>控制面板 ViewModel — 管理生命周期和 TTS 配置。</summary>
@@ -522,6 +526,8 @@ namespace TrueFluentPro.ViewModels
             ConfigurationService configService,
             AudioLifecyclePipelineService pipeline,
             AudioLabControlPanelViewModel controlPanel,
+            IAudioLabExportService exportService,
+            IDesktopFolderLauncher folderLauncher,
             IAudioTaskQueueService? queueService = null,
             ITaskEventBus? eventBus = null)
         {
@@ -533,6 +539,8 @@ namespace TrueFluentPro.ViewModels
             _configProvider = configProvider;
             _configService = configService;
             _pipeline = pipeline;
+            _exportService = exportService;
+            _folderLauncher = folderLauncher;
             _queueService = queueService;
             _eventBus = eventBus;
             ControlPanel = controlPanel;
@@ -583,6 +591,12 @@ namespace TrueFluentPro.ViewModels
             GenerateResearchCommand = new RelayCommand(_ => _ = GenerateResearchAsync(), _ => !IsGenerating && !IsResearchProcessing && Segments.Count > 0);
             GeneratePodcastCommand = new RelayCommand(_ => _ = GeneratePodcastAsync(), _ => !IsGenerating && !IsPodcastProcessing && Segments.Count > 0);
             GenerateTranslationCommand = new RelayCommand(_ => _ = GenerateTranslationAsync(), _ => !IsGenerating && !IsTranslationProcessing && Segments.Count > 0);
+            RegenerateCustomStageCommand = new RelayCommand(
+                _ => RegenerateCustomStage(),
+                _ => _queueService != null
+                    && _currentAudioItemId != null
+                    && !string.IsNullOrWhiteSpace(CustomStageKey)
+                    && !HasActiveProcessing);
             StopGenerationCommand = new RelayCommand(_ => _activeSession?.Cts?.Cancel(), _ => IsGenerating);
 
             // 订阅任务事件总线（队列化模式下，任务完成后自动刷新 UI）
@@ -603,14 +617,16 @@ namespace TrueFluentPro.ViewModels
         }
 
         /// <summary>将当前标签页的可用产物导出到用户选择的目录。</summary>
-        public async Task ExportCurrentTabAsync(string exportDirectory, CancellationToken cancellationToken = default)
+        public async Task<AudioLabExportResult?> ExportCurrentTabAsync(
+            string exportDirectory,
+            CancellationToken cancellationToken = default)
         {
-            if (IsExporting) return;
+            if (IsExporting) return null;
             if (string.IsNullOrWhiteSpace(CurrentFilePath))
             {
                 StatusMessage = "请先加载音频文件。";
                 HasExportFeedback = true;
-                return;
+                return null;
             }
 
             var exportSession = _activeSession;
@@ -630,78 +646,154 @@ namespace TrueFluentPro.ViewModels
             try
             {
                 SetExportStatus("正在导出当前内容...", showFeedback: false);
-                var customPreset = _mergedPresets.FirstOrDefault(p => p.Stage == CustomStageKey);
-                var request = SelectedTab switch
-                {
-                    AudioLabTabKind.Summary => new AudioLabExportRequest
-                    {
-                        Kind = AudioLabExportKind.Summary,
-                        SourceAudioPath = CurrentFilePath,
-                        MarkdownContent = IsSummaryEditing ? SummaryEditText : SummaryMarkdown
-                    },
-                    AudioLabTabKind.Transcript => new AudioLabExportRequest
-                    {
-                        Kind = AudioLabExportKind.Transcript,
-                        SourceAudioPath = CurrentFilePath,
-                        TranscriptSegments = Segments.ToList()
-                    },
-                    AudioLabTabKind.MindMap => new AudioLabExportRequest
-                    {
-                        Kind = AudioLabExportKind.MindMap,
-                        SourceAudioPath = CurrentFilePath,
-                        MindMapRoot = MindMapRoot
-                    },
-                    AudioLabTabKind.Insight => new AudioLabExportRequest
-                    {
-                        Kind = AudioLabExportKind.Insight,
-                        SourceAudioPath = CurrentFilePath,
-                        MarkdownContent = InsightMarkdown
-                    },
-                    AudioLabTabKind.Research => new AudioLabExportRequest
-                    {
-                        Kind = AudioLabExportKind.Research,
-                        SourceAudioPath = CurrentFilePath,
-                        MarkdownContent = BuildResearchExportMarkdown()
-                    },
-                    AudioLabTabKind.Podcast => new AudioLabExportRequest
-                    {
-                        Kind = AudioLabExportKind.Podcast,
-                        SourceAudioPath = CurrentFilePath,
-                        MarkdownContent = PodcastMarkdown,
-                        AdditionalAudioPath = PodcastAudioPath
-                    },
-                    AudioLabTabKind.Translation => new AudioLabExportRequest
-                    {
-                        Kind = AudioLabExportKind.Translation,
-                        SourceAudioPath = CurrentFilePath,
-                        MarkdownContent = TranslationMarkdown
-                    },
-                    AudioLabTabKind.Custom => new AudioLabExportRequest
-                    {
-                        Kind = AudioLabExportKind.Custom,
-                        SourceAudioPath = CurrentFilePath,
-                        DisplayName = customPreset?.DisplayName ?? CustomStageKey,
-                        MarkdownContent = CustomStageContent,
-                        MindMapRoot = IsCustomStageMindMap ? CustomStageMindMapRoot : null
-                    },
-                    _ => throw new InvalidOperationException("当前能力暂不支持导出。")
-                };
+                var request = BuildCurrentExportRequest();
 
                 var result = await _exportService.ExportAsync(exportDirectory, request, cancellationToken);
                 SetExportStatus($"已导出 {result.ExportedFiles.Count} 个文件到：{exportDirectory}", showFeedback: true);
+                try
+                {
+                    _folderLauncher.Open(result.ExportDirectory);
+                }
+                catch (Exception ex)
+                {
+                    SetExportStatus($"导出成功，但无法自动打开目录：{ex.Message}", showFeedback: true);
+                }
+                return result;
             }
             catch (OperationCanceledException)
             {
                 SetExportStatus("导出已取消。", showFeedback: true);
+                return null;
             }
             catch (Exception ex)
             {
                 SetExportStatus($"导出失败：{ex.Message}", showFeedback: true);
+                return null;
             }
             finally
             {
                 IsExporting = false;
             }
+        }
+
+        private AudioLabExportRequest BuildCurrentExportRequest()
+        {
+            if (SelectedTab == AudioLabTabKind.Transcript)
+            {
+                if (Segments.Count == 0)
+                    throw new InvalidOperationException("当前没有可导出的录音稿。");
+
+                return new AudioLabExportRequest
+                {
+                    SourceAudioPath = CurrentFilePath,
+                    Artifacts = new AudioLabExportArtifact[]
+                    {
+                        new()
+                        {
+                            Kind = AudioLabExportArtifactKind.Markdown,
+                            Label = "录音稿",
+                            MarkdownContent = AudioLabExportService.BuildTranscriptMarkdown(
+                                Path.GetFileNameWithoutExtension(CurrentFilePath),
+                                Path.GetFileName(CurrentFilePath),
+                                Segments.ToList())
+                        },
+                        new()
+                        {
+                            Kind = AudioLabExportArtifactKind.FileCopy,
+                            Label = "原始音频",
+                            SourceFilePath = CurrentFilePath
+                        }
+                    }
+                };
+            }
+
+            var stageKey = GetSelectedPromptStageKey();
+            var preset = _mergedPresets.FirstOrDefault(p =>
+                string.Equals(p.Stage, stageKey, StringComparison.OrdinalIgnoreCase));
+            if (preset == null)
+                throw new InvalidOperationException($"未找到当前提示词套件：{stageKey}");
+
+            var label = string.IsNullOrWhiteSpace(preset.DisplayName)
+                ? preset.Stage
+                : preset.DisplayName.Trim();
+            var artifacts = new List<AudioLabExportArtifact>();
+
+            if (preset.DisplayMode == StageDisplayMode.MindMap)
+            {
+                artifacts.Add(new AudioLabExportArtifact
+                {
+                    Kind = AudioLabExportArtifactKind.MindMap,
+                    Label = label,
+                    MindMapRoot = GetStageMindMapSnapshot(stageKey)
+                });
+            }
+            else
+            {
+                artifacts.Add(new AudioLabExportArtifact
+                {
+                    Kind = AudioLabExportArtifactKind.Markdown,
+                    Label = label,
+                    MarkdownContent = GetStageMarkdownSnapshot(stageKey)
+                });
+            }
+
+            // 套件可声明主产物；领域附件按已有生命周期结果追加。
+            if (string.Equals(stageKey, "PodcastScript", StringComparison.OrdinalIgnoreCase)
+                && !string.IsNullOrWhiteSpace(PodcastAudioPath))
+            {
+                artifacts.Add(new AudioLabExportArtifact
+                {
+                    Kind = AudioLabExportArtifactKind.FileCopy,
+                    Label = "播客音频",
+                    SourceFilePath = PodcastAudioPath
+                });
+            }
+
+            return new AudioLabExportRequest
+            {
+                SourceAudioPath = CurrentFilePath,
+                Artifacts = artifacts
+            };
+        }
+
+        private string GetSelectedPromptStageKey()
+            => SelectedTab switch
+            {
+                AudioLabTabKind.Summary => "Summarized",
+                AudioLabTabKind.MindMap => "MindMap",
+                AudioLabTabKind.Insight => "Insight",
+                AudioLabTabKind.Research => "Research",
+                AudioLabTabKind.Podcast => "PodcastScript",
+                AudioLabTabKind.Translation => "Translated",
+                AudioLabTabKind.Custom when !string.IsNullOrWhiteSpace(CustomStageKey) => CustomStageKey,
+                _ => throw new InvalidOperationException("当前页面没有关联的提示词套件。")
+            };
+
+        private string GetStageMarkdownSnapshot(string stageKey)
+            => stageKey switch
+            {
+                "Summarized" => IsSummaryEditing ? SummaryEditText : SummaryMarkdown,
+                "Insight" => InsightMarkdown,
+                "Research" => BuildResearchExportMarkdown(),
+                "PodcastScript" => PodcastMarkdown,
+                "Translated" => TranslationMarkdown,
+                _ => _currentAudioItemId == null
+                    ? ""
+                    : _pipeline.TryLoadCachedContent(_currentAudioItemId, stageKey) ?? ""
+            };
+
+        private MindMapNode? GetStageMindMapSnapshot(string stageKey)
+        {
+            if (string.Equals(stageKey, "MindMap", StringComparison.OrdinalIgnoreCase))
+                return MindMapRoot;
+            if (string.Equals(stageKey, CustomStageKey, StringComparison.OrdinalIgnoreCase)
+                && CustomStageMindMapRoot != null)
+                return CustomStageMindMapRoot;
+            if (_currentAudioItemId == null)
+                return null;
+
+            var content = _pipeline.TryLoadCachedContent(_currentAudioItemId, stageKey);
+            return string.IsNullOrWhiteSpace(content) ? null : ParseMindMapJson(content);
         }
 
         private string BuildResearchExportMarkdown()
@@ -1509,7 +1601,8 @@ namespace TrueFluentPro.ViewModels
                     json = json.Trim();
                 }
 
-                var root = ParseMindMapJson(json);
+                var root = ParseMindMapJson(json)
+                    ?? throw new InvalidOperationException("AI 返回的思维导图不是有效 JSON，请重新生成。");
                 session.MindMapRoot = root;
                 session.StatusMessage = "思维导图生成完成";
                 await InvokeIfActiveAsync(session, () =>
@@ -1560,7 +1653,7 @@ namespace TrueFluentPro.ViewModels
             }
             catch
             {
-                return new MindMapNode { Title = "解析失败" };
+                return null;
             }
         }
 
@@ -1830,6 +1923,24 @@ namespace TrueFluentPro.ViewModels
             return Task.CompletedTask;
         }
 
+        private void RegenerateCustomStage()
+        {
+            if (_queueService == null
+                || _currentAudioItemId == null
+                || string.IsNullOrWhiteSpace(CustomStageKey))
+                return;
+
+            _pipeline.MarkStageStale(_currentAudioItemId, CustomStageKey);
+            _queueService.Submit(_currentAudioItemId, CustomStageKey);
+            StatusMessage = $"{GetCustomStageDisplayName(CustomStageKey)}任务已提交到队列...";
+            RefreshStageStates(_currentAudioItemId);
+        }
+
+        private string GetCustomStageDisplayName(string stageKey)
+            => _mergedPresets.FirstOrDefault(p =>
+                   string.Equals(p.Stage, stageKey, StringComparison.OrdinalIgnoreCase))?.DisplayName
+               ?? stageKey;
+
         // ── 队列化重新生成辅助 ────────────────────────────────
 
         /// <summary>
@@ -1944,6 +2055,7 @@ namespace TrueFluentPro.ViewModels
             ((RelayCommand)GenerateResearchCommand).RaiseCanExecuteChanged();
             ((RelayCommand)GeneratePodcastCommand).RaiseCanExecuteChanged();
             ((RelayCommand)GenerateTranslationCommand).RaiseCanExecuteChanged();
+            ((RelayCommand)RegenerateCustomStageCommand).RaiseCanExecuteChanged();
             ((RelayCommand)StopGenerationCommand).RaiseCanExecuteChanged();
         }
 
@@ -1974,17 +2086,32 @@ namespace TrueFluentPro.ViewModels
             // 刷新阶段状态
             RefreshStageStates(e.AudioItemId);
 
+            var isCustomStage = !string.IsNullOrWhiteSpace(e.StageKey);
+
             // 任务完成时，从 DB 重新加载内容到 UI
             if (e.NewStatus == AudioTaskStatus.Completed)
             {
-                RefreshStageContentFromDb(session, e.AudioItemId, e.Stage);
-                // 自定义阶段内容也可能更新（事件用占位 Stage，需主动刷新自定义内容）
-                OnPropertyChanged(nameof(CustomStageContent));
-                RefreshCustomStageMindMap();
+                if (isCustomStage)
+                {
+                    OnPropertyChanged(nameof(CustomStageContent));
+                    RefreshCustomStageMindMap();
+                    StatusMessage = $"{GetCustomStageDisplayName(e.StageKey!)}生成完成";
+                }
+                else
+                {
+                    RefreshStageContentFromDb(session, e.AudioItemId, e.Stage);
+                }
             }
             else if (e.NewStatus == AudioTaskStatus.Failed)
             {
-                StatusMessage = $"{e.Stage} 失败：{e.ErrorMessage}";
+                var stageName = isCustomStage
+                    ? GetCustomStageDisplayName(e.StageKey!)
+                    : e.Stage.ToString();
+                StatusMessage = $"{stageName}失败：{e.ErrorMessage}";
+            }
+            else if (e.NewStatus == AudioTaskStatus.Cancelled && isCustomStage)
+            {
+                StatusMessage = $"{GetCustomStageDisplayName(e.StageKey!)}已取消";
             }
         }
 

@@ -11,36 +11,47 @@ using TrueFluentPro.Models;
 
 namespace TrueFluentPro.Services;
 
-public enum AudioLabExportKind
+public interface IAudioLabExportService
 {
-    Summary,
-    Transcript,
-    MindMap,
-    Insight,
-    Research,
-    Podcast,
-    Translation,
-    Custom
+    Task<AudioLabExportResult> ExportAsync(
+        string exportDirectory,
+        AudioLabExportRequest request,
+        CancellationToken cancellationToken = default);
 }
 
-/// <summary>听析中心导出请求。所有能力共用同一目录导出协议。</summary>
+public enum AudioLabExportArtifactKind
+{
+    Markdown,
+    MindMap,
+    FileCopy
+}
+
+/// <summary>单个导出产物。页面只描述产物，服务不感知页面或提示词阶段。</summary>
+public sealed class AudioLabExportArtifact
+{
+    public AudioLabExportArtifactKind Kind { get; init; }
+    public string Label { get; init; } = "";
+    public string MarkdownContent { get; init; } = "";
+    public MindMapNode? MindMapRoot { get; init; }
+    public string SourceFilePath { get; init; } = "";
+}
+
+/// <summary>听析中心导出请求。所有页面和提示词套件共用同一产物协议。</summary>
 public sealed class AudioLabExportRequest
 {
-    public AudioLabExportKind Kind { get; init; }
+    /// <summary>仅用于生成导出文件名前缀，不决定导出类型。</summary>
     public string SourceAudioPath { get; init; } = "";
-    public string DisplayName { get; init; } = "";
-    public string MarkdownContent { get; init; } = "";
-    public IReadOnlyList<TranscriptSegment> TranscriptSegments { get; init; } = Array.Empty<TranscriptSegment>();
-    public MindMapNode? MindMapRoot { get; init; }
-    public string AdditionalAudioPath { get; init; } = "";
+    public IReadOnlyList<AudioLabExportArtifact> Artifacts { get; init; } = Array.Empty<AudioLabExportArtifact>();
 }
 
 public sealed class AudioLabExportResult
 {
+    public string ExportDirectory { get; }
     public IReadOnlyList<string> ExportedFiles { get; }
 
-    public AudioLabExportResult(IReadOnlyList<string> exportedFiles)
+    public AudioLabExportResult(string exportDirectory, IReadOnlyList<string> exportedFiles)
     {
+        ExportDirectory = exportDirectory;
         ExportedFiles = exportedFiles;
     }
 }
@@ -49,7 +60,7 @@ public sealed class AudioLabExportResult
 /// 听析中心通用导出服务。调用方只提供目标目录和当前能力快照，
 /// 服务负责生成标准文件名、Markdown、导图图片及所需音频副本。
 /// </summary>
-public sealed class AudioLabExportService
+public sealed class AudioLabExportService : IAudioLabExportService
 {
     private static readonly UTF8Encoding Utf8WithoutBom = new(false);
     private const int MaximumMindMapNodes = 2000;
@@ -65,12 +76,14 @@ public sealed class AudioLabExportService
             throw new ArgumentException("导出目录为空。", nameof(exportDirectory));
         if (string.IsNullOrWhiteSpace(request.SourceAudioPath))
             throw new InvalidOperationException("请先加载音频文件。");
+        if (request.Artifacts.Count == 0)
+            throw new InvalidOperationException("当前页面没有可导出的产物。");
 
         Directory.CreateDirectory(exportDirectory);
         var baseName = SanitizeFileName(Path.GetFileNameWithoutExtension(request.SourceAudioPath));
         if (string.IsNullOrWhiteSpace(baseName))
             baseName = "听析内容";
-        baseName = FindAvailableBaseName(exportDirectory, baseName);
+        baseName = FindAvailableBaseName(exportDirectory, baseName, request.Artifacts);
 
         var stagingDirectory = Path.Combine(exportDirectory, $".truefluentpro-export-{Guid.NewGuid():N}");
         Directory.CreateDirectory(stagingDirectory);
@@ -85,7 +98,7 @@ public sealed class AudioLabExportService
                 File.Move(stagedFile, destination, overwrite: false);
                 committedFiles.Add(destination);
             }
-            return new AudioLabExportResult(committedFiles);
+            return new AudioLabExportResult(exportDirectory, committedFiles);
         }
         catch
         {
@@ -110,64 +123,35 @@ public sealed class AudioLabExportService
         CancellationToken cancellationToken)
     {
         var exportedFiles = new List<string>();
-        switch (request.Kind)
+        foreach (var artifact in request.Artifacts)
         {
-            case AudioLabExportKind.Summary:
-                await WriteMarkdownAsync(exportDirectory, baseName, "总结分析", request.MarkdownContent, exportedFiles, cancellationToken);
-                break;
+            cancellationToken.ThrowIfCancellationRequested();
+            var label = SanitizeFileName(artifact.Label);
+            if (string.IsNullOrWhiteSpace(label)) label = "导出内容";
 
-            case AudioLabExportKind.Transcript:
-                if (request.TranscriptSegments.Count == 0)
-                    throw new InvalidOperationException("当前没有可导出的录音稿。");
-                await WriteMarkdownAsync(
-                    exportDirectory,
-                    baseName,
-                    "录音稿",
-                    BuildTranscriptMarkdown(baseName, Path.GetFileName(request.SourceAudioPath), request.TranscriptSegments),
-                    exportedFiles,
-                    cancellationToken);
-                await CopyAudioAsync(request.SourceAudioPath, exportDirectory, baseName, "原始音频", exportedFiles, cancellationToken);
-                break;
-
-            case AudioLabExportKind.MindMap:
-                await ExportMindMapAsync(exportDirectory, baseName, "思维导图", request.MindMapRoot, exportedFiles, cancellationToken);
-                break;
-
-            case AudioLabExportKind.Insight:
-                await WriteMarkdownAsync(exportDirectory, baseName, "顿悟分析", request.MarkdownContent, exportedFiles, cancellationToken);
-                break;
-
-            case AudioLabExportKind.Research:
-                await WriteMarkdownAsync(exportDirectory, baseName, "研究报告", request.MarkdownContent, exportedFiles, cancellationToken);
-                break;
-
-            case AudioLabExportKind.Podcast:
-                if (!string.IsNullOrWhiteSpace(request.MarkdownContent))
-                    await WriteMarkdownAsync(exportDirectory, baseName, "播客台本", request.MarkdownContent, exportedFiles, cancellationToken);
-                if (!string.IsNullOrWhiteSpace(request.AdditionalAudioPath))
-                    await CopyAudioAsync(request.AdditionalAudioPath, exportDirectory, baseName, "播客音频", exportedFiles, cancellationToken);
-                if (exportedFiles.Count == 0)
-                    throw new InvalidOperationException("当前播客暂无可导出的台本或音频。");
-                break;
-
-            case AudioLabExportKind.Translation:
-                await WriteMarkdownAsync(exportDirectory, baseName, "翻译稿", request.MarkdownContent, exportedFiles, cancellationToken);
-                break;
-
-            case AudioLabExportKind.Custom:
-                var label = SanitizeFileName(request.DisplayName);
-                if (string.IsNullOrWhiteSpace(label)) label = "自定义分析";
-                if (request.MindMapRoot != null)
-                    await ExportMindMapAsync(exportDirectory, baseName, label, request.MindMapRoot, exportedFiles, cancellationToken);
-                else
-                    await WriteMarkdownAsync(exportDirectory, baseName, label, request.MarkdownContent, exportedFiles, cancellationToken);
-                break;
-
-            default:
-                throw new InvalidOperationException("当前能力暂不支持导出。");
+            switch (artifact.Kind)
+            {
+                case AudioLabExportArtifactKind.Markdown:
+                    await WriteMarkdownAsync(
+                        exportDirectory, baseName, label,
+                        artifact.MarkdownContent, exportedFiles, cancellationToken);
+                    break;
+                case AudioLabExportArtifactKind.MindMap:
+                    await ExportMindMapAsync(
+                        exportDirectory, baseName, label,
+                        artifact.MindMapRoot, exportedFiles, cancellationToken);
+                    break;
+                case AudioLabExportArtifactKind.FileCopy:
+                    await CopyFileAsync(
+                        artifact.SourceFilePath, exportDirectory, baseName, label,
+                        exportedFiles, cancellationToken);
+                    break;
+                default:
+                    throw new InvalidOperationException($"不支持的导出产物类型：{artifact.Kind}");
+            }
         }
 
-            return exportedFiles;
+        return exportedFiles;
     }
 
     public static string BuildTranscriptMarkdown(
@@ -248,7 +232,7 @@ public sealed class AudioLabExportService
         exportedFiles.Add(path);
     }
 
-    private static async Task CopyAudioAsync(
+    private static async Task CopyFileAsync(
         string sourcePath,
         string directory,
         string baseName,
@@ -257,7 +241,7 @@ public sealed class AudioLabExportService
         CancellationToken cancellationToken)
     {
         if (!File.Exists(sourcePath))
-            throw new FileNotFoundException("要导出的音频文件不存在。", sourcePath);
+            throw new FileNotFoundException("要导出的附件文件不存在。", sourcePath);
 
         var extension = Path.GetExtension(sourcePath);
         var destinationPath = Path.Combine(directory, $"{baseName}_{SanitizeFileName(label)}{extension}");
@@ -273,21 +257,49 @@ public sealed class AudioLabExportService
         exportedFiles.Add(destinationPath);
     }
 
-    private static string FindAvailableBaseName(string directory, string requestedBaseName)
+    private static string FindAvailableBaseName(
+        string directory,
+        string requestedBaseName,
+        IReadOnlyList<AudioLabExportArtifact> artifacts)
     {
         var comparison = OperatingSystem.IsWindows()
             ? StringComparison.OrdinalIgnoreCase
             : StringComparison.Ordinal;
-        var existingNames = Directory.EnumerateFiles(directory)
-            .Select(Path.GetFileName)
-            .Where(name => !string.IsNullOrEmpty(name))
-            .ToList();
 
         var candidate = requestedBaseName;
         var suffix = 1;
-        while (existingNames.Any(name => name!.StartsWith(candidate + "_", comparison)))
+        while (BuildTargetFileNames(candidate, artifacts)
+            .Any(name => Directory.EnumerateFiles(directory)
+                .Select(Path.GetFileName)
+                .Any(existing => string.Equals(existing, name, comparison))))
+        {
             candidate = $"{requestedBaseName} ({suffix++})";
+        }
         return candidate;
+    }
+
+    private static IEnumerable<string> BuildTargetFileNames(
+        string baseName,
+        IReadOnlyList<AudioLabExportArtifact> artifacts)
+    {
+        foreach (var artifact in artifacts)
+        {
+            var label = SanitizeFileName(artifact.Label);
+            if (string.IsNullOrWhiteSpace(label)) label = "导出内容";
+            switch (artifact.Kind)
+            {
+                case AudioLabExportArtifactKind.Markdown:
+                    yield return $"{baseName}_{label}.md";
+                    break;
+                case AudioLabExportArtifactKind.MindMap:
+                    yield return $"{baseName}_{label}.md";
+                    yield return $"{baseName}_{label}.png";
+                    break;
+                case AudioLabExportArtifactKind.FileCopy:
+                    yield return $"{baseName}_{label}{Path.GetExtension(artifact.SourceFilePath)}";
+                    break;
+            }
+        }
     }
 
     private static void AppendMindMapNode(StringBuilder builder, MindMapNode node, int depth)

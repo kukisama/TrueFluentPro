@@ -45,7 +45,8 @@
                                            VerticalAlignment="Center" Margin="10,0,6,0"/>
                                 <TextBox Grid.Column="4" Text="{Binding Stage, Mode=TwoWay}"
                                          LostFocus="Field_Changed"
-                                         IsEnabled="{Binding IsEnabled}"
+                                         Classes="stage-key"
+                                         IsEnabled="{Binding IsStageKeyEditable}"
                                          Padding="4,3" VerticalAlignment="Center"/>
                                 <!-- 显示Tab -->
                                 <TextBlock Grid.Column="5" Text="显示:" FontSize="11"
@@ -79,7 +80,8 @@
                                 <!-- 删除 -->
                                 <Button Grid.Column="11" Content="删除" Margin="6,0,0,0" Padding="6,2"
                                         FontSize="11" Click="RemovePreset_Click"
-                                        Tag="{Binding}" VerticalAlignment="Center"/>
+                                    Tag="{Binding}" VerticalAlignment="Center"
+                                    IsVisible="{Binding CanRemove}"/>
                             </Grid>
                             <!-- 提示词（启用时展开） -->
                             <Grid ColumnDefinitions="52,*" Margin="0,2,0,4"

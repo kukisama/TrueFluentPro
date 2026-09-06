@@ -44,6 +44,8 @@ namespace TrueFluentPro.Views
             ConfigurationService configService,
             AudioLifecyclePipelineService pipeline,
             AudioLabControlPanelViewModel controlPanelViewModel,
+            IAudioLabExportService exportService,
+            IDesktopFolderLauncher folderLauncher,
             IAudioTaskQueueService? queueService = null,
             ITaskEventBus? eventBus = null)
         {
@@ -59,6 +61,8 @@ namespace TrueFluentPro.Views
                 configService,
                 pipeline,
                 controlPanelViewModel,
+                exportService,
+                folderLauncher,
                 queueService,
                 eventBus);
             vm.FilePanelStateChanged += OnFilePanelStateChanged;

@@ -105,6 +105,8 @@ public partial class App : Application
         services.AddSingleton<IRealtimeConnectionSpecResolver, RealtimeConnectionSpecResolver>();
         services.AddSingleton<IRealtimeTranslationServiceFactory, RealtimeTranslationServiceFactory>();
         services.AddSingleton<IAiAudioTranscriptionService, AiAudioTranscriptionService>();
+        services.AddSingleton<IAudioLabExportService, AudioLabExportService>();
+        services.AddSingleton<IDesktopFolderLauncher, DesktopFolderLauncher>();
         services.AddSingleton<IAboutSectionService, AboutSectionService>();
         services.AddSingleton<IEndpointBatchTestService, EndpointBatchTestService>();
         services.AddSingleton<IBatchPackageStateService, BatchPackageStateService>();

@@ -34,6 +34,9 @@ namespace TrueFluentPro.Services
 
         /// <summary>动态设置转录任务超时（分钟），范围 1~60。</summary>
         void SetTranscriptionTimeout(int minutes);
+
+        /// <summary>取消正在执行的任务；任务最终状态由执行器统一落库。</summary>
+        void CancelTask(string taskId);
     }
 
     /// <summary>
@@ -211,9 +214,26 @@ namespace TrueFluentPro.Services
                 else
                     Interlocked.Increment(ref _runningAiCount);
 
-                // 标记为 Running
+                // 先登记 CTS，再原子认领 Pending → Running：
+                // Pending 取消会让认领失败；Running 取消一定能找到 CTS。
+                var taskTimeout = isTranscription
+                    ? TimeSpan.FromMinutes(_transcriptionTimeoutMinutes)
+                    : AiTaskTimeout;
+                var cts = CancellationTokenSource.CreateLinkedTokenSource(appShutdown);
+                cts.CancelAfter(taskTimeout);
+                lock (_ctsLock) { _runningCts[task.TaskId] = cts; }
+
                 var oldStatus = task.Status;
-                _taskRepo.MarkRunning(task.TaskId);
+                if (!_taskRepo.TryMarkRunning(task.TaskId))
+                {
+                    lock (_ctsLock) { _runningCts.Remove(task.TaskId); }
+                    cts.Dispose();
+                    if (isTranscription)
+                        Interlocked.Decrement(ref _runningTranscriptionCount);
+                    else
+                        Interlocked.Decrement(ref _runningAiCount);
+                    continue;
+                }
 
                 if (Enum.TryParse<AudioLifecycleStage>(task.Stage, out var stage))
                 {
@@ -221,14 +241,13 @@ namespace TrueFluentPro.Services
                         task.TaskId, task.AudioItemId, stage,
                         oldStatus, AudioTaskStatus.Running));
                 }
-
-                // 创建独立的 CancellationToken（含任务级超时）
-                var taskTimeout = isTranscription
-                    ? TimeSpan.FromMinutes(_transcriptionTimeoutMinutes)
-                    : AiTaskTimeout;
-                var cts = CancellationTokenSource.CreateLinkedTokenSource(appShutdown);
-                cts.CancelAfter(taskTimeout);
-                lock (_ctsLock) { _runningCts[task.TaskId] = cts; }
+                else
+                {
+                    _eventBus.Publish(new TaskStatusChangedEvent(
+                        task.TaskId, task.AudioItemId, AudioLifecycleStage.Summarized,
+                        oldStatus, AudioTaskStatus.Running,
+                        StageKey: task.Stage));
+                }
 
                 // 在线程池执行任务（不阻塞调度循环）
                 var capturedTask = task;
@@ -264,7 +283,7 @@ namespace TrueFluentPro.Services
             if (!isBuiltIn)
             {
                 // 自定义阶段：使用自定义执行路径
-                await ExecuteCustomTaskAsync(task, ct);
+                await ExecuteCustomTaskAsync(task, ct, appShutdown);
                 return;
             }
 
@@ -296,6 +315,7 @@ namespace TrueFluentPro.Services
 
                 // 调用阶段处理器执行实际的生成逻辑
                 var outcome = await _stageHandler.ExecuteStageAsync(task.AudioItemId, stage, ct, reportProgress);
+                ct.ThrowIfCancellationRequested();
 
                 sw.Stop();
 
@@ -311,11 +331,12 @@ namespace TrueFluentPro.Services
                     _executionRepo.SaveDebugData(executionId, outcome.DebugPrompt, outcome.DebugResponse);
 
                 // 标记任务完成
-                _taskRepo.MarkCompleted(task.TaskId);
-
-                _eventBus.Publish(new TaskStatusChangedEvent(
-                    task.TaskId, task.AudioItemId, stage,
-                    AudioTaskStatus.Running, AudioTaskStatus.Completed));
+                if (_taskRepo.TryMarkCompleted(task.TaskId))
+                {
+                    _eventBus.Publish(new TaskStatusChangedEvent(
+                        task.TaskId, task.AudioItemId, stage,
+                        AudioTaskStatus.Running, AudioTaskStatus.Completed));
+                }
             }
             catch (OperationCanceledException)
             {
@@ -331,21 +352,25 @@ namespace TrueFluentPro.Services
                     // 用户取消 或 app 关闭
                     var reason = appShutdown.IsCancellationRequested ? "shutdown" : "user";
                     _executionRepo.MarkCancelled(executionId, reason, null, null, durationMs);
-                    _taskRepo.MarkCancelled(task.TaskId);
-                    _eventBus.Publish(new TaskStatusChangedEvent(
-                        task.TaskId, task.AudioItemId, stage,
-                        AudioTaskStatus.Running, AudioTaskStatus.Cancelled));
+                    if (_taskRepo.TryMarkCancelled(task.TaskId, AudioTaskStatus.Running))
+                    {
+                        _eventBus.Publish(new TaskStatusChangedEvent(
+                            task.TaskId, task.AudioItemId, stage,
+                            AudioTaskStatus.Running, AudioTaskStatus.Cancelled));
+                    }
                 }
                 else if (task.RetryCount < MaxAutoRetries)
                 {
                     // 任务超时且未达重试上限 → 自动重试
                     var timeoutMsg = $"任务执行超时（已运行 {sw.Elapsed.TotalSeconds:F0} 秒），将自动重试（第 {task.RetryCount + 1}/{MaxAutoRetries} 次）...";
                     _executionRepo.MarkFailed(executionId, null, null, durationMs, timeoutMsg);
-                    _taskRepo.Retry(task.TaskId);
-                    _eventBus.Publish(new TaskStatusChangedEvent(
-                        task.TaskId, task.AudioItemId, stage,
-                        AudioTaskStatus.Running, AudioTaskStatus.Pending,
-                        timeoutMsg));
+                    if (_taskRepo.TryRetryRunning(task.TaskId))
+                    {
+                        _eventBus.Publish(new TaskStatusChangedEvent(
+                            task.TaskId, task.AudioItemId, stage,
+                            AudioTaskStatus.Running, AudioTaskStatus.Pending,
+                            timeoutMsg));
+                    }
                     Debug.WriteLine($"[AudioTaskExecutor] 任务 {task.TaskId} 超时，自动重试 ({task.RetryCount + 1}/{MaxAutoRetries})");
                 }
                 else
@@ -353,11 +378,13 @@ namespace TrueFluentPro.Services
                     // 超时且已达重试上限 → 标记失败
                     var timeoutMsg = $"任务执行超时（已运行 {sw.Elapsed.TotalSeconds:F0} 秒，已重试 {task.RetryCount} 次）。请检查网络连接。";
                     _executionRepo.MarkFailed(executionId, null, null, durationMs, timeoutMsg);
-                    _taskRepo.MarkFailed(task.TaskId, timeoutMsg);
-                    _eventBus.Publish(new TaskStatusChangedEvent(
-                        task.TaskId, task.AudioItemId, stage,
-                        AudioTaskStatus.Running, AudioTaskStatus.Failed,
-                        timeoutMsg));
+                    if (_taskRepo.TryMarkFailed(task.TaskId, timeoutMsg))
+                    {
+                        _eventBus.Publish(new TaskStatusChangedEvent(
+                            task.TaskId, task.AudioItemId, stage,
+                            AudioTaskStatus.Running, AudioTaskStatus.Failed,
+                            timeoutMsg));
+                    }
                 }
             }
             catch (Exception ex)
@@ -366,16 +393,21 @@ namespace TrueFluentPro.Services
                 var errorMsg = ex.Message;
                 _executionRepo.MarkFailed(executionId, null, null, (int)sw.Elapsed.TotalMilliseconds, errorMsg);
 
-                _taskRepo.MarkFailed(task.TaskId, errorMsg);
-                _eventBus.Publish(new TaskStatusChangedEvent(
-                    task.TaskId, task.AudioItemId, stage,
-                    AudioTaskStatus.Running, AudioTaskStatus.Failed,
-                    errorMsg));
+                if (_taskRepo.TryMarkFailed(task.TaskId, errorMsg))
+                {
+                    _eventBus.Publish(new TaskStatusChangedEvent(
+                        task.TaskId, task.AudioItemId, stage,
+                        AudioTaskStatus.Running, AudioTaskStatus.Failed,
+                        errorMsg));
+                }
             }
         }
 
         /// <summary>执行自定义阶段任务（非内置枚举值）。</summary>
-        private async Task ExecuteCustomTaskAsync(AudioTaskRecord task, CancellationToken ct)
+        private async Task ExecuteCustomTaskAsync(
+            AudioTaskRecord task,
+            CancellationToken ct,
+            CancellationToken appShutdown)
         {
             var executionId = Helpers.UlidGenerator.NewUlid();
             var sw = Stopwatch.StartNew();
@@ -395,12 +427,16 @@ namespace TrueFluentPro.Services
                 Action<string> reportProgress = message =>
                 {
                     _taskRepo.UpdateProgressMessage(task.TaskId, message);
+                    _eventBus.PublishProgress(new TaskProgressEvent(
+                        task.TaskId, task.AudioItemId, AudioLifecycleStage.Summarized,
+                        message, task.Stage));
                 };
 
                 reportProgress("准备执行自定义阶段...");
 
                 var outcome = await _stageHandler.ExecuteCustomStageAsync(
                     task.AudioItemId, task.Stage, ct, reportProgress);
+                ct.ThrowIfCancellationRequested();
 
                 sw.Stop();
 
@@ -413,26 +449,70 @@ namespace TrueFluentPro.Services
                 if (outcome?.DebugPrompt != null || outcome?.DebugResponse != null)
                     _executionRepo.SaveDebugData(executionId, outcome.DebugPrompt, outcome.DebugResponse);
 
-                _taskRepo.MarkCompleted(task.TaskId);
-
-                // 自定义阶段无对应 enum，使用 Summarized 作为占位通知 UI 刷新
-                // （ViewModel 的 OnTaskStatusChanged 会检查 audioItemId 并刷新自定义内容）
-                _eventBus.Publish(new TaskStatusChangedEvent(
-                    task.TaskId, task.AudioItemId, AudioLifecycleStage.Summarized,
-                    AudioTaskStatus.Running, AudioTaskStatus.Completed));
+                if (_taskRepo.TryMarkCompleted(task.TaskId))
+                {
+                    _eventBus.Publish(new TaskStatusChangedEvent(
+                        task.TaskId, task.AudioItemId, AudioLifecycleStage.Summarized,
+                        AudioTaskStatus.Running, AudioTaskStatus.Completed,
+                        StageKey: task.Stage));
+                }
             }
             catch (OperationCanceledException)
             {
                 sw.Stop();
-                _executionRepo.MarkCancelled(executionId, "user", null, null, (int)sw.Elapsed.TotalMilliseconds);
-                _taskRepo.MarkCancelled(task.TaskId);
+                var durationMs = (int)sw.Elapsed.TotalMilliseconds;
+                bool isUserCancel;
+                lock (_ctsLock) { isUserCancel = _userCancelledTasks.Remove(task.TaskId); }
+
+                if (isUserCancel || appShutdown.IsCancellationRequested)
+                {
+                    var reason = appShutdown.IsCancellationRequested ? "shutdown" : "user";
+                    _executionRepo.MarkCancelled(executionId, reason, null, null, durationMs);
+                    if (_taskRepo.TryMarkCancelled(task.TaskId, AudioTaskStatus.Running))
+                    {
+                        _eventBus.Publish(new TaskStatusChangedEvent(
+                            task.TaskId, task.AudioItemId, AudioLifecycleStage.Summarized,
+                            AudioTaskStatus.Running, AudioTaskStatus.Cancelled,
+                            StageKey: task.Stage));
+                    }
+                }
+                else if (task.RetryCount < MaxAutoRetries)
+                {
+                    var timeoutMsg = $"任务执行超时（已运行 {sw.Elapsed.TotalSeconds:F0} 秒），将自动重试（第 {task.RetryCount + 1}/{MaxAutoRetries} 次）...";
+                    _executionRepo.MarkFailed(executionId, null, null, durationMs, timeoutMsg);
+                    if (_taskRepo.TryRetryRunning(task.TaskId))
+                    {
+                        _eventBus.Publish(new TaskStatusChangedEvent(
+                            task.TaskId, task.AudioItemId, AudioLifecycleStage.Summarized,
+                            AudioTaskStatus.Running, AudioTaskStatus.Pending,
+                            timeoutMsg, task.Stage));
+                    }
+                }
+                else
+                {
+                    var timeoutMsg = $"任务执行超时（已运行 {sw.Elapsed.TotalSeconds:F0} 秒，已重试 {task.RetryCount} 次）。请检查网络连接。";
+                    _executionRepo.MarkFailed(executionId, null, null, durationMs, timeoutMsg);
+                    if (_taskRepo.TryMarkFailed(task.TaskId, timeoutMsg))
+                    {
+                        _eventBus.Publish(new TaskStatusChangedEvent(
+                            task.TaskId, task.AudioItemId, AudioLifecycleStage.Summarized,
+                            AudioTaskStatus.Running, AudioTaskStatus.Failed,
+                            timeoutMsg, task.Stage));
+                    }
+                }
             }
             catch (Exception ex)
             {
                 sw.Stop();
                 var errorMsg = ex.Message;
                 _executionRepo.MarkFailed(executionId, null, null, (int)sw.Elapsed.TotalMilliseconds, errorMsg);
-                _taskRepo.MarkFailed(task.TaskId, errorMsg);
+                if (_taskRepo.TryMarkFailed(task.TaskId, errorMsg))
+                {
+                    _eventBus.Publish(new TaskStatusChangedEvent(
+                        task.TaskId, task.AudioItemId, AudioLifecycleStage.Summarized,
+                        AudioTaskStatus.Running, AudioTaskStatus.Failed,
+                        errorMsg, task.Stage));
+                }
             }
         }
 

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -72,11 +73,23 @@ namespace TrueFluentPro.Models
             if (userPresets == null || userPresets.Count == 0)
                 return defaults;
 
-            var userMap = userPresets
-                .Where(p => !string.IsNullOrWhiteSpace(p.Stage))
-                .ToDictionary(p => p.Stage, p => p);
+            var normalizedUsers = new List<AudioLabStagePreset>();
+            var seenStages = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var preset in userPresets.Where(p => !string.IsNullOrWhiteSpace(p.Stage)))
+            {
+                preset.Stage = preset.Stage.Trim();
+                if (seenStages.Add(preset.Stage))
+                    normalizedUsers.Add(preset);
+            }
 
-            var knownStages = new HashSet<string>(defaults.Select(d => d.Stage));
+            var userMap = normalizedUsers.ToDictionary(
+                p => p.Stage,
+                p => p,
+                StringComparer.OrdinalIgnoreCase);
+
+            var knownStages = new HashSet<string>(
+                Enum.GetNames<AudioLifecycleStage>(),
+                StringComparer.OrdinalIgnoreCase);
 
             var result = new List<AudioLabStagePreset>();
             // 先按默认顺序合并已知阶段
@@ -95,7 +108,7 @@ namespace TrueFluentPro.Models
                 }
             }
             // 追加用户自定义的额外阶段
-            foreach (var p in userPresets.Where(p => !string.IsNullOrWhiteSpace(p.Stage) && !knownStages.Contains(p.Stage)))
+            foreach (var p in normalizedUsers.Where(p => !knownStages.Contains(p.Stage)))
             {
                 result.Add(p);
             }
@@ -106,7 +119,7 @@ namespace TrueFluentPro.Models
         public static bool ShouldIncludeInBatch(List<AudioLabStagePreset>? presets, string stage)
         {
             var merged = MergeWithDefaults(presets);
-            var preset = merged.FirstOrDefault(p => p.Stage == stage);
+            var preset = merged.FirstOrDefault(p => string.Equals(p.Stage, stage, StringComparison.OrdinalIgnoreCase));
             return preset != null && preset.IsEnabled && preset.IncludeInBatch;
         }
 
@@ -114,7 +127,7 @@ namespace TrueFluentPro.Models
         public static bool ShouldShowTab(List<AudioLabStagePreset>? presets, string stage)
         {
             var merged = MergeWithDefaults(presets);
-            var preset = merged.FirstOrDefault(p => p.Stage == stage);
+            var preset = merged.FirstOrDefault(p => string.Equals(p.Stage, stage, StringComparison.OrdinalIgnoreCase));
             return preset != null && preset.IsEnabled && preset.ShowInTab;
         }
 
@@ -122,11 +135,12 @@ namespace TrueFluentPro.Models
         public static string GetCustomPrompt(List<AudioLabStagePreset>? presets, string stage)
         {
             var merged = MergeWithDefaults(presets);
-            var preset = merged.FirstOrDefault(p => p.Stage == stage);
+            var preset = merged.FirstOrDefault(p => string.Equals(p.Stage, stage, StringComparison.OrdinalIgnoreCase));
             if (preset != null && !string.IsNullOrWhiteSpace(preset.SystemPrompt))
                 return preset.SystemPrompt;
             // 回退到内置默认（对自定义阶段返回空）
-            var defaultPreset = CreateDefaults().FirstOrDefault(p => p.Stage == stage);
+            var defaultPreset = CreateDefaults().FirstOrDefault(p =>
+                string.Equals(p.Stage, stage, StringComparison.OrdinalIgnoreCase));
             return defaultPreset?.SystemPrompt ?? "";
         }
     }

@@ -97,7 +97,7 @@ namespace TrueFluentPro.Services
                 throw new InvalidOperationException($"自定义阶段未启动：{errorMessage}");
 
             var preset = AudioLabStagePresetDefaults.MergeWithDefaults(config.AudioLabStagePresets)
-                .FirstOrDefault(p => p.Stage == stageKey);
+                .FirstOrDefault(p => string.Equals(p.Stage, stageKey, StringComparison.OrdinalIgnoreCase));
             if (preset == null || string.IsNullOrWhiteSpace(preset.SystemPrompt))
                 throw new InvalidOperationException($"自定义阶段 {stageKey} 的提示词为空，无法执行。");
 
@@ -127,11 +127,53 @@ namespace TrueFluentPro.Services
                     if (result.EndsWith("```")) result = result[..^3];
                     result = result.Trim();
                 }
+                ValidateMindMapJson(result, preset.DisplayName);
             }
 
             reportProgress("保存结果...");
             _pipeline.SaveStageContent(audioItemId, stageKey, result);
             return outcome;
+        }
+
+        private static void ValidateMindMapJson(string json, string displayName)
+        {
+            try
+            {
+                using var document = JsonDocument.Parse(json);
+                var nodeCount = 0;
+                ValidateMindMapElement(document.RootElement, 0, ref nodeCount);
+            }
+            catch (JsonException ex)
+            {
+                throw new InvalidOperationException(
+                    $"{displayName}返回的导图 JSON 无效，请重新生成：{ex.Message}", ex);
+            }
+        }
+
+        private static void ValidateMindMapElement(JsonElement element, int depth, ref int nodeCount)
+        {
+            if (element.ValueKind != JsonValueKind.Object)
+                throw new JsonException("导图节点必须是 JSON 对象。");
+            if (depth > 20)
+                throw new JsonException("导图层级超过 20 层。");
+            if (++nodeCount > 2000)
+                throw new JsonException("导图节点超过 2000 个。");
+
+            var title = element.TryGetProperty("label", out var label)
+                ? label.GetString()
+                : element.TryGetProperty("title", out var titleElement)
+                    ? titleElement.GetString()
+                    : null;
+            if (string.IsNullOrWhiteSpace(title))
+                throw new JsonException("导图节点缺少非空 label/title。");
+
+            if (!element.TryGetProperty("children", out var children))
+                return;
+            if (children.ValueKind != JsonValueKind.Array)
+                throw new JsonException("导图 children 必须是数组。");
+
+            foreach (var child in children.EnumerateArray())
+                ValidateMindMapElement(child, depth + 1, ref nodeCount);
         }
 
         // ── 转录 ──────────────────────────────────────────────
@@ -235,8 +277,8 @@ namespace TrueFluentPro.Services
             reportProgress("加载转录数据...");
             var transcript = LoadTranscriptTextOrThrow(audioItemId, splitOptions);
 
-            if (!TryBuildTextRuntimeConfig(config, out var runtimeRequest, out var endpoint, out _))
-                return null; // 思维导图失败不阻塞
+            if (!TryBuildTextRuntimeConfig(config, out var runtimeRequest, out var endpoint, out var errorMessage))
+                throw new InvalidOperationException($"思维导图未启动：{errorMessage}");
 
             reportProgress("认证 AI 服务...");
             var aiService = await CreateAuthenticatedInsightServiceAsync(runtimeRequest, endpoint, ct);
@@ -259,6 +301,8 @@ namespace TrueFluentPro.Services
                 if (json.EndsWith("```")) json = json[..^3];
                 json = json.Trim();
             }
+
+            ValidateMindMapJson(json, "思维导图");
 
             reportProgress("保存思维导图结果...");
             _pipeline.SaveStageContent(audioItemId, AudioLifecycleStage.MindMap, json);

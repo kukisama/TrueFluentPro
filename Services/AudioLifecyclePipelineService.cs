@@ -130,6 +130,13 @@ namespace TrueFluentPro.Services
             _lifecycleRepo.MarkStale(audioItemId, stage.ToString());
         }
 
+        /// <summary>将自定义字符串阶段标记为 stale。</summary>
+        public void MarkStageStale(string audioItemId, string stageKey)
+        {
+            if (!string.IsNullOrWhiteSpace(stageKey))
+                _lifecycleRepo.MarkStale(audioItemId, stageKey.Trim());
+        }
+
         /// <summary>
         /// 当转录结果发生变化时，标记所有下游阶段为过期。
         /// </summary>
