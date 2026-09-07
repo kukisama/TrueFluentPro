@@ -3,18 +3,20 @@ param(
     [ValidatePattern('^[a-z0-9]+(?:-[a-z0-9]+)+$')]
     [string]$Runtime = 'win-x64',
     [ValidateSet('NativeAot', 'Managed')]
-    [string]$Mode = 'NativeAot'
+    [string]$Mode = 'NativeAot',
+    [string]$OutputDirectory
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 try {
-    $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
     $project = Join-Path $PSScriptRoot 'GptImageCli.csproj'
-    $folder = if ($Mode -eq 'NativeAot') { 'gpt-image-cli-aot' } else { 'gpt-image-cli-standalone' }
-    $output = Join-Path $repoRoot "artifacts/$folder/$Runtime"
-    foreach ($required in @('README.md', 'skills/gpt-image-cli/SKILL.md')) {
+    $folder = if ($Mode -eq 'NativeAot') { 'publish' } else { 'publish-managed' }
+    $output = if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
+        Join-Path $PSScriptRoot "bin/Release/net10.0/$Runtime/$folder"
+    } else { [IO.Path]::GetFullPath($OutputDirectory) }
+    foreach ($required in @('README.md', 'CAPABILITIES.md', 'skills/gpt-image-cli/SKILL.md')) {
         if (-not (Test-Path -LiteralPath (Join-Path $PSScriptRoot $required) -PathType Leaf)) {
             throw "缺少发布所需文件：$required"
         }
@@ -34,13 +36,7 @@ try {
     }
 
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'README.md') -Destination $output -Force
-    $capabilities = Join-Path $PSScriptRoot 'CAPABILITIES.md'
-    if (Test-Path -LiteralPath $capabilities -PathType Leaf) {
-        Copy-Item -LiteralPath $capabilities -Destination $output -Force
-    }
-    else {
-        Write-Warning 'CAPABILITIES.md 尚未提供，已跳过复制；旧副本不会删除，分发前请核对。'
-    }
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'CAPABILITIES.md') -Destination $output -Force
     $skillsOutput = Join-Path $output 'skills'
     New-Item -ItemType Directory -Path $skillsOutput -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'skills/gpt-image-cli') `

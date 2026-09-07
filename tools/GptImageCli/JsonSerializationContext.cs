@@ -11,7 +11,8 @@ internal sealed record ApiErrorReport(string? code, string? type, string? param,
 internal sealed record CliReportData(
     bool ok, int exit_code, List<string> files, string? mode, int? http_status,
     string? request_id, long elapsed_ms, object? usage, ApiErrorReport? api_error,
-    string? error, List<Dictionary<string, string>> response_metadata);
+    string? error, List<Dictionary<string, string>> response_metadata,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] EndpointSummary[]? endpoints = null);
 
 // Every concrete type stored in an object slot must be registered: request dictionaries,
 // their scalar/array/DTO values, and NumericUsage's recursive dictionaries/JsonElements.
@@ -29,4 +30,5 @@ internal sealed record CliReportData(
 [JsonSerializable(typeof(JsonElement))]
 [JsonSerializable(typeof(ApiErrorReport))]
 [JsonSerializable(typeof(CliReportData))]
+[JsonSerializable(typeof(EndpointSummary))]
 internal partial class JsonSerializationContext : JsonSerializerContext;

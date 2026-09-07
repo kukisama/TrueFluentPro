@@ -10,7 +10,20 @@ internal static class CommandLineParser
         var values = ParseKeyValues(args, referenceImages);
 
         var endpoint = FirstNonEmpty(Get(values, "endpoint"), Environment.GetEnvironmentVariable("GPT_IMAGE_ENDPOINT"), Environment.GetEnvironmentVariable("OPENAI_BASE_URL"), Environment.GetEnvironmentVariable("AZURE_OPENAI_ENDPOINT"));
-        var apiKey = FirstNonEmpty(Get(values, "api-key"), Environment.GetEnvironmentVariable("GPT_IMAGE_API_KEY"), Environment.GetEnvironmentVariable("OPENAI_API_KEY"), Environment.GetEnvironmentVariable("AZURE_OPENAI_API_KEY"));
+        var explicitApiKey = Get(values, "api-key");
+        var environmentApiKey = FirstNonEmpty(Environment.GetEnvironmentVariable("GPT_IMAGE_API_KEY"), Environment.GetEnvironmentVariable("OPENAI_API_KEY"), Environment.GetEnvironmentVariable("AZURE_OPENAI_API_KEY"));
+        var apiKey = explicitApiKey ?? environmentApiKey;
+        // 外部密钥必须有明确目标；选择器表示用户授权将该密钥覆盖到所选节点。
+        // 不能自动选配置目标，也不能悄悄丢弃外部密钥改用配置密钥。
+        if (apiKey is not null && endpoint is null && Get(values, "endpoint-name") is null && Get(values, "endpoint-id") is null)
+            throw new CliException($"{(explicitApiKey is not null ? "显式 --api-key" : "环境密钥")}缺少明确目标；请提供 --endpoint、环境 URL 或 --endpoint-name / --endpoint-id。未发送请求。");
+        var imageModel = FirstNonEmpty(Get(values, "image-model"), Environment.GetEnvironmentVariable("GPT_IMAGE_MODEL"));
+        var mode = ParseMode(Get(values, "mode"));
+        ConfigConnection? connection = null;
+        if (!values.ContainsKey("no-config") && (endpoint is null || apiKey is null || Get(values, "endpoint-name") is not null || Get(values, "endpoint-id") is not null))
+            connection = LocalEndpointConfig.Resolve(Get(values, "config"), Get(values, "endpoint-name"), Get(values, "endpoint-id"), endpoint, apiKey, imageModel, mode);
+        endpoint ??= connection?.Endpoint;
+        apiKey ??= connection?.Key;
         var prompt = await ResolvePromptAsync(values);
 
         if (string.IsNullOrWhiteSpace(endpoint))
@@ -20,7 +33,6 @@ internal static class CommandLineParser
         if (string.IsNullOrWhiteSpace(prompt))
             throw new CliException("缺少 --prompt / --prompt-file，或通过 stdin 输入提示词。");
 
-        var mode = ParseMode(Get(values, "mode"));
         if (mode == ApiMode.Edit && referenceImages.Count == 0)
             throw new CliException("edit 改图模式必须提供 --image <参考图路径>。");
         if (mode != ApiMode.Edit && referenceImages.Count > 0)
@@ -32,7 +44,8 @@ internal static class CommandLineParser
             if (Path.GetExtension(path).ToLowerInvariant() is not (".png" or ".jpg" or ".jpeg" or ".webp"))
                 throw new CliException($"参考图只支持 PNG、JPEG 或 WebP：{path}");
         }
-        var auth = ParseAuth(Get(values, "auth"), endpoint);
+        var auth = Get(values, "auth") is { } explicitAuth && !explicitAuth.Equals("auto", StringComparison.OrdinalIgnoreCase)
+            ? ParseAuth(explicitAuth, endpoint) : connection?.Auth ?? ParseAuth(null, endpoint);
         var count = ParsePositiveInt(Get(values, "n") ?? Get(values, "count"), 1, "n");
         var timeout = ParsePositiveInt(Get(values, "timeout-minutes"), 10, "timeout-minutes");
         var outputFormat = NormalizeFormat(Get(values, "format") ?? Get(values, "output-format") ?? "png");
@@ -46,9 +59,11 @@ internal static class CommandLineParser
             ReferenceImagePaths = referenceImages.ToArray(),
             AuthMode = auth,
             TextModel = Get(values, "model") ?? Environment.GetEnvironmentVariable("GPT_IMAGE_TEXT_MODEL") ?? "gpt-4.1",
-            ImageModel = Get(values, "image-model") ?? Environment.GetEnvironmentVariable("GPT_IMAGE_MODEL") ?? "gpt-image-2",
+            ImageModel = connection?.Model ?? imageModel ?? "gpt-image-2",
+            LogicalImageModel = connection?.LogicalModel,
+            ConfiguredRequestUrl = connection?.RequestUrl,
             ApiVersion = Get(values, "api-version") ?? Environment.GetEnvironmentVariable("AZURE_OPENAI_API_VERSION"),
-            Size = Get(values, "size") ?? "1024x1024",
+            Size = Get(values, "size") ?? "1024x640",
             Quality = Get(values, "quality") ?? "medium",
             OutputFormat = outputFormat,
             Count = count,
@@ -68,6 +83,12 @@ internal static class CommandLineParser
 
     internal static void ValidateSyntax(string[] args) => ParseKeyValues(args, []);
 
+    internal static EndpointSummary[]? ListEndpoints(string[] args)
+    {
+        var values = ParseKeyValues(args, []);
+        return values.ContainsKey("list-endpoints") ? LocalEndpointConfig.List(Get(values, "config")) : null;
+    }
+
     private static Dictionary<string, string?> ParseKeyValues(string[] args, List<string> referenceImages)
     {
         var values = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
@@ -80,11 +101,11 @@ internal static class CommandLineParser
             var keyValue = arg[2..];
             var equalsIndex = keyValue.IndexOf('=');
             var option = equalsIndex < 0 ? keyValue : keyValue[..equalsIndex];
-            const string allowed = "endpoint api-key prompt prompt-file mode image auth model image-model api-version size quality format output-format n count output out timeout-minutes mask background output-compression moderation user json help overwrite";
+            const string allowed = "endpoint endpoint-name endpoint-id list-endpoints config no-config api-key prompt prompt-file mode image auth model image-model api-version size quality format output-format n count output out timeout-minutes mask background output-compression moderation user json help overwrite";
             if (!allowed.Split(' ').Contains(option, StringComparer.OrdinalIgnoreCase))
                 throw new CliException($"未知参数 --{option}；未发送请求。");
             if (option.Equals("json", StringComparison.OrdinalIgnoreCase) || option.Equals("help", StringComparison.OrdinalIgnoreCase) ||
-                option.Equals("overwrite", StringComparison.OrdinalIgnoreCase))
+                option.Equals("overwrite", StringComparison.OrdinalIgnoreCase) || option.Equals("list-endpoints", StringComparison.OrdinalIgnoreCase) || option.Equals("no-config", StringComparison.OrdinalIgnoreCase))
             {
                 if (equalsIndex >= 0 || (i + 1 < args.Length && !args[i + 1].StartsWith("--", StringComparison.Ordinal)))
                     throw new CliException($"--{option} 是无值开关。");
@@ -108,6 +129,9 @@ internal static class CommandLineParser
             }
         }
 
+        if (values.ContainsKey("endpoint-name") && values.ContainsKey("endpoint-id")) throw new CliException("--endpoint-name 与 --endpoint-id 互斥。");
+        if (values.ContainsKey("no-config") && new[] { "config", "endpoint-name", "endpoint-id", "list-endpoints" }.Any(values.ContainsKey))
+            throw new CliException("--no-config 不能与 --config、节点选择器或 --list-endpoints 同用。");
         return values;
 
         void AddValue(string key, string value)
@@ -143,7 +167,7 @@ internal static class CommandLineParser
         return null;
     }
 
-    private static ApiMode ParseMode(string? value) => (value ?? "responses").ToLowerInvariant() switch
+    private static ApiMode ParseMode(string? value) => (value ?? "images").ToLowerInvariant() switch
     {
         "responses" or "response" => ApiMode.Responses,
         "images" or "image" or "generations" => ApiMode.Images,

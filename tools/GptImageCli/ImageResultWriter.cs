@@ -5,7 +5,7 @@ internal static class ImageResultWriter
     public static void ValidateOutputTargets(CliOptions options)
     {
         // Responses has no known result count; protect its actual paths when saving.
-        if (options.Overwrite || options.Mode == ApiMode.Responses || !Path.HasExtension(options.OutputPath)) return;
+        if (options.Overwrite || options.Mode == ApiMode.Responses || IsOutputDirectory(options.OutputPath)) return;
         foreach (var path in ResolveOutputPaths(options.OutputPath, options.OutputFormat, options.Count))
             if (File.Exists(path) || Directory.Exists(path))
                 throw new CliException($"输出目标已存在：{path}；默认不覆盖，确认后可使用 --overwrite。");
@@ -51,15 +51,17 @@ internal static class ImageResultWriter
         return saved;
     }
 
+    private static bool IsOutputDirectory(string path) =>
+        Directory.Exists(path) || Path.EndsInDirectorySeparator(path) || !Path.HasExtension(path);
+
     private static List<string> ResolveOutputPaths(string outputPath, string outputFormat, int count)
     {
         var normalizedOutput = string.IsNullOrWhiteSpace(outputPath) ? "." : outputPath;
         var extension = outputFormat == "jpeg" ? ".jpg" : $".{outputFormat}";
-        var hasExtension = Path.HasExtension(normalizedOutput);
         var timestamp = $"{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}-{Guid.NewGuid():N}";
         var paths = new List<string>(count);
 
-        if (!hasExtension)
+        if (IsOutputDirectory(normalizedOutput))
         {
             for (var i = 0; i < count; i++)
                 paths.Add(Path.GetFullPath(Path.Combine(normalizedOutput, $"gpt-image-{timestamp}-{i + 1:00}{extension}")));

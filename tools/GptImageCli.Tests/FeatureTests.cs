@@ -1,13 +1,15 @@
 using System.Net;
 using System.Text.Json;
 using GptImageCli;
+using CommandLineParser = OfflineCli;
+using CliApplication = OfflineCli;
 
 internal static class FeatureTests
 {
     public static async Task RunAsync(string root, string source, byte[] png, Action<bool, string> check)
     {
         string[] Args(params string[] extra) =>
-            ["--endpoint", "https://offline.invalid", "--api-key", "offline-secret-not-for-report", "--prompt", "offline prompt", .. extra];
+            ["--endpoint", "https://offline.invalid", "--api-key", "offline-secret-not-for-report", "--prompt", "offline prompt", "--mode", "responses", .. extra];
 
         async Task Reject(string name, params string[] extra)
         {
@@ -195,8 +197,8 @@ internal static class FeatureTests
 
         var successBody = JsonSerializer.Serialize(new { data = new[] { new { b64_json = b64 } } });
         var blockedOutput = Path.Combine(root, "blocked.png");
-        Directory.CreateDirectory(blockedOutput);
-        foreach (var path in new[] { blockedOutput, "bad\0output.png" })
+        await File.WriteAllBytesAsync(blockedOutput, png);
+        foreach (var path in new[] { Path.Combine(blockedOutput, "child.png"), "bad\0output.png" })
         {
             using var handler = new FakeHandler(_ => Task.FromResult(Response(successBody)));
             var run = await RunJson(Args("--json", "--output", path), handler);

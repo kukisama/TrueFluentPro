@@ -18,13 +18,15 @@ internal sealed class CliOptions
     public required string Endpoint { get; init; }
     public required string ApiKey { get; init; }
     public required string Prompt { get; init; }
-    public ApiMode Mode { get; init; } = ApiMode.Responses;
+    public ApiMode Mode { get; init; } = ApiMode.Images;
     public IReadOnlyList<string> ReferenceImagePaths { get; init; } = [];
     public AuthMode AuthMode { get; init; } = AuthMode.Bearer;
     public string TextModel { get; init; } = "gpt-4.1";
     public string ImageModel { get; init; } = "gpt-image-2";
+    public string? LogicalImageModel { get; init; }
+    public string? ConfiguredRequestUrl { get; init; }
     public string? ApiVersion { get; init; }
-    public string Size { get; init; } = "1024x1024";
+    public string Size { get; init; } = "1024x640";
     public string Quality { get; init; } = "medium";
     public string OutputFormat { get; init; } = "png";
     public int Count { get; init; } = 1;

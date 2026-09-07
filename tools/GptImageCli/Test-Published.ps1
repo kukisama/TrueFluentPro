@@ -1,11 +1,12 @@
 #Requires -Version 7.0
 <#
-只验证已发布 exe 的离线行为；不构建、不发布、不读取配置、不验证云端兼容性。
+只验证传入 exe 的离线行为；不构建、不发布、不读取真实配置、不验证云端兼容性。
+旧场景强制 --no-config；新场景仅用临时 APPDATA/--config 沙盒和合成密钥。
 证据永久保留在 artifacts/gpt-image-cli-published-tests/<GUID>。
 #>
 [CmdletBinding()]
 param(
-    [string]$ExePath = (Join-Path $PSScriptRoot '../../artifacts/gpt-image-cli-aot/win-x64/gpt-image.exe'),
+    [string]$ExePath = (Join-Path $PSScriptRoot 'bin/Release/net10.0/win-x64/publish/gpt-image.exe'),
     [ValidateRange(5, 120)][int]$TimeoutSeconds = 20
 )
 
@@ -22,6 +23,7 @@ $cases = [Collections.Generic.List[string]]::new()
 $fingerprint = $null
 $failure = $null
 $key = 'offline-only-' + [guid]::NewGuid().ToString('N')
+$externalKey = 'offline-external-' + [guid]::NewGuid().ToString('N')
 $prompt = '把帆船改为绿色，保留天空与倒影。'
 
 function Await-Task($Task, [string]$Operation, [int]$Milliseconds = ($TimeoutSeconds * 1000)) {
@@ -116,13 +118,14 @@ function Read-Request($Stream, [string]$Directory) {
     return @{ line = $line; headers = $headers; body = $body }
 }
 
-function Invoke-Case([string]$Name, [string[]]$CliArgs, [int]$Status = 0, $Response = $null) {
+function Invoke-Case([string]$Name, [string[]]$CliArgs, [int]$Status = 0, $Response = $null, [hashtable]$ConfigCase = $null) {
     $dir = Join-Path $evidence $Name
     $null = [IO.Directory]::CreateDirectory($dir)
     $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Parse('127.0.0.1'), 0)
     $process = [Diagnostics.Process]::new()
     $client = $null; $stream = $null; $outTask = $null; $errTask = $null
     $started = $false; $request = $null; $connections = 0
+    $configPath = $null; $configHash = $null; $configStamp = $null
     try {
         $listener.Start()
         $port = ([Net.IPEndPoint]$listener.LocalEndpoint).Port
@@ -148,15 +151,56 @@ function Invoke-Case([string]$Name, [string[]]$CliArgs, [int]$Status = 0, $Respo
         }
         $psi.Environment['NO_PROXY'] = '*'
         $psi.Environment['DOTNET_EnableDiagnostics'] = '0'
-        $psi.Environment['GPT_IMAGE_API_KEY'] = $key
-        $psi.Environment['GPT_IMAGE_ENDPOINT'] = $endpoint
+        $sandbox = Join-Path $dir 'isolated-appdata'
+        $null = [IO.Directory]::CreateDirectory($sandbox)
+        $psi.Environment['APPDATA'] = $sandbox
+        if ($null -eq $ConfigCase) {
+            $psi.Environment['GPT_IMAGE_API_KEY'] = $key
+            $psi.Environment['GPT_IMAGE_ENDPOINT'] = $endpoint
+            $psi.ArgumentList.Add('--no-config')
+        } else {
+            $configDirectory = Join-Path $sandbox 'TrueFluentPro'
+            $null = [IO.Directory]::CreateDirectory($configDirectory)
+            $configPath = Join-Path $configDirectory 'config.json'
+            $type = if ($ConfigCase.ContainsKey('Type')) { [int]$ConfigCase.Type } else { 0 }
+            $header = if ($ConfigCase.ContainsKey('Header')) { [int]$ConfigCase.Header } else { 0 }
+            $node = @{
+                Id = 'offline-node'; Name = '离线友好节点'; IsEnabled = $true; EndpointType = $type
+                ProfileId = @('builtin.openai.compatible', 'builtin.microsoft.azure-openai', 'builtin.microsoft.apim-gateway')[$type]
+                BaseUrl = $endpoint; ApiKey = $key; AuthMode = $(if ($ConfigCase.ContainsKey('Aad')) { 1 } else { 0 })
+                ApiKeyHeaderMode = $header; ImageApiRouteMode = 0; ApiVersion = 'offline-config-version'
+                Models = @(@{ ModelId = 'gpt-image-2'; DeploymentName = 'offline-config-deploy'; Capabilities = 2 },
+                    @{ ModelId = 'gpt-image-1'; DeploymentName = 'offline-default-deploy'; Capabilities = 2 })
+            }
+            if ($ConfigCase.ContainsKey('BaseSuffix')) { $node.BaseUrl += $ConfigCase.BaseSuffix }
+            if ($ConfigCase.ContainsKey('Route')) { $node.ImageApiRouteMode = [int]$ConfigCase.Route }
+            if ($ConfigCase.ContainsKey('SecretUrl')) { $node.BaseUrl += '/Proxy/' + $key; $node.ApiVersion = $key }
+            $fixture = @{ Endpoints = @($node); MediaGenConfig = @{ ImageSize = '16x16'; ImageQuality = 'high'; ImageCount = 9; ImageFormat = 'jpeg' } }
+            if ($ConfigCase.ContainsKey('Default')) {
+                $second = $node.Clone(); $second.Id = 'second-node'; $second.Name = '第二节点'
+                $fixture.Endpoints += $second
+                $fixture.MediaGenConfig.ImageModelRef = @{ EndpointId = 'offline-node'; ModelId = 'gpt-image-1' }
+            }
+            if ($ConfigCase.ContainsKey('Malformed')) { Write-Bytes $configPath ($utf8.GetBytes('{"ApiKey":"' + $key + '",BROKEN')) }
+            else { Write-Json $configPath $fixture }
+            $configHash = [Convert]::ToBase64String([Security.Cryptography.SHA256]::HashData((Read-Bytes $configPath)))
+            $configStamp = [IO.File]::GetLastWriteTimeUtc($configPath)
+            if (-not $ConfigCase.ContainsKey('Implicit')) { $psi.ArgumentList.Add('--config'); $psi.ArgumentList.Add($configPath) }
+            if ($ConfigCase.ContainsKey('Mismatch')) { $psi.ArgumentList.Add('--endpoint'); $psi.ArgumentList.Add($endpoint + '/other') }
+            Check (-not $psi.Environment.ContainsKey('GPT_IMAGE_API_KEY') -and -not $psi.Environment.ContainsKey('GPT_IMAGE_ENDPOINT')) "$Name 无连接环境注入"
+            if ($ConfigCase.ContainsKey('EnvKey')) { $psi.Environment[$ConfigCase.EnvKey] = $externalKey }
+            if ($ConfigCase.ContainsKey('ExplicitKey')) { $psi.ArgumentList.Add('--api-key'); $psi.ArgumentList.Add($externalKey) }
+        }
         foreach ($arg in $CliArgs) { $psi.ArgumentList.Add($arg) }
-        if ($Status -ne 0 -or $Name -like 'conflict-*') {
+        if ($null -eq $ConfigCase -and (($Status -ne 0 -and $Name -notlike 'default-*') -or $Name -like 'conflict-*')) {
             $psi.ArgumentList.Add('--endpoint'); $psi.ArgumentList.Add($endpoint)
+        }
+        if ($Name -like 'default-*') {
+            Check ($psi.ArgumentList.Count -eq $CliArgs.Count + 1 -and $psi.ArgumentList[0] -eq '--no-config') "$Name 仅注入 --no-config，使用隔离的假环境连接"
         }
         Write-Json (Join-Path $dir 'invocation.json') @{
             exe = $fingerprint; arguments = @($psi.ArgumentList); endpoint = $endpoint
-            configuration = 'Inherited GPT_IMAGE*/OPENAI*/AZURE_OPENAI* removed; offline-only key; proxy bypass'
+            configuration = 'Inherited GPT_IMAGE*/OPENAI*/AZURE_OPENAI* removed; isolated APPDATA; legacy --no-config or synthetic config only; offline-only key; proxy bypass'
             timeout_seconds = $TimeoutSeconds
         }
         $process.StartInfo = $psi
@@ -192,6 +236,20 @@ function Invoke-Case([string]$Name, [string[]]$CliArgs, [int]$Status = 0, $Respo
         }
         Check (-not $pending) "$Name 无额外连接（退出后 Pending=false）"
         Check (-not ($stdout + $stderr).Contains($key)) "$Name stdout/stderr 不泄漏假密钥"
+        Check (-not ($stdout + $stderr).Contains($externalKey)) "$Name stdout/stderr 不泄漏外部假密钥"
+        if ($null -ne $configPath) {
+            Check (-not ($stdout + $stderr).Contains($endpoint)) "$Name 配置连接日志隐藏完整 URL"
+            Check ($configHash -ceq [Convert]::ToBase64String([Security.Cryptography.SHA256]::HashData((Read-Bytes $configPath))) -and
+                $configStamp -eq [IO.File]::GetLastWriteTimeUtc($configPath)) "$Name 配置内容和写入时间未修改"
+            Check (@([IO.Directory]::GetFiles([IO.Path]::GetDirectoryName($configPath))).Count -eq 1) "$Name 不创建默认配置或备份"
+        }
+        if ($CliArgs -contains '--list-endpoints') {
+            Check (-not ($stdout + $stderr).Contains($endpoint) -and -not ($stdout + $stderr).Contains('offline-config-deploy') -and
+                -not ($stdout + $stderr).Contains('offline-default-deploy')) "$Name 列表不泄漏 URL 或部署名"
+        }
+        if ($CliArgs -notcontains '--json') {
+            return @{ stdout = $stdout; stderr = $stderr; request = $request; exit = $process.ExitCode; connections = $connections }
+        }
         # JsonDocument 拒绝多份 JSON / 尾随日志；ConvertFrom-Json 用于后续字段断言。
         $document = [Text.Json.JsonDocument]::Parse([string]$stdout)
         $document.Dispose()
@@ -226,7 +284,7 @@ function New-Args([string]$Mode, [string]$Output, [string]$Auth = 'bearer') {
         '--model', 'offline-text', '--size', '1024x640', '--quality', 'low', '--format', 'png',
         '--n', '1', '--auth', $Auth, '--timeout-minutes', '1', '--output', $Output)
 }
-function Check-Request($Run, [string]$Mode, [string]$Auth) {
+function Check-Request($Run, [string]$Mode, [string]$Auth, [string]$Quality = 'low') {
     $path = @{ images = '/v1/images/generations'; edit = '/v1/images/edits'; responses = '/v1/responses' }[$Mode]
     Check ($Run.request.line -ceq "POST $path HTTP/1.1") "$Mode 出站路径与方法"
     $h = $Run.request.headers
@@ -248,7 +306,7 @@ function Check-Request($Run, [string]$Mode, [string]$Auth) {
         Check ($body['model'] -ceq 'gpt-image-2' -and $body['prompt'] -ceq $prompt) 'images 模型与中文 prompt'
         $fields = $body
     }
-    foreach ($pair in @{ size = '1024x640'; quality = 'low'; output_format = 'png' }.GetEnumerator()) {
+    foreach ($pair in @{ size = '1024x640'; quality = $Quality; output_format = 'png' }.GetEnumerator()) {
         Check ($fields[$pair.Key] -ceq $pair.Value) "$Mode 请求字段 $($pair.Key)"
     }
 }
@@ -299,6 +357,29 @@ try {
     $unknown = Invoke-Case 'unknown' @('--json', '--unknown')
     Check ($unknown.exit -eq 2 -and $unknown.connections -eq 0 -and $unknown.report['files'].Count -eq 0 -and $null -eq $unknown.report['http_status']) 'unknown exit 2 无 HTTP'
     $cases.Add('unknown')
+    foreach ($name in @('default-cwd', 'default-cwd-json', 'default-directory')) {
+        $cliArgs = @('--prompt', $prompt)
+        if ($name -ne 'default-cwd') { $cliArgs += '--json' }
+        $directory = Join-Path $evidence $name
+        if ($name -eq 'default-directory') {
+            $cliArgs += @('--output', '中文 输出/新建目录.v2/')
+            $directory = Join-Path $directory '中文 输出/新建目录.v2'
+        }
+        $run = Invoke-Case $name $cliArgs 200 @{ data = @(@{ b64_json = [Convert]::ToBase64String($png) }) }
+        Check-Request $run 'images' 'bearer' 'medium'
+        $body = ConvertFrom-Json -InputObject ($utf8.GetString($run.request.body)) -AsHashtable
+        Check ($body.Count -eq 5 -and -not $body.ContainsKey('n') -and -not $body.ContainsKey('tools')) "$name 默认 n=1，无 Responses/额外字段"
+        Check ($run.exit -eq 0 -and $run.connections -eq 1 -and [IO.Directory]::Exists($directory)) "$name 最少参数成功且输出目录自动创建"
+        $files = @([IO.Directory]::GetFiles($directory, '*.png'))
+        Check ($files.Count -eq 1 -and [IO.Path]::GetFileName($files[0]) -cmatch '^gpt-image-\d{8}-\d{6}-[0-9a-f]{32}-01\.png$') "$name 指定工作目录内生成时间戳加 GUID 文件名"
+        Check (Same-Bytes (Read-Bytes $files[0]) $png) "$name 输出原始 PNG 字节"
+        if ($name -eq 'default-cwd') {
+            Check ($run.stdout.StartsWith('POST ') -and $run.stdout.Contains($files[0]) -and $run.stderr -eq '') "$name 仅 prompt 的非 JSON 输出"
+        } else {
+            Check ($run.report['mode'] -ceq 'images' -and $run.report['files'].Count -eq 1 -and $run.report['files'][0] -ceq $files[0]) "$name JSON 默认模式与自动路径"
+        }
+        $cases.Add($name)
+    }
     $usage = @{ input_tokens = 12; output_tokens = 8; total_tokens = 20; input_tokens_details = @{ text_tokens = 5; image_tokens = 7; cached_tokens = 0 }; output_tokens_details = @{ image_tokens = 8; reasoning_tokens = 0 }; ignored = 'discard-me' }
     foreach ($mode in @('images', 'edit', 'responses')) {
         $target = Join-Path $evidence "$mode-result.png"
@@ -366,6 +447,112 @@ try {
         if ($mode -eq 'images') { Check (-not [IO.File]::Exists((Join-Path $evidence 'conflict-images-01.png'))) 'images 第二目标冲突时不写首目标' }
         $cases.Add("conflict-$mode")
     }
+    foreach ($scenario in @(
+        @{ Name = 'config-name'; Options = @{}; Args = @('--endpoint-name', '离线友好节点') },
+        @{ Name = 'config-auto-name'; Options = @{ Implicit = $true }; Args = @('--endpoint-name', '离线友好节点') },
+        @{ Name = 'config-default'; Options = @{ Default = $true }; Args = @() },
+        @{ Name = 'config-apim-auto'; Options = @{ Type = 2 }; Args = @('--endpoint-name', '离线友好节点') },
+        @{ Name = 'config-apim-apikey'; Options = @{ Type = 2; Header = 1 }; Args = @('--endpoint-id', 'offline-node') },
+        @{ Name = 'config-azure'; Options = @{ Type = 1 }; Args = @('--endpoint-id', 'offline-node') }
+    )) {
+        $name = $scenario.Name
+        $run = Invoke-Case $name (@('--json', '--prompt', $prompt) + $scenario.Args) 200 @{ data = @(@{ b64_json = [Convert]::ToBase64String($png) }) } $scenario.Options
+        Check ($run.exit -eq 0 -and $run.connections -eq 1 -and $run.report['files'].Count -eq 1) "$name 按沙盒节点连接成功"
+        $expectedPath = if ($name -eq 'config-azure') { '/openai/v1/images/generations' } else { '/v1/images/generations' }
+        Check ($run.request.line -ceq "POST $expectedPath HTTP/1.1") "$name profile 首选路由不附加无关版本"
+        $headers = $run.request.headers
+        if ($name -in @('config-apim-apikey', 'config-azure')) {
+            Check ($headers['api-key'] -ceq $key -and -not $headers.ContainsKey('Authorization')) "$name api-key 认证"
+        } else { Check ($headers['Authorization'] -ceq "Bearer $key" -and -not $headers.ContainsKey('api-key')) "$name Auto Bearer 认证" }
+        $body = ConvertFrom-Json -InputObject ($utf8.GetString($run.request.body)) -AsHashtable
+        $expectedModel = if ($name -eq 'config-default') { 'offline-default-deploy' } else { 'offline-config-deploy' }
+        Check ($body['model'] -ceq $expectedModel -and $body['prompt'] -ceq $prompt) "$name 逻辑模型映射部署（含有效默认引用）"
+        Check ($body['size'] -ceq '1024x640' -and $body['quality'] -ceq 'medium' -and $body['output_format'] -ceq 'png' -and
+            -not $body.ContainsKey('n')) "$name 不导入主配置生成参数"
+        Check (Same-Bytes (Read-Bytes $run.report['files'][0]) $png) "$name 响应字节保存正确"
+        $cases.Add($name)
+    }
+    foreach ($scenario in @(
+        @{ Name = 'config-list'; Options = @{}; Args = @('--list-endpoints'); Exit = 0 },
+        @{ Name = 'config-invalid'; Options = @{ Malformed = $true }; Args = @('--prompt', $prompt); Exit = 2 },
+        @{ Name = 'config-aad'; Options = @{ Aad = $true }; Args = @('--prompt', $prompt); Exit = 2 },
+        @{ Name = 'config-mismatch'; Options = @{ Mismatch = $true }; Args = @('--prompt', $prompt, '--endpoint-id', 'offline-node'); Exit = 2 },
+        @{ Name = 'config-help'; Options = @{ Malformed = $true; Implicit = $true }; Args = @('--help'); Exit = 0 }
+    )) {
+        $run = Invoke-Case $scenario.Name (@('--json') + $scenario.Args) 0 $null $scenario.Options
+        Check ($run.exit -eq $scenario.Exit -and $run.connections -eq 0 -and $run.report['files'].Count -eq 0) "$($scenario.Name) 离线预期退出码且零 HTTP"
+        if ($scenario.Name -eq 'config-list') {
+            $entries = $run.report['endpoints']
+            Check ($entries.Count -eq 1 -and $entries[0]['id'] -ceq 'offline-node' -and $entries[0]['name'] -ceq '离线友好节点' -and
+                ($entries[0]['models'] -join ',') -ceq 'gpt-image-2,gpt-image-1' -and $entries[0].Count -eq 3) 'config-list 仅公开 id/name/逻辑 models'
+        }
+        $cases.Add($scenario.Name)
+    }
+    # 外部 key 没有明确目标时必须在读取默认配置/发送 POST 前拒绝。
+    foreach ($source in @('GPT_IMAGE_API_KEY', 'OPENAI_API_KEY', 'AZURE_OPENAI_API_KEY', 'explicit')) {
+        foreach ($useDefault in @($false, $true)) {
+            foreach ($mode in @('images', 'edit', 'responses')) {
+                $name = "key-no-target-$source-$useDefault-$mode"
+                $options = @{ Implicit = $true }
+                if ($useDefault) { $options.Default = $true }
+                if ($source -eq 'explicit') { $options.ExplicitKey = $true } else { $options.EnvKey = $source }
+                $cliArgs = @('--json', '--prompt', $prompt, '--mode', $mode)
+                if ($mode -eq 'edit') { $cliArgs += @('--image', $source1) }
+                $run = Invoke-Case $name $cliArgs 0 $null $options
+                # StandardErrorEncoding 不会强制子进程编码；中文原文由 C# 测试验证。
+                # 此处校验同一提示的 ASCII 选择器，避免 Windows 代码页导致假阴性。
+                Check ($run.exit -eq 2 -and $run.connections -eq 0 -and $null -eq $run.report['http_status'] -and
+                    -not $run.stderr.Contains('POST ') -and $run.stderr.Contains('--endpoint-name / --endpoint-id')) "$name exit2 零POST 提示明确目标选择器"
+                $cases.Add($name)
+            }
+        }
+        foreach ($selector in @('--endpoint-id', '--endpoint-name')) {
+            $name = "key-selected-$source-$($selector.TrimStart('-'))"
+            $options = @{}
+            if ($source -eq 'explicit') { $options.ExplicitKey = $true } else { $options.EnvKey = $source }
+            $target = if ($selector -eq '--endpoint-id') { 'offline-node' } else { '离线友好节点' }
+            $run = Invoke-Case $name @('--json', '--prompt', $prompt, $selector, $target) 200 @{ data = @(@{ b64_json = [Convert]::ToBase64String($png) }) } $options
+            Check ($run.exit -eq 0 -and $run.connections -eq 1 -and $run.request.line -ceq 'POST /v1/images/generations HTTP/1.1') "$name 明确目标允许覆盖"
+            Check ($run.request.headers['Authorization'] -ceq "Bearer $externalKey" -and -not $run.request.headers.ContainsKey('api-key') -and
+                -not ($run.request.headers.Values -join ' ').Contains($key)) "$name 只发送覆盖密钥，不静默切换配置密钥"
+            $cases.Add($name)
+        }
+    }
+    foreach ($type in @(0, 1, 2)) {
+        $routes = if ($type -eq 2) { @(0, 2) } else { @(0) }
+        foreach ($route in $routes) {
+            foreach ($mode in @('images', 'edit', 'responses')) {
+                foreach ($tail in @('', '/v1', '/openai', '/openai/v1')) {
+                    foreach ($slash in @('', '/')) {
+                        $name = "path-$type-$route-$mode-$($tail.Replace('/', '_'))-$($slash.Length)"
+                        $options = @{ Type = $type; Route = $route; BaseSuffix = '/Proxy/v1/Tenant' + $tail + $slash }
+                        $cliArgs = @('--json', '--prompt', $prompt, '--mode', $mode)
+                        if ($mode -eq 'edit') { $cliArgs += @('--image', $source1) }
+                        $run = Invoke-Case $name $cliArgs 200 @{ data = @(@{ b64_json = [Convert]::ToBase64String($png) }) } $options
+                        $action = @{ images = 'images/generations'; edit = 'images/edits'; responses = 'responses' }[$mode]
+                        $raw = $type -eq 2 -and ($mode -eq 'responses' -or $route -eq 2)
+                        $versioned = if ($tail -eq '') { if ($type -eq 1) { '/openai/v1' } else { '/v1' } }
+                            elseif ($tail -eq '/openai') { '/openai/v1' } else { $tail }
+                        $expected = '/Proxy/v1/Tenant' + $(if ($raw) { $tail } else { $versioned }) + '/' + $action
+                        if ($type -eq 2 -and ($mode -eq 'responses' -or ($route -eq 2 -and $mode -eq 'images'))) { $expected += '?api-version=offline-config-version' }
+                        Check ($run.exit -eq 0 -and $run.connections -eq 1 -and $run.request.line -ceq "POST $expected HTTP/1.1") "$name 精确路径，版本不重复，保留代理前缀和raw路由"
+                        if ($type -eq 1) {
+                            Check ($run.request.headers['api-key'] -ceq $key -and -not $run.request.headers.ContainsKey('Authorization')) "$name 配置api-key隔离"
+                        } else { Check ($run.request.headers['Authorization'] -ceq "Bearer $key" -and -not $run.request.headers.ContainsKey('api-key')) "$name 配置Bearer隔离" }
+                        $cases.Add($name)
+                    }
+                }
+            }
+        }
+    }
+    foreach ($jsonMode in @($false, $true)) {
+        $name = "config-secret-url-$jsonMode"
+        $cliArgs = @('--prompt', $prompt, '--mode', 'responses')
+        if ($jsonMode) { $cliArgs += '--json' }
+        $run = Invoke-Case $name $cliArgs 200 @{ data = @(@{ b64_json = [Convert]::ToBase64String($png) }) } @{ Type = 2; SecretUrl = $true }
+        Check ($run.exit -eq 0 -and $run.connections -eq 1 -and $run.request.line -ceq "POST /Proxy/$key/responses?api-version=$key HTTP/1.1") "$name 假密钥在路径和版本中也不输出日志"
+        $cases.Add($name)
+    }
     $after = Get-Fingerprint
     Check ($after.sha256 -ceq $fingerprint.sha256 -and $after.bytes -eq $fingerprint.bytes) '测试前后实际 exe 指纹一致'
 } catch {
@@ -373,15 +560,15 @@ try {
     Write-Bytes (Join-Path $evidence 'failure.txt') ($utf8.GetBytes(($_ | Out-String)))
 } finally {
     $summary = [ordered]@{
-        all_pass = ($null -eq $failure -and $cases.Count -eq 9)
-        passed_tests = $cases.Count; expected_tests = 9
+        all_pass = ($null -eq $failure -and $cases.Count -eq 153)
+        passed_tests = $cases.Count; expected_tests = 153
         passed_checks = @($checks | Where-Object { $_.passed }).Count
         cases = @($cases.ToArray()); checks = @($checks.ToArray()); failure = $failure
         evidence_directory = $evidence; exe = $fingerprint
-        scope = '仅已发布 exe + 127.0.0.1 离线假服务器行为验证；不代表云端真实性、图像尺寸或蒙版语义验证'
+        scope = '仅传入 exe + 127.0.0.1 离线假服务器行为验证；不代表云端真实性、图像尺寸或蒙版语义验证；是否 NativeAOT 以传入产物为准'
     }
     Write-Json (Join-Path $evidence 'summary.json') $summary
-    Write-Host "测试通过：$($cases.Count)/9；断言通过：$($summary.passed_checks)"
+    Write-Host "测试通过：$($cases.Count)/153；断言通过：$($summary.passed_checks)"
     Write-Host "证据目录：$evidence"
     if ($null -ne $fingerprint) { Write-Host "实际 exe：$ExePath`n字节数：$($fingerprint.bytes)`nSHA256：$($fingerprint.sha256)" }
 }

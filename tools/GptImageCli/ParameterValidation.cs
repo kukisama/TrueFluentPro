@@ -36,7 +36,7 @@ internal static class ParameterValidation
             if (stream.Read(signature) != 8 || !signature.SequenceEqual(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 }))
                 throw new CliException("--mask 不是有效的 PNG 文件。");
         }
-        if (options.Mode != ApiMode.Responses && options.ImageModel.Equals("gpt-image-2", StringComparison.OrdinalIgnoreCase) && options.Size != "auto")
+        if (options.Mode != ApiMode.Responses && (options.LogicalImageModel ?? options.ImageModel).Equals("gpt-image-2", StringComparison.OrdinalIgnoreCase) && options.Size != "auto")
         {
             var parts = options.Size.Split('x');
             if (parts.Length != 2 || !int.TryParse(parts[0], out var w) || !int.TryParse(parts[1], out var h) ||

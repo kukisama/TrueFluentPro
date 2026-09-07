@@ -2,6 +2,8 @@ using System.Net;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using GptImageCli;
+using CommandLineParser = OfflineCli;
+using CliApplication = OfflineCli;
 
 internal static class SafetyTests
 {
@@ -96,11 +98,11 @@ internal static class SafetyTests
                 $"{mode} n={count} precheck has no writes and preserves existing file");
         }
         var directoryTarget = Path.Combine(root, "precheck-directory.png");
-        Directory.CreateDirectory(directoryTarget);
+        Directory.CreateDirectory(Target(directoryTarget, 2, 2));
         foreach (var path in new[] { directoryTarget, "bad\0target.png" })
         {
             using var handler = new FakeHandler(_ => Task.FromResult(Response(Images(b64, 1))));
-            var run = await RunJson(Args("--json", "--mode", "images", "--output", path), handler);
+            var run = await RunJson(Args("--json", "--mode", "images", "--n", "2", "--output", path), handler);
             check(run.Exit == 2 && handler.Calls == 0, "precheck directory/invalid target exits 2 without POST");
         }
 
@@ -149,7 +151,7 @@ internal static class SafetyTests
             var conflict = Target(path, count, count);
             await File.WriteAllBytesAsync(conflict, oldBytes);
             using var handler = new FakeHandler(_ => Task.FromResult(Response(Images(b64, count, "responses"))));
-            var run = await RunJson(Args("--json", "--output", path), handler);
+            var run = await RunJson(Args("--json", "--mode", "responses", "--output", path), handler);
             check(run.Exit == 1 && handler.Calls == 1 && run.Report.GetProperty("files").GetArrayLength() == count - 1 &&
                 (await File.ReadAllBytesAsync(conflict)).SequenceEqual(oldBytes), "Responses protects actual existing output count=" + count);
         }

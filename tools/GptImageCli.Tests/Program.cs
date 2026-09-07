@@ -3,6 +3,8 @@ using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using GptImageCli;
+using CommandLineParser = OfflineCli;
+using CliApplication = OfflineCli;
 
 // Offline regression runner: no real configuration, credentials or cloud requests.
 foreach (var variable in new[] { "GPT_IMAGE_ENDPOINT", "OPENAI_BASE_URL", "AZURE_OPENAI_ENDPOINT",
@@ -94,7 +96,7 @@ foreach (var mode in new[] { "images", "responses" })
     Check(request.RequestUri!.AbsolutePath == (mode == "images" ? "/v1/images/generations" : "/v1/responses"), mode + " route unchanged");
     Check(json.RootElement.TryGetProperty(mode == "images" ? "prompt" : "tools", out _), mode + " body preserved");
 }
-Check((await CommandLineParser.ParseAsync(Arguments())).Mode == ApiMode.Responses, "default mode preserved");
+Check((await CommandLineParser.ParseAsync(Arguments())).Mode == ApiMode.Images, "default mode is images");
 
 // Actual CLI HTTP -> parsing -> file writing, using only a loopback fake server.
 using var listener = new TcpListener(IPAddress.Loopback, 0);
@@ -137,4 +139,7 @@ Check((await File.ReadAllBytesAsync(target)).SequenceEqual(png), "HTTP image res
 Console.WriteLine($"Original regression checks passed: {checks}");
 await FeatureTests.RunAsync(root, source, png, Check);
 await SafetyTests.RunAsync(root, source, png, Check);
+await DefaultOutputTests.RunAsync(root, source, png, Check);
+await ConfigTests.RunAsync(root, source, png, Check);
+await ConfigRegressionTests.RunAsync(root, source, png, Check);
 Console.WriteLine($"All {checks} checks passed. Artifacts: {root}");

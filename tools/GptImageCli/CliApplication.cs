@@ -38,6 +38,13 @@ internal static class CliApplication
         CliOptions options;
         try
         {
+            if (CommandLineParser.ListEndpoints(args) is { } endpoints)
+            {
+                report.Endpoints = endpoints;
+                if (!args.Any(a => a.Equals("--json", StringComparison.OrdinalIgnoreCase)))
+                    foreach (var entry in endpoints) await output.WriteLineAsync($"{entry.id}\t{entry.name}\t{string.Join(", ", entry.models)}");
+                return 0;
+            }
             options = await CommandLineParser.ParseAsync(args);
             report.Mode = options.Mode.ToString().ToLowerInvariant();
             ImageResultWriter.ValidateOutputTargets(options);
@@ -51,12 +58,12 @@ internal static class CliApplication
 
         try
         {
-            using var client = handler is null ? new HttpClient() : new HttpClient(handler, disposeHandler: false);
+            using var client = handler is null ? new HttpClient(new HttpClientHandler { AllowAutoRedirect = false }) : new HttpClient(handler, disposeHandler: false);
             client.Timeout = TimeSpan.FromMinutes(options.TimeoutMinutes);
             using var request = RequestFactory.Create(options);
             ApplyAuthentication(request, options);
 
-            await output.WriteLineAsync($"POST {request.RequestUri}");
+            await output.WriteLineAsync(options.ConfiguredRequestUrl is null ? $"POST {request.RequestUri}" : "POST [配置目标 URL 已隐藏]");
             using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
             report.CaptureHeaders(response);
             var responseText = await response.Content.ReadAsStringAsync();
@@ -92,7 +99,7 @@ internal static class CliApplication
         }
         catch (HttpRequestException ex)
         {
-            await error.WriteLineAsync($"网络请求失败: {ex.Message}");
+            await error.WriteLineAsync(options.ConfiguredRequestUrl is null ? $"网络请求失败: {ex.Message}" : "网络请求失败；配置连接详情已省略。");
             return 1;
         }
         catch (JsonException)

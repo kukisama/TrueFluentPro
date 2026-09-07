@@ -23,9 +23,10 @@ permissions:
   contents: write
 
 jobs:
-  # ── 第一阶段 A：TrueFluentPro + Updater（按 RID 并行） ──
+  # ── 第一阶段 A：TrueFluentPro + Updater + GPT Image CLI（按 RID 并行） ──
   build:
-    runs-on: windows-latest
+    # 此镜像包含 Native AOT 所需的 x64 / ARM64 C++ 工具链与 Windows SDK。
+    runs-on: windows-2025
     strategy:
       matrix:
         rid: [win-x64, win-arm64]
@@ -54,8 +55,17 @@ jobs:
             -r ${{ matrix.rid }} `
             --self-contained false `
             -o artifacts/updater-${{ matrix.rid }}
+          if ($LASTEXITCODE -ne 0) { throw 'Updater 发布失败' }
           Copy-Item "artifacts/updater-${{ matrix.rid }}/Updater.exe" `
             "artifacts/publish/TrueFluentPro-${{ matrix.rid }}-fdd/Updater.exe"
+
+      - name: Publish GPT Image CLI (${{ matrix.rid }})
+        shell: pwsh
+        run: |
+          & pwsh -NoProfile -File tools/GptImageCli/Publish.ps1 `
+            -Runtime ${{ matrix.rid }} -Mode NativeAot `
+            -OutputDirectory "artifacts/publish/TrueFluentPro-${{ matrix.rid }}-fdd/GptImageCli"
+          if ($LASTEXITCODE -ne 0) { throw 'GPT Image CLI 发布失败' }
 
       - name: Create zip
         run: |

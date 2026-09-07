@@ -29,6 +29,12 @@ internal static class RequestFactory
 
     private static Uri BuildUrl(CliOptions options)
     {
+        if (options.ConfiguredRequestUrl is { } configured)
+        {
+            if (options.ApiVersion is { } version)
+                configured = configured.Split('?')[0] + "?api-version=" + Uri.EscapeDataString(version);
+            return new Uri(configured);
+        }
         var endpoint = options.Endpoint.TrimEnd('/');
         if (LooksLikeFullApiUrl(endpoint, options.Mode))
             return AppendApiVersionIfNeeded(endpoint, options.ApiVersion);
@@ -47,6 +53,23 @@ internal static class RequestFactory
             url = $"{endpoint}/v1/{path}";
 
         return AppendApiVersionIfNeeded(url, options.ApiVersion);
+    }
+
+    internal static string JoinConfiguredPath(string baseUrl, string suffix)
+    {
+        // 仅版本化路由复用已有版本尾段；不修改配置 BaseUrl 的密钥匹配身份。
+        // APIM /images/* 和 /responses 是 raw 路由，完整保留其基地址路径。
+        var versionPrefix = suffix.StartsWith("/openai/v1/", StringComparison.Ordinal) ? "/openai/v1/"
+            : suffix.StartsWith("/v1/", StringComparison.Ordinal) ? "/v1/" : null;
+        if (versionPrefix is not null)
+        {
+            var path = new Uri(baseUrl).AbsolutePath;
+            if (path.EndsWith("/v1", StringComparison.OrdinalIgnoreCase))
+                return baseUrl + "/" + suffix[versionPrefix.Length..];
+            if (path.EndsWith("/openai", StringComparison.OrdinalIgnoreCase))
+                return baseUrl + "/v1/" + suffix[versionPrefix.Length..];
+        }
+        return baseUrl + suffix;
     }
 
     private static bool LooksLikeFullApiUrl(string endpoint, ApiMode mode)

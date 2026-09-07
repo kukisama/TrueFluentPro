@@ -9,6 +9,7 @@ internal sealed class CliReport
     private readonly Stopwatch _clock = Stopwatch.StartNew();
     public string? Mode { get; set; }
     public string? Error { get; set; }
+    public EndpointSummary[]? Endpoints { get; set; }
     public List<string> Files { get; } = [];
     private int? _httpStatus;
     private string? _requestId;
@@ -81,5 +82,5 @@ internal sealed class CliReport
         request_id: _requestId, elapsed_ms: _clock.ElapsedMilliseconds, usage: _usage,
         api_error: _apiError,
         error: exit == 0 ? null : Error ?? (exit == 2 ? "参数无效或无法读取输入文件；详见 stderr。" : "请求、响应或文件保存失败；详见 stderr。"),
-        response_metadata: _metadata), JsonSerializationContext.Default.CliReportData);
+        response_metadata: _metadata, endpoints: Endpoints), JsonSerializationContext.Default.CliReportData);
 }
