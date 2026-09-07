@@ -96,10 +96,12 @@ internal static class ConfigTests
             "https://offline.invalid.evil/Proxy", "https://user:pass@offline.invalid/Proxy", Url + "#fragment", "ftp://offline.invalid/Proxy" })
         {
             await Reject("URL boundary without selector: " + badUrl, "--endpoint", badUrl);
-            await Reject("URL boundary with selector: " + badUrl, "--endpoint", badUrl, "--endpoint-id", "one");
+            var selected = await Parse("--endpoint", badUrl, "--endpoint-id", "one");
+            check(selected.Endpoint == Url && selected.ApiKey == Key, "selector ignores external URL: " + badUrl);
         }
         check((await Parse("--endpoint", "HTTPS://OFFLINE.INVALID:443/Proxy/")).ApiKey == Key, "same normalized scheme/host/default port/trailing slash accepted");
-        await Reject("URL and selector mismatch despite explicit key", "--endpoint", "https://other.invalid", "--api-key", "explicit", "--endpoint-id", "one");
+        var selectedConnection = await Parse("--endpoint", "https://other.invalid", "--api-key", "explicit", "--endpoint-id", "one");
+        check(selectedConnection.Endpoint == Url && selectedConnection.ApiKey == Key && selectedConnection.ApiKeySource == "节点配置", "selector overrides explicit address/key as a pair");
         await Reject("deployment retains image2 size validation", "--size", "16x16");
         await Reject("explicit deployment retains logical image2 size validation", "--image-model", "private-deployment", "--size", "16x16");
         await Reject("edit deployment retains logical image2 size validation", "--mode", "edit", "--image", source, "--size", "16x16");
@@ -176,15 +178,17 @@ internal static class ConfigTests
             Environment.SetEnvironmentVariable("GPT_IMAGE_MODEL", "environment-model");
             Environment.SetEnvironmentVariable("GPT_IMAGE_API_KEY", "environment-key");
             await Reject("environment key without target cannot select configuration automatically");
-            check((await Parse("--endpoint-id", "one")).ImageModel == "environment-model" && (await Parse("--endpoint-id", "one")).ApiKey == "environment-key", "environment key/model precede configuration only with explicit target");
-            check((await Parse("--endpoint-id", "one", "--image-model", "gpt-image-2", "--api-key", "explicit-key")).ApiKey == "explicit-key" &&
-                (await Parse("--endpoint-id", "one", "--image-model", "gpt-image-2")).LogicalImageModel == "gpt-image-2", "explicit key/model precede environment with explicit target");
+            check((await Parse("--endpoint-id", "one")).ImageModel == "environment-model" && (await Parse("--endpoint-id", "one")).ApiKey == Key, "selector overrides environment key while model stays independent");
+            check((await Parse("--endpoint-id", "one", "--image-model", "gpt-image-2", "--api-key", "explicit-key")).ApiKey == Key &&
+                (await Parse("--endpoint-id", "one", "--image-model", "gpt-image-2")).LogicalImageModel == "gpt-image-2", "selector overrides explicit key while explicit model remains effective");
             Environment.SetEnvironmentVariable("GPT_IMAGE_ENDPOINT", "https://environment.invalid");
             check((await Parse()).Endpoint == "https://environment.invalid" && (await Parse()).ConfiguredRequestUrl is null, "complete environment independent of conflicting config");
-            await Reject("selector still checks environment URL mismatch", "--endpoint-id", "one");
+            check((await Parse("--endpoint-id", "one")).Endpoint == Url, "selector overrides conflicting environment URL");
+            check(Environment.GetEnvironmentVariable("GPT_IMAGE_ENDPOINT") == "https://environment.invalid" &&
+                Environment.GetEnvironmentVariable("GPT_IMAGE_API_KEY") == "environment-key", "selector leaves process environment unchanged");
             check((await Parse("--endpoint", Url, "--endpoint-id", "one")).Endpoint == Url, "explicit endpoint overrides environment with selector");
             Environment.SetEnvironmentVariable("GPT_IMAGE_API_KEY", null);
-            await Reject("environment URL without key must exactly match", "--endpoint-id", "one");
+            check((await Parse("--endpoint-id", "one")).ApiKey == Key, "selector ignores environment URL even without external key");
             Environment.SetEnvironmentVariable("GPT_IMAGE_ENDPOINT", Url);
             check((await Parse()).ApiKey == Key, "environment URL gets key only from matched node");
             Environment.SetEnvironmentVariable("GPT_IMAGE_ENDPOINT", null);
@@ -285,7 +289,9 @@ internal static class ConfigTests
         await Write(Config(Endpoint(), aad, disabled, speech, blankKey, unsupportedType, unsafeName));
         var listing = await Run("--list-endpoints", "--prompt-file", missingPath);
         var entries = listing.Report.GetProperty("endpoints");
-        check(listing.Exit == 0 && entries.GetArrayLength() == 4 && listing.Error == "", "list is offline without prompt/key and filters enabled image types only");
+        check(listing.Exit == 0 && entries.GetArrayLength() == 4 && listing.Error.Contains("未列出节点") &&
+            listing.Error.Contains("节点未启用") && listing.Error.Contains("图片能力模型") && listing.Error.Contains("节点类型不适用"),
+            "list is offline with unchanged filtering and actionable exclusion diagnostics");
         check(entries[0].EnumerateObject().Select(p => p.Name).SequenceEqual(new[] { "id", "name", "models" }) &&
             entries[0].GetProperty("models")[0].GetString() == "gpt-image-2", "list allowlist contains only ID/name/logical models");
         check(entries[3].GetProperty("name").GetString() == "[已隐藏]", "list hides secrets even when embedded in friendly name");

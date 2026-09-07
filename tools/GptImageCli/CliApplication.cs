@@ -38,7 +38,7 @@ internal static class CliApplication
         CliOptions options;
         try
         {
-            if (CommandLineParser.ListEndpoints(args) is { } endpoints)
+            if (CommandLineParser.ListEndpoints(args, message => error.WriteLine(message)) is { } endpoints)
             {
                 report.Endpoints = endpoints;
                 if (!args.Any(a => a.Equals("--json", StringComparison.OrdinalIgnoreCase)))
@@ -51,6 +51,7 @@ internal static class CliApplication
         }
         catch (Exception ex) when (ex is CliException or IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
         {
+            if (ex is CliException) report.Error = ex.Message;
             await error.WriteLineAsync($"错误: {ex.Message}");
             await error.WriteLineAsync("运行 `gpt-image --help` 查看用法。");
             return 2;
@@ -63,6 +64,8 @@ internal static class CliApplication
             using var request = RequestFactory.Create(options);
             ApplyAuthentication(request, options);
 
+            if (options.ConfiguredRequestUrl is not null && options.ApiKeySource.StartsWith("环境变量 ", StringComparison.Ordinal))
+                await error.WriteLineAsync($"注意：当前密钥来自{options.ApiKeySource}；如需使用节点配置的地址和 Key，请指定 --endpoint-name/--endpoint-id。");
             await output.WriteLineAsync(options.ConfiguredRequestUrl is null ? $"POST {request.RequestUri}" : "POST [配置目标 URL 已隐藏]");
             using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
             report.CaptureHeaders(response);
@@ -71,8 +74,12 @@ internal static class CliApplication
 
             if (!response.IsSuccessStatusCode)
             {
-                report.Error = $"HTTP {(int)response.StatusCode}：请求失败。";
+                report.Error = response.StatusCode == System.Net.HttpStatusCode.Unauthorized
+                    ? $"HTTP 401：认证失败。当前认证头：{(options.AuthMode == AuthMode.ApiKey ? "api-key" : "Authorization: Bearer")}；密钥来源：{options.ApiKeySource}。请核对密钥有效性及认证方式；指定 --endpoint-name/--endpoint-id 时，地址和 Key 均取自节点配置，不受外部连接值覆盖。未自动重试。"
+                    : $"HTTP {(int)response.StatusCode}：请求失败。";
                 await error.WriteLineAsync($"请求失败: HTTP {(int)response.StatusCode}；服务端正文已省略。");
+                if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                    await error.WriteLineAsync(report.Error);
                 return 1;
             }
 

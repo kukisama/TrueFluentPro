@@ -6,7 +6,7 @@
 #>
 [CmdletBinding()]
 param(
-    [string]$ExePath = (Join-Path $PSScriptRoot 'bin/Release/net10.0/win-x64/publish/gpt-image.exe'),
+    [string]$ExePath = (Join-Path $PSScriptRoot 'bin/Release/net10.0/win-x64/publish/gpt-image-cli/gpt-image.exe'),
     [ValidateRange(5, 120)][int]$TimeoutSeconds = 20
 )
 
@@ -449,6 +449,7 @@ try {
     }
     foreach ($scenario in @(
         @{ Name = 'config-name'; Options = @{}; Args = @('--endpoint-name', '离线友好节点') },
+        @{ Name = 'config-mismatch'; Options = @{ Mismatch = $true }; Args = @('--endpoint-id', 'offline-node') },
         @{ Name = 'config-auto-name'; Options = @{ Implicit = $true }; Args = @('--endpoint-name', '离线友好节点') },
         @{ Name = 'config-default'; Options = @{ Default = $true }; Args = @() },
         @{ Name = 'config-apim-auto'; Options = @{ Type = 2 }; Args = @('--endpoint-name', '离线友好节点') },
@@ -476,7 +477,6 @@ try {
         @{ Name = 'config-list'; Options = @{}; Args = @('--list-endpoints'); Exit = 0 },
         @{ Name = 'config-invalid'; Options = @{ Malformed = $true }; Args = @('--prompt', $prompt); Exit = 2 },
         @{ Name = 'config-aad'; Options = @{ Aad = $true }; Args = @('--prompt', $prompt); Exit = 2 },
-        @{ Name = 'config-mismatch'; Options = @{ Mismatch = $true }; Args = @('--prompt', $prompt, '--endpoint-id', 'offline-node'); Exit = 2 },
         @{ Name = 'config-help'; Options = @{ Malformed = $true; Implicit = $true }; Args = @('--help'); Exit = 0 }
     )) {
         $run = Invoke-Case $scenario.Name (@('--json') + $scenario.Args) 0 $null $scenario.Options
@@ -512,9 +512,9 @@ try {
             if ($source -eq 'explicit') { $options.ExplicitKey = $true } else { $options.EnvKey = $source }
             $target = if ($selector -eq '--endpoint-id') { 'offline-node' } else { '离线友好节点' }
             $run = Invoke-Case $name @('--json', '--prompt', $prompt, $selector, $target) 200 @{ data = @(@{ b64_json = [Convert]::ToBase64String($png) }) } $options
-            Check ($run.exit -eq 0 -and $run.connections -eq 1 -and $run.request.line -ceq 'POST /v1/images/generations HTTP/1.1') "$name 明确目标允许覆盖"
-            Check ($run.request.headers['Authorization'] -ceq "Bearer $externalKey" -and -not $run.request.headers.ContainsKey('api-key') -and
-                -not ($run.request.headers.Values -join ' ').Contains($key)) "$name 只发送覆盖密钥，不静默切换配置密钥"
+            Check ($run.exit -eq 0 -and $run.connections -eq 1 -and $run.request.line -ceq 'POST /v1/images/generations HTTP/1.1') "$name 使用所选节点连接"
+            Check ($run.request.headers['Authorization'] -ceq "Bearer $key" -and -not $run.request.headers.ContainsKey('api-key') -and
+                -not ($run.request.headers.Values -join ' ').Contains($externalKey)) "$name 只发送节点配置密钥，忽略外部密钥"
             $cases.Add($name)
         }
     }

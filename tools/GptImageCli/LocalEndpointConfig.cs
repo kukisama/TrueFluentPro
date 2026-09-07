@@ -70,7 +70,18 @@ internal static class LocalEndpointConfig
         if (flag.ValueKind is not (JsonValueKind.Undefined or JsonValueKind.True or JsonValueKind.False)) throw new CliException("配置 IsEnabled 无效。");
         return flag.ValueKind != JsonValueKind.False;
     }
-    private static bool Eligible(JsonElement endpoint) => Enabled(endpoint) && Number(endpoint, "EndpointType") is >= 0 and <= 2 && Models(endpoint).Length > 0;
+    private static string? UnavailableReason(JsonElement endpoint)
+    {
+        if (!Enabled(endpoint)) return "节点未启用；请在主程序「AI 终结点管理」中选中该节点，勾选「启用」并保存。";
+        if (Number(endpoint, "EndpointType") is < 0 or > 2)
+            return "节点类型不适用于此图片 CLI；请选择 OpenAI 兼容、Azure OpenAI 或 APIM 图片节点。";
+        if (Array(endpoint, "Models").Length == 0)
+            return "节点尚未配置模型；请在主程序「AI 终结点管理 → 该节点 → 模型列表」添加图片模型并勾选图片生成能力，然后保存。";
+        if (Models(endpoint).Length == 0)
+            return "节点存在，但没有配置有效的图片能力模型；请在主程序「AI 终结点管理 → 该节点 → 模型列表」展开目标模型，确认模型名称非空并勾选图片生成能力，然后保存。仅填写 gpt-image-2 名称不等于已启用图片能力；这不是密钥或代理错误。";
+        return null;
+    }
+    private static bool Eligible(JsonElement endpoint) => UnavailableReason(endpoint) is null;
     private static JsonElement[] Endpoints(JsonElement root)
     {
         var endpoints = Array(root, "Endpoints");
@@ -88,14 +99,24 @@ internal static class LocalEndpointConfig
         return uri.GetLeftPart(UriPartial.Authority) + uri.AbsolutePath.TrimEnd('/') + uri.Query;
     }
 
-    public static EndpointSummary[] List(string? path)
+    public static EndpointSummary[] List(string? path, Action<string>? diagnostic = null)
     {
         using var document = Read(path);
         var endpoints = Endpoints(document.RootElement);
         var secrets = endpoints.SelectMany(e => new[] { Text(e, "ApiKey"), Text(e, "BaseUrl") }
             .Concat(Array(e, "Models").Where(m => Text(m, "DeploymentName") != Text(m, "ModelId")).Select(m => Text(m, "DeploymentName")))).Where(s => s.Length > 0).ToArray();
         string Safe(string value) => value.Contains("://") || value.Any(char.IsControl) || secrets.Any(s => value.Contains(s, StringComparison.Ordinal)) ? "[已隐藏]" : value;
-        return endpoints.Where(Eligible).Select(e => new EndpointSummary(Safe(Text(e, "Id")), Safe(Text(e, "Name")), Models(e).Select(m => Safe(Text(m, "ModelId"))).ToArray())).ToArray();
+        var result = new List<EndpointSummary>();
+        foreach (var endpoint in endpoints)
+        {
+            if (UnavailableReason(endpoint) is { } reason)
+                diagnostic?.Invoke($"未列出节点「{Safe(Text(endpoint, "Name"))}」：{reason}");
+            else
+                result.Add(new(Safe(Text(endpoint, "Id")), Safe(Text(endpoint, "Name")), Models(endpoint).Select(m => Safe(Text(m, "ModelId"))).ToArray()));
+        }
+        if (result.Count == 0)
+            diagnostic?.Invoke("当前没有符合条件的图片节点。--list-endpoints 只列出已启用且配置了图片能力模型的节点，不代表配置中的其他节点已被删除。请检查上述原因；若未配置节点，请先在主程序添加，或用 --config 指定正确的配置文件。");
+        return result.ToArray();
     }
 
     public static ConfigConnection Resolve(string? path, string? name, string? id, string? endpoint, string? key, string? model, ApiMode mode)
@@ -106,6 +127,9 @@ internal static class LocalEndpointConfig
 
     private static ConfigConnection ResolveCore(string? path, string? name, string? id, string? endpoint, string? key, string? model, ApiMode mode)
     {
+        // 显式选择节点时，地址与密钥必须成对取自该节点，外部值不参与匹配或回退。
+        var hasSelector = name is not null || id is not null;
+        if (hasSelector) { endpoint = null; key = null; }
         using var document = Read(path);
         var root = document.RootElement;
         var endpoints = Endpoints(root);
@@ -114,7 +138,12 @@ internal static class LocalEndpointConfig
         var referenceModel = Text(reference, "ModelId");
         JsonElement selected;
         if (name is not null || id is not null)
-            selected = Unique(endpoints.Where(e => id is not null ? Text(e, "Id") == id : Same(Text(e, "Name"), name!)).ToArray(), "节点未找到或名称重复；请用 --list-endpoints / --endpoint-id 选择。");
+        {
+            var matches = endpoints.Where(e => id is not null ? Text(e, "Id") == id : Same(Text(e, "Name"), name!)).ToArray();
+            if (matches.Length == 0)
+                throw new CliException("当前读取的配置中未找到指定节点；请核对终结点名称或 ID，并确认主程序已保存。若使用其他配置文件，请传 --config；可用 --list-endpoints 查看列表及未列出原因。未发送请求。");
+            selected = Unique(matches, "配置中有多个同名节点；请用 --list-endpoints 查看 ID，再改用 --endpoint-id 精确选择。未发送请求。");
+        }
         else if (endpoint is not null)
             selected = Unique(endpoints.Where(e => Eligible(e) && NormalizeUrl(Text(e, "BaseUrl")) == NormalizeUrl(endpoint)).ToArray(), "URL 未唯一匹配配置 BaseUrl；完整 API URL 不等于 BaseUrl。请显式提供 --api-key，不能按 host 借用密钥。");
         else if (reference.ValueKind is not (JsonValueKind.Undefined or JsonValueKind.Null))
@@ -122,7 +151,7 @@ internal static class LocalEndpointConfig
             selected = Unique(endpoints.Where(e => Text(e, "Id") == referenceId && Eligible(e) && Models(e).Count(m => Text(m, "ModelId") == referenceModel) == 1).ToArray(), "主程序默认 ImageModelRef 已失效；请修正或用 --endpoint-name / --endpoint-id 显式选择。");
         }
         else selected = Unique(endpoints.Where(Eligible).ToArray(), "没有唯一启用的图片节点；请用 --list-endpoints 后指定 --endpoint-name / --endpoint-id。");
-        if (!Eligible(selected)) throw new CliException("所选节点已禁用、不含图片模型或 EndpointType 不支持（仅 0/1/2）。");
+        if (UnavailableReason(selected) is { } reason) throw new CliException($"所选{reason}未发送请求。");
         var baseUrl = NormalizeUrl(Text(selected, "BaseUrl"));
         if (endpoint is not null && NormalizeUrl(endpoint) != baseUrl) throw new CliException("--endpoint URL 与所选节点 BaseUrl 不一致；拒绝使用配置密钥。");
         if (new Uri(baseUrl).Query.Length > 0) throw new CliException("配置 BaseUrl 不支持查询参数；请用 --no-config 显式提供完整 URL、key 和 --auth。");
@@ -156,7 +185,9 @@ internal static class LocalEndpointConfig
         var deployment = Text(chosen, "DeploymentName");
         var requestModel = deployment == "" ? logical : deployment;
         key ??= Text(selected, "ApiKey");
-        if (string.IsNullOrWhiteSpace(key)) throw new CliException("所选节点缺少 ApiKey；请提供 --api-key 或环境密钥。");
+        if (string.IsNullOrWhiteSpace(key)) throw new CliException(hasSelector
+            ? "所选节点缺少 ApiKey；请在主程序中补齐，或移除节点选择器并用 --no-config 提供独立连接。不会回退到外部密钥。"
+            : "所选节点缺少 ApiKey；请提供 --api-key 或环境密钥。");
         if (key.Any(char.IsControl)) throw new CliException("认证密钥包含非法控制字符；未发送请求。");
         var route = Number(selected, "ImageApiRouteMode");
         if (route is < 0 or > 2 || (route == 2 && type != 2 && mode != ApiMode.Responses)) throw new CliException("内建 profile 未声明此图片路由；请用 --no-config 显式提供完整 URL。");

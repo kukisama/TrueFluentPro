@@ -14,7 +14,7 @@ try {
     $project = Join-Path $PSScriptRoot 'GptImageCli.csproj'
     $folder = if ($Mode -eq 'NativeAot') { 'publish' } else { 'publish-managed' }
     $output = if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
-        Join-Path $PSScriptRoot "bin/Release/net10.0/$Runtime/$folder"
+        Join-Path $PSScriptRoot "bin/Release/net10.0/$Runtime/$folder/gpt-image-cli"
     } else { [IO.Path]::GetFullPath($OutputDirectory) }
     foreach ($required in @('README.md', 'CAPABILITIES.md', 'skills/gpt-image-cli/SKILL.md')) {
         if (-not (Test-Path -LiteralPath (Join-Path $PSScriptRoot $required) -PathType Leaf)) {
@@ -37,10 +37,8 @@ try {
 
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'README.md') -Destination $output -Force
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'CAPABILITIES.md') -Destination $output -Force
-    $skillsOutput = Join-Path $output 'skills'
-    New-Item -ItemType Directory -Path $skillsOutput -Force | Out-Null
-    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'skills/gpt-image-cli') `
-        -Destination $skillsOutput -Recurse -Force
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'skills/gpt-image-cli/SKILL.md') `
+        -Destination (Join-Path $output 'SKILL.md') -Force
     $executable = Join-Path $output $(if ($Runtime.StartsWith('win-')) { 'gpt-image.exe' } else { 'gpt-image' })
     $manifest = [ordered]@{
         mode = $Mode

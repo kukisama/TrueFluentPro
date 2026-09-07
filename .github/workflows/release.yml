@@ -64,7 +64,7 @@ jobs:
         run: |
           & pwsh -NoProfile -File tools/GptImageCli/Publish.ps1 `
             -Runtime ${{ matrix.rid }} -Mode NativeAot `
-            -OutputDirectory "artifacts/publish/TrueFluentPro-${{ matrix.rid }}-fdd/GptImageCli"
+            -OutputDirectory "artifacts/publish/TrueFluentPro-${{ matrix.rid }}-fdd/skills/gpt-image-cli"
           if ($LASTEXITCODE -ne 0) { throw 'GPT Image CLI 发布失败' }
 
       - name: Create zip

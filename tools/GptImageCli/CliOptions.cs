@@ -17,6 +17,7 @@ internal sealed class CliOptions
 {
     public required string Endpoint { get; init; }
     public required string ApiKey { get; init; }
+    public string ApiKeySource { get; init; } = "调用方";
     public required string Prompt { get; init; }
     public ApiMode Mode { get; init; } = ApiMode.Images;
     public IReadOnlyList<string> ReferenceImagePaths { get; init; } = [];

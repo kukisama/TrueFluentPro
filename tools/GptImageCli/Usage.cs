@@ -12,9 +12,12 @@ internal static class Usage
         writer.WriteLine("  gpt-image --endpoint-name <友好名称> --prompt <text>");
         writer.WriteLine("  --endpoint-name <Name> / --endpoint-id <Id> 互斥；名称精确匹配（忽略大小写），ID 精确匹配。");
         writer.WriteLine("  --list-endpoints 离线列出启用图片节点的 id/name/models；无需 prompt/key，--json 为单份报告。");
+        writer.WriteLine("  未列出的节点及具体原因显示在 stderr；模型须勾选图片生成能力，仅有 gpt-image-2 名称不够。");
         writer.WriteLine("  --config <path> 只读指定配置；默认 %APPDATA%/TrueFluentPro/config.json，最多 4 MiB，不创建或修改。");
         writer.WriteLine("  --no-config 禁用回退；不能与 --config、节点选择器、--list-endpoints 同用。");
-        writer.WriteLine("  参数 > 环境 > 配置；连接齐全且无选择器时不读配置（即使指定 --config）。--help 不读配置。");
+        writer.WriteLine("  指定名称/ID：节点配置的地址和 Key 覆盖参数及环境，仅本次请求生效，不修改全局数据。");
+        writer.WriteLine("  无选择器：参数 > 环境 > 配置回退；连接齐全时不读配置（即使指定 --config）。--help 不读配置。");
+        writer.WriteLine("  支持环境注入、节点名称/ID、明文 --endpoint/--api-key 三种方式；明文密钥可能进入历史与进程列表，不建议。");
         writer.WriteLine("  --endpoint 始终是 URL；借用配置 key 必须与 BaseUrl 规范 URL 完全一致，不按 host/完整 API 路径猜测。");
         writer.WriteLine("  自动选有效 ImageModelRef，否则仅选唯一图片节点；失效引用、多节点、重名均需明确选择。");
         writer.WriteLine("  模型优先 --image-model / GPT_IMAGE_MODEL，其次所选节点有效默认引用、唯一 gpt-image-2、唯一图片模型。");

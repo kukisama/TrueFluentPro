@@ -9,21 +9,24 @@ internal static class CommandLineParser
         var referenceImages = new List<string>();
         var values = ParseKeyValues(args, referenceImages);
 
+        var hasSelector = Get(values, "endpoint-name") is not null || Get(values, "endpoint-id") is not null;
         var endpoint = FirstNonEmpty(Get(values, "endpoint"), Environment.GetEnvironmentVariable("GPT_IMAGE_ENDPOINT"), Environment.GetEnvironmentVariable("OPENAI_BASE_URL"), Environment.GetEnvironmentVariable("AZURE_OPENAI_ENDPOINT"));
         var explicitApiKey = Get(values, "api-key");
-        var environmentApiKey = FirstNonEmpty(Environment.GetEnvironmentVariable("GPT_IMAGE_API_KEY"), Environment.GetEnvironmentVariable("OPENAI_API_KEY"), Environment.GetEnvironmentVariable("AZURE_OPENAI_API_KEY"));
+        var environmentKeyName = new[] { "GPT_IMAGE_API_KEY", "OPENAI_API_KEY", "AZURE_OPENAI_API_KEY" }
+            .FirstOrDefault(name => !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(name)));
+        var environmentApiKey = environmentKeyName is null ? null : Environment.GetEnvironmentVariable(environmentKeyName);
         var apiKey = explicitApiKey ?? environmentApiKey;
-        // 外部密钥必须有明确目标；选择器表示用户授权将该密钥覆盖到所选节点。
-        // 不能自动选配置目标，也不能悄悄丢弃外部密钥改用配置密钥。
-        if (apiKey is not null && endpoint is null && Get(values, "endpoint-name") is null && Get(values, "endpoint-id") is null)
-            throw new CliException($"{(explicitApiKey is not null ? "显式 --api-key" : "环境密钥")}缺少明确目标；请提供 --endpoint、环境 URL 或 --endpoint-name / --endpoint-id。未发送请求。");
+        // 选择器使用节点连接；无选择器的外部密钥仍必须有明确 URL，不能自动借用配置目标。
+        if (apiKey is not null && endpoint is null && !hasSelector)
+            throw new CliException($"{(explicitApiKey is not null ? "显式 --api-key" : "环境密钥")}缺少明确目标；请提供 --endpoint 或环境 URL；若要改用节点配置的地址和 Key，请指定 --endpoint-name / --endpoint-id。未发送请求。");
         var imageModel = FirstNonEmpty(Get(values, "image-model"), Environment.GetEnvironmentVariable("GPT_IMAGE_MODEL"));
         var mode = ParseMode(Get(values, "mode"));
         ConfigConnection? connection = null;
-        if (!values.ContainsKey("no-config") && (endpoint is null || apiKey is null || Get(values, "endpoint-name") is not null || Get(values, "endpoint-id") is not null))
+        if (!values.ContainsKey("no-config") && (endpoint is null || apiKey is null || hasSelector))
             connection = LocalEndpointConfig.Resolve(Get(values, "config"), Get(values, "endpoint-name"), Get(values, "endpoint-id"), endpoint, apiKey, imageModel, mode);
-        endpoint ??= connection?.Endpoint;
-        apiKey ??= connection?.Key;
+        // 只替换本次解析的局部值，不写回配置或进程环境。
+        endpoint = hasSelector ? connection!.Endpoint : endpoint ?? connection?.Endpoint;
+        apiKey = hasSelector ? connection!.Key : apiKey ?? connection?.Key;
         var prompt = await ResolvePromptAsync(values);
 
         if (string.IsNullOrWhiteSpace(endpoint))
@@ -54,6 +57,8 @@ internal static class CommandLineParser
         {
             Endpoint = endpoint.Trim(),
             ApiKey = apiKey.Trim(),
+            ApiKeySource = hasSelector ? "节点配置" : explicitApiKey is not null ? "命令行 --api-key"
+                : environmentApiKey is not null ? "环境变量 " + environmentKeyName : "节点配置",
             Prompt = prompt.Trim(),
             Mode = mode,
             ReferenceImagePaths = referenceImages.ToArray(),
@@ -83,10 +88,10 @@ internal static class CommandLineParser
 
     internal static void ValidateSyntax(string[] args) => ParseKeyValues(args, []);
 
-    internal static EndpointSummary[]? ListEndpoints(string[] args)
+    internal static EndpointSummary[]? ListEndpoints(string[] args, Action<string>? diagnostic = null)
     {
         var values = ParseKeyValues(args, []);
-        return values.ContainsKey("list-endpoints") ? LocalEndpointConfig.List(Get(values, "config")) : null;
+        return values.ContainsKey("list-endpoints") ? LocalEndpointConfig.List(Get(values, "config"), diagnostic) : null;
     }
 
     private static Dictionary<string, string?> ParseKeyValues(string[] args, List<string> referenceImages)
