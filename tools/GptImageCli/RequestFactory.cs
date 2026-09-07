@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 
@@ -8,13 +10,13 @@ internal static class RequestFactory
     public static HttpRequestMessage Create(CliOptions options)
     {
         var url = BuildUrl(options);
-        var body = options.Mode == ApiMode.Responses
-            ? BuildResponsesBody(options)
-            : BuildImagesBody(options);
-
         var request = new HttpRequestMessage(HttpMethod.Post, url)
         {
-            Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json")
+            Content = options.Mode == ApiMode.Edit
+                ? BuildEditContent(options)
+                : new StringContent(JsonSerializer.Serialize(options.Mode == ApiMode.Responses
+                    ? BuildResponsesBody(options)
+                    : BuildImagesBody(options), JsonSerializationContext.Default.RequestBody), Encoding.UTF8, "application/json")
         };
         request.Headers.Accept.ParseAdd("application/json");
         request.Headers.ExpectContinue = false;
@@ -32,7 +34,7 @@ internal static class RequestFactory
             return AppendApiVersionIfNeeded(endpoint, options.ApiVersion);
 
         var lower = endpoint.ToLowerInvariant();
-        var path = options.Mode == ApiMode.Responses ? "responses" : "images/generations";
+        var path = GetApiPath(options.Mode);
         string url;
 
         if (lower.EndsWith("/openai/v1") || lower.EndsWith("/v1"))
@@ -49,8 +51,66 @@ internal static class RequestFactory
 
     private static bool LooksLikeFullApiUrl(string endpoint, ApiMode mode)
     {
-        var expected = mode == ApiMode.Responses ? "/responses" : "/images/generations";
-        return endpoint.Contains(expected, StringComparison.OrdinalIgnoreCase);
+        var expected = "/" + GetApiPath(mode);
+        return new Uri(endpoint).AbsolutePath.TrimEnd('/').EndsWith(expected, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string GetApiPath(ApiMode mode) => mode switch
+    {
+        ApiMode.Responses => "responses",
+        ApiMode.Edit => "images/edits",
+        _ => "images/generations"
+    };
+
+    private static MultipartFormDataContent BuildEditContent(CliOptions options)
+    {
+        var content = new MultipartFormDataContent();
+        try
+        {
+            content.Add(new StringContent(options.ImageModel), "model");
+            content.Add(new StringContent(options.Prompt), "prompt");
+            content.Add(new StringContent(options.Size), "size");
+            content.Add(new StringContent(options.Quality), "quality");
+            content.Add(new StringContent(options.OutputFormat), "output_format");
+            content.Add(new StringContent(options.Count.ToString(CultureInfo.InvariantCulture)), "n");
+            var optional = new Dictionary<string, object>();
+            AddOptionalFields(optional, options);
+            foreach (var field in optional)
+                content.Add(new StringContent(Convert.ToString(field.Value, CultureInfo.InvariantCulture)!), field.Key);
+            if (options.MaskPath is { } mask)
+            {
+                var part = new ByteArrayContent(File.ReadAllBytes(mask));
+                part.Headers.ContentType = new MediaTypeHeaderValue("image/png");
+                content.Add(part, "mask", Path.GetFileName(mask));
+            }
+
+            foreach (var path in options.ReferenceImagePaths)
+            {
+                var image = new StreamContent(File.OpenRead(path));
+                try
+                {
+                    image.Headers.ContentType = new MediaTypeHeaderValue(Path.GetExtension(path).ToLowerInvariant() switch
+                    {
+                        ".jpg" or ".jpeg" => "image/jpeg",
+                        ".webp" => "image/webp",
+                        _ => "image/png"
+                    });
+                    content.Add(image, options.ReferenceImagePaths.Count == 1 ? "image" : "image[]", Path.GetFileName(path));
+                }
+                catch
+                {
+                    image.Dispose();
+                    throw;
+                }
+            }
+
+            return content;
+        }
+        catch
+        {
+            content.Dispose();
+            throw;
+        }
     }
 
     private static Uri AppendApiVersionIfNeeded(string url, string? apiVersion)
@@ -77,19 +137,16 @@ internal static class RequestFactory
             ["model"] = options.TextModel,
             ["input"] = new object[]
             {
-                new
-                {
-                    role = "user",
-                    content = new[] { new { type = "input_text", text = options.Prompt } }
-                }
+                new ResponsesInput("user", [new ResponsesContent("input_text", options.Prompt)])
             },
             ["tools"] = new[] { imageTool },
-            ["tool_choice"] = new { type = "image_generation" }
+            ["tool_choice"] = new ImageToolChoice("image_generation")
         };
 
         if (options.Count > 1)
             body["instructions"] = $"Generate exactly {options.Count} images. Each image should be a distinct variation.";
 
+        AddOptionalFields(imageTool, options);
         return body;
     }
 
@@ -107,6 +164,15 @@ internal static class RequestFactory
         if (options.Count > 1)
             body["n"] = options.Count;
 
+        AddOptionalFields(body, options);
         return body;
+    }
+
+    private static void AddOptionalFields(Dictionary<string, object> fields, CliOptions options)
+    {
+        if (options.Background is { } background) fields["background"] = background;
+        if (options.OutputCompression is { } compression) fields["output_compression"] = compression;
+        if (options.Moderation is { } moderation) fields["moderation"] = moderation;
+        if (options.User is { } user) fields["user"] = user;
     }
 }

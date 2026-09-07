@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Compile the same CLI sources without exposing internal implementation publicly. -->
+    <Compile Include="../GptImageCli/*.cs" Exclude="../GptImageCli/Program.cs" Link="Cli/%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>

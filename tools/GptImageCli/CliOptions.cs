@@ -3,7 +3,8 @@ namespace GptImageCli;
 internal enum ApiMode
 {
     Responses,
-    Images
+    Images,
+    Edit
 }
 
 internal enum AuthMode
@@ -18,6 +19,7 @@ internal sealed class CliOptions
     public required string ApiKey { get; init; }
     public required string Prompt { get; init; }
     public ApiMode Mode { get; init; } = ApiMode.Responses;
+    public IReadOnlyList<string> ReferenceImagePaths { get; init; } = [];
     public AuthMode AuthMode { get; init; } = AuthMode.Bearer;
     public string TextModel { get; init; } = "gpt-4.1";
     public string ImageModel { get; init; } = "gpt-image-2";
@@ -27,5 +29,11 @@ internal sealed class CliOptions
     public string OutputFormat { get; init; } = "png";
     public int Count { get; init; } = 1;
     public string OutputPath { get; init; } = ".";
+    public bool Overwrite { get; init; }
     public int TimeoutMinutes { get; init; } = 10;
+    public string? MaskPath { get; init; }
+    public string? Background { get; init; }
+    public int? OutputCompression { get; init; }
+    public string? Moderation { get; init; }
+    public string? User { get; init; }
 }

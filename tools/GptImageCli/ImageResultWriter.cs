@@ -2,11 +2,22 @@ namespace GptImageCli;
 
 internal static class ImageResultWriter
 {
+    public static void ValidateOutputTargets(CliOptions options)
+    {
+        // Responses has no known result count; protect its actual paths when saving.
+        if (options.Overwrite || options.Mode == ApiMode.Responses || !Path.HasExtension(options.OutputPath)) return;
+        foreach (var path in ResolveOutputPaths(options.OutputPath, options.OutputFormat, options.Count))
+            if (File.Exists(path) || Directory.Exists(path))
+                throw new CliException($"输出目标已存在：{path}；默认不覆盖，确认后可使用 --overwrite。");
+    }
+
     public static async Task<IReadOnlyList<string>> SaveAsync(
         IReadOnlyList<ImagePayload> images,
         string outputPath,
         string outputFormat,
-        HttpClient httpClient)
+        HttpClient httpClient,
+        ICollection<string>? savedFiles = null,
+        bool overwrite = false)
     {
         var paths = ResolveOutputPaths(outputPath, outputFormat, images.Count);
         var saved = new List<string>(images.Count);
@@ -30,8 +41,11 @@ internal static class ImageResultWriter
 
             var path = paths[i];
             Directory.CreateDirectory(Path.GetDirectoryName(path) ?? ".");
-            await File.WriteAllBytesAsync(path, bytes);
+            await using (var stream = new FileStream(path, overwrite ? FileMode.Create : FileMode.CreateNew,
+                FileAccess.Write, FileShare.None, 4096, FileOptions.Asynchronous))
+                await stream.WriteAsync(bytes);
             saved.Add(path);
+            savedFiles?.Add(path);
         }
 
         return saved;
@@ -42,7 +56,7 @@ internal static class ImageResultWriter
         var normalizedOutput = string.IsNullOrWhiteSpace(outputPath) ? "." : outputPath;
         var extension = outputFormat == "jpeg" ? ".jpg" : $".{outputFormat}";
         var hasExtension = Path.HasExtension(normalizedOutput);
-        var timestamp = DateTimeOffset.UtcNow.ToString("yyyyMMdd-HHmmss");
+        var timestamp = $"{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}-{Guid.NewGuid():N}";
         var paths = new List<string>(count);
 
         if (!hasExtension)
