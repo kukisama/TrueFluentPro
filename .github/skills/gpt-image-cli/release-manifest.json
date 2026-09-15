@@ -1,0 +1,7 @@
+{
+  "mode": "NativeAot",
+  "runtime": "win-x64",
+  "executable": "gpt-image.exe",
+  "bytes": 5358592,
+  "sha256": "FD24CC309043DED988260EEC845A9437A4B66D20159394B90AB955B9E8A336B8"
+}
