@@ -313,6 +313,7 @@ namespace TrueFluentPro.ViewModels.Settings
         {
             UnsubscribeEndpoints(_endpoints);
             Config = config;
+            var restoredCapabilities = RestoreUnclassifiedAzureModels(config.Endpoints);
             _endpoints = new ObservableCollection<AiEndpoint>(config.Endpoints);
             SubscribeEndpoints(_endpoints);
             OnPropertyChanged(nameof(Endpoints));
@@ -326,6 +327,50 @@ namespace TrueFluentPro.ViewModels.Settings
             {
                 SelectedEndpoint = null;
             }
+            if (restoredCapabilities)
+                OnChanged();
+        }
+
+        // 历史版本刷新能力开关时曾将 AOAI 模型分类清零。仅从同名已分类模型
+        // 或 AOAI 资料包明确声明的 sora-2 视频模型恢复，不猜测其它模型的用途。
+        internal static bool RestoreUnclassifiedAzureModels(IReadOnlyList<AiEndpoint> endpoints)
+        {
+            var classified = endpoints
+                .SelectMany(ep => ep.Models)
+                .Where(model => !string.IsNullOrWhiteSpace(model.ModelId)
+                    && model.Capabilities != ModelCapability.None)
+                .GroupBy(model => model.ModelId.Trim(), StringComparer.OrdinalIgnoreCase)
+                .Where(group => group.Select(model => model.Capabilities).Distinct().Count() == 1)
+                .ToDictionary(group => group.Key, group => group.First().Capabilities, StringComparer.OrdinalIgnoreCase);
+
+            var changed = false;
+            foreach (var endpoint in endpoints.Where(ep => ep.EndpointType == EndpointApiType.AzureOpenAi
+                         && ep.AuthMode == AzureAuthMode.AAD
+                         && ep.Models.Count > 0
+                         && ep.Models.All(model => model.Capabilities == ModelCapability.None)))
+            {
+                foreach (var model in endpoint.Models)
+                {
+                    var id = model.ModelId?.Trim() ?? "";
+                    var isSora2 = id.Equals("sora-2", StringComparison.OrdinalIgnoreCase)
+                        || id.StartsWith("sora-2-", StringComparison.OrdinalIgnoreCase);
+                    if (classified.TryGetValue(id, out var capability))
+                    {
+                        // 同名模型和资料包的视频声明相矛盾时，不自动猜测。
+                        if (isSora2 && capability != ModelCapability.Video)
+                            continue;
+                    }
+                    else if (isSora2)
+                        capability = ModelCapability.Video;
+                    else
+                        continue;
+
+                    model.Capabilities = capability;
+                    changed = true;
+                }
+            }
+
+            return changed;
         }
 
         public override void ApplyTo(AzureSpeechConfig config)

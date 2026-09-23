@@ -205,10 +205,18 @@ public partial class EndpointsSection : UserControl
         var panel = toggle.Parent as StackPanel;
         if (panel?.Tag is not AiModelEntry model) return;
 
-        // 单选：取消其他 toggle
-        foreach (var other in panel.Children.OfType<ToggleButton>())
+        // 切换分类时先取消旧选项，但不要让中途的 Unchecked 把模型写成 None。
+        _suppressCapToggleEvents = true;
+        try
         {
-            if (other != toggle) other.IsChecked = false;
+            foreach (var other in panel.Children.OfType<ToggleButton>())
+            {
+                if (other != toggle) other.IsChecked = false;
+            }
+        }
+        finally
+        {
+            _suppressCapToggleEvents = false;
         }
 
         var tag = toggle.Tag?.ToString();
@@ -273,12 +281,7 @@ public partial class EndpointsSection : UserControl
             _suppressCapToggleEvents = false;
         }
 
-        if (model.Capabilities != ModelCapability.None && !allowed.Contains(model.Capabilities))
-        {
-            model.Capabilities = ModelCapability.None;
-            if (DataContext is EndpointsSectionVM vm)
-                vm.NotifyModelChanged();
-        }
+        // 资料包策略仅限制当前可选择的分类；展示刷新不得擦除已保存的模型能力。
     }
 
     private void UpdateHeaderCapIcon(StackPanel capPanel, AiModelEntry model)

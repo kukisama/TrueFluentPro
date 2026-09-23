@@ -15,6 +15,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GptImageCli", "tools\GptIma
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GptImageCli.Tests", "tools\GptImageCli.Tests\GptImageCli.Tests.csproj", "{697A4949-BC36-44C7-ACC6-7175092ECA03}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EndpointCapabilityRegression", "tools\EndpointCapabilityRegression\EndpointCapabilityRegression.csproj", "{E910CD12-B4E8-4652-8725-AECD42B27FC3}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -73,6 +75,18 @@ Global
 		{697A4949-BC36-44C7-ACC6-7175092ECA03}.Release|x64.Build.0 = Release|Any CPU
 		{697A4949-BC36-44C7-ACC6-7175092ECA03}.Release|x86.ActiveCfg = Release|Any CPU
 		{697A4949-BC36-44C7-ACC6-7175092ECA03}.Release|x86.Build.0 = Release|Any CPU
+		{E910CD12-B4E8-4652-8725-AECD42B27FC3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E910CD12-B4E8-4652-8725-AECD42B27FC3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E910CD12-B4E8-4652-8725-AECD42B27FC3}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{E910CD12-B4E8-4652-8725-AECD42B27FC3}.Debug|x64.Build.0 = Debug|Any CPU
+		{E910CD12-B4E8-4652-8725-AECD42B27FC3}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{E910CD12-B4E8-4652-8725-AECD42B27FC3}.Debug|x86.Build.0 = Debug|Any CPU
+		{E910CD12-B4E8-4652-8725-AECD42B27FC3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E910CD12-B4E8-4652-8725-AECD42B27FC3}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E910CD12-B4E8-4652-8725-AECD42B27FC3}.Release|x64.ActiveCfg = Release|Any CPU
+		{E910CD12-B4E8-4652-8725-AECD42B27FC3}.Release|x64.Build.0 = Release|Any CPU
+		{E910CD12-B4E8-4652-8725-AECD42B27FC3}.Release|x86.ActiveCfg = Release|Any CPU
+		{E910CD12-B4E8-4652-8725-AECD42B27FC3}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -81,6 +95,7 @@ Global
 		{FE18FDEA-5512-4F9C-85AD-677086E126D0} = {1AE8ACA6-933B-BF2A-3671-3E2EAC007D16}
 		{C944A8CA-9345-4735-B64D-85F8048B27DF} = {07C2787E-EAC7-C090-1BA3-A61EC2A24D84}
 		{697A4949-BC36-44C7-ACC6-7175092ECA03} = {07C2787E-EAC7-C090-1BA3-A61EC2A24D84}
+		{E910CD12-B4E8-4652-8725-AECD42B27FC3} = {07C2787E-EAC7-C090-1BA3-A61EC2A24D84}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {6BF63EEE-B2B6-40E3-9D35-F7BA86CCD042}
