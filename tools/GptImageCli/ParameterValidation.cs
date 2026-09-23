@@ -25,6 +25,12 @@ internal static class ParameterValidation
             throw new CliException("透明背景仅支持 png/webp，不支持 jpeg。");
         if (options.Mode == ApiMode.Responses && options.User is not null)
             throw new CliException("responses 模式暂不支持 --user；请使用 images 或 edit。");
+        if (options.ImageAction is not null && (options.Mode != ApiMode.Responses || options.ImageAction is not ("generate" or "edit" or "auto")))
+            throw new CliException("--image-action 仅支持 responses 模式的 generate、edit 或 auto。");
+        if (options.ImageAction == "edit" && options.ReferenceImagePaths.Count == 0)
+            throw new CliException("--image-action edit 必须提供 --image 参考图。");
+        if (options.ReferenceImagePaths.Count > 16)
+            throw new CliException("参考图最多支持 16 张。");
         if (options.MaskPath is { } mask)
         {
             if (options.Mode != ApiMode.Edit)

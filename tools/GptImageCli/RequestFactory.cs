@@ -155,12 +155,32 @@ internal static class RequestFactory
             ["output_format"] = options.OutputFormat
         };
 
+        var content = new List<object> { new ResponsesContent("input_text", options.Prompt) };
+        foreach (var path in options.ReferenceImagePaths)
+        {
+            var mediaType = Path.GetExtension(path).ToLowerInvariant() switch
+            {
+                ".jpg" or ".jpeg" => "image/jpeg",
+                ".webp" => "image/webp",
+                _ => "image/png"
+            };
+            content.Add(new ResponsesImageContent("input_image", $"data:{mediaType};base64,{Convert.ToBase64String(File.ReadAllBytes(path))}", "auto"));
+        }
+
+        if (options.ReferenceImagePaths.Count > 0)
+        {
+            imageTool["model"] = options.ImageModel;
+            imageTool["action"] = options.ImageAction ?? "generate";
+        }
+        else if (options.ImageAction is { } action)
+            imageTool["action"] = action;
+
         var body = new Dictionary<string, object>
         {
             ["model"] = options.TextModel,
             ["input"] = new object[]
             {
-                new ResponsesInput("user", [new ResponsesContent("input_text", options.Prompt)])
+                new ResponsesInput("user", content.ToArray())
             },
             ["tools"] = new[] { imageTool },
             ["tool_choice"] = new ImageToolChoice("image_generation")

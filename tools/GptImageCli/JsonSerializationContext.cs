@@ -4,8 +4,9 @@ using System.Text.Json.Serialization;
 namespace GptImageCli;
 
 // Keep the wire names and property order identical to the former anonymous objects.
-internal sealed record ResponsesInput(string role, ResponsesContent[] content);
+internal sealed record ResponsesInput(string role, object[] content);
 internal sealed record ResponsesContent(string type, string text);
+internal sealed record ResponsesImageContent(string type, string image_url, string detail);
 internal sealed record ImageToolChoice(string type);
 internal sealed record ApiErrorReport(string? code, string? type, string? param, string message);
 internal sealed record CliReportData(
@@ -26,6 +27,7 @@ internal sealed record CliReportData(
 [JsonSerializable(typeof(ResponsesInput))]
 [JsonSerializable(typeof(ResponsesContent[]))]
 [JsonSerializable(typeof(ResponsesContent))]
+[JsonSerializable(typeof(ResponsesImageContent))]
 [JsonSerializable(typeof(ImageToolChoice))]
 [JsonSerializable(typeof(JsonElement))]
 [JsonSerializable(typeof(ApiErrorReport))]

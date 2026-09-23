@@ -31,7 +31,8 @@ internal static class Usage
         writer.WriteLine();
         writer.WriteLine("常用选项:");
         writer.WriteLine("  --mode <responses|images|edit> 默认 images 文生图；edit 直接改图");
-        writer.WriteLine("  --image <path>               edit 必填；PNG/JPEG/WebP，可重复传入多张参考图");
+        writer.WriteLine("  --image <path>               edit 必填；responses 可选；PNG/JPEG/WebP，可重复传入参考图");
+        writer.WriteLine("  --image-action <generate|edit|auto> 仅 responses；带参考图默认 generate，新图参考生成与编辑分开测试");
         writer.WriteLine("  --model <text-model>         Responses API 文本模型，默认 gpt-4.1");
         writer.WriteLine("  --image-model <model>        图片模型/部署名；独立连接默认 gpt-image-2，配置连接按上述顺序选择");
         writer.WriteLine("  --api-version <version>      Azure/OpenAI 兼容网关需要时追加 api-version");
@@ -66,5 +67,7 @@ internal static class Usage
         writer.WriteLine("改图示例（endpoint/key 已设为环境变量）:");
         writer.WriteLine("  gpt-image --mode edit --image input.png --prompt \"把帆船改为绿色，保留背景\"");
         writer.WriteLine("  edit 使用 /images/edits，不需要文字模型或 Responses 会话；继续改图时将上次输出作为 --image。");
+        writer.WriteLine("  gpt-image --mode responses --model gpt-4.1 --image-model gpt-image-2.5-flare --image input.png --image-action generate --prompt \"参考画面配色，重新生成帆船\"");
+        writer.WriteLine("  responses 的参考图以 data URL 输入；edit 动作仍走 /responses，不等于 /images/edits。需文本模型及网关支持 image_generation 工具。");
     }
 }

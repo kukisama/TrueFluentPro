@@ -38,8 +38,8 @@ internal static class CommandLineParser
 
         if (mode == ApiMode.Edit && referenceImages.Count == 0)
             throw new CliException("edit 改图模式必须提供 --image <参考图路径>。");
-        if (mode != ApiMode.Edit && referenceImages.Count > 0)
-            throw new CliException("--image 仅用于 --mode edit；不会忽略参考图退化成文生图。");
+        if (mode == ApiMode.Images && referenceImages.Count > 0)
+            throw new CliException("--image 不支持 images 文字生图；请使用 --mode edit 或 --mode responses。");
         foreach (var path in referenceImages)
         {
             if (!File.Exists(path))
@@ -62,6 +62,7 @@ internal static class CommandLineParser
             Prompt = prompt.Trim(),
             Mode = mode,
             ReferenceImagePaths = referenceImages.ToArray(),
+            ImageAction = Get(values, "image-action")?.ToLowerInvariant(),
             AuthMode = auth,
             TextModel = Get(values, "model") ?? Environment.GetEnvironmentVariable("GPT_IMAGE_TEXT_MODEL") ?? "gpt-4.1",
             ImageModel = connection?.Model ?? imageModel ?? "gpt-image-2",
@@ -106,7 +107,7 @@ internal static class CommandLineParser
             var keyValue = arg[2..];
             var equalsIndex = keyValue.IndexOf('=');
             var option = equalsIndex < 0 ? keyValue : keyValue[..equalsIndex];
-            const string allowed = "endpoint endpoint-name endpoint-id list-endpoints config no-config api-key prompt prompt-file mode image auth model image-model api-version size quality format output-format n count output out timeout-minutes mask background output-compression moderation user json help overwrite";
+            const string allowed = "endpoint endpoint-name endpoint-id list-endpoints config no-config api-key prompt prompt-file mode image image-action auth model image-model api-version size quality format output-format n count output out timeout-minutes mask background output-compression moderation user json help overwrite";
             if (!allowed.Split(' ').Contains(option, StringComparer.OrdinalIgnoreCase))
                 throw new CliException($"未知参数 --{option}；未发送请求。");
             if (option.Equals("json", StringComparison.OrdinalIgnoreCase) || option.Equals("help", StringComparison.OrdinalIgnoreCase) ||

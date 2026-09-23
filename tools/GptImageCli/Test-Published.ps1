@@ -416,6 +416,30 @@ try {
         }
         $cases.Add($mode)
     }
+    foreach ($action in @('generate', 'edit')) {
+        $name = "responses-reference-$action"
+        $target = Join-Path $evidence "$name.png"
+        $refs = @($source1)
+        if ($action -eq 'generate') { $refs += $source2 }
+        $cliArgs = (New-Args 'responses' $target) + @('--image-action', $action)
+        foreach ($ref in $refs) { $cliArgs += @('--image', $ref) }
+        $run = Invoke-Case $name $cliArgs 200 @{ output = @(@{ type = 'image_generation_call'; result = [Convert]::ToBase64String($png) }) }
+        Check-Request $run 'responses' 'bearer'
+        $body = ConvertFrom-Json -InputObject ($utf8.GetString($run.request.body)) -AsHashtable
+        Check ($body['tools'][0]['model'] -ceq 'gpt-image-2' -and $body['tools'][0]['action'] -ceq $action) "$name 图片模型与动作"
+        $content = $body['input'][0]['content']
+        Check ($content.Count -eq $refs.Count + 1 -and $content[0]['text'] -ceq $prompt) "$name 文本和参考图数"
+        for ($i = 0; $i -lt $refs.Count; $i++) {
+            $expected = [Convert]::ToBase64String((Read-Bytes $refs[$i]))
+            Check ($content[$i + 1]['type'] -ceq 'input_image' -and $content[$i + 1]['detail'] -ceq 'auto' -and
+                $content[$i + 1]['image_url'] -ceq "data:image/png;base64,$expected") "$name 参考图原始字节与顺序 $i"
+        }
+        Check ($run.exit -eq 0 -and $run.report['files'].Count -eq 1 -and (Same-Bytes (Read-Bytes $target) $png)) "$name 完整解析保存"
+        $cases.Add($name)
+    }
+    $rejected = Invoke-Case 'images-reference-rejected' ((New-Args 'images' (Join-Path $evidence 'rejected.png')) + @('--image', $source1))
+    Check ($rejected.exit -eq 2 -and $rejected.connections -eq 0 -and $null -eq $rejected.report['http_status']) 'generations 不发送参考图'
+    $cases.Add('images-reference-rejected')
     foreach ($kind in @('safe', 'unsafe')) {
         $name = "http400-$kind"
         $target = Join-Path $evidence "$name.png"
@@ -560,15 +584,15 @@ try {
     Write-Bytes (Join-Path $evidence 'failure.txt') ($utf8.GetBytes(($_ | Out-String)))
 } finally {
     $summary = [ordered]@{
-        all_pass = ($null -eq $failure -and $cases.Count -eq 153)
-        passed_tests = $cases.Count; expected_tests = 153
+        all_pass = ($null -eq $failure -and $cases.Count -eq 156)
+        passed_tests = $cases.Count; expected_tests = 156
         passed_checks = @($checks | Where-Object { $_.passed }).Count
         cases = @($cases.ToArray()); checks = @($checks.ToArray()); failure = $failure
         evidence_directory = $evidence; exe = $fingerprint
         scope = '仅传入 exe + 127.0.0.1 离线假服务器行为验证；不代表云端真实性、图像尺寸或蒙版语义验证；是否 NativeAOT 以传入产物为准'
     }
     Write-Json (Join-Path $evidence 'summary.json') $summary
-    Write-Host "测试通过：$($cases.Count)/153；断言通过：$($summary.passed_checks)"
+    Write-Host "测试通过：$($cases.Count)/156；断言通过：$($summary.passed_checks)"
     Write-Host "证据目录：$evidence"
     if ($null -ne $fingerprint) { Write-Host "实际 exe：$ExePath`n字节数：$($fingerprint.bytes)`nSHA256：$($fingerprint.sha256)" }
 }

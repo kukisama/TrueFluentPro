@@ -72,6 +72,10 @@ APIM 与 OpenAI 兼容节点都可使用 Key 认证，但 HTTP 头可能是 `api
 
 单图编辑：`./gpt-image.exe --mode edit --image "<输入图路径>" --prompt "<用户编辑要求>" --json`
 
+参考图生成新图：`./gpt-image.exe --mode responses --model "<支持 Responses 的文字模型>" --image "<输入图路径>" --image-action generate --prompt "参考原图风格，创作新图" --json`
+
+参考图编辑：将上述命令的 `--image-action generate` 改为 `--image-action edit`，并在提示词中写明需要保留和修改的部分。两者通过 Responses `image_generation` 工具处理，不等同于 multipart `/images/edits`；需网关同时支持所选文字模型、工具和图片模型。`--image` 会以内联 data URL 发送，图片内容可能增加请求体大小；不经过 `/files`。网关是否真正出图以本次 JSON 结果为准，不要收到 503 后自动重试。
+
 **不写参数即使用：生图（images）、1024×640、中等质量（medium）、PNG、1 张、当前工作目录。** 这些参数都可省略，只有需要改变时才指定。
 
 输出可省略，也可只传目录，如 `--output "./图片"`，程序自动创建目录并生成“时间戳＋随机 ID＋序号”文件名，无需调用方生成 ID 或预查路径。指定 `--output "./图片/result.png"` 则使用该文件名，多张追加 `-01`、`-02`。已有目录或无扩展名路径按目录处理；新建的带点目录请以 `/` 或 `\` 结尾。实际文件路径从 `files` 获取。
@@ -98,7 +102,8 @@ APIM 与 OpenAI 兼容节点都可使用 Key 认证，但 HTTP 头可能是 `api
 | --- | --- |
 | `--mode` | 默认 `images`（生图）；改图指定 `edit`，兼容模式指定 `responses` |
 | `--prompt` / `--prompt-file` | 无默认文本；依次优先使用提示词、文件、重定向 stdin，不能为空 |
-| `--image` | 仅 edit，至少一个本地 PNG/JPG/JPEG/WebP 文件；服务接受范围可能更窄 |
+| `--image` | edit 必填，responses 可选；本地 PNG/JPG/JPEG/WebP 文件可重复传入，最多 16 张；images 模式拒绝参考图 |
+| `--image-action` | 仅 responses 可用：`generate` / `edit` / `auto`；带参考图默认 `generate`，`edit` 必须提供参考图 |
 | `--mask` | 仅 edit，可选 PNG 蒙版 |
 | `--auth` | 默认 `auto`；可选 `auto` / `bearer` / `api-key`；自动选择不代替服务认证要求 |
 | `--image-model` | 图片模型或部署名；未配置时默认 `gpt-image-2` |
