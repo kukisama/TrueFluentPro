@@ -13,7 +13,7 @@ internal enum AuthMode
     ApiKey
 }
 
-internal sealed class CliOptions
+internal sealed record CliOptions
 {
     public required string Endpoint { get; init; }
     public required string ApiKey { get; init; }

@@ -7,6 +7,9 @@ internal static class Usage
         writer.WriteLine("gpt-image - GPT-Image-2 独立命令行生图/改图工具");
         writer.WriteLine();
         writer.WriteLine("用法:");
+        writer.WriteLine("  gpt-image submit [生图参数] [--name 任务名称] [--json]  持久入队后返回，后台执行");
+        writer.WriteLine("  gpt-image queue                                      打开终端队列维护界面");
+        writer.WriteLine("  gpt-image queue --help                               队列命令及配置说明");
         writer.WriteLine("  gpt-image --endpoint <url> --api-key <key> --prompt <text> [options]");
         writer.WriteLine("  cat prompt.txt | gpt-image --endpoint <url> --api-key <key>");
         writer.WriteLine("  gpt-image --endpoint-name <友好名称> --prompt <text>");

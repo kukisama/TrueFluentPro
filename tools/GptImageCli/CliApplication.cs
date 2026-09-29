@@ -57,8 +57,19 @@ internal static class CliApplication
             return 2;
         }
 
+        return await ExecuteAsync(options, output, error, report, handler);
+    }
+
+    // One attempt only. Persistent queue scheduling owns all retries.
+    internal static async Task<int> ExecuteAsync(CliOptions options, TextWriter output, TextWriter error,
+        CliReport report, HttpMessageHandler? handler = null)
+    {
+        report.Mode = options.Mode.ToString().ToLowerInvariant();
         try
         {
+            ImageResultWriter.ValidateOutputTargets(options);
+            using var deadline = new CancellationTokenSource(TimeSpan.FromMinutes(options.TimeoutMinutes));
+            var cancellation = deadline.Token;
             using var client = handler is null ? new HttpClient(new HttpClientHandler { AllowAutoRedirect = false }) : new HttpClient(handler, disposeHandler: false);
             client.Timeout = TimeSpan.FromMinutes(options.TimeoutMinutes);
             using var request = RequestFactory.Create(options);
@@ -66,10 +77,12 @@ internal static class CliApplication
 
             if (options.ConfiguredRequestUrl is not null && options.ApiKeySource.StartsWith("环境变量 ", StringComparison.Ordinal))
                 await error.WriteLineAsync($"注意：当前密钥来自{options.ApiKeySource}；如需使用节点配置的地址和 Key，请指定 --endpoint-name/--endpoint-id。");
-            await output.WriteLineAsync(options.ConfiguredRequestUrl is null ? $"POST {request.RequestUri}" : "POST [配置目标 URL 已隐藏]");
-            using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+            await output.WriteLineAsync(options.ConfiguredRequestUrl is null ? $"POST {request.RequestUri!.GetLeftPart(UriPartial.Authority)} [路径与查询已隐藏]" : "POST [配置目标 URL 已隐藏]");
+            report.Stage = "request";
+            using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellation);
             report.CaptureHeaders(response);
-            var responseText = await response.Content.ReadAsStringAsync();
+            var responseText = await response.Content.ReadAsStringAsync(cancellation);
+            report.Stage = "response";
             report.CaptureBody(responseText, options.ApiKey);
 
             if (!response.IsSuccessStatusCode)
@@ -91,7 +104,8 @@ internal static class CliApplication
                 return 1;
             }
 
-            var savedFiles = await ImageResultWriter.SaveAsync(images, options.OutputPath, options.OutputFormat, client, report.Files, options.Overwrite);
+            report.Stage = "save";
+            var savedFiles = await ImageResultWriter.SaveAsync(images, options.OutputPath, options.OutputFormat, client, report.Files, options.Overwrite, cancellation);
             foreach (var file in savedFiles)
             {
                 await output.WriteLineAsync(file);
@@ -101,27 +115,38 @@ internal static class CliApplication
         }
         catch (OperationCanceledException)
         {
+            report.Error = "请求已取消或超时；已发送的请求可能仍在服务端执行，请勿盲目重试。";
             await error.WriteLineAsync("请求已取消或超时。");
             return 1;
         }
-        catch (HttpRequestException ex)
+        catch (HttpRequestException)
         {
-            await error.WriteLineAsync(options.ConfiguredRequestUrl is null ? $"网络请求失败: {ex.Message}" : "网络请求失败；配置连接详情已省略。");
+            report.Error = "网络请求失败；请检查网络或服务端请求记录。";
+            await error.WriteLineAsync("网络请求失败；连接详情已省略。");
             return 1;
         }
         catch (JsonException)
         {
+            report.Error = "响应 JSON 解析失败；服务端正文已省略。";
             await error.WriteLineAsync("响应 JSON 解析失败；服务端正文已省略。");
             return 1;
         }
         catch (IOException ex)
         {
+            report.Error = "文件读取或写入失败；请检查输入及输出目录。";
             await error.WriteLineAsync($"文件读取或写入失败: {ex.Message}");
             return 1;
         }
         catch (UnauthorizedAccessException ex)
         {
+            report.Error = "没有权限读取或写入文件。";
             await error.WriteLineAsync($"没有权限读取或写入文件: {ex.Message}");
+            return 1;
+        }
+        catch (Exception ex) when (ex is CliException or ArgumentException or FormatException or InvalidOperationException or NotSupportedException)
+        {
+            report.Error = ex is CliException ? ex.Message : "请求、响应或文件处理失败。";
+            await error.WriteLineAsync(report.Error);
             return 1;
         }
     }

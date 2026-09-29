@@ -17,7 +17,8 @@ internal static class ImageResultWriter
         string outputFormat,
         HttpClient httpClient,
         ICollection<string>? savedFiles = null,
-        bool overwrite = false)
+        bool overwrite = false,
+        CancellationToken cancellationToken = default)
     {
         var paths = ResolveOutputPaths(outputPath, outputFormat, images.Count);
         var saved = new List<string>(images.Count);
@@ -32,7 +33,7 @@ internal static class ImageResultWriter
             }
             else if (!string.IsNullOrWhiteSpace(image.Url))
             {
-                bytes = await httpClient.GetByteArrayAsync(image.Url);
+                bytes = await httpClient.GetByteArrayAsync(image.Url, cancellationToken);
             }
             else
             {
@@ -43,7 +44,7 @@ internal static class ImageResultWriter
             Directory.CreateDirectory(Path.GetDirectoryName(path) ?? ".");
             await using (var stream = new FileStream(path, overwrite ? FileMode.Create : FileMode.CreateNew,
                 FileAccess.Write, FileShare.None, 4096, FileOptions.Asynchronous))
-                await stream.WriteAsync(bytes);
+                await stream.WriteAsync(bytes, cancellationToken);
             saved.Add(path);
             savedFiles?.Add(path);
         }
@@ -54,7 +55,7 @@ internal static class ImageResultWriter
     private static bool IsOutputDirectory(string path) =>
         Directory.Exists(path) || Path.EndsInDirectorySeparator(path) || !Path.HasExtension(path);
 
-    private static List<string> ResolveOutputPaths(string outputPath, string outputFormat, int count)
+    internal static List<string> ResolveOutputPaths(string outputPath, string outputFormat, int count)
     {
         var normalizedOutput = string.IsNullOrWhiteSpace(outputPath) ? "." : outputPath;
         var extension = outputFormat == "jpeg" ? ".jpg" : $".{outputFormat}";

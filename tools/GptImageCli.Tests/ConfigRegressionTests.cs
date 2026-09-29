@@ -97,10 +97,10 @@ internal static class ConfigRegressionTests
                 foreach (var selector in new[] { "--endpoint-id", "--endpoint-name" })
                 {
                     var action = mode == "responses" ? "responses" : mode == "edit" ? "images/edits" : "images/generations";
-                    await Wire(mode, "/Proxy/v1/" + action, variable == "explicit" ? ExplicitKey : ExternalKey, 0,
+                    await Wire(mode, "/Proxy/v1/" + action, ConfigKey, 0,
                         [.. keyArgs, selector, "proxy"]);
                     if (variable != "explicit")
-                        await Wire(mode, "/Proxy/v1/" + action, ExplicitKey, 0, [selector, "proxy", "--api-key", ExplicitKey]);
+                        await Wire(mode, "/Proxy/v1/" + action, ConfigKey, 0, [selector, "proxy", "--api-key", ExplicitKey]);
                 }
                 if (variable != "explicit") Environment.SetEnvironmentVariable(variable, null);
             }
@@ -151,7 +151,9 @@ internal static class ConfigRegressionTests
         {
             await Write(Node(Origin + "/Proxy" + tail));
             await Reject(mode, "未唯一匹配", "--endpoint", Origin + "/Proxy" + otherTail);
-            await Reject(mode, "不一致", "--endpoint", Origin + "/Proxy" + otherTail, "--endpoint-id", "proxy");
+            var selected = await CommandLineParser.ParseAsync(Args(mode, "--endpoint", Origin + "/Proxy" + otherTail, "--endpoint-id", "proxy"));
+            check(selected.Endpoint == Origin + "/Proxy" + tail && selected.ApiKey == ConfigKey,
+                "explicit selector overrides external URL and key as a configured pair");
             await Write(Node(Origin + "/Proxy" + tail), other: Node(Origin + "/Proxy" + otherTail, key: OtherKey, id: "other"));
             var parsed = await CommandLineParser.ParseAsync(Args(mode, "--endpoint", Origin + "/Proxy" + otherTail));
             check(parsed.ApiKey == OtherKey, "distinct versioned BaseUrl selects only its own credential");

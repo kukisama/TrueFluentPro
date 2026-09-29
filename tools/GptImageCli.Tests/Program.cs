@@ -27,6 +27,20 @@ void Check(bool condition, string name)
 string[] Arguments(params string[] extra) =>
     ["--endpoint", "http://127.0.0.1:1", "--api-key", "offline-only", "--prompt", "把帆船改为绿色", .. extra];
 
+if (args.Length == 2 && args[0] == "--queue-published")
+{
+    await QueuePublishedTests.RunAsync(root, args[1], png, Check);
+    Console.WriteLine($"Published queue checks passed. Artifacts: {root}");
+    return;
+}
+
+if (args.Contains("--queue-only"))
+{
+    await QueueTests.RunAsync(root, source, png, Check);
+    Console.WriteLine($"Queue checks passed. Artifacts: {root}");
+    return;
+}
+
 async Task Reject(string name, params string[] extra)
 {
     using var output = new StringWriter();
@@ -41,7 +55,14 @@ await Reject("empty image value", "--mode", "edit", "--image=");
 await Reject("nonexistent image", "--mode", "edit", "--image", Path.Combine(root, "missing.png"));
 await Reject("directory as image", "--mode", "edit", "--image", root);
 await Reject("generation must not ignore image", "--mode", "images", "--image", source);
-await Reject("responses must not ignore image", "--mode", "responses", "--image", source);
+using (var referenceRequest = RequestFactory.Create(await CommandLineParser.ParseAsync(Arguments("--mode", "responses", "--image", source))))
+{
+    using var referenceJson = JsonDocument.Parse(await referenceRequest.Content!.ReadAsStringAsync());
+    var content = referenceJson.RootElement.GetProperty("input")[0].GetProperty("content");
+    Check(content[1].GetProperty("type").GetString() == "input_image" &&
+        content[1].GetProperty("image_url").GetString()!.StartsWith("data:image/png;base64,"),
+        "responses preserves its supported reference image input without a network request");
+}
 await Reject("any missing reference", "--mode", "edit", "--image", source, "--image", Path.Combine(root, "missing.png"));
 var textFile = Path.Combine(root, "invalid.txt");
 await File.WriteAllTextAsync(textFile, "not an image");
@@ -142,4 +163,5 @@ await SafetyTests.RunAsync(root, source, png, Check);
 await DefaultOutputTests.RunAsync(root, source, png, Check);
 await ConfigTests.RunAsync(root, source, png, Check);
 await ConfigRegressionTests.RunAsync(root, source, png, Check);
+await QueueTests.RunAsync(root, source, png, Check);
 Console.WriteLine($"All {checks} checks passed. Artifacts: {root}");

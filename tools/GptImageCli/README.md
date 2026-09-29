@@ -6,16 +6,90 @@
 
 ### AI 日常调用：只执行，不扩展任务
 
-普通画图只需已加载的 `SKILL.md`：适度整理提示词，以同目录 exe 的绝对路径执行一次，再从终端 JSON 报告生成数量和文件路径。本指南是按需参考，不是每次画图的前置阅读任务。
+普通画图只需已加载的 `SKILL.md`：适度整理提示词，以同目录 exe 的绝对路径执行一次 `submit ... --json`，再报告“已入队，任务编号：…”，不声称已生成。用户明确需要同步等待时，仍可使用不带 `submit` 的旧接口。本指南是按需参考，不是每次画图的前置阅读任务。
 
 - 连接优先级为用户本次明确选择 → `SKILL.md` 的“本地明文默认配置”区块 → exe 自身解析。本地节点仅在该区块配置，不写入 exe、不修改环境变量；发布前可删除源码模板及安装副本中的该区块。
 - 不先读其他文件、查网页、运行帮助或列节点，不读取主程序配置及密钥。以下安装检查与故障说明供用户主动要求时使用，不自动执行。
-- 缺目标、缺密钥、节点无效、配置歧义或请求失败，报错即停；让用户先在主程序或受信任启动器中配置后重新发起，不自动排障、切换节点或重试。
-- 成功只报告“已生成 N 张图片：路径”。不额外确认文件存在、不解码、不打开或再次展示图片；图片内容、尺寸和透明效果由用户人肉检查。
+- 缺目标、缺密钥、节点无效、配置歧义或提交失败，报告后停止，不自动排障、切换节点或重复提交；若已返回任务编号，保留编号供查询。队列内的 429 重试由 worker 按配置执行，不由 AI 另发请求。
+- `submit` 成功只表示入队；同步调用报告保存成功后才可说“已生成 N 张图片：路径”。不额外确认文件存在、不解码、不打开或再次展示图片；图片内容、尺寸和透明效果由用户人肉检查。
+
+## 持久队列（推荐）
+
+同一个 `gpt-image.exe` 提供提交、交互管理和后台执行器，无需另装服务。以下 `$exe` 表示同目录 exe 的绝对路径；在用户项目目录执行，节点按用户选择或 skill 默认配置填写：
+
+```powershell
+& $exe submit --endpoint-name '公司大实例' --prompt '一只小胖狗' --name '小胖狗插画' --output './图片' --json
+& $exe queue
+```
+
+`submit` 接受现有生图/改图参数，额外支持可选 `--name`（最多 120 字符、不能含控制字符，仅为任务名称，不是输出文件名）。`--json` 的队列回复是 **camelCase `QueueReply`**：`ok`、`message`、`jobId`、`workerRunning`，另有按命令使用的可空字段。`ok=true`、退出码 0 仅表示提交操作成功，**不表示图片已生成**；后台启动失败时也可能已有 `jobId`，不要重复提交。
+
+### 已实现的管理入口
+
+以下参数均传给同一个 exe；`submit` / `queue` 必须是首个参数，连接参数及 `--queue-dir` 放在其后。任务编号是数据库 ID，不是列表行号。
+
+| 命令 | 用途 |
+| --- | --- |
+| `queue` | 默认打开交互管理；不接受 `--json` |
+| `queue list [--queue ID] [--state 状态] [--page N] [--json]` | 概览与任务分页，每页最多 20 条 |
+| `queue show 编号 [--json]` | 任务、结果与尝试记录；此命令即使不加 `--json` 也输出 JSON |
+| `queue pause [队列ID]` / `queue resume [队列ID]` | 省略 ID 表示全局暂停/继续；暂停只阻止新派发，不中止在途请求 |
+| `queue cancel 编号` | 仅取消 `pending` / `retry_wait` 任务 |
+| `queue clear --yes [--queue ID]` | 确认取消剩余排队/重试任务；不删除执行中任务、历史或输出 |
+| `queue config` | 显示配置路径与内容，不是设置参数的子命令 |
+| `queue start` | 启动后台处理未完成任务，仍遵守暂停及禁用状态 |
+| `queue worker` | 前台诊断执行器；Ctrl+C 停止派发并等待在途任务结束 |
+
+状态名：`pending`、`running`、`retry_wait`、`succeeded`、`failed`、`unknown`、`cancelled`。菜单 **6** 查看任务详情与尝试记录，菜单 **8** 编辑 RPM、并发、额外重试数、等待秒数。菜单 **3**“全部继续”同时解除全局和各队列暂停；命令行无 ID 的 `queue resume` 只解除全局暂停。菜单 **4** 清除全部队列的已确认剩余任务，**不受当前列表筛选限制**。
+
+`submit` 与 `queue` 均支持 `--queue-dir <本机目录>` 隔离配置、数据库、输入快照及 worker；之后管理时须传同一目录。默认是 `%LOCALAPPDATA%\GptImageCli`，**同一 Windows 用户的所有项目共享**，不是每个项目各自限速；不支持网络共享目录。
+
+### 配额与重试配置
+
+首次使用队列时，若用户目录没有 `queue-settings.json`，程序从内置 `queue-settings.default.json` 创建；已有配置不被默认值覆盖。可手改该 JSON，或用菜单 8 修改数值；`models`、`enabled`、新增队列需手改。配置只含调度策略，**不放密钥**；它与连接配置 `--config` 是两回事。
+
+| 队列 ID | 默认模型映射 | 每分钟请求数 / 并发上限 | 额外重试数 / 等待秒数 |
+| --- | --- | --- | --- |
+| `image2` | `gpt-image-2` | 9 / 4 | 2 / 61 |
+| `flare` | `gpt-image-2.5-flare` | 2 / 1 | 2 / 61 |
+| `sunburst` | `gpt-image-2.5-sunburst` | 2 / 1 | 2 / 61 |
+
+- 字段为 `version=1`、`queues`，每组包含 `id`、`models`、`requestsPerMinute`、`maxConcurrency`、`retryCount`、`retryDelaySeconds`、`enabled`。模型映射可扩展，模型名不能跨组重复；未映射模型拒绝入队。有逻辑模型名时优先按其映射，否则按图片模型/部署名匹配。
+- 每组独立限速、并发和冷却；同组不同节点仍共享该组额度。采用近 60 秒滚动计数并间隔派发，**按派发尝试/请求数，不按 Token 或图片数**；`n>1` 仍计一次请求，重试另计。服务若按图片张数限额，须自行对应调整 `n` 和本地配额，CLI 不自动换算。
+- 默认仅对可重试的 **HTTP 429** 等待至少 61 秒、最多额外重试 2 次（总尝试最多 3 次）；服务端 `Retry-After` 要求更久则等更久，并冷却该组。`insufficient_quota` / `billing_hard_limit_reached` 不重试；认证错误、5xx、超时等也不自动重试。不保证重试未计费。
+- 运行中的 worker 约每秒重载配置；非法配置、不可读配置或移除活动队列时保留上一份有效配置并记事件。不要移除仍有未完成任务的队列 ID。
+
+### 持久化、安全与恢复
+
+- 队列支持 Windows 10/11，SQLite 使用系统 **`winsqlite3`**（托管访问层为 `Microsoft.Data.Sqlite.Core` 与对应 provider），不随包携带额外 native SQLite 库。
+- `queue.db` 保存任务、`events` 事件和 `attempts` 尝试记录。菜单 6 / `queue show` 查看任务结果与尝试记录；当前没有事件列表或日志导出命令，不要编造 `queue export`。
+- 完整任务参数与提交时解析的连接快照用 **DPAPI `CurrentUser`** 加密保存，worker 不重新读取最新连接配置。密钥轮换不自动更新旧任务；应取消可取消的旧任务，再重新提交。任务名称、结果/路径和日志不是全库加密内容，名称中不要放秘密。
+- 参考图及蒙版复制到队列目录的 `inputs/`，输出在提交时固定为绝对路径；不要删除这些输入快照。DPAPI 保护的是任务参数，不是参考图副本。
+- 无 `pending` / `running` / `retry_wait` 任务后 worker 自动退出；若暂停或禁用后仍有任务，则继续等候。关闭管理界面不停止 worker。关机后没有登录自启功能；下次 `submit` 或 `queue start` 启动恢复，`queue resume` / 菜单继续操作也会尝试启动后台。
+- 恢复时原 `running` 转为 **`unknown`**，需人工核对输出与服务端记录，不自动重画，也没有“确认后重试”子命令。超时/网络中断可能已经计费。`cancel` / `clear` 只改排队或等待重试任务的状态，保留历史和输出，不是清库。
+- 入队事务会预留预计输出文件：活动任务不能共享同一目标，即使传 `--overwrite` 也不允许并发占用。取消待办或任务正常结束后释放；`unknown` 保留预留，请核对后使用新文件名。Responses 实际多图数量由服务决定，超出预期数量的文件仍依赖保存时的防覆盖检查。
+- 后台须完成数据库初始化和恢复后才确认就绪；正在运行的不同二进制版本不混用同一队列，请等旧执行器结束后再使用新版。某些 SDK/IDE 宿主的 Windows Job 禁止后台脱离时，会明确返回启动失败及已入队编号；从独立 PowerShell 运行 `queue start`，不要重新提交任务。
+
+### 开发验证
+
+离线队列回归：`dotnet run --project tools/GptImageCli.Tests -- --queue-only`。
+实际发布产物回归：先构建测试项目，再**直接运行** `tools/GptImageCli.Tests/bin/Debug/net10.0/GptImageCli.Tests.exe --queue-published <发布exe绝对路径>`，不要用会限制子进程脱离的 `dotnet run` 宿主。测试使用回环地址、假密钥和独立目录，验证实际四并发、429、终端菜单及退出行为。
+
+`Test-QueueLive.ps1` 仅在显式 `-AllowPaidRequests` 后运行：指定 exe、节点名称及尚不存在的输出目录，提交一张 image2 参考图，再分别用 image2、flare、sunburst 执行 `edit`，记录实际 PNG 尺寸。会产生费用，不属于默认构建或离线测试。
+
+2026-09-29 当前节点实测：三模型 `edit` 均一次 HTTP 200、实际 PNG `832x800`，三个请求执行时间存在重叠。证据范围及结果位置见 `CAPABILITIES.md`；不是所有端点或任意 16 倍数尺寸的通用保证。
+
+### 队列结果与旧接口区别
+
+`queue show` 的外层字段是 camelCase（如 `job.state`、`attempts[].httpStatus`），但 `job.result` 保留原 `CliReport` 的 **snake_case**（如 `exit_code`、`http_status`、`files`）。查看实际结果时，依据 `job.state` 与 `job.result` 判断，不能把查询回复的 `ok=true` 当成任务成功；`succeeded` 且结果 `ok=true`、`exit_code=0`、`files` 非空才报告已保存的数量与路径。失败也可能有部分输出。
+
+`submit` 退出码：0 表示提交成功，2 表示捕获到操作错误且本次没有新提交的编号，1 表示已入队但后续启动等操作失败；错误详情在 `message`，不是同步报告的 `error`。查询成功的退出码不是任务的生成退出码。
+
+## 安装与同步兼容用法
 
 ### 在项目中使用 skill
 
-将完整发行目录放到 `.github/skills/gpt-image-cli/`，保留同级 `SKILL.md`、`gpt-image.exe`、`README.md`、`CAPABILITIES.md`、`release-manifest.json`。在支持项目 skills 的 AI 宿主中，可输入 `/gpt-image-cli`，或说「使用 gpt-image-cli skill 生成／修改图片」。若当前会话尚未发现新 skill，显式让 AI 读取该目录的 `SKILL.md`。
+将完整发行目录放到 `.github/skills/gpt-image-cli/`，保留同级 `SKILL.md`、`gpt-image.exe`、`README.md`、`CAPABILITIES.md`、`queue-settings.default.json`、`release-manifest.json`。在支持项目 skills 的 AI 宿主中，可输入 `/gpt-image-cli`，或说「使用 gpt-image-cli skill 生成／修改图片」。若当前会话尚未发现新 skill，显式让 AI 读取该目录的 `SKILL.md`。
 
 AI 根据已加载的 `SKILL.md` 定位同级 exe，无需 PATH 或原源码目录。平台以发行清单的 `runtime` 为准：`win-x64` Release 用于 Windows x64，不能在 macOS/Linux 直接运行；Native AOT 无需安装 .NET。图片保存位置与 skill 安装位置独立。安装验证只执行 `--help`，不会自动发送付费请求。
 
@@ -31,7 +105,9 @@ $exe = (Resolve-Path -LiteralPath './gpt-image.exe').Path
 
 `$exe` 保存实际路径，之后可切换到需要保存图片的项目目录；不需要把 exe 加入 PATH。若从其他目录调用，也可将 `$exe` 设置为实际 exe 的完整路径；带引号的路径前必须使用 `&`。`--list-endpoints` 是离线读配置，**不是** `--list`，列表成功不表示认证或生图成功。
 
-### 2. 用已配置的节点生成一张图
+### 2. 用已配置的节点同步生成一张图（兼容模式）
+
+**下文从本节到“JSON 结果与文件安全”的不带 `submit` 示例描述旧同步接口**，其 snake_case JSON 与不自动重试行为保留。生图参数及连接规则也供 `submit` 复用，但队列回复与重试规则以上文为准。
 
 将下面的“节点友好名称”替换为列表中实际名称，提示词可直接替换为自己的需求；会发送一次可能计费的请求：
 
@@ -96,7 +172,7 @@ APIM 与 OpenAI 兼容节点都可使用 Key 认证，但 HTTP 头可能是 `api
 
 ## 常用参数
 
-有值参数支持 `--name value` 或 `--name=value`；仅 `--image` 累积重复，其他同名参数最后一次生效。`--help`、`--json`、`--overwrite`、`--list-endpoints`、`--no-config` 是无值开关。别名与其余参数见 `--help`。
+有值参数支持 `--参数 value` 或 `--参数=value`；仅 `--image` 累积重复，其他同名参数最后一次生效。`--help`、`--json`、`--overwrite`、`--list-endpoints`、`--no-config` 是无值开关。任务名称 `--name` 仅用于 `submit`；别名与其余生图参数见 `--help`。
 
 | 参数 | 默认值与合法范围 |
 | --- | --- |
@@ -119,7 +195,7 @@ APIM 与 OpenAI 兼容节点都可使用 Key 认证，但 HTTP 头可能是 `api
 | `--output-compression` | 默认不发送；整数 0..100，仅 JPEG/WebP；接受参数不保证调节效果 |
 | `--moderation` | 默认不发送；可选 `auto` / `low`，接受参数不代表安全拦截效果保证 |
 
-## JSON 结果与文件安全
+## JSON 结果与文件安全（旧同步接口）
 
 ### 失败时怎么看
 
@@ -130,7 +206,7 @@ APIM 与 OpenAI 兼容节点都可使用 Key 认证，但 HTTP 头可能是 `api
 | HTTP 404 | 检查所选服务的路由及部署，不自动尝试多个地址 |
 | 退出码 2、没有 HTTP 状态 | 参数、配置或输入检查失败，未发送请求；节点配置等 CLI 校验错误会在 JSON 的 `error` 与 stderr 中给出具体原因和操作建议 |
 
-`POST [配置目标 URL 已隐藏]` 是隐私保护，不是 URL 缺失。HTTP 失败或超时后不要自动重试；确认原因和付费授权后再执行一次。错误输出只报告密钥来源，不打印密钥值或服务端原文。
+`POST [配置目标 URL 已隐藏]` 是隐私保护，不是 URL 缺失。同步调用在 HTTP 失败或超时后不自动重试；确认原因和付费授权后再执行一次。错误输出只报告密钥来源，不打印密钥值或服务端原文。
 
 stdout 和 stderr 均使用 UTF-8。`--json` 让 stdout 输出单份 JSON，帮助、进度和错误走 stderr；它不是 JSON edit 请求开关。解析 JSON 时不要用 `2>&1` 把 stderr 混进 stdout；JSON 中的 `\uXXXX` 中文转义会在解析后还原。
 
@@ -149,7 +225,7 @@ stdout 和 stderr 均使用 UTF-8。`--json` 让 stdout 输出单份 JSON，帮�
 
 默认拒绝覆盖已有文件。images/edit 显式文件输出按 n 预检目标，冲突可在请求前退出 2；目录输出、Responses 或保存竞态的冲突可能在请求后退出 1，应检查部分 `files`。仅显式 `--overwrite` 才允许覆盖。
 
-不自动重试、切路由、改模型或增加数量。超时或网络错误仍可能已计费，重试须重新获得用户授权。
+旧同步接口不自动重试；队列仅按配置对可重试的 429 自动重试。两者均不自动切路由、改模型或增加数量。超时或网络错误仍可能已计费，人工重新提交/调用须重新获得用户授权。
 
 ## 本地构建与 CI/CD
 
@@ -162,7 +238,9 @@ stdout 和 stderr 均使用 UTF-8。`--json` 让 stdout 输出单份 JSON，帮�
 
 两者支持 `-NoOpen`；Release 默认 win-x64，可传 `-Runtime win-arm64`。构建需要 .NET 10 SDK，Release 另需 Visual Studio C++ 桌面开发工具链（ARM64 需对应组件）。请分发 Release 输出中的整个 `gpt-image-cli` 目录，而不是其上层构建目录或仅 SKILL.md。
 
-交付文件全部收在 `gpt-image-cli/` 内：根目录放 `SKILL.md`、exe、两份说明和 Release 清单，不再嵌套 `skills/gpt-image-cli`，也不在 skill 的上一层放 CLI 文件。Debug 所需 DLL 等也在 skill 内；当前交付包不需要额外子目录。
+Release AOT 使用体积优先优化、JSON 源生成和固定地区无关格式，裁掉未用 HTTP/3 与框架遥测；保留中文内容、异常文本和堆栈。SQLite 使用 Windows 系统库，不为队列引入 GUI、ORM 或额外原生数据库文件。修改这些裁剪设置后须重新验证实际发布产物。
+
+交付文件全部收在 `gpt-image-cli/` 内：根目录放 `SKILL.md`、exe、两份说明、`queue-settings.default.json` 和 Release 清单，不再嵌套 `skills/gpt-image-cli`，也不在 skill 的上一层放 CLI 文件。Debug 所需 DLL 等也在 skill 内；运行时队列数据位于用户队列目录，不是发行目录。
 
 `Publish.ps1` 为共用发布入口，默认也输出项目的 Release skill 目录；自动化可用 `-OutputDirectory` 指定最终 skill 目录（脚本不会再附加子目录）。GitHub Release 工作流为 x64、ARM64 分别发布主程序、Updater 和 CLI，再整体压缩上传；完整 skill 位于主包的 `skills/gpt-image-cli/`。本地常规构建不使用仓库根 `artifacts`；该目录仅用于专门打包、测试产物及 CI 暂存。
 
@@ -171,6 +249,7 @@ stdout 和 stderr 均使用 UTF-8。`--json` 让 stdout 输出单份 JSON，帮�
 - `gpt-image.exe`：独立 CLI；使用与操作系统和架构匹配的发行包。
 - 随主程序交付时位于 `skills/gpt-image-cli/`；将整个 `gpt-image-cli` 复制到目标项目所用的 skill 根目录即可，例如 `.github/skills/` 或 `.claude/skills/`，具体发现规则以 AI 宿主为准。无需安装或启动主程序，也不依赖原仓库位置。
 - `release-manifest.json`：发行信息；以其中 `mode` 判断运行模式。仅 `NativeAot` 表示原生 AOT；`Managed` 是自包含托管模式，**两者均无需另装 .NET**，不能混淆模式与版本。
-- `README.md`：使用、参数和结果说明；`CAPABILITIES.md`：能力结果及适用边界。
+- `README.md`：使用、参数和结果说明；`CAPABILITIES.md`：源码已实现能力及适用边界，不是在线测试通过报告。
+- `queue-settings.default.json`：默认队列模板，同时内置于 exe；运行时编辑用户队列目录中的 `queue-settings.json`，不把密钥写入模板。
 - `SKILL.md`：交付包根目录中的 AI 调用规程，与 exe 及两份说明同级；源码模板位于 `skills/gpt-image-cli/SKILL.md`。让 AI 显式读取或按宿主机制注册；普通 `skills/` 目录不保证自动发现。
 - 文档与 skill 是包内伴随文件，不嵌入 exe；保留目录结构以维持相对链接。

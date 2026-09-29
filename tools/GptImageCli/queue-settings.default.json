@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "queues": [
+    {
+      "id": "image2",
+      "models": ["gpt-image-2"],
+      "requestsPerMinute": 9,
+      "maxConcurrency": 4,
+      "retryCount": 2,
+      "retryDelaySeconds": 61,
+      "enabled": true
+    },
+    {
+      "id": "flare",
+      "models": ["gpt-image-2.5-flare"],
+      "requestsPerMinute": 2,
+      "maxConcurrency": 1,
+      "retryCount": 2,
+      "retryDelaySeconds": 61,
+      "enabled": true
+    },
+    {
+      "id": "sunburst",
+      "models": ["gpt-image-2.5-sunburst"],
+      "requestsPerMinute": 2,
+      "maxConcurrency": 1,
+      "retryCount": 2,
+      "retryDelaySeconds": 61,
+      "enabled": true
+    }
+  ]
+}
