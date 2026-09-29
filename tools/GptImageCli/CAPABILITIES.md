@@ -1,58 +1,39 @@
 # GPT-Image CLI 能力与边界
 
-本文区分源码能力和已记录的实测结果；本机节点的成功不代表所有端点、尺寸或视觉效果都有保证。具体用法见 [README.md](./README.md)，普通 AI 调用按发行包中的 `SKILL.md` 执行。
+参数速查见 [README.md](./README.md)。以下区分本地实现契约与真实端点实测，不以请求构造能力推断远端兼容性。
 
-## 请求能力（源码已实现）
+## 请求契约
 
-依据 `RequestFactory.cs`、`CommandLineParser.cs`、`ParameterValidation.cs`：
+依据 `CommandLineParser.cs`、`ParameterValidation.cs`、`RequestFactory.cs`。
 
-| 模式 | 请求构造 | 本地约束与远端边界 |
+| 模式 | 本地请求构造 | 边界 |
 | --- | --- | --- |
-| `images`（默认） | POST `images/generations`，JSON 文本生图；模型、提示词、尺寸、质量、格式，`n>1` 时发送 `n` | 不接受参考图；服务是否接受参数与数量需单独确认 |
-| `edit` | POST `images/edits`，multipart；单图字段 `image`、多图字段 `image[]`，可带 PNG `mask` | 至少 1 张参考图，最多 16 张；支持本地 PNG/JPG/JPEG/WebP，不是 JSON edit |
-| `responses` | POST `responses`，文字模型配合 `image_generation` 工具；本地参考图以内联 `input_image` data URL 发送 | **支持带图请求构造**，不是“Responses 不支持图片”；不经过 `/files`，仍取决于网关、文字模型及图片工具/模型的支持 |
+| `images` | POST `images/generations`，JSON | 不接受参考图 |
+| `edit` | POST `images/edits`，multipart；单图 `image`、多图 `image[]`，可带 `mask` | 1..16 张本地 PNG/JPEG/WebP |
+| `responses` | POST `responses`，文字模型 + `image_generation`；参考图为 `input_image` data URL | 不经 `/files`；依赖网关、文字模型和图片工具/模型支持 |
 
-- Responses 的 `--model` 选择文字模型，`--image-model` 选择图片模型/部署；请求带 `x-ms-oai-image-generation-deployment` 头。带参考图时工具包含图片模型与 `action`，默认 `generate`，可选 `edit` / `auto`；`edit` 必须有参考图。`n>1` 通过文字指令要求多个变体，不保证实际数量。
-- 默认 `images`、`1024x640`、`medium`、PNG、1 张、10 分钟超时；无配置覆盖时图片模型为 `gpt-image-2`、Responses 文字模型为 `gpt-4.1`。可设置质量、格式、背景、压缩及审核参数；参数可发送不等于服务必接受或效果保证。
-- 本地 `n` 范围 1..10、参考图最多 16 张。非 Responses 的逻辑模型 `gpt-image-2` 校验尺寸为 `auto` 或 16 倍数宽高，单边 ≤3840、长宽比 ≤3、总像素 655360..8294400；这不是其他模型或端点的统一规格。
-- 蒙版只用于 edit：检查 PNG 文件头，不解码核验 alpha 或尺寸。用户须提供与首图尺寸一致、alpha=0 表示可编辑区的蒙版；不承诺区域外像素锁定。透明背景不允许 JPEG；实际透明、尺寸、压缩及画面由用户验收。
-- Bearer / `api-key` 认证和配置节点路由已实现；显式节点名称/ID 用该节点的地址与 Key 覆盖本次外层连接。AI 不读取配置 Key。CLI 不自动探测或切换路由，不自动读取 `.env`。
-- 当前 CLI 未暴露 SSE、JSON edit、`input_fidelity`、Batch、`file_id` 或会话续接入口；连续编辑是把已保存文件作为新的输入。此边界仅指当前 CLI，不代表上游平台不支持。
+- Responses 的 `--model` 是文字模型，`--image-model` 是图片模型/部署；请求带 `x-ms-oai-image-generation-deployment`。带图时工具含图片模型及 `action`，默认 `generate`；`edit` 必须有图。
+- 本地 `n=1..10`；Responses 仅用文字要求多变体，不保证数量。可发送的尺寸、质量、格式、背景、压缩和审核参数不等于远端接受或效果保证。
+- 非 Responses 的逻辑模型 `gpt-image-2`：尺寸为 `auto` 或宽高均为 16 倍数，边长 ≤3840、比例 ≤3、像素数 655360..8294400；其他模型仍以端点限制为准。
+- edit 蒙版只检查 PNG 文件头，不解码检查尺寸/alpha；输入须与首图同尺寸，alpha=0 为可编辑区，不是区域外像素锁。透明背景不能配 JPEG。
+- 当前 CLI 未暴露 SSE、JSON edit、`input_fidelity`、Batch、`file_id` 或会话续接；连续编辑以已保存图片作新输入。这不代表上游平台没有相应能力。
 
-## 执行与持久队列
+## 队列、结果与文件契约
 
-依据 `Program.cs`、`QueueApplication.cs`、`QueueModels.cs`、`QueueConsole.cs`、`QueueStore.cs`、`QueueWorker.cs` 和 `queue-settings.default.json`：
+依据 `QueueApplication.cs`、`QueueModels.cs`、`QueueSubmission.cs`、`QueueStore.cs`、`ImageResultWriter.cs`。
 
-- 同 exe 的 `submit [生图参数] [--name 名称] --json` 持久入队并尝试启动后台。camelCase `QueueReply` 的 `ok/message/jobId/workerRunning` 表示提交情况，**不是生成结果**；后台启动失败也可能已经分配编号，不可据此重复提交。
-- `queue` 默认交互管理；已实现 `list`、`show`、`pause`、`resume`、`cancel`、`clear --yes`、`config`、`start`、`worker`，筛选/分页参数见 README。菜单 6 提供详情与尝试记录，菜单 8 编辑数值配额；没有任务重试、日志导出或登录自启命令。
-- 默认同 Windows 用户全项目共享 `%LOCALAPPDATA%\GptImageCli`；`--queue-dir` 可隔离到另一本机目录，提交与管理必须一致。配置首次由内置默认生成，已有配置保留；可手改 `queue-settings.json`，模型映射可扩展，菜单 8 不改模型或启用状态。
-- 默认三组：`image2` → `gpt-image-2` 为 **9 RPM / 4 并发**；`flare` → `gpt-image-2.5-flare`、`sunburst` → `gpt-image-2.5-sunburst` 各 **2 RPM / 1 并发**。各组独立，按模型归组，不按节点分别计额；未映射模型拒绝入队。
-- 近 60 秒滚动限额配合间隔派发，按派发尝试/请求数计量，**不是 Token 或图片张数**；`n>1` 仍算一次请求，重试另计。按图片额度收费/限流的服务需用户自行对应配置，不能把本地限速当成服务配额保证。
-- 默认可重试 HTTP 429 等待至少 **61 秒**，额外重试 **2 次**（最多总 **3 次**）；更长 `Retry-After` 优先，并冷却该组。`insufficient_quota`、`billing_hard_limit_reached` 不重试；其他 HTTP 错误、超时、网络及保存错误不自动重试。
-- worker 在无未完成任务时退出；暂停/禁用仍有任务则等候，关闭管理不停止后台。关机后须再次触发恢复：下次 `submit` / `queue start`（继续操作也尝试启动），无登录启动功能。恢复的原 `running` 转 `unknown`，需人工确认，不自动重画。
-- `cancel` / `clear` 仅取消 `pending` / `retry_wait`，保留历史与输出，不撤回在途请求。菜单 3 同时解除全局/各组暂停，无 ID 的 `queue resume` 仅解除全局；菜单 4 清除范围不随列表筛选缩小。
-- 旧的不带 `submit` 同步接口继续保留原 snake_case JSON，且不自动重试；队列与同步调用不能混用成功判据。
+- `submit` / `queue` 必须是首个参数。`QueueReply` 为 camelCase；提交字段 `ok/message/jobId/workerRunning` 不包含生成结果。后台启动失败仍可能已有 `jobId`。
+- `submit` 退出码：0 为提交成功；2 为捕获到错误且未取得新编号；1 为已入队后发生错误。查询退出码表示查询操作，不是生成结果。
+- `queue show` 的 `job.result` 保留 snake_case：保存成功要求 `job.state=succeeded`、`result.ok=true`、`result.exit_code=0`、`result.files` 非空；失败也可能有部分文件。保存成功不等于视觉验收。
+- `--json` 只控制本地报告；stdout 为 JSON，stderr 为进度/错误，不能合并后解析。旧同步接口不受队列调度，也不自动重试。
+- 队列按模型映射共享请求限额，不按节点分额；未映射模型拒绝入队。`n>1` 仍计一次请求，重试另计；仅按配置重试可重试 HTTP 429，配额不足错误不重试。
+- 队列使用 Windows 10/11 系统 `winsqlite3`。参数及连接快照用 DPAPI `CurrentUser` 加密，旧任务不随密钥轮换更新；不是全库加密，参考图/蒙版副本及结果路径不在保护范围。
+- 输出在提交时固定为绝对路径，默认拒绝覆盖；活动任务不能预留相同目标，即使有 `--overwrite`。`unknown` 保留预留；Responses 超出预计数量的输出依赖保存时防覆盖。
+- 中断的 `running` 恢复为 `unknown`，不自动重画；超时/中断可能已计费。取消/清除只作用于 `pending/retry_wait`，保留历史和文件，不撤回在途请求；没有任务重试、事件导出或登录自启命令。
 
-## 数据与结果边界
+## 已记录实测（2026-09-29）
 
-依据 `QueuePaths.cs`、`QueueSubmission.cs`、`QueueWorkerHost.cs`、`CliReport.cs`、`ImageResponseParser.cs`、`ImageResultWriter.cs` 及项目依赖：
-
-- 队列面向 Windows 10/11，使用系统 `winsqlite3`，通过 `Microsoft.Data.Sqlite.Core` / `SQLitePCLRaw.provider.winsqlite3` 访问，不附带额外 native SQLite 库。后台独立进程可能被宿主权限限制；报告启动失败时先保留任务编号。
-- DPAPI `CurrentUser` 加密完整任务参数与解析后的连接快照。worker 用提交时的快照，密钥轮换不会更新旧任务，须取消可取消的旧任务再重新提交。此保护不是全库/全目录加密，也不是可跨用户搬迁的凭据格式。
-- 参考图及蒙版复制到队列 `inputs/`；副本未由上述 DPAPI 加密。输出在提交时固定为绝对路径。`queue-settings.json` 无密钥；任务名称、结果路径、事件与尝试记录不属于加密载荷，不要在名称中放秘密。
-- `queue.db` 内含 `events` / `attempts`；`queue show` / 菜单 6 返回任务结果与尝试记录，不提供 events 导出。外层 camelCase，`job.result` 是原 snake_case `CliReport`（如 `exit_code`、`http_status`、`files`）。
-- 响应解析支持 Images 的 `data[].b64_json/url` 及 Responses 的 `image_generation_call.result` 图片数据；保存支持 Base64 和下载 URL，返回已保存文件绝对路径，默认拒绝覆盖，失败可能保留部分输出。
-- `submit` 入队成功、`queue show` 查询成功、HTTP 成功、图片保存成功和视觉效果验收是不同结论。只有生成结果报告保存成功才报告文件；超时/中断可能仍在服务端执行或已计费，不据此自动重画。
-
-## 发布与验证状态
-
-默认队列模板既内置于 exe，也复制到输出目录；运行时修改用户的 `queue-settings.json`。未改动用户安装目录，当前交付产物位于项目的 Release skill 目录。
-
-2026-09-29 核验：
-
-- Native AOT 发布成功；实际 exe 的回环服务观察到 image2 四个同时未完成的请求，另一模型队列可独立发送；429 重试、耗尽、暂停取消、菜单修改并发和后台退出均通过。
-- 默认策略 61 秒等待、2 次额外重试用可控时间验证；产物级测试将等待改为 1 秒以缩短测试，不将其冒充真实等待 61 秒的在线结果。
-- 当前配置节点真实队列请求：image2 生成参考图 HTTP 200、实际 PNG `1024x640`；image2、image2.5 flare、image2.5 sunburst 各一次 `edit` 均 HTTP 200，实际 PNG **`832x800`**，都未重试。三个 edit 的请求时间存在重叠。该结果支持这组 16 像素倍数尺寸，不代表任意 16 倍数尺寸均符合服务的面积、比例或上限要求。
-- 真实结果记录：仓库 `artifacts/gpt-image-queue/live-20260929-edit/results.json`。核验实际 PNG 头尺寸，不作画面内容或区域保持的视觉验收承诺。
-- 后续输出预留、后台就绪握手及 AOT 裁剪通过本地回归，未为这些收尾改动增加付费请求。
-- 使用 Windows 系统 SQLite，不携带额外 SQLite 原生 DLL；AOT 保留异常文本/堆栈，关闭未使用的 HTTP/3、框架遥测及地区格式依赖，中文参数和配置、实际终端菜单回归通过。
+- 当前节点：image2 生成参考图为 HTTP 200、PNG `1024x640`；image2、flare、sunburst 的 `edit` 各一次 HTTP 200，实际 PNG 均为 **`832x800`**，无重试，三个编辑请求时间有重叠。
+- 证据：仓库 `artifacts/gpt-image-queue/live-20260929-edit/results.json`；核验了 PNG 头尺寸，未据此验证画面或蒙版保持效果。
+- **不是任意 16 倍数尺寸均可用**，也不是跨端点保证；例如 `512x512` 不满足上述 image2 本地最小像素数。
+- 发布 exe 回环测试记录：image2 四并发及跨组独立派发、429、取消和后台退出通过；默认 61 秒等待用可控时间验证，产物测试缩为 1 秒，不是在线实等 61 秒。

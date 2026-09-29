@@ -1,95 +1,76 @@
 ---
 name: gpt-image-cli
-description: '用户要求画图、生图或改图时，调用同目录 gpt-image.exe submit 提交队列；适度整理提示词，按默认节点提交，只报告已入队和任务编号。用户明确需要同步时保留旧调用；缺配置或提交失败即停止，不重复提交。'
-argument-hint: '描述要生成的图片或编辑要求，可附图片路径和节点名称'
+description: '用户要求画图、生图、edit 改图、查询或维护队列、修改配额、模型对比、替换项目图片资源时使用。用同目录 gpt-image.exe 异步 submit，默认 flare；调度、并发与 429 重试由队列处理。'
 ---
 
-# 独立 CLI 生图与改图
+# gpt-image-cli 命令速查
 
-本文件已包含日常调用所需说明。默认流程只有：**整理提示词 → 执行一次 exe 的 `submit` → 报告已入队及任务编号**。不要把入队说成已生成，也不要把画图扩展成代码开发、环境排障或图片验收任务。用户明确要求同步等待时，使用不带 `submit` 的兼容接口，见下文。
-
-以宿主提供的本 SKILL.md 绝对路径定位同目录 `gpt-image.exe`，始终用 exe 绝对路径调用；不要写死安装盘符、依赖 PATH 或当前工作目录查找 exe。图片保存到用户项目，不放进 skill 目录。安装位置未知、exe 缺失或平台不匹配时，说明缺项并停止，不寻找替代版本、不编译、不下载。
-
-普通生图不读取 README、CAPABILITIES、发行清单、仓库源码、记忆或其他外部文件，不查网页，不列计划，不先运行 `--help` / `--list-endpoints`。已加载的本文件无需重复读取。[使用指南](./README.md)、[能力边界](./CAPABILITIES.md)、[发行清单](./release-manifest.json) 仅供用户明确要求安装检查、特殊参数说明或排障时按需使用；不确定且本文件未覆盖的参数不要猜。
-
-## 本地明文默认配置（发布前可删除整个区块）
-
-默认节点名称：`公司大实例`
-
-用户未指定连接方式时，每次显式追加 `--endpoint-name "公司大实例"`，不询问、不枚举节点。这是 skill 的本地调用约定，不是 exe 内置默认值，也不修改任何环境变量。所选节点的地址和 Key 成对覆盖本次外层连接环境，避免误用外层密钥。
-
-发布时可删除本区块；源码模板与安装副本应同步删除。删除后不传节点选择器，由 exe 按既有环境与主程序默认配置解析；若缺目标、缺密钥或有歧义，报错停止，不猜节点。
-
-## 授权与安全
-
-1. 用户明确提出画图或改图，即授权按本 skill 的默认配置提交该次操作（可能计费），后台按已有队列策略派发及处理可重试的 429；默认一张，不擅自改配额，不重复确认，不额外发探测请求。改图缺输入路径等无法执行的信息时才简短询问。
-2. 可以补充构图、风格、光线等提示词细节，但保留用户主体与要求，不擅自增加数量或提高质量档位。用户要求原样提示词时不加工。
-3. 连接优先级：用户本次明确指定的节点或独立连接方式 → 上述本地默认配置 → exe 自身配置解析。显式节点用 `--endpoint-name` 或 `--endpoint-id`，两者互斥，不额外混入默认节点。
-4. 地址和密钥交给 exe 内部解析。AI 不打开主程序配置、不读取或回显密钥及环境变量、不在命令行传密钥、不通过聊天索取秘密。独立连接由受信任启动器提供 `GPT_IMAGE_ENDPOINT`、`GPT_IMAGE_API_KEY`，可用 `--no-config`；CLI 不自动读 `.env`，不要为本次画图创建配置文件。
-5. 缺目标、缺密钥、节点无效或有歧义时，转述 CLI 的安全错误并立即停止，让用户先在主程序或受信任启动器中配置，完成后重新发起。不要自动列节点、询问换节点、换认证头、清环境、查网页或重复提交。其他调用失败也同样停止；已有 `jobId` 时保留编号，后台启动失败不等于未入队；超时或网络失败可能已经计费。
-
-## 输入、输出与参数
-
-- 默认保存到进程当前工作目录，执行前明确工作目录即可；队列在提交时固定输出绝对路径。`--output` 可省略或只给目录，程序自动创建目录并用时间戳＋随机 ID 命名；不要自行生成 GUID、时间戳或预查输出文件。用户明确给出文件名时照用，扩展名匹配格式；新建带点目录以分隔符结尾。默认不覆盖，明确授权后才加 `--overwrite`。可选 `--name` 只设任务名称（最多 120 字符，无控制字符），不设文件名，不放秘密。
-- 生图用 `--prompt`；仅提示词确实复杂时才创建 UTF-8 文件并用 `--prompt-file`。常规改图用 `--mode edit --image`，多图按用户顺序重复并说明各图角色，文件校验交给 exe，不预先打开图片。明确要试用 Responses 参考图生成/编辑时，参见 README 的 `--mode responses --image --image-action` 用法；端点支持需单独验证，不自动改路由。
-- 蒙版用 `--mask`：用户提供带 alpha 的 PNG，与首图尺寸一致，alpha=0 为可编辑区；不是像素锁。说明输入约束即可，默认不解码检查。
-- 连续编辑须先获得上次已完成任务的 `job.result.files`（同步模式为 `files`），再将选定结果作为下次 `--image`；不能从入队回复猜文件名。输出可继续省略或复用同一目录，自动生成新文件名，不是会话续接。
-- 默认值：`mode=images`、`size=1024x640`、`quality=medium`（中）、`format=png`、`n=1`、输出为当前目录自动命名。默认参数应省略，不主动改为 low；仅按用户需要覆盖，不承诺固定成本。
-- 用户同时给出“单个元素尺寸”和拼图/宫格数量时，尺寸描述默认指每个元素，而不是最终画布。例如“单个图标 512×512，4 个拼一张图”应理解为 2×2 四宫格，最终 `--size 1024x1024`；一般按“画布宽 = 单元宽 × 列数、画布高 = 单元高 × 行数”推导。提示词中同时写明单元尺寸、网格和最终画布尺寸，并以最终画布尺寸检查 CLI/端点限制。只有网格形状无法从用户描述合理确定时才询问，不要擅自把单元尺寸直接当成最终输出尺寸。
-- “N 个拼一张图”“一张图包含 N 个方案”表示生成 1 个文件并在画布内排版，保持默认 `n=1`；只有用户明确要求 N 张独立图片或 N 个文件时才使用 `--n N`。
-- 用户要求拼图中的每个单元可按指定尺寸精确裁切时，网格边界必须等分最终画布，透明留白、安全边距和视觉间隔应放在各单元内部，不额外增加会挤占单元尺寸的画布沟槽。例如 1024×1024 的 2×2 网格应形成四个严格的 512×512 裁切区。
-- 调用始终使用已定位的 exe 绝对路径；图片输入和输出目录根据用户项目定位，与 skill 安装目录分开，默认不要把图片写进 skill 目录。
-- quality 可选 `low/medium/high/auto`，format 可选 `png/jpeg/webp`；n 本地范围 1..10，不保证服务全部接受。指定尺寸用 `--size`，例如 `1024x640`、`640x1024`、`816x816`，默认不覆盖；参数合法性由 exe 和服务校验。
-- 透明图用 `--background transparent`，保留默认 PNG；不支持透明 JPEG。实际透明效果由用户检查，不宣称已经验证。
-
-## 常见用例
-
-下表为传给已定位 exe 的操作参数；**所有示例均按连接优先级添加连接参数**，不把表中省略节点当作跳过本地默认配置。`submit` / `queue` 必须是首个参数，连接参数及 `--queue-dir` 放在其后。尖括号占位符必须替换为实际内容。
-
-PowerShell 最短调用模板（`$exe` 填同目录 exe 的实际绝对路径，`$connectionArgs` 按上述配置填写；无连接覆盖时为空数组）：
-
+## 定位与默认
+- 用宿主提供的本 SKILL.md 绝对路径定位同目录 exe；始终以 `& $exe` 调用，避免 PATH、同名函数或 alias 干扰。路径未知或 exe 缺失则说明缺项，不另找版本。
 ```powershell
-$exe = '<同目录 gpt-image.exe 的绝对路径>'
-$connectionArgs = @('--endpoint-name', '<按连接优先级选定的节点名称>')
-$imageArgs = @('--prompt', '<整理后的用户提示词>', '--name', '<简短任务名称>', '--json')
-& $exe submit @connectionArgs @imageArgs
+$exe = Join-Path (Split-Path -Parent '<本 SKILL.md 的实际绝对路径>') 'gpt-image.exe'
 ```
+- 默认每次显式传 `--endpoint-name "公司大实例"`；用户指定节点或连接方式时替换默认。`--endpoint-name` 与 `--endpoint-id` 互斥，连接交给 exe 解析。
+- 每次显式传 `--image-model`：默认 flare=`gpt-image-2.5-flare`；新需求明确要更精细时 sunburst=`gpt-image-2.5-sunburst`；明确 image2=`gpt-image-2` 优先。连续编辑保持已选模型，用户要求更换才改。
+- 默认 `mode=images / size=1024x640 / quality=medium / format=png / n=1`，默认参数省略；不随模型改变质量或失败自动回退。
+- 画图请求即授权提交；改配额、暂停、取消或清除须用户授权，不读 Key；普通调用不读 help、枚举 endpoints 或做配置预检。
 
-在用户项目目录执行，终端等待本次提交命令返回即可，生成由后台处理；不自动轮询等待。不增加帮助调用、配置预检、解码器或额外脚本；输出 JSON 可直接阅读，无需包装长段 PowerShell。
+## 最短提交
+在当前用户项目目录执行，替换提示词和图片路径；`submit` / `queue` 必须是首个参数。
+```powershell
+& $exe submit --endpoint-name "公司大实例" --image-model gpt-image-2.5-flare --prompt "绘制橙色小帆船插画" --json
+& $exe submit --endpoint-name "公司大实例" --image-model gpt-image-2.5-flare --mode edit --image "<原图绝对路径>" --prompt "船帆改为绿色，保留构图" --json
+```
+- 输出默认当前项目目录，勿放 skill 目录；`--output` 可为目录或文件，省略/目录输出自动命名。`--name` 仅任务名，不设文件名；文件扩展名匹配格式，覆盖须授权并加 `--overwrite`。
+- 不同页面、不同提示词各自独立 `submit`；`--n` 是同一提示词的多张结果，不代表多个提示词，拼图仍 `n=1`。
+- 多图编辑重复 `--image` 并说明图序角色；连续编辑从上次成功任务的 `job.result.files` 取真实路径，不用计划路径或猜文件名。
+- 需近方形编辑时可推荐 `--size 832x800`：当前节点三个模型的 edit 已实测；不推断所有 16 倍数均可用，其余限制见末尾能力边界。
+- 生成是异步任务：提交退出码 0、`ok=true` 且有 `jobId` 即报告“已入队，编号 …”并返回，不默认轮询等出图。失败报告 `message`；即使失败仍有编号，也保留编号，不当成未入队重提。
 
-| 用户需求 | 最短参数示例 | 操作要点 |
-| --- | --- | --- |
-| 生成一张插画 | `submit --prompt "绘制一艘橙色小帆船的简洁插画" --json` | 加上本地默认连接参数，生成参数默认值全部省略 |
-| 用指定节点生成 | `submit --endpoint-name "<友好名称>" --prompt "<用户提示词>" --json` | 用用户指定节点替换默认节点，不先列举，不读取 key |
-| 修改已有图片 | `submit --mode edit --image "<原图绝对路径>" --prompt "将船帆改为绿色，保留构图" --json` | 输入必须存在，不用 Responses |
-| 两图参考合成 | `submit --mode edit --image "<图一绝对路径>" --image "<图二绝对路径>" --prompt "保留图一的主体，参考图二的配色" --json` | 图序与提示词中的角色对应 |
-| 继续修改上次结果 | `submit --mode edit --image "<上次已保存文件的绝对路径>" --prompt "将背景改成日落，保留主体" --json` | 从真实结果的文件列表取路径，不编造文件名或会话 ID；保留已选节点参数 |
-| 透明图或指定输出 | `submit --prompt "<用户提示词>" --background transparent --output "<目标目录>" --json` | PNG 默认无需重复指定；普通图省略 background；明确文件名时改传 `<目标目录>/result.png`，目录输出自动命名 |
+## 查询与结果
+```powershell
+& $exe queue list --json
+& $exe queue show <任务编号> --json
+```
+- 默认只查询一次；外层 JSON 是 camelCase（如 `jobId`），`job.result` 是 snake_case（如 `exit_code`），stdout 与 stderr 不合并解析。
+- 只有 `job.state="succeeded"`、`job.result.ok=true`、`job.result.exit_code=0` 且 `job.result.files` 非空，才报告已保存数量及路径；外层 `ok` 仅说明查询成功。
+- `unknown` 表示结果不明，`failed` 表示最终失败；均不自动重提，超时也不另开生成请求。用户要求等待、继续编辑或资源替换时查询原任务，等待方法见扩展示例。
+- 默认不解码、展示或视觉评价结果；仅用户要求验图或资源替换需要时检查。已入队不等于已保存，已保存不等于已验图或已替换资源。
 
-这些用例按需选择，不要逐条执行。蒙版按需追加 `--mask "<蒙版绝对路径.png>"`；其他覆盖参数仅按用户要求添加。
+## 队列命令
+以下 `[id]` 是可选队列 ID（`image2/flare/sunburst`），`<任务编号>` 来自回执；执行时替换占位符。
+| 命令 | 用途 |
+| --- | --- |
+| `& $exe queue` | 打开交互 console |
+| `& $exe queue pause [id]` | 暂停派发；省略 ID 为全局 |
+| `& $exe queue resume [id]` | 解除指定队列/全局暂停；无 ID 不解除各队列单独暂停 |
+| `& $exe queue cancel <任务编号>` | 取消指定未执行任务 |
+| `& $exe queue clear --yes [--queue id]` | 取消全部或指定队列剩余未执行任务 |
+| `& $exe queue start` | 启动后台并恢复任务 |
+| `& $exe queue config` | 显示运行时配置内容和 `settingsPath` |
+- `cancel/clear` 只取消 `pending/retry_wait`，保留历史与图片，不能撤回在途请求；`pause` 也不停止在途请求。
+- 无未完成任务后后台退出，无常驻服务；关机后下次 `queue start` 或 `submit` 恢复，中断的在途任务转 `unknown`，需核对。
 
-## 队列管理（用户要求时）
+## 修改配额与模型映射
+先运行 `& $exe queue config` 找实际运行时 `queue-settings.json`，默认位于 `%LOCALAPPDATA%\GptImageCli`（同一 Windows 用户跨项目共享）。直接用编辑器修改该文件；或运行 `& $exe queue` 进入 console **菜单 8**，修改 RPM、并发、重试数和延时等数值；`models/enabled` 需直接编辑 JSON。
+以下是完整默认配置示例，不是要求覆盖现有配置：
+```json
+{
+	"version": 1,
+	"queues": [
+		{"id":"image2","models":["gpt-image-2"],"requestsPerMinute":9,"maxConcurrency":4,"retryCount":2,"retryDelaySeconds":61,"enabled":true},
+		{"id":"flare","models":["gpt-image-2.5-flare"],"requestsPerMinute":2,"maxConcurrency":1,"retryCount":2,"retryDelaySeconds":61,"enabled":true},
+		{"id":"sunburst","models":["gpt-image-2.5-sunburst"],"requestsPerMinute":2,"maxConcurrency":1,"retryCount":2,"retryDelaySeconds":61,"enabled":true}
+	]
+}
+```
+- 每个队列配额独立：`requestsPerMinute` 是请求/分钟，非 Token 或图片张数，`n>1` 仍一次请求；`maxConcurrency` 是同时在途请求上限，`enabled` 控制是否启用。
+- `models` 可映射新模型；新增模型在 `queues` 追加独立条目，设置唯一 `id`、模型名及全部配额字段。模型名不跨队列重复，未映射不能入队；已配置值不自动改。
+- 并发、限速及可重试 HTTP 429 由队列程序处理，AI 不自行实现；默认 `retryCount=2` 为额外 2 次（最多 3 次尝试），`retryDelaySeconds=61` 为等待秒数，服务要求更久则等更久，配额不足不重试。
+- 保存合法配置后后台自动重载。只有用户要求隔离才用 `--queue-dir <本机目录>`，提交与管理保持一致，不通过另建队列目录绕过限额。
 
-- 同 exe 的 `queue` 默认打开交互管理；自动化查询用 `queue list --json`、`queue show <编号> --json`。支持 `list --queue ID --state 状态 --page N`、`pause [队列ID]`、`resume [队列ID]`、`cancel <编号>`、`clear --yes [--queue ID]`、`config`、`start`、`worker`，均以 `queue` 开头。不要编造重试、导出或登录自启命令。
-- 默认 `%LOCALAPPDATA%\GptImageCli` 在同一 Windows 用户的全项目间共享；仅用户需要隔离时使用 `--queue-dir <本机目录>`，提交与后续管理须一致，不能靠另建目录绕过服务限额。
-- 用户目录的 `queue-settings.json` 首次从内置默认生成；配置无密钥，可手改或菜单 8 改 RPM/并发/重试数/等待秒数。默认 `image2`（`gpt-image-2`）为 9 RPM / 4 并发，`flare`、`sunburst`（对应 `gpt-image-2.5-flare`、`gpt-image-2.5-sunburst`）各 2 RPM / 1 并发；各组独立，`models` 映射可手改扩展，未映射模型拒绝入队。
-- 各组默认 61 秒、额外 2 次重试（总计最多 3 次），仅限可重试的 HTTP 429；服务要求更久则等更久，配额不足错误不重试。按请求而非 Token/张数计量，`n>1` 仍一次请求；图片额度须用户自行对应，AI 不代改配额。
-- 队列使用 Windows 10/11 系统 `winsqlite3`，不带额外 native SQLite；完整任务参数/连接快照由 DPAPI `CurrentUser` 加密，参考图/蒙版复制到 `inputs/`。密钥轮换不会刷新旧任务，须取消可取消旧任务再重新提交，不读取配置 Key 来“修复”任务。
-- `events` / `attempts` 在 SQLite；菜单 6 / `queue show` 查看结果与尝试记录，不是事件导出。菜单 8 不改模型和启用状态；菜单 3 解除全部暂停，而无 ID 的 `queue resume` 只解除全局暂停。
-- 无未完成任务后 worker 退出；暂停仍有任务时等候。关闭管理不停止 worker；关机后须下次 `submit` / `queue start` 启动恢复（继续操作也会尝试启动），无登录启动功能。中断的 `running` 转 `unknown`，需人工核对，不自动重画。
-- `cancel` / `clear` 仅取消 `pending` / `retry_wait`，保留历史与输出，不能撤回在途请求；清除前须获用户授权。菜单 4 清除全部队列已确认剩余任务，不受当前筛选限制。
-
-## 执行结果与收尾
-
-1. 带 `--json` 时 stdout 是单份 JSON，stderr 是进度或错误；不要用 `2>&1` 混合解析。`submit` 返回 camelCase `QueueReply`：读取 `ok`、`message`、`jobId`、`workerRunning`，**不要期待同步的 `exit_code` / `files`**。
-2. `submit` 退出码 0、`ok=true` 且有 `jobId` 时，只说“已入队，任务编号：<jobId>”。失败转述 `message` 后停止；若仍有 `jobId`，报告任务已入队但后台启动失败/未确认，保留编号，不重复提交。无需自动查询或等待图片。
-3. 用户明确要求查询时，读取 `queue show` 的 `job.state`、`job.result` 与 `attempts`。外层为 camelCase，嵌套 `job.result` 仍是 snake_case 同步报告。只有 `succeeded` 且结果 `ok=true`、`exit_code=0`、`files` 非空才报告已保存数量及路径；外层查询 `ok=true` 不表示生成成功。失败的部分输出也须如实说明。
-4. **用户明确要求同步时**，从上述调用中去掉 `submit`、`--name`、`--queue-dir`，沿用其他生图参数和 `--json`。旧接口不入队、不自动重试；检查进程与报告退出码均为 0、`ok=true`、`files` 非空，再说“已生成 N 张图片：<路径>”。错误字段为 `error` / `api_error` / `http_status`；退出码 2 为参数/输入错误，1 为运行失败。
-5. **返回结果后立即收尾，不再调用工具检查图片**：不 Test-Path、不读文件头、不解码尺寸/格式/alpha、不打开图片、不截图、不做视觉评价。图片由用户人肉检查，除非用户另行明确要求验图。无需嵌入图片、重复缩略图、声明验收通过或撰写变更日志。
-
-## 停止边界
-
-- CLI Responses 支持本地参考图 data URL，但不支持会话续接；`--image-action generate|edit|auto` 的端点兼容性须单独验证，不能从请求构造能力推断远端一定出图。普通改图仍按明确选择的模式提交一次，失败不自动切换；尺寸限制依端点，实际尺寸可能与请求不同。
-- 不编造 SSE、JSON edit、`input_fidelity`、Batch、`file_id` 参数；CLI 未暴露这些入口，`--json` 仅指本地结果报告。
-- AI 不重复提交、换路由、改模型、增加数量或擅自覆盖文件；队列仅由 worker 按配置处理可重试的 429，旧同步接口不自动重试。超时/网络错误也可能已计费，先报告结果，人工重发须重新授权。
-- 区分 CLI 参数范围、端点支持与本次实际结果，不将条件性结论写成所有云端保证。
+## 罕用扩展（按需读取）
+- [扩展示例](./references/examples.md)：批量/三模型对比直接 `foreach` 分别提交、mask、Responses、可选等待脚本 `Get-GptImageQueueResult.ps1`。
+- [项目资源替换](./references/project-resource-replacement.md)：应用成功结果。
+- [平台图标入口](./references/platform-icon-entrypoints.md)：定位资源引用。
+- [能力边界](./CAPABILITIES.md)：尺寸、参数及端点限制。

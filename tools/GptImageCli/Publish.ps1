@@ -16,7 +16,9 @@ try {
     $output = if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
         Join-Path $PSScriptRoot "bin/Release/net10.0/$Runtime/$folder/gpt-image-cli"
     } else { [IO.Path]::GetFullPath($OutputDirectory) }
-    foreach ($required in @('README.md', 'CAPABILITIES.md', 'skills/gpt-image-cli/SKILL.md')) {
+    foreach ($required in @('README.md', 'CAPABILITIES.md', 'skills/gpt-image-cli/SKILL.md',
+        'skills/gpt-image-cli/Get-GptImageQueueResult.ps1', 'skills/gpt-image-cli/references/examples.md',
+        'skills/gpt-image-cli/references/project-resource-replacement.md', 'skills/gpt-image-cli/references/platform-icon-entrypoints.md')) {
         if (-not (Test-Path -LiteralPath (Join-Path $PSScriptRoot $required) -PathType Leaf)) {
             throw "缺少发布所需文件：$required"
         }
@@ -37,8 +39,14 @@ try {
 
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'README.md') -Destination $output -Force
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'CAPABILITIES.md') -Destination $output -Force
-    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'skills/gpt-image-cli/SKILL.md') `
-        -Destination (Join-Path $output 'SKILL.md') -Force
+    $obsolete = Join-Path $output 'Invoke-GptImageModelComparison.ps1'
+    if (Test-Path -LiteralPath $obsolete -PathType Leaf) { Remove-Item -LiteralPath $obsolete }
+    $skillRoot = Join-Path $PSScriptRoot 'skills/gpt-image-cli'
+    foreach ($asset in Get-ChildItem -LiteralPath $skillRoot -Recurse -File) {
+        $destination = Join-Path $output ([IO.Path]::GetRelativePath($skillRoot, $asset.FullName))
+        [void][IO.Directory]::CreateDirectory((Split-Path -Parent $destination))
+        Copy-Item -LiteralPath $asset.FullName -Destination $destination -Force
+    }
     $executable = Join-Path $output $(if ($Runtime.StartsWith('win-')) { 'gpt-image.exe' } else { 'gpt-image' })
     $manifest = [ordered]@{
         mode = $Mode
