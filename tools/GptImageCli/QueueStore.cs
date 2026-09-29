@@ -36,6 +36,9 @@ internal sealed class QueueStore
                 finished_at INTEGER, http_status INTEGER, request_id TEXT, stage TEXT NOT NULL DEFAULT 'prepare', error TEXT,
                 PRIMARY KEY(job_id,number));
             CREATE INDEX IF NOT EXISTS attempts_rate ON attempts(queue,started_at);
+            CREATE TABLE IF NOT EXISTS attempt_diagnostics(
+                job_id INTEGER NOT NULL, number INTEGER NOT NULL, configuration TEXT NOT NULL,
+                dispatch TEXT NOT NULL, result TEXT, retry TEXT, PRIMARY KEY(job_id,number));
             CREATE TABLE IF NOT EXISTS queues(id TEXT PRIMARY KEY, paused INTEGER NOT NULL DEFAULT 0,
                 next_at INTEGER NOT NULL DEFAULT 0);
             CREATE TABLE IF NOT EXISTS control(id INTEGER PRIMARY KEY CHECK(id=1), paused INTEGER NOT NULL DEFAULT 0);
@@ -97,10 +100,11 @@ internal sealed class QueueStore
     {
         using var db = Open(); using var tx = db.BeginTransaction();
         Execute(db, tx, "INSERT OR IGNORE INTO queues(id) VALUES($q)", ("$q", policy.Id));
+        var running = (int)Scalar(db, tx, "SELECT COUNT(*) FROM jobs WHERE queue=$q AND state='running'", ("$q", policy.Id));
+        var sent = (int)Scalar(db, tx, "SELECT COUNT(*) FROM attempts WHERE queue=$q AND started_at>$since", ("$q", policy.Id), ("$since", now - 60000));
         if (!policy.Enabled || Scalar(db, tx, "SELECT paused FROM control WHERE id=1") != 0 ||
             Scalar(db, tx, "SELECT COUNT(*) FROM queues WHERE id=$q AND (paused=1 OR next_at>$now)", ("$q", policy.Id), ("$now", now)) != 0 ||
-            Scalar(db, tx, "SELECT COUNT(*) FROM jobs WHERE queue=$q AND state='running'", ("$q", policy.Id)) >= policy.MaxConcurrency ||
-            Scalar(db, tx, "SELECT COUNT(*) FROM attempts WHERE queue=$q AND started_at>$since", ("$q", policy.Id), ("$since", now - 60000)) >= policy.RequestsPerMinute)
+            running >= policy.MaxConcurrency || sent >= policy.RequestsPerMinute)
             return null;
         // Retries stay ahead of new work, but never bypass group cooldown or rate limits.
         using var cmd = Command(db, tx, """
@@ -118,6 +122,12 @@ internal sealed class QueueStore
         Execute(db, tx, "INSERT INTO attempts(job_id,number,queue,started_at) VALUES($id,$a,$q,$now)",
             ("$id", job.Id), ("$a", job.Attempt), ("$q", policy.Id), ("$now", now));
         var spacing = (long)Math.Ceiling(60000d / policy.RequestsPerMinute);
+        Execute(db, tx, """
+            INSERT INTO attempt_diagnostics(job_id,number,configuration,dispatch) VALUES($id,$a,$config,$dispatch)
+            """, ("$id", job.Id), ("$a", job.Attempt),
+            ("$config", JsonSerializer.Serialize(policy, QueueJsonContext.Default.QueueDefinition)),
+            ("$dispatch", JsonSerializer.Serialize(new QueueDispatchDecision(policy.Id, "queue_limits_satisfied",
+                running, sent, spacing), QueueJsonContext.Default.QueueDispatchDecision)));
         Execute(db, tx, "UPDATE queues SET next_at=$next WHERE id=$q", ("$next", now + spacing), ("$q", policy.Id));
         Event(db, tx, job.Id, "started", $"开始第 {job.Attempt} 次尝试。");
         tx.Commit(); return job;
@@ -125,11 +135,15 @@ internal sealed class QueueStore
 
     public void Complete(ClaimedJob job, QueueDefinition policy, CliReport report, int exit, long now)
     {
+        // Preserve the transport failure before replacing the job's latest summary with a retry message.
+        var attemptResult = report.Serialize(exit);
+        var attemptError = report.Error;
         var rateLimited = report.HttpStatus == 429 && report.ApiErrorCode is not ("insufficient_quota" or "billing_hard_limit_reached");
         var retry = rateLimited && job.Attempt <= policy.RetryCount;
         var delay = Math.Max(policy.RetryDelaySeconds, report.RetryAfterSeconds);
+        var excessiveDelay = !double.IsFinite(delay) || delay > TimeSpan.FromDays(365).TotalSeconds;
         // Never overflow a persisted timestamp on untrusted response headers; fail rather than retry too soon.
-        if (!double.IsFinite(delay) || delay > TimeSpan.FromDays(365).TotalSeconds)
+        if (excessiveDelay)
         { retry = false; delay = TimeSpan.FromDays(365).TotalSeconds; report.Error = "服务端等待时间过长；请人工检查限额。"; }
         var next = rateLimited ? now + (long)Math.Ceiling(delay * 1000) : 0;
         var state = exit == 0 ? JobState.Succeeded : retry ? JobState.Retry :
@@ -139,6 +153,21 @@ internal sealed class QueueStore
         using var db = Open(); using var tx = db.BeginTransaction();
         if (rateLimited)
             Execute(db, tx, "UPDATE queues SET next_at=MAX(next_at,$next) WHERE id=$q", ("$next", next), ("$q", job.Queue));
+        var cooldownUntil = rateLimited
+            ? Scalar(db, tx, "SELECT next_at FROM queues WHERE id=$q", ("$q", job.Queue)) : 0;
+        var reason = exit == 0 ? "succeeded" : !rateLimited
+            ? report.HttpStatus == 429 ? "quota_not_retryable" : "not_retryable"
+            : excessiveDelay ? "server_delay_too_long" : retry ? "http_429" : "retry_exhausted";
+        var decision = new QueueRetryDecision(retry, reason, policy.RetryCount, job.Attempt - 1,
+            policy.RetryDelaySeconds, report.RetryAfterSeconds, report.RetryAfterSource,
+            rateLimited ? delay : 0, !rateLimited ? "none" : excessiveDelay ? "safety_cap"
+                : report.RetryAfterSeconds > policy.RetryDelaySeconds ? "server"
+                : report.RetryAfterSeconds == policy.RetryDelaySeconds ? "configuration_and_server" : "configuration",
+            rateLimited ? "queue" : "none", job.Queue, cooldownUntil, retry ? next : 0);
+        Execute(db, tx, """
+            UPDATE attempt_diagnostics SET result=$result,retry=$retry WHERE job_id=$id AND number=$a
+            """, ("$result", attemptResult), ("$retry", JsonSerializer.Serialize(decision, QueueJsonContext.Default.QueueRetryDecision)),
+            ("$id", job.Id), ("$a", job.Attempt));
         Execute(db, tx, """
             UPDATE jobs SET state=$state,updated_at=$now,next_at=$next,http_status=$http,error=$error,result=$result
             WHERE id=$id AND state='running'
@@ -148,7 +177,10 @@ internal sealed class QueueStore
             UPDATE attempts SET finished_at=$now,http_status=$http,request_id=$request,stage=$stage,error=$error
             WHERE job_id=$id AND number=$a
             """, ("$now", now), ("$http", report.HttpStatus), ("$request", report.RequestId), ("$stage", report.Stage),
-            ("$error", report.Error), ("$id", job.Id), ("$a", job.Attempt));
+            ("$error", attemptError), ("$id", job.Id), ("$a", job.Attempt));
+        if (rateLimited)
+            Event(db, tx, job.Id, "queue_cooldown",
+                $"queue={job.Queue}; attempt={job.Attempt}; reason={reason}; delaySource={decision.DelaySource}; cooldownUntil={cooldownUntil}; scope=queue（仅本队列，其他队列不受影响）。");
         Event(db, tx, job.Id, state, exit == 0 ? "图片已保存。" : report.Error ?? "任务执行失败。");
         if (state is JobState.Succeeded or JobState.Failed)
             Execute(db, tx, "DELETE FROM output_reservations WHERE job_id=$id", ("$id", job.Id));
@@ -226,11 +258,18 @@ internal sealed class QueueStore
     public List<QueueAttempt> Attempts(long id)
     {
         using var db = Open(); using var cmd = Command(db, null, """
-            SELECT job_id,number,started_at,finished_at,http_status,request_id,stage,error FROM attempts WHERE job_id=$id ORDER BY number
+            SELECT a.job_id,a.number,a.started_at,a.finished_at,a.http_status,a.request_id,a.stage,a.error,
+                d.configuration,d.dispatch,d.result,d.retry
+            FROM attempts a LEFT JOIN attempt_diagnostics d ON d.job_id=a.job_id AND d.number=a.number
+            WHERE a.job_id=$id ORDER BY a.number
             """, ("$id", id));
         using var r = cmd.ExecuteReader(); var result = new List<QueueAttempt>();
         while (r.Read()) result.Add(new(r.GetInt64(0), r.GetInt32(1), r.GetInt64(2), r.IsDBNull(3) ? null : r.GetInt64(3),
-            r.IsDBNull(4) ? null : r.GetInt32(4), r.IsDBNull(5) ? null : r.GetString(5), r.GetString(6), r.IsDBNull(7) ? null : r.GetString(7)));
+            r.IsDBNull(4) ? null : r.GetInt32(4), r.IsDBNull(5) ? null : r.GetString(5), r.GetString(6), r.IsDBNull(7) ? null : r.GetString(7),
+            r.IsDBNull(8) ? null : ParseResult(r.GetString(8)),
+            r.IsDBNull(9) ? null : JsonSerializer.Deserialize(r.GetString(9), QueueJsonContext.Default.QueueDispatchDecision),
+            r.IsDBNull(10) ? null : ParseResult(r.GetString(10)),
+            r.IsDBNull(11) ? null : JsonSerializer.Deserialize(r.GetString(11), QueueJsonContext.Default.QueueRetryDecision)));
         return result;
     }
     public QueueSnapshot Snapshot(QueuePaths paths, QueueSettings settings, string? queue = null, string? state = null, int page = 1)

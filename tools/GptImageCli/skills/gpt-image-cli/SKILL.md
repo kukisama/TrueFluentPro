@@ -33,6 +33,7 @@ $exe = Join-Path (Split-Path -Parent '<本 SKILL.md 的实际绝对路径>') 'gp
 & $exe queue show <任务编号> --json
 ```
 - 默认只查询一次；外层 JSON 是 camelCase（如 `jobId`），`job.result` 是 snake_case（如 `exit_code`），stdout 与 stderr 不合并解析。
+- 排查 429 看 `attempts` 而不只看 `job.result`：每次保留独立 `result`（脱敏错误、请求 ID、白名单响应头、阶段耗时）、`configuration`（当时配额）、`dispatch`、`retry`（重试依据、等待来源及 `cooldownUntil` UTC Unix 毫秒）。最终成功不覆盖失败证据；升级前记录新增字段可能为空。
 - 只有 `job.state="succeeded"`、`job.result.ok=true`、`job.result.exit_code=0` 且 `job.result.files` 非空，才报告已保存数量及路径；外层 `ok` 仅说明查询成功。
 - `unknown` 表示结果不明，`failed` 表示最终失败；均不自动重提，超时也不另开生成请求。用户要求等待、继续编辑或资源替换时查询原任务，等待方法见扩展示例。
 - 默认不解码、展示或视觉评价结果；仅用户要求验图或资源替换需要时检查。已入队不等于已保存，已保存不等于已验图或已替换资源。
@@ -65,6 +66,7 @@ $exe = Join-Path (Split-Path -Parent '<本 SKILL.md 的实际绝对路径>') 'gp
 }
 ```
 - 每个队列配额独立：`requestsPerMinute` 是请求/分钟，非 Token 或图片张数，`n>1` 仍一次请求；`maxConcurrency` 是同时在途请求上限，`enabled` 控制是否启用。
+- 429 冷却只影响命中的队列，不暂停其他模型队列；同一 `models` 条目内共用配额，全局暂停除外。服务商仍可能有跨模型共享限额；先查每次尝试证据，再决定调整参数。
 - `models` 可映射新模型；新增模型在 `queues` 追加独立条目，设置唯一 `id`、模型名及全部配额字段。模型名不跨队列重复，未映射不能入队；已配置值不自动改。
 - 并发、限速及可重试 HTTP 429 由队列程序处理，AI 不自行实现；默认 `retryCount=2` 为额外 2 次（最多 3 次尝试），`retryDelaySeconds=61` 为等待秒数，服务要求更久则等更久，配额不足不重试。
 - 保存合法配置后后台自动重载。只有用户要求隔离才用 `--queue-dir <本机目录>`，提交与管理保持一致，不通过另建队列目录绕过限额。

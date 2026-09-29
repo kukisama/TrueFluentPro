@@ -14,21 +14,72 @@ internal sealed class CliReport
     public string? RequestId => _requestId;
     public string? ApiErrorCode => _apiError?.code;
     public double RetryAfterSeconds { get; private set; }
+    public string? RetryAfterSource { get; private set; }
     public string Stage { get; set; } = "prepare";
+    public PhaseTimings Timings { get; } = new();
     private int? _httpStatus;
     private string? _requestId;
     private object? _usage;
     private ApiErrorReport? _apiError;
+    private RequestSettingsReport? _requestSettings;
     private readonly List<Dictionary<string, string>> _metadata = [];
+    private readonly Dictionary<string, string> _responseHeaders = [];
+    private readonly DiagnosticSanitizer _sanitizer = new();
+    private string _requestIdStatus = "missing";
+    private string? _requestIdSource;
 
-    public void CaptureHeaders(HttpResponseMessage response)
+    internal void ProtectInputs(CliOptions options)
     {
+        _sanitizer.AddSensitiveValue(options.ApiKey);
+        _sanitizer.AddSensitiveValue(options.Prompt);
+        _requestSettings = new RequestSettingsReport(
+            options.Mode.ToString().ToLowerInvariant(),
+            _sanitizer.Identifier(options.ImageModel, 128),
+            _sanitizer.Identifier(options.LogicalImageModel ?? options.ImageModel, 128),
+            options.Mode == ApiMode.Responses ? _sanitizer.Identifier(options.TextModel, 128) : null,
+            ValidMetadata("size", options.Size) ? _sanitizer.Identifier(options.Size) : null,
+            ValidMetadata("quality", options.Quality) ? _sanitizer.Identifier(options.Quality) : null,
+            options.Count, options.TimeoutMinutes);
+    }
+
+    public void CaptureHeaders(HttpResponseMessage response, string? apiKey = null)
+    {
+        _sanitizer.AddSensitiveValue(apiKey);
         _httpStatus = (int)response.StatusCode;
-        var retry = response.Headers.RetryAfter;
-        RetryAfterSeconds = Math.Max(0, retry?.Delta?.TotalSeconds ??
-            (retry?.Date is { } date ? (date - DateTimeOffset.UtcNow).TotalSeconds : 0));
-        foreach (var name in new[] { "x-request-id", "apim-request-id", "x-ms-request-id" })
-            if (response.Headers.TryGetValues(name, out var values)) { _requestId = values.FirstOrDefault(); break; }
+        _responseHeaders.Clear();
+        _requestId = null;
+        _requestIdSource = null;
+        _requestIdStatus = "missing";
+        RetryAfterSeconds = 0;
+        RetryAfterSource = null;
+        foreach (var name in DiagnosticHeaders.RequestIds.Concat(DiagnosticHeaders.Retry).Concat(DiagnosticHeaders.RateLimits))
+        {
+            if (!response.Headers.TryGetValues(name, out var values)) continue;
+            var entries = values.Take(2).ToArray();
+            var value = entries.Length == 1 ? entries[0] : null;
+            if (DiagnosticHeaders.RequestIds.Contains(name))
+            {
+                if (_requestId is null) _requestIdStatus = "unusable";
+                if (_sanitizer.Identifier(value, 256) is not { } id) continue;
+                _responseHeaders[name] = id;
+                if (_requestId is not null) continue;
+                _requestId = id;
+                _requestIdSource = name;
+                _requestIdStatus = "available";
+            }
+            else if (value is { Length: <= 8192 } && !_sanitizer.ContainsSensitiveValue(value))
+            {
+                if (DiagnosticHeaders.Retry.Contains(name))
+                {
+                    if (!DiagnosticHeaders.RetryValue(name, value, out var seconds)) continue;
+                    _responseHeaders[name] = value.Length <= 128 ? value : "[oversized numeric value omitted]";
+                    if (RetryAfterSource is not null && seconds <= RetryAfterSeconds) continue;
+                    RetryAfterSeconds = seconds;
+                    RetryAfterSource = name;
+                }
+                else if (value.Length <= 128 && DiagnosticHeaders.RateLimitValue(name, value)) _responseHeaders[name] = value;
+            }
+        }
     }
 
     public void CaptureBody(string text, string? apiKey = null)
@@ -42,10 +93,13 @@ internal sealed class CliReport
             if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("error", out var apiError) &&
                 apiError.ValueKind == JsonValueKind.Object)
                 _apiError = new ApiErrorReport(
-                    SafeErrorField(apiError, "code", apiKey),
-                    SafeErrorField(apiError, "type", apiKey),
-                    SafeErrorField(apiError, "param", apiKey),
-                    "服务端返回错误。");
+                    _sanitizer.ErrorField(apiError, "code"),
+                    _sanitizer.ErrorField(apiError, "type"),
+                    _sanitizer.ErrorField(apiError, "param"),
+                    _sanitizer.ErrorSummary(apiError));
+            CaptureBodyRequestId(root, "body");
+            if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("error", out var error))
+                CaptureBodyRequestId(error, "body.error");
             Visit(document.RootElement);
             if (document.RootElement.ValueKind == JsonValueKind.Object && document.RootElement.TryGetProperty("usage", out var usage))
                 _usage = NumericUsage(usage);
@@ -55,19 +109,36 @@ internal sealed class CliReport
 
     internal void RedactTransportMetadata(string? apiKey)
     {
-        bool Secret(string text) => !string.IsNullOrEmpty(apiKey) &&
-            (text.Contains(apiKey, StringComparison.Ordinal) || text.Contains(Uri.EscapeDataString(apiKey), StringComparison.Ordinal));
-        if (_requestId is { } id && (id.Length > 256 || id.Any(char.IsControl) || Secret(id))) _requestId = null;
-        if (Error is { } error && Secret(error)) Error = "任务失败；敏感错误详情已隐藏。";
+        _sanitizer.AddSensitiveValue(apiKey);
+        foreach (var name in _responseHeaders.Keys.ToArray())
+            if (_sanitizer.ContainsSensitiveValue(_responseHeaders[name])) _responseHeaders.Remove(name);
+        if (_requestId is { } id && _sanitizer.ContainsSensitiveValue(id))
+        {
+            _requestId = null;
+            _requestIdSource = null;
+            _requestIdStatus = "unusable";
+        }
+        if (RetryAfterSource is { } source && !_responseHeaders.ContainsKey(source))
+        {
+            RetryAfterSeconds = 0;
+            RetryAfterSource = null;
+        }
+        if (Error is { } error && _sanitizer.ContainsSensitiveValue(error)) Error = "任务失败；敏感错误详情已隐藏。";
     }
 
-    private static string? SafeErrorField(JsonElement error, string name, string? apiKey)
+    private void CaptureBodyRequestId(JsonElement root, string prefix)
     {
-        if (!error.TryGetProperty(name, out var field) || field.ValueKind != JsonValueKind.String) return null;
-        var value = field.GetString()!;
-        // Reject rather than truncate/clean untrusted text; never copy the server's message.
-        return value.Length is > 0 and <= 64 && value.All(c => char.IsAsciiLetterOrDigit(c) || c is '_' or '.' or '[' or ']' or '-') &&
-            (string.IsNullOrEmpty(apiKey) || !value.Contains(apiKey, StringComparison.Ordinal)) ? value : null;
+        if (_requestId is not null || root.ValueKind != JsonValueKind.Object) return;
+        foreach (var name in new[] { "request_id", "requestId", "request-id" })
+        {
+            if (!root.TryGetProperty(name, out var field)) continue;
+            _requestIdStatus = "unusable";
+            if (field.ValueKind != JsonValueKind.String || _sanitizer.Identifier(field.GetString(), 256) is not { } id) continue;
+            _requestId = id;
+            _requestIdSource = prefix + "." + name;
+            _requestIdStatus = "available";
+            return;
+        }
     }
 
     private static object? NumericUsage(JsonElement value) => value.ValueKind switch
@@ -109,5 +180,8 @@ internal sealed class CliReport
         request_id: _requestId, elapsed_ms: _clock.ElapsedMilliseconds, usage: _usage,
         api_error: _apiError,
         error: exit == 0 ? null : Error ?? (exit == 2 ? "参数无效或无法读取输入文件；详见 stderr。" : "请求、响应或文件保存失败；详见 stderr。"),
-        response_metadata: _metadata, endpoints: Endpoints), JsonSerializationContext.Default.CliReportData);
+        response_metadata: _metadata, endpoints: Endpoints,
+        response_headers: _responseHeaders, request_id_status: _requestIdStatus, request_id_source: _requestIdSource,
+        retry_after_seconds: RetryAfterSeconds, retry_after_source: RetryAfterSource,
+        phase_elapsed_ms: Timings.ElapsedMilliseconds, request_settings: _requestSettings), JsonSerializationContext.Default.CliReportData);
 }

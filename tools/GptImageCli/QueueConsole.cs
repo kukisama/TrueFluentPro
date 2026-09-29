@@ -369,7 +369,8 @@ internal static class QueueConsole
                 };
                 var attempts = store.Attempts(id.Value).Select(a => a with
                 {
-                    RequestId = SafeOptional(a.RequestId, 160), Stage = SafeText(a.Stage, 64), Error = SafeOptional(a.Error, 512)
+                    RequestId = SafeOptional(a.RequestId, 256), Stage = SafeText(a.Stage, 64), Error = SafeOptional(a.Error, 512),
+                    Result = SafeResult(a.Result)
                 }).ToList();
                 reply = new(true, "任务详情（安全字段；长文本已限长，不包含请求载荷或原始服务响应）。", JobId: id, Job: safeJob, Attempts: attempts);
             }
@@ -427,7 +428,9 @@ internal static class QueueConsole
             foreach (var property in value.EnumerateObject())
             {
                 if (property.Name is not ("ok" or "exit_code" or "files" or "mode" or "http_status" or
-                    "request_id" or "elapsed_ms" or "usage" or "api_error" or "error" or "response_metadata")) continue;
+                    "request_id" or "elapsed_ms" or "usage" or "api_error" or "error" or "response_metadata" or
+                    "response_headers" or "request_id_status" or "request_id_source" or
+                    "retry_after_seconds" or "retry_after_source" or "phase_elapsed_ms" or "request_settings")) continue;
                 writer.WritePropertyName(property.Name);
                 WriteSafeJson(writer, property.Value, 0);
             }

@@ -60,3 +60,22 @@ $exe = (Resolve-Path -LiteralPath './gpt-image.exe').Path
 独立连接可由受信任启动器注入 `GPT_IMAGE_ENDPOINT`、`GPT_IMAGE_API_KEY`；CLI 不自动读取 `.env`。指定节点时使用该节点成对的地址与 Key。
 
 批量、三模型对比、蒙版与 Responses 示例在发行包 `references/examples.md`（源码 `skills/gpt-image-cli/references/examples.md`）；资源接入另见同目录 `project-resource-replacement.md`。
+
+## 429 排错与队列隔离
+
+在运行任务的那台机器、同一 Windows 用户下执行 `gpt-image queue show <编号> --json`（使用过 `--queue-dir` 时继续指定相同目录）。交互 console 的任务详情也显示诊断；`job.result` 仅是最新结果，排错应查看 `attempts`，最终成功不会覆盖此前失败尝试。
+
+- `attempts[].configuration`：派发时生效的队列配额与模型映射；不是查询时的当前配置。在途任务仍按派发时策略处理重试，下次尝试才使用重载后的配置。
+- `attempts[].dispatch`：派发队列、当时在途数、最近一分钟尝试数及最小派发间距。
+- `attempts[].result`：该次尝试独立的 HTTP 状态、脱敏服务端错误、请求 ID、白名单响应头和阶段耗时；不保存原始响应正文。
+- `attempts[].retry`：是否重试及原因、已用额外重试数、配置等待与服务端等待、最终采用的等待来源、冷却范围及截止时间。`cooldownUntil` / `nextAttemptAt` 是 UTC Unix 毫秒；前者含同队列其他请求延长的冷却，后者只表示本任务可重试的最早时间，仍受队列限额约束。`delaySource=configuration` 表示配置等待较长或服务端未给出有效等待，`server` 表示采用更长的服务端等待，`configuration_and_server` 表示两者相同。额度耗尽与重试耗尽分别记录为 `quota_not_retryable`、`retry_exhausted`。
+
+`server_delay_too_long` / `safety_cap` 表示服务端等待超过 365 天：沿用原有安全策略，不自动重试该任务，并对该队列保留最多 365 天的保护性冷却，需人工核查服务商返回值；不是正常的 61 秒重试。
+
+默认 `image2`、`flare`、`sunburst` 的并发、滚动 RPM、派发间距和 429 冷却均独立；image2 满载或冷却不会暂停另外两个队列，反之亦然。同一配置条目 `models` 中的模型共用该队列；全局暂停则有意影响全部队列。客户端隔离不能改变服务商按账号、节点或部署共享的服务端配额，不应因为 429 盲目增加并发。
+
+升级后才会产生新增诊断；旧历史的这些字段为 `null`，不能补回旧响应头或旧配置。服务商没有返回可用请求 ID 或限额头时，不会伪造；错误 `message` 是按已知错误标识和关键词归类的安全摘要，不是原文或服务商确认的根因，未知内容仍省略，应结合服务商记录定位。阶段耗时是客户端观测值，等待响应头包含连接、上传、网络及服务端处理，不能单独解释为服务端计算耗时。
+
+`result.response_headers` 只收录经过校验的请求关联 ID、重试和限额白名单头；`request_id_source` 标明来源，`request_id_status` 区分缺失或被过滤。`request_settings` 保留实际/逻辑模型、模式、尺寸、质量、张数及超时，不含提示词、节点 URL 或密钥。`phase_elapsed_ms` 分为 `headers_wait`、`body_receive`、`parse`、`download`、`decode`、`write`；未执行的阶段为 `null`，多张图片的对应阶段累计计时，失败阶段也保留已经耗费的时间。
+
+先对照 `api_error.code/type`、分类摘要和限额响应头：RPM 指向请求频率（`requestsPerMinute`），并发限制指向 `maxConcurrency`，TPM 则需检查令牌吞吐及服务商配额，余额/计费不足不是提高并发能解决的。限额类型不明时，携带请求 ID 与尝试时间向服务商核查，不把关键词推断当成定论。

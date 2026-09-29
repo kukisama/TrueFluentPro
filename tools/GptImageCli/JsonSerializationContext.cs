@@ -9,11 +9,17 @@ internal sealed record ResponsesContent(string type, string text);
 internal sealed record ResponsesImageContent(string type, string image_url, string detail);
 internal sealed record ImageToolChoice(string type);
 internal sealed record ApiErrorReport(string? code, string? type, string? param, string message);
+internal sealed record RequestSettingsReport(
+    string mode, string? image_model, string? logical_image_model, string? text_model,
+    string? size, string? quality, int count, int timeout_minutes);
 internal sealed record CliReportData(
     bool ok, int exit_code, List<string> files, string? mode, int? http_status,
     string? request_id, long elapsed_ms, object? usage, ApiErrorReport? api_error,
     string? error, List<Dictionary<string, string>> response_metadata,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] EndpointSummary[]? endpoints = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] EndpointSummary[]? endpoints = null,
+    Dictionary<string, string>? response_headers = null, string request_id_status = "missing",
+    string? request_id_source = null, double retry_after_seconds = 0, string? retry_after_source = null,
+    Dictionary<string, double?>? phase_elapsed_ms = null, RequestSettingsReport? request_settings = null);
 
 // Every concrete type stored in an object slot must be registered: request dictionaries,
 // their scalar/array/DTO values, and NumericUsage's recursive dictionaries/JsonElements.

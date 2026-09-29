@@ -65,6 +65,7 @@ internal static class CliApplication
         CliReport report, HttpMessageHandler? handler = null)
     {
         report.Mode = options.Mode.ToString().ToLowerInvariant();
+        report.ProtectInputs(options);
         try
         {
             ImageResultWriter.ValidateOutputTargets(options);
@@ -79,11 +80,17 @@ internal static class CliApplication
                 await error.WriteLineAsync($"注意：当前密钥来自{options.ApiKeySource}；如需使用节点配置的地址和 Key，请指定 --endpoint-name/--endpoint-id。");
             await output.WriteLineAsync(options.ConfiguredRequestUrl is null ? $"POST {request.RequestUri!.GetLeftPart(UriPartial.Authority)} [路径与查询已隐藏]" : "POST [配置目标 URL 已隐藏]");
             report.Stage = "request";
-            using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellation);
-            report.CaptureHeaders(response);
-            var responseText = await response.Content.ReadAsStringAsync(cancellation);
+            HttpResponseMessage received;
+            using (report.Timings.Measure("headers_wait"))
+                received = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellation);
+            using var response = received;
+            report.CaptureHeaders(response, options.ApiKey);
+            string responseText;
+            using (report.Timings.Measure("body_receive"))
+                responseText = await response.Content.ReadAsStringAsync(cancellation);
             report.Stage = "response";
-            report.CaptureBody(responseText, options.ApiKey);
+            using (report.Timings.Measure("parse"))
+                report.CaptureBody(responseText, options.ApiKey);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -96,7 +103,9 @@ internal static class CliApplication
                 return 1;
             }
 
-            var images = ImageResponseParser.Parse(responseText).ToList();
+            List<ImagePayload> images;
+            using (report.Timings.Measure("parse"))
+                images = ImageResponseParser.Parse(responseText).ToList();
             if (images.Count == 0)
             {
                 report.Error = "请求成功，但响应里没有找到图片数据。";
@@ -105,7 +114,7 @@ internal static class CliApplication
             }
 
             report.Stage = "save";
-            var savedFiles = await ImageResultWriter.SaveAsync(images, options.OutputPath, options.OutputFormat, client, report.Files, options.Overwrite, cancellation);
+            var savedFiles = await ImageResultWriter.SaveAsync(images, options.OutputPath, options.OutputFormat, client, report.Files, options.Overwrite, cancellation, report.Timings);
             foreach (var file in savedFiles)
             {
                 await output.WriteLineAsync(file);
@@ -148,6 +157,10 @@ internal static class CliApplication
             report.Error = ex is CliException ? ex.Message : "请求、响应或文件处理失败。";
             await error.WriteLineAsync(report.Error);
             return 1;
+        }
+        finally
+        {
+            report.RedactTransportMetadata(options.ApiKey);
         }
     }
 

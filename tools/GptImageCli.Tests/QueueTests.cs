@@ -29,6 +29,10 @@ internal static class QueueTests
         Dispatch(new QueuePaths(Path.Combine(suite, "dispatch")), key, check);
         RateWindow(new QueuePaths(Path.Combine(suite, "rpm")), key, check);
         Retries(new QueuePaths(Path.Combine(suite, "retry")), key, check);
+        AttemptEvidence(new QueuePaths(Path.Combine(suite, "evidence")), key, check);
+        OverlappingCooldown(new QueuePaths(Path.Combine(suite, "overlapping-cooldown")), key, check);
+        Isolation(new QueuePaths(Path.Combine(suite, "isolation")), key, check);
+        LegacyAttempts(new QueuePaths(Path.Combine(suite, "legacy")), key, check);
         Quota(new QueuePaths(Path.Combine(suite, "quota")), key, check);
         RecoveryAndCancel(new QueuePaths(Path.Combine(suite, "recovery")), key, check);
         OutputReservations(new QueuePaths(Path.Combine(suite, "output-reservations")), key, check);
@@ -197,6 +201,170 @@ internal static class QueueTests
             "queue: following task starts only after final failure's cooldown; failed task is not retried");
     }
 
+    private static void AttemptEvidence(QueuePaths paths, string key, Action<bool, string> check)
+    {
+        var settings = paths.LoadSettings();
+        var policy = settings.ForModel("gpt-image-2");
+        var store = new QueueStore(paths);
+        var id = Submit(paths, store, settings, key, "gpt-image-2", "evidence");
+        var first = Claim(store, policy, Start);
+        var claimed = store.Attempts(id).Single();
+        check(claimed.Configuration is { } configuration &&
+            configuration.GetProperty("requestsPerMinute").GetInt32() == 9 &&
+            configuration.GetProperty("maxConcurrency").GetInt32() == 4 &&
+            configuration.GetProperty("retryCount").GetInt32() == 2 &&
+            configuration.GetProperty("retryDelaySeconds").GetInt32() == 61 &&
+            claimed.Dispatch is { Queue: "image2", Reason: "queue_limits_satisfied", RunningBefore: 0,
+                SentLastMinute: 0, SpacingMilliseconds: 6667 } &&
+            claimed.Result is null && claimed.Retry is null,
+            "queue: claim durably records policy and admission counters before HTTP completes");
+        var failure = Limited(key, 90, requestId: "first-attempt-evidence");
+        var originalError = failure.Error;
+        using var original = JsonDocument.Parse(failure.Serialize(1));
+        store.Complete(first, policy, failure, 1, Start + 10);
+        var failedAttempt = store.Attempts(id).Single();
+        check(failedAttempt.Error == originalError && failedAttempt.Result is { } failedResult &&
+            SameReport(failedResult, original.RootElement) &&
+            failedResult.GetProperty("http_status").GetInt32() == 429 &&
+            failedResult.GetProperty("api_error").GetProperty("code").GetString() == "rate_limit_exceeded" &&
+            !failedResult.GetRawText().Contains(key) && failedAttempt.RequestId == "first-attempt-evidence" &&
+            store.Get(id)!.Error != originalError,
+            "queue: attempt retains original sanitized report/error, not the job's generic retry summary");
+        check(failedAttempt.Retry is { WillRetry: true, Reason: "http_429", RetryCount: 2, RetriesUsed: 0,
+                ConfiguredDelaySeconds: 61, ServerDelaySeconds: 90, AppliedDelaySeconds: 90,
+                DelaySource: "server", CooldownScope: "queue", Queue: "image2" } decision &&
+            !string.IsNullOrEmpty(decision.ServerDelaySource) &&
+            decision.CooldownUntil == Start + 90010 && decision.NextAttemptAt == Start + 90010,
+            "queue: per-attempt retry evidence explains server-selected delay and queue deadline");
+
+        policy.RequestsPerMinute = 17;
+        policy.MaxConcurrency = 3;
+        policy.RetryCount = 4;
+        policy.RetryDelaySeconds = 7;
+        paths.SaveSettings(settings);
+        var updated = paths.LoadSettings().ForModel("gpt-image-2");
+        var second = Claim(store, updated, Start + 90010);
+        var success = Success();
+        using var successReport = JsonDocument.Parse(success.Serialize(0));
+        store.Complete(second, updated, success, 0, Start + 90020);
+        var history = store.Attempts(id);
+        var reopened = new QueueStore(new QueuePaths(paths.Root));
+        var persisted = reopened.Attempts(id);
+        check(reopened.Get(id) is { State: JobState.Succeeded, Attempts: 2, Error: null } &&
+            persisted.Count == 2 && SameAttempts(history, persisted) &&
+            persisted[0].Result is { } firstResult && JsonElement.DeepEquals(firstResult, failedAttempt.Result!.Value) &&
+            persisted[1].Result is { } lastResult && SameReport(lastResult, successReport.RootElement) &&
+            persisted[0].Error == originalError && persisted[0].HttpStatus == 429 && persisted[1].HttpStatus == 200 &&
+            persisted[1].Retry is { WillRetry: false, Reason: "succeeded", CooldownScope: "none", AppliedDelaySeconds: 0 },
+            "queue: full 429 and 200 attempt reports and decisions survive success and same-path reopen");
+        check(persisted[0].Configuration is { } oldPolicy &&
+            oldPolicy.GetProperty("requestsPerMinute").GetInt32() == 9 &&
+            oldPolicy.GetProperty("maxConcurrency").GetInt32() == 4 &&
+            oldPolicy.GetProperty("retryCount").GetInt32() == 2 &&
+            oldPolicy.GetProperty("retryDelaySeconds").GetInt32() == 61 &&
+            persisted[1].Configuration is { } newPolicy &&
+            newPolicy.GetProperty("requestsPerMinute").GetInt32() == 17 &&
+            newPolicy.GetProperty("maxConcurrency").GetInt32() == 3 &&
+            newPolicy.GetProperty("retryCount").GetInt32() == 4 &&
+            newPolicy.GetProperty("retryDelaySeconds").GetInt32() == 7 &&
+            persisted[1].Dispatch is { RunningBefore: 0, SentLastMinute: 0, SpacingMilliseconds: 3530 },
+            "queue: hot changes apply to the next claim without rewriting historical configuration");
+    }
+
+    private static void OverlappingCooldown(QueuePaths paths, string key, Action<bool, string> check)
+    {
+        var settings = paths.LoadSettings();
+        var policy = settings.ForModel("gpt-image-2");
+        var store = new QueueStore(paths);
+        var firstId = Submit(paths, store, settings, key, "gpt-image-2", "long-cooldown");
+        var secondId = Submit(paths, store, settings, key, "gpt-image-2", "short-cooldown");
+        var first = Claim(store, policy, Start);
+        var second = Claim(store, policy, Start + 6667);
+        check(store.Attempts(secondId).Single().Dispatch is { RunningBefore: 1, SentLastMinute: 1 },
+            "queue: overlapping claim records only prior running requests and sends");
+        store.Complete(first, policy, Limited(key, 120), 1, Start + 7000);
+        store.Complete(second, policy, Limited(key, 1), 1, Start + 8000);
+        var earlier = store.Attempts(firstId).Single().Retry!;
+        var later = store.Attempts(secondId).Single().Retry!;
+        check(earlier.CooldownUntil == Start + 127000 &&
+            later is { ConfiguredDelaySeconds: 61, ServerDelaySeconds: 1, AppliedDelaySeconds: 61,
+                DelaySource: "configuration", CooldownScope: "queue" } &&
+            later.NextAttemptAt == Start + 69000 && later.CooldownUntil == earlier.CooldownUntil &&
+            store.Snapshot(paths, settings).Queues.Single(q => q.Id == policy.Id).NextDispatchAt == earlier.CooldownUntil,
+            "queue: later short response records the effective longer overlapping group cooldown");
+        var reopened = new QueueStore(new QueuePaths(paths.Root));
+        check(reopened.TryClaim(policy, later.NextAttemptAt) is null &&
+            reopened.TryClaim(policy, earlier.CooldownUntil - 1) is null &&
+            Claim(reopened, policy, earlier.CooldownUntil).Id == firstId,
+            "queue: overlapping cooldown survives reopen and expires only at its effective deadline");
+    }
+
+    private static void Isolation(QueuePaths paths, string key, Action<bool, string> check)
+    {
+        foreach (var blockedId in new[] { "image2", "flare", "sunburst" })
+        foreach (var limit in new[] { "concurrency", "rpm", "cooldown" })
+        {
+            var casePaths = new QueuePaths(Path.Combine(paths.Root, blockedId + "-" + limit));
+            var settings = casePaths.LoadSettings();
+            var blocked = settings.Queues.Single(q => q.Id == blockedId);
+            var store = new QueueStore(casePaths);
+            var count = limit == "concurrency" ? blocked.MaxConcurrency : limit == "rpm" ? blocked.RequestsPerMinute : 1;
+            var ids = Enumerable.Range(0, count + 1)
+                .Select(i => Submit(casePaths, store, settings, key, blocked.Models[0], "blocked-" + i)).ToArray();
+            var peers = settings.Queues.Where(q => q.Id != blockedId)
+                .Select(q => (Policy: q, Id: Submit(casePaths, store, settings, key, q.Models[0], "peer-" + q.Id))).ToArray();
+            var rpm = blocked.RequestsPerMinute;
+            if (limit == "rpm") blocked.RequestsPerMinute = 10000;
+            var spacing = (long)Math.Ceiling(60000d / blocked.RequestsPerMinute);
+            for (var i = 0; i < count; i++)
+            {
+                var job = Claim(store, blocked, Start + i * spacing);
+                if (limit == "rpm") store.Complete(job, blocked, Success(), 0, Start + i * spacing);
+                if (limit == "cooldown") store.Complete(job, blocked, Limited(key, 120), 1, Start + 1);
+            }
+            if (limit == "rpm") blocked.RequestsPerMinute = rpm;
+            var now = limit == "rpm" ? Start + 59999 : Start + count * spacing;
+            check(store.TryClaim(blocked, now) is null && store.Attempts(ids[^1]).Count == 0,
+                $"queue isolation: {blockedId} is blocked by its own {limit} without consuming attempts");
+            foreach (var peer in peers)
+            {
+                var admitted = Claim(store, peer.Policy, now);
+                check(admitted.Id == peer.Id &&
+                    store.Attempts(peer.Id).Single().Dispatch is { RunningBefore: 0, SentLastMinute: 0 },
+                    $"queue isolation: {blockedId} {limit} does not block {peer.Policy.Id} or consume its counters");
+            }
+            check(store.TryClaim(blocked, now) is null,
+                $"queue isolation: dispatching both peers does not clear {blockedId} {limit}");
+        }
+    }
+
+    private static void LegacyAttempts(QueuePaths paths, string key, Action<bool, string> check)
+    {
+        var settings = paths.LoadSettings();
+        var policy = settings.ForModel("gpt-image-2");
+        var store = new QueueStore(paths);
+        var id = Submit(paths, store, settings, key, "gpt-image-2", "legacy");
+        store.Complete(Claim(store, policy, Start), policy, Success(), 0, Start + 1);
+        // Removing only the additive table recreates the existing version-1 schema.
+        using (var db = new SqliteConnection(new SqliteConnectionStringBuilder
+        { DataSource = paths.DatabaseFile, Pooling = false }.ToString()))
+        {
+            db.Open();
+            using var command = db.CreateCommand();
+            command.CommandText = "DROP TABLE attempt_diagnostics; PRAGMA user_version=1;";
+            command.ExecuteNonQuery();
+        }
+        var reopened = new QueueStore(new QueuePaths(paths.Root));
+        check(reopened.Get(id) is { State: JobState.Succeeded, Attempts: 1 } &&
+            reopened.Attempts(id).Single() is { Number: 1, HttpStatus: 200, Stage: "save",
+                Configuration: null, Dispatch: null, Result: null, Retry: null },
+            "queue: old version-1 attempts remain readable with absent diagnostics, without fabricated evidence");
+        var next = Submit(paths, reopened, settings, key, "gpt-image-2", "after-upgrade");
+        check(Claim(reopened, policy, Start + 6667).Id == next &&
+            reopened.Attempts(next).Single() is { Configuration: not null, Dispatch: not null },
+            "queue: additive upgrade records diagnostics for new claims alongside legacy history");
+    }
+
     private static void Quota(QueuePaths paths, string key, Action<bool, string> check)
     {
         var settings = paths.LoadSettings();
@@ -234,6 +402,7 @@ internal static class QueueTests
         store.Complete(other, flare, Success(), 0, Start + 1);
         store.Pause(policy.Id, false);
         var running = Claim(store, policy, Start);
+        var interruptedBefore = store.Attempts(interrupted).Single();
         check(running.Id == interrupted && store.Cancel(interrupted) == 0 && store.Get(interrupted)?.State == JobState.Running,
             "queue: resume permits claim; cancel refuses running work");
         var retry = Claim(store, policy, Start + 6667);
@@ -258,12 +427,18 @@ internal static class QueueTests
             reopened.Get(completedId) is { State: JobState.Succeeded, Attempts: 1 } &&
             after.State == JobState.Retry && after.Attempts == before.Attempts && after.NextAttemptAt == before.NextAttemptAt &&
             after.HttpStatus == before.HttpStatus && after.Result?.GetRawText() == before.Result?.GetRawText() &&
-            reopened.Attempts(retryId).SequenceEqual(attemptsBefore),
+            SameAttempts(reopened.Attempts(retryId), attemptsBefore),
             "queue: same-path DB reopen preserves retry/deadline/pending/success; only running becomes unknown");
         check(reopened.Attempts(interrupted).Single() is { Stage: "interrupted", FinishedAt: not null } &&
             snapshot.Paused && snapshot.Queues.Single(q => q.Id == policy.Id).Paused &&
             snapshot.Queues.Single(q => q.Id == policy.Id).NextDispatchAt == before.NextAttemptAt,
             "queue: interrupted attempt closed; pause flags and group cooldown survive reopen");
+        var interruptedAfter = reopened.Attempts(interrupted).Single();
+        check(interruptedBefore.Configuration is { } claimedPolicy && interruptedAfter.Configuration is { } recoveredPolicy &&
+            JsonElement.DeepEquals(claimedPolicy, recoveredPolicy) &&
+            interruptedBefore.Dispatch is not null && interruptedAfter.Dispatch == interruptedBefore.Dispatch &&
+            interruptedAfter.Result is null && interruptedAfter.Retry is null,
+            "queue: recovery retains interrupted claim configuration/admission evidence without inventing an HTTP result");
         check(reopened.Cancel(interrupted) == 0 && reopened.Cancel() == 2 &&
             reopened.Get(interrupted)?.State == JobState.Unknown && reopened.Get(completedId)?.State == JobState.Succeeded &&
             reopened.Get(pendingId)?.State == JobState.Cancelled && reopened.Get(retryId)?.State == JobState.Cancelled && !reopened.HasWork(),
@@ -493,6 +668,16 @@ internal static class QueueTests
 
     private static ClaimedJob Claim(QueueStore store, QueueDefinition policy, long now) =>
         store.TryClaim(policy, now) ?? throw new Exception($"FAIL: queue {policy.Id} expected a claim at virtual time {now}");
+
+    private static bool SameAttempts(List<QueueAttempt> left, List<QueueAttempt> right) =>
+        JsonElement.DeepEquals(
+            JsonSerializer.SerializeToElement(new QueueReply(true, "", Attempts: left), QueueJsonContext.Default.QueueReply),
+            JsonSerializer.SerializeToElement(new QueueReply(true, "", Attempts: right), QueueJsonContext.Default.QueueReply));
+
+    private static bool SameReport(JsonElement left, JsonElement right) =>
+        left.EnumerateObject().Count() == right.EnumerateObject().Count() &&
+        left.EnumerateObject().All(p => right.TryGetProperty(p.Name, out var value) &&
+            (p.Name == "elapsed_ms" || JsonElement.DeepEquals(p.Value, value)));
 
     private static CliReport Success()
     {
