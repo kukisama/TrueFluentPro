@@ -8,7 +8,8 @@ internal sealed record ResponsesInput(string role, object[] content);
 internal sealed record ResponsesContent(string type, string text);
 internal sealed record ResponsesImageContent(string type, string image_url, string detail);
 internal sealed record ImageToolChoice(string type);
-internal sealed record ApiErrorReport(string? code, string? type, string? param, string message);
+internal sealed record ApiErrorReport(string? code, string? type, string? param, string message,
+    string? upstream_message = null);
 internal sealed record RequestSettingsReport(
     string mode, string? image_model, string? logical_image_model, string? text_model,
     string? size, string? quality, int count, int timeout_minutes);

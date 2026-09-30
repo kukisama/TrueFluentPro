@@ -1,6 +1,6 @@
 ---
 name: gpt-image-cli
-description: '用户要求画图、生图、edit 改图、查询或维护队列、修改配额、模型对比、替换项目图片资源时使用。用同目录 gpt-image.exe 异步 submit，默认 flare；调度、并发与 429 重试由队列处理。'
+description: '用户要求画图、生图、edit 改图、查询或维护队列、查生图日志或排查 429、修改配额、模型对比、替换项目图片资源时使用。用同目录 gpt-image.exe 异步 submit，默认 flare；调度、并发与 429 重试由队列处理。'
 ---
 
 # gpt-image-cli 命令速查
@@ -32,11 +32,15 @@ $exe = Join-Path (Split-Path -Parent '<本 SKILL.md 的实际绝对路径>') 'gp
 & $exe queue list --json
 & $exe queue show <任务编号> --json
 ```
+- `submit` 的任务及每次尝试自动保存在 `%LOCALAPPDATA%\GptImageCli\queue.db`，同一 Windows 用户跨项目共享；用过 `--queue-dir` 时查询带相同目录。不直接读库或连接密钥，用上述命令查询；历史列表每页 20 条，`queue list --page 2 --json` 查下一页。
+- 当前不自动清理历史，成功或取消不删除此前 429；直接同步生图不自动留档，`--json` 只输出 stdout，不自动保存 JSON 文件。位置、保存范围和保留规则见 [README 日志说明](./README.md#日志保存位置与查询)。
 - 默认只查询一次；外层 JSON 是 camelCase（如 `jobId`），`job.result` 是 snake_case（如 `exit_code`），stdout 与 stderr 不合并解析。
 - 排查 429 看 `attempts` 而不只看 `job.result`：每次保留独立 `result`（脱敏错误、请求 ID、白名单响应头、阶段耗时）、`configuration`（当时配额）、`dispatch`、`retry`（重试依据、等待来源及 `cooldownUntil` UTC Unix 毫秒）。最终成功不覆盖失败证据；升级前记录新增字段可能为空。
+- `result.api_error.upstream_message` 保留脱敏上游详情及原有限流数值，`message` 仍为分类推断；密钥/凭据模式会屏蔽，过长或不可安全处理时为 null。未知格式的上游私钥不保证识别，分享前检查；旧记录不能补回正文。
 - 只有 `job.state="succeeded"`、`job.result.ok=true`、`job.result.exit_code=0` 且 `job.result.files` 非空，才报告已保存数量及路径；外层 `ok` 仅说明查询成功。
 - `unknown` 表示结果不明，`failed` 表示最终失败；均不自动重提，超时也不另开生成请求。用户要求等待、继续编辑或资源替换时查询原任务，等待方法见扩展示例。
-- 默认不解码、展示或视觉评价结果；仅用户要求验图或资源替换需要时检查。已入队不等于已保存，已保存不等于已验图或已替换资源。
+- 默认信任模型输出，完成用户要求的生成/交付即结束，不做额外 QA：不解码验图、不制作缩略图总览或检查用裁切、不跑 OCR/文字校对、不调用视觉审查子代理，也不因与 PPT 等 skill 组合使用或资源替换自动开启检查。
+- 只有用户当前任务明确要求 QA、审查、验图或校对时，才按指定范围检查，不自行扩大或因“精美/高质量”要求启动 QA。状态与交付路径确认、嵌入/资源转换等制作必需操作不属于额外 QA；未审查就不声称已审查。已入队不等于已保存，已保存不等于已验图或已替换资源。
 
 ## 队列命令
 以下 `[id]` 是可选队列 ID（`image2/flare/sunburst`），`<任务编号>` 来自回执；执行时替换占位符。

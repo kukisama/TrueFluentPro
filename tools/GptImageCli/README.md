@@ -61,6 +61,31 @@ $exe = (Resolve-Path -LiteralPath './gpt-image.exe').Path
 
 批量、三模型对比、蒙版与 Responses 示例在发行包 `references/examples.md`（源码 `skills/gpt-image-cli/references/examples.md`）；资源接入另见同目录 `project-resource-replacement.md`。
 
+## 日志保存位置与查询
+
+日常通过 `submit` 入队的生图和 edit 任务自动持久化；同一 Windows 用户跨项目共享，不保存在 skill 安装目录。默认目录为 `%LOCALAPPDATA%\GptImageCli`（例如 `C:\Users\a9y\AppData\Local\GptImageCli`）：
+
+| 位置 | 保存内容 |
+| --- | --- |
+| `queue.db` | 任务状态、输出路径、每次请求尝试、HTTP 状态、脱敏诊断、429 重试决策及队列事件；成功后仍保留失败尝试 |
+| `queue-settings.json` | 队列配额与模型映射配置，不是日志 |
+| `inputs/` | edit 参考图与 mask 的输入快照，不是生成图片或日志 |
+| 提交时的 `--output`，省略时为提交工作目录 | 生成图片；实际路径以 `job.result.files` 为准 |
+
+优先从 CLI 查询，不必直接打开数据库。`$exe` 为本安装目录 `gpt-image.exe` 的绝对路径，任务编号来自提交回执：
+
+```powershell
+& $exe queue list --json
+& $exe queue list --page 2 --json
+& $exe queue show <任务编号> --json
+```
+
+- 列表每页最多 20 条，可用 `--queue ID` / `--state 状态` 筛选。`queue show` 的 `attempts` 是全部尝试记录，429 详情看 `attempts[].result.api_error.upstream_message`，实际重试依据看 `attempts[].retry`；不要只看最终 `job.result`，具体字段见下节。
+- 使用 `--queue-dir <目录>` 时数据位于该目录，提交和查询必须指定相同目录。`queue config` 返回的 `settingsPath` 所在目录也是实际日志目录；不要另建队列来找历史或绕过限额。
+- 当前没有按天数或数量自动清理：任务及尝试历史持续保留，`cancel/clear` 仅取消未执行任务，不删除历史或图片；edit 输入快照在任务结束后也不自动清理，目录可能持续增长。
+- 旧直接同步调用（没有 `submit`）不写队列历史；`--json` 仅向 stdout 输出报告，不自动写 JSON/JSONL/文本日志文件。需要文件留档时由调用方保存 stdout，不与 stderr 合并解析；源码 `artifacts/` 内的专项验收文件是测试时另存的证据，不是日常自动日志。
+- 保存的是脱敏诊断，不是完整 HTTP 响应正文；排查和分享优先使用 CLI 查询结果，不分享整个队列数据库、输入快照或连接配置，凭据过滤边界见下节。
+
 ## 429 排错与队列隔离
 
 在运行任务的那台机器、同一 Windows 用户下执行 `gpt-image queue show <编号> --json`（使用过 `--queue-dir` 时继续指定相同目录）。交互 console 的任务详情也显示诊断；`job.result` 仅是最新结果，排错应查看 `attempts`，最终成功不会覆盖此前失败尝试。
@@ -76,6 +101,8 @@ $exe = (Resolve-Path -LiteralPath './gpt-image.exe').Path
 
 升级后才会产生新增诊断；旧历史的这些字段为 `null`，不能补回旧响应头或旧配置。服务商没有返回可用请求 ID 或限额头时，不会伪造；错误 `message` 是按已知错误标识和关键词归类的安全摘要，不是原文或服务商确认的根因，未知内容仍省略，应结合服务商记录定位。阶段耗时是客户端观测值，等待响应头包含连接、上传、网络及服务端处理，不能单独解释为服务端计算耗时。
 
+`api_error.upstream_message` 另行保留上游 `error.message` 的脱敏详情，包括限额、已用量、建议等待等原有文字和数值。屏蔽本次密钥/提示词的已知编码、Bearer、sk-、常见凭据标签和 32 位十六进制凭据，以及 URL/图片数据；控制字符转为空格。非字符串、超过 8192 字符或无法安全处理时为 `null`，不保存完整响应正文。客户端不知道上游私有密钥，模式过滤不保证识别任意未知格式；分享诊断仍需检查。历史记录不能恢复已省略的原文。
+
 `result.response_headers` 只收录经过校验的请求关联 ID、重试和限额白名单头；`request_id_source` 标明来源，`request_id_status` 区分缺失或被过滤。`request_settings` 保留实际/逻辑模型、模式、尺寸、质量、张数及超时，不含提示词、节点 URL 或密钥。`phase_elapsed_ms` 分为 `headers_wait`、`body_receive`、`parse`、`download`、`decode`、`write`；未执行的阶段为 `null`，多张图片的对应阶段累计计时，失败阶段也保留已经耗费的时间。
 
-先对照 `api_error.code/type`、分类摘要和限额响应头：RPM 指向请求频率（`requestsPerMinute`），并发限制指向 `maxConcurrency`，TPM 则需检查令牌吞吐及服务商配额，余额/计费不足不是提高并发能解决的。限额类型不明时，携带请求 ID 与尝试时间向服务商核查，不把关键词推断当成定论。
+先对照 `api_error.code/type`、`upstream_message`、分类摘要和限额响应头：RPM 指向请求频率（`requestsPerMinute`），并发限制指向 `maxConcurrency`，TPM 则需检查令牌吞吐及服务商配额，余额/计费不足不是提高并发能解决的。限额类型不明时，携带请求 ID 与尝试时间向服务商核查，不把关键词推断当成定论。

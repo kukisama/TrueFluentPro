@@ -90,6 +90,10 @@ internal static class QueuePublishedTests
         var retryWire = wire.Requests.Where(r => r.Prompt == "retry-once").ToArray();
         test.Check(History(retry.Attempts!, 429, 200) && retryWire[0].Boundary != retryWire[1].Boundary &&
             retryWire.All(r => r.ValidMultipart), "429 后重新构建 multipart 和图片流，遵守一秒冷却后成功");
+        var upstream = retry.Attempts![0].Result!.Value.GetProperty("api_error").GetProperty("upstream_message").GetString()!;
+        test.Check(upstream.Contains("RPM Limit 2 Used 2 Retry after 1 second") &&
+            upstream.Contains("[REDACTED]") && !upstream.Contains("upstream-private-secret"),
+            "安装版 exe 保留上游限额与等待数值，过滤上游凭据，成功后仍保留该次详情");
         var exhausted = await test.ReplyAsync("show", Id(jobs["always429"]));
         test.Check(exhausted.Job is { State: JobState.Failed, Attempts: 3, HttpStatus: 429 } &&
             History(exhausted.Attempts!, 429, 429, 429) && !File.Exists(test.Output("always429")),
@@ -438,7 +442,15 @@ internal static class QueuePublishedTests
                     }
                     if (_held.Contains(request.Prompt)) await _release.Task.WaitAsync(cancellation);
                     var limited = request.Prompt == "always429" || request.Prompt == "retry-once" && attempt == 1;
-                    var body = limited ? Encoding.UTF8.GetBytes("{\"error\":{\"code\":\"rate_limit_exceeded\",\"message\":\"offline limit\"}}") : _success;
+                    var body = limited ? JsonSerializer.SerializeToUtf8Bytes(new
+                    {
+                        error = new
+                        {
+                            code = "rate_limit_exceeded",
+                            message = "RPM Limit 2 Used 2 Retry after 1 second; api-key=" + _key +
+                                "; upstream api-key=upstream-private-secret"
+                        }
+                    }) : _success;
                     var headers = Encoding.ASCII.GetBytes("HTTP/1.1 " + (limited ? "429 Too Many Requests" : "200 OK") +
                         "\r\nContent-Type: application/json\r\nContent-Length: " + body.Length.ToString(CultureInfo.InvariantCulture) +
                         "\r\nConnection: close\r\nx-request-id: offline-" + request.Prompt + "-" + attempt +

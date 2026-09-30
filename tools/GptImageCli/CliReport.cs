@@ -96,7 +96,8 @@ internal sealed class CliReport
                     _sanitizer.ErrorField(apiError, "code"),
                     _sanitizer.ErrorField(apiError, "type"),
                     _sanitizer.ErrorField(apiError, "param"),
-                    _sanitizer.ErrorSummary(apiError));
+                        _sanitizer.ErrorSummary(apiError),
+                        _sanitizer.UpstreamMessage(apiError));
             CaptureBodyRequestId(root, "body");
             if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("error", out var error))
                 CaptureBodyRequestId(error, "body.error");

@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace GptImageCli;
 
@@ -31,8 +32,8 @@ internal sealed class PhaseTimings
     }
 }
 
-// Response fields are untrusted. Messages are classified into fixed summaries, never echoed.
-internal sealed class DiagnosticSanitizer
+// Response fields are untrusted. Keep the classification separate from redacted upstream detail.
+internal sealed partial class DiagnosticSanitizer
 {
     private readonly HashSet<string> _secrets = new(StringComparer.Ordinal);
 
@@ -74,6 +75,43 @@ internal sealed class DiagnosticSanitizer
     public string? ErrorField(JsonElement error, string name) =>
         error.TryGetProperty(name, out var field) && field.ValueKind == JsonValueKind.String
             ? Identifier(field.GetString(), parameter: true) : null;
+
+    public string? UpstreamMessage(JsonElement error)
+    {
+        if (!error.TryGetProperty("message", out var field) || field.ValueKind != JsonValueKind.String ||
+            field.GetString() is not { Length: > 0 and <= 8192 } text) return null;
+        try
+        {
+            // Normalize nested URL/HTML encoding before looking for credential labels.
+            for (var depth = 0; depth < 3; depth++)
+            {
+                var decoded = WebUtility.HtmlDecode(Uri.UnescapeDataString(text));
+                if (decoded == text) break;
+                text = decoded;
+            }
+            foreach (var secret in _secrets.OrderByDescending(value => value.Length))
+                text = text.Replace(secret, "[REDACTED]", StringComparison.OrdinalIgnoreCase);
+            text = CredentialTokens().Replace(text, "[REDACTED]");
+            text = CredentialFields().Replace(text, match => match.Groups[1].Value + "[REDACTED]");
+            text = PrivatePayloads().Replace(text, "[REDACTED]");
+            if (ContainsSensitiveValue(text)) return null;
+            // Do not let a response inject terminal control sequences or additional log lines.
+            return new string(text.Select(c => char.IsControl(c) ? ' ' : c).ToArray());
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            return null; // Fail closed: never fall back to the unfiltered message.
+        }
+    }
+
+    [GeneratedRegex("""\bBearer\s+[^\s"'<>;,]+|\bsk-[A-Za-z0-9_-]+|\b[0-9a-f]{32}\b|\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+""", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, 100)]
+    private static partial Regex CredentialTokens();
+
+    [GeneratedRegex("""(\b(?:api[-_ ]?key|subscription[-_ ]?key|ocp-apim-subscription-key|access[-_ ]?token|refresh[-_ ]?token|token|secret[-_ ]?key|secret|password|authorization|key[12]?)\b["']?\s*(?:[:=：]|\bis\b)\s*)(?:"[^"]*"|'[^']*'|[^\s,;&<>]+)""", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, 100)]
+    private static partial Regex CredentialFields();
+
+    [GeneratedRegex("""https?://[^\s"'<>]+|data:[^\s,]+;base64,[A-Za-z0-9+/=_-]+""", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, 100)]
+    private static partial Regex PrivatePayloads();
 
     public string ErrorSummary(JsonElement error)
     {

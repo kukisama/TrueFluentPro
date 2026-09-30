@@ -82,8 +82,33 @@ internal static class DiagnosticsTests
                 json.GetProperty("response_headers").EnumerateObject().Count() == 0 &&
                 json.GetProperty("api_error").GetProperty("code").ValueKind == JsonValueKind.Null &&
                 json.GetProperty("api_error").GetProperty("type").ValueKind == JsonValueKind.Null &&
-                !report.Serialize(1).Contains(value, StringComparison.Ordinal),
+                (value == "******" || !report.Serialize(1).Contains(value, StringComparison.Ordinal)),
                 "diagnostics: untrusted headers/error identifiers reject sensitive and encoded values");
+        }
+
+        {
+            const string reason = "RPM limit 2, Used 2, Requested 1. Retry after 60 seconds.";
+            const string upstreamKey = "unknown-upstream-private-key";
+            const string azureKey = "0123456789abcdef0123456789abcdef";
+            var report = new CliReport();
+            report.ProtectInputs(Options(root));
+            var details = reason + " api-key=\"" + upstreamKey + "\" Bearer upstream-auth-secret sk-upstream-secret " +
+                azureKey + " " + Uri.EscapeDataString(Uri.EscapeDataString(Key)) + " " +
+                Convert.ToBase64String(Encoding.UTF8.GetBytes(Key)) + " prompt=" + Prompt;
+            report.CaptureBody(JsonSerializer.Serialize(new { error = new { code = "RateLimitReached", message = details } }), Key);
+            var api = Read(report).GetProperty("api_error");
+            var detail = api.GetProperty("upstream_message").GetString()!;
+            check(detail.Contains(reason) && api.GetProperty("message").GetString()!.Contains("RPM") &&
+                detail.Contains("[REDACTED]") && !detail.Contains(upstreamKey) && !detail.Contains(azureKey) &&
+                !detail.Contains("upstream-auth-secret") && !detail.Contains("sk-upstream-secret") &&
+                !report.Serialize(1).Contains(Key) && !detail.Contains(Prompt),
+                "diagnostics: upstream detail keeps exact rate limit numbers while masking known and upstream credential patterns");
+            report.CaptureBody("{\"error\":{\"message\":\"limit 2\\r\\nretry 60\"}}", Key);
+            check(Read(report).GetProperty("api_error").GetProperty("upstream_message").GetString() == "limit 2  retry 60",
+                "diagnostics: upstream detail cannot inject control characters or extra log lines");
+            report.CaptureBody(JsonSerializer.Serialize(new { error = new { message = new string('x', 8193) } }), Key);
+            check(Read(report).GetProperty("api_error").GetProperty("upstream_message").ValueKind == JsonValueKind.Null,
+                "diagnostics: oversized upstream detail is omitted, never truncated through a credential");
         }
 
         foreach (var (reason, expected) in new[]
