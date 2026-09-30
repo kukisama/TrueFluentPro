@@ -45,6 +45,9 @@ internal sealed class QueueStore
             INSERT OR IGNORE INTO control(id) VALUES(1);
             CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY AUTOINCREMENT, time INTEGER NOT NULL,
                 job_id INTEGER, kind TEXT NOT NULL, message TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS worker_runtime(id INTEGER PRIMARY KEY CHECK(id=1),
+                protocol_version INTEGER NOT NULL, process_id INTEGER NOT NULL,
+                process_started_at INTEGER NOT NULL, binary_hash TEXT NOT NULL);
             PRAGMA user_version=1;
             """);
         tx.Commit();
@@ -77,6 +80,25 @@ internal sealed class QueueStore
 
     public void Log(string kind, string message)
     { using var db = Open(); Event(db, null, null, kind, message); }
+
+    public void WriteWorkerInfo(QueueWorkerInfo info)
+    {
+        using var db = Open();
+        Execute(db, null, """
+            INSERT OR REPLACE INTO worker_runtime(id,protocol_version,process_id,process_started_at,binary_hash)
+            VALUES(1,$version,$pid,$started,$hash)
+            """, ("$version", info.ProtocolVersion), ("$pid", info.ProcessId),
+            ("$started", info.ProcessStartedAt), ("$hash", info.BinaryHash));
+    }
+
+    public QueueWorkerInfo? GetWorkerInfo()
+    {
+        using var db = Open();
+        using var cmd = Command(db, null,
+            "SELECT protocol_version,process_id,process_started_at,binary_hash FROM worker_runtime WHERE id=1");
+        using var reader = cmd.ExecuteReader();
+        return reader.Read() ? new(reader.GetInt32(0), reader.GetInt32(1), reader.GetInt64(2), reader.GetString(3)) : null;
+    }
 
     public long Enqueue(string queue, string name, byte[] payload, IReadOnlyList<string>? outputs = null)
     {

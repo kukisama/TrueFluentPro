@@ -37,6 +37,7 @@ internal static class QueueTests
         RecoveryAndCancel(new QueuePaths(Path.Combine(suite, "recovery")), key, check);
         OutputReservations(new QueuePaths(Path.Combine(suite, "output-reservations")), key, check);
         Snapshot(new QueuePaths(Path.Combine(suite, "snapshot")), source, png, key, check);
+        await LegacyWorkerAsync(new QueuePaths(Path.Combine(suite, "legacy-worker")), check);
         await WorkerAsync(new QueuePaths(Path.Combine(suite, "worker")), source, png, key, check);
         check(File.Exists(source) && File.ReadAllBytes(source).SequenceEqual(png), "queue: caller's reference image remains unchanged");
     }
@@ -473,6 +474,32 @@ internal static class QueueTests
         catch (CliException) { rejected = true; }
         check(rejected && store.Get(next)?.State == JobState.Unknown,
             "queue: result-unknown job retains output protection until manual review");
+
+        var countBefore = store.List().Count;
+        foreach (var extension in new[] { ".json", ".jsonl", ".log", ".txt", ".jpg" })
+        {
+            rejected = false;
+            try { QueueSubmission.Submit(paths, store, settings, options with
+                { OutputPath = Path.Combine(paths.Root, "output", "invalid" + extension), Overwrite = true }, "invalid-output"); }
+            catch (CliException) { rejected = true; }
+            check(rejected && store.List().Count == countBefore,
+                "queue: non-image or mismatched output rejected before enqueue, even with overwrite: " + extension);
+        }
+        rejected = false;
+        try { ImageResultWriter.ValidateOutputTargets(options with
+            { Mode = ApiMode.Responses, OutputPath = Path.Combine(paths.Root, "output", "invalid.json") }); }
+        catch (CliException) { rejected = true; }
+        check(rejected, "queue: Responses cannot bypass image extension validation");
+        foreach (var output in new[] { Path.Combine(paths.Root, "mixed.png"), Path.Combine(Path.GetDirectoryName(paths.Root)!, "mixed.png") })
+        {
+            rejected = false;
+            try { QueueSubmission.Submit(paths, store, settings, options with { OutputPath = output }, "mixed-runtime"); }
+            catch (CliException) { rejected = true; }
+            check(rejected && store.List().Count == countBefore, "queue: delivery directory cannot contain queue runtime files");
+        }
+        foreach (var (format, extension) in new[] { ("png", ".PNG"), ("jpeg", ".jpg"), ("jpeg", ".jpeg"), ("webp", ".webp") })
+            check(ImageResultWriter.ResolveOutputPaths(Path.Combine(paths.Root, "output", "valid" + extension), format, 1).Count == 1,
+                "queue: accepted image output " + extension);
     }
 
     private static void Snapshot(QueuePaths paths, string source, byte[] png, string key, Action<bool, string> check)
@@ -540,6 +567,23 @@ internal static class QueueTests
         }
     }
 
+    private static async Task LegacyWorkerAsync(QueuePaths paths, Action<bool, string> check)
+    {
+        var store = new QueueStore(paths);
+        using var process = System.Diagnostics.Process.GetCurrentProcess();
+        var legacy = Path.Combine(paths.Root, "worker-info.json");
+        File.WriteAllText(legacy, JsonSerializer.Serialize(new QueueWorkerInfo(1, process.Id,
+            process.StartTime.ToUniversalTime().Ticks, "older-binary"), QueueJsonContext.Default.QueueWorkerInfo));
+        using var lifecycle = paths.TryLock("lifecycle");
+        using var worker = paths.TryLock("worker");
+        check(lifecycle is not null && worker is not null, "queue upgrade: own the simulated old worker and lifecycle leases");
+        var rejected = false;
+        try { await QueueWorkerHost.EnsureStartedUnderLockAsync(paths); }
+        catch (CliException ex) { rejected = ex.Message.Contains("另一个版本的执行器"); }
+        check(rejected && File.Exists(legacy) && store.GetWorkerInfo() is null,
+            "queue upgrade: read-only legacy handshake rejects a live different binary without replacing or restarting it");
+    }
+
     private static async Task WorkerAsync(QueuePaths paths, string source, byte[] png, string key, Action<bool, string> check)
     {
         var settings = paths.LoadSettings();
@@ -550,6 +594,8 @@ internal static class QueueTests
         }
         paths.SaveSettings(settings);
         var store = new QueueStore(paths);
+        var legacyReady = Path.Combine(paths.Root, "worker-info.json");
+        File.WriteAllText(legacyReady, JsonSerializer.Serialize(new QueueWorkerInfo(1, 0, 0, "legacy"), QueueJsonContext.Default.QueueWorkerInfo));
         var reference = Path.Combine(paths.Root, "worker-owned-reference.png");
         File.Copy(source, reference, overwrite: false);
         var editOptions = Options(paths, key, "gpt-image-2", "worker-edit") with
@@ -648,6 +694,13 @@ internal static class QueueTests
             check(exclusive.Length == png.Length, "queue worker: multipart disposal releases snapshot " + Path.GetFileName(input));
         }
         check(!store.HasWork() && !paths.WorkerRunning(), "queue worker: drained work exits and releases singleton lease");
+        var ready = store.GetWorkerInfo();
+        check(ready is { ProtocolVersion: 1 } && ready.ProcessId == Environment.ProcessId &&
+            new QueueStore(new QueuePaths(paths.Root)).GetWorkerInfo() == ready && !File.Exists(legacyReady) &&
+            !File.Exists(legacyReady + ".tmp"), "queue worker: ready info persists in SQLite, no JSON sidecar remains");
+        var outputs = Directory.GetFiles(Path.Combine(paths.Root, "output"));
+        check(outputs.Length == 2 && outputs.All(p => Path.GetExtension(p) == ".png"),
+            "queue worker: delivery directory contains only the two generated images");
         using var lease = paths.TryLock("worker");
         check(lease is not null, "queue worker: released lease can be acquired again");
     }
@@ -658,7 +711,7 @@ internal static class QueueTests
         Prompt = "离线测试 " + name, Mode = ApiMode.Images, ReferenceImagePaths = [], ImageAction = null,
         AuthMode = AuthMode.ApiKey, TextModel = "offline-text-model", ImageModel = model, LogicalImageModel = model,
         ConfiguredRequestUrl = null, ApiVersion = "queue-test", Size = "1024x640", Quality = "high",
-        OutputFormat = "png", Count = 1, OutputPath = Path.Combine(paths.Root, name + ".png"),
+        OutputFormat = "png", Count = 1, OutputPath = Path.Combine(paths.Root, "output", name + ".png"),
         Overwrite = false, TimeoutMinutes = 1, MaskPath = null, Background = "opaque",
         OutputCompression = null, Moderation = "low", User = "offline-queue-user"
     };

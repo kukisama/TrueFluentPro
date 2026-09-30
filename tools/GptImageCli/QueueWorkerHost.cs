@@ -18,12 +18,13 @@ internal static class QueueWorkerHost
     internal static async Task<bool> EnsureStartedUnderLockAsync(QueuePaths paths)
     {
         var binaryHash = BinaryHash();
+        var store = new QueueStore(paths);
         if (paths.WorkerRunning())
         {
             var untilReady = Environment.TickCount64 + 10000;
             while (Environment.TickCount64 < untilReady)
             {
-                if (IsReady(paths, binaryHash)) return true;
+                if (IsReady(paths, store, binaryHash)) return true;
                 if (!paths.WorkerRunning()) break;
                 await Task.Delay(50);
             }
@@ -48,7 +49,7 @@ internal static class QueueWorkerHost
             var until = Environment.TickCount64 + 10000;
             while (Environment.TickCount64 < until)
             {
-                if (IsReady(paths, binaryHash, (int)process.ProcessId)) return true;
+                if (IsReady(paths, store, binaryHash, (int)process.ProcessId)) return true;
                 if (WaitForSingleObject(process.Process, 0) == 0)
                     throw new CliException("任务已入队，但后台执行器启动后退出；请运行 queue worker 查看安全诊断。");
                 await Task.Delay(50);
@@ -67,34 +68,53 @@ internal static class QueueWorkerHost
         return Convert.ToHexString(SHA256.HashData(stream));
     }
 
-    internal static void WriteReady(QueuePaths paths)
+    internal static void WriteReady(QueuePaths paths, QueueStore store)
     {
         using var process = Process.GetCurrentProcess();
         var info = new QueueWorkerInfo(1, process.Id, process.StartTime.ToUniversalTime().Ticks, BinaryHash());
-        var path = Path.Combine(paths.Root, "worker-info.json");
-        var temporary = path + ".tmp";
-        using (var stream = new FileStream(temporary, FileMode.Create, FileAccess.Write, FileShare.None))
-        { JsonSerializer.Serialize(stream, info, QueueJsonContext.Default.QueueWorkerInfo); stream.Flush(true); }
-        File.Move(temporary, path, overwrite: true);
+        store.WriteWorkerInfo(info);
+        // Called only with the exclusive worker lease; an older worker can no longer be writing these files.
+        try
+        {
+            File.Delete(Path.Combine(paths.Root, "worker-info.json"));
+            File.Delete(Path.Combine(paths.Root, "worker-info.json.tmp"));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        { store.Log("legacy_worker_info_cleanup", "执行器就绪信息已入库；旧版就绪文件无法删除，请检查目录权限。"); }
     }
 
-    private static bool IsReady(QueuePaths paths, string binaryHash, int? expectedPid = null)
+    private static bool IsReady(QueuePaths paths, QueueStore store, string binaryHash, int? expectedPid = null)
     {
         QueueWorkerInfo? info;
         try
         {
-            info = JsonSerializer.Deserialize(File.ReadAllText(Path.Combine(paths.Root, "worker-info.json")),
-                QueueJsonContext.Default.QueueWorkerInfo);
-            if (info is null || (expectedPid is not null && info.ProcessId != expectedPid)) return false;
-            using var process = Process.GetProcessById(info.ProcessId);
-            if (process.HasExited || process.StartTime.ToUniversalTime().Ticks != info.ProcessStartedAt) return false;
+            info = store.GetWorkerInfo();
+            if (!IsLiveProcess(info, expectedPid))
+            {
+                // Read-only compatibility with a still-running older binary; never create a JSON sidecar.
+                info = JsonSerializer.Deserialize(File.ReadAllText(Path.Combine(paths.Root, "worker-info.json")),
+                    QueueJsonContext.Default.QueueWorkerInfo);
+                if (!IsLiveProcess(info, expectedPid)) return false;
+            }
         }
-        catch (Exception ex) when (ex is IOException or JsonException or ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception)
+        catch (Exception ex) when (ex is IOException or JsonException or Microsoft.Data.Sqlite.SqliteException)
         { return false; }
         if (!paths.WorkerRunning()) return false;
-        if (info.ProtocolVersion != 1 || info.BinaryHash != binaryHash)
+        if (info!.ProtocolVersion != 1 || info.BinaryHash != binaryHash)
             throw new CliException("另一个版本的执行器仍在处理此队列；请等其完成后再用当前版本提交，或使用相同版本。未切换正在运行的程序。");
         return true;
+    }
+
+    private static bool IsLiveProcess(QueueWorkerInfo? info, int? expectedPid)
+    {
+        if (info is null || (expectedPid is not null && info.ProcessId != expectedPid)) return false;
+        try
+        {
+            using var process = Process.GetProcessById(info.ProcessId);
+            return !process.HasExited && process.StartTime.ToUniversalTime().Ticks == info.ProcessStartedAt;
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception)
+        { return false; }
     }
 
     internal static string Quote(string argument)

@@ -45,7 +45,7 @@ $exe = (Resolve-Path -LiteralPath './gpt-image.exe').Path
 | `--quality` | `medium`；可选 `low` / `high` / `auto` |
 | `--format` | `png`；可选 `jpeg`（别名 `jpg`）/ `webp` |
 | `--n` | `1`；整数 1..10，同一提示词的结果数量，不是不同任务 |
-| `--output` | 当前目录自动命名；可给目录或明确文件名，多张追加序号；新建带点目录以分隔符结尾 |
+| `--output` | 当前目录自动命名；可给目录或明确图片文件名，扩展名须匹配格式（JPEG 可用 .jpg/.jpeg）；多张追加序号；新建带点目录以分隔符结尾 |
 | `--name` | 仅 submit 的任务名，最多 120 字符、无控制字符；不决定文件名 |
 | `--overwrite` | 无值开关，默认不覆盖已有文件 |
 | `--background` | 默认不发送；`auto` / `opaque` / `transparent`，透明不能配 JPEG |
@@ -65,10 +65,13 @@ $exe = (Resolve-Path -LiteralPath './gpt-image.exe').Path
 
 日常通过 `submit` 入队的生图和 edit 任务自动持久化；同一 Windows 用户跨项目共享，不保存在 skill 安装目录。默认目录为 `%LOCALAPPDATA%\GptImageCli`（例如 `C:\Users\a9y\AppData\Local\GptImageCli`）：
 
+**图片交付目录只保存图片。** 提示词及参数/连接快照已加密存入数据库，任务名、结果路径、429 诊断、重试决策、事件与执行器就绪信息也在数据库，不需要额外 JSON 回执、提示词文件或日志。`--json` 和查询 `.ps1` 返回的 JSON 是 stdout 通信格式，不是文件写入要求；在内存解析并用 `queue list/show` 查询即可。
+
 | 位置 | 保存内容 |
 | --- | --- |
-| `queue.db` | 任务状态、输出路径、每次请求尝试、HTTP 状态、脱敏诊断、429 重试决策及队列事件；成功后仍保留失败尝试 |
+| `queue.db` | 加密参数快照、任务状态与名称、输出路径、每次尝试、脱敏诊断、重试决策、事件及执行器就绪信息；成功后仍保留失败尝试 |
 | `queue-settings.json` | 队列配额与模型映射配置，不是日志 |
+| `queue.db-wal` / `queue.db-shm`、`*.lock` | SQLite 运行文件及同步锁，不是交付文件 |
 | `inputs/` | edit 参考图与 mask 的输入快照，不是生成图片或日志 |
 | 提交时的 `--output`，省略时为提交工作目录 | 生成图片；实际路径以 `job.result.files` 为准 |
 
@@ -81,9 +84,10 @@ $exe = (Resolve-Path -LiteralPath './gpt-image.exe').Path
 ```
 
 - 列表每页最多 20 条，可用 `--queue ID` / `--state 状态` 筛选。`queue show` 的 `attempts` 是全部尝试记录，429 详情看 `attempts[].result.api_error.upstream_message`，实际重试依据看 `attempts[].retry`；不要只看最终 `job.result`，具体字段见下节。
-- 使用 `--queue-dir <目录>` 时数据位于该目录，提交和查询必须指定相同目录。`queue config` 返回的 `settingsPath` 所在目录也是实际日志目录；不要另建队列来找历史或绕过限额。
+- 使用 `--queue-dir <目录>` 时数据位于该目录，提交和查询必须指定相同目录。`queue config` 返回的 `settingsPath` 所在目录也是实际日志目录；该目录不能位于图片交付目录内，不要另建队列来找历史或绕过限额。
 - 当前没有按天数或数量自动清理：任务及尝试历史持续保留，`cancel/clear` 仅取消未执行任务，不删除历史或图片；edit 输入快照在任务结束后也不自动清理，目录可能持续增长。
-- 旧直接同步调用（没有 `submit`）不写队列历史；`--json` 仅向 stdout 输出报告，不自动写 JSON/JSONL/文本日志文件。需要文件留档时由调用方保存 stdout，不与 stderr 合并解析；源码 `artifacts/` 内的专项验收文件是测试时另存的证据，不是日常自动日志。
+- 旧直接同步调用（没有 `submit`）不写队列历史，日常应使用 `submit`；不要为了留档另用 `Set-Content` / `Out-File` / 重定向保存 stdout，直接查数据库，不与 stderr 合并解析。源码 `artifacts/` 内的专项验收文件是测试时另存的证据，不是日常自动日志，也不放入图片交付目录。
+- 新执行器把就绪信息写入 `worker_runtime` 表，不再生成 `worker-info.json`；只读兼容仍在运行的旧执行器，新执行器持有独占租约后清理本工具的旧就绪文件。不会清理图片目录中已有的用户文件或旧报告。
 - 保存的是脱敏诊断，不是完整 HTTP 响应正文；排查和分享优先使用 CLI 查询结果，不分享整个队列数据库、输入快照或连接配置，凭据过滤边界见下节。
 
 ## 429 排错与队列隔离

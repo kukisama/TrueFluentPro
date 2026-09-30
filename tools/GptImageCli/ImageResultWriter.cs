@@ -4,9 +4,11 @@ internal static class ImageResultWriter
 {
     public static void ValidateOutputTargets(CliOptions options)
     {
+        // Validate the image extension even for overwrite and unknown Responses result counts.
+        var targets = ResolveOutputPaths(options.OutputPath, options.OutputFormat, options.Count);
         // Responses has no known result count; protect its actual paths when saving.
         if (options.Overwrite || options.Mode == ApiMode.Responses || IsOutputDirectory(options.OutputPath)) return;
-        foreach (var path in ResolveOutputPaths(options.OutputPath, options.OutputFormat, options.Count))
+        foreach (var path in targets)
             if (File.Exists(path) || Directory.Exists(path))
                 throw new CliException($"输出目标已存在：{path}；默认不覆盖，确认后可使用 --overwrite。");
     }
@@ -78,6 +80,9 @@ internal static class ImageResultWriter
         var directory = Path.GetDirectoryName(normalizedOutput) ?? ".";
         var name = Path.GetFileNameWithoutExtension(normalizedOutput);
         var fileExtension = Path.GetExtension(normalizedOutput);
+        if (!fileExtension.Equals(extension, StringComparison.OrdinalIgnoreCase) &&
+            !(outputFormat == "jpeg" && fileExtension.Equals(".jpeg", StringComparison.OrdinalIgnoreCase)))
+            throw new CliException($"输出文件扩展名必须与 --format {outputFormat} 一致（{(outputFormat == "jpeg" ? ".jpg/.jpeg" : extension)}）；请使用图片文件名，目录路径可用目录分隔符结尾。");
 
         for (var i = 0; i < count; i++)
         {

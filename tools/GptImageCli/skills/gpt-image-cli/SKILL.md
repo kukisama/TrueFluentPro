@@ -22,6 +22,7 @@ $exe = Join-Path (Split-Path -Parent '<本 SKILL.md 的实际绝对路径>') 'gp
 & $exe submit --endpoint-name "公司大实例" --image-model gpt-image-2.5-flare --mode edit --image "<原图绝对路径>" --prompt "船帆改为绿色，保留构图" --json
 ```
 - 输出默认当前项目目录，勿放 skill 目录；`--output` 可为目录或文件，省略/目录输出自动命名。`--name` 仅任务名，不设文件名；文件扩展名匹配格式，覆盖须授权并加 `--overwrite`。
+- 图片交付目录只放生成图片，不另写 JSON/JSONL/TXT/日志/提示词/任务清单。提示词与参数快照、任务名、图片路径、尝试和重试诊断已存队列数据库；用 `--name` 标记页码/用途/模型，后续直接 `queue list/show` 查询，不自行写旁路文件，也不把 `--queue-dir` 放进图片交付目录。
 - 不同页面、不同提示词各自独立 `submit`；`--n` 是同一提示词的多张结果，不代表多个提示词，拼图仍 `n=1`。
 - 多图编辑重复 `--image` 并说明图序角色；连续编辑从上次成功任务的 `job.result.files` 取真实路径，不用计划路径或猜文件名。
 - 需近方形编辑时可推荐 `--size 832x800`：当前节点三个模型的 edit 已实测；不推断所有 16 倍数均可用，其余限制见末尾能力边界。
@@ -33,7 +34,7 @@ $exe = Join-Path (Split-Path -Parent '<本 SKILL.md 的实际绝对路径>') 'gp
 & $exe queue show <任务编号> --json
 ```
 - `submit` 的任务及每次尝试自动保存在 `%LOCALAPPDATA%\GptImageCli\queue.db`，同一 Windows 用户跨项目共享；用过 `--queue-dir` 时查询带相同目录。不直接读库或连接密钥，用上述命令查询；历史列表每页 20 条，`queue list --page 2 --json` 查下一页。
-- 当前不自动清理历史，成功或取消不删除此前 429；直接同步生图不自动留档，`--json` 只输出 stdout，不自动保存 JSON 文件。位置、保存范围和保留规则见 [README 日志说明](./README.md#日志保存位置与查询)。
+- 当前不自动清理历史，成功或取消不删除此前 429；`--json` 与查询 `.ps1` 返回的 JSON 只是 stdout 通信格式，可直接在内存中 `ConvertFrom-Json`，不是要求写文件，不用 `Set-Content` / `Out-File` / `>` 另存报告或回执。直接同步生图不入库，日常须用 `submit`。位置和保存范围见 [README 日志说明](./README.md#日志保存位置与查询)。
 - 默认只查询一次；外层 JSON 是 camelCase（如 `jobId`），`job.result` 是 snake_case（如 `exit_code`），stdout 与 stderr 不合并解析。
 - 排查 429 看 `attempts` 而不只看 `job.result`：每次保留独立 `result`（脱敏错误、请求 ID、白名单响应头、阶段耗时）、`configuration`（当时配额）、`dispatch`、`retry`（重试依据、等待来源及 `cooldownUntil` UTC Unix 毫秒）。最终成功不覆盖失败证据；升级前记录新增字段可能为空。
 - `result.api_error.upstream_message` 保留脱敏上游详情及原有限流数值，`message` 仍为分类推断；密钥/凭据模式会屏蔽，过长或不可安全处理时为 null。未知格式的上游私钥不保证识别，分享前检查；旧记录不能补回正文。

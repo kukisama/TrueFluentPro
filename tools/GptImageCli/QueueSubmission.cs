@@ -14,6 +14,11 @@ internal static class QueueSubmission
         var target = Path.GetFullPath(options.OutputPath);
         if (Directory.Exists(options.OutputPath) || Path.EndsInDirectorySeparator(options.OutputPath) || !Path.HasExtension(options.OutputPath))
             target = Path.Combine(target, $"gpt-image-{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}-{Guid.NewGuid():N}.{(options.OutputFormat == "jpeg" ? "jpg" : options.OutputFormat)}");
+        var outputDirectory = Path.GetDirectoryName(target)!;
+        var queueRelative = Path.GetRelativePath(outputDirectory, paths.Root);
+        if (queueRelative == "." || (!Path.IsPathRooted(queueRelative) && queueRelative != ".." &&
+            !queueRelative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal)))
+            throw new CliException("图片输出目录不能包含队列数据目录；请将 --queue-dir 与图片交付目录分开，避免混入数据库、配置或锁文件。未入队。");
         options = options with { OutputPath = target };
         ImageResultWriter.ValidateOutputTargets(options);
         var inputs = Path.Combine(paths.InputsDirectory, Guid.NewGuid().ToString("N"));

@@ -101,6 +101,9 @@ internal static class QueuePublishedTests
         var final = (await test.ReplyAsync("list")).Snapshot!;
         test.Check(!final.WorkerRunning && final.Jobs.All(j => !JobState.IsActive(j.State)),
             "后台完成后自动退出，list JSON 无活动任务");
+        test.Check(test.Store.GetWorkerInfo() is { ProtocolVersion: 1 } &&
+            !File.Exists(Path.Combine(test.Paths.Root, "worker-info.json")), "发布版就绪信息在数据库，不生成 worker-info.json");
+        test.CheckImageOnlyDelivery(6);
         using var lease = test.Paths.TryLock("worker");
         test.Check(lease is not null, "后台完成后独占租约可重新取得");
     }
@@ -152,6 +155,7 @@ internal static class QueuePublishedTests
                 { Prompt: "menu-run", Model: "gpt-image-2", Path: "/v1/images/edits", ValidMultipart: true },
             "菜单流程总共仅一次成功 HTTP，取消和清除的任务从未发送");
         test.CheckOutput(result.Job!, "menu-run");
+        test.CheckImageOnlyDelivery(1);
     }
 
     private static bool History(List<QueueAttempt> attempts, params int[] statuses) =>
@@ -220,7 +224,14 @@ internal static class QueuePublishedTests
             _ = Store;
         }
 
-        public string Output(string prompt) => Path.Combine(_root, prompt + ".png");
+        public string Output(string prompt) => Path.Combine(_root, "images", prompt + ".png");
+
+        public void CheckImageOnlyDelivery(int count)
+        {
+            var files = Directory.GetFiles(Path.Combine(_root, "images"), "*", SearchOption.AllDirectories);
+            Check(files.Length == count && files.All(p => Path.GetExtension(p) == ".png"),
+                "图片交付目录仅有生成图片，没有 JSON/日志/回执/提示词");
+        }
 
         public async Task<long> SubmitAsync(string prompt, string model = "gpt-image-2")
         {

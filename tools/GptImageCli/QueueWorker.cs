@@ -18,7 +18,7 @@ internal static class QueueWorker
             var settings = paths.LoadSettings();
             store.RecoverInterrupted();
             store.Log("worker_started", "后台执行器启动。");
-            QueueWorkerHost.WriteReady(paths);
+            QueueWorkerHost.WriteReady(paths, store);
             string? lastConfigError = null;
             long lastLoad = 0;
             while (!cancellation.IsCancellationRequested)
