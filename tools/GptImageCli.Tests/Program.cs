@@ -41,6 +41,13 @@ if (args.Contains("--queue-only"))
     return;
 }
 
+if (args.Contains("--diagnostics-only"))
+{
+    await DiagnosticsTests.RunAsync(root, png, Check);
+    Console.WriteLine($"Diagnostics checks passed. Artifacts: {root}");
+    return;
+}
+
 async Task Reject(string name, params string[] extra)
 {
     using var output = new StringWriter();
@@ -160,6 +167,7 @@ Check((await File.ReadAllBytesAsync(target)).SequenceEqual(png), "HTTP image res
 Console.WriteLine($"Original regression checks passed: {checks}");
 await FeatureTests.RunAsync(root, source, png, Check);
 await SafetyTests.RunAsync(root, source, png, Check);
+await DiagnosticsTests.RunAsync(root, png, Check);
 await DefaultOutputTests.RunAsync(root, source, png, Check);
 await ConfigTests.RunAsync(root, source, png, Check);
 await ConfigRegressionTests.RunAsync(root, source, png, Check);

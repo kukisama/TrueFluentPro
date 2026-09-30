@@ -18,7 +18,8 @@ internal static class ImageResultWriter
         HttpClient httpClient,
         ICollection<string>? savedFiles = null,
         bool overwrite = false,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        PhaseTimings? timings = null)
     {
         var paths = ResolveOutputPaths(outputPath, outputFormat, images.Count);
         var saved = new List<string>(images.Count);
@@ -29,11 +30,13 @@ internal static class ImageResultWriter
             byte[] bytes;
             if (!string.IsNullOrWhiteSpace(image.Base64))
             {
-                bytes = Convert.FromBase64String(image.Base64);
+                using (timings?.Measure("decode"))
+                    bytes = Convert.FromBase64String(image.Base64);
             }
             else if (!string.IsNullOrWhiteSpace(image.Url))
             {
-                bytes = await httpClient.GetByteArrayAsync(image.Url, cancellationToken);
+                using (timings?.Measure("download"))
+                    bytes = await httpClient.GetByteArrayAsync(image.Url, cancellationToken);
             }
             else
             {
@@ -41,10 +44,13 @@ internal static class ImageResultWriter
             }
 
             var path = paths[i];
-            Directory.CreateDirectory(Path.GetDirectoryName(path) ?? ".");
-            await using (var stream = new FileStream(path, overwrite ? FileMode.Create : FileMode.CreateNew,
-                FileAccess.Write, FileShare.None, 4096, FileOptions.Asynchronous))
+            using (timings?.Measure("write"))
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(path) ?? ".");
+                await using var stream = new FileStream(path, overwrite ? FileMode.Create : FileMode.CreateNew,
+                    FileAccess.Write, FileShare.None, 4096, FileOptions.Asynchronous);
                 await stream.WriteAsync(bytes, cancellationToken);
+            }
             saved.Add(path);
             savedFiles?.Add(path);
         }

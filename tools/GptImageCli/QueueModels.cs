@@ -58,7 +58,15 @@ internal static class JobState
 internal sealed record QueueJob(long Id, string Queue, string Name, string State, int Attempts,
     long CreatedAt, long UpdatedAt, long NextAttemptAt, int? HttpStatus, string? Error, JsonElement? Result);
 internal sealed record QueueAttempt(long JobId, int Number, long StartedAt, long? FinishedAt,
-    int? HttpStatus, string? RequestId, string Stage, string? Error);
+    int? HttpStatus, string? RequestId, string Stage, string? Error,
+    JsonElement? Configuration = null, QueueDispatchDecision? Dispatch = null,
+    JsonElement? Result = null, QueueRetryDecision? Retry = null);
+internal sealed record QueueDispatchDecision(string Queue, string Reason, int RunningBefore,
+    int SentLastMinute, long SpacingMilliseconds);
+internal sealed record QueueRetryDecision(bool WillRetry, string Reason, int RetryCount,
+    int RetriesUsed, double ConfiguredDelaySeconds, double ServerDelaySeconds, string? ServerDelaySource,
+    double AppliedDelaySeconds, string DelaySource, string CooldownScope, string Queue,
+    long CooldownUntil, long NextAttemptAt);
 internal sealed record ClaimedJob(long Id, string Queue, int Attempt, byte[] Payload);
 internal sealed record QueueWorkerInfo(int ProtocolVersion, int ProcessId, long ProcessStartedAt, string BinaryHash);
 internal sealed record QueueOverview(string Id, int RequestsPerMinute, int MaxConcurrency, int RetryCount,
@@ -76,4 +84,7 @@ internal sealed record QueueReply(bool Ok, string Message, long? JobId = null, b
 [JsonSerializable(typeof(QueueReply))]
 [JsonSerializable(typeof(QueueWorkerInfo))]
 [JsonSerializable(typeof(CliOptions))]
+[JsonSerializable(typeof(QueueDefinition))]
+[JsonSerializable(typeof(QueueDispatchDecision))]
+[JsonSerializable(typeof(QueueRetryDecision))]
 internal partial class QueueJsonContext : JsonSerializerContext;

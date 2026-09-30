@@ -59,7 +59,8 @@ internal static class Usage
         writer.WriteLine("  --moderation <auto|low>      内容审核级别");
         writer.WriteLine("  --user <string>              仅 images/edit；responses 明确拒绝");
         writer.WriteLine("  --json                      无值开关；stdout 单份 JSON 报告，进度在 stderr");
-        writer.WriteLine("  api_error 仅含 root.error 的安全 code/type/param（最多 64 字符）及通用中文 message。");
+        writer.WriteLine("  api_error 含 root.error 的安全 code/type/param（最多 64 字符）及脱敏 message 摘要，不含原始正文。");
+        writer.WriteLine("  排查 429：queue show 编号 --json 查看 attempts 中独立保存的响应诊断、当时配置、重试依据和本队列冷却截止时间。");
         writer.WriteLine("  mask/background/output-compression/moderation/user 默认不设置、不发送；quality: low/medium/high/auto；n: 1..10。");
         writer.WriteLine("  默认无参考图；独立连接默认不追加 api-version（可由环境变量提供）；配置连接按 profile 模板使用版本；--json 默认关闭。");
         writer.WriteLine();
