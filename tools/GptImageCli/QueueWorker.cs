@@ -80,9 +80,12 @@ internal static class QueueWorker
     {
         var report = new CliReport();
         var exit = 1;
+        CliOptions? options = null;
         try
         {
-            var options = QueueSubmission.Decode(job.Payload);
+            options = QueueSubmission.Decode(job.Payload);
+            report.Mode = options.Mode.ToString().ToLowerInvariant();
+            report.ProtectInputs(options);
             ParameterValidation.Validate(options);
             exit = await CliApplication.ExecuteAsync(options, TextWriter.Null, TextWriter.Null, report, handler);
             report.RedactTransportMetadata(options.ApiKey);
@@ -92,6 +95,9 @@ internal static class QueueWorker
             report.Error = "无法读取或解密任务参数/输入；请确认使用提交任务的 Windows 用户及完整输入文件。";
         }
         // Storage failures are fatal to the worker, not a reason to resubmit a paid request.
-        store.Complete(job, policy, report, exit, QueueStore.Now);
+        var state = store.Complete(job, policy, report, exit, QueueStore.Now);
+        if (state is JobState.Failed or JobState.Unknown &&
+            (options is null || !await FailureResultWriter.TrySaveAsync(options, report, state, job.Id)))
+            store.Log("failure_output_error", $"任务 {job.Id}：无法写入同名 .txt 错误日志；原始任务及尝试记录已保留在数据库。");
     }
 }

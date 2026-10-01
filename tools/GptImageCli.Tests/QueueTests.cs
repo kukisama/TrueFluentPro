@@ -39,6 +39,7 @@ internal static class QueueTests
         Snapshot(new QueuePaths(Path.Combine(suite, "snapshot")), source, png, key, check);
         await LegacyWorkerAsync(new QueuePaths(Path.Combine(suite, "legacy-worker")), check);
         await WorkerAsync(new QueuePaths(Path.Combine(suite, "worker")), source, png, key, check);
+        await FailureOutputsAsync(new QueuePaths(Path.Combine(suite, "failure-output")), source, png, key, check);
         check(File.Exists(source) && File.ReadAllBytes(source).SequenceEqual(png), "queue: caller's reference image remains unchanged");
     }
 
@@ -464,6 +465,12 @@ internal static class QueueTests
         catch (CliException) { rejected = true; }
         check(rejected && store.List().Count == 1 && store.Get(id)?.Attempts == 0,
             "queue: duplicate output is rejected transactionally across groups even with overwrite, before any paid request");
+        rejected = false;
+        try { QueueSubmission.Submit(paths, store, settings, options with
+            { OutputFormat = "jpeg", OutputPath = Path.ChangeExtension(options.OutputPath, ".jpg") }, "same-log"); }
+        catch (CliException) { rejected = true; }
+        check(rejected && store.List().Count == 1,
+            "queue: different image extensions cannot reserve the same failure TXT concurrently");
         store.Cancel(id);
         var next = QueueSubmission.Submit(paths, store, settings, options, "after-cancel");
         var running = Claim(store, settings.ForModel("gpt-image-2"), Start);
@@ -662,6 +669,8 @@ internal static class QueueTests
                 json.RootElement.GetProperty("prompt").GetString() == flareOptions.Prompt,
                 "queue worker: flare request uses its own submitted options");
             flareSawRetry = store.Get(editId)?.State == JobState.Retry;
+            check(!File.Exists(Path.ChangeExtension(editOptions.OutputPath, ".txt")),
+                "queue worker: retry_wait does not write a premature failure log");
             return ImageResponse(png);
         });
         // Only this integration case uses real time (~1s retry + worker dispatch ticks).
@@ -703,6 +712,114 @@ internal static class QueueTests
             "queue worker: delivery directory contains only the two generated images");
         using var lease = paths.TryLock("worker");
         check(lease is not null, "queue worker: released lease can be acquired again");
+    }
+
+    private static async Task FailureOutputsAsync(QueuePaths paths, string source, byte[] png, string key, Action<bool, string> check)
+    {
+        const string message = "Your request was rejected by the safety system. Include request ID 263d5f70-7fbd-417d-9bb6-ab0da052de76.";
+        var settings = paths.LoadSettings();
+        foreach (var policy in settings.Queues) policy.RequestsPerMinute = 10000;
+        paths.SaveSettings(settings);
+        var store = new QueueStore(paths);
+        var edit = Options(paths, key, "gpt-image-2.5-flare", "moderation") with
+        {
+            Mode = ApiMode.Edit, ReferenceImagePaths = [source], OutputFormat = "jpeg",
+            OutputPath = Path.Combine(paths.Root, "output", "moderation.jpg")
+        };
+        var batch = Options(paths, key, "gpt-image-2", "batch") with { Count = 2 };
+        var auto = Options(paths, key, "gpt-image-2", "auto") with
+        { OutputFormat = "webp", OutputPath = Path.Combine(paths.Root, "output", "automatic") + Path.DirectorySeparatorChar };
+        var blocked = Options(paths, key, "gpt-image-2", "blocked");
+        var occupied = Options(paths, key, "gpt-image-2", "occupied");
+        var unknown = Options(paths, key, "gpt-image-2", "unknown");
+        var cases = new[] { edit, batch, auto, blocked, occupied, unknown };
+        var jobs = cases.Select(o => QueueSubmission.Submit(paths, store, settings, o, null)).ToArray();
+        Directory.CreateDirectory(Path.ChangeExtension(blocked.OutputPath, ".txt"));
+        var occupiedLog = Path.ChangeExtension(occupied.OutputPath, ".txt");
+        File.WriteAllText(occupiedLog, "existing user text");
+        using var handler = new FakeHandler((request, cancellation) =>
+        {
+            if (request.Content is not MultipartFormDataContent)
+            {
+                using var body = JsonDocument.Parse(request.Content!.ReadAsStringAsync(cancellation).GetAwaiter().GetResult());
+                if (body.RootElement.GetProperty("prompt").GetString() == unknown.Prompt)
+                    throw new HttpRequestException("offline connection failure");
+            }
+            var response = new HttpResponseMessage(HttpStatusCode.BadRequest)
+            {
+                Content = new StringContent(JsonSerializer.Serialize(new
+                { error = new { code = "moderation_blocked", message = message + " api-key=" + key } }), Encoding.UTF8, "application/json")
+            };
+            response.Headers.Add("x-request-id", "263d5f70-7fbd-417d-9bb6-ab0da052de76");
+            return response;
+        });
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        check(await QueueWorker.RunAsync(paths, timeout.Token, handler) == 0 && !timeout.IsCancellationRequested,
+            "failure output: worker drains despite unwritable TXT and an existing user file");
+        foreach (var id in jobs)
+        {
+            var job = store.Get(id)!;
+            var isUnknown = id == jobs[^1];
+            check(job.State == (isUnknown ? JobState.Unknown : JobState.Failed) && job.Attempts == 1 &&
+                job.HttpStatus == (isUnknown ? null : 400) && store.Attempts(id).Single().Result is not null &&
+                job.Result!.Value.GetProperty("files").GetArrayLength() == 0,
+                "failure output: original job and attempt persist, TXT is not an image result " + id);
+        }
+        foreach (var (path, id) in new[]
+        {
+            (Path.ChangeExtension(edit.OutputPath, ".txt"), jobs[0]),
+            (Path.Combine(paths.Root, "output", "batch-01.txt"), jobs[1]),
+            (Path.Combine(paths.Root, "output", "batch-02.txt"), jobs[1]),
+            (Directory.GetFiles(auto.OutputPath, "*.txt").Single(), jobs[2])
+        })
+        {
+            var text = File.ReadAllText(path);
+            using var json = JsonDocument.Parse(text);
+            var log = json.RootElement;
+            var dbResult = store.Get(id)!.Result!.Value;
+            check(log.GetProperty("Id").GetInt64() == id && log.GetProperty("State").GetString() == "failed" &&
+                log.GetProperty("Http").GetInt32() == 400 && log.GetProperty("ErrorCode").GetString() == "moderation_blocked" &&
+                log.GetProperty("UpstreamMessage").GetString() == dbResult.GetProperty("api_error").GetProperty("upstream_message").GetString() &&
+                log.GetProperty("UpstreamMessage").GetString()!.StartsWith(message) && !text.Contains(key) &&
+                log.GetProperty("FileCount").GetInt32() == 0 &&
+                log.GetProperty("Mode").GetString() == (id == jobs[0] ? "edit" : "images") &&
+                log.GetProperty("Model").GetString() == (id == jobs[0] ? edit.ImageModel : batch.ImageModel),
+                "failure output: same-name TXT preserves safe upstream detail and task metadata " + Path.GetFileName(path));
+        }
+        using (var json = JsonDocument.Parse(File.ReadAllText(Path.ChangeExtension(unknown.OutputPath, ".txt"))))
+            check(json.RootElement.GetProperty("State").GetString() == "unknown" &&
+                json.RootElement.GetProperty("UpstreamMessage").GetString() == store.Get(jobs[^1])!.Error,
+                "failure output: uncertain network result stays unknown with original local error fallback");
+        check(File.ReadAllText(occupiedLog) == "existing user text" &&
+            Directory.Exists(Path.ChangeExtension(blocked.OutputPath, ".txt")) &&
+            !Directory.GetFiles(Path.Combine(paths.Root, "output"), "*", SearchOption.AllDirectories)
+                .Any(p => Path.GetExtension(p) != ".txt"),
+            "failure output: no fake images, existing files/directories unchanged");
+
+        // The legacy synchronous command shares the output branch, without creating queue history.
+        var syncImage = Path.Combine(paths.Root, "output", "sync.png");
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+        var syncExit = await CliApplication.RunAsync(["--no-config", "--endpoint", "https://queue-tests.invalid",
+            "--api-key", key, "--prompt", "offline sync", "--output", syncImage, "--json"], output, error, handler);
+        using (var json = JsonDocument.Parse(File.ReadAllText(Path.ChangeExtension(syncImage, ".txt"))))
+            check(syncExit == 1 && json.RootElement.GetProperty("Id").ValueKind == JsonValueKind.Null &&
+                json.RootElement.GetProperty("ErrorCode").GetString() == "moderation_blocked" && !File.Exists(syncImage),
+                "failure output: synchronous CLI also writes same-name TXT and preserves failure exit code");
+
+        // Explicit overwrite may replace a TXT, but partial successes never get a failure placeholder.
+        var report = new CliReport { Error = "local write failure", Mode = "images" };
+        var partial = batch with { OutputPath = Path.Combine(paths.Root, "output", "partial.png") };
+        var partialPaths = ImageResultWriter.ResolveOutputPaths(partial.OutputPath, partial.OutputFormat, partial.Count);
+        File.WriteAllBytes(partialPaths[0], png);
+        report.Files.Add(partialPaths[0]);
+        check(await FailureResultWriter.TrySaveAsync(partial, report, JobState.Failed) &&
+            !File.Exists(Path.ChangeExtension(partialPaths[0], ".txt")) &&
+            File.Exists(Path.ChangeExtension(partialPaths[1], ".txt")) && File.ReadAllBytes(partialPaths[0]).SequenceEqual(png),
+            "failure output: partial success keeps its image; only missing image gets TXT");
+        check(await FailureResultWriter.TrySaveAsync(occupied with { Overwrite = true }, report, JobState.Failed) &&
+            File.ReadAllText(occupiedLog).Contains("local write failure"),
+            "failure output: explicit overwrite allows replacing an existing TXT");
     }
 
     private static CliOptions Options(QueuePaths paths, string key, string model, string name) => new()

@@ -2,10 +2,16 @@ namespace GptImageCli;
 
 internal static class Usage
 {
-    public static void Write(TextWriter writer)
+    public static void WriteHeader(TextWriter writer, string version)
     {
-        writer.WriteLine("gpt-image - GPT-Image-2 独立命令行生图/改图工具");
+        writer.WriteLine($"gpt-image {version} - GPT-Image-2 独立命令行生图/改图工具");
+        writer.WriteLine("版本变更：安装目录 CHANGELOG.md");
         writer.WriteLine();
+    }
+
+    public static void Write(TextWriter writer, string version)
+    {
+        WriteHeader(writer, version);
         writer.WriteLine("用法:");
         writer.WriteLine("  gpt-image submit [生图参数] [--name 任务名称] [--json]  持久入队后返回，后台执行");
         writer.WriteLine("  gpt-image queue                                      打开终端队列维护界面");

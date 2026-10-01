@@ -98,12 +98,22 @@ internal static class QueuePublishedTests
         test.Check(exhausted.Job is { State: JobState.Failed, Attempts: 3, HttpStatus: 429 } &&
             History(exhausted.Attempts!, 429, 429, 429) && !File.Exists(test.Output("always429")),
             "retryCount=2 表示总共三次；耗尽后失败，不写图片、不发第四次");
+        using (var log = JsonDocument.Parse(File.ReadAllText(Path.ChangeExtension(test.Output("always429"), ".txt"))))
+        {
+            var detail = log.RootElement;
+            test.Check(detail.GetProperty("Id").GetInt64() == jobs["always429"] &&
+                detail.GetProperty("State").GetString() == "failed" && detail.GetProperty("Http").GetInt32() == 429 &&
+                detail.GetProperty("ErrorCode").GetString() == "rate_limit_exceeded" &&
+                detail.GetProperty("UpstreamMessage").GetString() == exhausted.Job!.Result!.Value.GetProperty("api_error").GetProperty("upstream_message").GetString() &&
+                !detail.GetRawText().Contains("upstream-private-secret") && detail.GetProperty("FileCount").GetInt32() == 0,
+                "发布版最终失败写同名 TXT，保留脱敏上游原文和数据库任务编号");
+        }
         var final = (await test.ReplyAsync("list")).Snapshot!;
         test.Check(!final.WorkerRunning && final.Jobs.All(j => !JobState.IsActive(j.State)),
             "后台完成后自动退出，list JSON 无活动任务");
         test.Check(test.Store.GetWorkerInfo() is { ProtocolVersion: 1 } &&
             !File.Exists(Path.Combine(test.Paths.Root, "worker-info.json")), "发布版就绪信息在数据库，不生成 worker-info.json");
-        test.CheckImageOnlyDelivery(6);
+        test.CheckDelivery(6, 1);
         using var lease = test.Paths.TryLock("worker");
         test.Check(lease is not null, "后台完成后独占租约可重新取得");
     }
@@ -155,7 +165,7 @@ internal static class QueuePublishedTests
                 { Prompt: "menu-run", Model: "gpt-image-2", Path: "/v1/images/edits", ValidMultipart: true },
             "菜单流程总共仅一次成功 HTTP，取消和清除的任务从未发送");
         test.CheckOutput(result.Job!, "menu-run");
-        test.CheckImageOnlyDelivery(1);
+        test.CheckDelivery(1, 0);
     }
 
     private static bool History(List<QueueAttempt> attempts, params int[] statuses) =>
@@ -226,11 +236,12 @@ internal static class QueuePublishedTests
 
         public string Output(string prompt) => Path.Combine(_root, "images", prompt + ".png");
 
-        public void CheckImageOnlyDelivery(int count)
+        public void CheckDelivery(int images, int logs)
         {
             var files = Directory.GetFiles(Path.Combine(_root, "images"), "*", SearchOption.AllDirectories);
-            Check(files.Length == count && files.All(p => Path.GetExtension(p) == ".png"),
-                "图片交付目录仅有生成图片，没有 JSON/日志/回执/提示词");
+            Check(files.Length == images + logs && files.Count(p => Path.GetExtension(p) == ".png") == images &&
+                files.Count(p => Path.GetExtension(p) == ".txt") == logs,
+                "交付目录仅有成功图片和最终失败 TXT，没有额外回执或提示词");
         }
 
         public async Task<long> SubmitAsync(string prompt, string model = "gpt-image-2")

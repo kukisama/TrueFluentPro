@@ -27,6 +27,13 @@ void Check(bool condition, string name)
 string[] Arguments(params string[] extra) =>
     ["--endpoint", "http://127.0.0.1:1", "--api-key", "offline-only", "--prompt", "把帆船改为绿色", .. extra];
 
+if (args.Contains("--help-only"))
+{
+    await HelpTests.RunAsync(Check);
+    Console.WriteLine("Help checks passed.");
+    return;
+}
+
 if (args.Length == 2 && args[0] == "--queue-published")
 {
     await QueuePublishedTests.RunAsync(root, args[1], png, Check);
@@ -165,6 +172,7 @@ Check(wire.StartsWith("POST /v1/images/edits") && wire.Contains("api-key: offlin
 Check(wire.Contains("multipart/form-data;") && wire.Contains("image/png"), "wire multipart and image MIME");
 Check((await File.ReadAllBytesAsync(target)).SequenceEqual(png), "HTTP image response saved unchanged");
 Console.WriteLine($"Original regression checks passed: {checks}");
+await HelpTests.RunAsync(Check);
 await FeatureTests.RunAsync(root, source, png, Check);
 await SafetyTests.RunAsync(root, source, png, Check);
 await DiagnosticsTests.RunAsync(root, png, Check);

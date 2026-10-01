@@ -31,7 +31,7 @@ internal static class CliApplication
     {
         if (args.Length == 0 || args.Any(a => a.Equals("--help", StringComparison.OrdinalIgnoreCase)))
         {
-            Usage.Write(output);
+            Usage.Write(output, CliVersion.Current);
             return 0;
         }
 
@@ -57,7 +57,15 @@ internal static class CliApplication
             return 2;
         }
 
-        return await ExecuteAsync(options, output, error, report, handler);
+        var exit = await ExecuteAsync(options, output, error, report, handler);
+        if (exit != 0)
+        {
+            var state = report.Stage == "request" && report.HttpStatus is null or >= 200 and < 300
+                ? JobState.Unknown : JobState.Failed;
+            if (!await FailureResultWriter.TrySaveAsync(options, report, state))
+                await error.WriteLineAsync("无法写入同名 .txt 错误日志；原始错误仍保留在本次结果中。");
+        }
+        return exit;
     }
 
     // One attempt only. Persistent queue scheduling owns all retries.

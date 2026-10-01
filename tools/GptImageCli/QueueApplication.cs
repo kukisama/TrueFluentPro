@@ -18,6 +18,7 @@ internal static class QueueApplication
             var directory = Extract(remaining, "--queue-dir");
             if (remaining.Contains("--help"))
             {
+                Usage.WriteHeader(json ? error : output, CliVersion.Current);
                 await (json ? error : output).WriteLineAsync("""
                     队列用法（Windows 10/11，本机当前用户共享）：
                       gpt-image submit [现有生图参数] [--name 任务名称] [--json]

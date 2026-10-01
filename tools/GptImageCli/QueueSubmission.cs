@@ -41,7 +41,8 @@ internal static class QueueSubmission
             try { encrypted = Protect(json); }
             finally { CryptographicOperations.ZeroMemory(json); }
             return store.Enqueue(policy.Id, name ?? Path.GetFileNameWithoutExtension(target), encrypted,
-                ImageResultWriter.ResolveOutputPaths(target, options.OutputFormat, options.Count));
+                ImageResultWriter.ResolveOutputPaths(target, options.OutputFormat, options.Count)
+                    .SelectMany(path => new[] { path, Path.ChangeExtension(path, ".txt") }).ToArray());
         }
         catch
         {

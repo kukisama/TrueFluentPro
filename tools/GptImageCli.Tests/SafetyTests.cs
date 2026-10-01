@@ -78,7 +78,7 @@ internal static class SafetyTests
             "overwrite defaults false and accepts case-insensitive valueless switch");
         using (var help = new StringWriter())
         {
-            Usage.Write(help);
+            Usage.Write(help, CliVersion.Current);
             check(help.ToString().Contains("--overwrite") && help.ToString().Contains("api_error") && help.ToString().Contains("GUID"), "Usage describes both safety changes");
         }
 

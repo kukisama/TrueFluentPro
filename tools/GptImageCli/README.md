@@ -2,10 +2,12 @@
 
 独立图片生成与编辑工具。日常提交、查询和队列管理见发行包 `SKILL.md`；实际契约与实测限制见 [CAPABILITIES.md](./CAPABILITIES.md)。
 
+运行 `gpt-image --help` 查看程序版本；版本能力与变更见 [CHANGELOG.md](./CHANGELOG.md)。版本号仅在 `GptImageCli.csproj` 的 `Version` 定义，由 SDK 生成程序集/文件版本，程序读取版本元数据后传给帮助界面，无需同步修改帮助文案。
+
 ## 安装
 
 - 复制完整 `gpt-image-cli/` 到宿主支持的 skill 目录，例如项目 `.github/skills/gpt-image-cli/`；不要只复制 exe 或 SKILL.md。
-- 保留根目录的 exe、SKILL.md、两份说明、辅助脚本、队列模板、发行清单及 `references/`。源码 skill 资产位于 `skills/gpt-image-cli/`，发行时展开到包根。
+- 保留根目录的 exe、SKILL.md、README.md、CAPABILITIES.md、CHANGELOG.md、辅助脚本、队列模板、发行清单及 `references/`。源码 skill 资产位于 `skills/gpt-image-cli/`，发行时展开到包根。
 - 发行清单 `runtime` 须匹配 Windows 架构；`mode=NativeAot` 与 `Managed` 均无需另装 .NET，Debug 包需要 .NET 10。
 - 无需启动主程序或配置 PATH；图片输出目录与安装目录独立。宿主未发现 skill 时，可显式加载该目录的 SKILL.md。
 
@@ -65,7 +67,9 @@ $exe = (Resolve-Path -LiteralPath './gpt-image.exe').Path
 
 日常通过 `submit` 入队的生图和 edit 任务自动持久化；同一 Windows 用户跨项目共享，不保存在 skill 安装目录。默认目录为 `%LOCALAPPDATA%\GptImageCli`（例如 `C:\Users\a9y\AppData\Local\GptImageCli`）：
 
-**图片交付目录只保存图片。** 提示词及参数/连接快照已加密存入数据库，任务名、结果路径、429 诊断、重试决策、事件与执行器就绪信息也在数据库，不需要额外 JSON 回执、提示词文件或日志。`--json` 和查询 `.ps1` 返回的 JSON 是 stdout 通信格式，不是文件写入要求；在内存解析并用 `queue list/show` 查询即可。
+**成功输出图片，最终失败输出同目录、同名 `.txt`。** 例如 `xxx.jpg` / `xxx.png` 失败时写 `xxx.txt`；多张按原序号写 `xxx-01.txt` 等，已有本次成功图片不另写失败占位。TXT 是简洁 JSON：任务编号、状态、HTTP、错误码、上游错误原文（沿用脱敏）、已保存图片数、模型、模式和请求 ID，不加分析说明；没有可用上游信息时记录本次错误。数据库及每次尝试照常保存，TXT 不加入 `result.files`。等待重试时不写 TXT；本次执行返回的结果不明错误写 `State=unknown`，不自动重提。旧历史、强制中断恢复及无法解密参数的任务不补写。
+
+TXT 默认不覆盖已有文件，显式 `--overwrite` 才允许覆盖；日志不可写时原任务记录仍在数据库，并新增 `failure_output_error` 事件。成功不会删除以前的 TXT 或其他用户文件。同步调用也输出失败 TXT，但 `Id=null`，仍不入队列库。除此以外不另存 JSON 回执、提示词或任务清单；`--json` 和查询 `.ps1` 的 JSON 只是 stdout 通信格式。
 
 | 位置 | 保存内容 |
 | --- | --- |
@@ -73,7 +77,7 @@ $exe = (Resolve-Path -LiteralPath './gpt-image.exe').Path
 | `queue-settings.json` | 队列配额与模型映射配置，不是日志 |
 | `queue.db-wal` / `queue.db-shm`、`*.lock` | SQLite 运行文件及同步锁，不是交付文件 |
 | `inputs/` | edit 参考图与 mask 的输入快照，不是生成图片或日志 |
-| 提交时的 `--output`，省略时为提交工作目录 | 生成图片；实际路径以 `job.result.files` 为准 |
+| 提交时的 `--output`，省略时为提交工作目录 | 成功图片或最终失败同名 `.txt`；图片实际路径以 `job.result.files` 为准 |
 
 优先从 CLI 查询，不必直接打开数据库。`$exe` 为本安装目录 `gpt-image.exe` 的绝对路径，任务编号来自提交回执：
 

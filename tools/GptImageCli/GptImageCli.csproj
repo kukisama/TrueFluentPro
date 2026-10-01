@@ -7,6 +7,8 @@
     <Nullable>enable</Nullable>
     <AssemblyName>gpt-image</AssemblyName>
     <RootNamespace>GptImageCli</RootNamespace>
+    <Version>1.0.2</Version>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>false</SelfContained>
     <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>

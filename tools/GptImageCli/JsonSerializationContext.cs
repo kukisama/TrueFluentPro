@@ -41,3 +41,10 @@ internal sealed record CliReportData(
 [JsonSerializable(typeof(CliReportData))]
 [JsonSerializable(typeof(EndpointSummary))]
 internal partial class JsonSerializationContext : JsonSerializerContext;
+
+internal sealed record FailureOutputReport(long? Id, string State, int? Http, string? ErrorCode,
+    string? UpstreamMessage, int FileCount, string? Model, string? Mode, string? RequestId);
+
+[JsonSourceGenerationOptions(WriteIndented = true, GenerationMode = JsonSourceGenerationMode.Metadata)]
+[JsonSerializable(typeof(FailureOutputReport))]
+internal partial class FailureOutputJsonContext : JsonSerializerContext;

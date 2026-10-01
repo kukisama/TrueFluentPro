@@ -176,6 +176,11 @@ internal sealed class CliReport
         return parts.Length == 2 && parts.All(p => p.Length is >= 1 and <= 4 && p.All(char.IsAsciiDigit));
     }
 
+    public string SerializeFailure(long? jobId, string state) => JsonSerializer.Serialize(new FailureOutputReport(
+        jobId, state, _httpStatus, ApiErrorCode, _apiError?.upstream_message ?? Error,
+        Files.Count, _requestSettings?.image_model, Mode, _requestId),
+        FailureOutputJsonContext.Default.FailureOutputReport);
+
     public string Serialize(int exit) => JsonSerializer.Serialize(new CliReportData(
         ok: exit == 0, exit_code: exit, files: Files, mode: Mode, http_status: _httpStatus,
         request_id: _requestId, elapsed_ms: _clock.ElapsedMilliseconds, usage: _usage,

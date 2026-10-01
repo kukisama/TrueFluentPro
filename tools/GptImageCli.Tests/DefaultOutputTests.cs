@@ -133,7 +133,7 @@ internal static class DefaultOutputTests
                     "explicit Responses retains caller-supplied size");
 
             using var help = new StringWriter();
-            Usage.Write(help);
+            Usage.Write(help, CliVersion.Current);
             check(help.ToString().Contains("默认 images") && help.ToString().Contains("默认 1024x640") &&
                 help.ToString().Contains("无需调用方生成 ID 或预先检查路径") && help.ToString().Contains("自行通过 --size 适配"),
                 "Usage documents defaults, automatic output and explicit Responses size adaptation");

@@ -7,7 +7,7 @@ try {
     $output = Join-Path $PSScriptRoot 'bin/Debug/net10.0/gpt-image-cli'
     & dotnet build (Join-Path $PSScriptRoot 'GptImageCli.csproj') -c Debug -o $output
     if ($LASTEXITCODE -ne 0) { throw "Debug 构建失败，退出码：$LASTEXITCODE" }
-    foreach ($relative in @('README.md', 'CAPABILITIES.md')) {
+    foreach ($relative in @('README.md', 'CAPABILITIES.md', 'CHANGELOG.md')) {
         $destination = Join-Path $output ([IO.Path]::GetFileName($relative))
         New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destination) | Out-Null
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot $relative) -Destination $destination -Force

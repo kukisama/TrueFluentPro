@@ -155,7 +155,7 @@ internal sealed class QueueStore
         tx.Commit(); return job;
     }
 
-    public void Complete(ClaimedJob job, QueueDefinition policy, CliReport report, int exit, long now)
+    public string Complete(ClaimedJob job, QueueDefinition policy, CliReport report, int exit, long now)
     {
         // Preserve the transport failure before replacing the job's latest summary with a retry message.
         var attemptResult = report.Serialize(exit);
@@ -207,6 +207,7 @@ internal sealed class QueueStore
         if (state is JobState.Succeeded or JobState.Failed)
             Execute(db, tx, "DELETE FROM output_reservations WHERE job_id=$id", ("$id", job.Id));
         tx.Commit();
+        return state;
     }
 
     // Call only after obtaining the exclusive worker lease. A previous process may have sent these jobs.
