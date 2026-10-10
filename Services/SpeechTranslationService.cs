@@ -332,6 +332,8 @@ namespace TrueFluentPro.Services
         {
             if (e.Reason == CancellationReason.Error)
             {
+                _auditLog?.Invoke(
+                    $"[翻译流] SpeechCanceled reason='{e.Reason}' code='{e.ErrorCode}' details='{(e.ErrorDetails ?? string.Empty).Replace("'", "’").Replace("\r", " ").Replace("\n", " ")}'");
                 OnStatusChanged?.Invoke(this, $"语音服务连接异常：{e.ErrorCode}。系统将尝试自动恢复。{(string.IsNullOrWhiteSpace(e.ErrorDetails) ? string.Empty : $" 详情：{e.ErrorDetails}")}");
                 ScheduleManagedReconnect($"检测到连接异常（{e.ErrorCode}）", immediateFirstAttempt: true);
             }

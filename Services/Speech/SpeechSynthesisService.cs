@@ -78,6 +78,18 @@ namespace TrueFluentPro.Services.Speech
                 : $"{host}/{normalizedPath}";
         }
 
+        public static string BuildRegionalBaseUrl(string region, string? configuredEndpoint)
+        {
+            if (string.IsNullOrWhiteSpace(region))
+                throw new ArgumentException("TTS 区域不能为空。", nameof(region));
+
+            var hostSuffix = !string.IsNullOrWhiteSpace(configuredEndpoint)
+                             && configuredEndpoint.Contains(".azure.cn", StringComparison.OrdinalIgnoreCase)
+                ? "tts.speech.azure.cn"
+                : "tts.speech.microsoft.com";
+            return $"https://{region.Trim()}.{hostSuffix}";
+        }
+
         private static HttpRequestMessage CreateAuthenticatedRequest(HttpMethod method, string url, TtsAuthContext auth)
         {
             var request = new HttpRequestMessage(method, url);
@@ -118,7 +130,7 @@ namespace TrueFluentPro.Services.Speech
                 $"TTS.Voices route='{GetRouteName(auth)}' baseUrl='{AudioLabRouteAuditLog.Safe(auth.BaseUrl)}' url='{AudioLabRouteAuditLog.Safe(url)}' auth='{GetAuthName(auth)}'");
             using var request = CreateAuthenticatedRequest(HttpMethod.Get, url, auth);
             using var response = await _httpClient.SendAsync(request, ct);
-            response.EnsureSuccessStatusCode();
+            await EnsureSuccessWithDetailsAsync(response, "加载语音列表", ct);
 
             var json = await response.Content.ReadAsStringAsync(ct);
             var voices = JsonSerializer.Deserialize<List<VoiceInfo>>(json) ?? new List<VoiceInfo>();
@@ -147,9 +159,56 @@ namespace TrueFluentPro.Services.Speech
             request.Headers.Add("User-Agent", "TrueFluentPro");
 
             using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
-            response.EnsureSuccessStatusCode();
+            await EnsureSuccessWithDetailsAsync(response, "语音合成", ct);
 
             return await response.Content.ReadAsByteArrayAsync(ct);
+        }
+
+        private static async Task EnsureSuccessWithDetailsAsync(
+            HttpResponseMessage response,
+            string operation,
+            CancellationToken ct)
+        {
+            if (response.IsSuccessStatusCode)
+                return;
+
+            var body = await response.Content.ReadAsStringAsync(ct);
+            var details = ExtractServiceError(body);
+            var message = string.IsNullOrWhiteSpace(details)
+                ? $"{operation}失败：HTTP {(int)response.StatusCode} {response.ReasonPhrase}。"
+                : $"{operation}失败：HTTP {(int)response.StatusCode} {response.ReasonPhrase}。{details}";
+
+            AudioLabRouteAuditLog.Failure(
+                $"TTS.Error operation='{AudioLabRouteAuditLog.Safe(operation)}' http='{(int)response.StatusCode} {AudioLabRouteAuditLog.Safe(response.ReasonPhrase)}' details='{AudioLabRouteAuditLog.Safe(details)}'");
+            throw new HttpRequestException(message, null, response.StatusCode);
+        }
+
+        private static string ExtractServiceError(string body)
+        {
+            if (string.IsNullOrWhiteSpace(body))
+                return string.Empty;
+
+            try
+            {
+                using var document = JsonDocument.Parse(body);
+                if (document.RootElement.TryGetProperty("error", out var error))
+                {
+                    var code = error.TryGetProperty("code", out var codeElement)
+                        ? codeElement.GetString()
+                        : null;
+                    var message = error.TryGetProperty("message", out var messageElement)
+                        ? messageElement.GetString()
+                        : null;
+                    if (!string.IsNullOrWhiteSpace(code) || !string.IsNullOrWhiteSpace(message))
+                        return $"{code}: {message}".Trim(' ', ':');
+                }
+            }
+            catch (JsonException)
+            {
+            }
+
+            var normalized = body.Replace("\r", " ").Replace("\n", " ").Trim();
+            return normalized.Length <= 800 ? normalized : normalized[..800] + "...";
         }
 
         // ── SSML 构建 ─────────────────────────────────

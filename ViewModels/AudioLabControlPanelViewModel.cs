@@ -402,13 +402,15 @@ namespace TrueFluentPro.ViewModels
                         throw new InvalidOperationException($"传统 Speech TTS 配置错误：已选择“{speechRes.Name}”，但无法解析区域。请检查该 Speech 终结点。不会回退到其他资源。");
                     }
 
+                    var ttsBaseUrl = SpeechSynthesisService.BuildRegionalBaseUrl(region, speechRes.Endpoint);
+
                     AudioLabRouteAuditLog.Info(
-                        $"TTS.Auth route='SpeechKeySelectedEndpoint' endpointName='{AudioLabRouteAuditLog.Safe(speechRes.Name)}' endpoint='{AudioLabRouteAuditLog.Safe(speechRes.Endpoint)}' baseUrl='https://{AudioLabRouteAuditLog.Safe(region)}.tts.speech.microsoft.com' auth='Key'");
+                        $"TTS.Auth route='SpeechKeySelectedEndpoint' endpointName='{AudioLabRouteAuditLog.Safe(speechRes.Name)}' endpoint='{AudioLabRouteAuditLog.Safe(speechRes.Endpoint)}' baseUrl='{AudioLabRouteAuditLog.Safe(ttsBaseUrl)}' auth='Key'");
 
                     return new SpeechSynthesisService.TtsAuthContext
                     {
                         SubscriptionKey = speechRes.SubscriptionKey,
-                        BaseUrl = $"https://{region}.tts.speech.microsoft.com",
+                        BaseUrl = ttsBaseUrl,
                         IsCustomDomainEndpoint = false,
                     };
                 }
