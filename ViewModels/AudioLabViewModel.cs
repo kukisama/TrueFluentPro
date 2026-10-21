@@ -478,6 +478,8 @@ namespace TrueFluentPro.ViewModels
         private readonly ObservableCollection<MediaFileItem> _audioFiles = new();
         public ObservableCollection<MediaFileItem> AudioFiles => _audioFiles;
 
+        private bool _suppressSelectedAudioFileLoad;
+
         [ObservableProperty]
         private MediaFileItem? _selectedAudioFile;
 
@@ -612,6 +614,9 @@ namespace TrueFluentPro.ViewModels
 
         partial void OnSelectedAudioFileChanged(MediaFileItem? value)
         {
+            if (_suppressSelectedAudioFileLoad)
+                return;
+
             if (value != null && !string.IsNullOrWhiteSpace(value.FullPath))
                 LoadAudioFile(value.FullPath);
         }
@@ -821,6 +826,31 @@ namespace TrueFluentPro.ViewModels
             if (string.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath))
                 return;
 
+            var existingItem = _audioFiles.FirstOrDefault(item =>
+                string.Equals(item.FullPath, filePath, StringComparison.OrdinalIgnoreCase));
+            if (existingItem == null)
+            {
+                existingItem = new MediaFileItem
+                {
+                    Name = Path.GetFileName(filePath),
+                    FullPath = filePath
+                };
+                _audioFiles.Insert(0, existingItem);
+            }
+
+            if (!ReferenceEquals(SelectedAudioFile, existingItem))
+            {
+                _suppressSelectedAudioFileLoad = true;
+                try
+                {
+                    SelectedAudioFile = existingItem;
+                }
+                finally
+                {
+                    _suppressSelectedAudioFileLoad = false;
+                }
+            }
+
             // 保存当前会话的 UI 编辑状态
             if (_activeSession != null)
                 SaveUiToSession(_activeSession);
@@ -996,8 +1026,22 @@ namespace TrueFluentPro.ViewModels
                 if (refreshVersion != _audioLibraryRefreshVersion)
                     return;
 
-                var selectedPath = SelectedAudioFile?.FullPath;
+                var selectedPath = SelectedAudioFile?.FullPath ?? CurrentFilePath;
                 _audioFiles.Clear();
+                foreach (var sessionPath in _sessions.Keys)
+                {
+                    if (!File.Exists(sessionPath))
+                        continue;
+                    if (files.Any(f => string.Equals(f.FullPath, sessionPath, StringComparison.OrdinalIgnoreCase)))
+                        continue;
+
+                    _audioFiles.Add(new MediaFileItem
+                    {
+                        Name = Path.GetFileName(sessionPath),
+                        FullPath = sessionPath
+                    });
+                }
+
                 foreach (var f in files)
                     _audioFiles.Add(f);
 
@@ -1005,7 +1049,15 @@ namespace TrueFluentPro.ViewModels
                 {
                     var matched = _audioFiles.FirstOrDefault(item =>
                         string.Equals(item.FullPath, selectedPath, StringComparison.OrdinalIgnoreCase));
-                    SelectedAudioFile = matched;
+                    _suppressSelectedAudioFileLoad = true;
+                    try
+                    {
+                        SelectedAudioFile = matched;
+                    }
+                    finally
+                    {
+                        _suppressSelectedAudioFileLoad = false;
+                    }
                 }
             });
         }

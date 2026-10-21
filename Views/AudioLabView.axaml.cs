@@ -1,9 +1,14 @@
 using System;
+using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Layout;
+using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using Avalonia.VisualTree;
 using TrueFluentPro.Models;
@@ -178,7 +183,7 @@ namespace TrueFluentPro.Views
                 {
                     new FilePickerFileType("音频文件")
                     {
-                        Patterns = new[] { "*.wav", "*.mp3", "*.m4a", "*.flac", "*.ogg", "*.wma", "*.aac" }
+                        Patterns = new[] { "*.wav", "*.mp3", "*.m4a", "*.flac", "*.ogg", "*.opus", "*.wma", "*.aac", "*.webm", "*.amr", "*.mp4" }
                     },
                     FilePickerFileTypes.All
                 }
@@ -188,8 +193,177 @@ namespace TrueFluentPro.Views
             {
                 var path = files[0].TryGetLocalPath();
                 if (!string.IsNullOrEmpty(path))
-                    ViewModel?.LoadAudioFile(path);
+                    await LoadAudioFileWithFormatCheckAsync(path);
             }
+        }
+
+        public async Task LoadAudioFileWithFormatCheckAsync(string rawPath)
+        {
+            var viewModel = ViewModel;
+            if (viewModel == null || string.IsNullOrWhiteSpace(rawPath))
+                return;
+
+            var path = rawPath.Trim().Trim('\u202a', '\u202b', '\u202c', '\u200e', '\u200f', '"');
+            if (!File.Exists(path))
+            {
+                viewModel.StatusMessage = $"音频文件不存在：{path}";
+                return;
+            }
+
+            if (AudioFormatConverter.IsMicrosoftSpeechSupportedFormat(path, out _))
+            {
+                viewModel.LoadAudioFile(path);
+                return;
+            }
+
+            AudioMp3ConversionPlan plan;
+            try
+            {
+                plan = await Task.Run(() => AudioFormatConverter.BuildMp3ConversionPlan(path));
+            }
+            catch (Exception ex)
+            {
+                viewModel.StatusMessage = $"读取音频格式信息失败：{ex.Message}";
+                return;
+            }
+
+            var confirmed = await ShowFormatConversionConfirmDialogAsync(plan);
+            if (!confirmed)
+            {
+                viewModel.StatusMessage = "已取消音频格式转换。";
+                return;
+            }
+
+            viewModel.IsGenerating = true;
+            viewModel.StatusMessage = $"正在转换音频格式：{Path.GetFileName(plan.TargetMp3Path)}（{plan.TargetBitrateKbps} kbps，不高于原始 {plan.SourceBitrateKbps} kbps）...";
+
+            try
+            {
+                var resultPlan = await AudioFormatConverter.ConvertToMp3CappedBitrateAsync(path, plan);
+                viewModel.IsGenerating = false;
+                viewModel.StatusMessage = $"格式转换完成：{Path.GetFileName(resultPlan.TargetMp3Path)}（{resultPlan.TargetBitrateKbps} kbps），正在提交转录...";
+                viewModel.LoadAudioFile(resultPlan.TargetMp3Path);
+            }
+            catch (Exception ex)
+            {
+                viewModel.IsGenerating = false;
+                viewModel.StatusMessage = $"音频格式转换失败：{ex.Message}";
+            }
+        }
+
+        private async Task<bool> ShowFormatConversionConfirmDialogAsync(AudioMp3ConversionPlan plan)
+        {
+            var owner = TopLevel.GetTopLevel(this) as Window;
+            if (owner == null)
+                return true;
+
+            var confirmed = false;
+            var dialog = new Window
+            {
+                Title = "音频格式不支持直接转录",
+                Width = 480,
+                SizeToContent = SizeToContent.Height,
+                CanResize = false,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner
+            };
+
+            var titleBlock = new TextBlock
+            {
+                Text = "当前音频格式不是微软语音转录直接支持的格式",
+                FontSize = 16,
+                FontWeight = FontWeight.SemiBold,
+                TextWrapping = TextWrapping.Wrap
+            };
+
+            var descBlock = new TextBlock
+            {
+                Text = $"检测到输入文件为 {plan.SourceFormatLabel} 格式，微软语音转录接口无法直接解码该格式。点击「确定」将开始转换为兼容的 MP3 格式，转换完成后自动以新文件提交转录。",
+                FontSize = 13,
+                Opacity = 0.85,
+                TextWrapping = TextWrapping.Wrap,
+                LineHeight = 20
+            };
+
+            var detailPanel = new StackPanel { Spacing = 6 };
+            detailPanel.Children.Add(new TextBlock
+            {
+                Text = $"原始文件：{Path.GetFileName(plan.SourcePath)}",
+                FontSize = 12,
+                TextWrapping = TextWrapping.Wrap
+            });
+            detailPanel.Children.Add(new TextBlock
+            {
+                Text = $"转换后文件：{Path.GetFileName(plan.TargetMp3Path)}",
+                FontSize = 12,
+                FontWeight = FontWeight.SemiBold,
+                TextWrapping = TextWrapping.Wrap
+            });
+            detailPanel.Children.Add(new TextBlock
+            {
+                Text = $"码流限制：原始约 {plan.SourceBitrateKbps} kbps → 转换目标 {plan.TargetBitrateKbps} kbps（不超过原始音频码流）",
+                FontSize = 12,
+                Opacity = 0.8,
+                TextWrapping = TextWrapping.Wrap
+            });
+
+            var detailBorder = new Border
+            {
+                Padding = new Thickness(12, 10),
+                CornerRadius = new CornerRadius(6),
+                BorderThickness = new Thickness(1),
+                BorderBrush = this.TryFindResource("CardBorderBrush", out var borderBrush) && borderBrush is IBrush bb
+                    ? bb
+                    : new SolidColorBrush(Color.Parse("#33888888")),
+                Background = this.TryFindResource("CardBackgroundFillColorDefaultBrush", out var bgBrush) && bgBrush is IBrush bg
+                    ? bg
+                    : new SolidColorBrush(Color.Parse("#14888888")),
+                Child = detailPanel
+            };
+
+            var cancelButton = new Button
+            {
+                Content = "取消",
+                Width = 88,
+                HorizontalContentAlignment = HorizontalAlignment.Center,
+                IsCancel = true
+            };
+            cancelButton.Click += (_, _) =>
+            {
+                confirmed = false;
+                dialog.Close();
+            };
+
+            var confirmButton = new Button
+            {
+                Content = "确定",
+                Width = 96,
+                HorizontalContentAlignment = HorizontalAlignment.Center,
+                IsDefault = true,
+                Classes = { "accent" }
+            };
+            confirmButton.Click += (_, _) =>
+            {
+                confirmed = true;
+                dialog.Close();
+            };
+
+            var buttonBar = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Spacing = 10,
+                Children = { cancelButton, confirmButton }
+            };
+
+            dialog.Content = new StackPanel
+            {
+                Margin = new Thickness(20),
+                Spacing = 14,
+                Children = { titleBlock, descBlock, detailBorder, buttonBar }
+            };
+
+            await dialog.ShowDialog(owner);
+            return confirmed;
         }
 
         // ── 通用导出 ─────────────────────────────────────────
@@ -241,7 +415,7 @@ namespace TrueFluentPro.Views
             e.Handled = true;
         }
 
-        private void OnDrop(object? sender, DragEventArgs e)
+        private async void OnDrop(object? sender, DragEventArgs e)
         {
             if (!e.Data.Contains(DataFormats.Files)) return;
 
@@ -249,10 +423,9 @@ namespace TrueFluentPro.Views
             if (files == null || files.Count == 0) return;
 
             var path = files[0].TryGetLocalPath();
-            if (!string.IsNullOrEmpty(path))
-                ViewModel?.LoadAudioFile(path);
-
             e.Handled = true;
+            if (!string.IsNullOrEmpty(path))
+                await LoadAudioFileWithFormatCheckAsync(path);
         }
 #pragma warning restore CS0618
 

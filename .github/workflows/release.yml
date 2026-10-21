@@ -1,8 +1,10 @@
-# 当推送 tag（如 v1.3.0 或 1.3.0）时，自动构建并发布 GitHub Release
+# 自动构建并发布 GitHub Release：
+# 1. 当修改 Assets/RELEASE_NOTES.md 顶部的版本号（如 # 译见 Pro v2.2.1）并合并/推送到 main 分支时，自动提取版本号、构建打包并创建对应的 Tag 与 GitHub Release
+# 2. 当直接推送 tag（如 v2.2.1 或 2.2.1）或手动触发 workflow_dispatch 时，同样自动构建并发布
 #
-# 流程：build job（按 matrix 并行构建多个 RID）→ release job（汇总所有 zip，读取 RELEASE_NOTES.md 创建 Release）
+# 流程：prepare job（解析版本号与去重检查）→ build job（按 matrix 并行构建多个 RID）→ release job（汇总所有 zip，读取 RELEASE_NOTES.md 创建 Release）
 # 关联文件：
-#   - Assets/RELEASE_NOTES.md   ← Release 说明正文（每次发布前编辑）
+#   - Assets/RELEASE_NOTES.md   ← 版本号与 Release 说明唯一权威来源（每次发布前编辑首行 vX.Y.Z 与正文）
 #   - Docs/publish-fdd.ps1      ← 本地一键打包脚本（本 workflow 不调用，仅供手动使用）
 #   - Docs/release.ps1           ← 本地一键发布脚本（含 tag + gh release，可替代本 workflow）
 
@@ -10,30 +12,116 @@ name: Release
 
 on:
   push:
+    branches:
+      - main
+    paths:
+      - 'Assets/RELEASE_NOTES.md'
+      - 'RELEASE_NOTES.md'
     tags:
       - 'v*'
       - '[0-9]*'
   workflow_dispatch:
     inputs:
       tag:
-        description: '要发布的 tag（如 1.8.1）'
-        required: true
+        description: '要发布的 tag（如 2.2.1，留空则从 RELEASE_NOTES.md 首行读取）'
+        required: false
 
 permissions:
   contents: write
 
 jobs:
+  # ── 阶段零：解析目标版本号并检查是否需要发布 ──
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      should_release: ${{ steps.meta.outputs.should_release }}
+      tag: ${{ steps.meta.outputs.tag }}
+      checkout_ref: ${{ steps.meta.outputs.checkout_ref }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          sparse-checkout: |
+            Assets/RELEASE_NOTES.md
+            RELEASE_NOTES.md
+
+      - name: Resolve version and release decision
+        id: meta
+        shell: bash
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          GITHUB_REF_FULL: ${{ github.ref }}
+          GITHUB_SHA_VAL: ${{ github.sha }}
+        run: |
+          notes_path=""
+          if [ -f "Assets/RELEASE_NOTES.md" ]; then
+            notes_path="Assets/RELEASE_NOTES.md"
+          elif [ -f "RELEASE_NOTES.md" ]; then
+            notes_path="RELEASE_NOTES.md"
+          else
+            echo "::error::RELEASE_NOTES.md not found in Assets/ or repository root"
+            exit 1
+          fi
+
+          first_line=$(head -n 1 "$notes_path" | tr -d '\r')
+          notes_ver=""
+          if [[ "$first_line" =~ v([0-9]+\.[0-9]+\.[0-9]+) ]]; then
+            notes_ver="${BASH_REMATCH[1]}"
+          fi
+          echo "Detected version in $notes_path: ${notes_ver:-<none>}"
+
+          if [ -n "$INPUT_TAG" ]; then
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+            echo "tag=$INPUT_TAG" >> "$GITHUB_OUTPUT"
+            echo "checkout_ref=$INPUT_TAG" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "$REF_TYPE" = "tag" ]; then
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+            echo "tag=$REF_NAME" >> "$GITHUB_OUTPUT"
+            echo "checkout_ref=$GITHUB_REF_FULL" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # 由分支（main）推送或未填 tag 的手动触发：从 RELEASE_NOTES.md 首行提取版本号
+          if [ -z "$notes_ver" ]; then
+            echo "::warning::Could not parse vX.Y.Z from first line of $notes_path: $first_line"
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "${GITHUB_EVENT_NAME}" = "push" ]; then
+            existing_tag=$(git ls-remote --tags origin "refs/tags/${notes_ver}" "refs/tags/v${notes_ver}")
+            if [ -n "$existing_tag" ]; then
+              echo "Tag ${notes_ver} already exists on remote; skipping duplicate build on branch push."
+              echo "should_release=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+
+          echo "should_release=true" >> "$GITHUB_OUTPUT"
+          echo "tag=${notes_ver}" >> "$GITHUB_OUTPUT"
+          echo "checkout_ref=${GITHUB_SHA_VAL}" >> "$GITHUB_OUTPUT"
+
   # ── 第一阶段 A：TrueFluentPro + Updater + GPT Image CLI（按 RID 并行） ──
   build:
+    needs: [prepare]
+    if: needs.prepare.outputs.should_release == 'true'
     # 此镜像包含 Native AOT 所需的 x64 / ARM64 C++ 工具链与 Windows SDK。
     runs-on: windows-2025
+    concurrency:
+      group: release-build-${{ needs.prepare.outputs.tag }}-${{ matrix.rid }}
+      cancel-in-progress: true
     strategy:
       matrix:
         rid: [win-x64, win-arm64]
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag || github.ref }}
+          ref: ${{ needs.prepare.outputs.checkout_ref }}
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -81,12 +169,16 @@ jobs:
 
   # ── 第二阶段：汇总所有 zip，读取 RELEASE_NOTES.md，创建 GitHub Release ──
   release:
-    needs: [build]
+    needs: [prepare, build]
+    if: needs.prepare.outputs.should_release == 'true'
     runs-on: ubuntu-latest
+    concurrency:
+      group: release-publish-${{ needs.prepare.outputs.tag }}
+      cancel-in-progress: true
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag || github.ref }}
+          ref: ${{ needs.prepare.outputs.checkout_ref }}
           sparse-checkout: |
             Assets/RELEASE_NOTES.md
             RELEASE_NOTES.md
@@ -113,7 +205,8 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ inputs.tag || github.ref_name }}
+          tag_name: ${{ needs.prepare.outputs.tag }}
+          target_commitish: ${{ github.sha }}
           body_path: ${{ steps.resolve_notes.outputs.path }}
           generate_release_notes: true
           append_body: true

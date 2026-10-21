@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Styling;
@@ -7,6 +8,8 @@ using Avalonia.Threading;
 using Microsoft.Extensions.DependencyInjection;
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using TrueFluentPro.Models;
 using TrueFluentPro.Services;
 using TrueFluentPro.Services.Storage;
@@ -98,16 +101,51 @@ public partial class MainWindow : Window
         NativePrelaunchSplash.CloseIfOpen();
         ApplyMainNavPaneState(_viewModel?.IsMainNavPaneOpen ?? false);
 
+        var startupAudioPath = TryGetStartupAudioFilePath();
+
         Dispatcher.UIThread.Post(() =>
         {
-            ShowPage(_viewModel?.SelectedNavTag ?? MainWindowViewModel.NavTagLive);
+            var initialTag = !string.IsNullOrWhiteSpace(startupAudioPath)
+                ? MainWindowViewModel.NavTagAudioLab
+                : (_viewModel?.SelectedNavTag ?? MainWindowViewModel.NavTagLive);
+
+            ShowPage(initialTag);
             _viewModel?.NotifyMainWindowShown();
 
             // 首次启动：确保主窗口置于最前
             Activate();
             Topmost = true;
-            Dispatcher.UIThread.Post(() => Topmost = false, DispatcherPriority.Background);
+            Dispatcher.UIThread.Post(async () =>
+            {
+                Topmost = false;
+                if (!string.IsNullOrWhiteSpace(startupAudioPath) && AudioLabViewPage != null)
+                {
+                    await AudioLabViewPage.LoadAudioFileWithFormatCheckAsync(startupAudioPath);
+                }
+            }, DispatcherPriority.Background);
         }, DispatcherPriority.Loaded);
+    }
+
+    private static string? TryGetStartupAudioFilePath()
+    {
+        if (Application.Current?.ApplicationLifetime is not IClassicDesktopStyleApplicationLifetime desktop
+            || desktop.Args == null
+            || desktop.Args.Length == 0)
+        {
+            return null;
+        }
+
+        foreach (var rawArg in desktop.Args)
+        {
+            if (string.IsNullOrWhiteSpace(rawArg)) continue;
+            var candidate = rawArg.Trim().Trim('\u202a', '\u202b', '\u202c', '\u200e', '\u200f', '"');
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        return null;
     }
 
     protected override void OnSizeChanged(SizeChangedEventArgs e)
