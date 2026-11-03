@@ -25,6 +25,14 @@ inline constexpr DWORD MaximumFrame = 65536;
 inline std::wstring GuidString(REFGUID guid) {
     wchar_t text[40]{}; StringFromGUID2(guid, text, 40); return text;
 }
+inline bool IsSuppressedWindow(HWND hwnd) {
+    if (!hwnd) return false;
+    wchar_t cls[64]{};
+    if (!GetClassNameW(hwnd, cls, 64)) return false;
+    return _wcsicmp(cls, L"TscShellContainerClass") == 0 ||
+           _wcsicmp(cls, L"IHWindowClass") == 0 ||
+           _wcsicmp(cls, L"TaskManagerWindow") == 0;
+}
 inline bool AbsoluteFile(const std::wstring& path) {
     // Deliberately reject UNC/device paths: configuration must name a local executable/DLL.
     if (path.size() < 3 || path[1] != L':' || path[2] != L'\\' || path.find(L'"') != path.npos) return false;
@@ -90,6 +98,7 @@ struct PipeRun {
     uint64_t generation;
     HANDLE cancel = CreateEventW(nullptr, TRUE, FALSE, nullptr);
     HANDLE commandReady = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    HANDLE flushed = CreateEventW(nullptr, TRUE, FALSE, nullptr);
     const DWORD threadId = GetCurrentThreadId();
     struct Command { char kind; uint64_t generation; };
     std::mutex commandMutex;
@@ -98,11 +107,16 @@ struct PipeRun {
     HWND target;
     std::atomic<unsigned> pending{0};
     std::atomic<bool> done{false};
+    std::atomic<bool> workerStarted{false};
     std::atomic<uint64_t> audioEpoch{0};
     std::atomic<uint64_t> deselection{0}; // Finish a confirmed D even if Service tears down.
     std::wstring pipeName;
     PipeRun(uint64_t g, HWND w, std::wstring name) : generation(g), target(w), pipeName(std::move(name)) {}
-    ~PipeRun() { if (cancel) CloseHandle(cancel); if (commandReady) CloseHandle(commandReady); }
+    ~PipeRun() {
+        if (cancel) CloseHandle(cancel);
+        if (commandReady) CloseHandle(commandReady);
+        if (flushed) CloseHandle(flushed);
+    }
 };
 struct Frame {
     std::shared_ptr<PipeRun> run;

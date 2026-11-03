@@ -53,16 +53,16 @@ bool WritePacket(HANDLE pipe, char kind, uint64_t value, HANDLE cancel) noexcept
     bytes.insert(bytes.end(), payload.begin(), payload.end());
     return Transfer(pipe, bytes.data(), static_cast<DWORD>(bytes.size()), true, cancel, 1000);
 } catch (...) { return false; }
-bool FlushCommands(HANDLE pipe, const std::shared_ptr<PipeRun>& run) {
+bool FlushCommands(HANDLE pipe, const std::shared_ptr<PipeRun>& run, HANDLE cancel = nullptr) {
     for (;;) {
         PipeRun::Command command{};
         {
             std::lock_guard<std::mutex> guard(run->commandMutex);
-            if (Cancelled(run)) return false;
+            if (cancel && Cancelled(run)) return false;
             if (run->commands.empty()) { ResetEvent(run->commandReady); return true; }
             command = run->commands.front(); run->commands.pop_front();
         }
-        if (!WritePacket(pipe, command.kind, command.generation, run->cancel)) return false;
+        if (!WritePacket(pipe, command.kind, command.generation, cancel)) return false;
         if (command.kind == 'D') run->deselection = 0;
     }
 }
@@ -70,7 +70,7 @@ bool ReadShared(HANDLE pipe, void* data, DWORD size, const std::shared_ptr<PipeR
     auto* bytes = static_cast<BYTE*>(data);
     while (size && !Cancelled(run)) {
         Handle event(CreateEventW(nullptr, TRUE, FALSE, nullptr));
-        if (!event.h || !FlushCommands(pipe, run)) return false;
+        if (!event.h || !FlushCommands(pipe, run, run->cancel)) return false;
         OVERLAPPED ov{}; ov.hEvent = event.h;
         DWORD count = 0;
         if (!ReadFile(pipe, bytes, size, &count, &ov)) {
@@ -82,7 +82,7 @@ bool ReadShared(HANDLE pipe, void* data, DWORD size, const std::shared_ptr<PipeR
                 if (ready == WAIT_OBJECT_0 + 1) {
                     completed = true;
                     if (!GetOverlappedResult(pipe, &ov, &count, FALSE)) return false;
-                } else if (ready != WAIT_OBJECT_0 + 2 || !FlushCommands(pipe, run)) {
+                } else if (ready != WAIT_OBJECT_0 + 2 || !FlushCommands(pipe, run, run->cancel)) {
                     CancelIoEx(pipe, &ov);
                     GetOverlappedResult(pipe, &ov, &count, TRUE);
                     return false;
@@ -107,20 +107,20 @@ bool Identity(HANDLE process, DWORD& session, std::wstring& sid) {
     if (!ConvertSidToStringSidW(reinterpret_cast<TOKEN_USER*>(bytes.data())->User.Sid, &value)) return false;
     sid = value; LocalFree(value); return true;
 }
-bool TrustedServer(HANDLE pipe, const std::wstring& host) {
-    ULONG pid = 0;
-    if (!GetNamedPipeServerProcessId(pipe, &pid)) return false;
-    Handle process(OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid));
-    if (!process.h) return false;
-    wchar_t path[32768]{}; DWORD count = 32768;
-    if (!QueryFullProcessImageNameW(process.h, 0, path, &count) || _wcsicmp(path, host.c_str())) return false;
-    DWORD ours = 0, theirs = 0; std::wstring ownSid, serverSid;
-    return Identity(GetCurrentProcess(), ours, ownSid) && Identity(process.h, theirs, serverSid) &&
-        ours == theirs && ownSid == serverSid;
-}
-std::wstring ReadHost() {
+std::wstring ReadHost(bool preferStandalone = false) {
     // This function is never used by isolated self-tests.
     for (REGSAM view : {KEY_WOW64_64KEY, KEY_WOW64_32KEY}) {
+        if (preferStandalone) {
+            HKEY uiKey{};
+            if (!RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\TrueFluentPro\\VoiceImeUI", 0, KEY_QUERY_VALUE | view, &uiKey)) {
+                wchar_t standalone[32768]{}; DWORD sSize = sizeof(standalone), sType = 0;
+                LONG sResult = RegQueryValueExW(uiKey, L"StandaloneHostExe", nullptr, &sType, reinterpret_cast<BYTE*>(standalone), &sSize);
+                RegCloseKey(uiKey);
+                if (!sResult && sType == REG_SZ && sSize >= 2 && sSize <= sizeof(standalone) && standalone[sSize / 2 - 1] == 0 && AbsoluteFile(standalone)) {
+                    return standalone;
+                }
+            }
+        }
         HKEY key{};
         if (RegOpenKeyExW(HKEY_CURRENT_USER, ConfigKey, 0, KEY_QUERY_VALUE | view, &key)) continue;
         wchar_t value[32768]{}; DWORD size = sizeof(value), type = 0;
@@ -129,6 +129,19 @@ std::wstring ReadHost() {
         if (!result && type == REG_SZ && size >= 2 && size <= sizeof(value) && value[size / 2 - 1] == 0 && AbsoluteFile(value)) return value;
     }
     return {};
+}
+bool TrustedServer(HANDLE pipe, const std::wstring& host) {
+    ULONG pid = 0;
+    if (!GetNamedPipeServerProcessId(pipe, &pid)) return false;
+    Handle process(OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid));
+    if (!process.h) return false;
+    wchar_t path[32768]{}; DWORD count = 32768;
+    if (!QueryFullProcessImageNameW(process.h, 0, path, &count)) return false;
+    const std::wstring standalone = ReadHost(true);
+    if (_wcsicmp(path, host.c_str()) && (standalone.empty() || _wcsicmp(path, standalone.c_str()))) return false;
+    DWORD ours = 0, theirs = 0; std::wstring ownSid, serverSid;
+    return Identity(GetCurrentProcess(), ours, ownSid) && Identity(process.h, theirs, serverSid) &&
+        ours == theirs && ownSid == serverSid;
 }
 HRESULT LaunchHost(const std::shared_ptr<PipeRun>& run, const std::wstring& host, PROCESS_INFORMATION& pi) {
     std::wstring command = QuoteArgument(host) + L" --voice-ime-host --shared";
@@ -141,7 +154,7 @@ HRESULT LaunchHost(const std::shared_ptr<PipeRun>& run, const std::wstring& host
 }
 void Run(const std::shared_ptr<PipeRun>& run) {
     if (Cancelled(run) || InstallationMaintenanceActive()) { Post(run, 'S'); return; }
-    std::wstring host = ReadHost();
+    std::wstring host = ReadHost(true);
     if (host.empty()) { Post(run, 'E'); return; }
     Handle pipe;
     ULONGLONG deadline = GetTickCount64() + 10000;
@@ -178,12 +191,14 @@ void Run(const std::shared_ptr<PipeRun>& run) {
                 // Never carry untrusted backend error strings into UI/logs.
                 if (!Post(run, kind, std::move(text), epoch, target)) break;
             }
-            // Only a previously queued, confirmed profile change survives teardown.
-            // Ordinary EOF/focus loss still never stops the shared audio session.
+            // Drain any pending commands and confirmed profile changes before closing the pipe.
+            FlushCommands(pipe.h, run, nullptr);
             const auto deselection = run->deselection.exchange(0);
             if (deselection) WritePacket(pipe.h, 'D', deselection, nullptr);
+            FlushFileBuffers(pipe.h);
         }
     }
+    if (run->flushed) SetEvent(run->flushed);
     // EOF/cancel affects this connection only, never sends stop to the owner.
     if (!Cancelled(run)) Post(run, 'E');
 }
@@ -193,6 +208,7 @@ DWORD WINAPI Entry(void* data) {
     {
         std::unique_ptr<Work> work(static_cast<Work*>(data)); module = work->module;
         try { Run(work->run); } catch (...) { Post(work->run, 'E'); }
+        if (work->run->flushed) SetEvent(work->run->flushed);
         work->run->done = true;
     }
     --ModuleObjects;
@@ -222,7 +238,8 @@ bool StartPipeWorker(const std::shared_ptr<PipeRun>& run) {
     auto* work = new (std::nothrow) Work{run, module};
     if (!work) { FreeLibrary(module); return false; }
     ++ModuleObjects;
+    run->workerStarted = true;
     HANDLE thread = CreateThread(nullptr, 0, Entry, work, 0, nullptr);
-    if (!thread) { --ModuleObjects; delete work; FreeLibrary(module); return false; }
+    if (!thread) { run->workerStarted = false; --ModuleObjects; delete work; FreeLibrary(module); return false; }
     CloseHandle(thread); return true;
 }

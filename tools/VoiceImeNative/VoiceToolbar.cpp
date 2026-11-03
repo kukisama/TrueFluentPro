@@ -6,7 +6,7 @@
 #include <cstring>
 
 namespace {
-constexpr int Margin = 4, Width = 96, Height = 36;
+constexpr int Margin = 4, Width = 136, Height = 36;
 constexpr int HintTail = 5;
 constexpr UINT_PTR AnimationTimer = 1, HoverTimer = 2, ToastTimer = 3;
 UINT WindowDpi(HWND hwnd) {
@@ -22,6 +22,37 @@ struct PlacementGuard {
     explicit PlacementGuard(bool& value) : flag(value) { flag = true; }
     ~PlacementGuard() { flag = false; }
 };
+constexpr wchar_t ToolbarRegKey[] = L"Software\\TrueFluentPro\\VoiceImeUI";
+bool LoadSavedToolbarPosition(POINT& out) {
+#ifdef VOICE_TOOLBAR_TEST
+    (void)out;
+    return false;
+#else
+    HKEY key{};
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, ToolbarRegKey, 0, KEY_QUERY_VALUE, &key) != ERROR_SUCCESS) return false;
+    DWORD x = 0, y = 0, sx = sizeof(x), sy = sizeof(y), tx = 0, ty = 0;
+    const bool ok = RegQueryValueExW(key, L"ToolbarX", nullptr, &tx, reinterpret_cast<BYTE*>(&x), &sx) == ERROR_SUCCESS &&
+                    RegQueryValueExW(key, L"ToolbarY", nullptr, &ty, reinterpret_cast<BYTE*>(&y), &sy) == ERROR_SUCCESS &&
+                    tx == REG_DWORD && ty == REG_DWORD && sx == sizeof(DWORD) && sy == sizeof(DWORD);
+    RegCloseKey(key);
+    if (!ok) return false;
+    out = {static_cast<LONG>(static_cast<int32_t>(x)), static_cast<LONG>(static_cast<int32_t>(y))};
+    return true;
+#endif
+}
+void SaveToolbarPosition(POINT pt) {
+#ifdef VOICE_TOOLBAR_TEST
+    (void)pt;
+#else
+    HKEY key{};
+    if (RegCreateKeyExW(HKEY_CURRENT_USER, ToolbarRegKey, 0, nullptr, 0, KEY_SET_VALUE, nullptr, &key, nullptr) != ERROR_SUCCESS) return;
+    const DWORD x = static_cast<DWORD>(static_cast<int32_t>(pt.x));
+    const DWORD y = static_cast<DWORD>(static_cast<int32_t>(pt.y));
+    RegSetValueExW(key, L"ToolbarX", 0, REG_DWORD, reinterpret_cast<const BYTE*>(&x), sizeof(x));
+    RegSetValueExW(key, L"ToolbarY", 0, REG_DWORD, reinterpret_cast<const BYTE*>(&y), sizeof(y));
+    RegCloseKey(key);
+#endif
+}
 void HintFormat(Gdiplus::StringFormat& format) {
     format.SetFormatFlags(Gdiplus::StringFormatFlagsNoWrap);
     format.SetTrimming(Gdiplus::StringTrimmingNone);
@@ -80,9 +111,9 @@ void PanelHint(Gdiplus::Graphics& g, float width, float height, bool status, boo
 }
 }
 
-bool VoiceToolbar::Create(HINSTANCE instance, Toggle toggle, void* owner) {
+bool VoiceToolbar::Create(HINSTANCE instance, Toggle toggle, void* owner, Settings settings) {
     if (window_ || graphicsToken_) return false;
-    instance_ = instance; toggle_ = toggle; owner_ = owner;
+    instance_ = instance; toggle_ = toggle; settings_ = settings; owner_ = owner;
     Gdiplus::GdiplusStartupInput startup;
     if (Gdiplus::GdiplusStartup(&graphicsToken_, &startup, nullptr) != Gdiplus::Ok) { graphicsToken_ = 0; return false; }
     className_ = L"TrueFluentVoiceIme.Toolbar." + std::to_wstring(reinterpret_cast<UINT_PTR>(this));
@@ -106,7 +137,7 @@ bool VoiceToolbar::Create(HINSTANCE instance, Toggle toggle, void* owner) {
     return true;
 }
 void VoiceToolbar::Destroy() {
-    eligible_ = false; toggle_ = nullptr; owner_ = nullptr;
+    eligible_ = false; toggle_ = nullptr; settings_ = nullptr; owner_ = nullptr;
     if (window_) {
         for (UINT_PTR timer : {AnimationTimer, HoverTimer, ToastTimer}) KillTimer(window_, timer);
         if (GetCapture() == window_) ReleaseCapture();
@@ -119,7 +150,7 @@ void VoiceToolbar::Destroy() {
     if (classRegistered_) UnregisterClassW(className_.c_str(), instance_);
     classRegistered_ = false; className_.clear();
     if (graphicsToken_) Gdiplus::GdiplusShutdown(graphicsToken_); graphicsToken_ = 0;
-    instance_ = nullptr; anchored_ = hovered_ = pressed_ = dragging_ = placing_ = false;
+    instance_ = nullptr; anchored_ = hovered_ = pressed_ = gearHovered_ = gearPressed_ = dragging_ = placing_ = false;
     state_ = VoiceToolbarState::Idle; noticeText_.clear();
     tooltipReady_ = noticeError_ = false; tooltipTail_ = 0;
     dpiPending_ = placingHints_ = false; editor_ = nullptr; editorMonitor_ = nullptr; editorDpi_ = 0;
@@ -141,6 +172,7 @@ POINT VoiceToolbar::DragPosition(POINT cursor, UINT dpi) const {
 }
 int VoiceToolbar::Pixels(int dip) const { return MulDiv(dip, static_cast<int>(dpi_), 96); }
 const wchar_t* VoiceToolbar::TooltipText() const {
+    if (gearHovered_) return L"打开输入法设置";
     return state_ == VoiceToolbarState::Idle ? L"按下 F8 开始录音" : L"按下 F8 停止录音";
 }
 void VoiceToolbar::SetEligible(bool eligible, HWND editor, const RECT* rect) {
@@ -148,7 +180,7 @@ void VoiceToolbar::SetEligible(bool eligible, HWND editor, const RECT* rect) {
     const bool changed = eligible_ != eligible; eligible_ = eligible;
     if (!eligible) {
         tooltipReady_ = false;
-        hovered_ = pressed_ = dragging_ = false;
+        hovered_ = pressed_ = gearHovered_ = gearPressed_ = dragging_ = false;
         if (GetCapture() == window_) ReleaseCapture();
         for (UINT_PTR timer : {AnimationTimer, HoverTimer, ToastTimer}) KillTimer(window_, timer);
         HideHints(); ShowWindow(window_, SW_HIDE);
@@ -166,7 +198,13 @@ void VoiceToolbar::SetEligible(bool eligible, HWND editor, const RECT* rect) {
     const bool targetChanged = changed || editor != editor_ || target != editorMonitor_ || editorDpi != editorDpi_;
     if (!anchored_ || FollowEditor(target, MonitorFromWindow(window_, MONITOR_DEFAULTTONEAREST), targetChanged)) {
         POINT point{};
-        if (hasArea) {
+        if (!anchored_ && LoadSavedToolbarPosition(point)) {
+            const HMONITOR savedMon = MonitorFromPoint(point, MONITOR_DEFAULTTONEAREST);
+            const UINT savedDpi = WindowDpi(window_);
+            MONITORINFO info{sizeof(info)};
+            if (GetMonitorInfoW(savedMon, &info))
+                point = ClampToWorkArea(point, ScaledSize(Width + Margin * 2, Height + Margin * 2, savedDpi), info.rcWork);
+        } else if (hasArea) {
             point = {area.left + MulDiv(20, static_cast<int>(editorDpi), 96),
                 area.bottom - MulDiv(Height + Margin * 2 + 16, static_cast<int>(editorDpi), 96)};
             // An editor can straddle displays while its left edge is still on the
@@ -174,7 +212,19 @@ void VoiceToolbar::SetEligible(bool eligible, HWND editor, const RECT* rect) {
             MONITORINFO info{sizeof(info)};
             if (GetMonitorInfoW(target, &info))
                 point = ClampToWorkArea(point, ScaledSize(Width + Margin * 2, Height + Margin * 2, editorDpi), info.rcWork);
-        } else { GetCursorPos(&point); point.x += Pixels(12); point.y += Pixels(24); }
+        } else {
+            POINT cursor{}; GetCursorPos(&cursor);
+            const HMONITOR mon = MonitorFromPoint(cursor, MONITOR_DEFAULTTOPRIMARY);
+            MONITORINFO info{sizeof(info)};
+            const SIZE barSize = ScaledSize(Width + Margin * 2, Height + Margin * 2, dpi_);
+            if (GetMonitorInfoW(mon, &info)) {
+                point = {info.rcWork.right - barSize.cx - Pixels(48),
+                         info.rcWork.bottom - barSize.cy - Pixels(16)};
+                point = ClampToWorkArea(point, barSize, info.rcWork);
+            } else {
+                point = {cursor.x + Pixels(12), cursor.y + Pixels(24)};
+            }
+        }
         anchored_ = true; Place(point);
     } else if (!dragging_ && (changed || editorDpi != editorDpi_ || dpi_ != WindowDpi(window_))) Place(position_);
     // Polls do not re-anchor to the mouse or undo a deliberate drag. A monitor/editor
@@ -241,17 +291,21 @@ void VoiceToolbar::Place(POINT point) {
 }
 bool VoiceToolbar::MicAt(LPARAM point) const {
     const int x = GET_X_LPARAM(point), y = GET_Y_LPARAM(point);
-    return x >= Pixels(Margin + 50) && x < Pixels(Margin + Width) && y >= Pixels(Margin) && y < Pixels(Margin + Height);
+    return x >= Pixels(Margin + 50) && x < Pixels(Margin + 96) && y >= Pixels(Margin) && y < Pixels(Margin + Height);
+}
+bool VoiceToolbar::GearAt(LPARAM point) const {
+    const int x = GET_X_LPARAM(point), y = GET_Y_LPARAM(point);
+    return x >= Pixels(Margin + 100) && x < Pixels(Margin + Width) && y >= Pixels(Margin) && y < Pixels(Margin + Height);
 }
 bool VoiceToolbar::BrandAt(LPARAM point) const {
     const int x = GET_X_LPARAM(point), y = GET_Y_LPARAM(point);
     return x >= Pixels(Margin) && x < Pixels(Margin + 43) && y >= Pixels(Margin) && y < Pixels(Margin + Height);
 }
-void VoiceToolbar::Hover(bool hovered) {
-    if (hovered_ == hovered) return;
-    hovered_ = hovered; tooltipReady_ = false;
+void VoiceToolbar::Hover(bool hovered, bool gearHovered) {
+    if (hovered_ == hovered && gearHovered_ == gearHovered) return;
+    hovered_ = hovered; gearHovered_ = gearHovered; tooltipReady_ = false;
     KillTimer(window_, HoverTimer);
-    if (hovered && eligible_ && IsWindowVisible(window_)) SetTimer(window_, HoverTimer, 400, nullptr);
+    if ((hovered || gearHovered) && eligible_ && IsWindowVisible(window_)) SetTimer(window_, HoverTimer, 400, nullptr);
     else ShowWindow(tooltip_, SW_HIDE);
     RenderMain();
 }
@@ -305,7 +359,7 @@ LRESULT VoiceToolbar::Message(HWND hwnd, UINT message, WPARAM w, LPARAM l) {
         if (w == AnimationTimer && eligible_ && state_ == VoiceToolbarState::Recording) { ++animation_; RenderMain(); }
         if (w == HoverTimer) {
             KillTimer(window_, HoverTimer);
-            if (eligible_ && hovered_ && IsWindowVisible(window_)) tooltipReady_ = true;
+            if (eligible_ && (hovered_ || gearHovered_) && IsWindowVisible(window_)) tooltipReady_ = true;
             RenderHints();
         }
         if (w == ToastTimer && state_ == VoiceToolbarState::Idle) {
@@ -317,33 +371,44 @@ LRESULT VoiceToolbar::Message(HWND hwnd, UINT message, WPARAM w, LPARAM l) {
             POINT point{GET_X_LPARAM(l), GET_Y_LPARAM(l)}; ClientToScreen(hwnd, &point);
             dragPoint_ = point; Place(DragPosition(point, dpi_));
         } else {
-            TRACKMOUSEEVENT track{sizeof(track), TME_LEAVE, hwnd, 0}; TrackMouseEvent(&track);
-            Hover(eligible_ && IsWindowVisible(window_) && MicAt(l));
+            RECT bounds{}; POINT cursor{};
+            if (GetWindowRect(hwnd, &bounds) && GetCursorPos(&cursor) && PtInRect(&bounds, cursor)) {
+                TRACKMOUSEEVENT track{sizeof(track), TME_LEAVE, hwnd, 0}; TrackMouseEvent(&track);
+            }
+            const bool active = eligible_ && IsWindowVisible(window_);
+            Hover(active && MicAt(l), active && GearAt(l));
         }
         return 0;
-    case WM_MOUSELEAVE: Hover(false); return 0;
+    case WM_MOUSELEAVE: Hover(false, false); return 0;
     case WM_LBUTTONDOWN:
         if (!eligible_ || !IsWindowVisible(window_)) return 0;
         if (BrandAt(l)) {
             dragging_ = true;
             dragOffset_ = {GET_X_LPARAM(l) * 96.0f / dpi_, GET_Y_LPARAM(l) * 96.0f / dpi_};
             dragPoint_ = {GET_X_LPARAM(l), GET_Y_LPARAM(l)}; ClientToScreen(hwnd, &dragPoint_);
-            Hover(false); SetCapture(hwnd);
+            Hover(false, false); SetCapture(hwnd);
         } else if (MicAt(l)) { pressed_ = true; SetCapture(hwnd); RenderMain(); }
+        else if (GearAt(l)) { gearPressed_ = true; SetCapture(hwnd); RenderMain(); }
         return 0;
     case WM_LBUTTONUP: {
+        const bool wasDragging = dragging_;
         const bool invoke = eligible_ && IsWindowVisible(window_) && pressed_ && MicAt(l);
-        pressed_ = dragging_ = false;
+        const bool invokeGear = eligible_ && IsWindowVisible(window_) && gearPressed_ && GearAt(l);
+        pressed_ = gearPressed_ = dragging_ = false;
         if (GetCapture() == hwnd) ReleaseCapture();
+        if (wasDragging) SaveToolbarPosition(position_);
         RenderMain();
         // The callback may deactivate/destroy the TSF service. Do not touch this afterwards.
-        const auto callback = toggle_; void* owner = owner_;
+        const auto callback = toggle_;
+        const auto settings = settings_;
+        void* owner = owner_;
         if (invoke && callback) callback(owner);
+        else if (invokeGear && settings) settings(owner);
         return 0;
     }
     case WM_CAPTURECHANGED:
     case WM_CANCELMODE:
-        pressed_ = dragging_ = false;
+        pressed_ = gearPressed_ = dragging_ = false;
         if (GetCapture() == hwnd) ReleaseCapture();
         RenderMain(); return 0;
     case WM_SETCURSOR:
@@ -357,7 +422,9 @@ void VoiceToolbar::PaintMain(Gdiplus::Graphics& g) const {
     using namespace Gdiplus;
     Setup(g); Panel(g, Width, Height, false);
     VoiceBrand::Draw(g, 14, 10, 24);
-    Pen divider(Color(255, 168, 194, 235), 1); g.DrawLine(&divider, 50.0f, 13.0f, 50.0f, 31.0f);
+    Pen divider(Color(255, 168, 194, 235), 1);
+    g.DrawLine(&divider, 50.0f, 13.0f, 50.0f, 31.0f);
+    g.DrawLine(&divider, 100.0f, 13.0f, 100.0f, 31.0f);
     const bool lit = hovered_ || state_ != VoiceToolbarState::Idle;
     if (lit) {
         SolidBrush halo(pressed_ ? Color(255, 22, 95, 228) : Color(255, 39, 119, 255));
@@ -375,6 +442,21 @@ void VoiceToolbar::PaintMain(Gdiplus::Graphics& g) const {
             g.DrawLine(&wave, 90.0f + i * 3, 22 - h * .5f, 90.0f + i * 3, 22 + h * .5f);
         }
     }
+    const bool gearLit = gearHovered_ || gearPressed_;
+    if (gearLit) {
+        SolidBrush gearHalo(gearPressed_ ? Color(255, 22, 95, 228) : Color(255, 39, 119, 255));
+        g.FillEllipse(&gearHalo, 108.0f, 10.0f, 24.0f, 24.0f);
+    }
+    const Color gearColor = gearLit ? Color(255, 255, 255, 255) : Color(255, 83, 105, 145);
+    Pen gearPen(gearColor, 1.6f); gearPen.SetStartCap(LineCapRound); gearPen.SetEndCap(LineCapRound);
+    constexpr float gx = 120.0f, gy = 22.0f;
+    for (int i = 0; i < 8; ++i) {
+        const float angle = i * 0.78539816f;
+        const float c = std::cos(angle), s = std::sin(angle);
+        g.DrawLine(&gearPen, gx + c * 5.2f, gy + s * 5.2f, gx + c * 7.6f, gy + s * 7.6f);
+    }
+    g.DrawEllipse(&gearPen, gx - 5.2f, gy - 5.2f, 10.4f, 10.4f);
+    g.DrawEllipse(&gearPen, gx - 2.1f, gy - 2.1f, 4.2f, 4.2f);
 }
 SIZE VoiceToolbar::HintSize(const wchar_t* text, bool status) const {
     using namespace Gdiplus;
@@ -440,12 +522,13 @@ void VoiceToolbar::RenderHints() {
     MONITORINFO info{sizeof(info)};
     const bool hasWork = GetMonitorInfoW(MonitorFromWindow(window_, MONITOR_DEFAULTTONEAREST), &info) != FALSE;
     const SIZE tip = HintSize(TooltipText(), false), tipPixels = ScaledSize(tip.cx, tip.cy, dpi_);
-    POINT p{position_.x + Pixels(74) - tipPixels.cx / 2, position_.y - tipPixels.cy + Pixels(Margin)};
+    const int anchorDip = gearHovered_ ? 120 : 74;
+    POINT p{position_.x + Pixels(anchorDip) - tipPixels.cx / 2, position_.y - tipPixels.cy + Pixels(Margin)};
     if (hasWork) p = ClampToWorkArea(p, tipPixels, info.rcWork);
-    tooltipTail_ = (position_.x + Pixels(74) - p.x) * 96.0f / dpi_;
+    tooltipTail_ = (position_.x + Pixels(anchorDip) - p.x) * 96.0f / dpi_;
     SetWindowTextW(tooltip_, TooltipText()); Render(tooltip_, tip.cx, tip.cy, TooltipText());
     SetWindowPos(tooltip_, HWND_TOPMOST, p.x, p.y, tipPixels.cx, tipPixels.cy,
-        SWP_NOACTIVATE | (tooltipReady_ && hovered_ ? SWP_SHOWWINDOW : SWP_HIDEWINDOW));
+        SWP_NOACTIVATE | (tooltipReady_ && (hovered_ || gearHovered_) ? SWP_SHOWWINDOW : SWP_HIDEWINDOW));
     if (noticeText_.empty()) { ShowWindow(notice_, SW_HIDE); return; }
     const SIZE hint = HintSize(noticeText_.c_str(), true), hintPixels = ScaledSize(hint.cx, hint.cy, dpi_);
     p = {position_.x + (Pixels(Width + Margin * 2) - hintPixels.cx) / 2,

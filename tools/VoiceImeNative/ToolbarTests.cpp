@@ -101,15 +101,23 @@ BOOL CALLBACK CountMonitor(HMONITOR, HDC, LPRECT, LPARAM data) { ++*reinterpret_
 bool ClientSize(HWND hwnd, SIZE size) {
     RECT r{}; return GetClientRect(hwnd, &r) && r.right == size.cx && r.bottom == size.cy;
 }
-struct Harness { VoiceToolbar* toolbar; unsigned toggles = 0; bool destroyOnToggle = false; };
+struct Harness { VoiceToolbar* toolbar; unsigned toggles = 0; unsigned settingsClicks = 0; bool destroyOnToggle = false; };
 void Toggle(void* owner) {
     auto& h = *static_cast<Harness*>(owner); ++h.toggles;
     if (h.destroyOnToggle) { h.toolbar->Destroy(); return; }
     const bool stopping = VoiceToolbarTestAccess::State(*h.toolbar) != VoiceToolbarState::Idle;
     h.toolbar->SetState(stopping ? VoiceToolbarState::Idle : VoiceToolbarState::Connecting, stopping);
 }
+void OpenSettings(void* owner) {
+    auto& h = *static_cast<Harness*>(owner); ++h.settingsClicks;
+}
 void Click(VoiceToolbar& t) {
     const auto point = VoiceToolbarTestAccess::Point(t, 74, 22);
+    SendMessageW(t.Handle(), WM_LBUTTONDOWN, MK_LBUTTON, point);
+    SendMessageW(t.Handle(), WM_LBUTTONUP, 0, point);
+}
+void ClickGear(VoiceToolbar& t) {
+    const auto point = VoiceToolbarTestAccess::Point(t, 120, 22);
     SendMessageW(t.Handle(), WM_LBUTTONDOWN, MK_LBUTTON, point);
     SendMessageW(t.Handle(), WM_LBUTTONUP, 0, point);
 }
@@ -132,19 +140,19 @@ void VoiceToolbarTestAccess::DpiChecks(VoiceToolbar& t, unsigned& failures) {
         Awareness(t.window_) == Awareness(t.tooltip_) && Awareness(t.window_) == Awareness(t.notice_), "owned HWNDs inherit the same native DPI/awareness");
     struct Scale { UINT dpi; int width, height, bodyWidth, bodyHeight; };
     // Independent expectations, not computed with the production size function.
-    const Scale scales[] = {{96,104,44,96,36}, {120,130,55,120,45}, {144,156,66,144,54}, {192,208,88,192,72}};
+    const Scale scales[] = {{96,144,44,136,36}, {120,180,55,170,45}, {144,216,66,204,54}, {192,288,88,272,72}};
     const RECT negativeWork{-1920, -1080, 0, 0};
     t.state_ = VoiceToolbarState::Idle; t.hovered_ = false; t.tooltipTail_ = 0;
     SIZE logicalHints[6]{};
     for (const auto& s : scales) {
         t.dpi_ = s.dpi;
-        const SIZE size = t.ScaledSize(104, 44, s.dpi);
+        const SIZE size = t.ScaledSize(144, 44, s.dpi);
         check(size.cx == s.width && size.cy == s.height, "100/125/150/200 percent pure pixel size");
         Gdiplus::Bitmap image(s.width, s.height, PixelFormat32bppPARGB);
         Gdiplus::REAL matrix[6]{};
         {
             Gdiplus::Graphics g(&image); g.Clear(Gdiplus::Color(0, 0, 0, 0));
-            t.PaintSurface(g, 104, 44, nullptr, false);
+            t.PaintSurface(g, 144, 44, nullptr, false);
             Gdiplus::Matrix transform; g.GetTransform(&transform); transform.GetElements(matrix);
         }
         const float factor = s.dpi / 96.0f;
@@ -160,11 +168,11 @@ void VoiceToolbarTestAccess::DpiChecks(VoiceToolbar& t, unsigned& failures) {
             if (color.GetA() < 128) continue;
             include(body, x, y);
             if (color.GetR() < 90 && color.GetG() < 180 && color.GetB() > 220) include(brand, x, y);
-            if (std::abs(static_cast<int>(color.GetR()) - 83) <= 2 && std::abs(static_cast<int>(color.GetG()) - 105) <= 2 &&
+            if (x < 96 * factor && std::abs(static_cast<int>(color.GetR()) - 83) <= 2 && std::abs(static_cast<int>(color.GetG()) - 105) <= 2 &&
                 std::abs(static_cast<int>(color.GetB()) - 145) <= 2) include(mic, x, y);
         }
         check(std::abs(body.right - body.left - s.bodyWidth) <= 2 && std::abs(body.bottom - body.top - s.bodyHeight) <= 2,
-            "rasterized opaque body remains 96x36 DIPs");
+            "rasterized opaque body remains 136x36 DIPs");
         check(std::abs(brand.left - 14 * factor) <= 2 && std::abs(brand.top - 10 * factor) <= 2 &&
             std::abs(brand.right - brand.left - 24 * factor) <= 2 && std::abs(brand.bottom - brand.top - 24 * factor) <= 2 &&
             mic.left > brand.right && mic.right <= 83 * factor && mic.top >= 12 * factor && mic.bottom <= 34 * factor,
@@ -178,7 +186,7 @@ void VoiceToolbarTestAccess::DpiChecks(VoiceToolbar& t, unsigned& failures) {
         check(t.MicAt(at(mLeft, top)) && t.MicAt(at(mRight - 1, bottom - 1)) &&
             !t.MicAt(at(mLeft - 1, top)) && !t.MicAt(at(mRight, top)) && !t.MicAt(at(mLeft, top - 1)) && !t.MicAt(at(mLeft, bottom)),
             "microphone hitbox exact independent pixel edges");
-        check(t.Render(t.window_, 104, 44) && ClientSize(t.window_, {s.width, s.height}), "actual layered main HWND size at the requested render scale");
+        check(t.Render(t.window_, 144, 44) && ClientSize(t.window_, {s.width, s.height}), "actual layered main HWND size at the requested render scale");
         const wchar_t* texts[] = {L"按下 F8 开始录音", L"按下 F8 停止录音", L"正在连接 · F8 停止", L"正在录音 · F8 停止", L"录音已停止", L"语音连接失败，请按 F8 重试"};
         for (unsigned i = 0; i < 6; ++i) {
             const bool status = i >= 2; const SIZE logical = t.HintSize(texts[i], status);
@@ -264,7 +272,7 @@ void VoiceToolbarTestAccess::DpiChecks(VoiceToolbar& t, unsigned& failures) {
         SetWindowLongPtrW(t.window_, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(observation.previous)); trace = nullptr;
         GetWindowRect(t.window_, &current);
         check(observation.sawSuggested && current.left == suggested.left && current.top == suggested.top && !t.dpiPending_ &&
-            t.dpi_ == ActualDpi(t.window_) && ClientSize(t.window_, {MulDiv(104,nativeDpi,96), MulDiv(44,nativeDpi,96)}),
+            t.dpi_ == ActualDpi(t.window_) && ClientSize(t.window_, {MulDiv(144,nativeDpi,96), MulDiv(44,nativeDpi,96)}),
             "native SetWindowPos applies suggestion then converges to actual GetDpiForWindow");
         // Also exercise real message dispatch without pre-setting placing_.
         SendMessageW(t.window_, WM_DPICHANGED, MAKELONG(s.dpi,s.dpi), reinterpret_cast<LPARAM>(&suggested));
@@ -272,7 +280,7 @@ void VoiceToolbarTestAccess::DpiChecks(VoiceToolbar& t, unsigned& failures) {
         std::printf("MESSAGE requested=%u actual=%u final-main=%ldx%ld suggested-applied=%d\n",
             s.dpi, ActualDpi(t.window_), current.right-current.left, current.bottom-current.top, observation.sawSuggested);
     }
-    PositionTrace reentry; reentry.suggested = {testOrigin.x,testOrigin.y,testOrigin.x+208,testOrigin.y+88};
+    PositionTrace reentry; reentry.suggested = {testOrigin.x,testOrigin.y,testOrigin.x+288,testOrigin.y+88};
     reentry.dpi = 192; reentry.inject = true; trace = &reentry;
     reentry.previous = reinterpret_cast<WNDPROC>(SetWindowLongPtrW(t.window_, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(TracePosition)));
     t.Place({testOrigin.x+5,testOrigin.y+5});
@@ -338,13 +346,13 @@ int wmain(int argc, wchar_t** argv) {
     const DWORD gdi = GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS), user = GetGuiResources(GetCurrentProcess(), GR_USEROBJECTS);
     const HWND front = GetForegroundWindow(), active = GetActiveWindow(), focus = GetFocus();
     VoiceToolbar toolbar; Harness harness{&toolbar};
-    if (!toolbar.Create(instance, Toggle, &harness)) { check(false, "toolbar creation"); return 1; }
+    if (!toolbar.Create(instance, Toggle, &harness, OpenSettings)) { check(false, "toolbar creation"); return 1; }
     check(dpiSet && Awareness(toolbar.Handle()) == (unaware ? 0 : system ? 1 : 2), "test EXE actually uses its requested DPI-awareness mode");
     const HWND window = toolbar.Handle(), tip = VoiceToolbarTestAccess::Tooltip(toolbar), notice = VoiceToolbarTestAccess::Notice(toolbar);
     const auto className = VoiceToolbarTestAccess::ClassName(toolbar);
     check(!IsWindowVisible(window) && !IsWindowVisible(tip) && !IsWindowVisible(notice),
         "created toolbar and all attached windows stay hidden until eligibility");
-    check(ClientSize(window, {MulDiv(104,ActualDpi(window),96), MulDiv(44,ActualDpi(window),96)}),
+    check(ClientSize(window, {MulDiv(144,ActualDpi(window),96), MulDiv(44,ActualDpi(window),96)}),
         "hidden creation already has the actual DPI-scaled size before eligibility");
     HICON largeIcon{}, smallIcon{}; wchar_t executable[32768]{}; GetModuleFileNameW(instance, executable, 32768);
     SetLastError(ERROR_SUCCESS);
@@ -378,6 +386,15 @@ int wmain(int argc, wchar_t** argv) {
     wchar_t text[128]{}; GetWindowTextW(tip, text, 128);
     check(VoiceToolbarTestAccess::Hovered(toolbar) && IsWindowVisible(tip) && wcscmp(text, L"按下 F8 开始录音") == 0,
         "mic hover highlights and shows the real Unicode start tooltip");
+    SendMessageW(window, WM_MOUSEMOVE, 0, VoiceToolbarTestAccess::Point(toolbar, 120, 22));
+    SendMessageW(window, WM_TIMER, 2, 0);
+    GetWindowTextW(tip, text, 128);
+    check(IsWindowVisible(tip) && wcscmp(text, L"打开输入法设置") == 0,
+        "gear hover highlights and shows settings tooltip");
+    ClickGear(toolbar);
+    check(harness.settingsClicks == 1 && harness.toggles == 0, "gear click invokes settings callback without toggling recording");
+    SendMessageW(window, WM_MOUSEMOVE, 0, VoiceToolbarTestAccess::Point(toolbar, 74, 22));
+    SendMessageW(window, WM_TIMER, 2, 0);
     if (!output.empty()) check(VoiceToolbarTestAccess::CaptureWindow(toolbar, output + L"\\02_hover.png", true),
         "one actual own-HWND hover screenshot includes the downward bubble tail");
     Click(toolbar);
@@ -473,7 +490,7 @@ int wmain(int argc, wchar_t** argv) {
     toolbar.SetState(VoiceToolbarState::Recording); Toggle(&harness); // Simulated F8 invokes the exact callback used by Click.
     check(harness.toggles == 5 && VoiceToolbarTestAccess::State(toolbar) == VoiceToolbarState::Idle &&
         VoiceToolbarTestAccess::NoticeText(toolbar) == L"录音已停止", "shared F8 callback stops synchronously just like the mic click");
-    VoiceToolbar disposable; Harness closing{&disposable, 0, true};
+    VoiceToolbar disposable; Harness closing{&disposable, 0, 0, true};
     check(disposable.Create(instance, Toggle, &closing), "callback teardown fixture created");
     disposable.SetEligible(true, nullptr, &editor); const HWND closingWindow = disposable.Handle(); Click(disposable);
     check(closing.toggles == 1 && !IsWindow(closingWindow) && !disposable.Handle(), "mic callback can destroy its toolbar without later access");

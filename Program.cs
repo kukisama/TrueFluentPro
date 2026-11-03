@@ -11,6 +11,13 @@ class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        // 输入法独立设置窗口模式：只启动轻量设置弹窗，不初始化主窗口。
+        if (args.Length > 0 && args[0] == "--voice-ime-settings")
+        {
+            WindowsDpiAwareness.TryEnablePerMonitorV2();
+            Environment.ExitCode = BuildVoiceImeSettingsApp().StartWithClassicDesktopLifetime(args);
+            return;
+        }
         // 输入法后台不创建 Avalonia、启动画面或主程序服务，也不持有主窗口。
         if (args.Length > 0 && args[0] == "--voice-ime-host")
         {
@@ -50,6 +57,35 @@ class Program
             .UsePlatformDetect()
             .WithInterFont()
             .LogToTrace();
+    }
+
+    public static AppBuilder BuildVoiceImeSettingsApp()
+    {
+        IconProvider.Current.Register<FontAwesomeIconProvider>();
+
+        return AppBuilder.Configure<VoiceImeSettingsApp>()
+            .UsePlatformDetect()
+            .WithInterFont()
+            .LogToTrace();
+    }
+}
+
+public sealed class VoiceImeSettingsApp : Application
+{
+    public override void Initialize()
+    {
+        Styles.Add(new Avalonia.Themes.Fluent.FluentTheme());
+        Avalonia.Markup.Xaml.AvaloniaXamlLoader.Load(new Uri("avares://TrueFluentPro/App.axaml"));
+    }
+
+    public override void OnFrameworkInitializationCompleted()
+    {
+        if (ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop)
+        {
+            desktop.ShutdownMode = Avalonia.Controls.ShutdownMode.OnMainWindowClose;
+            desktop.MainWindow = new TrueFluentPro.Views.VoiceImeSettingsWindow();
+        }
+        base.OnFrameworkInitializationCompleted();
     }
 }
 

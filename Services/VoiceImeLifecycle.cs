@@ -203,6 +203,7 @@ public sealed partial class VoiceImeRegistrationService
             manifest.Phase = "installed";
             WriteLifecycleManifest(manifest);
             RemoveMaintenanceGate(manifest);
+            DeployStandaloneHostDirectory(plan.HostPath);
             return new Result(true, "输入法安装/修复完成（当前用户 SID；未更改默认输入法）。" +
                 (manifest.PendingCleanup.Count > 0 ? "旧包文件待重启清理，队列成功不代表文件已删除。" : "旧包文件已清理。"));
         }
@@ -302,6 +303,7 @@ public sealed partial class VoiceImeRegistrationService
 
     private async Task<(List<InstallEntry> Entries, string Host, bool Complete, bool Absent)> InspectLifecycleAsync(InstallManifest manifest)
     {
+        DeployStandaloneHostDirectory(Path.Combine(_baseDirectory, "TrueFluentPro.exe"));
         var entries = new List<InstallEntry>();
         var hosts = new List<string>();
         var complete = true;
@@ -401,13 +403,24 @@ public sealed partial class VoiceImeRegistrationService
         }
     }
 
+    public static string GetProductVersionString()
+    {
+        var ver = UpdateService.ParseCurrentVersion();
+        if (ver.Major > 0 || ver.Minor > 0 || ver.Build > 0)
+            return $"{ver.Major}.{ver.Minor}.{Math.Max(0, ver.Build)}";
+        var asmVer = typeof(VoiceImeRegistrationService).Assembly.GetName().Version;
+        if (asmVer != null && (asmVer.Major > 0 || asmVer.Minor > 0))
+            return $"{asmVer.Major}.{asmVer.Minor}.{Math.Max(0, asmVer.Build)}";
+        return "2.2.2";
+    }
+
     private PackagePlan PlanPackage()
     {
         var host = Path.Combine(_baseDirectory, "TrueFluentPro.exe");
         VoiceImeMaintenance.GuardPath(host);
         if (!File.Exists(host)) throw new RegistrationException("缺少主程序 TrueFluentPro.exe，无法安装/修复输入法。");
         var plan = new PackagePlan { Package = GetPackageIdentity(), HostPath = host, HostHash = HashFile(host),
-            PackageVersion = typeof(VoiceImeRegistrationService).Assembly.GetName().Version?.ToString() ?? "unknown" };
+            PackageVersion = GetProductVersionString() };
         foreach (var architecture in Architectures)
         {
             var source = GetPackageEntry(architecture);
@@ -452,6 +465,102 @@ public sealed partial class VoiceImeRegistrationService
             if (large != IntPtr.Zero) DestroyIcon(large);
             if (small != IntPtr.Zero) DestroyIcon(small);
         }
+    }
+
+    private void DeployStandaloneHostDirectory(string sourceHostExe)
+    {
+        if (_lifecycleBackend != null || !OperatingSystem.IsWindows()) return;
+        try
+        {
+            var sourceDir = Path.GetDirectoryName(_baseDirectory.TrimEnd(Path.DirectorySeparatorChar)) != null
+                ? _baseDirectory : Path.GetDirectoryName(Path.GetFullPath(sourceHostExe));
+            if (string.IsNullOrEmpty(sourceDir) || !Directory.Exists(sourceDir)
+                || !File.Exists(Path.Combine(sourceDir, "TrueFluentPro.dll"))) return;
+            var hostDir = Path.Combine(_legacyInstallRoot, "host");
+            VoiceImeMaintenance.GuardPath(hostDir);
+            if (!File.Exists(MaintenancePath))
+            {
+                try
+                {
+                    foreach (var p in Process.GetProcessesByName("TrueFluentPro"))
+                    {
+                        using (p)
+                        {
+                            try
+                            {
+                                var exePath = p.MainModule?.FileName;
+                                if (!string.IsNullOrEmpty(exePath) && exePath.StartsWith(hostDir + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                                {
+                                    p.Kill();
+                                    p.WaitForExit(1500);
+                                }
+                            }
+                            catch { }
+                        }
+                    }
+                }
+                catch { }
+            }
+            if (Directory.Exists(hostDir) && File.Exists(Path.Combine(hostDir, "hostfxr.dll")))
+            {
+                try { Directory.Delete(hostDir, recursive: true); } catch { }
+            }
+            Directory.CreateDirectory(hostDir);
+            foreach (var file in Directory.EnumerateFiles(sourceDir, "*", SearchOption.TopDirectoryOnly))
+            {
+                var ext = Path.GetExtension(file);
+                if (!ext.Equals(".dll", StringComparison.OrdinalIgnoreCase)
+                    && !ext.Equals(".exe", StringComparison.OrdinalIgnoreCase)
+                    && !ext.Equals(".json", StringComparison.OrdinalIgnoreCase)
+                    && !ext.Equals(".pdb", StringComparison.OrdinalIgnoreCase)) continue;
+                var dest = Path.Combine(hostDir, Path.GetFileName(file));
+                try { File.Copy(file, dest, overwrite: true); } catch { }
+            }
+            var standaloneExe = Path.Combine(hostDir, "TrueFluentPro.exe");
+            foreach (var sub in new[] { "runtimes", "Assets", "voice-ime" })
+            {
+                var subSource = Path.Combine(sourceDir, sub);
+                if (!Directory.Exists(subSource)) continue;
+                foreach (var dirPath in Directory.EnumerateDirectories(subSource, "*", SearchOption.AllDirectories))
+                {
+                    var rel = Path.GetRelativePath(sourceDir, dirPath);
+                    Directory.CreateDirectory(Path.Combine(hostDir, rel));
+                }
+                foreach (var filePath in Directory.EnumerateFiles(subSource, "*", SearchOption.AllDirectories))
+                {
+                    var rel = Path.GetRelativePath(sourceDir, filePath);
+                    var dest = Path.Combine(hostDir, rel);
+                    Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+                    try { File.Copy(filePath, dest, overwrite: true); } catch { }
+                }
+            }
+            foreach (var view in Architectures.Select(ViewFor))
+            {
+                using var user = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, view);
+                using var uiConfig = user.CreateSubKey(@"Software\TrueFluentPro\VoiceImeUI", writable: true);
+                if (uiConfig != null)
+                {
+                    uiConfig.SetValue("MainAppExe", Path.Combine(sourceDir, "TrueFluentPro.exe"), RegistryValueKind.String);
+                    uiConfig.SetValue("StandaloneHostExe", standaloneExe, RegistryValueKind.String);
+                }
+            }
+            if (!File.Exists(MaintenancePath) && File.Exists(standaloneExe))
+            {
+                try
+                {
+                    Process.Start(new ProcessStartInfo
+                    {
+                        FileName = standaloneExe,
+                        Arguments = "--voice-ime-host --shared",
+                        WorkingDirectory = hostDir,
+                        UseShellExecute = false,
+                        CreateNoWindow = true
+                    });
+                }
+                catch { }
+            }
+        }
+        catch { }
     }
 
     private void CheckPlanDestinations(PackagePlan plan, InstallManifest manifest)
@@ -827,7 +936,8 @@ public sealed partial class VoiceImeRegistrationService
             "cleaning" => "回收自有文件", "installed" => "已安装", "removed" => "已移除",
             "pending-reboot" => "系统入口已移除，文件待重启清理", _ => "待修复（可恢复，未完成）"
         };
-        return new Result(true, $"阶段：{phase}；范围：当前用户 SID（不代其他用户解绑）。\n" +
+        var versionInfo = !string.IsNullOrWhiteSpace(manifest.PackageVersion) ? $"（版本 v{manifest.PackageVersion}）" : $"（当前产品版本 v{GetProductVersionString()}）";
+        return new Result(true, $"阶段：{phase}{versionInfo}；范围：当前用户 SID（不代其他用户解绑）。\n" +
             (state.Complete ? "双架构原生安装状态完整。" : state.Absent ? "原生全量状态及固定 footprint 均无登记。" : "仍有不完整登记，不能视为已卸载。") +
             (manifest.PendingCleanup.Count > 0 ? $"\n待重启清理 {manifest.PendingCleanup.Count} 个文件；排队不是删除成功，请重启后再次管理确认。" : "") +
             (VoiceImeMaintenance.Exists(MaintenancePath) ? "\n维护门禁生效，F8 暂停；请使用原用户继续安装/修复或卸载。" : ""));

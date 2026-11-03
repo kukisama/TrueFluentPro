@@ -4,7 +4,8 @@ param(
     [string]$ArtifactDirectory,
     [ValidateSet('x64', 'x86')][string[]]$Architecture = @('x64'),
     [string]$ExpectedDll,
-    [switch]$BuildOnly
+    [switch]$BuildOnly,
+    [switch]$SwitchOnly
 )
 $ErrorActionPreference = 'Stop'
 $artifactRoot = Join-Path $PSScriptRoot 'artifacts'
@@ -24,6 +25,7 @@ $summary = [ordered]@{
     Source = Join-Path $PSScriptRoot 'ActivationTests.cpp'; SourceSha256 = $null
     ScriptSha256 = (Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash
     BuildOnly = [bool]$BuildOnly; FunctionalTestsExecuted = $false; FunctionalAssessment = '未实测，待主agent统一生产部署后运行真实激活/GUI验收。'
+    SwitchOnly = [bool]$SwitchOnly
     ExpectedDll = $ExpectedDll; Owner = $null; Preflight = @(); Builds = @(); Runs = @(); ExitCode = 1
     Sources = @(
         'https://learn.microsoft.com/en-us/windows/win32/api/msctf/nf-msctf-itfinputprocessorprofilemgr-activateprofile',
@@ -61,12 +63,16 @@ $summary = [ordered]@{
         'https://learn.microsoft.com/en-us/windows/win32/api/psapi/nf-psapi-getmodulefilenameexw',
         'https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-queryfullprocessimagenamew',
         'https://learn.microsoft.com/en-us/windows/win32/api/msctf/nf-msctf-itfinputprocessorprofilemgr-enumprofiles',
+        'https://learn.microsoft.com/en-us/windows/win32/api/msctf/nf-msctf-itfinputprocessorprofiles-getlanguageprofiledescription',
         'https://learn.microsoft.com/en-us/windows/win32/api/msctf/ns-msctf-tf_inputprocessorprofile',
         'https://learn.microsoft.com/en-us/windows/win32/winmsg/wm-timer',
         'https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-bitblt',
         'https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getguithreadinfo',
         'https://devblogs.microsoft.com/oldnewthing/20161118-00/?p=94745'
     )
+}
+if ($SwitchOnly) {
+    $summary.Scope = 'SwitchOnly：Windows真实FORPROCESS激活client，鉴别共享owner及Idle主浮窗；优先选已启用搜狗，验证真实ActiveProfile、前台服务非Voice、同owner HWND隐藏，再Voice重选同HWND可见/F8资格恢复。跳过hover、截图、NoDocument、Readonly，不发F8Down、不录音。BuildOnly仅编译测试。'
 }
 function Read-RegistrationValue([Microsoft.Win32.RegistryHive]$Hive, [Microsoft.Win32.RegistryView]$View, [string]$Path, [string]$Name) {
     $base = [Microsoft.Win32.RegistryKey]::OpenBaseKey($Hive, $View)
@@ -104,9 +110,20 @@ function Read-RegisteredOwner {
     # Host registration metadata only, never config.json/owner.lock/credentials or a process launch.
     $hostExe = Read-RegistrationValue CurrentUser Registry64 'Software\TrueFluentPro\VoiceIme' 'HostExe'
     $ownerTag = Read-RegistrationValue CurrentUser Registry64 'Software\TrueFluentPro\VoiceIme' 'VoiceImeOwner'
+    $base = [Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::CurrentUser, [Microsoft.Win32.RegistryView]::Registry64)
+    try {
+        $sub = $base.OpenSubKey('Software\TrueFluentPro\VoiceImeUI', $false)
+        if ($sub) {
+            $standalone = $sub.GetValue('StandaloneHostExe')
+            if ($standalone -is [string] -and -not [string]::IsNullOrWhiteSpace($standalone) -and (Test-Path -LiteralPath $standalone -PathType Leaf)) {
+                $hostExe = $standalone
+            }
+            $sub.Dispose()
+        }
+    } finally { $base.Dispose() }
     if ($ownerTag -ne 'TrueFluentPro.VoiceIme.v1' -or $hostExe -notmatch '^[A-Za-z]:\\' -or
-        $hostExe -ne [IO.Path]::GetFullPath($hostExe) -or [IO.Path]::GetFileName($hostExe) -ne 'TrueFluentPro.exe') {
-        throw '共享owner登记必须是当前自有TrueFluentPro.exe的本地绝对路径。'
+        $hostExe -ne [IO.Path]::GetFullPath($hostExe) -or ([IO.Path]::GetFileName($hostExe) -notin @('TrueFluentPro.exe', 'TrueFluentVoiceImeHost.exe'))) {
+        throw '共享owner登记必须是当前自有TrueFluentPro.exe或TrueFluentVoiceImeHost.exe的本地绝对路径。'
     }
     $root = [IO.Path]::GetDirectoryName($hostExe)
     $module = Join-Path $root 'voice-ime\win-x64\TrueFluentVoiceIme.dll'
@@ -219,8 +236,10 @@ try {
         $reportPath = Join-Path $dir 'activation.json'
         $queryExe = Join-Path $ArtifactDirectory 'win-x64\VoiceImeActivationTests.exe'
         $summary.FunctionalTestsExecuted = $true
-        $run = Invoke-Child $exe @($reportPath, $preflight.RegisteredDll, $summary.Owner.HostExe,
-            $summary.Owner.ExpectedOwnerModule, $queryExe) $dir (Join-Path $dir 'activation') 30000
+        $activationArguments = @($reportPath, $preflight.RegisteredDll, $summary.Owner.HostExe,
+            $summary.Owner.ExpectedOwnerModule, $queryExe)
+        if ($SwitchOnly) { $activationArguments += '--switch-only' } # Last only; x86 still gets the same-source x64 query EXE at argv[5].
+        $run = Invoke-Child $exe $activationArguments $dir (Join-Path $dir 'activation') 30000
         $native = if (Test-Path -LiteralPath $reportPath) { Get-Content -LiteralPath $reportPath -Raw | ConvertFrom-Json } else { $null }
         $loadedHash = $null
         # Do not hash arbitrary report paths: first require the exact preflight-owned registration.
@@ -238,15 +257,30 @@ try {
             $native.OwnerProcessCreated -gt 0 -and $native.OwnerClassHmodule -gt 0 -and $native.OwnerQueryError -eq 0 -and
             $native.RegisteredOwnerExe -eq $summary.Owner.HostExe -and $native.ActualOwnerExe -eq $summary.Owner.HostExe -and
             $native.ExpectedOwnerModule -eq $summary.Owner.ExpectedOwnerModule -and
-            $native.ToolbarClassModule -eq $summary.Owner.ExpectedOwnerModule -and $native.NoDocumentToolbarClassModule -eq $summary.Owner.ExpectedOwnerModule -and
+            $native.ToolbarClassModule -eq $summary.Owner.ExpectedOwnerModule -and
+            ($SwitchOnly -or $native.NoDocumentToolbarClassModule -eq $summary.Owner.ExpectedOwnerModule) -and
             $ownerHash -eq $summary.Owner.InstalledX64DllSha256 -and $ownerHash -eq $summary.Owner.OwnerDllSha256 -and
             $ownerAfter.HostExe -eq $summary.Owner.HostExe -and $ownerAfter.HostExeSha256 -eq $summary.Owner.HostExeSha256 -and
             $ownerAfter.ExpectedOwnerModule -eq $summary.Owner.ExpectedOwnerModule -and $ownerAfter.OwnerDllSha256 -eq $ownerHash -and
             $ownerAfter.InstalledX64Dll -eq $summary.Owner.InstalledX64Dll -and
             $native.OwnerMainHwnd -gt 0 -and $native.OwnerTipHwnd -gt 0 -and $native.OwnerNoticeHwnd -gt 0 -and
-            $native.InitialMainHwnd -eq $native.OwnerMainHwnd -and $native.NoDocumentMainHwnd -eq $native.OwnerMainHwnd -and
+            $native.InitialMainHwnd -eq $native.OwnerMainHwnd -and ($SwitchOnly -or $native.NoDocumentMainHwnd -eq $native.OwnerMainHwnd) -and
             $native.VoiceReselectedMainHwnd -eq $native.OwnerMainHwnd -and $native.OwnerTerminationAttempted -eq $false
-        $required = @('ProcessUsesPMV2', 'OwnWindowTopmostAtHitTest', 'OwnClientExposedAfterPump', 'OwnClientReadyForMouseActivation', 'ClickInsideVirtualDesktop', 'ClickNotConfinedElsewhere',
+        $required = if ($SwitchOnly) {
+            @('SwitchOnly', 'SystemForegroundServiceIsVoice', 'SelectedVoice0804', 'SystemLoadedRegisteredDll', 'RegistrationMatchesPreflight',
+                'OwnerRegistrationMatchesPreflight', 'RealFocusBeforeActivation', 'RealFocusAfterActivation', 'OwnWindowObtainedForeground',
+                'MouseSequenceInserted', 'OwnWindowReceivedNormalClick', 'OwnWindowTopmostRemoved', 'Production500msTimerDispatched',
+                'SharedOwnerShownByNativeSelection', 'SharedOwnerMainAndTwoHintsExist', 'SharedOwnerIndependentProcessAndUiThread',
+                'InitialOwnerStable', 'InitialVisibility', 'InitialIdle', 'EditorFocusedAtIdleUi',
+                'RealEditLockSelectionRoundTrip', 'A_Passthrough', 'F8_SelectedEditable',
+                'EditorFocusedBeforeOtherIme', 'BeforeOtherImeOwnerStable', 'BeforeOtherImeVisibility', 'BeforeOtherImeIdle',
+                'OtherImeEnabledEnumerationComplete', 'OtherImeEnabledNonVoiceAvailable', 'OtherImeActuallySelected', 'OtherImeForegroundNotVoice',
+                'EditorFocusedDuringOtherIme', 'OtherImeOwnerActuallyHidden', 'OtherImeOwnerStable', 'OtherImeVisibility', 'OtherImeIdle',
+                'VoiceReselectIdleSameHwnd', 'VoiceReselectedActuallySelected', 'VoiceReselectedOwnerStable', 'VoiceReselectedVisibility', 'VoiceReselectedIdle', 'F8_AfterOtherImeRestore',
+                'NoTextInjected', 'TextUnchangedAtCleanup', 'OriginalProcessProfileRestored', 'FocusAssociationRestored', 'ContextPopped', 'ThreadDeactivated',
+                'OriginalForegroundAndFocusRestored', 'OriginalCursorRestored', 'OwnWindowDestroyed', 'OwnerRetainedAfterClientCleanup', 'CleanupCompleted')
+        } else {
+            @('ProcessUsesPMV2', 'OwnWindowTopmostAtHitTest', 'OwnClientExposedAfterPump', 'OwnClientReadyForMouseActivation', 'ClickInsideVirtualDesktop', 'ClickNotConfinedElsewhere',
             'NoCapturedMouseOrActiveMenu', 'NoHeldMouseButtonsOrModifiers', 'ClickTargetVerifiedOwnClient', 'MouseClickReverifiedOwnRootAndPid', 'MouseSequenceInserted', 'OwnWindowReceivedNormalClick', 'OwnWindowTopmostRemoved',
             'SystemLoadedRegisteredDll', 'Production500msTimerDispatched', 'OwnerRegistrationMatchesPreflight', 'SharedOwnerShownByNativeSelection',
             'SharedOwnerMainAndTwoHintsExist', 'SharedOwnerIndependentProcessAndUiThread', 'InitialOwnerStable', 'InitialVisibility', 'InitialIdle',
@@ -265,7 +299,25 @@ try {
             'EditorFocusedDuringOtherIme', 'OtherImeOwnerActuallyHidden', 'OtherImeOwnerStable', 'OtherImeVisibility', 'OtherImeIdle',
             'VoiceReselectIdleSameHwnd', 'VoiceReselectedActuallySelected', 'VoiceReselectedOwnerStable', 'VoiceReselectedVisibility', 'VoiceReselectedIdle', 'F8_AfterOtherImeRestore',
             'OriginalProcessProfileRestored', 'OriginalForegroundAndFocusRestored', 'OriginalCursorRestored', 'OwnWindowDestroyed', 'OwnerRetainedAfterClientCleanup')
+        }
         $missing = @($required | Where-Object { -not $native -or $native.$_ -ne $true })
+        $switchEvidence = $null
+        if ($SwitchOnly) {
+            $switchEvidence = $native -and $native.SwitchOnly -eq $true -and
+                $native.OtherImeActivateFlags -eq $native.ActivateFlags -and $native.VoiceReselectFlags -eq $native.ActivateFlags -and
+                $native.OtherImeActiveProfileHr -eq '0x00000000' -and
+                $native.OtherImeForegroundHr -in @('0x00000000', '0x00000001') -and
+                $native.OtherImeForegroundClsid -and $native.OtherImeForegroundClsid -ne $native.ForegroundClsid -and
+                $native.BeforeOtherImeMainHwnd -eq $native.OwnerMainHwnd -and $native.OtherImeMainHwnd -eq $native.OwnerMainHwnd -and
+                $native.VoiceReselectedMainHwnd -eq $native.OwnerMainHwnd -and $native.F8_AfterOtherImeRestoreEaten -eq $true -and
+                $native.F8KeyDownDispatched -eq $false -and $native.SyntheticPartialFinalInjected -eq $false -and
+                $native.ServiceIdleFrames -ge 1 -and $native.ServiceNonIdleFrames -eq 0 -and $native.TextStoreWrites -eq 0 -and
+                $native.NoDocumentSkipped -eq $true -and $native.ReadOnlySkipped -eq $true -and
+                -not [string]::IsNullOrWhiteSpace($native.OtherImeName) -and
+                $native.OtherImeIsSogou -eq [bool]($native.OtherImeName -match '搜狗|Sogou')
+        }
+        $noDocumentEvidence = $null
+        if (-not $SwitchOnly) {
         # NoDocument is a compatibility prefix for no textContext, never document=null.
         $noDocumentStages = @('NoDocumentBeforeTimer', 'NoDocumentAfterTimer', 'NoDocumentAfterF8')
         $invalidNoDocumentContexts = @($noDocumentStages | Where-Object {
@@ -288,50 +340,64 @@ try {
             $native.TextStoreWrites -eq 0 -and $native.SyntheticPartialFinalInjected -eq $false -and
             $native.ServiceIdleFrames -ge 1 -and $native.ServiceNonIdleFrames -eq 0 -and $native.F8_AfterNoDocumentRestoreEaten -eq $true -and
             $native.NoDocumentService500msTimerUpdates -ge 1 -and $native.NoDocumentServiceTimerElapsedMs -ge 500
+        }
         $mouseIdentity = $native -and $native.MouseMoveInserted -eq $false -and
             $native.MouseMoveSendInputRequested -eq 0 -and $native.MouseMoveSendInputSent -eq 0 -and
             $native.MouseSendInputRequested -eq 2 -and $native.MouseSendInputSent -eq 2
         $screenshot = Join-Path $dir 'OWNMAIN.png'
         $tipScreenshot = Join-Path $dir 'OWNTIP.png'
         $screenshotValid = $native -and $(
-            if ($native.CaptureStatus -eq 'Captured') {
+            if ($SwitchOnly) {
+                $native.CaptureStatus -eq 'Skipped' -and $native.CaptureSkipReason -like 'SwitchOnly*'
+            } elseif ($native.CaptureStatus -eq 'Captured') {
                 $native.ScreenshotAreaFullyExposed -eq $true -and $native.ScreenshotsSaved -eq $true -and $native.ObservedBody96x36Dip -eq $true -and
                 $native.OwnMainScreenshot -eq $screenshot -and (Test-Path -LiteralPath $screenshot -PathType Leaf) -and
                 $native.OwnTipScreenshot -eq $tipScreenshot -and (Test-Path -LiteralPath $tipScreenshot -PathType Leaf)
             } else { $native.CaptureStatus -eq 'Skipped' -and -not [string]::IsNullOrWhiteSpace($native.CaptureSkipReason) }
         )
-        $idlePixelsValid = $native -and $(
+        $idlePixelsValid = $null
+        if (-not $SwitchOnly) { $idlePixelsValid = $native -and $(
             if ($native.NoDocumentCaptureStatus -eq 'Captured') {
                 $native.NoDocumentScreenshotAreaFullyExposed -eq $true -and $native.NoDocumentObservedBody96x36Dip -eq $true -and $native.NoDocumentObservedIdleBrandMic -eq $true
             } else { $native.NoDocumentCaptureStatus -eq 'Skipped' -and -not [string]::IsNullOrWhiteSpace($native.NoDocumentCaptureSkipReason) }
-        )
+        ) }
         $summary.Runs += [pscustomobject]@{
             Architecture = $arch; Process = $run; ReportPath = $reportPath; Result = $native; LoadedModuleSha256 = $loadedHash
             ExpectedDllSha256 = $preflight.ExpectedDllSha256; RegisteredDllUnchanged = ($after.RegisteredDllSha256 -eq $preflight.RegisteredDllSha256)
             LoadedModuleIdentityVerified = [bool]$identity; MissingAssertions = $missing
             ActualOwnerModuleSha256 = $ownerHash; InstalledX64DllSha256 = $summary.Owner.InstalledX64DllSha256
             SharedOwnerIdentityVerified = [bool]$ownerIdentity; OwnerAfter = $ownerAfter
-            NoDocumentEvidenceVerified = [bool]$noDocumentEvidence
+            SwitchOnly = [bool]$SwitchOnly; SwitchEvidenceVerified = $switchEvidence
+            OtherImeName = $native.OtherImeName; OtherImeIsSogou = $native.OtherImeIsSogou; OtherImeCoverage = $native.OtherImeCoverage
+            NoDocumentEvidenceVerified = $noDocumentEvidence
             ClickOnlyMouseInputVerified = [bool]$mouseIdentity
             ScreenshotPath = $(if ($native.CaptureStatus -eq 'Captured' -and $screenshotValid) { $screenshot } else { $null })
             TipScreenshotPath = $(if ($native.CaptureStatus -eq 'Captured' -and $screenshotValid) { $tipScreenshot } else { $null })
             CaptureStatus = $native.CaptureStatus; CaptureSkipReason = $native.CaptureSkipReason
             NoDocumentCaptureStatus = $native.NoDocumentCaptureStatus; NoDocumentCaptureSkipReason = $native.NoDocumentCaptureSkipReason
-            VisualReview = '未目视验收；Captured仅说明真实窗口裁剪已保存；Skipped说明曝光不安全，未采集外部文本。主agent后续审核安全图片或另行真实GUI验收。'
+            VisualReview = $(if ($SwitchOnly) { 'SwitchOnly 按范围不截图，不要求强制目视UI；用户已提供截图。仅以真实Profile/前台服务/owner HWND动作及身份/清理验收。' } else { '未目视验收；Captured仅说明真实窗口裁剪已保存；Skipped说明曝光不安全，未采集外部文本。主agent后续审核安全图片或另行真实GUI验收。' })
             ExecutableSha256 = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash
         }
         Write-Output "RUN win-$arch pid=$($run.Pid) exit=$($run.ExitCode) exited=$($run.HasExited) report=$reportPath"
+        if ($SwitchOnly) {
+            Write-Output "SWITCH-ONLY ownerPid=$($native.OwnerPid) ownerIdentity=$ownerIdentity clientIdentity=$identity idle=$($native.InitialIdle) evidence=$switchEvidence otherIme=$($native.OtherImeName) sogou=$($native.OtherImeIsSogou) hidden=$($native.OtherImeOwnerActuallyHidden) foregroundNotVoice=$($native.OtherImeForegroundNotVoice) restoredF8=$($native.F8_AfterOtherImeRestoreEaten) capture=$($native.CaptureStatus)"
+            Write-Output $native.OtherImeCoverage
+        } else {
         Write-Output "UI ownerPid=$($native.OwnerPid) ownerIdentity=$ownerIdentity timer=$($native.Production500msTimerDispatched) idle=$($native.InitialIdle) hover=$($native.HoverTooltipVisibleWithStartText) focus=$($native.EditorFocusedDuringHover) clientIdentity=$identity capture=$($native.CaptureStatus)"
         Write-Output "NO-TEXT-CONTEXT evidence=$noDocumentEvidence emptyDoc=$($native.NoDocumentEmptyDocument) context=$($native.NoDocumentAfterF8Context) sameHwnd=$($native.NoDocumentOwnerStable) capture=$($native.NoDocumentCaptureStatus) F8=$($native.F8_SelectedNoDocumentNotEatenEaten) restoredF8=$($native.F8_AfterNoDocumentRestoreEaten)"
+        }
         if ($run.ExitCode -ne 0 -or $run.TimedOut -or -not $native -or -not $native.Passed -or -not $native.CleanupCompleted -or
-            -not $identity -or -not $ownerIdentity -or -not $noDocumentEvidence -or -not $mouseIdentity -or $missing.Count -or
-            -not $screenshotValid -or -not $idlePixelsValid -or $native.Pid -ne $run.Pid -or
+            -not $identity -or -not $ownerIdentity -or -not $mouseIdentity -or $missing.Count -or
+            ($SwitchOnly -and -not $switchEvidence) -or (-not $SwitchOnly -and (-not $noDocumentEvidence -or -not $idlePixelsValid)) -or
+            -not $screenshotValid -or $native.Pid -ne $run.Pid -or
             $native.Bitness -ne $(if ($arch -eq 'x64') { 64 } else { 32 })) {
             Write-Output ('UNMET=' + ($missing -join ', '))
             throw "win-$arch 验收失败；先核对报告和官方机制，后续架构不再运行。"
         }
     }
-        $summary.FunctionalAssessment = '真实激活/共享owner/空Context/其他IME隐藏恢复的程序断言通过；截图与目视状态单独列出，不代表真实录音通过。'
+        $summary.FunctionalAssessment = if ($SwitchOnly) {
+            'SwitchOnly 真实激活/共享owner Idle/其他IME前台服务让出及同HWND隐藏恢复/清理断言通过；搜狗是否实测以每架构 OtherImeName/OtherImeIsSogou 为准。未进行hover、截图、NoDocument、Readonly或录音。'
+        } else { '真实激活/共享owner/空Context/其他IME隐藏恢复的程序断言通过；截图与目视状态单独列出，不代表真实录音通过。' }
     }
     $summary.ExitCode = 0
 } catch {

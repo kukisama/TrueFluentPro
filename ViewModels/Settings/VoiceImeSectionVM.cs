@@ -13,12 +13,13 @@ namespace TrueFluentPro.ViewModels.Settings
     public sealed class VoiceImeSectionVM : SettingsSectionBase
     {
         [Flags]
-        private enum EditedField { None = 0, Resource = 1, Model = 2, Microphone = 4, Language = 8, Silence = 16 }
+        private enum EditedField { None = 0, Resource = 1, Model = 2, Microphone = 4, Language = 8, Silence = 16, Prewarm = 32 }
 
         private readonly VoiceImeRegistrationService _registration;
         private AzureSpeechConfig? _config;
         private EditedField _edited;
         private bool _refreshing;
+        private bool _enablePrewarm = true;
         private string _resourceId = "";
         private ModelReference? _modelRef;
         private string _microphoneId = "";
@@ -51,6 +52,7 @@ namespace TrueFluentPro.ViewModels.Settings
         }
 
         public bool IsWindows => OperatingSystem.IsWindows();
+        public string ImeVersionText => $"版本 v{VoiceImeRegistrationService.GetProductVersionString()}（跟随主产品版本）";
         public bool CanManageRegistration => IsWindows && !IsRegistrationBusy;
         public List<ResourceOption> SpeechResources => _speechResources;
         public List<ModelOption> SpeechModels => _speechModels;
@@ -107,6 +109,16 @@ namespace TrueFluentPro.ViewModels.Settings
             }
         }
 
+        public bool EnablePrewarm
+        {
+            get => _enablePrewarm;
+            set
+            {
+                if (_refreshing || !SetProperty(ref _enablePrewarm, value)) return;
+                Edited(EditedField.Prewarm);
+            }
+        }
+
         public double EndSilenceTimeoutSeconds
         {
             get => _endSilenceTimeoutSeconds;
@@ -151,6 +163,7 @@ namespace TrueFluentPro.ViewModels.Settings
             if (!ReferenceEquals(_config, config)) _edited = EditedField.None;
             _config = config;
             var source = config.VoiceIme ?? new VoiceImeConfig();
+            if (!_edited.HasFlag(EditedField.Prewarm)) _enablePrewarm = source.EnablePrewarm;
             if (!_edited.HasFlag(EditedField.Resource)) _resourceId = source.SpeechResourceId ?? "";
             if (!_edited.HasFlag(EditedField.Model)) _modelRef = CloneReference(source.ModelRef);
             if (!_edited.HasFlag(EditedField.Microphone)) _microphoneId = source.MicrophoneDeviceId ?? "";
@@ -163,6 +176,7 @@ namespace TrueFluentPro.ViewModels.Settings
         {
             if (_edited == EditedField.None) return;
             var target = config.VoiceIme ??= new VoiceImeConfig();
+            if (_edited.HasFlag(EditedField.Prewarm)) target.EnablePrewarm = _enablePrewarm;
             if (_edited.HasFlag(EditedField.Resource)) target.SpeechResourceId = _resourceId;
             if (_edited.HasFlag(EditedField.Model)) target.ModelRef = CloneReference(_modelRef);
             if (_edited.HasFlag(EditedField.Microphone)) target.MicrophoneDeviceId = _microphoneId;
@@ -215,6 +229,7 @@ namespace TrueFluentPro.ViewModels.Settings
                 OnPropertyChanged(nameof(SelectedResource));
                 OnPropertyChanged(nameof(SelectedModel));
                 OnPropertyChanged(nameof(SelectedLanguage));
+                OnPropertyChanged(nameof(EnablePrewarm));
                 OnPropertyChanged(nameof(EndSilenceTimeoutSeconds));
                 ApplyMicrophones(_availableMicrophones);
             }

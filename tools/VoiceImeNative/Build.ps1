@@ -13,6 +13,18 @@ if (-not (Test-Path -LiteralPath $vswhere)) { throw '未找到 Visual Studio Ins
 $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
 if (-not $vs) { throw '需要已安装的 Visual Studio C++ x64/x86 工具；本脚本不会安装。' }
 $vcvars = Join-Path $vs 'VC\Auxiliary\Build\vcvarsall.bat'
+$repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
+$releaseNotesPath = Join-Path $repoRoot 'Assets\RELEASE_NOTES.md'
+$productVersionStr = '2.2.2'
+$productVersionCsv = '2,2,2,0'
+if (Test-Path -LiteralPath $releaseNotesPath) {
+    $firstLine = Get-Content -LiteralPath $releaseNotesPath -TotalCount 1
+    if ($firstLine -match 'v(\d+)\.(\d+)\.(\d+)') {
+        $productVersionStr = "$($Matches[1]).$($Matches[2]).$($Matches[3])"
+        $productVersionCsv = "$($Matches[1]),$($Matches[2]),$($Matches[3]),0"
+    }
+}
+$rcVersionFlags = "/DVOICE_IME_VERSION_CSV=$productVersionCsv /DVOICE_IME_VERSION_STR=\`"$productVersionStr\`""
 $runtime = if ($Configuration -eq 'Debug') { '/MTd /Od /Zi' } else { '/MT /O2 /DNDEBUG' }
 $toolbarFlags = "/nologo /std:c++17 /EHsc /W4 /utf-8 /DUNICODE /D_UNICODE /D_WIN32_WINNT=0x0602 $runtime"
 $brandIcon = Join-Path $PSScriptRoot 'Brand.ico'
@@ -48,7 +60,7 @@ if ($Target -eq 'Toolbar') {
         }
         $res = Join-Path $obj 'Brand.res'
         $commands = @("call `"$vcvars`" $arch >nul",
-            "rc /nologo /c65001 /I `"$PSScriptRoot`" /fo `"$res`" `"$(Join-Path $PSScriptRoot 'Brand.rc')`"",
+            "rc /nologo /c65001 $rcVersionFlags /I `"$PSScriptRoot`" /fo `"$res`" `"$(Join-Path $PSScriptRoot 'Brand.rc')`"",
             "cl $toolbarFlags /DVOICE_TOOLBAR_TEST `"$(Join-Path $PSScriptRoot 'ToolbarTests.cpp')`" `"$(Join-Path $PSScriptRoot 'VoiceToolbar.cpp')`" /Fe:`"$test`" /Fo:`"$obj\\`" /Fd:`"$obj\toolbar.pdb`" /link `"$res`" /INCREMENTAL:NO /DYNAMICBASE /NXCOMPAT /MANIFEST:EMBED /MANIFESTUAC:`"level='asInvoker' uiAccess='false'`" gdiplus.lib dwmapi.lib user32.lib gdi32.lib shell32.lib")
         $batch = Join-Path $obj 'build-toolbar.cmd'
         $lines = @('@echo off', '@chcp 65001 >nul')
@@ -111,11 +123,11 @@ foreach ($arch in @('x64', 'x86')) {
     # vcvarsall chooses the installed Windows SDK, INCLUDE and LIB. Environment changes stay inside cmd.exe.
     $commands = @(
         "call `"$vcvars`" $arch >nul",
-        "rc /nologo /c65001 /I `"$PSScriptRoot`" /fo `"$brandResource`" `"$(Join-Path $PSScriptRoot 'Brand.rc')`"",
+        "rc /nologo /c65001 $rcVersionFlags /I `"$PSScriptRoot`" /fo `"$brandResource`" `"$(Join-Path $PSScriptRoot 'Brand.rc')`"",
         "cl $flags /DNOMINMAX /D_CRT_SECURE_NO_WARNINGS /c $($libImeSources -join ' ') /Fo:`"$libImeObj\\`" /Fd:`"$libImeObj\libIME2.pdb`"",
         "lib /nologo /OUT:`"$libImeLibrary`" `"$libImeObj\*.obj`"",
         "cl $flags /LD $($sources -join ' ') /Fe:`"$dll`" /Fo:`"$obj\\`" /Fd:`"$obj\dll.pdb`" /link `"$brandResource`" /DEF:`"$(Join-Path $PSScriptRoot $def)`" /INCREMENTAL:NO /DYNAMICBASE /NXCOMPAT $libs $uiLibs $imeLibs",
-        "cl $flags `"$(Join-Path $PSScriptRoot 'RegisterMain.cpp')`" `"$(Join-Path $PSScriptRoot 'Registration.cpp')`" /Fe:`"$exe`" /Fo:`"$obj\\`" /Fd:`"$obj\helper.pdb`" /link $exeLink $libs",
+        "cl $flags `"$(Join-Path $PSScriptRoot 'RegisterMain.cpp')`" `"$(Join-Path $PSScriptRoot 'Registration.cpp')`" /Fe:`"$exe`" /Fo:`"$obj\\`" /Fd:`"$obj\helper.pdb`" /link `"$brandResource`" $exeLink $libs",
         "cl $flags `"$(Join-Path $PSScriptRoot 'Tests.cpp')`" /Fe:`"$test`" /Fo:`"$obj\\`" /Fd:`"$obj\tests.pdb`" /link $exeLink $libs",
         "cl $flags `"$(Join-Path $PSScriptRoot 'EditTests.cpp')`" $toolbarSource $bridgeSource `"$(Join-Path $PSScriptRoot 'Registration.cpp')`" /Fe:`"$editTest`" /Fo:`"$obj\\`" /Fd:`"$obj\edits.pdb`" /link `"$brandResource`" $exeLink $libs $uiLibs $imeLibs",
         "cl $flags `"$(Join-Path $PSScriptRoot 'RegistrationTests.cpp')`" /Fe:`"$registrationTest`" /Fo:`"$obj\\`" /Fd:`"$obj\registration-tests.pdb`" /link $exeLink $libs",

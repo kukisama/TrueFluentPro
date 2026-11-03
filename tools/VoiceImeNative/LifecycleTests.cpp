@@ -129,9 +129,10 @@ int wmain(int argc, wchar_t** argv) {
             check(OfflineEditAccess::Listening(service.Get()) && OfflineEditAccess::Unbound(service.Get()),
                 "background R broadcasts synchronize state; old target partial cannot request an edit");
             service->onKillFocus();
-            check(OfflineEditAccess::Listening(service.Get()) && WaitForSingleObject(shared->cancel, 0) == WAIT_OBJECT_0 &&
-                shared->commands.size() == 1 && !shared->target,
-                "ordinary kill-focus disconnects locally, never T/D or audio stop");
+            check(OfflineEditAccess::Listening(service.Get()) && OfflineEditAccess::Unbound(service.Get()) &&
+                WaitForSingleObject(shared->cancel, 0) == WAIT_TIMEOUT &&
+                shared->commands.size() == 1 && shared->target == window,
+                "ordinary kill-focus unbinds target locally while retaining connection, never T/D or audio stop");
         } else check(false, "offline message-only service window");
     }
     check(ModuleObjects == 0, "offline lifecycle releases all native objects; no audio/cloud/host/registration");

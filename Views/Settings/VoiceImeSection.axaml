@@ -9,7 +9,12 @@
             BorderThickness="1" CornerRadius="8" Padding="20">
         <StackPanel Spacing="16">
             <StackPanel Spacing="6">
-                <TextBlock Text="语音输入法" Theme="{StaticResource SubtitleTextBlockStyle}"/>
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Text="语音输入法" Theme="{StaticResource SubtitleTextBlockStyle}" VerticalAlignment="Center"/>
+                    <Border Grid.Column="1" Classes="sub-card" Padding="8,3" CornerRadius="6" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding ImeVersionText}" FontSize="11" Foreground="{DynamicResource TextSubtleBrush}"/>
+                    </Border>
+                </Grid>
                 <TextBlock Classes="field-note" TextWrapping="Wrap"
                            Text="Windows 纯语音输入法。切换到该输入法后，使用固定 F8 开始或停止听写；不需要保持主程序窗口打开。"/>
                 <TextBlock Classes="field-note" TextWrapping="Wrap"
@@ -19,30 +24,35 @@
 
             <StackPanel Spacing="10">
                 <TextBlock Text="识别配置" FontWeight="Bold"/>
-                <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto"
+                <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto"
                       RowSpacing="10" ColumnSpacing="12" IsEnabled="{Binding IsWindows}">
-                    <TextBlock Grid.Row="0" Text="语音资源" VerticalAlignment="Center"/>
-                    <ComboBox Grid.Row="0" Grid.Column="1" HorizontalAlignment="Stretch"
+                    <TextBlock Grid.Row="0" Text="连接预热" VerticalAlignment="Center"/>
+                    <CheckBox Grid.Row="0" Grid.Column="1"
+                              IsChecked="{Binding EnablePrewarm, Mode=TwoWay}"
+                              Content="切换到输入法时后台预建语音连接（加速首次按 F8 出字，关闭则按 F8 时才建连）"
+                              VerticalAlignment="Center"/>
+                    <TextBlock Grid.Row="1" Text="语音资源" VerticalAlignment="Center"/>
+                    <ComboBox Grid.Row="1" Grid.Column="1" HorizontalAlignment="Stretch"
                               ItemsSource="{Binding SpeechResources}"
                               SelectedItem="{Binding SelectedResource, Mode=TwoWay}"
                               ToolTip.Tip="引用现有语音资源；跟随模式在后台读取配置时解析当前活动资源。"/>
-                    <TextBlock Grid.Row="1" Text="模型覆盖" VerticalAlignment="Center"/>
-                    <ComboBox Grid.Row="1" Grid.Column="1" HorizontalAlignment="Stretch"
+                    <TextBlock Grid.Row="2" Text="模型覆盖" VerticalAlignment="Center"/>
+                    <ComboBox Grid.Row="2" Grid.Column="1" HorizontalAlignment="Stretch"
                               ItemsSource="{Binding SpeechModels}"
                               SelectedItem="{Binding SelectedModel, Mode=TwoWay}"
                               ToolTip.Tip="仅用于输入法快照，不修改共享语音资源及其他功能的模型。"/>
-                    <TextBlock Grid.Row="2" Text="麦克风" VerticalAlignment="Center"/>
-                    <Grid Grid.Row="2" Grid.Column="1" ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                    <TextBlock Grid.Row="3" Text="麦克风" VerticalAlignment="Center"/>
+                    <Grid Grid.Row="3" Grid.Column="1" ColumnDefinitions="*,Auto" ColumnSpacing="8">
                         <ComboBox HorizontalAlignment="Stretch" ItemsSource="{Binding Microphones}"
                                   SelectedItem="{Binding SelectedMicrophone, Mode=TwoWay}"/>
                         <Button Grid.Column="1" Content="刷新设备" Command="{Binding RefreshMicrophonesCommand}"/>
                     </Grid>
-                    <TextBlock Grid.Row="3" Text="识别语言" VerticalAlignment="Center"/>
-                    <ComboBox Grid.Row="3" Grid.Column="1" HorizontalAlignment="Stretch"
+                    <TextBlock Grid.Row="4" Text="识别语言" VerticalAlignment="Center"/>
+                    <ComboBox Grid.Row="4" Grid.Column="1" HorizontalAlignment="Stretch"
                               ItemsSource="{Binding Languages}"
                               SelectedItem="{Binding SelectedLanguage, Mode=TwoWay}"/>
-                    <TextBlock Grid.Row="4" Text="句尾静音（秒）" VerticalAlignment="Center"/>
-                    <NumericUpDown Grid.Row="4" Grid.Column="1" Width="140" HorizontalAlignment="Left"
+                    <TextBlock Grid.Row="5" Text="句尾静音（秒）" VerticalAlignment="Center"/>
+                    <NumericUpDown Grid.Row="5" Grid.Column="1" Width="140" HorizontalAlignment="Left"
                                    Minimum="0.2" Maximum="3" Increment="0.1" FormatString="0.0"
                                    Value="{Binding EndSilenceTimeoutSeconds, Mode=TwoWay}"
                                    ToolTip.Tip="连续静音达到该时长后提交当前句子，默认 0.8 秒；讯飞/百度以连接器实际支持为准。"/>

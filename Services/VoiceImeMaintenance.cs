@@ -112,7 +112,7 @@ internal static class VoiceImeMaintenance
                     var receipt = JsonSerializer.Deserialize<HostReceipt>(File.ReadAllText(path))
                         ?? throw new IOException("输入法后台记录异常。");
                     if (receipt.Pid <= 0 || receipt.StartTime <= 0 || !Path.IsPathFullyQualified(receipt.HostExe)
-                        || Path.GetFileName(receipt.HostExe) != "TrueFluentPro.exe"
+                        || (Path.GetFileName(receipt.HostExe) != "TrueFluentPro.exe" && Path.GetFileName(receipt.HostExe) != "TrueFluentVoiceImeHost.exe")
                         || Path.GetFileName(path) != $"host-{receipt.Pid}-{receipt.StartTime}.json")
                         throw new IOException("输入法后台记录身份不匹配，未结束任何进程。");
                     try

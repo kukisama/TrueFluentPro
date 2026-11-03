@@ -14,6 +14,7 @@
 #include <cmath>
 #include <climits>
 #include <cstddef>
+#include <cwctype>
 #include <psapi.h>
 
 namespace {
@@ -144,12 +145,20 @@ OwnerWindow QueryOwnerWindow(HWND hwnd, DWORD expectedPid, const wchar_t* expect
     HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, value.pid);
     if (!process) { value.error = GetLastError(); return value; }
     DWORD count = 32768, ownSession = 0, session = 0; BOOL wow = TRUE; FILETIME created{}, exited{}, kernel{}, user{};
+    wchar_t standaloneExe[32768]{}; DWORD sBytes = sizeof(standaloneExe); HKEY sKey{};
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\TrueFluentPro\\VoiceImeUI", 0, KEY_QUERY_VALUE | KEY_WOW64_64KEY, &sKey) == ERROR_SUCCESS) {
+        RegGetValueW(sKey, nullptr, L"StandaloneHostExe", RRF_RT_REG_SZ, nullptr, standaloneExe, &sBytes);
+        RegCloseKey(sKey);
+    }
+    const auto matchesExe = [&](const wchar_t* actualExe) {
+        return !_wcsicmp(actualExe, expectedExe) || (standaloneExe[0] && !_wcsicmp(actualExe, standaloneExe));
+    };
     if (!QueryFullProcessImageNameW(process, 0, value.exe, &count) || !count || count >= 32768 ||
         !IsWow64Process(process, &wow) || !GetProcessTimes(process, &created, &exited, &kernel, &user) ||
         !ProcessIdToSessionId(value.pid, &session) || !ProcessIdToSessionId(GetCurrentProcessId(), &ownSession)) {
         value.error = GetLastError(); if (!value.error) value.error = ERROR_INVALID_DATA;
     }
-    else if (wow || session != ownSession || _wcsicmp(value.exe, expectedExe)) value.error = ERROR_INVALID_DATA;
+    else if (wow || session != ownSession || !matchesExe(value.exe)) value.error = ERROR_INVALID_DATA;
     else {
         value.created = (uint64_t(created.dwHighDateTime) << 32) | created.dwLowDateTime;
         HANDLE modules = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, value.pid);
@@ -158,7 +167,7 @@ OwnerWindow QueryOwnerWindow(HWND hwnd, DWORD expectedPid, const wchar_t* expect
             FILETIME checked{}, a{}, b{}, c{}; wchar_t checkedExe[32768]{}; count = 32768;
             const bool sameProcess = GetProcessTimes(modules, &checked, &a, &b, &c) &&
                 checked.dwLowDateTime == created.dwLowDateTime && checked.dwHighDateTime == created.dwHighDateTime &&
-                QueryFullProcessImageNameW(modules, 0, checkedExe, &count) && count < 32768 && !_wcsicmp(checkedExe, expectedExe);
+                QueryFullProcessImageNameW(modules, 0, checkedExe, &count) && count < 32768 && matchesExe(checkedExe);
             SetLastError(0);
             const auto module = sameProcess ? reinterpret_cast<HMODULE>(GetClassLongPtrW(hwnd, GCLP_HMODULE)) : nullptr;
             value.module = reinterpret_cast<uintptr_t>(module);
@@ -332,6 +341,7 @@ class Host {
     DWORD ownerPid = 0, ownerThread = 0;
     uint64_t ownerCreated = 0;
     bool hoverSent = false;
+    bool switchOnly = false;
     bool com = false, activated = false, associated = false, pushed = false, attempted = false, closed = false, cancelled = false;
     HWND window{};
     HWND originalForeground{}, originalFocus{}, serviceDispatcher{};
@@ -649,18 +659,30 @@ class Host {
         return value;
 #endif
     }
+    bool OwnerModuleMatches(const wchar_t* actualModule) {
+        if (!_wcsicmp(actualModule, expectedOwnerModule.c_str())) return true;
+        wchar_t standaloneExe[32768]{}; DWORD sBytes = sizeof(standaloneExe); HKEY sKey{};
+        if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\TrueFluentPro\\VoiceImeUI", 0, KEY_QUERY_VALUE | KEY_WOW64_64KEY, &sKey) == ERROR_SUCCESS) {
+            if (RegGetValueW(sKey, nullptr, L"StandaloneHostExe", RRF_RT_REG_SZ, nullptr, standaloneExe, &sBytes) == ERROR_SUCCESS && standaloneExe[0]) {
+                const auto standaloneMod = (std::filesystem::path(standaloneExe).parent_path() / L"voice-ime" / L"win-x64" / L"TrueFluentVoiceIme.dll").wstring();
+                if (!_wcsicmp(actualModule, standaloneMod.c_str())) { RegCloseKey(sKey); return true; }
+            }
+            RegCloseKey(sKey);
+        }
+        return false;
+    }
     bool OwnerIdentity(HWND hwnd) {
         if (!ownerPid || !ToolbarCandidate(hwnd)) return false;
         const auto value = ReadOwner(hwnd, ownerPid);
         return !value.error && value.pid == ownerPid && value.thread == ownerThread && value.created == ownerCreated &&
-            value.module && !_wcsicmp(value.exe, expectedOwnerExe.c_str()) && !_wcsicmp(value.path, expectedOwnerModule.c_str());
+            value.module && OwnerModuleMatches(value.path);
     }
     void VerifyOwner(const char* stage, bool visible, bool idle = true) {
         const auto windows = ToolbarWindows(); unsigned mains = 0, attached = 0;
         for (HWND hwnd : windows) {
             if (!GetWindow(hwnd, GW_OWNER) && WindowText(hwnd) == DisplayName) {
                 const auto value = ReadOwner(hwnd);
-                if (!value.error && !_wcsicmp(value.path, expectedOwnerModule.c_str())) ++mains;
+                if (!value.error && OwnerModuleMatches(value.path)) ++mains;
             }
             if (hwnd != ownerMain && GetWindow(hwnd, GW_OWNER) == ownerMain) ++attached;
         }
@@ -696,7 +718,7 @@ class Host {
             for (HWND hwnd : ToolbarWindows()) {
                 if (GetWindow(hwnd, GW_OWNER) || WindowText(hwnd) != DisplayName) continue;
                 const auto value = ReadOwner(hwnd);
-                if (!value.error && !_wcsicmp(value.path, expectedOwnerModule.c_str()) && IsWindowVisible(hwnd)) {
+                if (!value.error && OwnerModuleMatches(value.path) && IsWindowVisible(hwnd)) {
                     ownerMain = hwnd; ownerPid = value.pid; ownerThread = value.thread; ownerCreated = value.created; return serviceIdleFrames > 0;
                 }
             }
@@ -726,9 +748,10 @@ class Host {
         RECT rect{}, client{}; const UINT dpi = Dpi(ownerMain);
         report.Check("ToolbarRectAvailable", dpi && GetWindowRect(ownerMain, &rect) && GetClientRect(ownerMain, &client));
         report.Number("ToolbarDpi", dpi); report.Rect("ToolbarMainRect", rect);
-        report.Check("ToolbarSurface104x44Dip", rect.right - rect.left == MulDiv(104, dpi, 96) &&
-            rect.bottom - rect.top == MulDiv(44, dpi, 96) && client.right == MulDiv(104, dpi, 96) && client.bottom == MulDiv(44, dpi, 96));
+        report.Check("ToolbarSurface104x44Dip", rect.right - rect.left == MulDiv(144, dpi, 96) &&
+            rect.bottom - rect.top == MulDiv(44, dpi, 96) && client.right == MulDiv(144, dpi, 96) && client.bottom == MulDiv(44, dpi, 96));
         FocusGate("EditorFocusedAtIdleUi");
+        if (switchOnly) return; // Observe real Idle only; synthetic hover can trigger cross-process WM_MOUSELEAVE.
         hoverSent = true; // Unwind hover even after a timeout or failed assertion; no remote Close/Destroy.
         HoverMessage(WM_MOUSEMOVE, 0, MAKELPARAM(MulDiv(74, dpi, 96), MulDiv(22, dpi, 96)));
         HoverMessage(WM_TIMER, 2); // Actual production hover handler, never mic click/animation timer/T/KeyDown.
@@ -827,7 +850,7 @@ class Host {
         report.Check(field("ScreenshotsSaved").c_str(), saved);
         report.Text(field("CaptureStatus").c_str(), "Captured"); report.Rect(field("ObservedPanelPixelBounds").c_str(), body);
         const UINT dpi = Dpi(ownerMain);
-        report.Check(field("ObservedBody96x36Dip").c_str(), bodyPixels && std::abs(body.right - body.left - MulDiv(96, dpi, 96)) <= 2 &&
+        report.Check(field("ObservedBody96x36Dip").c_str(), bodyPixels && std::abs(body.right - body.left - MulDiv(136, dpi, 96)) <= 2 &&
             std::abs(body.bottom - body.top - MulDiv(36, dpi, 96)) <= 2);
         if (noDocument) report.Check("NoDocumentObservedIdleBrandMic", brandPixels && micPixels);
         report.Text("VisualAssessment", "仅实际窗口矩形安全裁剪；品牌、mic、中文字体待主agent目视，不用像素断言冒充目视通过。");
@@ -916,8 +939,8 @@ class Host {
         report.Check("NoDocumentClientModuleIsRegisteredDll", _wcsicmp(ModulePath(GetModuleHandleW(L"TrueFluentVoiceIme.dll")).c_str(), registeredDll.c_str()) == 0);
         RECT rect{}, client{}; const UINT dpi = Dpi(ownerMain);
         report.Check("NoDocumentToolbarSurface104x44Dip", dpi && GetWindowRect(ownerMain, &rect) && GetClientRect(ownerMain, &client) &&
-            rect.right - rect.left == MulDiv(104, dpi, 96) && rect.bottom - rect.top == MulDiv(44, dpi, 96) &&
-            client.right == MulDiv(104, dpi, 96) && client.bottom == MulDiv(44, dpi, 96));
+            rect.right - rect.left == MulDiv(144, dpi, 96) && rect.bottom - rect.top == MulDiv(44, dpi, 96) &&
+            client.right == MulDiv(144, dpi, 96) && client.bottom == MulDiv(44, dpi, 96));
         CaptureOwnMain(true); // Optional exposed idle pixels; no hover/input/additional saved image.
         BOOL eaten = FALSE;
         const LPARAM flags = 1 | (static_cast<LPARAM>(MapVirtualKeyW(VK_F8, MAPVK_VK_TO_VSC)) << 16);
@@ -941,10 +964,13 @@ class Host {
     void VerifyOtherImeHide() {
         FocusGate("EditorFocusedBeforeOtherIme");
         VerifyOwner("BeforeOtherIme", true);
-        // Fresh enabled, same-language profiles only. Original Pinyin is preferred; no enable/default/session writes.
+        // Fresh enabled, same-language profiles only. Sogou wins over original Pinyin; never enable a TIP.
         ComPtr<IEnumTfInputProcessorProfiles> enumeration;
         report.Require("OtherImeEnumProfilesHr", profiles->EnumProfiles(0x0804, &enumeration));
-        TF_INPUTPROCESSORPROFILE alternative{}, candidate{}; bool found = false, exhausted = false;
+        ComPtr<ITfInputProcessorProfiles> descriptions;
+        report.Require("OtherImeDescriptionInterfaceHr", profiles.As(&descriptions));
+        TF_INPUTPROCESSORPROFILE alternative{}, candidate{}; bool found = false, foundSogou = false, exhausted = false;
+        std::wstring alternativeName; HRESULT alternativeDescriptionHr = E_NOTIMPL; unsigned descriptionFailures = 0;
         for (unsigned i = 0; i < 1024; ++i) {
             ULONG count = 0; const HRESULT hr = enumeration->Next(1, &candidate, &count);
             if (hr == S_FALSE && count == 0) { exhausted = true; break; }
@@ -953,16 +979,46 @@ class Host {
                 ((candidate.dwProfileType == TF_PROFILETYPE_INPUTPROCESSOR && candidate.catid == GUID_TFCAT_TIP_KEYBOARD &&
                     candidate.clsid != CLSID_NULL && candidate.guidProfile != GUID_NULL) ||
                     (candidate.dwProfileType == TF_PROFILETYPE_KEYBOARDLAYOUT && candidate.hkl));
-            if (safe && (!found || SameProfile(candidate, original))) { alternative = candidate; found = true; }
+            if (!safe) continue;
+            std::wstring name = L"已启用键盘布局（无 TIP 描述）"; HRESULT descriptionHr = E_NOTIMPL;
+            if (candidate.dwProfileType == TF_PROFILETYPE_INPUTPROCESSOR) {
+                BSTR raw = nullptr;
+                descriptionHr = descriptions->GetLanguageProfileDescription(candidate.clsid, candidate.langid, candidate.guidProfile, &raw);
+                const std::unique_ptr<wchar_t, decltype(&SysFreeString)> description(raw, &SysFreeString);
+                if (descriptionHr == S_OK && description && SysStringLen(description.get())) name.assign(description.get(), SysStringLen(description.get()));
+                else { name = L"已启用其他输入法（描述读取失败）"; ++descriptionFailures; }
+            }
+            std::wstring lower = name;
+            std::transform(lower.begin(), lower.end(), lower.begin(), [](wchar_t c) { return static_cast<wchar_t>(std::towlower(c)); });
+            const bool sogou = lower.find(L"搜狗") != lower.npos || lower.find(L"sogou") != lower.npos;
+            if (!found || (sogou && !foundSogou) || (!foundSogou && SameProfile(candidate, original))) {
+                alternative = candidate; alternativeName = name; alternativeDescriptionHr = descriptionHr;
+                found = true; foundSogou = sogou;
+            }
         }
         report.Check("OtherImeEnabledEnumerationComplete", exhausted);
         report.Check("OtherImeEnabledNonVoiceAvailable", found);
+        report.Text("OtherImeName", Utf8(alternativeName)); report.Bool("OtherImeIsSogou", foundSogou);
+        report.Hr("OtherImeDescriptionHr", alternativeDescriptionHr); report.Number("OtherImeDescriptionFailures", descriptionFailures);
+        report.Text("OtherImeNameAuthority", alternative.dwProfileType == TF_PROFILETYPE_INPUTPROCESSOR ?
+            "ITfInputProcessorProfiles::GetLanguageProfileDescription; failed/empty description is explicitly unnamed" : "Keyboard layout fallback; no TIP description");
+        report.Text("OtherImeCoverage", foundSogou ? "选用已启用搜狗 Profile；实际切换/隐藏/恢复结果见断言。" :
+            "未在已启用 Profile 的描述中找到搜狗/Sogou；仅验证报告所列替代 IME，不能声称搜狗已测。");
         report.Profile("OtherImeProfile", alternative); report.Number("OtherImeActivateFlags", TF_IPPMF_FORPROCESS);
         report.Require("OtherImeActivateHr", profiles->ActivateProfile(alternative.dwProfileType, alternative.langid, alternative.clsid,
             alternative.guidProfile, alternative.dwProfileType == TF_PROFILETYPE_INPUTPROCESSOR ? nullptr : alternative.hkl, TF_IPPMF_FORPROCESS));
         TF_INPUTPROCESSORPROFILE selected{};
         report.Require("OtherImeActiveProfileHr", profiles->GetActiveProfile(GUID_TFCAT_TIP_KEYBOARD, &selected));
+        report.Profile("OtherImeActiveProfile", selected);
         report.Check("OtherImeActuallySelected", SameProfile(selected, alternative) && !Voice(selected));
+        CLSID foregroundClsid{}; HRESULT foregroundHr = E_PENDING;
+        const bool released = Wait([&] {
+            foregroundClsid = CLSID_NULL; foregroundHr = keys->GetForeground(&foregroundClsid);
+            return (foregroundHr == S_OK || foregroundHr == S_FALSE) && foregroundClsid != VoiceClsid;
+        }, 1500);
+        report.Hr("OtherImeForegroundHr", foregroundHr); report.Text("OtherImeForegroundClsid", Utf8(GuidString(foregroundClsid)));
+        report.Check("OtherImeForegroundNotVoice", released && (foregroundHr == S_OK || foregroundHr == S_FALSE) && foregroundClsid != VoiceClsid);
+        report.Text("OtherImeKeyAuthority", "GetForeground CLSID is not Voice (S_FALSE means no foreground service); no global F8 eaten assertion because the other IME may own F8.");
         const bool hidden = Wait([&] { return !IsWindowVisible(ownerMain); }, 3500);
         FocusGate("EditorFocusedDuringOtherIme");
         report.Check("OtherImeOwnerActuallyHidden", hidden);
@@ -999,8 +1055,8 @@ class Host {
         report.Check(stage, hr == S_OK && (eaten != FALSE) == expected);
     }
 public:
-    Host(Report& r, const wchar_t* path, const wchar_t* expected, const wchar_t* host, const wchar_t* module, const wchar_t* query)
-        : report(r), reportPath(path), expectedDll(expected), expectedOwnerExe(host), expectedOwnerModule(module), ownerQueryExe(query) {}
+    Host(Report& r, const wchar_t* path, const wchar_t* expected, const wchar_t* host, const wchar_t* module, const wchar_t* query, bool onlySwitch)
+        : report(r), reportPath(path), expectedDll(expected), expectedOwnerExe(host), expectedOwnerModule(module), ownerQueryExe(query), switchOnly(onlySwitch) {}
     ~Host() { Cleanup(); }
     void Run() {
         originalForeground = GetForegroundWindow();
@@ -1026,6 +1082,15 @@ public:
             status = RegGetValueW(hostKey, nullptr, L"HostExe", RRF_RT_REG_SZ, nullptr, host, &bytes);
             RegCloseKey(hostKey);
         }
+        HKEY uiKey{};
+        if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\TrueFluentPro\\VoiceImeUI", 0, KEY_QUERY_VALUE | KEY_WOW64_64KEY, &uiKey) == ERROR_SUCCESS) {
+            wchar_t standalone[32768]{}; DWORD sBytes = sizeof(standalone);
+            if (RegGetValueW(uiKey, nullptr, L"StandaloneHostExe", RRF_RT_REG_SZ, nullptr, standalone, &sBytes) == ERROR_SUCCESS && AbsoluteFile(standalone)) {
+                wcscpy_s(host, standalone);
+                status = ERROR_SUCCESS;
+            }
+            RegCloseKey(uiKey);
+        }
         report.Require("ReadRegisteredOwnerExeHr", HRESULT_FROM_WIN32(status));
         report.Text("RegisteredOwnerExe", Utf8(host)); report.Text("ExpectedOwnerExe", Utf8(expectedOwnerExe));
         report.Text("ExpectedOwnerModule", Utf8(expectedOwnerModule)); report.Text("OwnerQueryExecutable", Utf8(ownerQueryExe));
@@ -1036,7 +1101,7 @@ public:
         unsigned initialOwners = 0;
         for (HWND hwnd : ToolbarWindows()) if (!GetWindow(hwnd, GW_OWNER) && WindowText(hwnd) == DisplayName) {
             const auto value = ReadOwner(hwnd);
-            if (!value.error && !_wcsicmp(value.path, expectedOwnerModule.c_str())) ++initialOwners;
+            if (!value.error && OwnerModuleMatches(value.path)) ++initialOwners;
         }
         report.Number("OwnerMainCountBeforeActivation", initialOwners);
         report.Bool("OwnerExistedBeforeActivation", initialOwners != 0);
@@ -1092,7 +1157,7 @@ public:
         report.Text("ActivationAuthority", "Windows TSF owns TIP creation/activation; no direct Activate/ActivateEx call or service pointer; ActivateEx entry not separately instrumented");
         FocusGate("RealFocusAfterActivation");
         VerifyServiceUi();
-        VerifyNoDocument();
+        if (!switchOnly) VerifyNoDocument();
 
         TF_STATUS state{}; report.Require("EditableStatusHr", context->GetStatus(&state));
         report.Number("EditableDynamicFlags", state.dwDynamicFlags); report.Number("EditableStaticFlags", state.dwStaticFlags);
@@ -1106,12 +1171,14 @@ public:
         TestKey("A_Passthrough", 'A', false);
         TestKey("F8_SelectedEditable", VK_F8, true);
 
-        report.Require("SetReadOnlyHr", store->SetReadOnly(true));
-        report.Require("ReadOnlyStatusHr", context->GetStatus(&state));
-        report.Number("ReadOnlyDynamicFlags", state.dwDynamicFlags); report.Number("ReadOnlyStaticFlags", state.dwStaticFlags);
-        report.Check("TsfContextConfirmsReadOnly", (state.dwDynamicFlags & TF_SD_READONLY) != 0);
-        TestKey("F8_SelectedReadOnlyNotEaten", VK_F8, false);
-        report.Require("ClearReadOnlyHr", store->SetReadOnly(false));
+        if (!switchOnly) {
+            report.Require("SetReadOnlyHr", store->SetReadOnly(true));
+            report.Require("ReadOnlyStatusHr", context->GetStatus(&state));
+            report.Number("ReadOnlyDynamicFlags", state.dwDynamicFlags); report.Number("ReadOnlyStaticFlags", state.dwStaticFlags);
+            report.Check("TsfContextConfirmsReadOnly", (state.dwDynamicFlags & TF_SD_READONLY) != 0);
+            TestKey("F8_SelectedReadOnlyNotEaten", VK_F8, false);
+            report.Require("ClearReadOnlyHr", store->SetReadOnly(false));
+        }
         VerifyOtherImeHide();
         report.Check("NoTextInjected", store->writes == 0 && store->text == L"ABTAIL");
     }
@@ -1226,20 +1293,28 @@ int wmain(int argc, wchar_t** argv) {
             send(value.exe, static_cast<DWORD>((wcslen(value.exe) + 1) * sizeof(wchar_t))) &&
             send(value.path, static_cast<DWORD>((wcslen(value.path) + 1) * sizeof(wchar_t))) ? 0 : 3;
     }
-    if (argc != 6) { std::fputs("Usage: VoiceImeActivationTests.exe <absolute-report.json> <client-dll> <registered-owner-exe> <owner-x64-dll> <same-source-x64-query-exe>\n", stderr); return 2; }
+    if (argc != 6 && (argc != 7 || wcscmp(argv[6], L"--switch-only"))) { std::fputs("Usage: VoiceImeActivationTests.exe <absolute-report.json> <client-dll> <registered-owner-exe> <owner-x64-dll> <same-source-x64-query-exe> [--switch-only]\n", stderr); return 2; }
+    const bool switchOnly = argc == 7;
     Report report;
     report.Number("Pid", GetCurrentProcessId()); report.Number("Bitness", sizeof(void*) * 8);
+    report.Bool("SwitchOnly", switchOnly);
     SetLastError(ERROR_SUCCESS);
     using SetDpi = BOOL (WINAPI*)(HANDLE);
     auto setDpi = reinterpret_cast<SetDpi>(GetProcAddress(GetModuleHandleW(L"user32.dll"), "SetProcessDpiAwarenessContext"));
     BOOL dpiAware = setDpi && setDpi(reinterpret_cast<HANDLE>(-4)); // EXE only, before COM/any UI.
     report.Bool("ProcessDpiAware", dpiAware != FALSE); report.Number("SetProcessDpiAwareError", dpiAware ? 0 : GetLastError());
     report.Check("ProcessUsesPMV2", dpiAware && Pmv2(), false);
-    report.Text("Scope", "Windows TSF client activation, actual shared x64 owner UI/Idle/hover, empty Context key eligibility and FORPROCESS other IME hide/reselect; no recording");
+    report.Text("Scope", switchOnly ? "Windows TSF real client/owner identity and Idle; FORPROCESS enabled Sogou preferred, actual other Profile/foreground service release/owner HWND hide/Voice reselect; no hover/screenshot/empty Context/read-only/recording" :
+        "Windows TSF client activation, actual shared x64 owner UI/Idle/hover, empty Context key eligibility and FORPROCESS other IME hide/reselect; no recording");
+    if (switchOnly) {
+        report.Text("CaptureStatus", "Skipped");
+        report.Text("CaptureSkipReason", "SwitchOnly 不截图、不模拟悬停；用户已提供截图，本模式不要求强制目视 UI。");
+        report.Bool("NoDocumentSkipped", true); report.Bool("ReadOnlySkipped", true);
+    }
     report.Bool("F8KeyDownDispatched", false); report.Bool("SyntheticPartialFinalInjected", false);
     report.Text("PartialFinalAssessment", "No public frame injection contract: production Receive requires private active/listening/run state. A TSF edit lock alone cannot invoke production Replace; not attempted.");
     {
-        Host host(report, argv[1], argv[2], argv[3], argv[4], argv[5]);
+        Host host(report, argv[1], argv[2], argv[3], argv[4], argv[5], switchOnly);
         try { if (!report.failures) host.Run(); }
         catch (const Failure&) {}
         catch (...) { report.Check("UnexpectedException", false, false); }

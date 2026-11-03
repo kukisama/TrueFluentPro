@@ -12,6 +12,9 @@
 
     <AppIconPng>Assets\AppIcon.png</AppIconPng>
     <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
+    <Version>2.2.2</Version>
+    <FileVersion>2.2.2.0</FileVersion>
+    <AssemblyVersion>2.2.2.0</AssemblyVersion>
   </PropertyGroup>
 
   <!-- macOS 构建时添加条件编译符号 -->
@@ -103,6 +106,7 @@
     </ItemGroup>
     <Copy SourceFiles="@(VoiceImeRelinkSources)" DestinationFiles="@(VoiceImeRelinkSources->'$(TargetDir)voice-ime\source\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
     <Copy SourceFiles="$(ProjectDir)LICENSE" DestinationFiles="$(TargetDir)voice-ime\source\LICENSE" SkipUnchangedFiles="true" />
+    <Exec Command="pwsh -NoProfile -File &quot;$(ProjectDir)tools\VoiceImeNative\Sync-Host.ps1&quot; -TargetDir &quot;$(TargetDir)&quot;" />
   </Target>
   <Target Name="PublishVoiceIme" AfterTargets="Publish"
           Condition="'$(OS)' == 'Windows_NT' AND !$(RuntimeIdentifier.StartsWith('osx')) AND !$(RuntimeIdentifier.StartsWith('linux'))">

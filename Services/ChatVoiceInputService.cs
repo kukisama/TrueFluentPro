@@ -120,6 +120,7 @@ internal sealed class ChatVoiceInputSession : IChatVoiceInputSession, IAsrUplink
     private readonly Queue<InputTurn> _turnOrder = new();
     private readonly HashSet<string> _speechResultIds = new(StringComparer.Ordinal);
 
+    private Task? _prewarmTask;
     private Task? _startTask;
     private Task? _stopTask;
     private Task? _sendTask;
@@ -134,6 +135,7 @@ internal sealed class ChatVoiceInputSession : IChatVoiceInputSession, IAsrUplink
     private AudioConfig? _audioConfig;
     private AutoDetectSourceLanguageConfig? _autoLanguages;
     private SpeechRecognizer? _recognizer;
+    private Connection? _speechConnection;
     private IAsrConnector? _connector;
     private RealtimeConnectionSpec? _spec;
     private string _inputModel = ConversationAsrModel;
@@ -170,6 +172,58 @@ internal sealed class ChatVoiceInputSession : IChatVoiceInputSession, IAsrUplink
 
     // 共享输入法下一轮等待真实后台清理；公开 Stop 的快速超时行为保持不变。
     internal Task ResourcesReleased => _resourcesReleased.Task;
+
+    /// <summary>切换到输入法时后台零费用预热：构建识别器并预开连接（不启动麦克风、不推音频流）。</summary>
+    internal Task PrewarmAsync(CancellationToken cancellationToken = default)
+    {
+        lock (_stateLock)
+        {
+            if (_disposed != 0 || _stopTask != null || _stopping != 0 || _startTask != null)
+                return Task.CompletedTask;
+            return _prewarmTask ??= Task.Run(() => PrewarmWorkerAsync(cancellationToken), cancellationToken);
+        }
+    }
+
+    private async Task PrewarmWorkerAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _resourceGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                if (_stopping != 0 || _disposed != 0 || _recognizer != null || _socket != null) return;
+                if (!_speechResources.TryResolveActive(_config, SpeechCapability.RealtimeSpeechToText,
+                        out var runtime, out _) || runtime == null) return;
+                ResolveMicrophoneId();
+                if (runtime.IsMicrosoftSpeech)
+                {
+                    await PrepareMicrosoftRecognizerAsync(runtime, cancellationToken).ConfigureAwait(false);
+                    _speechConnection = Connection.FromRecognizer(_recognizer);
+                    _speechConnection.Open(true);
+                }
+                else if (runtime.AiRuntime is { AzureAuthMode: AzureAuthMode.AAD } ai)
+                {
+                    var provider = await _tokens.GetAuthenticatedProviderAsync(
+                        ai.ProfileKey, ai.AzureTenantId, ai.AzureClientId, cancellationToken).ConfigureAwait(false);
+                    if (provider != null) await provider.GetTokenAsync(cancellationToken).ConfigureAwait(false);
+                }
+            }
+            finally { _resourceGate.Release(); }
+        }
+        catch { /* 预热失败静默回退到按下 F8 时按需建连 */ }
+    }
+
+    private void ResolveMicrophoneId()
+    {
+        if (!string.IsNullOrEmpty(_microphoneId)) return;
+        using var enumerator = new MMDeviceEnumerator();
+        using var microphone = string.IsNullOrWhiteSpace(_config.SelectedAudioDeviceId)
+            ? enumerator.GetDefaultAudioEndpoint(DataFlow.Capture, Role.Multimedia)
+            : enumerator.GetDevice(_config.SelectedAudioDeviceId);
+        if (microphone.DataFlow != DataFlow.Capture || microphone.State != DeviceState.Active)
+            throw new VoiceInputException("配置的麦克风不可用，请重新选择可用的输入设备。");
+        _microphoneId = microphone.ID;
+    }
 
     public Task StartAsync(CancellationToken cancellationToken = default)
     {
@@ -298,15 +352,7 @@ internal sealed class ChatVoiceInputSession : IChatVoiceInputSession, IAsrUplink
 
             // WasapiPcm16AudioSource 对失效 ID 会回退默认设备；先校验并固定实际输入 ID，
             // 避免错误地从另一只麦克风采集，也拒绝被误存为输入 ID 的 render endpoint。
-            using (var enumerator = new MMDeviceEnumerator())
-            using (var microphone = string.IsNullOrWhiteSpace(_config.SelectedAudioDeviceId)
-                ? enumerator.GetDefaultAudioEndpoint(DataFlow.Capture, Role.Multimedia)
-                : enumerator.GetDevice(_config.SelectedAudioDeviceId))
-            {
-                if (microphone.DataFlow != DataFlow.Capture || microphone.State != DeviceState.Active)
-                    throw new VoiceInputException("配置的麦克风不可用，请重新选择可用的输入设备。");
-                _microphoneId = microphone.ID;
-            }
+            ResolveMicrophoneId();
 
             _audioSource = new WasapiPcm16AudioSource(
                 loopbackDeviceId: null,
@@ -332,8 +378,9 @@ internal sealed class ChatVoiceInputSession : IChatVoiceInputSession, IAsrUplink
         }
     }
 
-    private async Task OpenMicrosoftAsync(SpeechResourceRuntimeResolution runtime, CancellationToken cancellationToken)
+    private async Task PrepareMicrosoftRecognizerAsync(SpeechResourceRuntimeResolution runtime, CancellationToken cancellationToken)
     {
+        if (_recognizer != null) return;
         if (runtime.IsAadMicrosoftSpeech)
         {
             var endpoint = _config.Endpoints.FirstOrDefault(e =>
@@ -389,7 +436,12 @@ internal sealed class ChatVoiceInputSession : IChatVoiceInputSession, IAsrUplink
         _recognizer.Recognized += OnRecognized;
         _recognizer.Canceled += OnRecognitionCanceled;
         _recognizer.SessionStopped += OnRecognitionStopped;
-        await _recognizer.StartContinuousRecognitionAsync().WaitAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task OpenMicrosoftAsync(SpeechResourceRuntimeResolution runtime, CancellationToken cancellationToken)
+    {
+        await PrepareMicrosoftRecognizerAsync(runtime, cancellationToken).ConfigureAwait(false);
+        await _recognizer!.StartContinuousRecognitionAsync().WaitAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private async Task AuthenticateSocketAsync(ModelRuntimeResolution runtime, RealtimeConnectionSpec spec, CancellationToken token)
@@ -839,6 +891,8 @@ internal sealed class ChatVoiceInputSession : IChatVoiceInputSession, IAsrUplink
             try { await task.WaitAsync(TimeSpan.FromMilliseconds(200)).ConfigureAwait(false); }
             catch { Observe(task); }
         }
+        try { _speechConnection?.Dispose(); } catch { }
+        _speechConnection = null;
         try { _recognizer?.Dispose(); } catch { }
         _recognizer = null;
         try { _audioConfig?.Dispose(); } catch { }

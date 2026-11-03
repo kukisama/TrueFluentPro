@@ -132,7 +132,9 @@ class Service final : public Ime::TextService, public ITfThreadFocusSink, public
     }
     void Disconnect() {
         if (run) {
+            const bool waitFlush = run->workerStarted.load() && run->deselection.load() != 0;
             SetEvent(run->cancel);
+            if (waitFlush && run->flushed) WaitForSingleObject(run->flushed, 1500);
             { std::lock_guard<std::mutex> guard(run->delivery); run->target = nullptr; }
             run.reset();
         }
@@ -185,7 +187,7 @@ class Service final : public Ime::TextService, public ITfThreadFocusSink, public
         const HWND front = GetForegroundWindow();
         DWORD frontProcess = 0;
         if (front) GetWindowThreadProcessId(front, &frontProcess);
-        if (InstallationMaintenanceActive() || !front ||
+        if (InstallationMaintenanceActive() || !front || IsSuppressedWindow(front) ||
             frontProcess != GetCurrentProcessId()) return false;
         return true;
     }
@@ -195,12 +197,14 @@ class Service final : public Ime::TextService, public ITfThreadFocusSink, public
         if (!manager || FAILED(manager->IsThreadFocus(&focused)) || !focused) return false;
         return true;
     }
-    bool SelectedForeground() {
-        if (!ActualForeground()) return false;
+    bool IsVoiceProfileSelected() {
         TF_INPUTPROCESSORPROFILE selected{};
         return profiles && profiles->GetActiveProfile(GUID_TFCAT_TIP_KEYBOARD, &selected) == S_OK &&
             selected.dwProfileType == TF_PROFILETYPE_INPUTPROCESSOR && selected.clsid == VoiceClsid &&
             selected.guidProfile == VoiceProfile && selected.langid == 0x0804;
+    }
+    bool SelectedForeground() {
+        return ActualForeground() && IsVoiceProfileSelected();
     }
     void UpdateToolbar(bool stopped = false, bool error = false) {
         (void)stopped; (void)error;
@@ -265,6 +269,12 @@ class Service final : public Ime::TextService, public ITfThreadFocusSink, public
         return true;
     }
     void RefreshContext() {
+        if (selectedAnnounced && ((profiles && !IsVoiceProfileSelected()) || IsSuppressedWindow(GetForegroundWindow()))) {
+            selectedAnnounced = false; latch.down = false;
+            DropTarget();
+            SendSharedCommand(run, 'D', generation);
+            return;
+        }
         if (SelectedForeground()) EnsureConnection();
         ComPtr<ITfDocumentMgr> doc; ComPtr<ITfContext> next;
         if (manager && SUCCEEDED(manager->GetFocus(&doc)) && doc) doc->GetTop(&next);
@@ -282,6 +292,7 @@ class Service final : public Ime::TextService, public ITfThreadFocusSink, public
         UpdateToolbar();
         if (!CheapAllowed(context.Get())) {
             if (targetBound || probePending || composition) DropTarget();
+            UpdateToolbar();
         } else if (run && !probePending) {
             probePending = true; Request(EditKind::Probe);
         }
@@ -296,7 +307,7 @@ class Service final : public Ime::TextService, public ITfThreadFocusSink, public
     void DropTarget() {
         const uint64_t old = generation;
         const bool bound = targetBound;
-        ++generation; targetBound = false; probePending = false;
+        ++generation; targetBound = false; probePending = false; selectedAnnounced = false;
         FinishComposition(); suppressSentence = false;
         if (bound) SendSharedCommand(run, 'U', old);
     }
@@ -424,7 +435,10 @@ public:
         RefreshContext();
     }
     void onDeactivate() override {
-        foreground = false; Stop(false); latch.down = false;
+        foreground = false; latch.down = false;
+        DropTarget();
+        SendSharedCommand(run, 'D', generation);
+        Stop(false);
         Unadvise(context.Get(), editCookie); Unadvise(context.Get(), statusCookie); context.Reset();
         Unadvise(manager.Get(), focusCookie);
         Unadvise(manager.Get(), profileCookie);
@@ -436,18 +450,14 @@ public:
     void onLangProfileActivated(REFGUID profile) override {
         if (profile == VoiceProfile && manager) {
             BOOL focused = FALSE; manager->IsThreadFocus(&focused); foreground = focused != FALSE;
-            RefreshContext();
+            selectedAnnounced = false; EnsureConnection(); RefreshContext();
         }
     }
     void onLangProfileDeactivated(REFGUID profile) override {
         if (profile != VoiceProfile) return;
-        TF_INPUTPROCESSORPROFILE current{};
-        if (ForegroundProcess() && profiles &&
-            profiles->GetActiveProfile(GUID_TFCAT_TIP_KEYBOARD, &current) == S_OK &&
-            !(current.dwProfileType == TF_PROFILETYPE_INPUTPROCESSOR && current.clsid == VoiceClsid &&
-                current.guidProfile == VoiceProfile && current.langid == 0x0804))
-            SendSharedCommand(run, 'D', generation);
-        selectedAnnounced = false; latch.down = false; DropTarget();
+        selectedAnnounced = false; latch.down = false;
+        DropTarget();
+        SendSharedCommand(run, 'D', generation);
     }
     void onCompartmentChanged(REFGUID compartment) override {
         Ime::TextService::onCompartmentChanged(compartment);
@@ -480,26 +490,23 @@ public:
     STDMETHODIMP OnSetThreadFocus() override { onSetFocus(); return S_OK; }
     STDMETHODIMP OnKillThreadFocus() override { onKillFocus(); return S_OK; }
     STDMETHODIMP OnStatusChange(ITfContext* c, DWORD) override {
-        if (Same(c, context.Get()) && !CheapAllowed(c)) DropTarget();
-        UpdateToolbar(); return S_OK;
+        if (Same(c, context.Get())) RefreshContext();
+        return S_OK;
     }
     using Ime::TextService::OnActivated;
     STDMETHODIMP OnActivated(DWORD type, LANGID language, REFCLSID clsid, REFGUID category,
         REFGUID profile, HKL hkl, DWORD flags) override {
         AddRef(); // Advice/callback teardown cannot delete the current call's receiver.
-        if ((flags & TF_IPSINK_FLAG_ACTIVE) && ForegroundProcess() && profiles &&
-            ((type == TF_PROFILETYPE_INPUTPROCESSOR && category == GUID_TFCAT_TIP_KEYBOARD) ||
+        if ((flags & TF_IPSINK_FLAG_ACTIVE) &&
+            ((type == TF_PROFILETYPE_INPUTPROCESSOR && (category == GUID_TFCAT_TIP_KEYBOARD || category == GUID{}) &&
+                clsid != GUID{} && profile != GUID{} && language != 0) ||
                 (type == TF_PROFILETYPE_KEYBOARDLAYOUT && hkl))) {
-            TF_INPUTPROCESSORPROFILE current{};
-            if (profiles->GetActiveProfile(GUID_TFCAT_TIP_KEYBOARD, &current) == S_OK &&
-                current.dwProfileType == type && current.langid == language && current.clsid == clsid &&
-                current.guidProfile == profile && (type != TF_PROFILETYPE_KEYBOARDLAYOUT || current.hkl == hkl)) {
-                if (type == TF_PROFILETYPE_INPUTPROCESSOR && clsid == VoiceClsid && profile == VoiceProfile && language == 0x0804) {
-                    selectedAnnounced = false; RefreshContext();
-                } else {
-                    // Only a confirmed current foreground other IME is D; kill-focus is just U.
-                    SendSharedCommand(run, 'D', generation); selectedAnnounced = false; DropTarget();
-                }
+            if (type == TF_PROFILETYPE_INPUTPROCESSOR && clsid == VoiceClsid && profile == VoiceProfile && language == 0x0804) {
+                selectedAnnounced = false; EnsureConnection(); RefreshContext();
+            } else {
+                selectedAnnounced = false; latch.down = false;
+                DropTarget();
+                SendSharedCommand(run, 'D', generation);
             }
         }
         Release(); return S_OK;

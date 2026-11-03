@@ -3,6 +3,9 @@ namespace TrueFluentPro.Models
     /// <summary>独立语音输入法配置；仅引用已有资源，不复制连接信息或凭据。</summary>
     public sealed class VoiceImeConfig
     {
+        /// <summary>切换到输入法时是否后台预热识别连接与设备（默认开启）。</summary>
+        public bool EnablePrewarm { get; set; } = true;
+
         /// <summary>空字符串表示跟随主程序活动语音资源。</summary>
         public string SpeechResourceId { get; set; } = "";
 

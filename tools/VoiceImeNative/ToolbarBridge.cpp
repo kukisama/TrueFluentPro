@@ -18,7 +18,7 @@ class ToolbarBridge final : public ITfInputProcessorProfileActivationSink {
     DWORD thread = GetCurrentThreadId();
     HWND dispatcher{};
     std::wstring windowClass;
-    bool registered = false, closing = false, running = false;
+    bool registered = false, closing = false, running = false, suppressedByWindow = false;
     VoiceToolbar toolbar;
     ToolbarCallback callback;
     void* context;
@@ -43,6 +43,43 @@ class ToolbarBridge final : public ITfInputProcessorProfileActivationSink {
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
         }
         if (self && msg == BridgeClose) { self->closing = true; return 0; }
+        if (self && msg == WM_TIMER && w == 1) {
+            bool visible = false;
+            { std::lock_guard<std::mutex> guard(self->updateMutex); visible = self->update.visible; }
+            if (visible && !self->closing && IsSuppressedWindow(GetForegroundWindow())) {
+                self->suppressedByWindow = true;
+                self->Notify(2, 0);
+            } else if (!visible && self->suppressedByWindow && !self->closing && !IsSuppressedWindow(GetForegroundWindow())) {
+                self->suppressedByWindow = false;
+                if (self->profiles) {
+                    TF_INPUTPROCESSORPROFILE active{};
+                    if (self->profiles->GetActiveProfile(GUID_TFCAT_TIP_KEYBOARD, &active) == S_OK &&
+                        active.dwProfileType == TF_PROFILETYPE_INPUTPROCESSOR && active.langid == 0x0804 &&
+                        active.clsid == VoiceClsid && active.guidProfile == VoiceProfile) {
+                        self->Notify(2, 1);
+                    }
+                }
+            }
+            return 0;
+        }
+        if (self && msg == WM_TIMER && w == 2) {
+            if (!self->closing && self->profiles) {
+                if (IsSuppressedWindow(GetForegroundWindow())) {
+                    self->suppressedByWindow = true;
+                } else {
+                    KillTimer(hwnd, 2);
+                    TF_INPUTPROCESSORPROFILE active{};
+                    if (self->profiles->GetActiveProfile(GUID_TFCAT_TIP_KEYBOARD, &active) == S_OK &&
+                        active.dwProfileType == TF_PROFILETYPE_INPUTPROCESSOR && active.langid == 0x0804 &&
+                        active.clsid == VoiceClsid && active.guidProfile == VoiceProfile) {
+                        self->Notify(2, 1);
+                    }
+                }
+            } else {
+                KillTimer(hwnd, 2);
+            }
+            return 0;
+        }
         if (self && msg == BridgeUpdate) {
             decltype(self->update) next;
             { std::lock_guard<std::mutex> guard(self->updateMutex); next = self->update; self->updatePosted = false; }
@@ -70,8 +107,8 @@ public:
         REFGUID profile, HKL hkl, DWORD flags) override {
         AddRef();
         if ((flags & TF_IPSINK_FLAG_ACTIVE) &&
-            ((type == TF_PROFILETYPE_INPUTPROCESSOR && category == GUID_TFCAT_TIP_KEYBOARD &&
-                clsid != CLSID_NULL && profile != GUID_NULL && language != 0) ||
+            ((type == TF_PROFILETYPE_INPUTPROCESSOR && (category == GUID_TFCAT_TIP_KEYBOARD || category == GUID{}) &&
+                clsid != GUID{} && profile != GUID{} && language != 0) ||
                 (type == TF_PROFILETYPE_KEYBOARDLAYOUT && hkl))) {
             // ACTIVE is the actual TSF notification. The observer's background
             // thread profile is not the foreground application's selection.
@@ -91,9 +128,10 @@ public:
         if (!RegisterClassW(&cls)) return false;
         registered = true;
         dispatcher = CreateWindowExW(0, cls.lpszClassName, L"", 0, 0, 0, 0, 0, HWND_MESSAGE, nullptr, ModuleInstance, this);
-        if (!dispatcher || !toolbar.Create(ModuleInstance, [](void* ctx) {
-            auto* self = static_cast<ToolbarBridge*>(ctx); self->Notify(1, 0);
-        }, this)) return false;
+        if (!dispatcher || !SetTimer(dispatcher, 1, 500, nullptr) || !toolbar.Create(ModuleInstance,
+            [](void* ctx) { auto* self = static_cast<ToolbarBridge*>(ctx); self->Notify(1, 0); },
+            this,
+            [](void* ctx) { auto* self = static_cast<ToolbarBridge*>(ctx); self->Notify(3, 0); })) return false;
         HRESULT hr = CoCreateInstance(CLSID_TF_ThreadMgr, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&manager));
         // These flags forbid selecting a TIP/layout/default in the dedicated owner thread.
         if (SUCCEEDED(hr)) hr = manager->ActivateEx(&client, TF_TMAE_NOACTIVATETIP | TF_TMAE_NOACTIVATEKEYBOARDLAYOUT);
@@ -101,6 +139,7 @@ public:
         if (SUCCEEDED(hr)) hr = manager.As(&source);
         if (SUCCEEDED(hr)) hr = source->AdviseSink(IID_ITfInputProcessorProfileActivationSink,
             static_cast<ITfInputProcessorProfileActivationSink*>(this), &cookie);
+        if (SUCCEEDED(hr)) SetTimer(dispatcher, 2, 150, nullptr);
         return SUCCEEDED(hr);
     }
     void Cleanup() {
