@@ -29,6 +29,45 @@ internal static class LifecycleRegression
             Check((await f.Instance.RegisterAsync()).Succeeded && f.Removals >= Architectures.Length
                 && f.State.Count == Architectures.Length && !File.Exists(f.Gate), "partial 未先安全卸载自有残留再修复");
         });
+        await Case("installed-version-comes-from-binaries-not-stale-journal", async () =>
+        {
+            var f = new Fixture("installed-version");
+            await InstallBaselineAsync(f, "版本基线安装失败");
+            var saved = JsonNode.Parse(File.ReadAllText(f.Manifest))!;
+            saved["PackageVersion"] = "1.0.0.0";
+            foreach (var path in new[] { f.Manifest, Path.Combine(f.UserRoot, "install-manifest.json") })
+                File.WriteAllText(path, saved.ToJsonString());
+            var writes = f.Writes;
+            var productVersion = VoiceImeRegistrationService.GetProductVersionString();
+            var status = await f.Instance.RefreshStatusAsync();
+            Check(status.Succeeded && status.Message.Contains("已安装组件 v" + productVersion)
+                && !status.Message.Contains("v1.0.0.0"), "旧清单版本覆盖了实际组件版本：" + status.Message);
+            Check((await f.Instance.RegisterAsync()).Succeeded && f.Writes == writes
+                && JsonNode.Parse(File.ReadAllText(f.Manifest))!["PackageVersion"]!.GetValue<string>() == productVersion,
+                "同包版本元数据修复未收敛，或重复登记组件");
+            f.BinaryVersion = "2.2.1.0";
+            status = await f.Instance.RefreshStatusAsync();
+            Check(status.Succeeded && status.Message.Contains("已安装组件 v2.2.1")
+                && status.Message.Contains("当前主程序 v" + productVersion), "旧组件被当前程序版本冒充");
+            var rejected = await f.Instance.RegisterAsync();
+            Check(!rejected.Succeeded && rejected.Message.Contains("与主程序") && f.Writes == writes,
+                "版本不一致的待安装包没有在写入前拒绝");
+            f.BinaryVersion = null;
+            status = await f.Instance.RefreshStatusAsync();
+            Check(status.Succeeded && status.Message.Contains("已安装组件版本未知")
+                && !status.Message.Contains("已安装组件 v" + productVersion), "无版本资源的旧组件被伪报新版");
+        });
+        await Case("observed-reboot-queue-prefix-reserves-exact-path-only", () =>
+        {
+            var path = Path.Combine(Artifacts, "queued", "TrueFluentVoiceIme.dll");
+            var match = Service.GetMethod("IsQueuedPath", BindingFlags.NonPublic | BindingFlags.Static)
+                ?? throw new CheckFailure("缺少生产静态方法：IsQueuedPath");
+            foreach (var value in new[] { path, @"\??\" + path, @"*1\??\" + path })
+                Check((bool)match.Invoke(null, [value, path])!, "遗漏精确队列路径：" + value);
+            foreach (var value in new[] { @"*1\??\" + path + ".other", @"*2\??\" + path, "prefix" + path })
+                Check(!(bool)match.Invoke(null, [value, path])!, "队列匹配越过精确路径边界：" + value);
+            return Task.CompletedTask;
+        });
         await Case("upgrade-failure-restores-original-host-and-entries", async () =>
         {
             var f = new Fixture("rollback");
@@ -53,6 +92,27 @@ internal static class LifecycleRegression
                 && old.Values.All(p => !File.Exists(p)) && File.Exists(oldHost),
                 "升级没有实际切换新包/Host，或误删旧主程序：" + upgraded.Message);
         });
+            await Case("host-record-drift-is-rejected-without-changing-installation", async () =>
+            {
+                var f = new Fixture("host-record-drift");
+                await InstallBaselineAsync(f, "Host 漂移基线安装失败");
+                var oldHost = f.Host;
+                var journal = File.ReadAllText(f.Manifest);
+                var writes = f.Writes;
+                var removals = f.Removals;
+                f.Host = Path.Combine(f.UserRoot, "host", "TrueFluentPro.exe");
+                var status = await f.Instance.RefreshStatusAsync();
+                var repair = await f.Instance.RegisterAsync();
+                var uninstall = await f.Instance.UnregisterAsync();
+                Check(new[] { status, repair, uninstall }.All(r => !r.Succeeded
+                    && r.Message.Contains("原 Host 与本模块恢复清单不一致"))
+                && f.Writes == writes && f.Removals == removals && !File.Exists(f.Gate)
+                && File.ReadAllText(f.Manifest) == journal, "Host 漂移被静默认领或修改了原安装");
+                f.Host = oldHost;
+                Check((await f.Instance.RefreshStatusAsync()).Succeeded
+                && (await f.Instance.RegisterAsync()).Succeeded && f.Writes == writes
+                && f.Removals == removals, "恢复精确 Host 记录后同版维修仍无法收敛");
+            });
         await Case("restored-and-same-version-cleanup-failure-keeps-confirmed-installation", async () =>
         {
             var f = new Fixture("restore-cleanup-failure");
@@ -143,27 +203,78 @@ internal static class LifecycleRegression
             {
                 var result = await f.Instance.UnregisterAsync();
                 var saved = JsonNode.Parse(File.ReadAllText(f.Manifest))!;
-                Check(!result.Succeeded && result.Message.Contains("系统入口已移除，文件待重启清理")
+                Check(result.Succeeded && result.CleanupPending && result.Message.Contains("系统入口已卸载")
                     && saved["Phase"]!.GetValue<string>() == "pending-reboot"
                     && saved["PendingCleanup"]!.AsArray().Count == 1 && f.Queue.Contains(dll)
                     && File.Exists(dll) && f.State.Count == 0, "共享锁没有变成持久 pending，或把排队冒充删除");
                 var writes = f.Writes;
-                Check(!(await f.Instance.RegisterAsync()).Succeeded && f.Writes == writes,
-                    "尚未重启便复用了已排队的相同包路径");
+                var reinstall = await f.Instance.RegisterAsync();
+                Check(reinstall.Succeeded && f.Writes > writes && f.State.Count == Architectures.Length
+                    && f.State.Values.All(p => p != dll && !f.Queue.Contains(p)),
+                    "同版重装没有自动避开已排队路径，或仍要求重启：" + reinstall.Message);
+                var stableWrites = f.Writes;
+                Check((await f.Instance.RegisterAsync()).Succeeded && f.Writes == stableWrites,
+                    "自动新目录重装后同版维修又重复登记");
             }
-            // 模拟 OS 已完成删除且队列已消费；不调用 MoveFileEx/修改系统队列。
-            File.Delete(dll);
-            Check(!(await f.Instance.RegisterAsync()).Succeeded, "文件被手动移走但队列仍在时复用了路径");
+            // 占用释放后无需等重启：正常维护立即再删，但不能遗忘仍在系统队列中的路径。
+            var scheduled = f.ScheduleCalls;
+            var retried = await f.Instance.UnregisterAsync();
+            Check(retried.Succeeded && retried.CleanupPending && !File.Exists(dll)
+                && f.ScheduleCalls == scheduled && f.Queue.Contains(dll), "已排队旧 DLL 释放后未自动删除，或重复排队");
+            var reserved = JsonNode.Parse(File.ReadAllText(f.Manifest))!;
+            Check(reserved["PendingCleanup"]!.AsArray().Count == 1
+                && reserved["Files"]!.AsArray().Any(v => v!["Path"]!.GetValue<string>() == dll),
+                "提前删除文件后丢失精确 receipt 或路径禁用记录");
+            var fresh = await f.Instance.RegisterAsync();
+            Check(fresh.Succeeded && f.State.Values.All(p => !f.Queue.Contains(p)),
+                "队列仍在时重装没有选择安全新路径：" + fresh.Message);
+            // 模拟 OS 已消费队列；不调用 MoveFileEx/修改系统队列。
             f.Queue.Clear();
             var cleanup = await f.Instance.UnregisterAsync();
             Check(cleanup.Succeeded && !File.Exists(f.Manifest)
                 && !File.Exists(Path.Combine(f.UserRoot, "install-manifest.json")), "pending 后续操作未确认清理并移除恢复记录：" + cleanup.Message);
         });
+        await Case("transient-sharing-release-cleans-without-reboot-queue", async () =>
+        {
+            var f = new Fixture("transient-sharing");
+            await InstallBaselineAsync(f, "短暂占用基线失败");
+            f.TransientSharing = 1;
+            var result = await f.Instance.UnregisterAsync();
+            Check(result.Succeeded && !result.CleanupPending && f.ScheduleCalls == 0
+                && f.TransientSharing == 0 && !File.Exists(f.Manifest), "短暂共享占用未自动等待释放，或过早加入重启队列");
+        });
+        await Case("UI-permission-prompt-cancel-and-single-operation-resume", async () =>
+        {
+            var method = Service.GetMethod("ManageFromUiAsync", BindingFlags.NonPublic | BindingFlags.Static)!;
+            async Task<VoiceImeRegistrationService.Result> Invoke(bool install,
+                Func<bool, Task<VoiceImeRegistrationService.Result>> manage,
+                Func<bool, Task<bool>> confirm, Func<bool, Task<VoiceImeRegistrationService.Result>> elevate)
+                => await (Task<VoiceImeRegistrationService.Result>)method.Invoke(null, [install, manage, confirm, elevate])!;
+            foreach (var install in new[] { true, false })
+            {
+                var operations = 0; var prompts = 0; var launches = 0;
+                var denied = new VoiceImeRegistrationService.Result(false, "前置权限不足") { RequiresAdministrator = true };
+                Task<VoiceImeRegistrationService.Result> Manage(bool value)
+                { Check(value == install, "维护操作被改变"); operations++; return Task.FromResult(denied); }
+                Task<bool> Confirm(bool value)
+                { Check(value == install, "确认框操作被改变"); prompts++; return Task.FromResult(false); }
+                Task<VoiceImeRegistrationService.Result> Elevate(bool value)
+                { Check(value == install, "提权续办操作被改变"); launches++; return Task.FromResult(denied); }
+                Check(!(await Invoke(install, Manage, Confirm, Elevate)).Succeeded
+                    && operations == 1 && prompts == 1 && launches == 0, "取消提示后仍提权或重复维护");
+                operations = prompts = launches = 0;
+                await Invoke(install, Manage, value => { prompts++; return Task.FromResult(true); }, Elevate);
+                Check(operations == 1 && prompts == 1 && launches == 1, "提权返回失败后又循环授权或重做原操作");
+                operations = prompts = launches = 0;
+                var result = await Invoke(install, value => { operations++; return Task.FromResult(new VoiceImeRegistrationService.Result(true, "完成")); }, Confirm, Elevate);
+                Check(result.Succeeded && operations == 1 && prompts == 0 && launches == 0, "有权限的维护仍弹窗提权");
+            }
+        });
         await Case("sid-and-admin-denied-before-any-write", async () =>
         {
             var f = new Fixture("permission");
             f.Admin = false;
-            Check(!(await f.Instance.RegisterAsync()).Succeeded && !(await f.Instance.UnregisterAsync()).Succeeded
+            Check((await f.Instance.RegisterAsync()).RequiresAdministrator && (await f.Instance.UnregisterAsync()).RequiresAdministrator
                 && f.HelperCalls == 0 && !Directory.Exists(f.SystemRoot) && !Directory.Exists(f.UserRoot),
                 "权限拒绝发生在目录/助手/清单写入之后");
             f.Admin = true;
@@ -288,13 +399,14 @@ internal static class LifecycleRegression
             f.MappedImage = oldDll;
             var result = await f.Instance.RegisterAsync();
             var saved = JsonNode.Parse(File.ReadAllText(f.Manifest))!;
-            Check(result.Succeeded && result.Message.Contains("待重启清理") && !File.Exists(f.Gate)
+            Check(result.Succeeded && result.CleanupPending && result.Message.Contains("自动尝试清理") && !File.Exists(f.Gate)
                 && f.Queue.Contains(oldDll) && File.Exists(oldDll)
                 && saved["Phase"]!.GetValue<string>() == "installed"
                 && f.State.Values.All(p => p.StartsWith(f.PackageRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)),
                 "已证明旧映像映射仍阻塞新安装，或把排队冒充删除：" + result.Message);
         });
         await Case("maintenance-cancels-fake-voice-and-refuses-new-run-before-config", VerifyMaintenanceAsync);
+        await Case("elevation-entry-and-result-protocol-no-UAC", ElevationRegression.VerifyAsync);
         Note("LIFECYCLE all fixture paths retained under artifacts; actual helper, Windows registration, UAC, user config, microphone and cloud calls=0");
     }
 
@@ -386,9 +498,10 @@ internal static class LifecycleRegression
     {
         internal readonly string Root, SystemRoot, UserRoot;
         internal string Source = "", Sid = "S-1-5-21-111-222-333-1001", Host = "";
+        internal string? BinaryVersion = VoiceImeRegistrationService.GetProductVersionString() + ".0";
         internal string? ExpectedStage, FailRegisterRoot, FailDeletePath, MappedImage;
         internal bool Admin = true, Partial, ApiOnly, FailRemove, WaitFails;
-        internal int Writes, Removals, HelperCalls;
+        internal int Writes, Removals, HelperCalls, ScheduleCalls, TransientSharing;
         internal string LastBackend = "none";
         internal readonly Dictionary<string, string> State = new(StringComparer.OrdinalIgnoreCase);
         internal readonly HashSet<string> Queue = new(StringComparer.OrdinalIgnoreCase);
@@ -420,13 +533,16 @@ internal static class LifecycleRegression
                 LastBackend = "delete:" + Path.GetRelativePath(Root, path);
                 Check(Path.GetFullPath(path).StartsWith(Root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase),
                     "fixture 删除越界");
+                if (TransientSharing > 0) { TransientSharing--; return 32; }
                 if (string.Equals(path, FailDeletePath, StringComparison.OrdinalIgnoreCase)) return 5;
                 try { File.Delete(path); return 0; }
                 catch (IOException ex) { return ex.HResult & 0xFFFF; }
             }));
-            Set(backend, "Schedule", (Func<string, bool>)(path => { Queue.Add(path); return true; }));
+            Set(backend, "Schedule", (Func<string, bool>)(path => { ScheduleCalls++; Queue.Add(path); return true; }));
             Set(backend, "Queued", (Func<string, bool>)(path => Queue.Contains(path)));
             Set(backend, "ImageMapped", (Func<string, bool>)(path => path == MappedImage));
+            Set(backend, "FileVersion", (Func<string, string?>)(_ => BinaryVersion));
+            Set(backend, "Delay", (Func<TimeSpan, Task>)(_ => Task.CompletedTask));
             Set(backend, "WaitForHost", (Func<Task>)(() => WaitFails
                 ? Task.FromException(new IOException("synthetic still alive")) : Task.CompletedTask));
             Set(Instance, "_lifecycleBackend", backend);

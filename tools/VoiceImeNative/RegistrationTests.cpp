@@ -228,10 +228,13 @@ int wmain() {
             "official SampleIME order registers profile before categories");
         m.calls.clear(); r = Register(m, Dll, &Host);
         check(r.ExitCode() == 0 && !m.Called("RegisterProfile") && !m.Called("RegisterCategory") && !m.Called("Enable"), "existing shared profile and enablement are not rewritten");
-        m.s.machine[1] = Owned(Other); m.calls.clear(); r = Unregister(m, Dll);
-        check(r.ExitCode() == 0 && !m.s.machine[0].exists && m.s.machine[1].exists && m.s.profile &&
+        m.s.machine[1] = Owned(Other); m.s.active = true; m.calls.clear(); r = Unregister(m, Dll);
+        check(r.ExitCode() == 0 && !m.s.active && !m.s.machine[0].exists && m.s.machine[1].exists && m.s.profile &&
             m.s.category && m.s.host[0].owned && !m.Called("Disable") && !m.Called("UnregisterProfile") && !m.Called("UnregisterCategory") && !m.Called("UnregisterServiceClass"),
             "one architecture uninstall preserves shared profile/category/HostExe");
+        check(std::count(m.calls.begin(), m.calls.end(), "SwitchAway") == 1 &&
+            std::find(m.calls.begin(), m.calls.end(), "SwitchAway") < std::find(m.calls.begin(), m.calls.end(), "RemoveKeys"),
+            "one architecture switches away before removing its COM anchor");
         m.s.machine[0] = m.s.machine[1]; m.s.machine[1] = {}; m.calls.clear(); r = Unregister(m, Other);
         check(r.ExitCode() == 0 && m.s.Empty() && m.Called("Disable") && m.Called("UnregisterProfile") && m.Called("UnregisterCategory"),
             "last architecture removes official profile/category and owned bound host");
@@ -242,11 +245,36 @@ int wmain() {
         check(r.ExitCode() == 0 && r.already && m.calls.size() == 1, "repeated completed uninstall is read-only and idempotent");
     }
     {
+        Memory m; auto r = Register(m, Dll, &Host);
+        m.s.machine[1] = Owned(Other); m.s.active = true; m.fail = "SwitchAway"; m.calls.clear();
+        r = Unregister(m, Dll);
+        check(r.ExitCode() == 4 && std::string(r.stage) == "SwitchAway" && r.hr == E_FAIL &&
+            m.s.machine[0].owned && Equal(m.s.machine[0].path, Dll) &&
+            m.s.machine[1].owned && Equal(m.s.machine[1].path, Other) && m.s.active &&
+            m.s.profile && m.s.enabled && m.s.keyboard && m.s.category &&
+            m.s.host[0].owned && m.s.host[1].owned && m.Called("SwitchAway") &&
+            !m.Called("RemoveKeys") && !m.Called("Disable") && !m.Called("UnregisterProfile") &&
+            !m.Called("UnregisterCategory") && !m.Called("UnregisterServiceClass"),
+            "intact other architecture: failed switch preserves both COM anchors and shared state without deletion");
+        m.fail = ""; m.s.machine[1] = Owned(L"C:\\another-install\\win-x86\\ime.dll"); m.calls.clear();
+        r = Unregister(m, Dll);
+        check(r.ExitCode() == 4 && std::string(r.stage) == "OtherArchitectureOwnership" &&
+            m.s.active && m.s.machine[0].owned && m.s.machine[1].owned &&
+            !m.Called("SwitchAway") && !m.Called("RemoveKeys"),
+            "foreign owned other-architecture path is refused before switching or COM removal");
+        m.s.machine[1] = Owned(Other); m.s.host[1].owned = false; m.calls.clear();
+        r = Unregister(m, Dll);
+        check(r.ExitCode() == 4 && std::string(r.stage) == "HostOwnership" &&
+            !m.Called("SwitchAway") && !m.Called("RemoveKeys"),
+            "shared foreign host is refused before first-architecture switching");
+    }
+    {
         Memory m; m.s.machine[0] = Owned(L"C:\\another-install\\win-x64\\ime.dll");
         auto r = Register(m, Dll, &Host);
         check(r.ExitCode() == 4 && !m.Called("AddKeys"), "different registered path is refused before writes");
         r = Unregister(m, Dll);
-        check(r.ExitCode() == 4 && !m.Called("RemoveKeys"), "stale uninstall cannot delete a different installation");
+        check(r.ExitCode() == 4 && !m.Called("SwitchAway") && !m.Called("RemoveKeys"),
+            "stale uninstall cannot switch input or delete a different installation");
     }
     {
         Memory m; m.s.user[0] = Owned(Dll); m.s.legacyTip[0] = Owned(Dll);

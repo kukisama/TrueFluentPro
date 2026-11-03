@@ -51,7 +51,7 @@ namespace TrueFluentPro.Services
         private const string ComponentClsid = "{5638E6E5-D18C-4FE8-B778-E59A5170B481}";
         private const string ComKey = @"Software\Classes\CLSID\" + ComponentClsid;
         private const string TipKey = @"Software\Microsoft\CTF\TIP\" + ComponentClsid;
-        private const string AdministratorMessage = "请关闭主程序，使用原安装用户右键以管理员身份运行，再安装/修复或卸载输入法；日常听写不需要管理员，不会自动提权。";
+        private const string AdministratorMessage = "输入法安装/卸载需要管理员权限，请在授权提示中使用当前用户确认；授权后自动继续，日常听写无需管理员。";
         private static readonly SemaphoreSlim OperationGate = new(1, 1);
         private static readonly JsonSerializerOptions ManifestJsonOptions = new() { WriteIndented = true };
         private readonly string _baseDirectory = Path.GetFullPath(AppContext.BaseDirectory);
@@ -59,7 +59,21 @@ namespace TrueFluentPro.Services
         private readonly string _legacyInstallRoot = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "TrueFluentPro", "VoiceIme");
 
-        public sealed record Result(bool Succeeded, string Message);
+        public sealed record Result(bool Succeeded, string Message)
+        {
+            public bool RequiresAdministrator { get; init; }
+            public bool CleanupPending { get; init; }
+        }
+
+        // 仅按钮已经明确发起的写操作才允许请求 UAC；刷新状态绝不弹授权。
+        internal static async Task<Result> ManageFromUiAsync(bool install, Func<bool, Task<Result>> manage,
+            Func<bool, Task<bool>> confirm, Func<bool, Task<Result>> elevate)
+        {
+            var result = await manage(install);
+            if (!result.RequiresAdministrator) return result;
+            if (!await confirm(install)) return new(false, "已取消本次输入法维护；未修改安装，主窗口和当前任务已保留。");
+            return await elevate(install); // 仅一次，不按结果循环重弹 UAC。
+        }
 
         public Task<Result> RegisterAsync() => RunAsync(() => ManageLifecycleAsync(true), writes: true, requiresAdministrator: true);
         public Task<Result> UnregisterAsync() => RunAsync(() => ManageLifecycleAsync(false), writes: true, requiresAdministrator: true);
@@ -79,7 +93,8 @@ namespace TrueFluentPro.Services
             try
             {
                 // 必须早于建目录、写锁文件、读取清单以及启动助手。
-                if (requiresAdministrator && !LifecycleAdministrator()) return new Result(false, AdministratorMessage);
+                if (requiresAdministrator && !LifecycleAdministrator())
+                    return new Result(false, AdministratorMessage) { RequiresAdministrator = true };
                 notify = writes;
                 return await operation().ConfigureAwait(false);
             }
@@ -402,7 +417,7 @@ namespace TrueFluentPro.Services
                 if (!process.Start()) throw new RegistrationException("无法启动输入法注册助手。");
             }
             catch (RegistrationException) { throw; }
-            catch { throw new RegistrationException("无法启动注册助手；请检查组件架构及文件权限。安装/反安装需手动以管理员运行主程序，不会自动提权。"); }
+            catch { throw new RegistrationException("无法启动注册助手；请检查组件架构及文件权限，本次维护未自动重试。"); }
 
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
             var stdout = ReadBoundedAsync(process.StandardOutput, timeout.Token);
@@ -479,7 +494,7 @@ namespace TrueFluentPro.Services
         private static string FriendlyMessage(Exception ex) => ex switch
         {
             RegistrationException => ex.Message,
-            UnauthorizedAccessException => "无法访问输入法安装目录或登记。安装/反安装需手动以管理员运行主程序；查询不需要提权。",
+            UnauthorizedAccessException => "无法访问输入法安装目录或登记，请检查文件权限；本次维护未自动重试。",
             System.Security.SecurityException => "无法读取本组件的输入法登记，注册状态未知；不会自动提权。",
             JsonException => "输入法安装记录无法读取，注册状态未知；未修改其他输入法。",
             IOException => "输入法组件文件读写失败，文件可能被占用；请刷新状态后重试，不要删除已加载的 DLL。",

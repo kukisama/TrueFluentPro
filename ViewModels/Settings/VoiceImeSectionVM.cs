@@ -304,12 +304,16 @@ namespace TrueFluentPro.ViewModels.Settings
                 : "正在停止本用户输入法后台、移除系统入口并清理自有文件…";
             try
             {
-                var result = register ? await _registration.RegisterAsync() : await _registration.UnregisterAsync();
+                var result = await VoiceImeRegistrationService.ManageFromUiAsync(register,
+                    install => install ? _registration.RegisterAsync() : _registration.UnregisterAsync(),
+                    Views.VoiceImeElevationDialog.ConfirmAsync, VoiceImeMaintenanceElevation.RunElevatedAsync);
                 OperationMessage = result.Message;
+                // 子模式不拉起高权限语音后台；回到原权限进程后仅在确认仍安装时部署。
+                if (register && result.Succeeded) await _registration.RefreshStandaloneHostAsync();
                 try { RegistrationStatus = (await _registration.RefreshStatusAsync()).Message; }
                 catch { RegistrationStatus = "安装状态查询失败，当前状态未知，请稍后刷新；上方操作结果保留。"; }
             }
-            catch { OperationMessage = "输入法组件操作失败，请刷新状态后重试；安装/反安装需手动以管理员运行主程序，不会自动提权。"; }
+            catch { OperationMessage = "输入法维护未完成，主窗口和当前任务已保留；请刷新状态查看结果，不会自动重复操作。"; }
             finally { IsRegistrationBusy = false; }
         }
 

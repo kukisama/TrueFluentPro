@@ -11,6 +11,12 @@ class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        // 维护子模式必须早于配置、Avalonia、后台及其他命令模式；混合参数直接拒绝。
+        if (Array.Exists(args, value => value == VoiceImeMaintenanceElevation.Switch))
+        {
+            Environment.ExitCode = VoiceImeMaintenanceElevation.RunWorkerAsync(args).GetAwaiter().GetResult();
+            return;
+        }
         // 输入法独立设置窗口模式：只启动轻量设置弹窗，不初始化主窗口。
         if (args.Length > 0 && args[0] == "--voice-ime-settings")
         {

@@ -23,6 +23,8 @@ internal sealed class VoiceImeLifecycleBackend
     internal Func<string, bool> Schedule = null!;
     internal Func<string, bool> Queued = null!;
     internal Func<string, bool>? ImageMapped;
+    internal Func<string, string?>? FileVersion = null;
+    internal Func<TimeSpan, Task>? Delay = null;
     internal Func<Task> WaitForHost = null!;
 }
 
@@ -68,6 +70,7 @@ public sealed partial class VoiceImeRegistrationService
             return new Result(false, "此包路径已进入重启删除队列，禁止复用；请先重启 Windows，再安装/修复输入法。");
         if (install && before.Complete && manifest.Phase == "installed" && manifest.Previous == null
             && manifest.Package == plan!.Package && SamePath(manifest.HostPath, plan.HostPath)
+            && manifest.PackageVersion == plan.PackageVersion
             && manifest.HostHash == plan.HostHash && manifest.PendingCleanup.Count == 0
             && before.Entries.All(e => plan.Entries.Any(p => SamePath(e.DllPath, p.DllPath) && SamePath(e.HelperPath, p.HelperPath)))
             && manifest.Files.Count == plan.Files.Count
@@ -121,12 +124,14 @@ public sealed partial class VoiceImeRegistrationService
                 await QuiesceAsync().ConfigureAwait(false);
                 await ConfirmInstalledAsync(before.Entries, before.Host).ConfigureAwait(false);
                 committed = true; // 同版也以完整确认作为提交边界，后续仅收敛文件清理。
-                CleanupFiles(manifest, before.Entries);
+                await CleanupFilesAsync(manifest, before.Entries).ConfigureAwait(false);
+                manifest.PackageVersion = plan!.PackageVersion;
                 manifest.Phase = "installed";
                 WriteLifecycleManifest(manifest);
                 RemoveMaintenanceGate(manifest);
+                DeployStandaloneHostDirectory(plan.HostPath);
                 return new Result(true, "同版输入法已完整安装，无需重复安装。" +
-                    (manifest.PendingCleanup.Count > 0 ? "旧包文件待重启清理，尚未删除。" : "旧缓存已确认清理。"));
+                    CleanupSummary(manifest)) { CleanupPending = manifest.PendingCleanup.Count > 0 };
             }
             if (recovering && install && manifest.Previous is { Complete: true })
             {
@@ -166,14 +171,15 @@ public sealed partial class VoiceImeRegistrationService
                 manifest.Phase = "cleaning";
                 WriteLifecycleManifest(manifest);
                 // 只有原生全量状态及固定 footprint 都为空，才允许清理 receipt 对应文件。
-                CleanupFiles(manifest, Array.Empty<InstallEntry>());
+                await CleanupFilesAsync(manifest, Array.Empty<InstallEntry>()).ConfigureAwait(false);
                 if (manifest.PendingCleanup.Count == 0) manifest.Installations.Clear();
                 manifest.Previous = null;
                 manifest.Phase = manifest.PendingCleanup.Count == 0 ? "removed" : "pending-reboot";
                 WriteLifecycleManifest(manifest);
                 RemoveMaintenanceGate(manifest);
                 if (manifest.PendingCleanup.Count != 0)
-                    return new Result(false, "系统入口已移除，文件待重启清理；队列仅表示已受理，尚未完整卸载。重启后再次点击卸载确认。");
+                    return new Result(true, "输入法系统入口已卸载，已停止后台，不再作为输入法启用。" + CleanupSummary(manifest))
+                        { CleanupPending = true };
                 DeleteCompletedManifest();
                 return new Result(true, before.Absent
                     ? "当前未安装，无需卸载；失败占位及已认领缓存已清理。"
@@ -199,13 +205,13 @@ public sealed partial class VoiceImeRegistrationService
             manifest.Previous = null;
             manifest.Phase = "cleaning";
             WriteLifecycleManifest(manifest);
-            CleanupFiles(manifest, plan.Entries);
+            await CleanupFilesAsync(manifest, plan.Entries).ConfigureAwait(false);
             manifest.Phase = "installed";
             WriteLifecycleManifest(manifest);
             RemoveMaintenanceGate(manifest);
             DeployStandaloneHostDirectory(plan.HostPath);
             return new Result(true, "输入法安装/修复完成（当前用户 SID；未更改默认输入法）。" +
-                (manifest.PendingCleanup.Count > 0 ? "旧包文件待重启清理，队列成功不代表文件已删除。" : "旧包文件已清理。"));
+                CleanupSummary(manifest)) { CleanupPending = manifest.PendingCleanup.Count > 0 };
         }
         catch (Exception ex)
         {
@@ -234,7 +240,7 @@ public sealed partial class VoiceImeRegistrationService
                     var actual = await InspectLifecycleAsync(manifest).ConfigureAwait(false);
                     await RemoveEntriesAsync(actual.Entries).ConfigureAwait(false);
                     await ConfirmAbsentAsync(plan!.Entries).ConfigureAwait(false);
-                    CleanupFiles(manifest, Array.Empty<InstallEntry>());
+                    await CleanupFilesAsync(manifest, Array.Empty<InstallEntry>()).ConfigureAwait(false);
                     if (manifest.PendingCleanup.Count == 0) manifest.Installations.Clear();
                     manifest.Previous = null;
                     manifest.Phase = manifest.PendingCleanup.Count > 0 ? "pending-reboot" : "removed";
@@ -293,7 +299,7 @@ public sealed partial class VoiceImeRegistrationService
         manifest.HostPath = previous.HostPath;
         manifest.HostHash = previous.HostHash;
         manifest.Previous = null;
-        CleanupFiles(manifest, manifest.Installations);
+        await CleanupFilesAsync(manifest, manifest.Installations).ConfigureAwait(false);
         manifest.Phase = "installed";
         WriteLifecycleManifest(manifest);
         RemoveMaintenanceGate(manifest);
@@ -303,7 +309,6 @@ public sealed partial class VoiceImeRegistrationService
 
     private async Task<(List<InstallEntry> Entries, string Host, bool Complete, bool Absent)> InspectLifecycleAsync(InstallManifest manifest)
     {
-        DeployStandaloneHostDirectory(Path.Combine(_baseDirectory, "TrueFluentPro.exe"));
         var entries = new List<InstallEntry>();
         var hosts = new List<string>();
         var complete = true;
@@ -411,7 +416,7 @@ public sealed partial class VoiceImeRegistrationService
         var asmVer = typeof(VoiceImeRegistrationService).Assembly.GetName().Version;
         if (asmVer != null && (asmVer.Major > 0 || asmVer.Minor > 0))
             return $"{asmVer.Major}.{asmVer.Minor}.{Math.Max(0, asmVer.Build)}";
-        return "2.2.2";
+        return "2.2.3";
     }
 
     private PackagePlan PlanPackage()
@@ -419,8 +424,37 @@ public sealed partial class VoiceImeRegistrationService
         var host = Path.Combine(_baseDirectory, "TrueFluentPro.exe");
         VoiceImeMaintenance.GuardPath(host);
         if (!File.Exists(host)) throw new RegistrationException("缺少主程序 TrueFluentPro.exe，无法安装/修复输入法。");
+        var version = ReadPackageVersion(Architectures.Select(GetPackageEntry))
+            ?? throw new RegistrationException("输入法组件缺少版本信息或双架构版本不一致，请重新构建完整组件后再安装。");
+        if (version != GetProductVersionString())
+            throw new RegistrationException($"待安装输入法版本 v{version} 与主程序 v{GetProductVersionString()} 不一致，请使用同版本完整包。");
         var plan = new PackagePlan { Package = GetPackageIdentity(), HostPath = host, HostHash = HashFile(host),
-            PackageVersion = GetProductVersionString() };
+            PackageVersion = version };
+        // 包内容身份与部署目录分开：旧目录若已排队删除，同版重装也改用新目录，
+        // 不取消系统队列、不覆盖已加载 DLL，更不要求用户为了重装先重启。
+        var journal = ReadLifecycleManifest();
+        var deployment = plan.Package;
+        if (journal.Package == plan.Package && journal.Installations.Count == Architectures.Length
+            && journal.Phase is "installed" or "recoverable" && journal.Previous == null)
+        {
+            var roots = journal.Installations.Select(e => Path.GetDirectoryName(Path.GetDirectoryName(e.DllPath)!)!)
+                .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            if (roots.Count == 1 && SamePath(Path.GetDirectoryName(roots[0])!, _installRoot))
+                deployment = Path.GetFileName(roots[0]);
+        }
+        if (journal.PendingCleanup.Any(p => p.Path.StartsWith(
+                Path.Combine(_installRoot, deployment) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+            || Architectures.Any(a =>
+        {
+            var path = Path.Combine(_installRoot, deployment, a, DllName);
+            return IsDeletionQueued(path);
+        }))
+        {
+            // 固定 hash/architecture 布局仍保持；随机目录只能凭事务先写入的 receipt 认领。
+            // 丢失 receipt 时不会把任意 hash 目录冒充可回收的内容寻址包。
+            deployment = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+                Encoding.UTF8.GetBytes(plan.Package + ":" + Guid.NewGuid().ToString("N")))).ToLowerInvariant();
+        }
         foreach (var architecture in Architectures)
         {
             var source = GetPackageEntry(architecture);
@@ -430,8 +464,8 @@ public sealed partial class VoiceImeRegistrationService
             var dllHash = HashFile(source.DllPath);
             var helperHash = HashFile(source.HelperPath);
             var cache = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
-                Encoding.UTF8.GetBytes(plan.Package + ":" + helperHash))).ToLowerInvariant();
-            var directory = Path.Combine(_installRoot, plan.Package, architecture);
+                Encoding.UTF8.GetBytes(deployment + ":" + helperHash))).ToLowerInvariant();
+            var directory = Path.Combine(_installRoot, deployment, architecture);
             var entry = new InstallEntry { Architecture = architecture, DllPath = Path.Combine(directory, DllName),
                 HelperPath = Path.Combine(directory, cache, HelperName) };
             ValidateInstalledEntry(entry);
@@ -447,6 +481,32 @@ public sealed partial class VoiceImeRegistrationService
                 + plan.Files.Single(f => f.Path == e.HelperPath).Hash))))).ToLowerInvariant();
         if (verifiedPackage != plan.Package) throw new RegistrationException("预检期间包文件发生变化，未部署文件。");
         return plan;
+    }
+
+    private string? ReadPackageVersion(IEnumerable<InstallEntry> entries, InstallManifest? manifest = null)
+    {
+        var components = entries.ToList();
+        if (components.Count != Architectures.Length
+            || Architectures.Any(a => components.Count(e => e.Architecture == a) != 1)) return null;
+        string? common = null;
+        foreach (var path in components.SelectMany(e => new[] { e.DllPath, e.HelperPath }))
+        {
+            VoiceImeMaintenance.GuardPath(path);
+            if (!File.Exists(path)) return null;
+            if (manifest != null)
+            {
+                var receipt = manifest.Files.SingleOrDefault(f => !f.Staging && SamePath(f.Path, path));
+                if (receipt == null || HashFile(path) != receipt.Hash) return null;
+            }
+            var raw = _lifecycleBackend?.FileVersion is { } readVersion
+                ? readVersion(path) : FileVersionInfo.GetVersionInfo(path).FileVersion;
+            if (!Version.TryParse(raw, out var version) || version.Build < 0
+                || (version.Major == 0 && version.Minor == 0 && version.Build == 0)) return null;
+            var text = version.Revision > 0 ? version.ToString(4) : version.ToString(3);
+            if (common != null && common != text) return null;
+            common = text;
+        }
+        return common;
     }
 
     private void EnsureToolbarBinary(string dllPath, string architecture)
@@ -467,9 +527,17 @@ public sealed partial class VoiceImeRegistrationService
         }
     }
 
+    internal Task<Result> RefreshStandaloneHostAsync() => RunAsync(async () =>
+    {
+        var state = await InspectLifecycleAsync(ReadLifecycleManifest()).ConfigureAwait(false);
+        if (state.Complete && !File.Exists(MaintenancePath))
+            DeployStandaloneHostDirectory(Path.Combine(_baseDirectory, "TrueFluentPro.exe"));
+        return new Result(true, "后台部署检查完成。");
+    }, writes: false);
+
     private void DeployStandaloneHostDirectory(string sourceHostExe)
     {
-        if (_lifecycleBackend != null || !OperatingSystem.IsWindows()) return;
+        if (_lifecycleBackend != null || !OperatingSystem.IsWindows() || VoiceImeMaintenanceElevation.IsWorker) return;
         try
         {
             var sourceDir = Path.GetDirectoryName(_baseDirectory.TrimEnd(Path.DirectorySeparatorChar)) != null
@@ -718,8 +786,9 @@ public sealed partial class VoiceImeRegistrationService
             throw new RegistrationException("回退组件文件不完整或摘要改变。");
     }
 
-    private void CleanupFiles(InstallManifest manifest, IReadOnlyCollection<InstallEntry> keep)
+    private async Task CleanupFilesAsync(InstallManifest manifest, IReadOnlyCollection<InstallEntry> keep)
     {
+        var retryBudget = Stopwatch.StartNew();
         var protectedPaths = keep.SelectMany(e => new[] { e.DllPath, e.HelperPath }).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var directories = manifest.Files.Select(f => Path.GetDirectoryName(f.Path)!).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         foreach (var file in manifest.Files.OrderBy(f => Path.GetFileName(f.Path) == HelperName ? 1 : 0).ToList())
@@ -738,26 +807,39 @@ public sealed partial class VoiceImeRegistrationService
                 continue;
             }
             if (!file.Staging && HashFile(file.Path) != file.Hash) throw new RegistrationException("文件摘要改变，未回收。");
-            if (pending != null)
+            var queued = pending != null && IsDeletionQueued(file.Path);
+            if (pending != null && !queued)
             {
-                if (IsDeletionQueued(file.Path)) continue;
                 // 上轮 intent 尚未入队，或重启删除失败：重做实际删除/共享占用检查，不能永久卡住。
                 manifest.PendingCleanup.Remove(pending);
                 WriteLifecycleManifest(manifest);
             }
             var error = DeleteOwnedFile(file.Path);
+            // 切换和 Host 退出后，给确定的共享/映像占用一个总计不超过两秒的释放窗口。
+            for (var attempt = 0; error != 0 && attempt < 3 && retryBudget.Elapsed < TimeSpan.FromSeconds(2)
+                && IsRetryableDelete(file, error); attempt++)
+            {
+                var delay = TimeSpan.FromMilliseconds(200 * (attempt + 1));
+                if (_lifecycleBackend?.Delay is { } wait) await wait(delay).ConfigureAwait(false);
+                else await Task.Delay(delay).ConfigureAwait(false);
+                VoiceImeMaintenance.GuardPath(file.Path);
+                if (VoiceImeMaintenance.Exists(file.Path) && !file.Staging && HashFile(file.Path) != file.Hash)
+                    throw new RegistrationException("重试时文件摘要改变，未回收。");
+                error = DeleteOwnedFile(file.Path);
+            }
             if (error == 0)
             {
+                // 可以提前删除物理文件，但系统队列仍按路径执行，receipt/路径禁用必须保留。
+                if (queued) continue;
                 manifest.Files.Remove(file);
                 WriteLifecycleManifest(manifest);
                 continue;
             }
             // 映像被加载时 DeleteFile 也可返回5；不能把所有拒绝访问当作占用。
             // 只对 receipt 已验真的非只读自有 DLL，再核对运行进程的精确映像路径。
-            var mappedImage = error == 5 && !file.Staging && Path.GetFileName(file.Path) == DllName
-                && (File.GetAttributes(file.Path) & FileAttributes.ReadOnly) == 0 && IsImageMapped(file.Path);
-            if (error is not (32 or 33 or 1224) && !mappedImage)
+            if (!IsRetryableDelete(file, error))
                 throw new RegistrationException($"文件回收失败（Win32={error}），已保留 receipt。");
+            if (queued) continue; // 已有系统排队，不重复入队；下次维护仍会机会性重试。
             pending = new OwnedFile { Path = file.Path, Hash = file.Hash, Staging = file.Staging, QueueState = "intent" };
             manifest.PendingCleanup.Add(pending);
             WriteLifecycleManifest(manifest); // 在不可回滚的系统队列写入前落盘，避免崩溃后误复用。
@@ -780,6 +862,20 @@ public sealed partial class VoiceImeRegistrationService
                 if (Directory.Exists(directory) && !Directory.EnumerateFileSystemEntries(directory).Any()) Directory.Delete(directory, false);
             }
         }
+    }
+
+    private bool IsRetryableDelete(OwnedFile file, int error)
+        => error is 32 or 33 or 1224 || error == 5 && !file.Staging
+            && Path.GetFileName(file.Path) == DllName && VoiceImeMaintenance.Exists(file.Path)
+            && (File.GetAttributes(file.Path) & FileAttributes.ReadOnly) == 0 && IsImageMapped(file.Path);
+
+    private static string CleanupSummary(InstallManifest manifest)
+    {
+        if (manifest.PendingCleanup.Count == 0) return "旧包文件已清理。";
+        var remaining = manifest.PendingCleanup.Count(p => VoiceImeMaintenance.Exists(p.Path));
+        return remaining > 0
+            ? $"已自动尝试清理；仍有 {remaining} 个旧文件交由 Windows 在正常重启时回收，无需专门重启或再次维护。"
+            : "旧 DLL 已清理；系统仍保留旧路径回收记录，无需操作，不会复用这些路径。";
     }
 
     private int DeleteOwnedFile(string path)
@@ -820,8 +916,17 @@ public sealed partial class VoiceImeRegistrationService
         var value = session?.GetValue("PendingFileRenameOperations", null, RegistryValueOptions.DoNotExpandEnvironmentNames);
         if (value != null && value is not string[]) throw new RegistrationException("系统重启删除队列类型未知，保留路径及恢复记录。");
         var paths = value as string[] ?? Array.Empty<string>();
-        return paths.Any(value => string.Equals(value, @"\??\" + Path.GetFullPath(path), StringComparison.OrdinalIgnoreCase)
-            || string.Equals(value, Path.GetFullPath(path), StringComparison.OrdinalIgnoreCase));
+        return paths.Any(value => IsQueuedPath(value, path));
+    }
+
+    private static bool IsQueuedPath(string value, string path)
+    {
+        var fullPath = Path.GetFullPath(path);
+        // 仅将队列中的精确自有路径作为保留依据，不修改队列。
+        // *1\??\ 为本机实测条目格式，内部标志含义未确认，不泛化为任意 *数字。
+        return string.Equals(value, fullPath, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(value, @"\??\" + fullPath, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(value, @"*1\??\" + fullPath, StringComparison.OrdinalIgnoreCase);
     }
 
     private InstallManifest ReadLifecycleManifest()
@@ -934,12 +1039,16 @@ public sealed partial class VoiceImeRegistrationService
             "legacy" => "旧版清单（下次管理将精确认领）", "staging" => "暂存新包", "quiescing" => "等待后台停止",
             "uninstalling" => "移除系统入口", "installing" => "安装/修复", "rolling-back" => "恢复原版本",
             "cleaning" => "回收自有文件", "installed" => "已安装", "removed" => "已移除",
-            "pending-reboot" => "系统入口已移除，文件待重启清理", _ => "待修复（可恢复，未完成）"
+            "pending-reboot" => "已卸载（保留旧文件自动回收记录）", _ => "待修复（可恢复，未完成）"
         };
-        var versionInfo = !string.IsNullOrWhiteSpace(manifest.PackageVersion) ? $"（版本 v{manifest.PackageVersion}）" : $"（当前产品版本 v{GetProductVersionString()}）";
+        // 展示 receipt 对应的实际已安装二进制，不用当前程序或历史 journal 冒充组件版本。
+        var installedVersion = state.Absent ? null : ReadPackageVersion(state.Entries, manifest);
+        var versionInfo = state.Absent ? "" : installedVersion != null
+            ? $"（已安装组件 v{installedVersion}）" : "（已安装组件版本未知：旧包未标注或组件版本不一致）";
         return new Result(true, $"阶段：{phase}{versionInfo}；范围：当前用户 SID（不代其他用户解绑）。\n" +
+            $"当前主程序 v{GetProductVersionString()}。\n" +
             (state.Complete ? "双架构原生安装状态完整。" : state.Absent ? "原生全量状态及固定 footprint 均无登记。" : "仍有不完整登记，不能视为已卸载。") +
-            (manifest.PendingCleanup.Count > 0 ? $"\n待重启清理 {manifest.PendingCleanup.Count} 个文件；排队不是删除成功，请重启后再次管理确认。" : "") +
+            (manifest.PendingCleanup.Count > 0 ? "\n" + CleanupSummary(manifest) : "") +
             (VoiceImeMaintenance.Exists(MaintenancePath) ? "\n维护门禁生效，F8 暂停；请使用原用户继续安装/修复或卸载。" : ""));
     }
 

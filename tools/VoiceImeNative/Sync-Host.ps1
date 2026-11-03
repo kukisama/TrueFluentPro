@@ -47,9 +47,9 @@ $mainExe = Join-Path $TargetDir 'TrueFluentPro.exe'
 New-Item -Path 'HKCU:\Software\TrueFluentPro\VoiceImeUI' -Force | Out-Null
 Set-ItemProperty -LiteralPath 'HKCU:\Software\TrueFluentPro\VoiceImeUI' -Name 'MainAppExe' -Value $mainExe
 Set-ItemProperty -LiteralPath 'HKCU:\Software\TrueFluentPro\VoiceImeUI' -Name 'StandaloneHostExe' -Value $standaloneExe
-if (Test-Path -LiteralPath 'HKCU:\Software\TrueFluentPro\VoiceIme') {
-    Set-ItemProperty -LiteralPath 'HKCU:\Software\TrueFluentPro\VoiceIme' -Name 'HostExe' -Value $standaloneExe
-}
+# HostExe / VoiceImeInstall 属于安装事务，必须与 install-manifest.json 保持一致。
+# 原生 ReadHost(true) / TrustedServer 已支持 VoiceImeUI\StandaloneHostExe；
+# 热同步只更新独立宿主入口，不能绕过生命周期改写安装身份。
 
 # If the IME is installed, pre-start the standalone host in background so it is immediately active without logoff
 if ((Test-Path -LiteralPath 'HKCU:\Software\TrueFluentPro\VoiceIme') -and (Test-Path -LiteralPath $standaloneExe)) {

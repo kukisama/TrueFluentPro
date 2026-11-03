@@ -15,8 +15,8 @@ if (-not $vs) { throw '需要已安装的 Visual Studio C++ x64/x86 工具；本
 $vcvars = Join-Path $vs 'VC\Auxiliary\Build\vcvarsall.bat'
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 $releaseNotesPath = Join-Path $repoRoot 'Assets\RELEASE_NOTES.md'
-$productVersionStr = '2.2.2'
-$productVersionCsv = '2,2,2,0'
+$productVersionStr = '2.2.3'
+$productVersionCsv = '2,2,3,0'
 if (Test-Path -LiteralPath $releaseNotesPath) {
     $firstLine = Get-Content -LiteralPath $releaseNotesPath -TotalCount 1
     if ($firstLine -match 'v(\d+)\.(\d+)\.(\d+)') {
@@ -25,6 +25,7 @@ if (Test-Path -LiteralPath $releaseNotesPath) {
     }
 }
 $rcVersionFlags = "/DVOICE_IME_VERSION_CSV=$productVersionCsv /DVOICE_IME_VERSION_STR=\`"$productVersionStr\`""
+$buildIdentity = "$Configuration|$productVersionStr"
 $runtime = if ($Configuration -eq 'Debug') { '/MTd /Od /Zi' } else { '/MT /O2 /DNDEBUG' }
 $toolbarFlags = "/nologo /std:c++17 /EHsc /W4 /utf-8 /DUNICODE /D_UNICODE /D_WIN32_WINNT=0x0602 $runtime"
 $brandIcon = Join-Path $PSScriptRoot 'Brand.ico'
@@ -55,7 +56,7 @@ if ($Target -eq 'Toolbar') {
         $stamp = Join-Path $obj 'built.toolbar.ok'
         if ((Test-Path -LiteralPath $stamp) -and (Test-Path -LiteralPath $test) -and
             (Get-Item -LiteralPath $stamp).LastWriteTimeUtc -ge $toolbarNewest -and
-            (Get-Content -LiteralPath $stamp -Raw).Trim() -eq $Configuration) {
+            (Get-Content -LiteralPath $stamp -Raw).Trim() -eq $buildIdentity) {
             Write-Output "UP-TO-DATE Toolbar win-$arch $Configuration"; continue
         }
         $res = Join-Path $obj 'Brand.res'
@@ -68,7 +69,7 @@ if ($Target -eq 'Toolbar') {
         Set-Content -LiteralPath $batch -Value $lines -Encoding utf8
         & $env:ComSpec /d /s /c "`"$batch`""
         if ($LASTEXITCODE -ne 0) { throw "Toolbar win-$arch 编译失败，退出码 $LASTEXITCODE" }
-        Set-Content -LiteralPath $stamp -Value $Configuration -Encoding ASCII
+        Set-Content -LiteralPath $stamp -Value $buildIdentity -Encoding ASCII
         Write-Output "BUILT Toolbar win-$arch $Configuration"
     }
     return
@@ -95,7 +96,7 @@ foreach ($arch in @('x64', 'x86')) {
         (Test-Path -LiteralPath $registrationTest) -and (Test-Path -LiteralPath $lifecycleTest))
     if (-not $build) {
         $built = (Get-Item -LiteralPath $stamp).LastWriteTimeUtc
-        $build = $built -lt $newest -or (Get-Content -LiteralPath $stamp -Raw).Trim() -ne $Configuration -or
+        $build = $built -lt $newest -or (Get-Content -LiteralPath $stamp -Raw).Trim() -ne $buildIdentity -or
             (Get-Item -LiteralPath $dll).LastWriteTimeUtc -gt $built -or (Get-Item -LiteralPath $exe).LastWriteTimeUtc -gt $built
     }
     if (-not $build) { Write-Output "UP-TO-DATE win-$arch $Configuration"; continue }
@@ -142,7 +143,7 @@ foreach ($arch in @('x64', 'x86')) {
         Set-Content -LiteralPath $batch -Value $batchLines -Encoding utf8
         & $env:ComSpec /d /s /c "`"$batch`""
         if ($LASTEXITCODE -ne 0) { throw "win-$arch 编译失败，退出码 $LASTEXITCODE" }
-        Set-Content -LiteralPath $stamp -Value $Configuration -Encoding ASCII
+        Set-Content -LiteralPath $stamp -Value $buildIdentity -Encoding ASCII
     } finally { Pop-Location }
     Write-Output "BUILT win-$arch $Configuration"
 }

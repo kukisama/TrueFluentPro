@@ -66,7 +66,7 @@
             <StackPanel Spacing="10">
                 <TextBlock Text="输入法安装管理" FontWeight="Bold"/>
                 <TextBlock Classes="field-note" TextWrapping="Wrap"
-                           Text="安装/修复或卸载需使用原安装用户右键以管理员身份运行，不会自动提权。仅管理当前用户 SID，不替其他用户解绑。64 位 Windows 同时管理 x64 与 x86；更新组件或移动主程序后直接点击安装/修复，失败将尝试恢复原完整版本。日常 F8 听写无需管理员。"/>
+                           Text="点击即可安装/修复或卸载；权限不足时会先提示，再由 Windows 请求管理员授权并自动继续，主窗口和当前任务保留。请使用当前用户授权，仅管理当前用户输入法。64 位 Windows 自动处理 x64 与 x86；日常 F8 听写无需管理员。"/>
                 <StackPanel Orientation="Horizontal" Spacing="8">
                     <Button Content="安装/修复输入法" Command="{Binding RegisterCommand}"/>
                     <Button Content="卸载输入法" Command="{Binding UnregisterCommand}"/>
@@ -76,7 +76,7 @@
                 <TextBlock Text="{Binding RegistrationStatus}" TextWrapping="Wrap"/>
                 <TextBlock Classes="hint-text" Text="{Binding OperationMessage}" TextWrapping="Wrap"/>
                 <TextBlock Classes="field-note" TextWrapping="Wrap"
-                           Text="维护期间暂停 F8 并等待本用户后台停止，不结束目标应用。卸载先确认系统入口全部移除，再清理本组件文件；被应用加载的 DLL 仅在确认为占用时排队待重启清理，此时不表示完整卸载。主程序、共享配置和日志保留。"/>
+                           Text="维护时自动暂停 F8、停止后台并切离本输入法；移除系统入口后自动重试清理旧组件，不结束你的其他应用。仍被应用持有的旧文件由 Windows 自动延后回收，无需手工切换或专门重启。主程序、共享配置和日志保留。"/>
             </StackPanel>
         </StackPanel>
     </Border>

@@ -1,10 +1,10 @@
 #include <winver.h>
 
 #ifndef VOICE_IME_VERSION_CSV
-#define VOICE_IME_VERSION_CSV 2,2,2,0
+#define VOICE_IME_VERSION_CSV 2,2,3,0
 #endif
 #ifndef VOICE_IME_VERSION_STR
-#define VOICE_IME_VERSION_STR "2.2.2"
+#define VOICE_IME_VERSION_STR "2.2.3"
 #endif
 
 // First and only group icon: the existing TSF RegisterProfile iconIndex=0 uses it.

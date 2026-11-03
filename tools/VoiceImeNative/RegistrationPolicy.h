@@ -336,6 +336,10 @@ inline Result Unregister(Backend& b, const std::wstring& dll) {
     if (s.machine[1].exists) {
         if (!s.machine[1].owned || !s.machine[1].apartment || !SameInstall(s.machine[1].path, dll))
             return Failure("OtherArchitectureOwnership", E_ACCESSDENIED);
+        if (s.otherProfiles || s.otherCategories) return Failure("ServiceClassNotExclusive", E_ACCESSDENIED);
+        for (const auto& host : s.host) if (host.exists && (!host.owned || !Equal(host.binding, InstallRoot(dll))))
+            return Failure("HostOwnership", E_ACCESSDENIED);
+        hr = b.SwitchAway(); if (hr != S_OK) return Failure("SwitchAway", ExactSuccess(hr));
         hr = b.RemoveKeys(dll, nullptr, ComKey);
         if (hr != S_OK) return Failure("RemoveCom", ExactSuccess(hr));
         Snapshot after; hr = b.Read(after);
