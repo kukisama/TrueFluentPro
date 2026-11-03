@@ -413,6 +413,7 @@ public sealed partial class VoiceImeRegistrationService
             var source = GetPackageEntry(architecture);
             VoiceImeMaintenance.GuardPath(source.DllPath);
             VoiceImeMaintenance.GuardPath(source.HelperPath);
+            EnsureToolbarBinary(source.DllPath, architecture);
             var dllHash = HashFile(source.DllPath);
             var helperHash = HashFile(source.HelperPath);
             var cache = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
@@ -433,6 +434,24 @@ public sealed partial class VoiceImeRegistrationService
                 + plan.Files.Single(f => f.Path == e.HelperPath).Hash))))).ToLowerInvariant();
         if (verifiedPackage != plan.Package) throw new RegistrationException("预检期间包文件发生变化，未部署文件。");
         return plan;
+    }
+
+    private void EnsureToolbarBinary(string dllPath, string architecture)
+    {
+        if (_lifecycleBackend != null) return;
+        IntPtr large = IntPtr.Zero, small = IntPtr.Zero;
+        try
+        {
+            var groups = ExtractIconExW(dllPath, -1, null, null, 0);
+            var extracted = groups > 0 ? ExtractIconExW(dllPath, 0, out large, out small, 1) : 0;
+            if (groups == 0 || extracted == 0 || extracted == uint.MaxValue || large == IntPtr.Zero || small == IntPtr.Zero)
+                throw new RegistrationException($"{architecture} 组件仍是缺少方案 A 品牌图标/浮条的旧包，请先重新构建输入法组件。");
+        }
+        finally
+        {
+            if (large != IntPtr.Zero) DestroyIcon(large);
+            if (small != IntPtr.Zero) DestroyIcon(small);
+        }
     }
 
     private void CheckPlanDestinations(PackagePlan plan, InstallManifest manifest)
@@ -820,6 +839,13 @@ public sealed partial class VoiceImeRegistrationService
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool MoveFileExW(string path, string? destination, uint flags);
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
+    private static extern uint ExtractIconExW(string lpszFile, int nIconIndex, IntPtr[]? phiconLarge, IntPtr[]? phiconSmall, uint nIcons);
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
+    private static extern uint ExtractIconExW(string lpszFile, int nIconIndex, out IntPtr phiconLarge, out IntPtr phiconSmall, uint nIcons);
+    [DllImport("user32.dll", ExactSpelling = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool DestroyIcon(IntPtr hIcon);
 
     private sealed class OwnedFile
     {

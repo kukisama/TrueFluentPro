@@ -115,6 +115,7 @@ internal sealed class ChatVoiceInputSession : IChatVoiceInputSession, IAsrUplink
     private readonly CancellationTokenSource _startupCancellation = new();
     private readonly CancellationTokenSource _lifetime = new();
     private readonly TaskCompletionSource<bool> _sessionReady = NewSignal();
+    private readonly TaskCompletionSource<bool> _resourcesReleased = NewSignal();
     private readonly Dictionary<string, InputTurn> _turns = new(StringComparer.Ordinal);
     private readonly Queue<InputTurn> _turnOrder = new();
     private readonly HashSet<string> _speechResultIds = new(StringComparer.Ordinal);
@@ -166,6 +167,9 @@ internal sealed class ChatVoiceInputSession : IChatVoiceInputSession, IAsrUplink
     public event Action<string, bool>? TextRecognized;
     public event Action<string>? Failed;
     public event Action<double>? AudioLevelChanged;
+
+    // 共享输入法下一轮等待真实后台清理；公开 Stop 的快速超时行为保持不变。
+    internal Task ResourcesReleased => _resourcesReleased.Task;
 
     public Task StartAsync(CancellationToken cancellationToken = default)
     {
@@ -776,7 +780,7 @@ internal sealed class ChatVoiceInputSession : IChatVoiceInputSession, IAsrUplink
             // 与初始化串行：取消发生在 native Start 中时，迟到的麦克风也一定由这里释放。
             await _resourceGate.WaitAsync().ConfigureAwait(false);
             try { await ReleaseResourcesAsync().ConfigureAwait(false); }
-            finally { _resourceGate.Release(); }
+            finally { _resourceGate.Release(); _resourcesReleased.TrySetResult(true); }
         });
         Observe(cleanup);
         try

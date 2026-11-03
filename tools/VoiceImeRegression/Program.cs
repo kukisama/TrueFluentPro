@@ -26,7 +26,9 @@ internal static class Program
         using var log = new StreamWriter(Path.Combine(Artifacts, "run.log"), false, new UTF8Encoding(false)) { AutoFlush = true };
         _log = log;
         var failures = 0;
-        if (args.SequenceEqual(new[] { "--lifecycle" }))
+        if (args.SequenceEqual(new[] { "--shared" }))
+            await Group("shared owner fixture only (duplex pipes, fake voice/auth/UI)", SharedSessionRegression.VerifyAsync);
+        else if (args.SequenceEqual(new[] { "--lifecycle" }))
             await Group("lifecycle fixture only (no native helper/system registration)", LifecycleRegression.VerifyAsync);
         else
         {

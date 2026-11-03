@@ -34,32 +34,18 @@ struct VoiceToolbarTestAccess {
     static const std::wstring& NoticeText(const VoiceToolbar& t) { return t.noticeText_; }
     static const std::wstring& ClassName(const VoiceToolbar& t) { return t.className_; }
     static LPARAM Point(const VoiceToolbar& t, int x, int y) { return MAKELPARAM(t.Pixels(x), t.Pixels(y)); }
+    static LONG TailPixel(const VoiceToolbar& t) { return static_cast<LONG>(std::lround(t.tooltipTail_ * t.dpi_ / 96.0f)); }
     static void Place(VoiceToolbar& t, POINT point) { t.Place(point); }
     static void DpiChecks(VoiceToolbar& t, unsigned& failures);
-    static bool Save(const VoiceToolbar& t, const std::wstring& path, UINT dpi = 96) {
-        CLSID encoder{}; if (!PngEncoder(encoder)) return false;
-        Gdiplus::Bitmap image(MulDiv(260, dpi, 96), MulDiv(152, dpi, 96), PixelFormat32bppARGB);
-        {
-            Gdiplus::Graphics g(&image); g.Clear(Gdiplus::Color(255, 239, 245, 253));
-            g.ScaleTransform(dpi / 96.0f, dpi / 96.0f);
-            auto saved = g.Save(); g.TranslateTransform(78, 56); t.PaintMain(g); g.Restore(saved);
-            if (t.hovered_) {
-                const SIZE size = t.HintSize(t.TooltipText(), false);
-                saved = g.Save(); g.TranslateTransform((260 - size.cx) / 2.0f, 10);
-                t.PaintHint(g, t.TooltipText(), false, size.cx, size.cy); g.Restore(saved);
-            }
-            if (!t.noticeText_.empty()) {
-                const SIZE size = t.HintSize(t.noticeText_.c_str(), true);
-                saved = g.Save(); g.TranslateTransform((260 - size.cx) / 2.0f, 106);
-                t.PaintHint(g, t.noticeText_.c_str(), true, size.cx, size.cy); g.Restore(saved);
-            }
-        }
-        const bool ok = image.Save(path.c_str(), &encoder) == Gdiplus::Ok;
-        std::printf("PNG production-render dpi=%u success=%d\n", dpi, ok); return ok;
-    }
-    static bool CaptureWindow(const VoiceToolbar& t, const std::wstring& path) {
+    static bool CaptureWindow(const VoiceToolbar& t, const std::wstring& path, bool hover = false) {
         CLSID encoder{}; if (!PngEncoder(encoder)) return false;
         RECT rect{}; if (!GetWindowRect(t.window_, &rect)) return false;
+        const HWND hint = hover ? t.tooltip_ : t.notice_;
+        RECT attached{};
+        if (!IsWindowVisible(t.window_) || !IsWindowVisible(hint) || !GetWindowRect(hint, &attached)) return false;
+        std::printf("CAPTURE %s main=%ldx%ld hint-surface=%ldx%ld dpi=%u\n", hover ? "hover" : "recording",
+            rect.right - rect.left, rect.bottom - rect.top, attached.right - attached.left, attached.bottom - attached.top, t.dpi_);
+        UnionRect(&rect, &rect, &attached); // Actual own HWNDs, including the chip/tail, not a synthetic composition.
         DwmFlush(); // Wait for our just-updated alpha surface before this one screen crop.
         HDC screen = GetDC(nullptr), memory = screen ? CreateCompatibleDC(screen) : nullptr;
         HBITMAP bitmap = memory ? CreateCompatibleBitmap(screen, rect.right - rect.left, rect.bottom - rect.top) : nullptr;
@@ -81,11 +67,14 @@ struct PositionTrace {
     RECT suggested{};
     UINT dpi{};
     bool inject = false, sawSuggested = false;
+    HWND main{};
+    bool orphanHint = false;
 };
 PositionTrace* trace{}; // Own test HWND only; never subclasses the host/editor.
 LRESULT CALLBACK TracePosition(HWND hwnd, UINT message, WPARAM w, LPARAM l) {
     if (message == WM_WINDOWPOSCHANGING) {
         const auto& pos = *reinterpret_cast<WINDOWPOS*>(l);
+        if (trace->main && (pos.flags & SWP_SHOWWINDOW) && !IsWindowVisible(trace->main)) trace->orphanHint = true;
         if (!(pos.flags & (SWP_NOMOVE | SWP_NOSIZE)) && pos.x == trace->suggested.left && pos.y == trace->suggested.top &&
             pos.cx == trace->suggested.right - trace->suggested.left && pos.cy == trace->suggested.bottom - trace->suggested.top)
             trace->sawSuggested = true;
@@ -112,9 +101,10 @@ BOOL CALLBACK CountMonitor(HMONITOR, HDC, LPRECT, LPARAM data) { ++*reinterpret_
 bool ClientSize(HWND hwnd, SIZE size) {
     RECT r{}; return GetClientRect(hwnd, &r) && r.right == size.cx && r.bottom == size.cy;
 }
-struct Harness { VoiceToolbar* toolbar; unsigned toggles = 0; };
+struct Harness { VoiceToolbar* toolbar; unsigned toggles = 0; bool destroyOnToggle = false; };
 void Toggle(void* owner) {
     auto& h = *static_cast<Harness*>(owner); ++h.toggles;
+    if (h.destroyOnToggle) { h.toolbar->Destroy(); return; }
     const bool stopping = VoiceToolbarTestAccess::State(*h.toolbar) != VoiceToolbarState::Idle;
     h.toolbar->SetState(stopping ? VoiceToolbarState::Idle : VoiceToolbarState::Connecting, stopping);
 }
@@ -130,6 +120,7 @@ void VoiceToolbarTestAccess::DpiChecks(VoiceToolbar& t, unsigned& failures) {
     const POINT original = t.position_;
     const auto state = t.state_; const bool hovered = t.hovered_;
     const std::wstring notice = t.noticeText_;
+    const bool noticeError = t.noticeError_, tooltipReady = t.tooltipReady_; const float tooltipTail = t.tooltipTail_;
     const HWND oldEditor = t.editor_; const HMONITOR oldMonitor = t.editorMonitor_; const UINT oldEditorDpi = t.editorDpi_;
     MONITORINFO nativeWork{sizeof(nativeWork)}; GetMonitorInfoW(MonitorFromWindow(t.window_,MONITOR_DEFAULTTONEAREST), &nativeWork);
     t.Place({nativeWork.rcWork.left + 20, nativeWork.rcWork.top + 60});
@@ -143,7 +134,8 @@ void VoiceToolbarTestAccess::DpiChecks(VoiceToolbar& t, unsigned& failures) {
     // Independent expectations, not computed with the production size function.
     const Scale scales[] = {{96,104,44,96,36}, {120,130,55,120,45}, {144,156,66,144,54}, {192,208,88,192,72}};
     const RECT negativeWork{-1920, -1080, 0, 0};
-    t.state_ = VoiceToolbarState::Idle; t.hovered_ = false;
+    t.state_ = VoiceToolbarState::Idle; t.hovered_ = false; t.tooltipTail_ = 0;
+    SIZE logicalHints[6]{};
     for (const auto& s : scales) {
         t.dpi_ = s.dpi;
         const SIZE size = t.ScaledSize(104, 44, s.dpi);
@@ -190,22 +182,57 @@ void VoiceToolbarTestAccess::DpiChecks(VoiceToolbar& t, unsigned& failures) {
         const wchar_t* texts[] = {L"按下 F8 开始录音", L"按下 F8 停止录音", L"正在连接 · F8 停止", L"正在录音 · F8 停止", L"录音已停止", L"语音连接失败，请按 F8 重试"};
         for (unsigned i = 0; i < 6; ++i) {
             const bool status = i >= 2; const SIZE logical = t.HintSize(texts[i], status);
+            if (s.dpi == 96) logicalHints[i] = logical;
+            check(logical.cx == logicalHints[i].cx && logical.cy == logicalHints[i].cy,
+                "hint logical measurement stays identical at all four scales");
+            const int bodyHeight = logical.cy - 8 - (status ? 0 : 5), inset = status ? 12 : 14;
+            if (status) check(bodyHeight == 22 && (i == 5 ? logical.cx - 8 < 180 : logical.cx - 8 <= 124) &&
+                (i != 4 || logical.cx - 8 < 96), "22-DIP chip body; short notices below old 124x30, full error below old 188px surface");
+            t.state_ = i == 2 ? VoiceToolbarState::Connecting : i == 3 ? VoiceToolbarState::Recording : VoiceToolbarState::Idle;
+            t.noticeError_ = i == 5;
             Gdiplus::Bitmap hint(MulDiv(logical.cx, s.dpi, 96), MulDiv(logical.cy, s.dpi, 96), PixelFormat32bppPARGB);
-            Gdiplus::Graphics g(&hint); t.PaintSurface(g, logical.cx, logical.cy, texts[i], status);
-            Gdiplus::Font font(L"Microsoft YaHei UI", 12, Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
+            Gdiplus::Graphics g(&hint); t.PaintSurface(g, logical.cx, logical.cy, texts[i], status); g.Flush(Gdiplus::FlushIntentionSync);
+            Gdiplus::Font font(L"Microsoft YaHei UI", status ? 10.0f : 12.0f, Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
             Gdiplus::StringFormat format(Gdiplus::StringFormatFlagsNoWrap);
+            format.SetTrimming(Gdiplus::StringTrimmingNone);
             format.SetAlignment(Gdiplus::StringAlignmentCenter); format.SetLineAlignment(Gdiplus::StringAlignmentCenter);
             Gdiplus::RectF measured; int fitted = 0, lines = 0;
             const auto result = g.MeasureString(texts[i], -1, &font,
-                Gdiplus::RectF(12, 4, static_cast<float>(logical.cx - 24), static_cast<float>(logical.cy - 8)), &format, &measured, &fitted, &lines);
+                Gdiplus::RectF(static_cast<float>(inset), 4, static_cast<float>(logical.cx - inset * 2), static_cast<float>(bodyHeight)), &format, &measured, &fitted, &lines);
             check(result == Gdiplus::Ok && fitted == static_cast<int>(wcslen(texts[i])) && lines == 1 &&
-                measured.Width <= logical.cx - 24 && measured.Height <= logical.cy - 8, "actual font measurement fits every production hint on one line");
+                measured.Width <= logical.cx - inset * 2 && measured.Height <= bodyHeight, "actual 12/10-DIP font fits every full tooltip/status text on one line");
+            if (i == 0 || i == 3) {
+                Gdiplus::BitmapData data{}; Gdiplus::Rect pixels(0, 0, static_cast<INT>(hint.GetWidth()), static_cast<INT>(hint.GetHeight()));
+                const bool locked = hint.LockBits(&pixels, Gdiplus::ImageLockModeRead, PixelFormat32bppPARGB, &data) == Gdiplus::Ok;
+                bool premultiplied = locked, antialiased = false;
+                RECT opaque{pixels.Width, pixels.Height, 0, 0};
+                if (locked) {
+                    for (int y = 0; y < pixels.Height; ++y) for (int x = 0; x < pixels.Width; ++x) {
+                        const BYTE* p = static_cast<const BYTE*>(data.Scan0) + y * data.Stride + x * 4;
+                        premultiplied = premultiplied && p[0] <= p[3] && p[1] <= p[3] && p[2] <= p[3];
+                        antialiased = antialiased || (p[3] > 0 && p[3] < 255);
+                        if (p[3] >= 128) include(opaque, x, y);
+                    }
+                    hint.UnlockBits(&data);
+                }
+                Gdiplus::Color corner, tailCenter, tailSide;
+                hint.GetPixel(0, 0, &corner);
+                hint.GetPixel(MulDiv(logical.cx / 2, s.dpi, 96), MulDiv(4 + bodyHeight + 2, s.dpi, 96), &tailCenter);
+                hint.GetPixel(MulDiv(logical.cx / 2 + 8, s.dpi, 96), MulDiv(4 + bodyHeight + 2, s.dpi, 96), &tailSide);
+                check(premultiplied && antialiased && corner.GetA() == 0 &&
+                    (status || (tailCenter.GetA() >= 128 && tailSide.GetA() < 128)),
+                    "premultiplied antialiased alpha; tooltip has one small downward tail outside text/body");
+                if (status) check(std::abs(opaque.right - opaque.left - (logical.cx - 8) * factor) <= 2 &&
+                    std::abs(opaque.bottom - opaque.top - 22 * factor) <= 2, "rasterized recording chip body is actually 22 DIPs tall, not just a logical size");
+            }
             HWND hwnd = status ? t.notice_ : t.tooltip_;
             check(t.Render(hwnd, logical.cx, logical.cy, texts[i], status) &&
                 ClientSize(hwnd, {MulDiv(logical.cx, s.dpi, 96), MulDiv(logical.cy, s.dpi, 96)}), "actual tooltip/status HWND size, independently scaled");
-            if (i == 0 || i == 2 || i == 5) std::printf("HINT dpi=%u kind=%u logical=%ldx%ld pixels=%dx%d measured=%.2fx%.2f fitted=%d/%zu\n",
-                s.dpi, i, logical.cx, logical.cy, MulDiv(logical.cx, s.dpi, 96), MulDiv(logical.cy, s.dpi, 96), measured.Width, measured.Height, fitted, wcslen(texts[i]));
+            std::printf("HINT dpi=%u kind=%u body=%ldx%d logical=%ldx%ld pixels=%dx%d font=%d measured=%.2fx%.2f fitted=%d/%zu\n",
+                s.dpi, i, logical.cx - 8, bodyHeight, logical.cx, logical.cy, MulDiv(logical.cx, s.dpi, 96), MulDiv(logical.cy, s.dpi, 96),
+                status ? 10 : 12, measured.Width, measured.Height, fitted, wcslen(texts[i]));
         }
+        t.state_ = VoiceToolbarState::Idle; t.noticeError_ = false;
         const POINT low = t.ClampToWorkArea({-5000,-5000}, size, negativeWork), high = t.ClampToWorkArea({100,100}, size, negativeWork);
         check(low.x == -1920 && low.y == -1080 && high.x == -s.width && high.y == -s.height, "negative-coordinate work area clamp (pure geometry, not another monitor)");
         SendMessageW(t.window_, WM_LBUTTONDOWN, MK_LBUTTON, at(MulDiv(20, s.dpi, 96), MulDiv(20, s.dpi, 96)));
@@ -280,7 +307,8 @@ void VoiceToolbarTestAccess::DpiChecks(VoiceToolbar& t, unsigned& failures) {
         check(r.left >= work.rcWork.left && r.top >= work.rcWork.top && r.right <= work.rcWork.right && r.bottom <= work.rcWork.bottom &&
             MonitorFromWindow(hwnd,MONITOR_DEFAULTTONEAREST) == MonitorFromWindow(t.window_,MONITOR_DEFAULTTONEAREST), "real main/hint bounds stay within the same monitor work area");
     }
-    t.state_ = state; t.hovered_ = hovered; t.noticeText_ = notice; t.Place(original);
+    t.state_ = state; t.hovered_ = hovered; t.noticeText_ = notice; t.noticeError_ = noticeError;
+    t.tooltipReady_ = tooltipReady; t.tooltipTail_ = tooltipTail; t.Place(original);
     t.editor_ = oldEditor; t.editorMonitor_ = oldMonitor; t.editorDpi_ = oldEditorDpi;
     std::puts("LIMIT cross-physical-monitor drag/DPI transition not exercised; no display settings changed");
 }
@@ -314,7 +342,8 @@ int wmain(int argc, wchar_t** argv) {
     check(dpiSet && Awareness(toolbar.Handle()) == (unaware ? 0 : system ? 1 : 2), "test EXE actually uses its requested DPI-awareness mode");
     const HWND window = toolbar.Handle(), tip = VoiceToolbarTestAccess::Tooltip(toolbar), notice = VoiceToolbarTestAccess::Notice(toolbar);
     const auto className = VoiceToolbarTestAccess::ClassName(toolbar);
-    check(!IsWindowVisible(window), "created toolbar remains hidden until selected/foreground eligibility");
+    check(!IsWindowVisible(window) && !IsWindowVisible(tip) && !IsWindowVisible(notice),
+        "created toolbar and all attached windows stay hidden until eligibility");
     check(ClientSize(window, {MulDiv(104,ActualDpi(window),96), MulDiv(44,ActualDpi(window),96)}),
         "hidden creation already has the actual DPI-scaled size before eligibility");
     HICON largeIcon{}, smallIcon{}; wchar_t executable[32768]{}; GetModuleFileNameW(instance, executable, 32768);
@@ -341,22 +370,20 @@ int wmain(int argc, wchar_t** argv) {
         check((ex & (WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW)) == (WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW) &&
             SendMessageW(hwnd, WM_MOUSEACTIVATE, 0, MAKELPARAM(HTCLIENT, WM_LBUTTONDOWN)) == MA_NOACTIVATE,
             "toolbar and both tooltip/status windows are nonactivating tool windows");
+        if (hwnd != window) check((ex & WS_EX_TRANSPARENT) &&
+            SendMessageW(hwnd, WM_NCHITTEST, 0, 0) == HTTRANSPARENT, "chip and bubble/tail do not intercept clicks or enlarge the main hitbox");
     }
-    const auto save = [&](const wchar_t* name, UINT dpi = 96) {
-        if (!output.empty()) check(VoiceToolbarTestAccess::Save(toolbar, output + L"\\" + name, dpi), "state image written with actual production renderer");
-    };
-    save(L"01_idle.png");
     SendMessageW(window, WM_MOUSEMOVE, 0, VoiceToolbarTestAccess::Point(toolbar, 74, 22));
     SendMessageW(window, WM_TIMER, 2, 0);
     wchar_t text[128]{}; GetWindowTextW(tip, text, 128);
     check(VoiceToolbarTestAccess::Hovered(toolbar) && IsWindowVisible(tip) && wcscmp(text, L"按下 F8 开始录音") == 0,
         "mic hover highlights and shows the real Unicode start tooltip");
-    save(L"02_hover.png");
+    if (!output.empty()) check(VoiceToolbarTestAccess::CaptureWindow(toolbar, output + L"\\02_hover.png", true),
+        "one actual own-HWND hover screenshot includes the downward bubble tail");
     Click(toolbar);
     check(harness.toggles == 1 && VoiceToolbarTestAccess::State(toolbar) == VoiceToolbarState::Connecting &&
         VoiceToolbarTestAccess::NoticeText(toolbar) == L"正在连接 · F8 停止" && wcscmp(toolbar.TooltipText(), L"按下 F8 停止录音") == 0,
         "mic click reaches shared toggle and connecting stop state");
-    save(L"03_connecting.png");
     Click(toolbar);
     check(harness.toggles == 2 && VoiceToolbarTestAccess::State(toolbar) == VoiceToolbarState::Idle && IsWindowVisible(window),
         "click stops connecting synchronously and keeps idle toolbar visible");
@@ -366,14 +393,20 @@ int wmain(int argc, wchar_t** argv) {
     SendMessageW(window, WM_TIMER, 3, 0); // Queued old idle-toast message must not clear the new recording hint.
     check(VoiceToolbarTestAccess::Animation(toolbar) == animation + 1 && VoiceToolbarTestAccess::NoticeText(toolbar) == L"正在录音 · F8 停止",
         "recording animation is presentation-only; stale toast cannot clear recording status");
-    save(L"04_recording.png"); save(L"04_recording_125pct.png", 120);
-    if (!output.empty()) check(VoiceToolbarTestAccess::CaptureWindow(toolbar, output + L"\\04_recording-window.png"), "one actual own-toolbar window screenshot");
+    SendMessageW(window, WM_MOUSELEAVE, 0, 0);
+    if (!output.empty()) check(VoiceToolbarTestAccess::CaptureWindow(toolbar, output + L"\\04_recording-window.png"),
+        "one actual own-HWND recording screenshot includes the compact full-text chip");
     Click(toolbar);
     check(harness.toggles == 4 && VoiceToolbarTestAccess::State(toolbar) == VoiceToolbarState::Idle &&
         VoiceToolbarTestAccess::NoticeText(toolbar) == L"录音已停止" && IsWindowVisible(window), "stop returns to idle with short stopped toast");
-    SendMessageW(window, WM_MOUSELEAVE, 0, 0); save(L"05_stopped.png");
-    SendMessageW(window, WM_TIMER, 3, 0);
-    check(!IsWindowVisible(notice) && IsWindowVisible(window), "toast expiry never permanently hides the toolbar");
+    const ULONGLONG stoppedAt = GetTickCount64();
+    while (IsWindowVisible(notice) && GetTickCount64() - stoppedAt < 2400) {
+        Pump(); MsgWaitForMultipleObjects(0, nullptr, FALSE, 25, QS_ALLINPUT);
+    }
+    const ULONGLONG stoppedMs = GetTickCount64() - stoppedAt;
+    std::printf("STOP-TOAST elapsed-ms=%llu\n", stoppedMs);
+    check(stoppedMs >= 1500 && stoppedMs < 2400 && !IsWindowVisible(notice) && IsWindowVisible(window),
+        "real 1.6-second stop timer expires the lightweight chip, not the main toolbar");
     RECT before{}, after{}; GetWindowRect(window, &before);
     SendMessageW(window, WM_LBUTTONDOWN, MK_LBUTTON, VoiceToolbarTestAccess::Point(toolbar, 20, 20));
     SendMessageW(window, WM_MOUSEMOVE, MK_LBUTTON, VoiceToolbarTestAccess::Point(toolbar, 44, 34));
@@ -391,8 +424,61 @@ int wmain(int argc, wchar_t** argv) {
     check(after.left >= monitor.rcWork.left && after.top >= monitor.rcWork.top && after.right <= monitor.rcWork.right && after.bottom <= monitor.rcWork.bottom,
         "placement clamped to monitor working area");
     VoiceToolbarTestAccess::DpiChecks(toolbar, failures);
+    toolbar.SetEligible(false); toolbar.SetState(VoiceToolbarState::Recording);
+    check(!IsWindowVisible(window) && !IsWindowVisible(tip) && !IsWindowVisible(notice), "late recording callback cannot show an ineligible notice alone");
+    PositionTrace visibility; visibility.main = window; trace = &visibility;
+    visibility.previous = reinterpret_cast<WNDPROC>(SetWindowLongPtrW(tip, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(TracePosition)));
+    SetWindowLongPtrW(notice, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(TracePosition));
+    toolbar.SetEligible(true, nullptr, &editor);
+    SetWindowLongPtrW(tip, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(visibility.previous));
+    SetWindowLongPtrW(notice, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(visibility.previous)); trace = nullptr;
+    check(!visibility.orphanHint && IsWindowVisible(window) && IsWindowVisible(notice) && !IsWindowVisible(tip),
+        "pre-existing recording appears only after the main HWND is actually visible");
+    SendMessageW(window, WM_MOUSEMOVE, 0, VoiceToolbarTestAccess::Point(toolbar, 74, 22)); SendMessageW(window, WM_TIMER, 2, 0);
+    check(IsWindowVisible(tip), "visible main can show its hover hint");
+    ShowWindow(window, SW_HIDE);
+    toolbar.SetState(VoiceToolbarState::Connecting); SendMessageW(window, WM_TIMER, 2, 0); Click(toolbar);
+    check(!IsWindowVisible(window) && !IsWindowVisible(tip) && !IsWindowVisible(notice) && harness.toggles == 4,
+        "actual ShowWindow hide also hides attached windows; late status/hover/click cannot resurrect them");
+    GetWindowRect(window, &before);
+    visibility.orphanHint = false; trace = &visibility;
+    visibility.previous = reinterpret_cast<WNDPROC>(SetWindowLongPtrW(tip, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(TracePosition)));
+    SetWindowLongPtrW(notice, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(TracePosition));
+    toolbar.SetEligible(true, nullptr, &editor); // Eligibility alone must repair the hidden main before showing its status.
+    GetWindowRect(window, &after);
+    check(!visibility.orphanHint && IsWindowVisible(window) && IsWindowVisible(notice) && !IsWindowVisible(tip) &&
+        VoiceToolbarTestAccess::NoticeText(toolbar) == L"正在连接 · F8 停止" && EqualRect(&before, &after),
+        "eligible refresh restores hidden main before attached status at the same position without stale hover");
+    for (int i = 0; i < 2; ++i) toolbar.SetEligible(true, nullptr, &editor);
+    GetWindowRect(window, &after);
+    SetWindowLongPtrW(tip, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(visibility.previous));
+    SetWindowLongPtrW(notice, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(visibility.previous)); trace = nullptr;
+    check(!visibility.orphanHint && IsWindowVisible(window) && IsWindowVisible(notice) && !IsWindowVisible(tip) && EqualRect(&before, &after),
+        "subsequent eligible polls retain restored main and status without reanchoring or stale hover");
+    SendMessageW(window, WM_MOUSELEAVE, 0, 0);
+    SendMessageW(window, WM_MOUSEMOVE, 0, VoiceToolbarTestAccess::Point(toolbar, 74, 22)); SendMessageW(window, WM_TIMER, 2, 0);
+    RECT bubble{}; GetWindowRect(tip, &bubble); GetWindowRect(window, &after);
+    const LONG tailPixel = VoiceToolbarTestAccess::TailPixel(toolbar);
+    std::printf("TAIL bubble-left=%ld offset=%ld microphone-x=%ld\n", bubble.left, tailPixel, after.left + MulDiv(74, ActualDpi(window), 96));
+    check(IsWindowVisible(tip) && tailPixel >= MulDiv(17, ActualDpi(window), 96) &&
+        tailPixel <= bubble.right - bubble.left - MulDiv(17, ActualDpi(window), 96) &&
+        std::abs(bubble.left + tailPixel - after.left - MulDiv(74, ActualDpi(window), 96)) <= 1,
+        "clamped hover bubble's downward tail, not its window center, points to the microphone");
+    SetWindowPos(window, nullptr, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOZORDER | SWP_HIDEWINDOW);
+    check(!IsWindowVisible(tip) && !IsWindowVisible(notice), "native SetWindowPos hide synchronously hides both attachments");
+    toolbar.SetEligible(false); toolbar.SetState(VoiceToolbarState::Idle); toolbar.SetEligible(true, nullptr, &editor);
+    toolbar.SetState(VoiceToolbarState::Idle, false, true); GetWindowTextW(notice, text, 128);
+    check(IsWindowVisible(window) && IsWindowVisible(notice) && wcscmp(text, L"语音连接失败，请按 F8 重试") == 0,
+        "friendly error preserves full Chinese text in its measured chip");
+    toolbar.SetState(VoiceToolbarState::Recording); Toggle(&harness); // Simulated F8 invokes the exact callback used by Click.
+    check(harness.toggles == 5 && VoiceToolbarTestAccess::State(toolbar) == VoiceToolbarState::Idle &&
+        VoiceToolbarTestAccess::NoticeText(toolbar) == L"录音已停止", "shared F8 callback stops synchronously just like the mic click");
+    VoiceToolbar disposable; Harness closing{&disposable, 0, true};
+    check(disposable.Create(instance, Toggle, &closing), "callback teardown fixture created");
+    disposable.SetEligible(true, nullptr, &editor); const HWND closingWindow = disposable.Handle(); Click(disposable);
+    check(closing.toggles == 1 && !IsWindow(closingWindow) && !disposable.Handle(), "mic callback can destroy its toolbar without later access");
     check(GetForegroundWindow() == front && GetActiveWindow() == active && GetFocus() == focus,
-        "show/hover/click/drag/animation leave foreground, active window and keyboard focus unchanged");
+        "show/hide/hover/click/stop/drag/late callback/teardown leave foreground, active window and keyboard focus unchanged");
     if (preview) {
         VoiceToolbarTestAccess::Place(toolbar, {editor.left + 20, editor.bottom - 80});
         std::puts("PREVIEW 10 seconds, simulated UI states only; no registration/audio/cloud; no focus requests");

@@ -4,3 +4,7 @@ EXPORTS
     DllCanUnloadNow=_DllCanUnloadNow@0 PRIVATE
     DllRegisterServer=_DllRegisterServer@0 PRIVATE
     DllUnregisterServer=_DllUnregisterServer@0 PRIVATE
+    VoiceImeToolbarCreate=_VoiceImeToolbarCreate@8
+    VoiceImeToolbarUpdate=_VoiceImeToolbarUpdate@20
+    VoiceImeToolbarRun=_VoiceImeToolbarRun@4
+    VoiceImeToolbarClose=_VoiceImeToolbarClose@4

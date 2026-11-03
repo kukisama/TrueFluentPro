@@ -1,7 +1,6 @@
 #include <initguid.h> // inputscope.h DEFINE_GUID values need exactly one defining translation unit.
 #include "Common.h"
 #include "NativeInstallPath.h"
-#include "VoiceToolbar.h"
 #include <algorithm>
 #include "ThirdParty/libIME2/src/ImeModule.h"
 #include "ThirdParty/libIME2/src/TextService.h"
@@ -29,6 +28,8 @@ class Edit final : public ITfEditSession {
     EditKind kind;
     char frame;
     std::wstring text;
+    uint64_t audioEpoch;
+    std::shared_ptr<PipeRun> connection;
 public:
     Edit(Service*, ITfContext*, uint64_t, EditKind, char, std::wstring);
     ~Edit();
@@ -92,7 +93,9 @@ bool Text(ITfRange* range, TfEditCookie cookie, std::wstring& result) {
         if (count < 512) return true;
     }
 }
-class Service final : public Ime::TextService, public ITfThreadFocusSink, public ITfStatusSink {
+class Service final : public Ime::TextService, public ITfThreadFocusSink, public ITfStatusSink,
+    public ITfInputProcessorProfileActivationSink {
+    friend class Edit;
 #ifdef VOICE_IME_OFFLINE_TEST
     friend struct OfflineEditAccess; // Only the standalone test EXE can inject offline text under a real TSF lock.
 #endif
@@ -103,19 +106,38 @@ class Service final : public Ime::TextService, public ITfThreadFocusSink, public
     ComPtr<ITfRange> owned;
     TfClientId client = TF_CLIENTID_NULL;
     DWORD focusCookie = TF_INVALID_COOKIE;
+    DWORD profileCookie = TF_INVALID_COOKIE;
     DWORD editCookie = TF_INVALID_COOKIE, statusCookie = TF_INVALID_COOKIE;
     bool foreground = false, active = false, listening = false;
     HRESULT activationResult = S_OK;
     ITfContext* keyContext = nullptr; // Borrowed only for a synchronous framework key dispatch.
     bool suppressSentence = false, ownEdit = false, probePending = false;
+    bool targetBound = false, selectedAnnounced = false;
+    uint64_t audioEpoch = 0;
     KeyLatch latch;
     uint64_t generation = 0;
     HWND window{};
-    VoiceToolbar toolbar;
     bool dispatcherClassRegistered = false;
     std::wstring windowClass;
     std::wstring lastText;
     std::shared_ptr<PipeRun> run;
+
+    void EnsureConnection() {
+        if (run || !window || InstallationMaintenanceActive()) return;
+        auto pipe = NewPipeName();
+        if (pipe.empty()) return;
+        ++generation; audioEpoch = 0; selectedAnnounced = false;
+        run = std::make_shared<PipeRun>(generation, window, std::move(pipe));
+        if (!StartPipeWorker(run)) run.reset();
+    }
+    void Disconnect() {
+        if (run) {
+            SetEvent(run->cancel);
+            { std::lock_guard<std::mutex> guard(run->delivery); run->target = nullptr; }
+            run.reset();
+        }
+        selectedAnnounced = false;
+    }
 
     static LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l) {
         Service* self = reinterpret_cast<Service*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
@@ -129,15 +151,9 @@ class Service final : public Ime::TextService, public ITfThreadFocusSink, public
             return 0;
         }
         if (self && msg == WM_TIMER) {
-            if (self->active) {
-                if (InstallationMaintenanceActive()) { self->Stop(false); return 0; }
-                self->RefreshContext();
-                if (self->run && self->run->done && self->run->pending == 0) self->Stop(true);
-                else if (!self->CheapAllowed(self->context.Get())) self->Stop(false);
-                else if (!self->probePending) { self->probePending = true; self->Request(EditKind::Probe); }
-            }
-            // Selection/foreground visibility is independent of the recording flag.
-            self->UpdateToolbar();
+            if (InstallationMaintenanceActive()) { self->Stop(false); return 0; }
+            if (self->run && self->run->done && self->run->pending == 0) self->Stop(true);
+            self->RefreshContext();
             return 0;
         }
         return DefWindowProcW(hwnd, msg, w, l);
@@ -149,11 +165,7 @@ class Service final : public Ime::TextService, public ITfThreadFocusSink, public
         if (!RegisterClassW(&cls)) return false;
         dispatcherClassRegistered = true;
         window = CreateWindowExW(0, cls.lpszClassName, L"", 0, 0, 0, 0, 0, HWND_MESSAGE, nullptr, ModuleInstance, this);
-        if (!window || !toolbar.Create(ModuleInstance, [](void* owner) {
-            auto* self = static_cast<Service*>(owner); self->AddRef();
-            try { self->ToggleRecording(); } catch (...) { self->Stop(true); }
-            self->Release();
-        }, this) || !SetTimer(window, 1, 500, nullptr)) {
+        if (!window || !SetTimer(window, 1, 500, nullptr)) {
             DestroyWindows(); return false;
         }
         return true;
@@ -161,7 +173,6 @@ class Service final : public Ime::TextService, public ITfThreadFocusSink, public
         DestroyWindows(); return false;
     }
     void DestroyWindows() {
-        toolbar.Destroy();
         if (window) {
             KillTimer(window, 1);
             MSG msg{}; while (PeekMessageW(&msg, window, FrameMessage, FrameMessage, PM_REMOVE)) delete reinterpret_cast<Frame*>(msg.lParam);
@@ -170,37 +181,40 @@ class Service final : public Ime::TextService, public ITfThreadFocusSink, public
         if (dispatcherClassRegistered) UnregisterClassW(windowClass.c_str(), ModuleInstance);
         dispatcherClassRegistered = false; windowClass.clear();
     }
-    bool SelectedForeground(ITfContext* candidate) {
+    bool ForegroundProcess() {
         const HWND front = GetForegroundWindow();
         DWORD frontProcess = 0;
         if (front) GetWindowThreadProcessId(front, &frontProcess);
-        if (InstallationMaintenanceActive() || !foreground || !front ||
-            frontProcess != GetCurrentProcessId() || !Current(candidate)) return false;
+        if (InstallationMaintenanceActive() || !front ||
+            frontProcess != GetCurrentProcessId()) return false;
+        return true;
+    }
+    bool ActualForeground() {
+        if (!ForegroundProcess()) return false;
+        BOOL focused = FALSE;
+        if (!manager || FAILED(manager->IsThreadFocus(&focused)) || !focused) return false;
+        return true;
+    }
+    bool SelectedForeground() {
+        if (!ActualForeground()) return false;
         TF_INPUTPROCESSORPROFILE selected{};
         return profiles && profiles->GetActiveProfile(GUID_TFCAT_TIP_KEYBOARD, &selected) == S_OK &&
             selected.dwProfileType == TF_PROFILETYPE_INPUTPROCESSOR && selected.clsid == VoiceClsid &&
             selected.guidProfile == VoiceProfile && selected.langid == 0x0804;
     }
     void UpdateToolbar(bool stopped = false, bool error = false) {
-        // Also require the actual app in the foreground; TSF Current verifies its focused thread.
-        // Multi-UI-thread hosts need not own the top-level foreground HWND on this exact thread.
-        // Stale TSF focus alone
-        // must not leave a toolbar over another app. Never change the host's DPI mode.
-        const bool visible = !isUiLess() && SelectedForeground(context.Get());
-        HWND editor{}; RECT area{}; ComPtr<ITfContextView> view;
-        if (visible && SUCCEEDED(context->GetActiveView(&view)) && view) {
-            view->GetWnd(&editor); view->GetScreenExt(&area);
-            // GetTextExt is deliberately not used here: no read edit cookie is held.
-        }
-        toolbar.SetEligible(visible, editor, &area);
-        toolbar.SetState(active ? (listening ? VoiceToolbarState::Recording : VoiceToolbarState::Connecting) :
-            VoiceToolbarState::Idle, stopped, error);
+        (void)stopped; (void)error;
+        // Shared owner alone presents UI. L is independent of context/editability.
+        if (!selectedAnnounced && run && SelectedForeground())
+            selectedAnnounced = SendSharedCommand(run, 'L', generation);
     }
     void ToggleRecording() {
-        if (active) { Stop(false); return; } // Immediate cancellation, never wait for an edit lock.
+        if (active) {
+            if (SelectedForeground()) SendSharedCommand(run, 'T', generation);
+            return; // Stop never requires an editable target.
+        }
         RefreshContext();
         if (!CheapAllowed(context.Get())) { UpdateToolbar(); return; }
-        active = true; listening = false; suppressSentence = false; ++generation;
         UpdateToolbar(); Request(EditKind::Start);
     }
     bool Current(ITfContext* candidate) {
@@ -210,7 +224,7 @@ class Service final : public Ime::TextService, public ITfThreadFocusSink, public
             SUCCEEDED(manager->GetFocus(&doc)) && doc && SUCCEEDED(doc->GetTop(&top)) && Same(top.Get(), candidate);
     }
     bool CheapAllowed(ITfContext* candidate) {
-        if (!SelectedForeground(candidate)) return false;
+        if (!SelectedForeground() || !Current(candidate)) return false;
         TF_STATUS state{};
         if (FAILED(candidate->GetStatus(&state)) || (state.dwDynamicFlags & TF_SD_READONLY)) return false;
         for (IUnknown* object : {static_cast<IUnknown*>(candidate), static_cast<IUnknown*>(manager.Get())})
@@ -237,7 +251,7 @@ class Service final : public Ime::TextService, public ITfThreadFocusSink, public
                         if (scopes[i] == IS_PASSWORD || scopes[i] == IS_NUMERIC_PASSWORD || scopes[i] == IS_PRIVATE ||
                             scopes[i] == IS_NUMERIC_PIN || scopes[i] == IS_ALPHANUMERIC_PIN) denied = true;
                     CoTaskMemFree(scopes);
-                }
+                } else denied = true;
             }
             VariantClear(&value);
             if (denied) return false;
@@ -251,19 +265,26 @@ class Service final : public Ime::TextService, public ITfThreadFocusSink, public
         return true;
     }
     void RefreshContext() {
+        if (SelectedForeground()) EnsureConnection();
         ComPtr<ITfDocumentMgr> doc; ComPtr<ITfContext> next;
         if (manager && SUCCEEDED(manager->GetFocus(&doc)) && doc) doc->GetTop(&next);
-        if (Same(context.Get(), next.Get())) { UpdateToolbar(); return; }
-        Stop(false);
-        Unadvise(context.Get(), editCookie); Unadvise(context.Get(), statusCookie);
-        context = next;
-        if (context) {
-            if (FAILED(Advise(context.Get(), IID_ITfTextEditSink, static_cast<ITfTextEditSink*>(this), editCookie))) {
-                context.Reset(); UpdateToolbar(); return;
+        if (!Same(context.Get(), next.Get())) {
+            DropTarget();
+            Unadvise(context.Get(), editCookie); Unadvise(context.Get(), statusCookie);
+            context = next;
+            if (context) {
+                if (FAILED(Advise(context.Get(), IID_ITfTextEditSink, static_cast<ITfTextEditSink*>(this), editCookie))) {
+                    context.Reset(); UpdateToolbar(); return;
+                }
+                Advise(context.Get(), IID_ITfStatusSink, static_cast<ITfStatusSink*>(this), statusCookie);
             }
-            Advise(context.Get(), IID_ITfStatusSink, static_cast<ITfStatusSink*>(this), statusCookie);
         }
         UpdateToolbar();
+        if (!CheapAllowed(context.Get())) {
+            if (targetBound || probePending || composition) DropTarget();
+        } else if (run && !probePending) {
+            probePending = true; Request(EditKind::Probe);
+        }
     }
     void FinishComposition() {
         auto old = composition; composition.Reset(); owned.Reset(); lastText.clear();
@@ -272,35 +293,45 @@ class Service final : public Ime::TextService, public ITfThreadFocusSink, public
             if (edit) { HRESULT result{}; context->RequestEditSession(client, edit, TF_ES_ASYNC | TF_ES_READWRITE, &result); edit->Release(); }
         }
     }
-    void Stop(bool error) {
-        const bool wasActive = active;
-        active = false; listening = false; probePending = false; ++generation;
-        if (run) {
-            SetEvent(run->cancel);
-            { std::lock_guard<std::mutex> guard(run->delivery); run->target = nullptr; }
-            run.reset();
-        }
+    void DropTarget() {
+        const uint64_t old = generation;
+        const bool bound = targetBound;
+        ++generation; targetBound = false; probePending = false;
         FinishComposition(); suppressSentence = false;
-        UpdateToolbar(wasActive && !error, error);
+        if (bound) SendSharedCommand(run, 'U', old);
+    }
+    void Stop(bool error) {
+        (void)error;
+        DropTarget();
+        Disconnect();
+        active = false; listening = false; selectedAnnounced = false;
     }
     HRESULT Request(EditKind kind, char frame = 0, std::wstring text = {}) {
-        if (!context) { Stop(false); return E_FAIL; }
+        if (!context) { DropTarget(); return E_FAIL; }
         auto* edit = new (std::nothrow) Edit(this, context.Get(), generation, kind, frame, std::move(text));
-        if (!edit) { Stop(true); return E_OUTOFMEMORY; }
+        if (!edit) { DropTarget(); return E_OUTOFMEMORY; }
         HRESULT result{};
         HRESULT hr = context->RequestEditSession(client, edit, TF_ES_ASYNC | TF_ES_READWRITE, &result);
         edit->Release();
-        if (FAILED(hr) || FAILED(result)) { Stop(true); return FAILED(hr) ? hr : result; }
+        if (FAILED(hr) || FAILED(result)) { DropTarget(); return FAILED(hr) ? hr : result; }
         return S_OK;
     }
     void Receive(const Frame& frame) {
-        if (!active || frame.run != run || frame.run->generation != generation) return;
+        if (frame.run != run) return;
         if (InstallationMaintenanceActive()) { Stop(false); return; }
-        if (!Current(context.Get())) { Stop(false); return; }
-        if (frame.kind == 'E') { Stop(true); return; }
-        if (frame.kind == 'S') { Stop(false); return; }
-        if (frame.kind == 'R') { listening = true; UpdateToolbar(); return; }
-        if (listening) Request(EditKind::Result, frame.kind, frame.text);
+        if (!ExtendedValidKind(frame.kind) || frame.audioEpoch < audioEpoch) return;
+        if (frame.kind != 'P' && frame.kind != 'F') {
+            if (frame.targetGeneration != 0) return;
+            if (frame.audioEpoch != audioEpoch) { FinishComposition(); suppressSentence = false; }
+            audioEpoch = frame.audioEpoch;
+            active = frame.kind == 'C' || frame.kind == 'R'; listening = frame.kind == 'R';
+            // Status synchronizes even background peers, never changes shared target/audio.
+            UpdateToolbar(); return;
+        }
+        if (!targetBound || frame.targetGeneration != generation || frame.audioEpoch != audioEpoch ||
+            frame.audioEpoch != run->audioEpoch.load() || !listening) return;
+        if (!CheapAllowed(context.Get())) { DropTarget(); return; }
+        Request(EditKind::Result, frame.kind, frame.text);
     }
     HRESULT Replace(TfEditCookie cookie, char frame, const std::wstring& text) {
         bool final = frame == 'F';
@@ -355,12 +386,13 @@ class Service final : public Ime::TextService, public ITfThreadFocusSink, public
 public:
     explicit Service(Ime::ComPtr<VoiceModule> module = Ime::ComPtr<VoiceModule>::make())
         : Ime::TextService(module) { ++ModuleObjects; }
-    ~Service() override { DestroyWindows(); --ModuleObjects; }
+    ~Service() override { Stop(false); DestroyWindows(); --ModuleObjects; }
     using Ime::TextService::OnSetFocus;
     STDMETHODIMP QueryInterface(REFIID id, void** out) override {
         if (!out) return E_POINTER; *out = nullptr;
         if (id == IID_ITfThreadFocusSink) *out = static_cast<ITfThreadFocusSink*>(this);
         else if (id == IID_ITfStatusSink) *out = static_cast<ITfStatusSink*>(this);
+        else if (id == IID_ITfInputProcessorProfileActivationSink) *out = static_cast<ITfInputProcessorProfileActivationSink*>(this);
         else return Ime::TextService::QueryInterface(id, out);
         AddRef(); return S_OK;
     }
@@ -383,36 +415,51 @@ public:
         // libIME2 owns the thread/key/compartment sinks. Only bridge the missing
         // thread-focus notification; context edit/status sinks have one owner below.
         if (SUCCEEDED(activationResult)) activationResult = Advise(manager.Get(), IID_ITfThreadFocusSink, static_cast<ITfThreadFocusSink*>(this), focusCookie);
+        if (SUCCEEDED(activationResult)) activationResult = Advise(manager.Get(), IID_ITfInputProcessorProfileActivationSink,
+            static_cast<ITfInputProcessorProfileActivationSink*>(this), profileCookie);
         if (FAILED(activationResult)) return;
         BOOL focused = FALSE; manager->IsThreadFocus(&focused); foreground = focused != FALSE;
+        // Connection exists while idle. Never wait for F8 or a document context.
+        EnsureConnection();
         RefreshContext();
     }
     void onDeactivate() override {
         foreground = false; Stop(false); latch.down = false;
         Unadvise(context.Get(), editCookie); Unadvise(context.Get(), statusCookie); context.Reset();
         Unadvise(manager.Get(), focusCookie);
+        Unadvise(manager.Get(), profileCookie);
         manager.Reset(); profiles.Reset(); client = TF_CLIENTID_NULL; keyContext = nullptr;
         DestroyWindows();
     }
-    void onSetFocus() override { foreground = true; RefreshContext(); }
-    void onKillFocus() override { foreground = false; latch.down = false; Stop(false); }
+    void onSetFocus() override { foreground = true; selectedAnnounced = false; EnsureConnection(); RefreshContext(); }
+    void onKillFocus() override { foreground = false; latch.down = false; DropTarget(); }
     void onLangProfileActivated(REFGUID profile) override {
         if (profile == VoiceProfile && manager) {
             BOOL focused = FALSE; manager->IsThreadFocus(&focused); foreground = focused != FALSE;
             RefreshContext();
         }
     }
-    void onLangProfileDeactivated(REFGUID profile) override { if (profile == VoiceProfile) onKillFocus(); }
+    void onLangProfileDeactivated(REFGUID profile) override {
+        if (profile != VoiceProfile) return;
+        TF_INPUTPROCESSORPROFILE current{};
+        if (ForegroundProcess() && profiles &&
+            profiles->GetActiveProfile(GUID_TFCAT_TIP_KEYBOARD, &current) == S_OK &&
+            !(current.dwProfileType == TF_PROFILETYPE_INPUTPROCESSOR && current.clsid == VoiceClsid &&
+                current.guidProfile == VoiceProfile && current.langid == 0x0804))
+            SendSharedCommand(run, 'D', generation);
+        selectedAnnounced = false; latch.down = false; DropTarget();
+    }
     void onCompartmentChanged(REFGUID compartment) override {
         Ime::TextService::onCompartmentChanged(compartment);
-        if (active && !CheapAllowed(context.Get())) Stop(false);
+        if (!CheapAllowed(context.Get())) DropTarget();
         UpdateToolbar();
     }
     bool keyEventsNeedEditSession() const override { return false; }
-    bool filterKeyDown(Ime::KeyEvent& key) override { return latch.TestDown(CheapAllowed(keyContext), key.keyCode()); }
+    bool KeyEligible() { return active ? SelectedForeground() : CheapAllowed(keyContext); }
+    bool filterKeyDown(Ime::KeyEvent& key) override { return latch.TestDown(KeyEligible(), key.keyCode()); }
     bool onKeyDown(Ime::KeyEvent& key, Ime::EditSession*) override {
         bool toggle = false;
-        bool eaten = latch.Press(CheapAllowed(keyContext), key.keyCode(), key.lParam(), toggle);
+        bool eaten = latch.Press(KeyEligible(), key.keyCode(), key.lParam(), toggle);
         if (toggle) ToggleRecording();
         return eaten;
     }
@@ -433,14 +480,37 @@ public:
     STDMETHODIMP OnSetThreadFocus() override { onSetFocus(); return S_OK; }
     STDMETHODIMP OnKillThreadFocus() override { onKillFocus(); return S_OK; }
     STDMETHODIMP OnStatusChange(ITfContext* c, DWORD) override {
-        if (active && !CheapAllowed(c)) Stop(false);
+        if (Same(c, context.Get()) && !CheapAllowed(c)) DropTarget();
         UpdateToolbar(); return S_OK;
+    }
+    using Ime::TextService::OnActivated;
+    STDMETHODIMP OnActivated(DWORD type, LANGID language, REFCLSID clsid, REFGUID category,
+        REFGUID profile, HKL hkl, DWORD flags) override {
+        AddRef(); // Advice/callback teardown cannot delete the current call's receiver.
+        if ((flags & TF_IPSINK_FLAG_ACTIVE) && ForegroundProcess() && profiles &&
+            ((type == TF_PROFILETYPE_INPUTPROCESSOR && category == GUID_TFCAT_TIP_KEYBOARD) ||
+                (type == TF_PROFILETYPE_KEYBOARDLAYOUT && hkl))) {
+            TF_INPUTPROCESSORPROFILE current{};
+            if (profiles->GetActiveProfile(GUID_TFCAT_TIP_KEYBOARD, &current) == S_OK &&
+                current.dwProfileType == type && current.langid == language && current.clsid == clsid &&
+                current.guidProfile == profile && (type != TF_PROFILETYPE_KEYBOARDLAYOUT || current.hkl == hkl)) {
+                if (type == TF_PROFILETYPE_INPUTPROCESSOR && clsid == VoiceClsid && profile == VoiceProfile && language == 0x0804) {
+                    selectedAnnounced = false; RefreshContext();
+                } else {
+                    // Only a confirmed current foreground other IME is D; kill-focus is just U.
+                    SendSharedCommand(run, 'D', generation); selectedAnnounced = false; DropTarget();
+                }
+            }
+        }
+        Release(); return S_OK;
     }
     STDMETHODIMP OnCompositionTerminated(TfEditCookie, ITfComposition* c) override {
         if (Same(c, composition.Get())) { composition.Reset(); owned.Reset(); lastText.clear(); suppressSentence = true; }
         return S_OK;
     }
     STDMETHODIMP OnEndEdit(ITfContext* c, TfEditCookie cookie, ITfEditRecord* record) override {
+        if (!Same(c, context.Get())) return S_OK;
+        if (targetBound && !Allowed(cookie)) { DropTarget(); return S_OK; }
         BOOL mine = FALSE;
         if (ownEdit || (SUCCEEDED(c->InWriteSession(client, &mine)) && mine) || !owned) return S_OK;
         bool touched = false;
@@ -461,29 +531,35 @@ public:
         // Selection changes alone intentionally do not stop dictation or move the caret.
         return S_OK;
     }
-    HRESULT Execute(ITfContext* c, uint64_t g, EditKind kind, char frame, const std::wstring& text, TfEditCookie cookie) {
-        if (!active || g != generation || !Same(c, context.Get())) return S_OK;
+    HRESULT Execute(ITfContext* c, uint64_t g, EditKind kind, char frame, const std::wstring& text,
+        TfEditCookie cookie, uint64_t epoch, const std::shared_ptr<PipeRun>& connection) {
+        if (g != generation || !Same(c, context.Get()) || connection != run) return S_OK;
         if (kind == EditKind::Probe) probePending = false;
-        if (!Allowed(cookie)) { Stop(false); return S_OK; }
-        if (kind == EditKind::Start) {
-            auto pipe = NewPipeName();
-            if (pipe.empty()) { Stop(true); return E_FAIL; }
-            run = std::make_shared<PipeRun>(generation, window, std::move(pipe));
-            if (!StartPipeWorker(run)) { Stop(true); return E_FAIL; }
+        if (kind == EditKind::Result && (!targetBound || !listening || !run || epoch != audioEpoch ||
+            epoch != run->audioEpoch.load() || (frame != 'P' && frame != 'F'))) return S_OK;
+        if (!Allowed(cookie)) { DropTarget(); return S_OK; }
+        if (kind == EditKind::Start || kind == EditKind::Probe) {
+            if (!run) return S_OK;
+            // Reassert the safe foreground target before every start toggle.
+            // Repeated B for the same peer/generation is a host-side no-op.
+            if (!targetBound || kind == EditKind::Start) {
+                targetBound = SendSharedCommand(run, 'B', generation);
+                if (!targetBound) return E_FAIL;
+            }
+            if (kind == EditKind::Start) SendSharedCommand(run, 'T', generation);
             return S_OK;
         }
-        if (kind == EditKind::Probe) return S_OK;
         HRESULT hr = Replace(cookie, frame, text);
-        if (FAILED(hr)) Stop(true);
+        if (FAILED(hr)) DropTarget();
         return hr;
     }
 };
 Ime::TextService* VoiceModule::createTextService() { return new Service(Ime::ComPtr<VoiceModule>(this)); }
 Edit::Edit(Service* s, ITfContext* c, uint64_t g, EditKind k, char f, std::wstring t)
-    : owner(s), context(c), generation(g), kind(k), frame(f), text(std::move(t)) { owner->AddRef(); ++ModuleObjects; }
+    : owner(s), context(c), generation(g), kind(k), frame(f), text(std::move(t)), audioEpoch(s->audioEpoch), connection(s->run) { owner->AddRef(); ++ModuleObjects; }
 Edit::~Edit() { owner->Release(); --ModuleObjects; }
 HRESULT Edit::DoEditSession(TfEditCookie cookie) {
-    try { return owner->Execute(context.Get(), generation, kind, frame, text, cookie); }
+    try { return owner->Execute(context.Get(), generation, kind, frame, text, cookie, audioEpoch, connection); }
     catch (...) { return E_OUTOFMEMORY; }
 }
 class Factory final : public IClassFactory {

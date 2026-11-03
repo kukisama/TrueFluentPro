@@ -41,6 +41,8 @@ private:
     bool eligible_ = false, anchored_ = false, hovered_ = false, pressed_ = false;
     bool dragging_ = false, placing_ = false, classRegistered_ = false;
     bool dpiPending_ = false, placingHints_ = false;
+    bool tooltipReady_ = false, noticeError_ = false;
+    float tooltipTail_ = 0; // Main microphone center in the positioned tooltip's DIPs.
     RECT dpiSuggested_{};
     POINT position_{}, dragPoint_{};
     struct { float x{}, y{}; } dragOffset_; // DIPs, not pixels from the previous monitor.
@@ -66,5 +68,6 @@ private:
     void PaintSurface(Gdiplus::Graphics& graphics, int width, int height, const wchar_t* text, bool status) const;
     bool Render(HWND target, int width, int height, const wchar_t* text = nullptr, bool status = false);
     void RenderMain();
+    void HideHints();
     void RenderHints();
 };

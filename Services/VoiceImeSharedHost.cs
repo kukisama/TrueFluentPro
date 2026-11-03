@@ -1,0 +1,591 @@
+using System;
+using System.Buffers.Binary;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Globalization;
+using System.IO;
+using System.IO.Pipes;
+using System.Linq;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Security.Principal;
+using System.Text;
+using System.Threading;
+using System.Threading.Channels;
+using System.Threading.Tasks;
+using Microsoft.Win32;
+using TrueFluentPro.Models;
+
+namespace TrueFluentPro.Services;
+
+public static partial class VoiceImeHost
+{
+    private static async Task<int> RunSharedAsync()
+    {
+        try
+        {
+            using var identity = WindowsIdentity.GetCurrent();
+            var sid = identity.User?.Value ?? throw new IOException();
+            using var process = Process.GetCurrentProcess();
+            var name = $"TrueFluentPro.VoiceIme.Shared.{process.SessionId}.{sid}";
+            var directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "TrueFluentPro", "VoiceIme");
+            var ownerPath = Path.Combine(directory, "owner.lock");
+            VoiceImeMaintenance.GuardPath(ownerPath);
+            using var lifetime = new CancellationTokenSource();
+            VoiceImeMaintenance.Check(VoiceImeMaintenance.GatePath, lifetime);
+            Directory.CreateDirectory(directory);
+            FileStream owner;
+            try { owner = new FileStream(ownerPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None); }
+            catch (IOException) { return 0; } // 已有 owner，由 native 连接同一个确定性 pipe
+            using (owner)
+            {
+                VoiceImeMaintenance.Check(VoiceImeMaintenance.GatePath, lifetime);
+                VoiceImeMaintenance.RecordHost(directory); // Idle 也必须被维护发现
+                var resolver = new SpeechResourceRuntimeResolver(new ModelRuntimeResolver());
+                var tokens = new AzureTokenProviderStore();
+                var authentication = new SharedAuthentication(process.SessionId, process.MainModule!.FileName);
+                await using var session = new MainSharedSession(name, VoiceImeMaintenance.GatePath,
+                    authentication.Authenticate, authentication.Foreground, LoadConfigurationAsync,
+                    config => new ChatVoiceInputFactory(resolver, new RealtimeConnectionSpecResolver(), tokens,
+                        useConfiguredLanguage: true, endSilenceTimeoutSeconds: config.VoiceIme.EndSilenceTimeoutSeconds).Create(config),
+                    Path.Combine(directory, "microphone.lock"), callback => new VoiceImeToolbar(callback), lifetime.Token);
+                return await session.RunAsync().ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException) { return 0; }
+        catch { return 1; } // 不回显云 URL、密钥、识别正文或认证详情
+    }
+
+    // 明确 fixture seam；不读取用户 owner/config、不加载 native，不接受任何生产开关。
+    internal static async Task<int> RunSharedFixtureAsync(string name, string gate,
+        Func<NamedPipeServerStream, uint, bool> authenticate, Func<NamedPipeServerStream, uint, bool> foreground,
+        Func<Task<AzureSpeechConfig>> load, Func<AzureSpeechConfig, IChatVoiceInputSession> create,
+        Action<Action<int, int>> attachUi, Action<bool, int, bool, bool> updateUi, Action closeUi,
+        Task uiClosed, CancellationToken token)
+    {
+        await using var session = new MainSharedSession(name, gate, authenticate, foreground, load, create,
+            null, callback => new FixtureToolbar(callback, attachUi, updateUi, closeUi, uiClosed), token);
+        return await session.RunAsync().ConfigureAwait(false);
+    }
+
+    private sealed class FixtureToolbar : IVoiceImeToolbar
+    {
+        private readonly Action<bool, int, bool, bool> _update;
+        private readonly Action _close;
+        private int _closed;
+        public FixtureToolbar(Action<int, int> callback, Action<Action<int, int>> attach,
+            Action<bool, int, bool, bool> update, Action close, Task completion)
+        { _update = update; _close = close; Completion = completion; attach(callback); }
+        public Task Ready => Task.CompletedTask;
+        public Task Completion { get; }
+        public void Update(bool visible, int state, bool stopped, bool error) => _update(visible, state, stopped, error);
+        public void Close() { if (Interlocked.Exchange(ref _closed, 1) == 0) _close(); }
+        public ValueTask DisposeAsync() { Close(); return new ValueTask(Completion); }
+    }
+
+    /// <summary>只协调本输入法的 owner、当前 peer/generation 与一轮音频；不持有目标 HWND/COM。</summary>
+    private sealed class MainSharedSession : IAsyncDisposable
+    {
+        private static readonly UTF8Encoding StrictUtf8 = new(false, true);
+        private const string ErrorText = "语音输入已中断，请在主程序中检查语音资源和麦克风后重试。";
+        private readonly string _name, _gate;
+        private readonly string? _microphonePath;
+        private readonly Func<NamedPipeServerStream, uint, bool> _authenticate;
+        private readonly Func<NamedPipeServerStream, uint, bool> _foreground;
+        private readonly Func<Task<AzureSpeechConfig>> _load;
+        private readonly Func<AzureSpeechConfig, IChatVoiceInputSession> _create;
+        private readonly CancellationTokenSource _lifetime;
+        private readonly Channel<Action> _commands = Channel.CreateBounded<Action>(new BoundedChannelOptions(256)
+        { SingleReader = true, SingleWriter = false, FullMode = BoundedChannelFullMode.Wait });
+        private readonly HashSet<Peer> _peers = new(); // 仅 actor 访问
+        private readonly SemaphoreSlim _slots = new(64);
+        private readonly IVoiceImeToolbar _toolbar;
+        private readonly List<Task> _connections = new(); // 仅 accept loop 访问
+        private Task _actor = Task.CompletedTask, _accept = Task.CompletedTask, _monitor = Task.CompletedTask;
+        private Task _released = Task.CompletedTask;
+        private AudioRound? _audio;
+        private Target? _target;
+        private Target? _selection;
+        private long _epoch;
+        private string _sentence = "";
+        private int _boundary, _delivered;
+        private char _status = 'I';
+        private bool _visible, _stopped, _error;
+        private int _disposed;
+
+        public MainSharedSession(string name, string gate, Func<NamedPipeServerStream, uint, bool> authenticate,
+            Func<NamedPipeServerStream, uint, bool> foreground, Func<Task<AzureSpeechConfig>> load,
+            Func<AzureSpeechConfig, IChatVoiceInputSession> create, string? microphonePath,
+            Func<Action<int, int>, IVoiceImeToolbar> toolbar, CancellationToken token)
+        {
+            _name = name; _gate = gate; _authenticate = authenticate; _foreground = foreground;
+            _load = load; _create = create; _microphonePath = microphonePath;
+            _lifetime = CancellationTokenSource.CreateLinkedTokenSource(token);
+            _toolbar = toolbar((kind, value) => Post(() =>
+            {
+                if (kind == 1) Toggle(); // 与 T 完全相同，不激活目标窗口
+                else if (kind == 2 && value == 1) { _visible = true; UpdateUi(); }
+                else if (kind == 2 && value == 0) OtherIme(); // native ACTIVE 的独立实际依据
+            }));
+        }
+
+        public async Task<int> RunAsync()
+        {
+            _actor = ActorAsync();
+            _monitor = VoiceImeMaintenance.MonitorAsync(_gate, _lifetime, _lifetime.Token);
+            try
+            {
+                VoiceImeMaintenance.Check(_gate, _lifetime);
+                await _toolbar.Ready.WaitAsync(_lifetime.Token).ConfigureAwait(false);
+                _accept = AcceptAsync();
+                await Task.WhenAny(_accept, _actor, _toolbar.Completion,
+                    Task.Delay(Timeout.Infinite, _lifetime.Token)).ConfigureAwait(false);
+                return 0;
+            }
+            catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { return 0; }
+            catch { return 1; }
+            finally { _lifetime.Cancel(); }
+        }
+
+        private async Task ActorAsync()
+        {
+            try
+            {
+                await foreach (var command in _commands.Reader.ReadAllAsync(_lifetime.Token).ConfigureAwait(false))
+                    command();
+            }
+            catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
+            catch { _lifetime.Cancel(); }
+            finally
+            {
+                StopAudio();
+                _visible = false;
+                UpdateUi();
+                foreach (var peer in _peers) peer.Close();
+                _peers.Clear();
+                _toolbar.Close();
+            }
+        }
+
+        private void Post(Action action)
+        {
+            if (!_lifetime.IsCancellationRequested && !_commands.Writer.TryWrite(action)) _lifetime.Cancel();
+        }
+
+        private async Task SubmitAsync(Action action)
+        {
+            var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            await _commands.Writer.WriteAsync(() => { action(); done.TrySetResult(); }, _lifetime.Token).ConfigureAwait(false);
+            await done.Task.WaitAsync(_lifetime.Token).ConfigureAwait(false);
+        }
+
+        private async Task AcceptAsync()
+        {
+            try
+            {
+                while (!_lifetime.IsCancellationRequested)
+                {
+                    await _slots.WaitAsync(_lifetime.Token).ConfigureAwait(false);
+                    NamedPipeServerStream? pipe = null;
+                    try
+                    {
+                        pipe = new NamedPipeServerStream(_name, PipeDirection.InOut, NamedPipeServerStream.MaxAllowedServerInstances,
+                            PipeTransmissionMode.Byte, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+                        await pipe.WaitForConnectionAsync(_lifetime.Token).ConfigureAwait(false);
+                        _connections.RemoveAll(task => task.IsCompleted);
+                        _connections.Add(ServeAsync(pipe));
+                        pipe = null;
+                    }
+                    finally { if (pipe != null) { pipe.Dispose(); _slots.Release(); } }
+                }
+            }
+            catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
+            catch { _lifetime.Cancel(); }
+        }
+
+        private async Task ServeAsync(NamedPipeServerStream pipe)
+        {
+            Peer? peer = null;
+            Task writer = Task.CompletedTask;
+            try
+            {
+                using var handshake = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
+                handshake.CancelAfter(TimeSpan.FromSeconds(5));
+                var hello = await ReadFrameAsync(pipe, handshake.Token).ConfigureAwait(false);
+                if (hello.Kind != 'H' || !Decimal(hello.Text, out var thread) || thread is 0 or > uint.MaxValue
+                    || !_authenticate(pipe, (uint)thread)) return;
+                peer = new Peer(pipe, (uint)thread, _lifetime.Token);
+                writer = WritePeerAsync(peer);
+                await SubmitAsync(() => { _peers.Add(peer); Send(peer, _status, 0, ""); }).ConfigureAwait(false);
+                while (!peer.Token.IsCancellationRequested)
+                {
+                    var frame = await ReadFrameAsync(pipe, peer.Token).ConfigureAwait(false);
+                    if (frame.Kind is not ('L' or 'B' or 'U' or 'T' or 'D') || !Decimal(frame.Text, out var generation)) break;
+                    await SubmitAsync(() => Command(peer, frame.Kind, generation)).ConfigureAwait(false);
+                }
+            }
+            catch { } // EOF、认证/协议/写错误只关闭此 peer，绝不结束 owner/音频
+            finally
+            {
+                if (peer != null)
+                {
+                    peer.Close();
+                    try { await SubmitAsync(() => { _peers.Remove(peer); Unbind(peer, null); }).ConfigureAwait(false); } catch { }
+                    try { await writer.ConfigureAwait(false); } catch { }
+                    peer.Dispose();
+                }
+                pipe.Dispose();
+                _slots.Release();
+            }
+        }
+
+        private void Command(Peer peer, char kind, ulong generation)
+        {
+            if (!_peers.Contains(peer) || peer.Token.IsCancellationRequested) return;
+            if (kind == 'U') { Unbind(peer, generation); return; }
+            if (kind == 'D')
+            {
+                // A real deactivation can arrive after editing focus is already gone.
+                // Only the last selected peer may release it; never an older owner.
+                if (_selection is { } selected && selected.Peer == peer &&
+                    generation >= selected.Generation && generation >= peer.Generation)
+                    OtherIme();
+                return;
+            }
+            if (!SafeForeground(peer) || generation < peer.Generation) return;
+            if (kind == 'B' && generation == 0) return;
+            // 同一前台线程的旧连接不能用 D 撤掉新连接；跨应用真实前台 D 仍可停止。
+            if (kind == 'D' && _target is { } current && current.Peer != peer && SafeForeground(current.Peer)) return;
+            peer.Generation = generation;
+            if (kind != 'B' && _target is { } bound && bound.Peer == peer && bound.Generation != generation)
+                Unbind(peer, bound.Generation); // 新 L/T 不等于新 context 已经通过 Allowed/B
+            switch (kind)
+            {
+                case 'L': _selection = new Target(peer, generation); _visible = true; UpdateUi(); break;
+                case 'B':
+                    _selection = new Target(peer, generation);
+                    if (_target is { } old && old.Peer == peer && old.Generation == generation) return;
+                    _boundary = Math.Max(_sentence.Length, _delivered);
+                    Volatile.Write(ref _target, new Target(peer, generation));
+                    break;
+                case 'T': Toggle(); break;
+                case 'D': OtherIme(); break;
+            }
+        }
+
+        private bool SafeForeground(Peer peer)
+        {
+            try { return !peer.Token.IsCancellationRequested && _foreground(peer.Pipe, peer.Thread); }
+            catch { return false; }
+        }
+
+        private void Unbind(Peer peer, ulong? generation)
+        {
+            if (_target is not { } target || target.Peer != peer
+                || (generation.HasValue && target.Generation != generation.Value)) return;
+            Volatile.Write(ref _target, null);
+            _boundary = Math.Max(_sentence.Length, _delivered);
+        }
+
+        private void Toggle()
+        {
+            if (_audio != null) { StopAudio(); return; }
+            if (_target is not { } target || !SafeForeground(target.Peer)) return;
+            VoiceImeMaintenance.Check(_gate, _lifetime);
+            var round = new AudioRound(Interlocked.Increment(ref _epoch), _lifetime.Token);
+            _audio = round;
+            _sentence = ""; _boundary = _delivered = 0;
+            _status = 'C'; _stopped = _error = false;
+            Broadcast('C'); UpdateUi();
+            var previous = _released;
+            _released = Task.Run(() => RunAudioAsync(round, previous));
+        }
+
+        private void StopAudio()
+        {
+            if (_audio is not { } round) return;
+            _audio = null;
+            Interlocked.Increment(ref _epoch); // 先隔离回调，再取消；连接中的第二个 T 不等 StartAsync
+            round.Stop.Cancel();
+            _sentence = ""; _boundary = _delivered = 0;
+            _status = 'S'; _stopped = true;
+            Broadcast('S'); UpdateUi();
+        }
+
+        private void OtherIme()
+        {
+            StopAudio();
+            _selection = null;
+            Volatile.Write(ref _target, null);
+            _visible = false;
+            UpdateUi();
+        }
+
+        private async Task RunAudioAsync(AudioRound round, Task previous)
+        {
+            IChatVoiceInputSession? voice = null;
+            FileStream? microphone = null;
+            Task? starting = null;
+            Action<string, bool> text = (value, final) => Post(() => Recognized(round, value, final));
+            Action<string> failed = _ => Post(() => Failed(round));
+            var failure = false;
+            try
+            {
+                // 即使此轮在排队时也被取消，仍保留整条释放链，不允许第三轮跳过第一轮。
+                await previous.ConfigureAwait(false);
+                round.Stop.Token.ThrowIfCancellationRequested();
+                VoiceImeMaintenance.Check(_gate, _lifetime);
+                if (_microphonePath != null)
+                {
+                    VoiceImeMaintenance.GuardPath(_microphonePath);
+                    microphone = new FileStream(_microphonePath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+                }
+                var config = CreateRuntimeConfiguration(await _load().WaitAsync(round.Stop.Token).ConfigureAwait(false));
+                round.Stop.Token.ThrowIfCancellationRequested();
+                VoiceImeMaintenance.Check(_gate, _lifetime);
+                voice = _create(config);
+                voice.TextRecognized += text;
+                voice.Failed += failed;
+                starting = voice.StartAsync(round.Stop.Token);
+                await starting.WaitAsync(round.Stop.Token).ConfigureAwait(false);
+                Post(() =>
+                {
+                    if (!Current(round)) return;
+                    _status = 'R'; Broadcast('R'); UpdateUi();
+                });
+                await Task.Delay(Timeout.Infinite, round.Stop.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (round.Stop.IsCancellationRequested) { }
+            catch { failure = true; Post(() => Failed(round)); }
+            finally
+            {
+                round.Stop.Cancel();
+                if (voice != null)
+                {
+                    voice.TextRecognized -= text;
+                    voice.Failed -= failed;
+                    try { await voice.StopAsync().ConfigureAwait(false); } catch { failure = true; }
+                    try { await voice.DisposeAsync().ConfigureAwait(false); } catch { failure = true; }
+                    if (voice is ChatVoiceInputSession production)
+                    {
+                        try { await production.ResourcesReleased.ConfigureAwait(false); } catch { failure = true; }
+                    }
+                }
+                // 不让忽略取消的迟到 Start 在下一轮已经拿锁之后重新占麦；异常在这里被观察。
+                if (starting != null) { try { await starting.ConfigureAwait(false); } catch { } }
+                microphone?.Dispose();
+                Post(() =>
+                {
+                    if (failure) Failed(round); // 旧 finally 不改新一轮状态
+                    round.Stop.Dispose(); // actor 已处理 stop/failure 以后再释放 CTS
+                });
+            }
+        }
+
+        private bool Current(AudioRound round) => ReferenceEquals(_audio, round) && _epoch == round.Epoch;
+
+        private void Failed(AudioRound round)
+        {
+            if (!Current(round)) return;
+            StopAudio();
+            _status = 'E'; _error = true;
+            Broadcast('E', ErrorText); UpdateUi();
+        }
+
+        private void Recognized(AudioRound round, string text, bool final)
+        {
+            if (!Current(round)) return;
+            _sentence = text;
+            if (_target is { } target)
+            {
+                if (!SafeForeground(target.Peer)) Unbind(target.Peer, target.Generation);
+                else
+                {
+                    var start = Math.Min(_boundary, text.Length);
+                    // 新快照在冻结位置变成代理对时，只向后跳，绝不补回已归旧目标的 UTF-16 单元。
+                    if (start > 0 && start < text.Length && char.IsHighSurrogate(text[start - 1]) && char.IsLowSurrogate(text[start])) start++;
+                    Send(target.Peer, final ? 'F' : 'P', target.Generation, text[start..]);
+                    _delivered = Math.Max(_delivered, text.Length);
+                }
+            }
+            if (final) { _sentence = ""; _boundary = _delivered = 0; }
+        }
+
+        private void Broadcast(char kind, string text = "")
+        { foreach (var peer in _peers) Send(peer, kind, 0, text); }
+
+        private void Send(Peer peer, char kind, ulong generation, string text)
+        {
+            var epoch = Volatile.Read(ref _epoch);
+            var payload = epoch.ToString(CultureInfo.InvariantCulture) + ":" + generation.ToString(CultureInfo.InvariantCulture) + ":" + text;
+            try
+            {
+                if (StrictUtf8.GetByteCount(payload) + 1 > MaximumFrame
+                    || !peer.Output.Writer.TryWrite(new Output(kind, payload, epoch, generation))) peer.Close();
+            }
+            catch (EncoderFallbackException) { peer.Close(); }
+        }
+
+        private void UpdateUi() => _toolbar.Update(_visible, _status == 'C' ? 1 : _status == 'R' ? 2 : 0, _stopped, _error);
+
+        private async Task WritePeerAsync(Peer peer)
+        {
+            try
+            {
+                await foreach (var frame in peer.Output.Reader.ReadAllAsync(peer.Token).ConfigureAwait(false))
+                {
+                    if (frame.Kind is 'P' or 'F')
+                    {
+                        var target = Volatile.Read(ref _target);
+                        if (target == null || target.Peer != peer || target.Generation != frame.Generation
+                            || Volatile.Read(ref _epoch) != frame.Epoch || !SafeForeground(peer)) continue;
+                    }
+                    await WriteFrameAsync(peer.Pipe, frame.Kind, frame.Payload, peer.Token).ConfigureAwait(false);
+                }
+            }
+            catch { peer.Close(); }
+        }
+
+        private static bool Decimal(string text, out ulong number)
+        {
+            number = 0;
+            return text.Length is > 0 and <= 20 && text.All(c => c is >= '0' and <= '9')
+                && ulong.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out number);
+        }
+
+        private static async Task<(char Kind, string Text)> ReadFrameAsync(Stream stream, CancellationToken token)
+        {
+            var header = new byte[4];
+            await stream.ReadExactlyAsync(header, token).ConfigureAwait(false);
+            var length = BinaryPrimitives.ReadInt32LittleEndian(header);
+            if (length is < 1 or > MaximumFrame) throw new InvalidDataException();
+            var bytes = new byte[length];
+            await stream.ReadExactlyAsync(bytes, token).ConfigureAwait(false);
+            return ((char)bytes[0], StrictUtf8.GetString(bytes.AsSpan(1)));
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+            _lifetime.Cancel();
+            _commands.Writer.TryComplete();
+            _toolbar.Close();
+            await Task.WhenAll(_actor, _accept, _monitor).ConfigureAwait(false);
+            await Task.WhenAll(_connections).ConfigureAwait(false);
+            await _released.ConfigureAwait(false);
+            await _toolbar.DisposeAsync().ConfigureAwait(false);
+            _slots.Dispose(); _lifetime.Dispose();
+        }
+
+        private sealed record Target(Peer Peer, ulong Generation);
+        private sealed record Output(char Kind, string Payload, long Epoch, ulong Generation);
+        private sealed class AudioRound(long epoch, CancellationToken token)
+        {
+            internal readonly long Epoch = epoch;
+            internal readonly CancellationTokenSource Stop = CancellationTokenSource.CreateLinkedTokenSource(token);
+        }
+        private sealed class Peer : IDisposable
+        {
+            internal readonly NamedPipeServerStream Pipe;
+            internal readonly uint Thread;
+            internal ulong Generation;
+            private readonly object _closeGate = new();
+            private readonly CancellationTokenSource _stop;
+            private bool _closed, _disposed;
+            internal CancellationToken Token { get; }
+            internal readonly Channel<Output> Output = Channel.CreateBounded<Output>(new BoundedChannelOptions(64)
+            { SingleReader = true, SingleWriter = true, FullMode = BoundedChannelFullMode.Wait });
+            internal Peer(NamedPipeServerStream pipe, uint thread, CancellationToken token)
+            { Pipe = pipe; Thread = thread; _stop = CancellationTokenSource.CreateLinkedTokenSource(token); Token = _stop.Token; }
+            internal void Close()
+            {
+                lock (_closeGate)
+                {
+                    if (_closed) return;
+                    _closed = true;
+                    _stop.Cancel();
+                    Output.Writer.TryComplete();
+                }
+            }
+            public void Dispose()
+            {
+                lock (_closeGate)
+                {
+                    if (_disposed) return;
+                    Close();
+                    _disposed = true;
+                    _stop.Dispose();
+                }
+            }
+        }
+    }
+
+    private sealed class SharedAuthentication(int sessionId, string host)
+    {
+        // 身份归属连接，不按可复用的 thread ID 覆盖；弱键不会积累已断开的进程身份。
+        private readonly ConditionalWeakTable<NamedPipeServerStream, Tuple<int, long>> _clients = new();
+        internal bool Authenticate(NamedPipeServerStream pipe, uint thread)
+        {
+            try
+            {
+                if (!GetNamedPipeClientProcessId(pipe.SafePipeHandle.DangerousGetHandle(), out var pid) || pid > int.MaxValue) return false;
+                using var process = Process.GetProcessById((int)pid);
+                if (!SafeNative(process, thread)) return false;
+                _clients.Add(pipe, Tuple.Create(process.Id, process.StartTime.ToUniversalTime().Ticks));
+                return true;
+            }
+            catch { return false; }
+        }
+
+        internal bool Foreground(NamedPipeServerStream pipe, uint thread)
+        {
+            try
+            {
+                if (!_clients.TryGetValue(pipe, out var client)) return false;
+                GetWindowThreadProcessId(GetForegroundWindow(), out var pid);
+                if (pid != (uint)client.Item1) return false;
+                using var process = Process.GetProcessById(client.Item1);
+                return process.StartTime.ToUniversalTime().Ticks == client.Item2 && SafeNative(process, thread);
+            }
+            catch { return false; }
+        }
+
+        private bool SafeNative(Process process, uint thread)
+        {
+            if (process.HasExited || process.SessionId != sessionId
+                || !process.Threads.Cast<ProcessThread>().Any(t => (uint)t.Id == thread)) return false;
+            const string owner = "TrueFluentPro.VoiceIme.v1";
+            const string com = @"Software\Classes\CLSID\{5638E6E5-D18C-4FE8-B778-E59A5170B481}";
+            foreach (var view in Environment.Is64BitOperatingSystem
+                ? new[] { RegistryView.Registry64, RegistryView.Registry32 } : new[] { RegistryView.Registry32 })
+            {
+                using var user = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, view);
+                using var config = user.OpenSubKey(@"Software\TrueFluentPro\VoiceIme");
+                if (config?.GetValue("VoiceImeOwner") as string != owner
+                    || config.GetValue("HostExe") is not string configuredHost || !Same(configuredHost, host)) continue;
+                using var shadow = user.OpenSubKey(com);
+                if (shadow != null) return false; // 不接受用户 COM 覆盖机器受保护组件
+                using var machine = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, view);
+                using var registered = machine.OpenSubKey(com);
+                using var server = registered?.OpenSubKey("InprocServer32");
+                if (registered?.GetValue("VoiceImeOwner") as string != owner
+                    || server?.GetValue(null, null, RegistryValueOptions.DoNotExpandEnvironmentNames) is not string dll) continue;
+                VoiceImeMaintenance.GuardPath(dll);
+                var parts = Path.GetRelativePath(VoiceImeMaintenance.InstallRoot, dll).Split(Path.DirectorySeparatorChar);
+                if (parts.Length != 3 || parts[0].Length != 64 || !parts[0].All(Uri.IsHexDigit)
+                    || parts[1] != (view == RegistryView.Registry64 ? "win-x64" : "win-x86")
+                    || parts[2] != "TrueFluentVoiceIme.dll") continue;
+                if (process.Modules.Cast<ProcessModule>().Any(module => Same(module.FileName, dll))) return true;
+            }
+            return false;
+        }
+        private static bool Same(string left, string right) => Path.IsPathFullyQualified(left)
+            && string.Equals(Path.GetFullPath(left), Path.GetFullPath(right), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [DllImport("user32.dll", ExactSpelling = true)]
+    private static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll", ExactSpelling = true)]
+    private static extern uint GetWindowThreadProcessId(IntPtr window, out uint pid);
+}

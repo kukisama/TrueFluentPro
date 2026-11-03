@@ -15,8 +15,8 @@ using TrueFluentPro.Models;
 
 namespace TrueFluentPro.Services;
 
-/// <summary>每次 F8 听写一个无界面进程。只读主配置，不启动主程序、不注册热键、不保存音频。</summary>
-public static class VoiceImeHost
+/// <summary>共享输入法 owner / 旧版单次后台入口。只读主配置，不启动主界面、不保存音频。</summary>
+public static partial class VoiceImeHost
 {
     private const int MaximumFrame = 65536;
     private static readonly JsonSerializerOptions ConfigJson = new()
@@ -28,6 +28,9 @@ public static class VoiceImeHost
 
     public static async Task<int> RunAsync(string[] args)
     {
+        if (OperatingSystem.IsWindows() && args.Length == 2
+            && args[0] == "--voice-ime-host" && args[1] == "--shared")
+            return await RunSharedAsync().ConfigureAwait(false);
         if (!OperatingSystem.IsWindows() || args.Length != 5 || args[1] != "--pipe" || args[3] != "--parent"
             || !int.TryParse(args[4], out var parentId) || parentId <= 0
             || !Regex.IsMatch(args[2], @"\ATrueFluentPro\.VoiceIme\." + parentId + @"\.[0-9]{1,10}\.[0-9a-fA-F]{32}\z"))

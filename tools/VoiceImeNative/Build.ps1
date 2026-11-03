@@ -90,9 +90,10 @@ foreach ($arch in @('x64', 'x86')) {
     $runtime = if ($Configuration -eq 'Debug') { '/MTd /Od /Zi' } else { '/MT /O2 /DNDEBUG' }
     $flags = "/nologo /std:c++17 /EHsc /W4 /utf-8 /DUNICODE /D_UNICODE /DVOICE_IME_RUNTIME_ONLY /D_WIN32_WINNT=0x0602 $runtime"
     $def = if ($arch -eq 'x86') { 'Exports.x86.def' } else { 'Exports.def' }
-    $sources = 'VoiceIme.cpp', 'VoiceToolbar.cpp', 'PipeClient.cpp', 'Registration.cpp' | ForEach-Object { '"' + (Join-Path $PSScriptRoot $_) + '"' }
+    $sources = 'VoiceIme.cpp', 'VoiceToolbar.cpp', 'ToolbarBridge.cpp', 'PipeClient.cpp', 'Registration.cpp' | ForEach-Object { '"' + (Join-Path $PSScriptRoot $_) + '"' }
     $brandResource = Join-Path $obj 'Brand.res'
     $toolbarSource = '"' + (Join-Path $PSScriptRoot 'VoiceToolbar.cpp') + '"'
+    $bridgeSource = '"' + (Join-Path $PSScriptRoot 'ToolbarBridge.cpp') + '"'
     # Compile upstream core and its Win32 UI support, with the same CRT as the adapter.
     # No CMake/gtest installation; the upstream registration implementation is excluded.
     $libImeObj = Join-Path $obj 'libIME2'
@@ -103,6 +104,7 @@ foreach ($arch in @('x64', 'x86')) {
         'LangBarButton', 'Utils', 'DrawUtils', 'Window', 'ImeWindow', 'MessageWindow', 'CandidateWindow' |
         ForEach-Object { '"' + (Join-Path $libImeSrc "$_.cpp") + '"' }
     $libs = 'ole32.lib oleaut32.lib uuid.lib advapi32.lib user32.lib gdi32.lib gdiplus.lib'
+    $uiLibs = 'dwmapi.lib shell32.lib'
     $imeLibs = '"' + $libImeLibrary + '" shlwapi.lib'
     # Embed, not merely generate a sidecar: x86 must not silently virtualize failed HKLM writes.
     $exeLink = '/INCREMENTAL:NO /MANIFEST:EMBED /MANIFESTUAC:"level=''asInvoker'' uiAccess=''false''"'
@@ -112,12 +114,12 @@ foreach ($arch in @('x64', 'x86')) {
         "rc /nologo /c65001 /I `"$PSScriptRoot`" /fo `"$brandResource`" `"$(Join-Path $PSScriptRoot 'Brand.rc')`"",
         "cl $flags /DNOMINMAX /D_CRT_SECURE_NO_WARNINGS /c $($libImeSources -join ' ') /Fo:`"$libImeObj\\`" /Fd:`"$libImeObj\libIME2.pdb`"",
         "lib /nologo /OUT:`"$libImeLibrary`" `"$libImeObj\*.obj`"",
-        "cl $flags /LD $($sources -join ' ') /Fe:`"$dll`" /Fo:`"$obj\\`" /Fd:`"$obj\dll.pdb`" /link `"$brandResource`" /DEF:`"$(Join-Path $PSScriptRoot $def)`" /INCREMENTAL:NO /DYNAMICBASE /NXCOMPAT $libs $imeLibs",
+        "cl $flags /LD $($sources -join ' ') /Fe:`"$dll`" /Fo:`"$obj\\`" /Fd:`"$obj\dll.pdb`" /link `"$brandResource`" /DEF:`"$(Join-Path $PSScriptRoot $def)`" /INCREMENTAL:NO /DYNAMICBASE /NXCOMPAT $libs $uiLibs $imeLibs",
         "cl $flags `"$(Join-Path $PSScriptRoot 'RegisterMain.cpp')`" `"$(Join-Path $PSScriptRoot 'Registration.cpp')`" /Fe:`"$exe`" /Fo:`"$obj\\`" /Fd:`"$obj\helper.pdb`" /link $exeLink $libs",
         "cl $flags `"$(Join-Path $PSScriptRoot 'Tests.cpp')`" /Fe:`"$test`" /Fo:`"$obj\\`" /Fd:`"$obj\tests.pdb`" /link $exeLink $libs",
-        "cl $flags `"$(Join-Path $PSScriptRoot 'EditTests.cpp')`" $toolbarSource `"$(Join-Path $PSScriptRoot 'Registration.cpp')`" /Fe:`"$editTest`" /Fo:`"$obj\\`" /Fd:`"$obj\edits.pdb`" /link `"$brandResource`" $exeLink $libs $imeLibs",
+        "cl $flags `"$(Join-Path $PSScriptRoot 'EditTests.cpp')`" $toolbarSource $bridgeSource `"$(Join-Path $PSScriptRoot 'Registration.cpp')`" /Fe:`"$editTest`" /Fo:`"$obj\\`" /Fd:`"$obj\edits.pdb`" /link `"$brandResource`" $exeLink $libs $uiLibs $imeLibs",
         "cl $flags `"$(Join-Path $PSScriptRoot 'RegistrationTests.cpp')`" /Fe:`"$registrationTest`" /Fo:`"$obj\\`" /Fd:`"$obj\registration-tests.pdb`" /link $exeLink $libs",
-        "cl $flags `"$(Join-Path $PSScriptRoot 'LifecycleTests.cpp')`" $toolbarSource `"$(Join-Path $PSScriptRoot 'Registration.cpp')`" /Fe:`"$lifecycleTest`" /Fo:`"$obj\\`" /Fd:`"$obj\lifecycle-tests.pdb`" /link `"$brandResource`" $exeLink $libs $imeLibs"
+        "cl $flags `"$(Join-Path $PSScriptRoot 'LifecycleTests.cpp')`" $toolbarSource $bridgeSource `"$(Join-Path $PSScriptRoot 'Registration.cpp')`" /Fe:`"$lifecycleTest`" /Fo:`"$obj\\`" /Fd:`"$obj\lifecycle-tests.pdb`" /link `"$brandResource`" $exeLink $libs $uiLibs $imeLibs"
     )
     Push-Location $obj
     try {

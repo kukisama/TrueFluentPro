@@ -7,6 +7,7 @@
 
 namespace {
 constexpr int Margin = 4, Width = 96, Height = 36;
+constexpr int HintTail = 5;
 constexpr UINT_PTR AnimationTimer = 1, HoverTimer = 2, ToastTimer = 3;
 UINT WindowDpi(HWND hwnd) {
     using GetDpi = UINT (WINAPI*)(HWND);
@@ -23,10 +24,12 @@ struct PlacementGuard {
 };
 void HintFormat(Gdiplus::StringFormat& format) {
     format.SetFormatFlags(Gdiplus::StringFormatFlagsNoWrap);
+    format.SetTrimming(Gdiplus::StringTrimmingNone);
     format.SetAlignment(Gdiplus::StringAlignmentCenter);
     format.SetLineAlignment(Gdiplus::StringAlignmentCenter);
 }
 void Setup(Gdiplus::Graphics& g) {
+    g.SetPageUnit(Gdiplus::UnitPixel);
     g.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
     g.SetPixelOffsetMode(Gdiplus::PixelOffsetModeHighQuality);
     // ClearType assumes an opaque RGB background and is unsuitable for alpha windows.
@@ -44,6 +47,36 @@ void Panel(Gdiplus::Graphics& g, float width, float height, bool status) {
         status ? Color(255, 220, 239, 255) : Color(255, 235, 243, 255));
     g.FillPath(&background, &body);
     Pen border(Color(255, 184, 207, 240), 1); g.DrawPath(&border, &body);
+}
+void PanelHint(Gdiplus::Graphics& g, float width, float height, bool status, bool error, bool active, float tail) {
+    using namespace Gdiplus;
+    const float x = 4.5f, y = 4.5f, w = width - 1, h = height - 1, radius = 8, diameter = radius * 2;
+    GraphicsPath body;
+    if (status) VoiceBrand::RoundRect(body, x, y, w, h, radius);
+    else {
+        // One closed outline avoids an opaque seam between the bubble and its alpha tail.
+        tail = std::clamp(tail, x + radius + 4, x + w - radius - 4);
+        body.AddArc(x, y, diameter, diameter, 180, 90);
+        body.AddArc(x + w - diameter, y, diameter, diameter, 270, 90);
+        body.AddArc(x + w - diameter, y + h - diameter, diameter, diameter, 0, 90);
+        body.AddLine(x + w - radius, y + h, tail + 4, y + h);
+        body.AddLine(tail + 4, y + h, tail, y + h + HintTail);
+        body.AddLine(tail, y + h + HintTail, tail - 4, y + h);
+        body.AddArc(x, y + h - diameter, diameter, diameter, 90, 90);
+        body.CloseFigure();
+    }
+    const auto saved = g.Save(); g.TranslateTransform(0, 1);
+    SolidBrush shade(Color(status ? 8 : 16, 68, 111, 166)); g.FillPath(&shade, &body); g.Restore(saved);
+    const Color top = !status ? Color(255, 248, 251, 255) : error ? Color(255, 255, 248, 238) :
+        active ? Color(255, 234, 246, 255) : Color(255, 243, 247, 253);
+    const Color bottom = !status ? Color(255, 239, 245, 255) : error ? Color(255, 253, 241, 221) :
+        active ? Color(255, 220, 239, 255) : Color(255, 238, 244, 251);
+    LinearGradientBrush background(PointF(x, y), PointF(x, y + h), top, bottom);
+    g.FillPath(&background, &body);
+    if (!status || active || error) {
+        Pen border(error ? Color(255, 232, 205, 162) : Color(255, 184, 207, 240), .8f);
+        g.DrawPath(&border, &body);
+    }
 }
 }
 
@@ -88,6 +121,7 @@ void VoiceToolbar::Destroy() {
     if (graphicsToken_) Gdiplus::GdiplusShutdown(graphicsToken_); graphicsToken_ = 0;
     instance_ = nullptr; anchored_ = hovered_ = pressed_ = dragging_ = placing_ = false;
     state_ = VoiceToolbarState::Idle; noticeText_.clear();
+    tooltipReady_ = noticeError_ = false; tooltipTail_ = 0;
     dpiPending_ = placingHints_ = false; editor_ = nullptr; editorMonitor_ = nullptr; editorDpi_ = 0;
 }
 SIZE VoiceToolbar::ScaledSize(int width, int height, UINT dpi) {
@@ -113,10 +147,11 @@ void VoiceToolbar::SetEligible(bool eligible, HWND editor, const RECT* rect) {
     if (!window_) return;
     const bool changed = eligible_ != eligible; eligible_ = eligible;
     if (!eligible) {
+        tooltipReady_ = false;
         hovered_ = pressed_ = dragging_ = false;
         if (GetCapture() == window_) ReleaseCapture();
         for (UINT_PTR timer : {AnimationTimer, HoverTimer, ToastTimer}) KillTimer(window_, timer);
-        ShowWindow(tooltip_, SW_HIDE); ShowWindow(notice_, SW_HIDE); ShowWindow(window_, SW_HIDE);
+        HideHints(); ShowWindow(window_, SW_HIDE);
         // Do not replay a previous session's transient toast after switching back.
         if (state_ == VoiceToolbarState::Idle) noticeText_.clear();
         return;
@@ -145,7 +180,9 @@ void VoiceToolbar::SetEligible(bool eligible, HWND editor, const RECT* rect) {
     // Polls do not re-anchor to the mouse or undo a deliberate drag. A monitor/editor
     // change is followed once; changes observed during a drag are handled after release.
     if (!dragging_) { editor_ = editor; editorMonitor_ = target; editorDpi_ = editorDpi; }
-    if (changed) {
+    // Eligibility owns idle visibility too; a window hidden by the host must
+    // recover without waiting for a recording transition or another key press.
+    if (changed || !IsWindowVisible(window_)) {
         RenderMain(); SetWindowPos(window_, HWND_TOPMOST, 0, 0, 0, 0,
             SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
         UpdateTimers(); RenderHints();
@@ -154,6 +191,7 @@ void VoiceToolbar::SetEligible(bool eligible, HWND editor, const RECT* rect) {
 void VoiceToolbar::SetState(VoiceToolbarState state, bool stopped, bool error) {
     if (state_ == state && !stopped && !error) return;
     state_ = state; animation_ = 0;
+    noticeError_ = error && state == VoiceToolbarState::Idle;
     if (window_) KillTimer(window_, ToastTimer);
     noticeText_ = state == VoiceToolbarState::Connecting ? L"正在连接 · F8 停止" :
         state == VoiceToolbarState::Recording ? L"正在录音 · F8 停止" :
@@ -211,9 +249,9 @@ bool VoiceToolbar::BrandAt(LPARAM point) const {
 }
 void VoiceToolbar::Hover(bool hovered) {
     if (hovered_ == hovered) return;
-    hovered_ = hovered;
+    hovered_ = hovered; tooltipReady_ = false;
     KillTimer(window_, HoverTimer);
-    if (hovered && eligible_) SetTimer(window_, HoverTimer, 400, nullptr);
+    if (hovered && eligible_ && IsWindowVisible(window_)) SetTimer(window_, HoverTimer, 400, nullptr);
     else ShowWindow(tooltip_, SW_HIDE);
     RenderMain();
 }
@@ -251,15 +289,24 @@ LRESULT VoiceToolbar::Message(HWND hwnd, UINT message, WPARAM w, LPARAM l) {
     }
     if (hwnd != window_) return DefWindowProcW(hwnd, message, w, l);
     switch (message) {
+    case WM_SHOWWINDOW:
+        // This message precedes visibility; never show hints from its TRUE branch.
+        if (!w) { tooltipReady_ = false; HideHints(); }
+        break;
+    case WM_WINDOWPOSCHANGED:
+        if (l) {
+            const UINT flags = reinterpret_cast<const WINDOWPOS*>(l)->flags;
+            if (flags & SWP_HIDEWINDOW) { tooltipReady_ = false; HideHints(); }
+            else if (flags & SWP_SHOWWINDOW) RenderHints();
+        }
+        break;
     case WM_DISPLAYCHANGE: Place(position_); return 0;
     case WM_TIMER:
         if (w == AnimationTimer && eligible_ && state_ == VoiceToolbarState::Recording) { ++animation_; RenderMain(); }
         if (w == HoverTimer) {
             KillTimer(window_, HoverTimer);
-            if (eligible_ && hovered_) {
-                SetWindowPos(tooltip_, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
-                RenderHints();
-            }
+            if (eligible_ && hovered_ && IsWindowVisible(window_)) tooltipReady_ = true;
+            RenderHints();
         }
         if (w == ToastTimer && state_ == VoiceToolbarState::Idle) {
             KillTimer(window_, ToastTimer); noticeText_.clear(); ShowWindow(notice_, SW_HIDE);
@@ -271,12 +318,12 @@ LRESULT VoiceToolbar::Message(HWND hwnd, UINT message, WPARAM w, LPARAM l) {
             dragPoint_ = point; Place(DragPosition(point, dpi_));
         } else {
             TRACKMOUSEEVENT track{sizeof(track), TME_LEAVE, hwnd, 0}; TrackMouseEvent(&track);
-            Hover(eligible_ && MicAt(l));
+            Hover(eligible_ && IsWindowVisible(window_) && MicAt(l));
         }
         return 0;
     case WM_MOUSELEAVE: Hover(false); return 0;
     case WM_LBUTTONDOWN:
-        if (!eligible_) return 0;
+        if (!eligible_ || !IsWindowVisible(window_)) return 0;
         if (BrandAt(l)) {
             dragging_ = true;
             dragOffset_ = {GET_X_LPARAM(l) * 96.0f / dpi_, GET_Y_LPARAM(l) * 96.0f / dpi_};
@@ -285,7 +332,7 @@ LRESULT VoiceToolbar::Message(HWND hwnd, UINT message, WPARAM w, LPARAM l) {
         } else if (MicAt(l)) { pressed_ = true; SetCapture(hwnd); RenderMain(); }
         return 0;
     case WM_LBUTTONUP: {
-        const bool invoke = eligible_ && pressed_ && MicAt(l);
+        const bool invoke = eligible_ && IsWindowVisible(window_) && pressed_ && MicAt(l);
         pressed_ = dragging_ = false;
         if (GetCapture() == hwnd) ReleaseCapture();
         RenderMain();
@@ -332,21 +379,28 @@ void VoiceToolbar::PaintMain(Gdiplus::Graphics& g) const {
 SIZE VoiceToolbar::HintSize(const wchar_t* text, bool status) const {
     using namespace Gdiplus;
     Bitmap image(1, 1, PixelFormat32bppPARGB); Graphics g(&image);
-    Setup(g); g.ScaleTransform(dpi_ / 96.0f, dpi_ / 96.0f);
-    Font font(L"Microsoft YaHei UI", 12, FontStyleRegular, UnitPixel);
+    // Measure in DIPs; only PaintSurface/Render applies the HWND's DPI scale.
+    Setup(g);
+    const int fontSize = status ? 10 : 12, padding = status ? 16 : 20;
+    Font font(L"Microsoft YaHei UI", static_cast<REAL>(fontSize), FontStyleRegular, UnitPixel);
     StringFormat format; HintFormat(format); RectF bounds;
     if (g.MeasureString(text, -1, &font, PointF(0, 0), &format, &bounds) != Ok)
-        return {std::max(status ? 124 : 160, static_cast<int>(wcslen(text)) * 12 + 24), 38};
-    return {std::max(status ? 124 : 160, static_cast<int>(std::ceil(bounds.Width)) + 26),
-        std::max(38, static_cast<int>(std::ceil(bounds.Height)) + 16)};
+        bounds = RectF(0, 0, static_cast<REAL>(wcslen(text) * fontSize), static_cast<REAL>(fontSize + 4));
+    return {std::max(status ? 0 : Width, static_cast<int>(std::ceil(bounds.Width)) + padding) + Margin * 2,
+        std::max(status ? 22 : 30, static_cast<int>(std::ceil(bounds.Height)) + (status ? 4 : 10)) + Margin * 2 + (status ? 0 : HintTail)};
 }
 void VoiceToolbar::PaintHint(Gdiplus::Graphics& g, const wchar_t* text, bool status, int width, int height) const {
     using namespace Gdiplus;
-    Setup(g); Panel(g, static_cast<float>(width - Margin * 2), static_cast<float>(height - Margin * 2), status);
-    Font font(L"Microsoft YaHei UI", 12, FontStyleRegular, UnitPixel);
+    Setup(g);
+    const float bodyHeight = static_cast<float>(height - Margin * 2 - (status ? 0 : HintTail));
+    PanelHint(g, static_cast<float>(width - Margin * 2), bodyHeight, status, noticeError_,
+        state_ != VoiceToolbarState::Idle, tooltipTail_ > 0 ? tooltipTail_ : width / 2.0f);
+    Font font(L"Microsoft YaHei UI", status ? 10.0f : 12.0f, FontStyleRegular, UnitPixel);
     StringFormat format; HintFormat(format);
-    SolidBrush ink(status ? Color(255, 44, 114, 185) : Color(255, 46, 64, 100));
-    g.DrawString(text, -1, &font, RectF(12, 4, static_cast<float>(width - 24), static_cast<float>(height - Margin * 2)), &format, &ink);
+    SolidBrush ink(!status ? Color(255, 46, 64, 100) : noticeError_ ? Color(255, 134, 85, 36) :
+        state_ != VoiceToolbarState::Idle ? Color(255, 44, 114, 185) : Color(255, 83, 105, 145));
+    const float inset = status ? 12.0f : 14.0f;
+    g.DrawString(text, -1, &font, RectF(inset, 4, width - inset * 2, bodyHeight), &format, &ink);
 }
 void VoiceToolbar::PaintSurface(Gdiplus::Graphics& g, int width, int height, const wchar_t* text, bool status) const {
     g.ScaleTransform(dpi_ / 96.0f, dpi_ / 96.0f);
@@ -375,16 +429,23 @@ bool VoiceToolbar::Render(HWND target, int width, int height, const wchar_t* tex
     return result;
 }
 void VoiceToolbar::RenderMain() { if (eligible_) Render(window_, Width + Margin * 2, Height + Margin * 2); }
+void VoiceToolbar::HideHints() {
+    if (tooltip_) ShowWindow(tooltip_, SW_HIDE);
+    if (notice_) ShowWindow(notice_, SW_HIDE);
+}
 void VoiceToolbar::RenderHints() {
-    if (!eligible_ || !window_ || placing_ || placingHints_) return;
+    if (!eligible_ || !window_ || !IsWindowVisible(window_)) { HideHints(); return; }
+    if (placing_ || placingHints_) return;
     PlacementGuard guard(placingHints_);
     MONITORINFO info{sizeof(info)};
     const bool hasWork = GetMonitorInfoW(MonitorFromWindow(window_, MONITOR_DEFAULTTONEAREST), &info) != FALSE;
     const SIZE tip = HintSize(TooltipText(), false), tipPixels = ScaledSize(tip.cx, tip.cy, dpi_);
-    POINT p{position_.x + Pixels(74) - tipPixels.cx / 2, position_.y - tipPixels.cy - Pixels(2)};
+    POINT p{position_.x + Pixels(74) - tipPixels.cx / 2, position_.y - tipPixels.cy + Pixels(Margin)};
     if (hasWork) p = ClampToWorkArea(p, tipPixels, info.rcWork);
+    tooltipTail_ = (position_.x + Pixels(74) - p.x) * 96.0f / dpi_;
     SetWindowTextW(tooltip_, TooltipText()); Render(tooltip_, tip.cx, tip.cy, TooltipText());
-    SetWindowPos(tooltip_, HWND_TOPMOST, p.x, p.y, tipPixels.cx, tipPixels.cy, SWP_NOACTIVATE);
+    SetWindowPos(tooltip_, HWND_TOPMOST, p.x, p.y, tipPixels.cx, tipPixels.cy,
+        SWP_NOACTIVATE | (tooltipReady_ && hovered_ ? SWP_SHOWWINDOW : SWP_HIDEWINDOW));
     if (noticeText_.empty()) { ShowWindow(notice_, SW_HIDE); return; }
     const SIZE hint = HintSize(noticeText_.c_str(), true), hintPixels = ScaledSize(hint.cx, hint.cy, dpi_);
     p = {position_.x + (Pixels(Width + Margin * 2) - hintPixels.cx) / 2,

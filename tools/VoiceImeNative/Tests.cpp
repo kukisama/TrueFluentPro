@@ -1,6 +1,15 @@
 #include "Common.h"
 #include <cstdio>
 
+using BridgeUpdateFn = void (WINAPI*)(void*, BOOL, int, BOOL, BOOL);
+using BridgeCloseFn = void (WINAPI*)(void*);
+struct BridgeWork { void* handle; BridgeUpdateFn update; BridgeCloseFn close; };
+DWORD WINAPI CloseBridge(void* value) {
+    auto* work = static_cast<BridgeWork*>(value);
+    work->update(work->handle, TRUE, 2, FALSE, FALSE);
+    work->close(work->handle); return 0;
+}
+
 int wmain(int argc, wchar_t** argv) {
     HANDLE token{}; DWORD enabled = 0, bytes = 0;
     if (OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) {
@@ -29,6 +38,14 @@ int wmain(int argc, wchar_t** argv) {
     const char valid[] = "\xe4\xbd\xa0\xe5\xa5\xbd";
     check(DecodeUtf8(valid, 6, text) && text == L"你好" && !DecodeUtf8("\xc0\xaf", 2, text), "strict UTF8");
     check(ValidKind('P') && ValidKind('F') && ValidKind('R') && ValidKind('E') && ValidKind('S') && !ValidKind('X'), "wire frame kinds");
+    uint64_t epoch = 0, target = 0;
+    check(ExtendedValidKind('I') && ExtendedValidKind('C') && !ExtendedValidKind('H') && !ExtendedValidKind('T') &&
+        SharedPayload('P', L"7:18:正文:冒号", epoch, target, text) && epoch == 7 && target == 18 && text == L"正文:冒号" &&
+        SharedPayload('S', L"8:0:", epoch, target, text) && text.empty() &&
+        !SharedPayload('P', L"7:0:text", epoch, target, text) && !SharedPayload('R', L"7:18:", epoch, target, text) &&
+        !SharedPayload('P', L"18446744073709551616:18:x", epoch, target, text) &&
+        !SharedPayload('P', L"+7:18:x", epoch, target, text) && !SharedPayload('P', L"7:18", epoch, target, text),
+        "shared epoch/generation envelope, strict decimal and first-two-colon split");
     check(QuoteArgument(L"C:\\folder name\\host.exe") == L"\"C:\\folder name\\host.exe\"" &&
         QuoteArgument(L"x\\") == L"\"x\\\\\"", "process argument escaping");
     HMODULE dll = LoadLibraryExW(argv[1], nullptr, LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32);
@@ -38,6 +55,13 @@ int wmain(int argc, wchar_t** argv) {
         using UnloadFn = HRESULT (WINAPI*)();
         auto get = reinterpret_cast<FactoryFn>(GetProcAddress(dll, "DllGetClassObject"));
         auto unload = reinterpret_cast<UnloadFn>(GetProcAddress(dll, "DllCanUnloadNow"));
+        using BridgeCreateFn = void* (WINAPI*)(void (*)(int, int, void*), void*);
+        using BridgeRunFn = int (WINAPI*)(void*);
+        auto createBridge = reinterpret_cast<BridgeCreateFn>(GetProcAddress(dll, "VoiceImeToolbarCreate"));
+        auto updateBridge = reinterpret_cast<BridgeUpdateFn>(GetProcAddress(dll, "VoiceImeToolbarUpdate"));
+        auto runBridge = reinterpret_cast<BridgeRunFn>(GetProcAddress(dll, "VoiceImeToolbarRun"));
+        auto closeBridge = reinterpret_cast<BridgeCloseFn>(GetProcAddress(dll, "VoiceImeToolbarClose"));
+        check(createBridge && updateBridge && runBridge && closeBridge, "four WINAPI toolbar exports undecorated on this architecture");
         check(get && unload && GetProcAddress(dll, "DllRegisterServer") && GetProcAddress(dll, "DllUnregisterServer"), "undecorated exports");
         if (get && unload) {
             check(unload() == S_OK, "initial module count");
@@ -61,6 +85,19 @@ int wmain(int argc, wchar_t** argv) {
             }
             factory.Reset();
             check(unload() == S_OK, "COM release balances references");
+            if (createBridge && updateBridge && runBridge && closeBridge) {
+                void* handle = createBridge(nullptr, nullptr);
+                check(handle && unload() == S_FALSE, "owner STA bridge creates, advises TSF and prevents module unload");
+                if (handle) {
+                    BridgeWork work{handle, updateBridge, closeBridge};
+                    HANDLE thread = CreateThread(nullptr, 0, CloseBridge, &work, 0, nullptr);
+                    if (!thread) closeBridge(handle);
+                    check(runBridge(handle) == 0, "cross-thread update/close, STA Run drains then releases windows/COM");
+                    if (thread) { WaitForSingleObject(thread, INFINITE); CloseHandle(thread); }
+                    updateBridge(handle, TRUE, 0, FALSE, FALSE); closeBridge(handle);
+                    check(unload() == S_OK, "closed bridge ignores stale handle and balances module objects");
+                }
+            }
         }
         FreeLibrary(dll);
     }

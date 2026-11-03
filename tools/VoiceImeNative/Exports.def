@@ -4,3 +4,7 @@ EXPORTS
     DllCanUnloadNow PRIVATE
     DllRegisterServer PRIVATE
     DllUnregisterServer PRIVATE
+    VoiceImeToolbarCreate
+    VoiceImeToolbarUpdate
+    VoiceImeToolbarRun
+    VoiceImeToolbarClose

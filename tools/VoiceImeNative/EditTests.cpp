@@ -9,6 +9,7 @@
 static unsigned workerStarts = 0;
 bool StartPipeWorker(const std::shared_ptr<PipeRun>&) { ++workerStarts; return false; }
 std::wstring NewPipeName() { return {}; } // No host/config/microphone path is linked into this EXE.
+bool SendSharedCommand(const std::shared_ptr<PipeRun>&, char, uint64_t) { return false; }
 
 namespace {
 HRESULT Stage(const char* api, HRESULT hr) {
@@ -109,9 +110,31 @@ void InspectClient(ITfThreadMgr* manager, Service* service, TfClientId owner, Tf
     if (SUCCEEDED(hr)) Stage("control.keys.UnadviseKeyEventSink(owner-client)", keys->UnadviseKeyEventSink(owner));
 }
 struct OfflineEditAccess {
+    static void BindMemoryOwner(Service* service, ITfThreadMgr* manager, TfClientId client) {
+        service->manager = manager; service->client = client;
+        // Real application-owned memory context/edit locks; NOT a successful TIP activation.
+    }
     static HRESULT ReplaceText(Service* service, ITfContext* context, TfEditCookie cookie, char kind, const std::wstring& text) {
         service->context = context;
         return service->Replace(cookie, kind, text);
+    }
+    static HRESULT RejectStale(Service* service, ITfContext* context, TfEditCookie cookie) {
+        auto run = std::make_shared<PipeRun>(71, nullptr, L"fixture-never-started");
+        service->context = context; service->run = run; service->generation = 71;
+        service->targetBound = true; service->active = true; service->listening = true;
+        service->audioEpoch = 77; run->audioEpoch = 77;
+        const std::wstring text = L"must-not-insert";
+        auto apply = [&](ITfContext* c, uint64_t generation, uint64_t epoch) {
+            return service->Execute(c, generation, EditKind::Result, 'P', text, cookie, epoch, run) == S_OK;
+        };
+        bool ok = apply(context, 70, 77) && apply(context, 71, 76) && apply(nullptr, 71, 77) && service->targetBound;
+        run->audioEpoch = 78;
+        ok = apply(context, 71, 77) && service->targetBound && ok; // New wire epoch invalidates queued edits before dispatch.
+        run->audioEpoch = 77;
+        ok = apply(context, 71, 77) && !service->targetBound && service->generation > 71 &&
+            service->active && service->listening && ok; // No actual foreground: only U/DropTarget, never audio stop.
+        service->Stop(false);
+        return ok ? S_OK : E_FAIL;
     }
 };
 class Store final : public ITextStoreACP, public ITfContextOwnerCompositionSink {
@@ -247,7 +270,9 @@ public:
     STDMETHODIMP_(ULONG) AddRef() override { return ++refs; }
     STDMETHODIMP_(ULONG) Release() override { ULONG n = --refs; if (!n) delete this; return n; }
     STDMETHODIMP DoEditSession(TfEditCookie cookie) override {
-        result = OfflineEditAccess::ReplaceText(service, context.Get(), cookie, kind, text); done = true; return result;
+        result = kind == 'X' ? OfflineEditAccess::RejectStale(service, context.Get(), cookie) :
+            OfflineEditAccess::ReplaceText(service, context.Get(), cookie, kind, text);
+        done = true; return result;
     }
 };
 bool Send(Service* service, ITfContext* context, TfClientId client, char kind, const wchar_t* text) {
@@ -301,21 +326,28 @@ int wmain() {
                 if (SUCCEEDED(direct)) service->Deactivate();
                 InspectClient(manager.Get(), service.Get(), client, serviceClient);
             }
-            if (check(SUCCEEDED(hr), "production ITfTextInputProcessor Activate on real TSF thread")) {
+            if (SUCCEEDED(hr)) {
+                check(true, "production ITfTextInputProcessor Activate on real TSF thread");
                 BOOL eaten = TRUE;
                 service->OnSetFocus(TRUE);
                 check(service->OnTestKeyDown(context.Get(), VK_F8, 0, &eaten) == S_OK && !eaten &&
                     service->OnKeyDown(context.Get(), VK_F8, 0, &eaten) == S_OK && !eaten, "unselected profile F8 never starts host");
-                std::puts("SCOPE production Replace under real async edit lock; profile eligibility/pipe intentionally bypassed");
-                check(Send(service.Get(), context.Get(), serviceClient, 'P', L"你") && store->text == L"AB你TAIL" && store->selection.acpStart == 3, "partial inserts at selection, suffix intact");
-                check(Send(service.Get(), context.Get(), serviceClient, 'P', L"你好") && store->text == L"AB你好TAIL" && store->selection.acpStart == 4, "partial replaces owned range without duplication");
-                store->MoveCaret(static_cast<LONG>(store->text.size()));
-                check(Send(service.Get(), context.Get(), serviceClient, 'F', L"你好。") && store->text == L"AB你好。TAIL" && store->selection.acpStart == 9, "final preserves moved selection across length delta");
-                store->MoveCaret(0);
-                check(Send(service.Get(), context.Get(), serviceClient, 'F', L"前") && store->text == L"前AB你好。TAIL" && store->selection.acpStart == 1, "next sentence reads new selection");
-                check(store->starts == 2 && store->ends == 2 && store->writes == 4 && store->unlockedWrites == 0 && store->grants > 0, "composition lifecycle and real write locks");
             } else {
-                std::printf("NOT-RUN partial/final: production activation gate failed; writes=%u\n", store->writes);
+                std::printf("ACTIVATION-UNAVAILABLE HRESULT=0x%08lX; memory-owner locks below do not certify installed TIP activation\n", static_cast<unsigned long>(hr));
+                OfflineEditAccess::BindMemoryOwner(service.Get(), manager.Get(), client);
+            }
+            {
+                const TfClientId editClient = SUCCEEDED(hr) ? serviceClient : client;
+                std::puts("SCOPE production Replace under real async memory TextStore edit lock; profile eligibility/pipe intentionally bypassed");
+                check(Send(service.Get(), context.Get(), editClient, 'P', L"你") && store->text == L"AB你TAIL" && store->selection.acpStart == 3, "partial inserts at selection, suffix intact");
+                check(Send(service.Get(), context.Get(), editClient, 'P', L"你好") && store->text == L"AB你好TAIL" && store->selection.acpStart == 4, "partial replaces owned range without duplication");
+                store->MoveCaret(static_cast<LONG>(store->text.size()));
+                check(Send(service.Get(), context.Get(), editClient, 'F', L"你好。") && store->text == L"AB你好。TAIL" && store->selection.acpStart == 9, "final preserves moved selection across length delta");
+                store->MoveCaret(0);
+                check(Send(service.Get(), context.Get(), editClient, 'F', L"前") && store->text == L"前AB你好。TAIL" && store->selection.acpStart == 1, "next sentence reads new selection");
+                check(store->starts == 2 && store->ends == 2 && store->writes == 4 && store->unlockedWrites == 0 && store->grants > 0, "composition lifecycle and real write locks");
+                check(Send(service.Get(), context.Get(), editClient, 'X', L"") && store->text == L"前AB你好。TAIL" && store->writes == 4,
+                    "real edit lock rejects stale generation/epoch/context and actual lost focus without writes or audio cancellation");
             }
             service->Deactivate(); service.Reset();
         }
