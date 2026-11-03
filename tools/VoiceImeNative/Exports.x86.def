@@ -1,0 +1,6 @@
+LIBRARY TrueFluentVoiceIme
+EXPORTS
+    DllGetClassObject=_DllGetClassObject@12 PRIVATE
+    DllCanUnloadNow=_DllCanUnloadNow@0 PRIVATE
+    DllRegisterServer=_DllRegisterServer@0 PRIVATE
+    DllUnregisterServer=_DllUnregisterServer@0 PRIVATE

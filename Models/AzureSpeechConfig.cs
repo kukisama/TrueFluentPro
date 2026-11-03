@@ -148,6 +148,7 @@ namespace TrueFluentPro.Models
         public int ActiveSubscriptionIndex { get; set; } = 0;
         public List<SpeechResource> SpeechResources { get; set; } = new();
         public string ActiveSpeechResourceId { get; set; } = "";
+        public VoiceImeConfig VoiceIme { get; set; } = new();
 
         public ThemeModePreference ThemeMode { get; set; } = ThemeModePreference.System;
         public bool IsMainNavPaneOpen { get; set; } = false;

@@ -24,6 +24,8 @@ namespace TrueFluentPro.Views
         private bool _initialized;
         private bool _isExportPickerOpen;
 
+        public Func<string, string, string, Task>? OpenTranscriptChatAsync { get; set; }
+
         /// <summary>与 MainWindow CompactNavWidth 同值。</summary>
         private const double CompactPanelWidth = 52;
         /// <summary>展开宽度。</summary>
@@ -473,11 +475,27 @@ namespace TrueFluentPro.Views
             flyout.Items.Add(new Separator());
 
             var askAiItem = new MenuItem { Header = "以此向AI提问" };
-            askAiItem.Click += (_, _) =>
+            askAiItem.Click += async (_, _) =>
             {
-                // 将字幕文本复制到剪贴板，供用户粘贴到创作工坊
-                TopLevel.GetTopLevel(this)?.Clipboard?.SetTextAsync(
-                    $"[{segment.TimeText}] {segment.Speaker}: {segment.Text}");
+                var vm = ViewModel;
+                if (vm == null) return;
+                try
+                {
+                    if (OpenTranscriptChatAsync == null)
+                        throw new InvalidOperationException("聊天窗口尚未就绪，请稍后重试。");
+
+                    var transcript = AudioLabExportService.BuildTranscriptMarkdown(
+                        Path.GetFileNameWithoutExtension(vm.CurrentFilePath),
+                        Path.GetFileName(vm.CurrentFilePath),
+                        vm.Segments.ToList());
+                    await OpenTranscriptChatAsync(vm.CurrentFilePath, transcript,
+                        $"[{segment.TimeText}] {segment.Speaker}: {segment.Text}");
+                }
+                catch (Exception ex)
+                {
+                    vm.StatusMessage = $"打开字幕问答失败：{ex.Message}";
+                    vm.HasExportFeedback = true;
+                }
             };
             flyout.Items.Add(askAiItem);
 

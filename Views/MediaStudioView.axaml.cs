@@ -46,6 +46,9 @@ namespace TrueFluentPro.Views
         private int _capturedSelEnd;
         private TrueFluentPro.Controls.Markdown.MarkdownRenderer? _capturedRenderer;
         private bool _initialized;
+        private ChatVoiceInputHotkey? _voiceHotkey;
+        private Window? _voiceHotkeyWindow;
+        private bool _voiceKeyDown;
 
         // ── 高度缓存：防 VirtualizingStackPanel 估算误差 ──
         private ListBox? _messageListBox;
@@ -102,6 +105,11 @@ namespace TrueFluentPro.Views
                 InputElement.KeyDownEvent,
                 PromptTextBox_KeyDown,
                 Avalonia.Interactivity.RoutingStrategies.Tunnel);
+            this.AddHandler(InputElement.KeyUpEvent, (_, e) =>
+            {
+                if (e.Key == Key.F8) _voiceKeyDown = false;
+            }, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+            UpdateVoiceHotkey();
 
             // 用 MenuFlyout 替代原生 ContextMenu（ContextMenu 在 NavigationView 内 Popup 不渲染）
             _sessionListBox!.AddHandler(
@@ -145,7 +153,61 @@ namespace TrueFluentPro.Views
 
         public void Cleanup()
         {
+            ReleaseVoiceHotkey();
             _viewModel?.Dispose();
+        }
+
+        protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+        {
+            base.OnAttachedToVisualTree(e);
+            Dispatcher.UIThread.Post(UpdateVoiceHotkey, DispatcherPriority.Loaded);
+        }
+
+        protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+        {
+            ReleaseVoiceHotkey();
+            _ = _viewModel?.VoiceInput.StopAsync();
+            base.OnDetachedFromVisualTree(e);
+        }
+
+        protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+        {
+            base.OnPropertyChanged(change);
+            if (change.Property == IsVisibleProperty)
+            {
+                UpdateVoiceHotkey();
+                if (!IsVisible) _ = _viewModel?.VoiceInput.StopAsync();
+            }
+        }
+
+        private void UpdateVoiceHotkey()
+        {
+            var window = TopLevel.GetTopLevel(this) as Window;
+            if (_viewModel == null || !IsEffectivelyVisible || window == null)
+            {
+                ReleaseVoiceHotkey();
+                return;
+            }
+            if (_voiceHotkey != null && ReferenceEquals(window, _voiceHotkeyWindow)) return;
+            ReleaseVoiceHotkey();
+            _voiceHotkeyWindow = window;
+            _voiceHotkey = new ChatVoiceInputHotkey(window, () =>
+            {
+                if (IsEffectivelyVisible && window.IsVisible && window.IsEnabled
+                    && _viewModel.VoiceInput.ToggleCommand.CanExecute(null))
+                    _viewModel.VoiceInput.ToggleCommand.Execute(null);
+            });
+            _voiceHotkey.HintChanged += hint => _viewModel.VoiceInput.HotkeyHint = hint;
+            _voiceHotkey.TryRegister(out var hint);
+            _viewModel.VoiceInput.HotkeyHint = hint;
+        }
+
+        private void ReleaseVoiceHotkey()
+        {
+            _voiceHotkey?.Dispose();
+            _voiceHotkey = null;
+            _voiceHotkeyWindow = null;
+            _voiceKeyDown = false;
         }
 
         /// <summary>
@@ -479,6 +541,17 @@ namespace TrueFluentPro.Views
 
         private async void PromptTextBox_KeyDown(object? sender, KeyEventArgs e)
         {
+            if (e.Key == Key.F8 && e.KeyModifiers == KeyModifiers.None)
+            {
+                e.Handled = true;
+                if (_voiceHotkey?.IsRegistered != true && !_voiceKeyDown)
+                {
+                    _voiceKeyDown = true;
+                    if (_viewModel?.VoiceInput.ToggleCommand.CanExecute(null) == true)
+                        _viewModel.VoiceInput.ToggleCommand.Execute(null);
+                }
+                return;
+            }
             // Ctrl+C：优先处理跨块选择复制
             if (e.Key == Key.C && e.KeyModifiers.HasFlag(KeyModifiers.Control))
             {

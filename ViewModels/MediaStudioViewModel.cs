@@ -56,6 +56,10 @@ namespace TrueFluentPro.ViewModels
         /// <summary>View 层报告的聊天区域视口高度，用于计算首批渲染条数。</summary>
         public double ChatViewportHeight { get; set; } = MediaSessionViewModel.DefaultViewportHeight;
 
+        /// <summary>外部新建会话前等待历史列表加载完成，避免新会话被启动选择覆盖。</summary>
+        public Task InitializationTask { get; }
+        public ChatVoiceInputViewModel VoiceInput { get; }
+
         // 会话内容异步加载取消令牌（防止快速连点竞态）
         private CancellationTokenSource? _sessionLoadCts;
 
@@ -68,6 +72,8 @@ namespace TrueFluentPro.ViewModels
             get => _currentSession;
             set
             {
+                if (!ReferenceEquals(_currentSession, value))
+                    _ = VoiceInput.StopAsync();
                 if (SetProperty(ref _currentSession, value))
                 {
                     OnPropertyChanged(nameof(HasCurrentSession));
@@ -217,6 +223,8 @@ namespace TrueFluentPro.ViewModels
             _configurationService = configurationService;
             _configProvider = configProvider;
             _onGlobalConfigUpdated = onGlobalConfigUpdated;
+            VoiceInput = new ChatVoiceInputViewModel(
+                App.Services.GetService<IChatVoiceInputFactory>(), configProvider, () => CurrentSession);
             _imageTokenProvider = _azureTokenProviderStore.GetProvider("media-image");
             _videoTokenProvider = _azureTokenProviderStore.GetProvider("media-video");
 
@@ -251,7 +259,7 @@ namespace TrueFluentPro.ViewModels
             RefreshAvailableTextModels();
 
             // 加载现有会话（磁盘 I/O 移到后台线程）
-            _ = LoadSessionsAsync();
+            InitializationTask = LoadSessionsAsync();
 
             _ = TrySilentLoginForMediaAsync();
         }
@@ -838,6 +846,7 @@ namespace TrueFluentPro.ViewModels
 
         public void Dispose()
         {
+            VoiceInput.Dispose();
             _sessionLoadCts?.Cancel();
             _sessionLoadCts?.Dispose();
             SaveAllSessions();

@@ -108,7 +108,7 @@ namespace TrueFluentPro.Models
     /// <summary>消息附件元数据（持久化用）</summary>
     public class ChatAttachmentInfo
     {
-        /// <summary>image / text</summary>
+        /// <summary>image / text / transcript（完整录音稿，持续作为会话资料携带）</summary>
         public string Type { get; set; } = "text";
         /// <summary>显示用文件名</summary>
         public string FileName { get; set; } = "";

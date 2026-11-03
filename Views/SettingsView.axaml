@@ -135,6 +135,12 @@
                             <TextBlock Grid.Column="1" Text="语音识别" VerticalAlignment="Center"/>
                         </Grid>
                     </ListBoxItem>
+                    <ListBoxItem Tag="Section_VoiceIme">
+                        <Grid Classes="sidebar-nav-item-content" ColumnDefinitions="18,*" ColumnSpacing="10">
+                            <icons:Icon Grid.Column="0" Value="fa-solid fa-microphone" FontSize="14"/>
+                            <TextBlock Grid.Column="1" Text="语音输入法" VerticalAlignment="Center"/>
+                        </Grid>
+                    </ListBoxItem>
                     <ListBoxItem Tag="Section_Text">
                         <Grid Classes="sidebar-nav-item-content" ColumnDefinitions="18,*" ColumnSpacing="10">
                             <icons:Icon Grid.Column="0" Value="fa-solid fa-closed-captioning" FontSize="14"/>

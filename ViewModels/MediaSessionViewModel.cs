@@ -218,6 +218,7 @@ namespace TrueFluentPro.ViewModels
             IsVideoMode && HasReferenceImage && IsReferenceImageSizeValid;
 
         // --- 输入区 ---
+        public ChatInputCursor InputCursor { get; } = new();
         private string _promptText = "";
         public string PromptText
         {
@@ -225,6 +226,20 @@ namespace TrueFluentPro.ViewModels
             set
             {
                 if (SetProperty(ref _promptText, value))
+                {
+                    ((RelayCommand)GenerateCommand).RaiseCanExecuteChanged();
+                    ((RelayCommand)OptimizePromptCommand).RaiseCanExecuteChanged();
+                }
+            }
+        }
+
+        private bool _isVoiceInputActive;
+        public bool IsVoiceInputActive
+        {
+            get => _isVoiceInputActive;
+            set
+            {
+                if (SetProperty(ref _isVoiceInputActive, value))
                 {
                     ((RelayCommand)GenerateCommand).RaiseCanExecuteChanged();
                     ((RelayCommand)OptimizePromptCommand).RaiseCanExecuteChanged();
@@ -346,6 +361,37 @@ namespace TrueFluentPro.ViewModels
         {
             var ext = Path.GetExtension(filePath).ToLowerInvariant();
             return ImageExtensions.Contains(ext) || TextExtensions.Contains(ext);
+        }
+
+        /// <summary>保存独立录音稿快照并立即写入历史；不自动调用模型，等待用户提问。</summary>
+        public async Task InitializeTranscriptConversationAsync(string sourcePath, string transcript, string selectedQuote)
+        {
+            if (string.IsNullOrWhiteSpace(transcript))
+                throw new InvalidOperationException("暂无可用于提问的字幕内容。");
+
+            var directory = Path.Combine(SessionDirectory, "attachments");
+            Directory.CreateDirectory(directory);
+            var fileName = $"{Path.GetFileNameWithoutExtension(sourcePath)}_录音稿.md";
+            var path = Path.Combine(directory, fileName);
+            await File.WriteAllTextAsync(path, transcript, new UTF8Encoding(false));
+
+            SessionName = $"{Path.GetFileNameWithoutExtension(sourcePath)} · 字幕问答";
+            SelectedType = MediaGenType.Text;
+            AppendMessage(new ChatMessageViewModel(new MediaChatMessage
+            {
+                Role = "user",
+                ContentType = "text",
+                Text = "已附加完整录音稿，接下来的问题请结合这份字幕回答，并在适当时引用时间和说话人。",
+                Attachments = new List<ChatAttachmentInfo>
+                {
+                    new() { Type = "transcript", FileName = fileName, FilePath = path, FileSize = new FileInfo(path).Length }
+                }
+            }));
+            PromptText = string.IsNullOrWhiteSpace(selectedQuote)
+                ? ""
+                : $"关于这段字幕：\n{selectedQuote}\n\n";
+            StatusText = "完整录音稿已保存，可以开始提问。";
+            _onRequestSave?.Invoke(this);
         }
 
         private MediaGenType _selectedType = MediaGenType.Text;
@@ -844,7 +890,7 @@ namespace TrueFluentPro.ViewModels
 
             OptimizePromptCommand = new RelayCommand(
                 _ => _ = OptimizePromptAsync(),
-                _ => !string.IsNullOrWhiteSpace(PromptText) && !IsOptimizingPrompt && !IsChatStreaming);
+                _ => !string.IsNullOrWhiteSpace(PromptText) && !IsOptimizingPrompt && !IsChatStreaming && !IsVoiceInputActive);
 
             // --- 对话功能增强命令 ---
             EditMessageCommand = new RelayCommand(
@@ -907,7 +953,7 @@ namespace TrueFluentPro.ViewModels
         private bool CanGenerateNow()
         {
             // 统一文字聊天模式：有文本或有附件即可发送
-            return !IsChatStreaming && (!string.IsNullOrWhiteSpace(PromptText) || PendingAttachments.Count > 0);
+            return !IsChatStreaming && !IsVoiceInputActive && (!string.IsNullOrWhiteSpace(PromptText) || PendingAttachments.Count > 0);
         }
 
         private async System.Threading.Tasks.Task ConfigureScopedServiceAuthAsync(
@@ -984,7 +1030,7 @@ namespace TrueFluentPro.ViewModels
                 heightBudget -= _allMessages[i].EstimateHeight();
                 firstBatch++;
             }
-            firstBatch = Math.Clamp(firstBatch, MinFirstPaintCount, Math.Min(MaxFirstPaintCount, totalToLoad));
+            firstBatch = Math.Clamp(firstBatch, Math.Min(MinFirstPaintCount, totalToLoad), Math.Min(MaxFirstPaintCount, totalToLoad));
 
             // 从尾部往前数 firstBatch 条作为第一批
             var firstBatchStart = _allMessages.Count - firstBatch;
@@ -1220,6 +1266,7 @@ namespace TrueFluentPro.ViewModels
 
         public void Generate()
         {
+            if (IsVoiceInputActive) return;
             var hasText = !string.IsNullOrWhiteSpace(PromptText);
             var hasAttachments = PendingAttachments.Count > 0;
             if (!hasText && !hasAttachments) return;
@@ -3156,7 +3203,7 @@ namespace TrueFluentPro.ViewModels
         }
 
         /// <summary>将附件内容展开并合并到 prompt 中（内部使用，用户看不到展开内容）</summary>
-        private static string ExpandAttachmentsIntoPrompt(string prompt, List<ChatAttachmentInfo> attachments)
+        private static string ExpandAttachmentsIntoPrompt(string prompt, IReadOnlyList<ChatAttachmentInfo> attachments)
         {
             if (attachments.Count == 0) return prompt;
 
@@ -3164,12 +3211,12 @@ namespace TrueFluentPro.ViewModels
 
             foreach (var att in attachments)
             {
-                if (att.Type == "text" && File.Exists(att.FilePath))
+                if ((att.Type == "text" || att.Type == "transcript") && File.Exists(att.FilePath))
                 {
                     try
                     {
                         var content = File.ReadAllText(att.FilePath);
-                        if (content.Length > 15000)
+                        if (att.Type != "transcript" && content.Length > 15000)
                             content = content[..15000] + "\n...(已截断)";
                         sb.AppendLine($"[附件: {att.FileName}]");
                         sb.AppendLine("---");
@@ -3198,22 +3245,34 @@ namespace TrueFluentPro.ViewModels
         private string BuildMultiTurnContent(string currentPrompt)
         {
             var textMessages = _allMessages
-                .Where(m => m.IsTextContent && !string.IsNullOrWhiteSpace(m.Text))
-                .TakeLast(_maxConversationTurns)
+                .Where(m => m.IsTextContent && !m.IsLoading && (!string.IsNullOrWhiteSpace(m.Text) || m.HasAttachments))
                 .ToList();
 
-            // 排除刚刚加入的用户消息（已在 textMessages 里）和占位 AI 消息
-            if (textMessages.Count <= 1)
-                return currentPrompt;
+            // 当前提问已单独展开；加载态 AI 文案不能被误当成最后一条用户消息。
+            if (textMessages.Count > 0 && textMessages[^1].IsUser)
+                textMessages.RemoveAt(textMessages.Count - 1);
 
             var sb = new StringBuilder();
-            // 不包含最后一条（那是刚发的 user prompt）
-            foreach (var msg in textMessages.Take(textMessages.Count - 1))
+            // 录音稿是本会话的资料附件，不随普通历史轮数淘汰，也不重复展开。
+            var transcripts = textMessages.Where(m => m.IsUser)
+                .SelectMany(m => m.Attachments)
+                .Where(a => a.Type == "transcript")
+                .DistinctBy(a => a.FilePath, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            if (transcripts.Count > 0)
+                sb.AppendLine(ExpandAttachmentsIntoPrompt("", transcripts)).AppendLine();
+
+            foreach (var msg in textMessages.TakeLast(Math.Max(1, _maxConversationTurns)))
             {
                 var label = msg.IsUser ? "用户" : "AI";
                 var text = msg.Text;
 
-                if (!msg.IsUser)
+                if (msg.IsUser)
+                {
+                    text = ExpandAttachmentsIntoPrompt(text,
+                        msg.Attachments.Where(a => a.Type != "transcript").ToList());
+                }
+                else
                 {
                     // 纯状态消息（图片生成 / 错误占位）不纳入上下文，避免历史膨胀误触安全过滤
                     if (IsStatusOnlyMessage(text))
@@ -3738,7 +3797,9 @@ namespace TrueFluentPro.ViewModels
                 runtimeRequest.ImageFormat = _genConfig.ImageFormat;
             }
 
-            var contextContent = BuildMultiTurnContent(prompt);
+            var currentAttachments = _allMessages.LastOrDefault(m => m.IsUser)?.Attachments
+                ?? Array.Empty<ChatAttachmentInfo>();
+            var contextContent = BuildMultiTurnContent(ExpandAttachmentsIntoPrompt(prompt, currentAttachments));
             if (!string.IsNullOrEmpty(webSearch.FormattedContext))
                 contextContent = webSearch.FormattedContext + "\n\n---\n\n" + contextContent;
 

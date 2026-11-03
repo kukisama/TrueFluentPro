@@ -16,6 +16,37 @@
     </UserControl.Resources>
 
     <UserControl.Styles>
+        <Style Selector="Button.voice-input-btn">
+            <Setter Property="Background" Value="{DynamicResource SurfaceAltBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource ControlStrokeColorDefaultBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+            <Setter Property="Cursor" Value="Hand"/>
+        </Style>
+        <Style Selector="Button.voice-input-btn:pointerover">
+            <Setter Property="Background" Value="{DynamicResource SurfaceHoverBrush}"/>
+        </Style>
+        <Style Selector="Button.voice-input-btn.voice-active">
+            <Setter Property="Background" Value="{DynamicResource ErrorBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource ErrorBrush}"/>
+            <Setter Property="Foreground" Value="White"/>
+        </Style>
+        <Style Selector="Button.voice-input-btn:focus-visible">
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentBlueBrush}"/>
+        </Style>
+        <Style Selector="Border.voice-surface.working">
+            <Style.Animations>
+                <Animation Duration="0:0:1" IterationCount="INFINITE">
+                    <KeyFrame Cue="0%"><Setter Property="Opacity" Value="1"/></KeyFrame>
+                    <KeyFrame Cue="50%"><Setter Property="Opacity" Value="0.7"/></KeyFrame>
+                    <KeyFrame Cue="100%"><Setter Property="Opacity" Value="1"/></KeyFrame>
+                </Animation>
+            </Style.Animations>
+        </Style>
+        <Style Selector="Border.voice-level">
+            <Setter Property="Transitions">
+                <Transitions><DoubleTransition Property="Height" Duration="0:0:0.08"/></Transitions>
+            </Setter>
+        </Style>
         <!-- 用户消息气泡 -->
         <Style Selector="Border.user-msg">
             <Setter Property="Background" Value="{DynamicResource UserMessageBrush}"/>
@@ -1121,9 +1152,11 @@
                                 <!-- Row 1: 输入框 + 发送/停止 -->
                                 <Grid Grid.Row="1" ColumnDefinitions="*,Auto" ColumnSpacing="6">
                                     <!-- 输入框 -->
-                                    <TextBox x:Name="PromptTextBox"
+                                    <controls:VoiceInputTextBox x:Name="PromptTextBox"
                                              Grid.Column="0"
                                              Text="{Binding PromptText}"
+                                             CursorState="{Binding InputCursor}"
+                                             ClearSelectionOnLostFocus="False"
                                              Watermark="请输入内容... (Ctrl+Enter 发送)"
                                              AcceptsReturn="True"
                                              TextWrapping="Wrap"
@@ -1134,6 +1167,48 @@
                                     <!-- 右侧：发送 / 停止 -->
                                     <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6"
                                                 VerticalAlignment="Bottom">
+                                        <Button Classes="voice-input-btn"
+                                                Classes.voice-active="{Binding $parent[UserControl].DataContext.VoiceInput.IsActive}"
+                                                Classes.recording="{Binding $parent[UserControl].DataContext.VoiceInput.IsRecording}"
+                                                Command="{Binding $parent[UserControl].DataContext.VoiceInput.ToggleCommand}"
+                                                ToolTip.Tip="{Binding $parent[UserControl].DataContext.VoiceInput.HotkeyHint}"
+                                                AutomationProperties.Name="开始或停止语音输入 (F8)"
+                                                Focusable="False"
+                                                Width="48" Height="38" Padding="0">
+                                            <Button.Template>
+                                                <ControlTemplate>
+                                                    <Border Name="VoiceButtonSurface" Classes="voice-surface"
+                                                            Classes.working="{Binding $parent[UserControl].DataContext.VoiceInput.IsActive}"
+                                                            Background="{TemplateBinding Background}"
+                                                            BorderBrush="{TemplateBinding BorderBrush}"
+                                                            BorderThickness="1" CornerRadius="10">
+                                                        <ContentPresenter Name="VoiceButtonContent"
+                                                                          Content="{TemplateBinding Content}"
+                                                                          HorizontalContentAlignment="Center"
+                                                                          VerticalContentAlignment="Center"/>
+                                                    </Border>
+                                                </ControlTemplate>
+                                            </Button.Template>
+                                            <StackPanel Orientation="Horizontal" Spacing="5" Height="22">
+                                                <icons:Icon Value="fa-solid fa-microphone-lines" FontSize="16"
+                                                            RenderTransformOrigin="50%,50%"
+                                                            HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                    <icons:Icon.RenderTransform>
+                                                        <ScaleTransform ScaleX="{Binding $parent[UserControl].DataContext.VoiceInput.MicrophoneScale}"
+                                                                        ScaleY="{Binding $parent[UserControl].DataContext.VoiceInput.MicrophoneScale}"/>
+                                                    </icons:Icon.RenderTransform>
+                                                </icons:Icon>
+                                                <StackPanel Orientation="Horizontal" Spacing="2" VerticalAlignment="Center"
+                                                            IsVisible="{Binding $parent[UserControl].DataContext.VoiceInput.IsRecording}">
+                                                    <Border Classes="voice-level" Width="2" CornerRadius="1" Background="White"
+                                                            Height="{Binding $parent[UserControl].DataContext.VoiceInput.LevelSideBarHeight}"/>
+                                                    <Border Name="VoiceLevelBar" Classes="voice-level" Width="2" CornerRadius="1" Background="White"
+                                                            Height="{Binding $parent[UserControl].DataContext.VoiceInput.LevelBarHeight}"/>
+                                                    <Border Classes="voice-level" Width="2" CornerRadius="1" Background="White"
+                                                            Height="{Binding $parent[UserControl].DataContext.VoiceInput.LevelSideBarHeight}"/>
+                                                </StackPanel>
+                                            </StackPanel>
+                                        </Button>
                                         <Button Classes="pressable" Content="发送" Command="{Binding GenerateCommand}"
                                                 Padding="16,8" FontWeight="SemiBold"
                                                 Background="{DynamicResource AccentBlueBrush}" Foreground="White"/>
@@ -1146,6 +1221,10 @@
                         </Grid>
 
                         <StackPanel Grid.Row="3" Margin="0,4,0,0" Spacing="2">
+                            <TextBlock FontSize="11" TextWrapping="Wrap"
+                                       Foreground="{DynamicResource TextMutedBrush}"
+                                       IsVisible="{Binding $parent[UserControl].DataContext.VoiceInput.HasStatus}"
+                                       Text="{Binding $parent[UserControl].DataContext.VoiceInput.StatusText}"/>
                             <TextBlock FontSize="12"
                                        Foreground="{DynamicResource WarningBrush}"
                                        IsVisible="{Binding IsVideoReferenceLimitExceeded}"
@@ -1183,6 +1262,8 @@
                 <TextBlock Grid.Column="0" Text="{Binding StatusText}"
                            FontSize="12" Foreground="{DynamicResource TextSubtleBrush}" VerticalAlignment="Center"/>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10">
+                    <TextBlock Text="{Binding VoiceInput.HotkeyHint}" FontSize="11"
+                               Foreground="{DynamicResource TextSubtleBrush}" VerticalAlignment="Center"/>
                     <TextBlock FontSize="12" Foreground="{DynamicResource TextSubtleBrush}" VerticalAlignment="Center">
                         <TextBlock.Text>
                             <MultiBinding StringFormat="活跃任务: {0}">

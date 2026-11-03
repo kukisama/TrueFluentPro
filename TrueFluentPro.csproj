@@ -92,4 +92,26 @@
     <Copy SourceFiles="@(UpdaterFiles)" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="true" />
   </Target>
 
+  <!-- 原生输入法仅编译/交付，不在构建过程中注册到系统。 -->
+  <Target Name="BuildVoiceIme" AfterTargets="Build"
+          Condition="'$(OS)' == 'Windows_NT' AND !$(RuntimeIdentifier.StartsWith('osx')) AND !$(RuntimeIdentifier.StartsWith('linux')) AND '$(DesignTimeBuild)' != 'true'">
+    <Exec Command="pwsh -NoProfile -File &quot;$(ProjectDir)tools\VoiceImeNative\Build.ps1&quot; -OutputDirectory &quot;$(TargetDir)voice-ime&quot; -Configuration $(Configuration)" />
+    <!-- 静态链接 LGPL：随组件交付对应源码、许可与完整原生重链接入口。 -->
+    <ItemGroup>
+      <VoiceImeRelinkSources Include="$(ProjectDir)tools\VoiceImeNative\**\*.cpp;$(ProjectDir)tools\VoiceImeNative\**\*.h;$(ProjectDir)tools\VoiceImeNative\**\*.def;$(ProjectDir)tools\VoiceImeNative\**\*.rc;$(ProjectDir)tools\VoiceImeNative\**\*.ico;$(ProjectDir)tools\VoiceImeNative\**\Build.ps1;$(ProjectDir)tools\VoiceImeNative\**\LICENSE.txt;$(ProjectDir)tools\VoiceImeNative\**\TRUEFLUENT-NOTICE.md;$(ProjectDir)tools\VoiceImeNative\**\README.md"
+                            Exclude="$(ProjectDir)tools\VoiceImeNative\artifacts\**;$(ProjectDir)tools\VoiceImeNative\ThirdParty\libIME2\lib\**;$(ProjectDir)tools\VoiceImeNative\ThirdParty\libIME2\test\**" />
+    </ItemGroup>
+    <Copy SourceFiles="@(VoiceImeRelinkSources)" DestinationFiles="@(VoiceImeRelinkSources->'$(TargetDir)voice-ime\source\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(ProjectDir)LICENSE" DestinationFiles="$(TargetDir)voice-ime\source\LICENSE" SkipUnchangedFiles="true" />
+  </Target>
+  <Target Name="PublishVoiceIme" AfterTargets="Publish"
+          Condition="'$(OS)' == 'Windows_NT' AND !$(RuntimeIdentifier.StartsWith('osx')) AND !$(RuntimeIdentifier.StartsWith('linux'))">
+    <ItemGroup>
+      <VoiceImeFiles Include="$(TargetDir)voice-ime\**\TrueFluentVoiceIme.dll;$(TargetDir)voice-ime\**\VoiceImeRegister.exe" />
+      <VoiceImePublishedSources Include="$(TargetDir)voice-ime\source\**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(VoiceImeFiles)" DestinationFiles="@(VoiceImeFiles->'$(PublishDir)voice-ime\%(RecursiveDir)%(Filename)%(Extension)')" />
+    <Copy SourceFiles="@(VoiceImePublishedSources)" DestinationFiles="@(VoiceImePublishedSources->'$(PublishDir)voice-ime\source\%(RecursiveDir)%(Filename)%(Extension)')" />
+  </Target>
+
 </Project>

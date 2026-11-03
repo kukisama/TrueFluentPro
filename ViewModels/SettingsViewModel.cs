@@ -32,6 +32,7 @@ namespace TrueFluentPro.ViewModels
         private readonly Lazy<AboutSectionVM> _aboutVm;
         private readonly Lazy<WebSearchSectionVM> _webSearchVm;
         private readonly Lazy<CloudSectionVM> _cloudVm;
+        private readonly Lazy<VoiceImeSectionVM> _voiceImeVm;
 
         private AzureSpeechConfig _config = new();
         private Timer? _debounceTimer;
@@ -59,6 +60,7 @@ namespace TrueFluentPro.ViewModels
         public AboutSectionVM AboutVM => _aboutVm.Value;
         public WebSearchSectionVM WebSearchVM => _webSearchVm.Value;
         public CloudSectionVM CloudVM => _cloudVm.Value;
+        public VoiceImeSectionVM VoiceImeVM => _voiceImeVm.Value;
 
         public SettingsViewModel(
             ConfigurationService configService,
@@ -89,6 +91,8 @@ namespace TrueFluentPro.ViewModels
             _videoGenVm = CreateLazySection(() => new VideoGenSectionVM(), ConfigureVideoGenSection);
             _aboutVm = CreateLazySection(() => new AboutSectionVM(aboutSectionService, ReportStatus), ConfigureAboutSection);
             _webSearchVm = CreateLazySection(() => new WebSearchSectionVM(), ConfigureWebSearchSection);
+            _voiceImeVm = CreateLazySection(() => new VoiceImeSectionVM(new VoiceImeRegistrationService()),
+                section => section.LoadFrom(_config));
             _cloudVm = CreateLazySection(() =>
             {
                 var authService = App.Services.GetService(typeof(ICloudAuthService)) as ICloudAuthService
@@ -330,6 +334,11 @@ namespace TrueFluentPro.ViewModels
                 ConfigureCloudSection(_cloudVm.Value);
             }
 
+            if (_voiceImeVm.IsValueCreated)
+            {
+                _voiceImeVm.Value.LoadFrom(_config);
+            }
+
             _ = RefreshAiAuthStatusAsync();
         }
 
@@ -363,6 +372,10 @@ namespace TrueFluentPro.ViewModels
 
             AudioLabVM.RefreshModels(BuildModelOptions(ModelCapability.Text));
             AudioLabVM.RefreshEndpoints(_config);
+            if (_voiceImeVm.IsValueCreated)
+            {
+                _voiceImeVm.Value.LoadFrom(_config);
+            }
         }
 
         private List<ModelOption> BuildModelOptions(ModelCapability required)
@@ -652,6 +665,11 @@ namespace TrueFluentPro.ViewModels
             if (_cloudVm.IsValueCreated)
             {
                 _cloudVm.Value.ApplyTo(_config);
+            }
+
+            if (_voiceImeVm.IsValueCreated)
+            {
+                _voiceImeVm.Value.ApplyTo(_config);
             }
 
             EndpointsVM.SyncEndpointsToConfig();

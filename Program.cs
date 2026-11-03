@@ -11,6 +11,12 @@ class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        // 输入法后台不创建 Avalonia、启动画面或主程序服务，也不持有主窗口。
+        if (args.Length > 0 && args[0] == "--voice-ime-host")
+        {
+            Environment.ExitCode = VoiceImeHost.RunAsync(args).GetAwaiter().GetResult();
+            return;
+        }
         CrashLogger.Init();
         Helpers.ScrollDiagLog.Reset();
         try

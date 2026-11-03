@@ -10,6 +10,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using TrueFluentPro.Models;
 using TrueFluentPro.Services;
 using TrueFluentPro.Services.Storage;
@@ -32,6 +33,7 @@ public partial class MainWindow : Window
     private bool _isApplyingNavPaneState;
     private readonly Dictionary<string, Control> _pageCache = new(StringComparer.Ordinal);
     private Control? _currentPage;
+    private Window? _workshopChatWindow;
 
     private MediaStudioView? MediaStudioViewPage => GetCachedPage<MediaStudioView>(MainWindowViewModel.NavTagMedia);
     private MediaCenterV2View? MediaCenterV2ViewPage => GetCachedPage<MediaCenterV2View>(MainWindowViewModel.NavTagMediaV2);
@@ -89,6 +91,7 @@ public partial class MainWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
+        _workshopChatWindow?.Close();
         MediaStudioViewPage?.Cleanup();
         MediaCenterV2ViewPage?.Cleanup();
         _viewModel?.Dispose();
@@ -237,6 +240,11 @@ public partial class MainWindow : Window
     private void ShowPage(string tag)
     {
         tag = NormalizeNavTag(tag);
+        if (tag == MainWindowViewModel.NavTagMedia && _workshopChatWindow != null)
+        {
+            ActivateWorkshopChatWindow();
+            return;
+        }
         var page = GetOrCreatePage(tag);
 
         if (!ReferenceEquals(_currentPage, page))
@@ -273,24 +281,7 @@ public partial class MainWindow : Window
 
         if (tag == MainWindowViewModel.NavTagMedia && _viewModel != null && !_mediaStudioInitialized)
         {
-            _mediaStudioInitialized = true;
-            Dispatcher.UIThread.Post(() =>
-            {
-                var config = _viewModel.ConfigVM.Config;
-                MediaStudioViewPage?.Initialize(
-                    config.AiConfig ?? new AiConfig(),
-                    config.MediaGenConfig,
-                    config.Endpoints,
-                    App.Services.GetRequiredService<IModelRuntimeResolver>(),
-                    App.Services.GetRequiredService<IAzureTokenProviderStore>(),
-                    App.Services.GetRequiredService<ConfigurationService>(),
-                    () => _viewModel.ConfigVM.Config,
-                    updatedConfig =>
-                    {
-                        _viewModel.ConfigVM.SetConfig(updatedConfig);
-                        _viewModel.Settings.Initialize(updatedConfig);
-                    });
-            }, DispatcherPriority.Background);
+            Dispatcher.UIThread.Post(EnsureMediaStudioInitialized, DispatcherPriority.Background);
         }
 
         if (tag == MainWindowViewModel.NavTagMediaV2 && !_mediaCenterV2Initialized)
@@ -346,6 +337,7 @@ public partial class MainWindow : Window
                         App.Services.GetRequiredService<IDesktopFolderLauncher>(),
                         App.Services.GetRequiredService<IAudioTaskQueueService>(),
                         App.Services.GetRequiredService<ITaskEventBus>());
+                    AudioLabViewPage!.OpenTranscriptChatAsync = OpenTranscriptChatAsync;
                 }
             }, DispatcherPriority.Background);
         }
@@ -569,26 +561,92 @@ public partial class MainWindow : Window
         ShowPage(MainWindowViewModel.NavTagMedia);
     }
 
-    private void NavigateToWorkshopWithAttachments(string[] filePaths)
+    private void EnsureMediaStudioInitialized()
     {
-        ShowPage(MainWindowViewModel.NavTagMedia);
+        if (_mediaStudioInitialized || _viewModel == null) return;
+        var config = _viewModel.ConfigVM.Config;
+        var studio = (MediaStudioView)GetOrCreatePage(MainWindowViewModel.NavTagMedia);
+        studio.Initialize(
+            config.AiConfig ?? new AiConfig(), config.MediaGenConfig, config.Endpoints,
+            App.Services.GetRequiredService<IModelRuntimeResolver>(),
+            App.Services.GetRequiredService<IAzureTokenProviderStore>(),
+            App.Services.GetRequiredService<ConfigurationService>(),
+            () => _viewModel.ConfigVM.Config,
+            updatedConfig =>
+            {
+                _viewModel.ConfigVM.SetConfig(updatedConfig);
+                _viewModel.Settings.Initialize(updatedConfig);
+            });
+        _mediaStudioInitialized = true;
+    }
 
-        // 确保创作工坊已初始化后再操作
-        Dispatcher.UIThread.Post(() =>
+    private async Task OpenTranscriptChatAsync(string sourcePath, string transcript, string selectedQuote)
+    {
+        EnsureMediaStudioInitialized();
+        var studio = MediaStudioViewPage
+            ?? throw new InvalidOperationException("创作工坊尚未就绪。");
+        var vm = studio.ViewModel
+            ?? throw new InvalidOperationException("聊天服务尚未就绪。");
+        await vm.InitializationTask;
+        vm.CreateNewSession();
+        var session = vm.CurrentSession!;
+        await session.InitializeTranscriptConversationAsync(sourcePath, transcript, selectedQuote);
+
+        if (_workshopChatWindow == null)
         {
-            var studio = MediaStudioViewPage;
-            if (studio?.ViewModel == null) return;
+            // 移动已有视图，不创建第二份会话管理器或历史缓存。
+            PageHost.Children.Remove(studio);
+            if (ReferenceEquals(_currentPage, studio))
+                _currentPage = null;
+            studio.IsVisible = true;
+            var window = new Window
+            {
+                Title = "字幕问答 · 创作工坊",
+                Width = 1120,
+                Height = 800,
+                MinWidth = 960,
+                MinHeight = 560,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Icon = Icon,
+                Content = studio
+            };
+            _workshopChatWindow = window;
+            window.Closed += (_, _) =>
+            {
+                window.Content = null;
+                studio.IsVisible = false;
+                _workshopChatWindow = null;
+            };
+            window.Show(this);
+        }
+        ActivateWorkshopChatWindow();
+    }
 
-            studio.ViewModel.CreateNewSession();
-            var session = studio.ViewModel.CurrentSession;
-            if (session == null) return;
+    private void ActivateWorkshopChatWindow()
+    {
+        if (_workshopChatWindow == null) return;
+        if (_workshopChatWindow.WindowState == WindowState.Minimized)
+            _workshopChatWindow.WindowState = WindowState.Normal;
+        _workshopChatWindow.Activate();
+    }
 
+    private async void NavigateToWorkshopWithAttachments(string[] filePaths)
+    {
+        try
+        {
             foreach (var path in filePaths)
             {
-                if (System.IO.File.Exists(path))
-                    session.AddAttachmentFile(path);
+                if (!File.Exists(path))
+                    throw new FileNotFoundException("字幕文件不存在，请重新加载字幕。", path);
+                await OpenTranscriptChatAsync(path, await File.ReadAllTextAsync(path), "");
             }
-        }, DispatcherPriority.Background);
+        }
+        catch (Exception ex)
+        {
+            if (MediaStudioViewPage?.ViewModel is { } vm)
+                vm.StatusText = $"打开字幕问答失败：{ex.Message}";
+            CrashLogger.AddBreadcrumb($"打开字幕问答失败：{ex.Message}");
+        }
     }
 
     private void MediaV2NavButton_Click(object? sender, RoutedEventArgs e)

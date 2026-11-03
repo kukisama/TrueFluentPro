@@ -1,0 +1,4 @@
+/artifacts/
+
+# Build.ps1 compiles libIME2/src directly; upstream GoogleTest is not used.
+/ThirdParty/libIME2/lib/googletest-release-1.10.0/

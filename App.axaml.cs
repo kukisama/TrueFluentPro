@@ -104,6 +104,7 @@ public partial class App : Application
         services.AddSingleton<ISpeechResourceRuntimeResolver, SpeechResourceRuntimeResolver>();
         services.AddSingleton<IRealtimeConnectionSpecResolver, RealtimeConnectionSpecResolver>();
         services.AddSingleton<IRealtimeTranslationServiceFactory, RealtimeTranslationServiceFactory>();
+        services.AddSingleton<IChatVoiceInputFactory, ChatVoiceInputFactory>();
         services.AddSingleton<IAiAudioTranscriptionService, AiAudioTranscriptionService>();
         services.AddSingleton<IAudioLabExportService, AudioLabExportService>();
         services.AddSingleton<IDesktopFolderLauncher, DesktopFolderLauncher>();

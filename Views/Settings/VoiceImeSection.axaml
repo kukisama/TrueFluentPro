@@ -1,0 +1,73 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:TrueFluentPro.ViewModels.Settings"
+             x:Class="TrueFluentPro.Views.Settings.VoiceImeSection"
+             x:DataType="vm:VoiceImeSectionVM"
+             x:CompileBindings="False">
+    <Border Classes="app-card"
+            BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+            BorderThickness="1" CornerRadius="8" Padding="20">
+        <StackPanel Spacing="16">
+            <StackPanel Spacing="6">
+                <TextBlock Text="语音输入法" Theme="{StaticResource SubtitleTextBlockStyle}"/>
+                <TextBlock Classes="field-note" TextWrapping="Wrap"
+                           Text="Windows 纯语音输入法。切换到该输入法后，使用固定 F8 开始或停止听写；不需要保持主程序窗口打开。"/>
+                <TextBlock Classes="field-note" TextWrapping="Wrap"
+                           Text="配置由主程序自动保存，独立后台读取同一份配置；输入法自身没有配置页，也不会自动注册或设置为默认输入法。"/>
+            </StackPanel>
+            <Separator/>
+
+            <StackPanel Spacing="10">
+                <TextBlock Text="识别配置" FontWeight="Bold"/>
+                <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto"
+                      RowSpacing="10" ColumnSpacing="12" IsEnabled="{Binding IsWindows}">
+                    <TextBlock Grid.Row="0" Text="语音资源" VerticalAlignment="Center"/>
+                    <ComboBox Grid.Row="0" Grid.Column="1" HorizontalAlignment="Stretch"
+                              ItemsSource="{Binding SpeechResources}"
+                              SelectedItem="{Binding SelectedResource, Mode=TwoWay}"
+                              ToolTip.Tip="引用现有语音资源；跟随模式在后台读取配置时解析当前活动资源。"/>
+                    <TextBlock Grid.Row="1" Text="模型覆盖" VerticalAlignment="Center"/>
+                    <ComboBox Grid.Row="1" Grid.Column="1" HorizontalAlignment="Stretch"
+                              ItemsSource="{Binding SpeechModels}"
+                              SelectedItem="{Binding SelectedModel, Mode=TwoWay}"
+                              ToolTip.Tip="仅用于输入法快照，不修改共享语音资源及其他功能的模型。"/>
+                    <TextBlock Grid.Row="2" Text="麦克风" VerticalAlignment="Center"/>
+                    <Grid Grid.Row="2" Grid.Column="1" ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                        <ComboBox HorizontalAlignment="Stretch" ItemsSource="{Binding Microphones}"
+                                  SelectedItem="{Binding SelectedMicrophone, Mode=TwoWay}"/>
+                        <Button Grid.Column="1" Content="刷新设备" Command="{Binding RefreshMicrophonesCommand}"/>
+                    </Grid>
+                    <TextBlock Grid.Row="3" Text="识别语言" VerticalAlignment="Center"/>
+                    <ComboBox Grid.Row="3" Grid.Column="1" HorizontalAlignment="Stretch"
+                              ItemsSource="{Binding Languages}"
+                              SelectedItem="{Binding SelectedLanguage, Mode=TwoWay}"/>
+                    <TextBlock Grid.Row="4" Text="句尾静音（秒）" VerticalAlignment="Center"/>
+                    <NumericUpDown Grid.Row="4" Grid.Column="1" Width="140" HorizontalAlignment="Left"
+                                   Minimum="0.2" Maximum="3" Increment="0.1" FormatString="0.0"
+                                   Value="{Binding EndSilenceTimeoutSeconds, Mode=TwoWay}"
+                                   ToolTip.Tip="连续静音达到该时长后提交当前句子，默认 0.8 秒；讯飞/百度以连接器实际支持为准。"/>
+                </Grid>
+                <TextBlock Classes="field-note" TextWrapping="Wrap" Text="仅保存资源、模型和设备引用，不复制凭据；暂时不可用的已保存引用不会因刷新被清空。"/>
+                <TextBlock Classes="hint-text" TextWrapping="Wrap" Text="{Binding MicrophoneStatus}"/>
+                <Button Content="刷新资源与模型" HorizontalAlignment="Left" Command="{Binding RefreshOptionsCommand}"/>
+            </StackPanel>
+
+            <Separator/>
+            <StackPanel Spacing="10">
+                <TextBlock Text="输入法安装管理" FontWeight="Bold"/>
+                <TextBlock Classes="field-note" TextWrapping="Wrap"
+                           Text="安装/修复或卸载需使用原安装用户右键以管理员身份运行，不会自动提权。仅管理当前用户 SID，不替其他用户解绑。64 位 Windows 同时管理 x64 与 x86；更新组件或移动主程序后直接点击安装/修复，失败将尝试恢复原完整版本。日常 F8 听写无需管理员。"/>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button Content="安装/修复输入法" Command="{Binding RegisterCommand}"/>
+                    <Button Content="卸载输入法" Command="{Binding UnregisterCommand}"/>
+                    <Button Content="刷新状态" Command="{Binding RefreshStatusCommand}"/>
+                </StackPanel>
+                <ProgressBar IsIndeterminate="True" Height="3" IsVisible="{Binding IsRegistrationBusy}"/>
+                <TextBlock Text="{Binding RegistrationStatus}" TextWrapping="Wrap"/>
+                <TextBlock Classes="hint-text" Text="{Binding OperationMessage}" TextWrapping="Wrap"/>
+                <TextBlock Classes="field-note" TextWrapping="Wrap"
+                           Text="维护期间暂停 F8 并等待本用户后台停止，不结束目标应用。卸载先确认系统入口全部移除，再清理本组件文件；被应用加载的 DLL 仅在确认为占用时排队待重启清理，此时不表示完整卸载。主程序、共享配置和日志保留。"/>
+            </StackPanel>
+        </StackPanel>
+    </Border>
+</UserControl>

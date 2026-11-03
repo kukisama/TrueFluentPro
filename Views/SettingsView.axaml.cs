@@ -28,6 +28,7 @@ public partial class SettingsView : UserControl
         ["Section_Audio"] = () => new AudioSection(),
         ["Section_AudioLab"] = () => new AudioLabSection(),
         ["Section_Recognition"] = () => new RecognitionSection(),
+        ["Section_VoiceIme"] = () => new VoiceImeSection(),
         ["Section_Text"] = () => new TextSection(),
         ["Section_Transfer"] = () => new TransferSection(),
         ["Section_About"] = () => new AboutSection(),
@@ -47,6 +48,7 @@ public partial class SettingsView : UserControl
         ["Section_Audio"] = vm => vm.AudioDevices,
         ["Section_AudioLab"] = vm => vm.Settings.AudioLabVM,
         ["Section_Recognition"] = vm => vm.Settings.RecognitionVM,
+        ["Section_VoiceIme"] = vm => vm.Settings.VoiceImeVM,
         ["Section_Text"] = vm => vm.Settings.TextVM,
         ["Section_Transfer"] = vm => vm.Settings.TransferVM,
         ["Section_About"] = vm => vm.Settings.AboutVM,
@@ -164,6 +166,11 @@ public partial class SettingsView : UserControl
 
         _currentSectionName = sectionName;
         SettingsScroller.Offset = new Vector(SettingsScroller.Offset.X, 0);
+
+        if (sectionName == "Section_VoiceIme")
+        {
+            _ = vm.Settings.VoiceImeVM.RefreshAsync();
+        }
     }
 
     private string? GetSectionTagFromSelection(SelectionChangedEventArgs e)
