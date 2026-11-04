@@ -30,3 +30,15 @@
 - 若 Windows 拒绝 Activate，测试只临时置顶自己的窗口，核验 WindowFromPoint 后点击自身标题区取得焦点，再恢复置顶状态；不绕过系统前台策略、不向其他窗口注入输入。
 - 记录现有屏幕 Scaling。只有实际存在且工作区能容纳当前主窗口最小尺寸的 200%／400% 屏幕才执行相应原生交互；否则明确 SKIP，不修改系统 DPI、不伪造 WM_DPICHANGED。
 - 标题栏另以 2×／4×、192／384 DPI 渲染，检查 DIP／像素比例、文字与图标边界并保存 PNG；这是倍率绘制检查，不代表原生高 DPI 跨屏通过。报告位于 `artifacts/window-chrome-validation/<时间戳>/result.txt`，成功输出 `WINDOW_CHROME_EXIT=0`。
+
+## 宋人书斋／经典外观专项
+
+- 构建后运行 `TranscriptChatRegression.dll --appearance`；该分支只执行外观专项，不运行默认聊天、字幕或原生标题栏测试。需要可显示窗口的桌面，专项设 40 秒取消预算，保留入口原有 45 秒总 deadline。
+- 创建真实生产 `MainWindow`，显式传入 `ShellAppearancePreferencesService`，路径限定为仓库 `artifacts/song-study-validation/<时间戳-随机后缀>/appearance.json`。由 `OnOpened` 创建原有 `LiveTranslationView`；不构造主 VM、不启动业务服务，不读取真实配置／注册表／麦克风／云端，不写真实 AppData、不改系统主题。
+- 使用公开 `INotifyPropertyChanged` 轻量夹具保留三个编辑器的真实文本绑定。两次书斋／经典往返检查 PageHost、页面、缓存 Spy、三个 `ConfigurableTextEditor`、底层 AvaloniaEdit 编辑器／文档、历史集合和原历史项的引用；监测切换期间 Detach 为零，检查逻辑编辑焦点、生产字号选择器设置及受控正文更新不丢。关闭窗口的正常 Detach 不计入切换断言。
+- 应用保持 Dark 时，书斋窗口／页面须为 Light；返回经典恢复继承 Dark。通过窗口及页面作用域 `TryFindResource(key, ActualThemeVariant, ...)` 检查 PrimaryBrush、正文、纸面、表面与边框色；预载样式集合始终不变，局部书斋色板须真正撤销，编辑器经典颜色／最小高度恢复，应用资源及样式不变。直接 `ApplyShellAppearance` 不得改写偏好文件字节或修改时间。
+- 在实际 1000×550、1440×860 客户区读取 SideRegion、TranscriptRegion、TranslationToggleButton 的 DIP／屏幕像素边界及祖先裁剪；激活生产 Expander 标题验证折叠／展开，有溢出时检查 SettingsScroll 独立滚动。开始／停止按钮必须在折叠内容之外且仍可见可用，绝不点击或执行启动命令。
+- `RaiseClick` 通过 Avalonia 11.3.11 的生产 `Button.OnClick` 激活入口打开主题 Flyout，再通过实际 `MenuItem.ClickEvent` 选择书斋，走生产 SaveAndApply 并用新服务实例重载隔离文件。随后选择“经典 · 浅色”：无主 VM 时 UpdateThemeMode 不执行，原 Application Dark 仍须保留。该流程是控件激活／路由验收，不冒充物理鼠标键盘验收。API 依据为该版本官方 `Button.cs`、`MenuItem.cs`、`ToggleButton.cs` 和 `ResourceNodeExtensions.cs` 源码。
+- 服务仅覆盖缺失文件、未知外观标识回退 Classic 及正常保存／重载；同目录隔离标记须原样保留、保存后无 `.tmp` 残留，不删除测试目录或扫描用户目录。成功输出 PASS、`ARTIFACTS` 与 `SHELL_APPEARANCE_EXIT=0`；`finally` 隐藏菜单、关闭窗口、恢复回归宿主原主题并写 `result.txt`。
+- 保存且仅保存一张 `study.png` 和一张 `classic.png`，由 `RenderTargetBitmap` 渲染已布局的生产窗口供主 agent 查看真实 UI，不做素材总览。这是**受控状态的真实 UI 验收**，不代表实际音频／翻译服务、真实业务 VM 状态、物理输入或系统高 DPI 已通过；专项源码本身不等于已构建／已运行结果。
+- 布局更新后等待实际 `CompositionBatch.Rendered` 再核验命中，避免合成线程仍使用上一布局的变换读回；`Processed` 或固定 RAF 数不代表本批已经渲染，不通过重试到命中成功来放宽断言。

@@ -1,0 +1,139 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:icons="https://github.com/projektanker/icons.avalonia">
+    <!--
+        接入契约：样式在窗口初始化时预载，切换时不增删 Styles，避免全树重新套用模板。
+        Window.Classes 的 song-study 控制呈现；同名色板由单独的 SongStudyPalette 局部合并。
+        不加入 App.Styles，不覆盖 Application.Resources，也不以 Button 类型键替换全局主题。
+        官方依据：docs.avaloniaui.net/docs/app-development/resource-dictionary
+                  docs.avaloniaui.net/docs/styling/control-themes
+    -->
+    <Styles.Resources>
+        <SolidColorBrush x:Key="SongStudyPaperBrush" Color="#FFFAF6EC"/>
+        <SolidColorBrush x:Key="SongStudyGoldBrush" Color="#FFC4AE7D"/>
+        <SolidColorBrush x:Key="SongStudyFocusBrush" Color="#FF79613A"/>
+        <SolidColorBrush x:Key="SongStudyNavHoverBrush" Color="#187D6240"/>
+        <SolidColorBrush x:Key="SongStudyNavPressedBrush" Color="#307D6240"/>
+        <FontFamily x:Key="SongStudySerifFontFamily">SimSun, Songti SC, STSong, Noto Serif CJK SC, serif</FontFamily>
+        <FontFamily x:Key="SongStudyUIFontFamily">Microsoft YaHei UI, PingFang SC, Noto Sans CJK SC, sans-serif</FontFamily>
+
+        <!-- 不 BasedOn 默认 Button：其内部状态样式不应在底图之上再涂 Fluent 背景。 -->
+        <ControlTheme x:Key="SongStudyNavigationButtonTheme" TargetType="Button">
+            <Setter Property="Background" Value="{DynamicResource CardBackgroundBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="CornerRadius" Value="2"/>
+            <Setter Property="Padding" Value="12,9"/>
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <Border Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="{TemplateBinding CornerRadius}">
+                        <Grid>
+                            <Image x:Name="PART_NavigationArt"
+                                   Source="avares://TrueFluentPro/Assets/Appearance/SongStudy/nav-idle.png"
+                                   Stretch="Fill"
+                                   IsHitTestVisible="False"/>
+                            <Border x:Name="PART_NavigationTint"
+                                    Margin="2" Background="Transparent"
+                                    IsHitTestVisible="False"/>
+                            <ContentPresenter x:Name="PART_ContentPresenter"
+                                              Content="{TemplateBinding Content}"
+                                              ContentTemplate="{TemplateBinding ContentTemplate}"
+                                              Padding="{TemplateBinding Padding}"
+                                              Foreground="{TemplateBinding Foreground}"
+                                              HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+                                              RecognizesAccessKey="True"/>
+                            <Border x:Name="PART_NavigationFocus"
+                                    Margin="2" BorderThickness="2" CornerRadius="2"
+                                    BorderBrush="{DynamicResource SongStudyFocusBrush}"
+                                    Opacity="0" IsHitTestVisible="False"/>
+                        </Grid>
+                    </Border>
+                </ControlTemplate>
+            </Setter>
+        </ControlTheme>
+    </Styles.Resources>
+
+    <Style Selector=":is(Window).song-study">
+        <Setter Property="Background" Value="{DynamicResource PageBackgroundBrush}"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+        <Setter Property="FontFamily" Value="{DynamicResource SongStudyUIFontFamily}"/>
+    </Style>
+    <Style Selector=":is(Window).song-study Border#ShellTitleBar TextBlock">
+        <Setter Property="FontFamily" Value="{DynamicResource SongStudySerifFontFamily}"/>
+    </Style>
+    <Style Selector=":is(Window).song-study Button.shell-nav-action">
+        <Setter Property="Theme" Value="{StaticResource SongStudyNavigationButtonTheme}"/>
+        <Setter Property="Background" Value="{DynamicResource CardBackgroundBrush}"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+        <Setter Property="FontFamily" Value="{DynamicResource SongStudySerifFontFamily}"/>
+        <Setter Property="FontSize" Value="14"/>
+        <!-- 防止底图在纵向无限测量的导航 StackPanel 内撑高按钮。 -->
+        <Setter Property="Height" Value="44"/>
+        <Setter Property="MinHeight" Value="44"/>
+        <Setter Property="Padding" Value="12,9"/>
+        <Setter Property="Margin" Value="8,0,8,7"/>
+        <Setter Property="CornerRadius" Value="2"/>
+        <Setter Property="HorizontalAlignment" Value="Stretch"/>
+        <Setter Property="HorizontalContentAlignment" Value="Left"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
+    </Style>
+    <Style Selector=":is(Window).song-study Button.shell-nav-action.selected /template/ Image#PART_NavigationArt">
+        <Setter Property="Source" Value="avares://TrueFluentPro/Assets/Appearance/SongStudy/nav-selected.png"/>
+    </Style>
+    <Style Selector=":is(Window).song-study Button.shell-nav-action.selected">
+        <Setter Property="Foreground" Value="{DynamicResource PrimaryDarkBrush}"/>
+    </Style>
+    <Style Selector=":is(Window).song-study Button.shell-nav-action.selected TextBlock">
+        <Setter Property="Foreground" Value="{DynamicResource PrimaryDarkBrush}"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+    <Style Selector=":is(Window).song-study Button.shell-nav-action.selected icons|Icon">
+        <Setter Property="Foreground" Value="{DynamicResource PrimaryDarkBrush}"/>
+    </Style>
+    <Style Selector=":is(Window).song-study Button.shell-nav-action:pointerover /template/ Border#PART_NavigationTint">
+        <Setter Property="Background" Value="{DynamicResource SongStudyNavHoverBrush}"/>
+    </Style>
+    <Style Selector=":is(Window).song-study Button.shell-nav-action:pressed /template/ Border#PART_NavigationTint">
+        <Setter Property="Background" Value="{DynamicResource SongStudyNavPressedBrush}"/>
+    </Style>
+    <Style Selector=":is(Window).song-study Button.shell-nav-action:focus-visible /template/ Border#PART_NavigationFocus">
+        <Setter Property="Opacity" Value="1"/>
+    </Style>
+    <Style Selector=":is(Window).song-study Button.shell-nav-action:disabled">
+        <Setter Property="Opacity" Value="0.45"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+    </Style>
+    <Style Selector=":is(Window).song-study Button.shell-nav-action:disabled TextBlock">
+        <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+    </Style>
+    <Style Selector=":is(Window).song-study Button.shell-nav-action:disabled icons|Icon">
+        <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+    </Style>
+    <Style Selector=":is(Window).song-study Button.shell-nav-action:disabled /template/ Border#PART_NavigationTint">
+        <Setter Property="Background" Value="Transparent"/>
+    </Style>
+
+    <!-- 仍使用原标题栏 Button、原拖动区和原事件；仅换色，不覆盖命中或命令。 -->
+    <Style Selector=":is(Window).song-study Button.shell-caption:pointerover /template/ ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource SurfaceHoverBrush}"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+    </Style>
+    <Style Selector=":is(Window).song-study Button.shell-caption:pressed /template/ ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource BorderMediumBrush}"/>
+    </Style>
+    <Style Selector=":is(Window).song-study Button.shell-caption-close:pointerover /template/ ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource PrimaryBrush}"/>
+        <Setter Property="Foreground" Value="White"/>
+    </Style>
+    <Style Selector=":is(Window).song-study Button.shell-caption-close:pressed /template/ ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource PrimaryDarkBrush}"/>
+        <Setter Property="Foreground" Value="White"/>
+    </Style>
+</Styles>

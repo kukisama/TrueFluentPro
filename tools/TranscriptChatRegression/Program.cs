@@ -37,6 +37,7 @@ internal static class Program
             try
             {
                 if (args.Contains("--window-chrome")) await WindowChromeRegression.VerifyAsync();
+                else if (args.Contains("--appearance")) await ShellAppearanceRegression.VerifyAsync();
                 else if (args.Contains("--floating-subtitle")) await FloatingSubtitleRegression.VerifyAsync();
                 else await VerifyAsync();
                 exitCode = 0;

@@ -956,7 +956,12 @@ namespace TrueFluentPro.ViewModels
 
         private void CycleThemeMode()
         {
-            var nextMode = GetNextThemeMode(CurrentThemeMode);
+            UpdateThemeMode(GetNextThemeMode(CurrentThemeMode));
+        }
+
+        /// <summary>供主题菜单明确选择经典明暗，保留原循环命令的兼容入口。</summary>
+        public void UpdateThemeMode(ThemeModePreference nextMode)
+        {
             CurrentThemeMode = nextMode;
             _config.ThemeMode = nextMode;
 

@@ -41,10 +41,16 @@ public partial class MainWindow : Window
     private AudioLabView? AudioLabViewPage => GetCachedPage<AudioLabView>(MainWindowViewModel.NavTagAudioLab);
     private TaskQueueMonitorView? TaskMonitorViewPage => GetCachedPage<TaskQueueMonitorView>(MainWindowViewModel.NavTagTaskMonitor);
 
-    public MainWindow()
+    public MainWindow() : this(new ShellAppearancePreferencesService())
     {
+    }
+
+    public MainWindow(ShellAppearancePreferencesService appearancePreferences)
+    {
+        _appearancePreferences = appearancePreferences ?? throw new ArgumentNullException(nameof(appearancePreferences));
         InitializeComponent();
         UpdateCaptionState();
+        ApplyShellAppearance(_appearancePreferences.Load());
 
         try
         {
@@ -134,6 +140,7 @@ public partial class MainWindow : Window
             {
                 UpdatePageDataContext(page);
             }
+            UpdateThemePresentation();
         }
     }
 
@@ -203,7 +210,7 @@ public partial class MainWindow : Window
     {
         base.OnSizeChanged(e);
 
-        if (_isApplyingNavPaneState || _viewModel?.IsMainNavPaneOpen != true)
+        if (IsSongStudyAppearance || _isApplyingNavPaneState || _viewModel?.IsMainNavPaneOpen != true)
         {
             return;
         }
@@ -437,6 +444,8 @@ public partial class MainWindow : Window
         }
 
         var page = CreatePage(tag);
+        if (page is LiveTranslationView live)
+            live.ApplyAppearance(IsSongStudyAppearance);
         _pageCache[tag] = page;
         return page;
     }
@@ -521,6 +530,7 @@ public partial class MainWindow : Window
     private void OnThemeModeChanged(ThemeModePreference mode)
     {
         ApplyThemeMode(mode);
+        UpdateThemePresentation();
     }
 
     private void OnMainNavPaneStateChanged(bool isOpen)
@@ -533,11 +543,13 @@ public partial class MainWindow : Window
         _isApplyingNavPaneState = true;
         try
         {
-            ApplyWindowWidthForPaneState(isOpen);
+            if (!IsSongStudyAppearance)
+                ApplyWindowWidthForPaneState(isOpen);
             if (ShellNavRail != null)
             {
-                ShellNavRail.Width = isOpen ? ExpandedNavWidth : CompactNavWidth;
+                ShellNavRail.Width = IsSongStudyAppearance ? 192 : isOpen ? ExpandedNavWidth : CompactNavWidth;
             }
+            UpdateNavigationLabels(isOpen || IsSongStudyAppearance);
         }
         finally
         {

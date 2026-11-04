@@ -1,0 +1,35 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="TrueFluentPro.Controls.SongStudyBookFrame"
+             IsHitTestVisible="False"
+             Focusable="False"
+             HorizontalAlignment="Stretch"
+             VerticalAlignment="Stretch"
+             Background="#FFFAF6EC">
+    <!-- 仅装饰层；业务页面仍放在原 PageHost，不作为本控件的 Content 迁移。 -->
+    <Panel IsHitTestVisible="False">
+        <Border Margin="1" BorderBrush="#FFD6C7A7" BorderThickness="0.6"/>
+        <!-- 四角、书脊固定宽高，仅各自纸面与边缘沿允许的方向延展。 -->
+        <Grid x:Name="BookSlices"
+              ColumnDefinitions="20,*,28,*,20"
+              RowDefinitions="20,*,20"
+              IsHitTestVisible="False">
+            <!-- Tag 保存资源地址，由后台安全加载；缺图时仍保留浅米白底。 -->
+            <Image x:Name="BookR0C0" Grid.Row="0" Grid.Column="0" Stretch="Fill" Tag="avares://TrueFluentPro/Assets/Appearance/SongStudy/book-r0-c0.png"/>
+            <Image x:Name="BookR0C1" Grid.Row="0" Grid.Column="1" Stretch="Fill" Tag="avares://TrueFluentPro/Assets/Appearance/SongStudy/book-r0-c1.png"/>
+            <Image x:Name="BookR0C2" Grid.Row="0" Grid.Column="2" Stretch="Fill" Tag="avares://TrueFluentPro/Assets/Appearance/SongStudy/book-r0-c2.png"/>
+            <Image x:Name="BookR0C3" Grid.Row="0" Grid.Column="3" Stretch="Fill" Tag="avares://TrueFluentPro/Assets/Appearance/SongStudy/book-r0-c3.png"/>
+            <Image x:Name="BookR0C4" Grid.Row="0" Grid.Column="4" Stretch="Fill" Tag="avares://TrueFluentPro/Assets/Appearance/SongStudy/book-r0-c4.png"/>
+            <Image x:Name="BookR1C0" Grid.Row="1" Grid.Column="0" Stretch="Fill" Tag="avares://TrueFluentPro/Assets/Appearance/SongStudy/book-r1-c0.png"/>
+            <Image x:Name="BookR1C1" Grid.Row="1" Grid.Column="1" Stretch="Fill" Tag="avares://TrueFluentPro/Assets/Appearance/SongStudy/book-r1-c1.png"/>
+            <Image x:Name="BookR1C2" Grid.Row="1" Grid.Column="2" Stretch="Fill" Tag="avares://TrueFluentPro/Assets/Appearance/SongStudy/book-r1-c2.png"/>
+            <Image x:Name="BookR1C3" Grid.Row="1" Grid.Column="3" Stretch="Fill" Tag="avares://TrueFluentPro/Assets/Appearance/SongStudy/book-r1-c3.png"/>
+            <Image x:Name="BookR1C4" Grid.Row="1" Grid.Column="4" Stretch="Fill" Tag="avares://TrueFluentPro/Assets/Appearance/SongStudy/book-r1-c4.png"/>
+            <Image x:Name="BookR2C0" Grid.Row="2" Grid.Column="0" Stretch="Fill" Tag="avares://TrueFluentPro/Assets/Appearance/SongStudy/book-r2-c0.png"/>
+            <Image x:Name="BookR2C1" Grid.Row="2" Grid.Column="1" Stretch="Fill" Tag="avares://TrueFluentPro/Assets/Appearance/SongStudy/book-r2-c1.png"/>
+            <Image x:Name="BookR2C2" Grid.Row="2" Grid.Column="2" Stretch="Fill" Tag="avares://TrueFluentPro/Assets/Appearance/SongStudy/book-r2-c2.png"/>
+            <Image x:Name="BookR2C3" Grid.Row="2" Grid.Column="3" Stretch="Fill" Tag="avares://TrueFluentPro/Assets/Appearance/SongStudy/book-r2-c3.png"/>
+            <Image x:Name="BookR2C4" Grid.Row="2" Grid.Column="4" Stretch="Fill" Tag="avares://TrueFluentPro/Assets/Appearance/SongStudy/book-r2-c4.png"/>
+        </Grid>
+    </Panel>
+</UserControl>

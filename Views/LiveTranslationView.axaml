@@ -9,7 +9,8 @@
              mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="600"
              x:Class="TrueFluentPro.Views.LiveTranslationView"
              x:DataType="vm:MainWindowViewModel"
-             x:CompileBindings="False">
+             x:CompileBindings="False"
+             Classes="classic-live">
 
     <UserControl.Resources>
         <controls:LevelToHeightConverter x:Key="LevelToHeight" MaxHeight="16"/>
@@ -189,15 +190,187 @@
             <Setter Property="Foreground" Value="White" />
             <Setter Property="BorderBrush" Value="{DynamicResource PrimaryDarkBrush}" />
         </Style>
+
+        <!-- 同一棵内容树，经典外观的布局与颜色仍由原有资源负责。 -->
+        <Style Selector="Grid#LayoutRoot">
+            <Setter Property="Background" Value="{DynamicResource PageBackgroundBrush}"/>
+        </Style>
+        <Style Selector="Border#ToolbarRegion">
+            <Setter Property="Padding" Value="12,10"/>
+            <Setter Property="Margin" Value="0,0,0,10"/>
+            <Setter Property="MinHeight" Value="56"/>
+            <Setter Property="BorderThickness" Value="0,0,0,1"/>
+        </Style>
+        <Style Selector="Border#TranscriptRegion, Border#SideRegion">
+            <Setter Property="BorderThickness" Value="1"/>
+        </Style>
+        <Style Selector="Grid#StudyHeader">
+            <Setter Property="IsVisible" Value="False"/>
+        </Style>
+        <Style Selector="Image#StudyLandscape">
+            <Setter Property="IsVisible" Value="False"/>
+        </Style>
+        <Style Selector="Expander#TranslationSettings /template/ ToggleButton#ExpanderHeader">
+            <Setter Property="IsVisible" Value="False"/>
+        </Style>
+        <Style Selector="Expander#TranslationSettings /template/ Border#ExpanderContent">
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="MinHeight" Value="0"/>
+            <Setter Property="Background" Value="Transparent"/>
+        </Style>
+        <Style Selector="WrapPanel#ToolbarItems">
+            <Setter Property="ItemHeight" Value="36"/>
+        </Style>
+        <Style Selector="Button#TranslationToggleButton">
+            <Setter Property="Padding" Value="10,5"/>
+            <Setter Property="Margin" Value="8,0,0,0"/>
+        </Style>
+        <Style Selector="TextBlock#SubscriptionValidationStatus">
+            <Setter Property="IsVisible" Value="True"/>
+        </Style>
+        <Style Selector="ScrollViewer.insight-scroll">
+            <Setter Property="VerticalScrollBarVisibility" Value="Disabled"/>
+        </Style>
+
+        <!-- 书斋样式只在本页面生效；同名色板由外壳的局部资源覆盖。 -->
+        <Style Selector=":is(UserControl).study-live Grid#LayoutRoot">
+            <Setter Property="Background" Value="Transparent"/>
+        </Style>
+        <Style Selector=":is(UserControl).study-live Grid#StudyHeader">
+            <Setter Property="IsVisible" Value="True"/>
+        </Style>
+        <Style Selector=":is(UserControl).study-live Image#StudyLandscape">
+            <Setter Property="IsVisible" Value="True"/>
+        </Style>
+        <Style Selector=":is(UserControl).study-live Border#TranscriptRegion, :is(UserControl).study-live Border#SideRegion">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="CornerRadius" Value="0"/>
+            <Setter Property="BoxShadow" Value="none"/>
+        </Style>
+        <Style Selector=":is(UserControl).study-live Border.sub-card">
+            <Setter Property="Background" Value="Transparent"/>
+        </Style>
+        <Style Selector=":is(UserControl).study-live Border#ToolbarRegion">
+            <Setter Property="Padding" Value="8"/>
+            <Setter Property="Margin" Value="0,10,0,0"/>
+            <Setter Property="MinHeight" Value="0"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="4"/>
+            <Setter Property="Background" Value="Transparent"/>
+        </Style>
+        <Style Selector=":is(UserControl).study-live Expander#TranslationSettings /template/ ToggleButton#ExpanderHeader">
+            <Setter Property="IsVisible" Value="True"/>
+            <Setter Property="MinHeight" Value="32"/>
+            <Setter Property="FontFamily" Value="SimSun, Songti SC, serif"/>
+            <Setter Property="FontSize" Value="15"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="4,0,0,0"/>
+        </Style>
+        <Style Selector=":is(UserControl).study-live WrapPanel#ToolbarItems">
+            <Setter Property="ItemHeight" Value="32"/>
+        </Style>
+        <Style Selector=":is(UserControl).study-live WrapPanel#ToolbarItems TextBlock">
+            <Setter Property="FontSize" Value="11"/>
+        </Style>
+        <Style Selector=":is(UserControl).study-live Border#ToolbarRegion ComboBox">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="MaxWidth" Value="210"/>
+        </Style>
+        <Style Selector=":is(UserControl).study-live Border#SideRegion TextBlock">
+            <Setter Property="FontSize" Value="12"/>
+        </Style>
+        <Style Selector=":is(UserControl).study-live Border.empty-illustration">
+            <Setter Property="Width" Value="44"/>
+            <Setter Property="Height" Value="44"/>
+            <Setter Property="CornerRadius" Value="22"/>
+            <Setter Property="Background" Value="Transparent"/>
+        </Style>
+        <Style Selector=":is(UserControl).study-live ScrollViewer.insight-scroll">
+            <Setter Property="VerticalScrollBarVisibility" Value="Auto"/>
+        </Style>
+        <Style Selector=":is(UserControl).study-live TextBlock#SubscriptionValidationStatus">
+            <Setter Property="IsVisible" Value="False"/>
+        </Style>
+        <Style Selector=":is(UserControl).study-live Border#ActionRegion">
+            <Setter Property="Background" Value="Transparent"/>
+        </Style>
+        <Style Selector=":is(UserControl).study-live Button#TranslationToggleButton">
+            <Setter Property="Width" Value="80"/>
+            <Setter Property="Height" Value="72"/>
+            <Setter Property="Padding" Value="6"/>
+            <Setter Property="VerticalAlignment" Value="Top"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <Grid>
+                        <Image x:Name="SealTexture"
+                               Source="avares://TrueFluentPro/Assets/Appearance/SongStudy/seal-primary.png"
+                               Stretch="Fill" IsHitTestVisible="False"/>
+                        <!-- 内容仍取自原命令状态，停止时明确显示“停止翻译”。 -->
+                        <ContentPresenter x:Name="PART_ContentPresenter"
+                                          Content="{TemplateBinding Content}"
+                                          ContentTemplate="{TemplateBinding ContentTemplate}"
+                                          Padding="{TemplateBinding Padding}"
+                                          HorizontalContentAlignment="Center"
+                                          VerticalContentAlignment="Center"
+                                          Background="Transparent" BorderBrush="Transparent"
+                                          Foreground="White"
+                                          FontFamily="SimSun, Songti SC, serif"
+                                          FontSize="14"
+                                          FontWeight="SemiBold"/>
+                    </Grid>
+                </ControlTemplate>
+            </Setter>
+        </Style>
+        <Style Selector=":is(UserControl).study-live Button#TranslationToggleButton /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="Foreground" Value="White"/>
+        </Style>
+        <Style Selector=":is(UserControl).study-live Button#TranslationToggleButton:pointerover /template/ Image#SealTexture">
+            <Setter Property="Opacity" Value="0.9"/>
+        </Style>
+        <Style Selector=":is(UserControl).study-live Button#TranslationToggleButton:pressed /template/ Image#SealTexture">
+            <Setter Property="Opacity" Value="0.75"/>
+        </Style>
+        <Style Selector=":is(UserControl).study-live Button#TranslationToggleButton:disabled /template/ Image#SealTexture">
+            <Setter Property="Opacity" Value="0.45"/>
+        </Style>
     </UserControl.Styles>
 
-    <Grid RowDefinitions="Auto,*,Auto"
-          Background="{DynamicResource PageBackgroundBrush}">
+    <Grid x:Name="LayoutRoot" RowDefinitions="Auto,*,Auto">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="12"/>
+            <ColumnDefinition Width="3*" MinWidth="420"/>
+            <ColumnDefinition Width="10"/>
+            <ColumnDefinition Width="2*" MinWidth="300"/>
+            <ColumnDefinition Width="12"/>
+        </Grid.ColumnDefinitions>
+        <Grid x:Name="StudyHeader" Grid.Column="1" Grid.ColumnSpan="3"
+              RowDefinitions="Auto,Auto" Margin="12,6,0,0" VerticalAlignment="Top" IsHitTestVisible="False">
+            <TextBlock Text="宋人书斋 · 实时翻译" FontFamily="SimSun, Songti SC, serif"
+                       FontSize="36" Foreground="{DynamicResource TextPrimaryBrush}"
+                       TextTrimming="CharacterEllipsis"/>
+            <TextBlock Grid.Row="1" Text="听万籁，译四方。让每一段言语，落在纸上。"
+                       FontSize="12" Foreground="{DynamicResource TextSubtleBrush}"
+                       TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
+        </Grid>
         <!-- 语音资源与输入选择区域（紧凑工具栏） -->
-        <Border Grid.Row="0" Classes="toolbar-surface"
-                BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="0,0,0,1"
-            Padding="12,10" Margin="0,0,0,10" MinHeight="56">
-            <WrapPanel Orientation="Horizontal" ItemHeight="36"
+        <Border x:Name="ToolbarRegion" Grid.Row="0" Grid.ColumnSpan="5" Classes="toolbar-surface"
+                BorderBrush="{DynamicResource CardBorderBrush}">
+            <Grid ColumnDefinitions="*,Auto">
+            <Expander x:Name="TranslationSettings" Header="译事设置" IsExpanded="True"
+                      MinWidth="0" MinHeight="0" Padding="0" BorderThickness="0" Background="Transparent"
+                      HorizontalAlignment="Stretch" VerticalAlignment="Top"
+                      HorizontalContentAlignment="Stretch"
+                      AutomationProperties.Name="译事设置">
+            <ScrollViewer x:Name="SettingsScroll"
+                          HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Disabled">
+            <WrapPanel x:Name="ToolbarItems" Orientation="Horizontal"
                    VerticalAlignment="Center">
             <!-- 语音资源选择 -->
             <TextBlock Text="语音资源:" VerticalAlignment="Center" Margin="0,0,6,0"/>
@@ -248,16 +421,6 @@
                 <ComboBoxItem Tag="de" Content="德语"/>
                 <ComboBoxItem Tag="es" Content="西班牙语"/>
                 </ComboBox>
-
-                <!-- 开始/停止翻译 -->
-                <Button Classes="pressable translation-toggle"
-                    Content="{Binding TranslationToggleButtonText}"
-                    Command="{Binding ToggleTranslationCommand}"
-                    Background="{Binding TranslationToggleButtonBackground}"
-                    Foreground="{Binding TranslationToggleButtonForeground}"
-                    Padding="10,5" Margin="0,0,8,0"
-                    AutomationProperties.Name="开始/停止翻译 (F5/F6)"
-                    ToolTip.Tip="F5 开始翻译, F6 停止翻译"/>
 
                 <!-- 分隔：翻译 | 设备 -->
                 <Border Width="1" Height="20" Margin="4,0,8,0"
@@ -382,7 +545,7 @@
                         CornerRadius="4" Padding="6,3" Margin="4,0,4,0"
                         VerticalAlignment="Center"
                         ToolTip.Tip="{Binding AudioPipelineTooltip}">
-                    <TextBlock Text="{Binding AudioPipelineStatusText}"
+                    <TextBlock Text="{Binding AudioPipelineStatusText}" MaxWidth="180" TextTrimming="CharacterEllipsis"
                                FontSize="11" Opacity="0.85"
                                VerticalAlignment="Center"/>
                 </Border>
@@ -414,17 +577,23 @@
                 </Grid>
                 </Border>
             </WrapPanel>
+            </ScrollViewer>
+            </Expander>
+            <!-- 不放在折叠内容中：小窗口收起设置后仍可立即开始／停止。 -->
+            <Button x:Name="TranslationToggleButton" Grid.Column="1" Classes="pressable translation-toggle"
+                    Content="{Binding TranslationToggleButtonText}"
+                    Command="{Binding ToggleTranslationCommand}"
+                    Background="{Binding TranslationToggleButtonBackground}"
+                    Foreground="{Binding TranslationToggleButtonForeground}"
+                    AutomationProperties.Name="开始/停止翻译 (F5/F6)"
+                    ToolTip.Tip="F5 开始翻译, F6 停止翻译"/>
+            </Grid>
         </Border>
 
-        <!-- 中间翻译内容区域 -->
-        <Grid Grid.Row="1" Margin="12,0,12,0" ColumnSpacing="0">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="3*" MinWidth="420"/>
-                <ColumnDefinition Width="10"/>
-                <ColumnDefinition Width="2*" MinWidth="300"/>
-            </Grid.ColumnDefinitions>
+        <!-- 中部区域保持同一根 Grid；外观切换只修改行列，不迁移内容。 -->
             <!-- 左侧实时翻译区域 -->
-            <Border Grid.Column="0" Classes="app-card" BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="1">
+            <Border x:Name="TranscriptRegion" Grid.Row="1" Grid.Column="1" Classes="app-card"
+                    BorderBrush="{DynamicResource CardBorderBrush}" ClipToBounds="True">
                 <Grid RowDefinitions="Auto,Auto,*,Auto">
                     <controls:ActiveSpeakerTimelineBar Grid.Row="0"
                                                        Margin="6,6,6,2"
@@ -446,12 +615,18 @@
                         </StackPanel>
                     </DockPanel>
 
-                    <Grid Grid.Row="2" Margin="5">
+                    <Grid Grid.Row="2" Margin="5" ClipToBounds="True">
+                        <Image x:Name="StudyLandscape"
+                               Source="avares://TrueFluentPro/Assets/Appearance/SongStudy/landscape.png"
+                               Opacity="0.16" Stretch="Uniform" MaxWidth="460" Height="150"
+                               HorizontalAlignment="Left" VerticalAlignment="Bottom"
+                               IsHitTestVisible="False"/>
                         <Border Classes="sub-card" BorderBrush="{DynamicResource SubCardBorderBrush}" BorderThickness="1" CornerRadius="6" IsVisible="{Binding IsSingleView}">
                             <Grid>
                                 <controls:ConfigurableTextEditor x:Name="UnifiedEditor"
                                                              Text="{Binding DisplayedText, Mode=TwoWay}"
                                                              Placeholder="{Binding DisplayPlaceholder}"
+                                                             Loaded="OnTranscriptEditorLoaded"
                                                              EditorType="Advanced"/>
                                 <!-- 空状态占位 -->
                                 <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
@@ -471,13 +646,15 @@
                         </Border>
                         <Grid RowDefinitions="*,6,*" IsVisible="{Binding IsBilingualView}">
                             <Border Grid.Row="0" Classes="sub-card" BorderBrush="{DynamicResource SubCardBorderBrush}" BorderThickness="1" CornerRadius="6">
-                                <controls:ConfigurableTextEditor Text="{Binding CurrentOriginal, Mode=TwoWay}"
+                                <controls:ConfigurableTextEditor x:Name="OriginalEditor" Text="{Binding CurrentOriginal, Mode=TwoWay}"
                                                                  Placeholder="原文将在这里显示..."
+                                                                 Loaded="OnTranscriptEditorLoaded"
                                                                  EditorType="Advanced"/>
                             </Border>
                             <Border Grid.Row="2" Classes="sub-card" BorderBrush="{DynamicResource SubCardBorderBrush}" BorderThickness="1" CornerRadius="6">
-                                <controls:ConfigurableTextEditor Text="{Binding CurrentTranslated, Mode=TwoWay}"
+                                <controls:ConfigurableTextEditor x:Name="TranslatedEditor" Text="{Binding CurrentTranslated, Mode=TwoWay}"
                                                                  Placeholder="译文将在这里显示..."
+                                                                 Loaded="OnTranscriptEditorLoaded"
                                                                  EditorType="Advanced"/>
                             </Border>
                         </Grid>
@@ -485,7 +662,7 @@
                 </Grid>
             </Border>
 
-            <GridSplitter Grid.Column="1"
+            <GridSplitter x:Name="TranscriptSplitter" Grid.Row="1" Grid.Column="2"
                           Width="10"
                           Background="Transparent"
                           HorizontalAlignment="Stretch"
@@ -494,7 +671,8 @@
                           ShowsPreview="True"/>
             
             <!-- 右侧历史/洞察区域 -->
-            <Border Grid.Column="2" Classes="app-card" BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="1">
+            <Border x:Name="SideRegion" Grid.Row="1" Grid.Column="3" Classes="app-card"
+                    BorderBrush="{DynamicResource CardBorderBrush}" ClipToBounds="True">
                 <TabControl SelectedIndex="{Binding LiveSidePanelTabIndex, Mode=TwoWay}">
                     <TabItem Header="历史记录">
                         <Grid RowDefinitions="*,Auto">
@@ -549,6 +727,7 @@
                         <ContentControl Content="{Binding LiveInsightTabContent}">
                             <ContentControl.DataTemplates>
                                 <DataTemplate DataType="vm:MainWindowViewModel">
+                                    <ScrollViewer Classes="insight-scroll" HorizontalScrollBarVisibility="Disabled">
                                     <Grid RowDefinitions="Auto,Auto,Auto,Auto,*,Auto">
                                         <!-- AI 状态 -->
                                         <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="8,8,8,4" Spacing="10">
@@ -652,16 +831,16 @@
                                                     Command="{Binding AiInsight.ClearInsightCommand}"/>
                                         </StackPanel>
                                     </Grid>
+                                    </ScrollViewer>
                                 </DataTemplate>
                             </ContentControl.DataTemplates>
                         </ContentControl>
                     </TabItem>
                 </TabControl>
             </Border>
-        </Grid>
     
         <!-- 底部操作栏 -->
-        <Border Grid.Row="2" Classes="toolbar-surface" BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="0,1,0,0" Padding="10,6" Margin="0,8,0,0">
+        <Border x:Name="ActionRegion" Grid.Row="2" Grid.ColumnSpan="5" Classes="toolbar-surface" BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="0,1,0,0" Padding="10,6" Margin="0,8,0,0">
             <Border.Resources>
                 <!-- 底栏按钮蓝色 hover 主题 -->
                 <SolidColorBrush x:Key="ButtonBackground" Color="{DynamicResource ControlFillColorDefault}" />
@@ -698,7 +877,7 @@
                 <SolidColorBrush x:Key="ToggleButtonForegroundCheckedPointerOver" Color="White" />
                 <SolidColorBrush x:Key="ToggleButtonForegroundCheckedPressed" Color="White" />
             </Border.Resources>
-            <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*,Auto">
+            <Grid x:Name="ActionLayout" RowDefinitions="Auto" ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*,Auto">
                 <!-- ── 数据操作组 ── -->
                 <Button Grid.Column="0" Command="{Binding ClearHistoryCommand}" 
                         Padding="10,5" Margin="0,0,6,0"
@@ -773,11 +952,11 @@
                 </ToggleButton>
 
                 <!-- 状态信息（右侧） -->
-                <StackPanel Grid.Column="7" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                    <TextBlock Text="{Binding StatusMessage}" FontSize="11" Foreground="{DynamicResource TextSubtleBrush}"
+                <StackPanel x:Name="StatusRegion" Grid.Column="7" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                    <TextBlock x:Name="TranslationStatus" Text="{Binding StatusMessage}" FontSize="11" Foreground="{DynamicResource TextSubtleBrush}"
                                VerticalAlignment="Center" MaxWidth="400" TextTrimming="CharacterEllipsis"
                                AutomationProperties.Name="翻译状态信息"/>
-                    <TextBlock Text="{Binding ConfigVM.SubscriptionValidationStatusMessage}" 
+                    <TextBlock x:Name="SubscriptionValidationStatus" Text="{Binding ConfigVM.SubscriptionValidationStatusMessage}"
                                FontSize="10" Foreground="{DynamicResource TextSubtleBrush}" VerticalAlignment="Center"
                                AutomationProperties.Name="订阅验证状态"/>
                 </StackPanel>
