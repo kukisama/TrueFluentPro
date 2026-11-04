@@ -42,3 +42,9 @@
 - 服务仅覆盖缺失文件、未知外观标识回退 Classic 及正常保存／重载；同目录隔离标记须原样保留、保存后无 `.tmp` 残留，不删除测试目录或扫描用户目录。成功输出 PASS、`ARTIFACTS` 与 `SHELL_APPEARANCE_EXIT=0`；`finally` 隐藏菜单、关闭窗口、恢复回归宿主原主题并写 `result.txt`。
 - 保存且仅保存一张 `study.png` 和一张 `classic.png`，由 `RenderTargetBitmap` 渲染已布局的生产窗口供主 agent 查看真实 UI，不做素材总览。这是**受控状态的真实 UI 验收**，不代表实际音频／翻译服务、真实业务 VM 状态、物理输入或系统高 DPI 已通过；专项源码本身不等于已构建／已运行结果。
 - 布局更新后等待实际 `CompositionBatch.Rendered` 再核验命中，避免合成线程仍使用上一布局的变换读回；`Processed` 或固定 RAF 数不代表本批已经渲染，不通过重试到命中成功来放宽断言。
+
+## 原稿独立书斋专项（InkStudy）
+
+- 入口：已构建的 `TranscriptChatRegression.dll --ink-study` → `InkStudyRegression.VerifyAsync`；40 秒专项预算、45 秒总 deadline。本次仅编码，未构建/执行。真实主窗先 Show 再切 InkStudy，显式外观文件限定本次 `artifacts/ink-study-validation/<时间戳-随机后缀>/appearance.json`；公开源 fake 提供配置/设备/长洞察 Markdown/计数器命令，不构造主 VM、不读真实配置或服务、不访问 AppData/音频/云端。
+- 覆盖 partial 同卡、final→History 去重、未知来源中性、释放后不更新、本地模式/字号隔离；以 `CompositionBatch.Rendered` 同步三档窗口布局、三分区安全区/洞察视口/语言组/来源卡及主按钮。最小 1000×550 保留 704 高画布并外层滚动；只按 live/主题，核验菜单隔离保存、旧页缓存/资源恢复与 Application Dark 不变。
+- 成功输出 `PASS`、`ARTIFACTS`、`INK_STUDY_EXIT=0`；`finally` 关闭并恢复主题、写 `result.txt`。运行时保存 `ink-study-default.png`、`ink-study-minimum.png` 供主 agent 与原稿比较；不审查生成资产、不做 OCR/总览，不冒充真实音频/服务或物理输入验收。严格只写本次 artifacts 时须使用生产 Release 产物：生产 Debug Markdown 渲染器可能另写输出目录的 `scroll_diag.log`，本专项不修改该生产日志实现。

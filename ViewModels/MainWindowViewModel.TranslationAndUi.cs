@@ -867,6 +867,7 @@ namespace TrueFluentPro.ViewModels
 
             CurrentOriginal = "";
             CurrentTranslated = "";
+            LatestRealtimeFrame = null;
             ResetFloatingSubtitleSession();
 
             ((RelayCommand)ClearHistoryCommand).RaiseCanExecuteChanged();
@@ -1148,6 +1149,7 @@ namespace TrueFluentPro.ViewModels
             {
                 CurrentOriginal = TrimRealtimeDisplayText(item.OriginalText);
                 CurrentTranslated = TrimRealtimeDisplayText(item.TranslatedText);
+                PublishPresentationFrame(item, isFinal: false);
 
                 if (acceptSubtitle && !_suspendFloatingSubtitleUpdates
                     && subtitleEpoch == _floatingSubtitleEpoch && ReferenceEquals(sender, _translationService))
@@ -1314,6 +1316,7 @@ namespace TrueFluentPro.ViewModels
                     History.RemoveAt(History.Count - 1);
                 }
 
+                PublishPresentationFrame(item, isFinal: true);
                 ((RelayCommand)ClearHistoryCommand).RaiseCanExecuteChanged();
 
                 AiInsight.OnNewDataAutoInsight();

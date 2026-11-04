@@ -8,7 +8,7 @@ namespace TrueFluentPro.Services;
 
 /// <summary>
 /// 只读写独立的 appearance.json。调用方在 UI 线程串行保存，并负责报告保存异常。
-/// 文件格式为单个 appearance 字段，值为 Classic 或 SongStudy，不含任何业务配置。
+/// 文件格式为单个 appearance 字段，不含任何业务配置。
 /// </summary>
 public sealed class ShellAppearancePreferencesService
 {
@@ -34,6 +34,7 @@ public sealed class ShellAppearancePreferencesService
             return appearance.GetString() switch
             {
                 nameof(ShellAppearancePreference.SongStudy) => ShellAppearancePreference.SongStudy,
+                nameof(ShellAppearancePreference.InkStudy) => ShellAppearancePreference.InkStudy,
                 _ => ShellAppearancePreference.Classic
             };
         }
@@ -45,7 +46,8 @@ public sealed class ShellAppearancePreferencesService
 
     public void Save(ShellAppearancePreference appearance)
     {
-        if (appearance is not ShellAppearancePreference.Classic and not ShellAppearancePreference.SongStudy)
+        if (appearance is not ShellAppearancePreference.Classic and not ShellAppearancePreference.SongStudy
+            and not ShellAppearancePreference.InkStudy)
         {
             throw new ArgumentOutOfRangeException(nameof(appearance), appearance, "无法保存未定义的窗口外观。");
         }

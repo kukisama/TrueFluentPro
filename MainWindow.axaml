@@ -113,6 +113,14 @@
             <Setter Property="MaxLines" Value="1"/>
         </Style>
         <StyleInclude Source="avares://TrueFluentPro/Styles/SongStudy.axaml"/>
+        <Style Selector=":is(Window).ink-study Border#ShellTitleBar">
+            <Setter Property="Background" Value="#EEE9DF"/>
+            <Setter Property="BorderBrush" Value="#D5C4A5"/>
+        </Style>
+        <Style Selector=":is(Window).ink-study Border#ShellTitleBar TextBlock">
+            <Setter Property="Foreground" Value="#263832"/>
+            <Setter Property="FontFamily" Value="SimSun, Songti SC, serif"/>
+        </Style>
     </Window.Styles>
 
     <Grid RowDefinitions="Auto,*"
@@ -160,7 +168,7 @@
                 </StackPanel>
             </Grid>
         </Border>
-        <Grid Grid.Row="1" ColumnDefinitions="Auto,*">
+        <Grid Name="LegacyWorkspace" Grid.Row="1" ColumnDefinitions="Auto,*">
         <Border Name="ShellNavRail"
                 Grid.Column="0"
                 Width="52"
@@ -399,5 +407,7 @@
                         Margin="0,0,20,16"/>
         </Panel>
         </Grid>
+        <!-- 新翻译页拥有自己的完整呈现树；旧页面留在原宿主，不迁移业务或控件。 -->
+        <Panel Name="InkStudyHost" Grid.Row="1" IsVisible="False"/>
     </Grid>
 </Window>

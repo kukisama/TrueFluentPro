@@ -1,0 +1,23 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="TrueFluentPro.Controls.InkStudyBookFrame"
+             IsHitTestVisible="False" Focusable="False">
+    <!-- 与页面内容列完全一致；固定书边和书脊，左右空白页各自伸展。 -->
+    <Grid ColumnDefinitions="20,*,28,*,20" RowDefinitions="20,*,20" IsHitTestVisible="False">
+        <Image Grid.Row="0" Grid.Column="0" Stretch="Fill" Source="avares://TrueFluentPro/Assets/Appearance/InkStudy/book-r0-c0.png"/>
+        <Image Grid.Row="0" Grid.Column="1" Stretch="Fill" Source="avares://TrueFluentPro/Assets/Appearance/InkStudy/book-r0-c1.png"/>
+        <Image Grid.Row="0" Grid.Column="2" Stretch="Fill" Source="avares://TrueFluentPro/Assets/Appearance/InkStudy/book-r0-c2.png"/>
+        <Image Grid.Row="0" Grid.Column="3" Stretch="Fill" Source="avares://TrueFluentPro/Assets/Appearance/InkStudy/book-r0-c3.png"/>
+        <Image Grid.Row="0" Grid.Column="4" Stretch="Fill" Source="avares://TrueFluentPro/Assets/Appearance/InkStudy/book-r0-c4.png"/>
+        <Image Grid.Row="1" Grid.Column="0" Stretch="Fill" Source="avares://TrueFluentPro/Assets/Appearance/InkStudy/book-r1-c0.png"/>
+        <Image Grid.Row="1" Grid.Column="1" Stretch="Fill" Source="avares://TrueFluentPro/Assets/Appearance/InkStudy/book-r1-c1.png"/>
+        <Image Grid.Row="1" Grid.Column="2" Stretch="Fill" Source="avares://TrueFluentPro/Assets/Appearance/InkStudy/book-r1-c2.png"/>
+        <Image Grid.Row="1" Grid.Column="3" Stretch="Fill" Source="avares://TrueFluentPro/Assets/Appearance/InkStudy/book-r1-c3.png"/>
+        <Image Grid.Row="1" Grid.Column="4" Stretch="Fill" Source="avares://TrueFluentPro/Assets/Appearance/InkStudy/book-r1-c4.png"/>
+        <Image Grid.Row="2" Grid.Column="0" Stretch="Fill" Source="avares://TrueFluentPro/Assets/Appearance/InkStudy/book-r2-c0.png"/>
+        <Image Grid.Row="2" Grid.Column="1" Stretch="Fill" Source="avares://TrueFluentPro/Assets/Appearance/InkStudy/book-r2-c1.png"/>
+        <Image Grid.Row="2" Grid.Column="2" Stretch="Fill" Source="avares://TrueFluentPro/Assets/Appearance/InkStudy/book-r2-c2.png"/>
+        <Image Grid.Row="2" Grid.Column="3" Stretch="Fill" Source="avares://TrueFluentPro/Assets/Appearance/InkStudy/book-r2-c3.png"/>
+        <Image Grid.Row="2" Grid.Column="4" Stretch="Fill" Source="avares://TrueFluentPro/Assets/Appearance/InkStudy/book-r2-c4.png"/>
+    </Grid>
+</UserControl>

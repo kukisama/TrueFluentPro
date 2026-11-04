@@ -4,5 +4,6 @@ namespace TrueFluentPro.Models;
 public enum ShellAppearancePreference
 {
     Classic,
-    SongStudy
+    SongStudy,
+    InkStudy
 }

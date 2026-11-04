@@ -1,0 +1,318 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- 仅由 InkStudyTranslationView 合并；不重定义任何应用级资源键。 -->
+    <SolidColorBrush x:Key="InkPaper" Color="#FCFBF8"/>
+    <SolidColorBrush x:Key="InkText" Color="#263832"/>
+    <SolidColorBrush x:Key="InkMuted" Color="#68736C"/>
+    <SolidColorBrush x:Key="InkGold" Color="#D5C4A5"/>
+    <SolidColorBrush x:Key="InkLine" Color="#E5DED0"/>
+    <SolidColorBrush x:Key="InkJade" Color="#496E66"/>
+    <SolidColorBrush x:Key="InkJadeDark" Color="#34564F"/>
+    <SolidColorBrush x:Key="InkWash" Color="#EDF1EB"/>
+    <SolidColorBrush x:Key="InkJadeLight" Color="#DCE7DE"/>
+    <SolidColorBrush x:Key="InkCinnabar" Color="#AC3F31"/>
+    <FontFamily x:Key="InkBodyFont">Microsoft YaHei UI, Segoe UI, sans-serif</FontFamily>
+    <FontFamily x:Key="InkSongFont">SimSun, Songti SC, Noto Serif CJK SC, serif</FontFamily>
+
+    <ControlTheme x:Key="InkButtonTheme" TargetType="Button">
+        <Setter Property="Background" Value="{StaticResource InkPaper}"/>
+        <Setter Property="Foreground" Value="{StaticResource InkText}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource InkGold}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="5"/>
+        <Setter Property="FontFamily" Value="{StaticResource InkBodyFont}"/>
+        <Setter Property="FontSize" Value="13"/>
+        <Setter Property="MinHeight" Value="30"/>
+        <Setter Property="Padding" Value="10,5"/>
+        <Setter Property="HorizontalContentAlignment" Value="Center"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
+        <Setter Property="FocusAdorner" Value="{x:Null}"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Template">
+            <ControlTemplate>
+                <Grid>
+                    <Border x:Name="InkChrome" Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="{TemplateBinding CornerRadius}">
+                        <ContentPresenter x:Name="PART_ContentPresenter"
+                                          Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}"
+                                          Padding="{TemplateBinding Padding}" RecognizesAccessKey="True"
+                                          Foreground="{TemplateBinding Foreground}" FontFamily="{TemplateBinding FontFamily}"
+                                          FontSize="{TemplateBinding FontSize}" FontWeight="{TemplateBinding FontWeight}"
+                                          HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                          VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"/>
+                    </Border>
+                    <Border x:Name="InkFocus" IsVisible="False" IsHitTestVisible="False" Margin="2"
+                            CornerRadius="4" BorderThickness="2" BorderBrush="{StaticResource InkJade}"/>
+                </Grid>
+            </ControlTemplate>
+        </Setter>
+        <Style Selector="^:pointerover /template/ Border#InkChrome">
+            <Setter Property="Background" Value="{StaticResource InkWash}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource InkJade}"/>
+        </Style>
+        <Style Selector="^:pressed /template/ Border#InkChrome">
+            <Setter Property="Background" Value="{StaticResource InkJadeLight}"/>
+        </Style>
+        <Style Selector="^:focus-visible /template/ Border#InkFocus">
+            <Setter Property="IsVisible" Value="True"/>
+        </Style>
+        <Style Selector="^:disabled">
+            <Setter Property="Opacity" Value="0.45"/>
+            <Setter Property="Cursor" Value="Arrow"/>
+        </Style>
+    </ControlTheme>
+
+    <ControlTheme x:Key="InkToggleTheme" TargetType="ToggleButton" BasedOn="{StaticResource InkButtonTheme}">
+        <Style Selector="^:checked /template/ Border#InkChrome">
+            <Setter Property="Background" Value="{StaticResource InkJade}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource InkJade}"/>
+        </Style>
+        <Style Selector="^:checked /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Foreground" Value="{StaticResource InkPaper}"/>
+        </Style>
+        <Style Selector="^:checked:pointerover /template/ Border#InkChrome">
+            <Setter Property="Background" Value="{StaticResource InkJadeDark}"/>
+        </Style>
+        <Style Selector="^:checked:pressed /template/ Border#InkChrome">
+            <Setter Property="Background" Value="#29473F"/>
+        </Style>
+    </ControlTheme>
+
+    <ControlTheme x:Key="InkNavTheme" TargetType="Button" BasedOn="{StaticResource InkButtonTheme}">
+        <Setter Property="Height" Value="90"/>
+        <Setter Property="HorizontalContentAlignment" Value="Left"/>
+        <Setter Property="Padding" Value="22,12,12,12"/>
+        <Setter Property="FontFamily" Value="{StaticResource InkSongFont}"/>
+        <Setter Property="Template">
+            <ControlTemplate>
+                <Grid Background="Transparent">
+                    <Image x:Name="InkNavIdle" Source="avares://TrueFluentPro/Assets/Appearance/InkStudy/nav-idle.png"
+                           Stretch="Fill" IsHitTestVisible="False"/>
+                    <Image x:Name="InkNavSelected" Source="avares://TrueFluentPro/Assets/Appearance/InkStudy/nav-selected.png"
+                           Stretch="Fill" IsVisible="False" IsHitTestVisible="False"/>
+                    <Border x:Name="InkNavHover" Background="{StaticResource InkJadeLight}" Opacity="0"
+                            CornerRadius="3" Margin="7,5" IsHitTestVisible="False"/>
+                    <ContentPresenter x:Name="PART_ContentPresenter" Content="{TemplateBinding Content}"
+                                      ContentTemplate="{TemplateBinding ContentTemplate}" Padding="{TemplateBinding Padding}"
+                                      Foreground="{TemplateBinding Foreground}" FontFamily="{TemplateBinding FontFamily}"
+                                      FontSize="{TemplateBinding FontSize}" FontWeight="{TemplateBinding FontWeight}"
+                                      HorizontalContentAlignment="Left" VerticalContentAlignment="Center"/>
+                    <Border x:Name="InkFocus" IsVisible="False" IsHitTestVisible="False" Margin="8"
+                            CornerRadius="3" BorderThickness="2" BorderBrush="{StaticResource InkJade}"/>
+                </Grid>
+            </ControlTemplate>
+        </Setter>
+        <Style Selector="^.ink-current /template/ Image#InkNavIdle">
+            <Setter Property="IsVisible" Value="False"/>
+        </Style>
+        <Style Selector="^.ink-current /template/ Image#InkNavSelected">
+            <Setter Property="IsVisible" Value="True"/>
+        </Style>
+        <Style Selector="^.ink-current /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Foreground" Value="{StaticResource InkCinnabar}"/>
+        </Style>
+        <Style Selector="^:pointerover /template/ Border#InkNavHover">
+            <Setter Property="Opacity" Value="0.24"/>
+        </Style>
+        <Style Selector="^:pressed /template/ Border#InkNavHover">
+            <Setter Property="Opacity" Value="0.5"/>
+        </Style>
+    </ControlTheme>
+
+    <ControlTheme x:Key="InkSealTheme" TargetType="Button" BasedOn="{StaticResource InkButtonTheme}">
+        <Setter Property="Width" Value="82"/>
+        <Setter Property="Height" Value="82"/>
+        <Setter Property="Padding" Value="9"/>
+        <Setter Property="Foreground" Value="#FFFFFF"/>
+        <Setter Property="FontFamily" Value="{StaticResource InkSongFont}"/>
+        <Setter Property="FontSize" Value="17"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Template">
+            <ControlTemplate>
+                <Grid Background="Transparent">
+                    <Image x:Name="InkSealImage" Source="avares://TrueFluentPro/Assets/Appearance/InkStudy/seal-primary.png"
+                           Stretch="Fill" IsHitTestVisible="False"/>
+                    <Border x:Name="InkSealHover" Background="#FFFFFF" Opacity="0" Margin="6"
+                            IsHitTestVisible="False" CornerRadius="5"/>
+                    <ContentPresenter x:Name="PART_ContentPresenter" Content="{TemplateBinding Content}"
+                                      ContentTemplate="{TemplateBinding ContentTemplate}" Padding="{TemplateBinding Padding}"
+                                      Foreground="{TemplateBinding Foreground}" FontFamily="{TemplateBinding FontFamily}"
+                                      FontSize="{TemplateBinding FontSize}" FontWeight="{TemplateBinding FontWeight}"
+                                      HorizontalContentAlignment="Center" VerticalContentAlignment="Center"/>
+                    <Border x:Name="InkFocus" IsVisible="False" IsHitTestVisible="False" Margin="7"
+                            CornerRadius="4" BorderThickness="2" BorderBrush="#FFFFFF"/>
+                </Grid>
+            </ControlTemplate>
+        </Setter>
+        <Style Selector="^:pointerover /template/ Border#InkSealHover">
+            <Setter Property="Opacity" Value="0.12"/>
+        </Style>
+        <Style Selector="^:pressed /template/ Border#InkSealHover">
+            <Setter Property="Background" Value="#000000"/>
+            <Setter Property="Opacity" Value="0.15"/>
+        </Style>
+    </ControlTheme>
+
+    <ControlTheme x:Key="InkComboItemTheme" TargetType="ComboBoxItem">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Foreground" Value="{StaticResource InkText}"/>
+        <Setter Property="FontFamily" Value="{StaticResource InkBodyFont}"/>
+        <Setter Property="FontSize" Value="13"/>
+        <Setter Property="Padding" Value="10,7"/>
+        <Setter Property="MinHeight" Value="32"/>
+        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+        <Setter Property="FocusAdorner" Value="{x:Null}"/>
+        <Setter Property="Template">
+            <ControlTemplate>
+                <ContentPresenter x:Name="PART_ContentPresenter" Content="{TemplateBinding Content}"
+                                  ContentTemplate="{TemplateBinding ContentTemplate}" Padding="{TemplateBinding Padding}"
+                                  Background="{TemplateBinding Background}" Foreground="{TemplateBinding Foreground}"
+                                  FontFamily="{TemplateBinding FontFamily}" FontSize="{TemplateBinding FontSize}"
+                                  FontWeight="{TemplateBinding FontWeight}" CornerRadius="3"
+                                  HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                  VerticalContentAlignment="Center"/>
+            </ControlTemplate>
+        </Setter>
+        <Style Selector="^:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{StaticResource InkWash}"/>
+        </Style>
+        <Style Selector="^:selected /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{StaticResource InkJadeLight}"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+        </Style>
+        <Style Selector="^:focus-visible /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="BorderBrush" Value="{StaticResource InkJade}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+        </Style>
+        <Style Selector="^:disabled">
+            <Setter Property="Opacity" Value="0.45"/>
+        </Style>
+    </ControlTheme>
+
+    <!-- 原生 ComboBox 的 PART_Popup / PART_ItemsPresenter 保留键盘与选择语义。 -->
+    <ControlTheme x:Key="InkComboTheme" TargetType="ComboBox">
+        <Setter Property="Background" Value="{StaticResource InkPaper}"/>
+        <Setter Property="Foreground" Value="{StaticResource InkText}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource InkGold}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="4"/>
+        <Setter Property="Padding" Value="8,5"/>
+        <Setter Property="FontFamily" Value="{StaticResource InkBodyFont}"/>
+        <Setter Property="FontSize" Value="13"/>
+        <Setter Property="MinHeight" Value="32"/>
+        <Setter Property="MaxDropDownHeight" Value="300"/>
+        <Setter Property="HorizontalAlignment" Value="Stretch"/>
+        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
+        <Setter Property="ItemContainerTheme" Value="{StaticResource InkComboItemTheme}"/>
+        <Setter Property="FocusAdorner" Value="{x:Null}"/>
+        <Setter Property="Template">
+            <ControlTemplate>
+                <Grid>
+                    <Border x:Name="InkComboChrome" Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="{TemplateBinding CornerRadius}">
+                        <Grid ColumnDefinitions="*,22">
+                            <ContentPresenter x:Name="ContentPresenter" Margin="{TemplateBinding Padding}"
+                                              Content="{TemplateBinding SelectionBoxItem}"
+                                              ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                              FontFamily="{TemplateBinding FontFamily}" FontSize="{TemplateBinding FontSize}"
+                                              FontWeight="{TemplateBinding FontWeight}" Foreground="{TemplateBinding Foreground}"
+                                              HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalContentAlignment="Center" ClipToBounds="True"/>
+                            <TextBlock Grid.Column="1" Text="⌄" FontSize="15" Foreground="{StaticResource InkJade}"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False"/>
+                        </Grid>
+                    </Border>
+                    <Popup x:Name="PART_Popup" Placement="BottomEdgeAlignedLeft"
+                           PlacementTarget="InkComboChrome" IsLightDismissEnabled="True" InheritsTransform="True"
+                           IsOpen="{TemplateBinding IsDropDownOpen, Mode=TwoWay}"
+                           MinWidth="{Binding Bounds.Width, RelativeSource={RelativeSource TemplatedParent}}"
+                           MaxHeight="{TemplateBinding MaxDropDownHeight}">
+                        <Border Background="{StaticResource InkPaper}" BorderBrush="{StaticResource InkGold}"
+                                BorderThickness="1" CornerRadius="5" Padding="4">
+                            <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                                <ItemsPresenter x:Name="PART_ItemsPresenter" ItemsPanel="{TemplateBinding ItemsPanel}"/>
+                            </ScrollViewer>
+                        </Border>
+                    </Popup>
+                </Grid>
+            </ControlTemplate>
+        </Setter>
+        <Style Selector="^:pointerover /template/ Border#InkComboChrome">
+            <Setter Property="Background" Value="{StaticResource InkWash}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource InkJade}"/>
+        </Style>
+        <Style Selector="^:pressed /template/ Border#InkComboChrome">
+            <Setter Property="Background" Value="{StaticResource InkJadeLight}"/>
+        </Style>
+        <Style Selector="^:focus-visible /template/ Border#InkComboChrome">
+            <Setter Property="BorderBrush" Value="{StaticResource InkJade}"/>
+            <Setter Property="BorderThickness" Value="2"/>
+        </Style>
+        <Style Selector="^:dropdownopen /template/ Border#InkComboChrome">
+            <Setter Property="BorderBrush" Value="{StaticResource InkJade}"/>
+        </Style>
+        <Style Selector="^:disabled">
+            <Setter Property="Opacity" Value="0.45"/>
+        </Style>
+    </ControlTheme>
+
+    <!-- 复用原生输入/选择/IME 模板，仅在本主题内改交互色。 -->
+    <ControlTheme x:Key="InkTextBoxTheme" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+        <Setter Property="Background" Value="{StaticResource InkPaper}"/>
+        <Setter Property="Foreground" Value="{StaticResource InkText}"/>
+        <Setter Property="CaretBrush" Value="{StaticResource InkJade}"/>
+        <Setter Property="SelectionBrush" Value="{StaticResource InkJadeLight}"/>
+        <Setter Property="SelectionForegroundBrush" Value="{StaticResource InkText}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource InkGold}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="4"/>
+        <Setter Property="FontFamily" Value="{StaticResource InkBodyFont}"/>
+        <Setter Property="FontSize" Value="13"/>
+        <Setter Property="MinHeight" Value="32"/>
+        <Setter Property="Padding" Value="8,6"/>
+        <Style Selector="^:pointerover, ^:focus, ^:disabled">
+            <Setter Property="Foreground" Value="{StaticResource InkText}"/>
+        </Style>
+        <Style Selector="^:pointerover /template/ Border#PART_BorderElement">
+            <Setter Property="Background" Value="{StaticResource InkWash}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource InkJade}"/>
+        </Style>
+        <Style Selector="^:focus /template/ Border#PART_BorderElement">
+            <Setter Property="Background" Value="{StaticResource InkPaper}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource InkJade}"/>
+            <Setter Property="BorderThickness" Value="2"/>
+        </Style>
+        <Style Selector="^:disabled /template/ Border#PART_BorderElement">
+            <Setter Property="Background" Value="{StaticResource InkWash}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource InkLine}"/>
+        </Style>
+        <Style Selector="^ /template/ TextBlock#PART_Watermark, ^:pointerover /template/ TextBlock#PART_Watermark, ^:focus /template/ TextBlock#PART_Watermark">
+            <Setter Property="Foreground" Value="{StaticResource InkMuted}"/>
+        </Style>
+        <Style Selector="^:disabled">
+            <Setter Property="Opacity" Value="0.5"/>
+        </Style>
+    </ControlTheme>
+
+    <ControlTheme x:Key="InkFlyoutTheme" TargetType="FlyoutPresenter">
+        <Setter Property="Background" Value="{StaticResource InkPaper}"/>
+        <Setter Property="Foreground" Value="{StaticResource InkText}"/>
+        <Setter Property="FontFamily" Value="{StaticResource InkBodyFont}"/>
+        <Setter Property="FontSize" Value="13"/>
+        <Setter Property="Padding" Value="16"/>
+        <Setter Property="Template">
+            <ControlTemplate>
+                <Border Background="{TemplateBinding Background}" BorderBrush="{StaticResource InkGold}"
+                        BorderThickness="1" CornerRadius="8" Padding="{TemplateBinding Padding}">
+                    <ContentPresenter x:Name="PART_ContentPresenter" Content="{TemplateBinding Content}"
+                                      ContentTemplate="{TemplateBinding ContentTemplate}"
+                                      Foreground="{TemplateBinding Foreground}" FontFamily="{TemplateBinding FontFamily}"
+                                      FontSize="{TemplateBinding FontSize}" FontWeight="{TemplateBinding FontWeight}"/>
+                </Border>
+            </ControlTemplate>
+        </Setter>
+    </ControlTheme>
+</ResourceDictionary>

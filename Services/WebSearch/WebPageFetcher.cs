@@ -40,7 +40,7 @@ public sealed class WebPageFetcher
             var html = await EdgeHeadlessBrowser.GetRenderedHtmlAsync(url, ct);
             if (string.IsNullOrWhiteSpace(html)) return "";
 
-            var article = Reader.ParseArticle(url, html);
+            var article = Reader.ParseArticle(url, text: html);
             if (!article.IsReadable) return FallbackExtract(html);
 
             var articleHtml = article.Content;

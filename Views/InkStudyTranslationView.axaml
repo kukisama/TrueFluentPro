@@ -1,0 +1,606 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:controls="using:TrueFluentPro.Controls"
+             xmlns:local="using:TrueFluentPro.Views"
+             xmlns:icons="https://github.com/projektanker/icons.avalonia"
+             x:Class="TrueFluentPro.Views.InkStudyTranslationView"
+             x:Name="InkRoot" Classes="ink-study-page" x:CompileBindings="False"
+             mc:Ignorable="d" d:DesignWidth="1440" d:DesignHeight="820"
+             FontFamily="Microsoft YaHei UI, Segoe UI, sans-serif" FontSize="13"
+             Foreground="#263832" Background="#EEE9DF">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceInclude Source="avares://TrueFluentPro/Styles/InkStudyControls.axaml"/>
+            </ResourceDictionary.MergedDictionaries>
+            <local:InkStudyFontSizeConverter x:Key="InkFontSizeSelection"/>
+            <local:InkStudySpeakerLabelConverter x:Key="InkHistorySpeakerLabel"/>
+            <controls:LevelToHeightConverter x:Key="InkLevelToHeight" MaxHeight="16"/>
+
+            <DataTemplate x:Key="InkConversationTemplate">
+                <Grid RowDefinitions="Auto,Auto,Auto" Margin="0,6,0,20">
+                    <Grid ColumnDefinitions="34,10,*,Auto" Margin="0,0,0,9">
+                        <Border Width="32" Height="32" CornerRadius="16" Background="{Binding AvatarBrush}"
+                                BorderBrush="{Binding AccentBrush}" BorderThickness="1">
+                            <icons:Icon Value="fa-solid fa-user" FontSize="15"
+                                        Foreground="{Binding AccentBrush}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                            <!-- 来源与时间均使用卡片快照；未知来源由适配器中性标记。 -->
+                            <TextBlock Text="{Binding SpeakerLabel}" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                            <Border Background="{StaticResource InkWash}" CornerRadius="3" Padding="5,2" IsVisible="{Binding IsLive}">
+                                <TextBlock Text="听译中" FontSize="10" Foreground="{StaticResource InkJade}"/>
+                            </Border>
+                        </StackPanel>
+                        <TextBlock Grid.Column="3" Text="{Binding TimeText}" FontSize="11" Margin="8,0,0,0"
+                                   VerticalAlignment="Center" Foreground="{StaticResource InkMuted}"/>
+                    </Grid>
+                    <Border Grid.Row="1" Background="{Binding BubbleBrush}" BorderBrush="{Binding AccentBrush}"
+                            BorderThickness="2,0,0,0" CornerRadius="8" Padding="14,12" Margin="0,0,0,8">
+                        <Border.IsVisible>
+                            <MultiBinding Converter="{x:Static BoolConverters.And}">
+                                <Binding Path="HasTranslated"/>
+                                <Binding Path="$parent[UserControl].DataContext.ShowTranslatedLine"/>
+                            </MultiBinding>
+                        </Border.IsVisible>
+                        <SelectableTextBlock Text="{Binding TranslatedText}" TextWrapping="Wrap"
+                                             FontFamily="{StaticResource InkBodyFont}" Foreground="{StaticResource InkText}"
+                                             FontSize="{Binding $parent[UserControl].DataContext.ConversationFontSize}"/>
+                    </Border>
+                    <SelectableTextBlock Grid.Row="2" Text="{Binding OriginalText}" TextWrapping="Wrap" Margin="14,2,10,0"
+                                         FontFamily="{StaticResource InkBodyFont}" Foreground="{StaticResource InkMuted}"
+                                         FontSize="{Binding $parent[UserControl].DataContext.ConversationFontSize}">
+                        <SelectableTextBlock.IsVisible>
+                            <MultiBinding Converter="{x:Static BoolConverters.And}">
+                                <Binding Path="HasOriginal"/>
+                                <Binding Path="$parent[UserControl].DataContext.ShowOriginalLine"/>
+                            </MultiBinding>
+                        </SelectableTextBlock.IsVisible>
+                    </SelectableTextBlock>
+                </Grid>
+            </DataTemplate>
+
+            <DataTemplate x:Key="InkRecentHistoryTemplate">
+                <Border Background="#65EDF0E9" CornerRadius="4" Padding="7,3" Margin="0,0,0,3" Height="41">
+                    <Grid ColumnDefinitions="46,*">
+                        <TextBlock Text="{Binding TimeText}" FontSize="10" Foreground="{StaticResource InkMuted}"
+                                   VerticalAlignment="Top" Margin="0,3,4,0" TextTrimming="CharacterEllipsis"/>
+                        <StackPanel Grid.Column="1" Spacing="1">
+                            <TextBlock Text="{Binding TranslatedText}" FontSize="12" TextTrimming="CharacterEllipsis"
+                                       IsVisible="{Binding HasTranslated}" Foreground="{StaticResource InkText}"/>
+                            <TextBlock Text="{Binding OriginalText}" FontSize="11" TextTrimming="CharacterEllipsis"
+                                       IsVisible="{Binding HasOriginal}" Foreground="{StaticResource InkMuted}"/>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+            </DataTemplate>
+        </ResourceDictionary>
+    </UserControl.Resources>
+
+    <UserControl.Styles>
+        <!-- :is(UserControl) 匹配自定义 View，所有选择器只在本页作用域内。 -->
+        <Style Selector=":is(UserControl).ink-study-page Button">
+            <Setter Property="Theme" Value="{StaticResource InkButtonTheme}"/>
+        </Style>
+        <Style Selector=":is(UserControl).ink-study-page ToggleButton">
+            <Setter Property="Theme" Value="{StaticResource InkToggleTheme}"/>
+        </Style>
+        <Style Selector=":is(UserControl).ink-study-page ComboBox">
+            <Setter Property="Theme" Value="{StaticResource InkComboTheme}"/>
+        </Style>
+        <Style Selector=":is(UserControl).ink-study-page TextBox">
+            <Setter Property="Theme" Value="{StaticResource InkTextBoxTheme}"/>
+        </Style>
+        <Style Selector="TextBlock.ink-section-title">
+            <Setter Property="FontFamily" Value="{StaticResource InkSongFont}"/>
+            <Setter Property="FontSize" Value="18"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="{StaticResource InkText}"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="TextBlock.ink-label">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Foreground" Value="{StaticResource InkMuted}"/>
+            <Setter Property="Margin" Value="0,0,0,4"/>
+        </Style>
+        <Style Selector="TextBlock.ink-nav-title">
+            <Setter Property="FontFamily" Value="{StaticResource InkSongFont}"/>
+            <Setter Property="FontSize" Value="18"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Margin" Value="0,0,0,5"/>
+        </Style>
+        <Style Selector="TextBlock.ink-nav-note">
+            <Setter Property="FontFamily" Value="{StaticResource InkSongFont}"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Foreground" Value="{StaticResource InkMuted}"/>
+        </Style>
+        <Style Selector=":is(UserControl).ink-study-page.ink-compact Button.ink-bookmark">
+            <Setter Property="Height" Value="84"/>
+            <Setter Property="Padding" Value="17,10,8,10"/>
+        </Style>
+        <Style Selector=":is(UserControl).ink-study-page.ink-compact TextBlock.ink-nav-title">
+            <Setter Property="FontSize" Value="16"/>
+        </Style>
+        <Style Selector=":is(UserControl).ink-study-page.ink-compact TextBlock.ink-nav-note">
+            <Setter Property="FontSize" Value="11"/>
+        </Style>
+    </UserControl.Styles>
+
+    <!-- 宽高由 Viewport 约束；小窗口只滚整页，不把右页结果的 * 行测量为无限。 -->
+    <ScrollViewer x:Name="InkPageScroll" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+        <Grid x:Name="InkCanvas" ColumnDefinitions="176,*" MinWidth="952" MinHeight="704" Margin="12">
+            <Grid RowDefinitions="90,*,112" Margin="0,0,8,0">
+                <Image Source="avares://TrueFluentPro/Assets/Appearance/InkStudy/bamboo-left.png"
+                       Grid.RowSpan="3" Stretch="UniformToFill" Opacity="0.36" IsHitTestVisible="False"/>
+                <Image Source="avares://TrueFluentPro/Assets/Appearance/InkStudy/tassel.png"
+                       Grid.Row="1" Width="22" Height="238" HorizontalAlignment="Left" VerticalAlignment="Top"
+                       Margin="-4,38,0,0" Stretch="Uniform" IsHitTestVisible="False"/>
+                <StackPanel Margin="17,13,6,0" Spacing="8">
+                    <TextBlock Text="译见 Pro" FontFamily="{StaticResource InkSongFont}" FontWeight="SemiBold" FontSize="25"/>
+                    <TextBlock Text="让世界的声音，被更多人听见" FontFamily="{StaticResource InkSongFont}"
+                               FontSize="10" Foreground="{StaticResource InkMuted}" TextWrapping="Wrap"/>
+                </StackPanel>
+                <StackPanel Grid.Row="1" Spacing="8" VerticalAlignment="Top">
+                    <Button Classes="ink-bookmark ink-current" Theme="{StaticResource InkNavTheme}" Tag="live"
+                            Click="OnNavigationClick" HorizontalAlignment="Stretch" AutomationProperties.Name="实时翻译，当前页面">
+                        <Grid ColumnDefinitions="20,*" ColumnSpacing="8">
+                        <icons:Icon Value="fa-solid fa-microphone-lines" FontSize="15" VerticalAlignment="Top" Margin="0,2,0,0"/>
+                        <StackPanel Grid.Column="1">
+                            <TextBlock Classes="ink-nav-title" Text="实时翻译"/>
+                            <TextBlock Classes="ink-nav-note" Text="即时语音"/>
+                            <TextBlock Classes="ink-nav-note" Text="多语互译"/>
+                        </StackPanel>
+                        </Grid>
+                    </Button>
+                    <Button Classes="ink-bookmark" Theme="{StaticResource InkNavTheme}" Tag="media"
+                            Click="OnNavigationClick" HorizontalAlignment="Stretch" AutomationProperties.Name="创作工坊">
+                        <Grid ColumnDefinitions="20,*" ColumnSpacing="8">
+                        <icons:Icon Value="fa-solid fa-pen-nib" FontSize="15" VerticalAlignment="Top" Margin="0,2,0,0"/>
+                        <StackPanel Grid.Column="1">
+                            <TextBlock Classes="ink-nav-title" Text="创作工坊"/>
+                            <TextBlock Classes="ink-nav-note" Text="AI 润色"/>
+                            <TextBlock Classes="ink-nav-note" Text="多语创作"/>
+                        </StackPanel>
+                        </Grid>
+                    </Button>
+                    <Button Classes="ink-bookmark" Theme="{StaticResource InkNavTheme}" Tag="mediav2"
+                            Click="OnNavigationClick" HorizontalAlignment="Stretch" AutomationProperties.Name="媒体中心">
+                        <Grid ColumnDefinitions="20,*" ColumnSpacing="8">
+                        <icons:Icon Value="fa-solid fa-photo-film" FontSize="15" VerticalAlignment="Top" Margin="0,2,0,0"/>
+                        <StackPanel Grid.Column="1">
+                            <TextBlock Classes="ink-nav-title" Text="媒体中心"/>
+                            <TextBlock Classes="ink-nav-note" Text="音视频翻译"/>
+                            <TextBlock Classes="ink-nav-note" Text="文件处理"/>
+                        </StackPanel>
+                        </Grid>
+                    </Button>
+                    <Button Classes="ink-bookmark" Theme="{StaticResource InkNavTheme}" Tag="audiolab"
+                            Click="OnNavigationClick" HorizontalAlignment="Stretch" AutomationProperties.Name="听析中心">
+                        <Grid ColumnDefinitions="20,*" ColumnSpacing="8">
+                        <icons:Icon Value="fa-solid fa-headphones" FontSize="15" VerticalAlignment="Top" Margin="0,2,0,0"/>
+                        <StackPanel Grid.Column="1">
+                            <TextBlock Classes="ink-nav-title" Text="听析中心"/>
+                            <TextBlock Classes="ink-nav-note" Text="语音转写"/>
+                            <TextBlock Classes="ink-nav-note" Text="智能总结"/>
+                        </StackPanel>
+                        </Grid>
+                    </Button>
+                    <Button Classes="ink-bookmark" Theme="{StaticResource InkNavTheme}" Tag="taskmonitor"
+                            Click="OnNavigationClick" HorizontalAlignment="Stretch" AutomationProperties.Name="任务监控">
+                        <Grid ColumnDefinitions="20,*" ColumnSpacing="8">
+                        <icons:Icon Value="fa-solid fa-chart-column" FontSize="15" VerticalAlignment="Top" Margin="0,2,0,0"/>
+                        <StackPanel Grid.Column="1">
+                            <TextBlock Classes="ink-nav-title" Text="任务监控"/>
+                            <TextBlock Classes="ink-nav-note" Text="任务进度"/>
+                            <TextBlock Classes="ink-nav-note" Text="运行状态"/>
+                        </StackPanel>
+                        </Grid>
+                    </Button>
+                </StackPanel>
+                <StackPanel Grid.Row="2" Spacing="8" Margin="13,10,10,7" VerticalAlignment="Bottom">
+                    <Button Theme="{StaticResource InkButtonTheme}" Tag="settings" Click="OnNavigationClick"
+                            HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Content="设置 · 系统偏好"/>
+                    <Button x:Name="InkThemeButton" Theme="{StaticResource InkButtonTheme}" Click="OnThemeClick"
+                            HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Content="主题 · 风格切换"
+                            AutomationProperties.Name="切换外观主题"/>
+                </StackPanel>
+            </Grid>
+
+            <Grid Grid.Column="1">
+                <Border Background="{StaticResource InkPaper}" CornerRadius="9" Margin="4"/>
+                <controls:InkStudyBookFrame/>
+                <!-- 与十五片底框同列同边距，内容永不跨书脊。 -->
+                <Grid ColumnDefinitions="20,*,28,*,20" RowDefinitions="20,*,20">
+                    <Grid Grid.Row="1" Grid.Column="1" RowDefinitions="96,*,24" Margin="14,0,12,0">
+                        <Grid RowDefinitions="56,Auto" Margin="4,7,0,0">
+                            <Image Source="avares://TrueFluentPro/Assets/Appearance/InkStudy/title-calligraphy.png"
+                                   Width="206" Height="50" Stretch="Uniform" HorizontalAlignment="Left"
+                                   IsHitTestVisible="False" AutomationProperties.Name="实时翻译"/>
+                            <TextBlock Grid.Row="1" Text="跨越语言的边界，连接更大的世界"
+                                       FontFamily="{StaticResource InkSongFont}" FontSize="12"
+                                       Foreground="{StaticResource InkMuted}" Margin="4,3,0,0"/>
+                        </Grid>
+                        <Grid Grid.Row="1" RowDefinitions="40,*" ClipToBounds="True">
+                            <Border BorderBrush="{StaticResource InkLine}" BorderThickness="0,0,0,1" Padding="0,0,0,7">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Text="此刻 · 对话" FontSize="11" Foreground="{StaticResource InkMuted}" VerticalAlignment="Center"/>
+                                    <Border Grid.Column="1" Background="{StaticResource InkWash}" CornerRadius="6" Padding="2">
+                                        <StackPanel Orientation="Horizontal" Spacing="2">
+                                            <ToggleButton x:Name="InkOriginalButton" Theme="{StaticResource InkToggleTheme}"
+                                                          Content="原文" Tag="original" Padding="11,3" MinHeight="26"
+                                                          IsChecked="{Binding IsOriginalMode, Mode=TwoWay}" Click="OnDisplayModeClick"
+                                                          AutomationProperties.Name="仅显示原文"/>
+                                            <ToggleButton x:Name="InkTranslatedButton" Theme="{StaticResource InkToggleTheme}"
+                                                          Content="译文" Tag="translated" Padding="11,3" MinHeight="26"
+                                                          IsChecked="{Binding IsTranslatedMode, Mode=TwoWay}" Click="OnDisplayModeClick"
+                                                          AutomationProperties.Name="仅显示译文"/>
+                                            <ToggleButton x:Name="InkBilingualButton" Theme="{StaticResource InkToggleTheme}"
+                                                          Content="双语" Tag="bilingual" Padding="11,3" MinHeight="26"
+                                                          IsChecked="{Binding IsBilingualMode, Mode=TwoWay}" Click="OnDisplayModeClick"
+                                                          AutomationProperties.Name="显示双语对照"/>
+                                        </StackPanel>
+                                    </Border>
+                                </Grid>
+                            </Border>
+                            <Grid Grid.Row="1" ClipToBounds="True">
+                                <Image Source="avares://TrueFluentPro/Assets/Appearance/InkStudy/landscape.png"
+                                       VerticalAlignment="Bottom" HorizontalAlignment="Stretch" Height="190"
+                                       Stretch="UniformToFill" Opacity="0.18" IsHitTestVisible="False"/>
+                                <ScrollViewer x:Name="InkConversationScroll" HorizontalScrollBarVisibility="Disabled"
+                                              VerticalScrollBarVisibility="Auto" Margin="0,9,0,0"
+                                              AutomationProperties.Name="实时双语对话">
+                                    <ItemsControl ItemsSource="{Binding Conversation}" ItemTemplate="{StaticResource InkConversationTemplate}"
+                                                  IsVisible="{Binding HasConversation}" Margin="3,0,10,36"/>
+                                </ScrollViewer>
+                                <StackPanel Spacing="8" Margin="24,52,24,0" VerticalAlignment="Top"
+                                            IsVisible="{Binding !HasConversation}" IsHitTestVisible="False">
+                                    <TextBlock Text="言语未至，纸页以待。" FontFamily="{StaticResource InkSongFont}"
+                                               FontSize="19" Foreground="{StaticResource InkJade}"/>
+                                    <TextBlock Text="选好语言与设备，轻按朱印开始听译。" FontSize="12"
+                                               Foreground="{StaticResource InkMuted}" TextWrapping="Wrap"/>
+                                    <TextBlock Text="原文与译文逐句呈现，发言来源随记录显示。" FontSize="11"
+                                               Foreground="{StaticResource InkMuted}" TextWrapping="Wrap"/>
+                                </StackPanel>
+                            </Grid>
+                        </Grid>
+                        <TextBlock Grid.Row="2" Text="言之无界，心之相通。" FontFamily="{StaticResource InkSongFont}"
+                                   FontSize="12" Foreground="{StaticResource InkMuted}" VerticalAlignment="Center" Margin="6,0"/>
+                    </Grid>
+
+                    <!-- 固定上下分区 + 有限 * 结果区，三块同时存在；不嵌套无限高度的 Grid*。 -->
+                    <Grid Grid.Row="1" Grid.Column="3" RowDefinitions="56,184,12,*,12,236" Margin="10,0,14,0">
+                        <TextBlock Text="海内存知己，天涯若比邻。" FontFamily="{StaticResource InkSongFont}"
+                                   FontSize="16" Foreground="{StaticResource InkMuted}" VerticalAlignment="Center"
+                                   HorizontalAlignment="Center" Margin="0,0,0,7"/>
+
+                        <Border x:Name="InkHistoryPanel" Grid.Row="1" BorderBrush="{StaticResource InkLine}"
+                                BorderThickness="1" Background="#BFFFFFFF" CornerRadius="6" Padding="12,8">
+                            <Grid RowDefinitions="30,*">
+                                <Grid ColumnDefinitions="*,Auto,Auto">
+                                    <TextBlock Classes="ink-section-title" Text="历史记录"/>
+                                    <Button x:Name="InkHistoryButton" Grid.Column="1" Theme="{StaticResource InkButtonTheme}"
+                                            Content="全部" MinHeight="26" Padding="8,3" Margin="6,0"
+                                            AutomationProperties.Name="查看全部历史记录">
+                                        <Button.Flyout>
+                                            <Flyout Placement="BottomEdgeAlignedRight" FlyoutPresenterTheme="{StaticResource InkFlyoutTheme}">
+                                                <Grid Width="520" Height="430" RowDefinitions="Auto,*,Auto">
+                                                    <TextBlock Classes="ink-section-title" Text="全部翻译历史" Margin="0,0,0,12"/>
+                                                    <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                                                        <ItemsControl ItemsSource="{Binding Session.History}">
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate>
+                                                                    <Border BorderBrush="{StaticResource InkLine}" BorderThickness="0,0,0,1"
+                                                                            Padding="3,8,8,12" Margin="0,0,0,4">
+                                                                        <StackPanel Spacing="6">
+                                                                            <Grid ColumnDefinitions="*,Auto">
+                                                                                <TextBlock Text="{Binding Source, Converter={StaticResource InkHistorySpeakerLabel}}" FontSize="11" Foreground="{StaticResource InkJade}"/>
+                                                                                <TextBlock Grid.Column="1" Text="{Binding Timestamp, StringFormat=\{0:MM-dd HH:mm:ss\}}"
+                                                                                           FontSize="11" Foreground="{StaticResource InkMuted}"/>
+                                                                            </Grid>
+                                                                            <SelectableTextBlock Text="{Binding TranslatedText}" TextWrapping="Wrap" FontSize="14"
+                                                                                                 Foreground="{StaticResource InkText}"/>
+                                                                            <SelectableTextBlock Text="{Binding OriginalText}" TextWrapping="Wrap" FontSize="13"
+                                                                                                 Foreground="{StaticResource InkMuted}"/>
+                                                                        </StackPanel>
+                                                                    </Border>
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
+                                                    </ScrollViewer>
+                                                    <Grid Grid.Row="2" ColumnDefinitions="*,Auto" Margin="0,12,0,0">
+                                                        <Button Theme="{StaticResource InkButtonTheme}" Content="打开历史文件夹"
+                                                                Command="{Binding Session.OpenHistoryFolderCommand}" HorizontalAlignment="Left"/>
+                                                        <Button Grid.Column="1" Theme="{StaticResource InkButtonTheme}" Content="清空历史"
+                                                                Command="{Binding Session.ClearHistoryCommand}"/>
+                                                    </Grid>
+                                                </Grid>
+                                            </Flyout>
+                                        </Button.Flyout>
+                                    </Button>
+                                    <Button Grid.Column="2" Theme="{StaticResource InkButtonTheme}" Content="清空"
+                                            Foreground="{StaticResource InkCinnabar}" MinHeight="26" Padding="8,3"
+                                            Command="{Binding Session.ClearHistoryCommand}" AutomationProperties.Name="清空翻译历史"/>
+                                </Grid>
+                                <!-- RecentHistory 为适配器的最近三条摘要，不排序或改变业务 History。 -->
+                                <ItemsControl Grid.Row="1" ItemsSource="{Binding RecentHistory}"
+                                              ItemTemplate="{StaticResource InkRecentHistoryTemplate}" Margin="0,5,0,0"
+                                              IsVisible="{Binding HasHistory}" ClipToBounds="True"/>
+                                <TextBlock Grid.Row="1" Text="已完成的译句，将在这里留存。" FontSize="12"
+                                           IsVisible="{Binding !HasHistory}" Foreground="{StaticResource InkMuted}"
+                                           VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                            </Grid>
+                        </Border>
+
+                        <Grid x:Name="InkInsightPanel" Grid.Row="3" MinHeight="140">
+                            <Border BorderBrush="{StaticResource InkGold}" BorderThickness="1" CornerRadius="6" Background="#D9FCFBF8"/>
+                            <Grid RowDefinitions="36,*,22" Margin="13,7,13,5">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Classes="ink-section-title" Text="AI 洞察"/>
+                                    <Button x:Name="InkInsightOptionsButton" Grid.Column="1" Theme="{StaticResource InkButtonTheme}"
+                                            Content="提问与自动分析" MinHeight="26" Padding="8,3"
+                                            AutomationProperties.Name="洞察提问、预设与自动分析设置">
+                                        <Button.Flyout>
+                                            <Flyout Placement="LeftEdgeAlignedTop" FlyoutPresenterTheme="{StaticResource InkFlyoutTheme}">
+                                                <ScrollViewer MaxHeight="470" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                                                    <StackPanel Width="390" Spacing="12">
+                                                        <TextBlock Classes="ink-section-title" Text="以对话为据，问得更深入"/>
+                                                        <TextBlock Text="尚未配置 AI 服务，请在系统设置中选择服务。" FontSize="12"
+                                                                   TextWrapping="Wrap" Foreground="{StaticResource InkCinnabar}"
+                                                                   IsVisible="{Binding !Session.AiInsight.IsAiConfigured}"/>
+                                                        <ItemsControl ItemsSource="{Binding Session.AiInsight.InsightPresetButtons}">
+                                                            <ItemsControl.ItemsPanel>
+                                                                <ItemsPanelTemplate><StackPanel Spacing="5"/></ItemsPanelTemplate>
+                                                            </ItemsControl.ItemsPanel>
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate>
+                                                                    <Button Theme="{StaticResource InkButtonTheme}" Content="{Binding Name}"
+                                                                            HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                                                                            Command="{Binding $parent[ItemsControl].DataContext.Session.AiInsight.SendPresetInsightCommand}"
+                                                                            CommandParameter="{Binding Prompt}"/>
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
+                                                        <TextBox Theme="{StaticResource InkTextBoxTheme}" MinHeight="66" MaxHeight="120"
+                                                                 Text="{Binding Session.AiInsight.InsightUserInput, Mode=TwoWay}"
+                                                                 Watermark="输入自定义分析问题…" AcceptsReturn="True" TextWrapping="Wrap"
+                                                                 AutomationProperties.Name="自定义洞察问题"/>
+                                                        <Grid ColumnDefinitions="*,8,*">
+                                                            <Button Theme="{StaticResource InkButtonTheme}" Content="发送问题" Command="{Binding Session.AiInsight.SendInsightCommand}"/>
+                                                            <Button Grid.Column="2" Theme="{StaticResource InkButtonTheme}" Content="停止生成"
+                                                                    Command="{Binding Session.AiInsight.StopInsightCommand}" IsEnabled="{Binding Session.AiInsight.IsInsightLoading}"/>
+                                                        </Grid>
+                                                        <Border Height="1" Background="{StaticResource InkLine}"/>
+                                                        <Grid ColumnDefinitions="*,10,94" RowDefinitions="Auto,Auto">
+                                                            <TextBlock Classes="ink-label" Text="自动分析方式"/>
+                                                            <TextBlock Grid.Column="2" Classes="ink-label" Text="间隔（秒）"/>
+                                                            <ComboBox Grid.Row="1" Theme="{StaticResource InkComboTheme}"
+                                                                      SelectedIndex="{Binding Session.AiInsight.AutoInsightModeIndex, Mode=TwoWay}"
+                                                                      IsEnabled="{Binding !Session.AiInsight.IsAutoInsightEnabled}" AutomationProperties.Name="自动洞察模式">
+                                                                <ComboBoxItem Content="定时循环"/>
+                                                                <ComboBoxItem Content="新数据触发"/>
+                                                            </ComboBox>
+                                                            <TextBox Grid.Row="1" Grid.Column="2" Theme="{StaticResource InkTextBoxTheme}"
+                                                                     Text="{Binding Session.AiInsight.AutoInsightIntervalSeconds, Mode=TwoWay}"
+                                                                     IsEnabled="{Binding !Session.AiInsight.IsAutoInsightEnabled}" AutomationProperties.Name="自动洞察间隔秒数"/>
+                                                        </Grid>
+                                                        <TextBox Theme="{StaticResource InkTextBoxTheme}" Text="{Binding Session.AiInsight.AutoInsightPrompt, Mode=TwoWay}"
+                                                                 Watermark="自动分析使用的提示词…" TextWrapping="Wrap" AcceptsReturn="True" MinHeight="66" MaxHeight="120"
+                                                                 IsEnabled="{Binding !Session.AiInsight.IsAutoInsightEnabled}" AutomationProperties.Name="自动洞察提示词"/>
+                                                        <Grid ColumnDefinitions="*,8,*">
+                                                            <Button Theme="{StaticResource InkButtonTheme}" Content="{Binding Session.AiInsight.AutoInsightToggleText}"
+                                                                    Command="{Binding Session.AiInsight.ToggleAutoInsightCommand}"/>
+                                                            <Button Grid.Column="2" Theme="{StaticResource InkButtonTheme}" Content="清除结果"
+                                                                    Command="{Binding Session.AiInsight.ClearInsightCommand}"/>
+                                                        </Grid>
+                                                    </StackPanel>
+                                                </ScrollViewer>
+                                            </Flyout>
+                                        </Button.Flyout>
+                                    </Button>
+                                </Grid>
+                                <Grid Grid.Row="1" ClipToBounds="True">
+                                    <ScrollViewer x:Name="InkInsightScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                                                  AutomationProperties.Name="AI 洞察结果" Margin="0,4,0,0" ClipToBounds="True">
+                                        <controls:ChatMarkdownBlock Markdown="{Binding Session.AiInsight.InsightMarkdown}"
+                                                                    MaxContentWidth="{Binding #InkInsightScroll.Viewport.Width}"
+                                                                    Margin="1,0,9,8" TextElement.Foreground="{StaticResource InkText}"/>
+                                    </ScrollViewer>
+                                    <TextBlock Text="从预设或提问开始，让洞察落在纸上。" FontSize="12" TextWrapping="Wrap"
+                                               Margin="2,12" IsVisible="{Binding Session.AiInsight.IsInsightEmpty}"
+                                               Foreground="{StaticResource InkMuted}" IsHitTestVisible="False"/>
+                                </Grid>
+                                <Grid Grid.Row="2" ColumnDefinitions="*,Auto">
+                                    <TextBlock Text="正在分析对话…" FontSize="10" Foreground="{StaticResource InkJade}"
+                                               IsVisible="{Binding Session.AiInsight.IsInsightLoading}" VerticalAlignment="Center"/>
+                                    <TextBlock Text="基于当前对话内容" FontSize="10" Foreground="{StaticResource InkMuted}"
+                                               IsVisible="{Binding !Session.AiInsight.IsInsightLoading}" VerticalAlignment="Center"/>
+                                    <Button Grid.Column="1" Theme="{StaticResource InkButtonTheme}" Content="浮动洞察" Padding="5,1" MinHeight="21"
+                                            FontSize="10" Command="{Binding Session.ShowFloatingInsightCommand}"/>
+                                </Grid>
+                            </Grid>
+                        </Grid>
+
+                        <Border x:Name="InkSettingsPanel" Grid.Row="5" BorderBrush="{StaticResource InkLine}"
+                                BorderThickness="1" CornerRadius="6" Background="#C7FCFBF8" Padding="12,8">
+                            <Grid RowDefinitions="24,42,42,20,*,18">
+                                <TextBlock Classes="ink-section-title" Text="译事设置"/>
+                                <!-- 设备与资源同一行，语言对下一行；所有表单均使用 Grid 成组。 -->
+                                <Grid Grid.Row="1" ColumnDefinitions="*,10,118">
+                                    <Grid ColumnDefinitions="54,*,12" Margin="0,3,0,4">
+                                        <TextBlock Text="语音资源" FontSize="11" Foreground="{StaticResource InkMuted}" VerticalAlignment="Center"/>
+                                        <ComboBox Grid.Column="1" Theme="{StaticResource InkComboTheme}"
+                                                  ItemsSource="{Binding Session.ConfigVM.SpeechResourceNames}"
+                                                  SelectedIndex="{Binding Session.ConfigVM.ActiveSpeechResourceIndex, Mode=TwoWay}"
+                                                  IsEnabled="{Binding Session.ConfigVM.IsConfigurationEnabled}"
+                                                  AutomationProperties.Name="语音资源"/>
+                                        <Ellipse Grid.Column="2" Width="7" Height="7" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                                 Fill="{Binding Session.ConfigVM.SubscriptionLampFill}"
+                                                 Stroke="{Binding Session.ConfigVM.SubscriptionLampStroke}"
+                                                 Opacity="{Binding Session.ConfigVM.SubscriptionLampOpacity}"
+                                                 ToolTip.Tip="{Binding Session.ConfigVM.SubscriptionValidationStatusMessage}"/>
+                                    </Grid>
+                                    <Grid Grid.Column="2" Margin="0,3,0,4">
+                                        <Button x:Name="InkDevicesButton" Theme="{StaticResource InkButtonTheme}" Content="音频设备 / 路由"
+                                                Padding="5,4" FontSize="11" AutomationProperties.Name="选择音频设备、识别与录制来源">
+                                            <Button.Flyout>
+                                                <Flyout Placement="LeftEdgeAlignedBottom" FlyoutPresenterTheme="{StaticResource InkFlyoutTheme}">
+                                                    <ScrollViewer MaxHeight="460" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                                                        <StackPanel Width="380" Spacing="12">
+                                                            <TextBlock Classes="ink-section-title" Text="音频设备与路由"/>
+                                                            <Grid RowDefinitions="Auto,Auto">
+                                                                <TextBlock Classes="ink-label" Text="麦克风（选择“无”可关闭采集）"/>
+                                                                <ComboBox Grid.Row="1" Theme="{StaticResource InkComboTheme}"
+                                                                          ItemsSource="{Binding Session.AudioDevices.AudioDevicesList}"
+                                                                          SelectedItem="{Binding Session.AudioDevices.SelectedAudioDevice, Mode=TwoWay}"
+                                                                          IsEnabled="{Binding Session.AudioDevices.IsInputDeviceUiEnabled}" AutomationProperties.Name="麦克风设备"/>
+                                                            </Grid>
+                                                            <Grid RowDefinitions="Auto,Auto">
+                                                                <TextBlock Classes="ink-label" Text="系统回环（选择“无”可关闭采集）"/>
+                                                                <ComboBox Grid.Row="1" Theme="{StaticResource InkComboTheme}"
+                                                                          ItemsSource="{Binding Session.AudioDevices.OutputDevicesList}"
+                                                                          SelectedItem="{Binding Session.AudioDevices.SelectedOutputDevice, Mode=TwoWay}"
+                                                                          IsEnabled="{Binding Session.AudioDevices.IsOutputDeviceUiEnabled}" AutomationProperties.Name="系统回环设备"/>
+                                                            </Grid>
+                                                            <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,5,*,5,*">
+                                                                <TextBlock Grid.ColumnSpan="5" Classes="ink-label" Text="识别来源"/>
+                                                                <ToggleButton Grid.Row="1" Theme="{StaticResource InkToggleTheme}" Content="仅回环" Padding="6,5"
+                                                                              IsChecked="{Binding Session.AudioDevices.IsRecognitionLoopbackOnly, Mode=TwoWay}" Click="OnRouteClick"/>
+                                                                <ToggleButton Grid.Row="1" Grid.Column="2" Theme="{StaticResource InkToggleTheme}" Content="回环 + 麦克风" Padding="6,5" FontSize="12"
+                                                                              IsChecked="{Binding Session.AudioDevices.IsRecognitionLoopbackMix, Mode=TwoWay}" Click="OnRouteClick"/>
+                                                                <ToggleButton Grid.Row="1" Grid.Column="4" Theme="{StaticResource InkToggleTheme}" Content="仅麦克风" Padding="6,5"
+                                                                              IsChecked="{Binding Session.AudioDevices.IsRecognitionMicOnly, Mode=TwoWay}" Click="OnRouteClick"/>
+                                                            </Grid>
+                                                            <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,5,*,5,*">
+                                                                <TextBlock Grid.ColumnSpan="5" Classes="ink-label" Text="录制来源（与识别独立）"/>
+                                                                <ToggleButton Grid.Row="1" Theme="{StaticResource InkToggleTheme}" Content="仅回环" Padding="6,5"
+                                                                              IsChecked="{Binding Session.AudioDevices.IsRecordingLoopbackOnly, Mode=TwoWay}" Click="OnRouteClick"/>
+                                                                <ToggleButton Grid.Row="1" Grid.Column="2" Theme="{StaticResource InkToggleTheme}" Content="回环 + 麦克风" Padding="6,5" FontSize="12"
+                                                                              IsChecked="{Binding Session.AudioDevices.IsRecordingLoopbackMix, Mode=TwoWay}" Click="OnRouteClick"/>
+                                                                <ToggleButton Grid.Row="1" Grid.Column="4" Theme="{StaticResource InkToggleTheme}" Content="仅麦克风" Padding="6,5"
+                                                                              IsChecked="{Binding Session.AudioDevices.IsRecordingMicOnly, Mode=TwoWay}" Click="OnRouteClick"/>
+                                                            </Grid>
+                                                            <TextBlock Text="设备与识别路由可在此切换；电平仅反映当前采集活动，不是双方音量控制。"
+                                                                       FontSize="11" Foreground="{StaticResource InkMuted}" TextWrapping="Wrap"/>
+                                                            <Button Theme="{StaticResource InkButtonTheme}" Content="刷新设备列表" HorizontalAlignment="Stretch"
+                                                                    Command="{Binding Session.AudioDevices.RefreshAudioDevicesCommand}"
+                                                                    IsEnabled="{Binding Session.AudioDevices.IsAudioDeviceRefreshEnabled}"/>
+                                                        </StackPanel>
+                                                    </ScrollViewer>
+                                                </Flyout>
+                                            </Button.Flyout>
+                                        </Button>
+                                    </Grid>
+                                </Grid>
+                                <Grid Grid.Row="2" ColumnDefinitions="*,26,*" IsEnabled="{Binding Session.ConfigVM.IsConfigurationEnabled}">
+                                    <Grid ColumnDefinitions="40,*" Margin="0,3,0,4">
+                                        <TextBlock Text="源语言" FontSize="11" Foreground="{StaticResource InkMuted}" VerticalAlignment="Center"/>
+                                        <ComboBox x:Name="InkSourceLanguage" Grid.Column="1" Theme="{StaticResource InkComboTheme}"
+                                                  SelectedIndex="{Binding Session.ConfigVM.SourceLanguageIndex, Mode=TwoWay}"
+                                                  IsEnabled="{Binding Session.ConfigVM.IsConfigurationEnabled}"
+                                                  AutomationProperties.Name="源语言">
+                                            <!-- 顺序与经典页 ConfigVM 的 index 契约完全一致。 -->
+                                            <ComboBoxItem Tag="auto" Content="自动识别"/>
+                                            <ComboBoxItem Tag="en-US" Content="英语"/>
+                                            <ComboBoxItem Tag="zh-CN" Content="中文"/>
+                                            <ComboBoxItem Tag="ja-JP" Content="日语"/>
+                                            <ComboBoxItem Tag="ko-KR" Content="韩语"/>
+                                            <ComboBoxItem Tag="fr-FR" Content="法语"/>
+                                            <ComboBoxItem Tag="de-DE" Content="德语"/>
+                                            <ComboBoxItem Tag="es-ES" Content="西班牙语"/>
+                                        </ComboBox>
+                                    </Grid>
+                                    <TextBlock Grid.Column="1" Text="→" FontSize="17" Foreground="{StaticResource InkJade}"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    <Grid Grid.Column="2" ColumnDefinitions="48,*" Margin="0,3,0,4">
+                                        <TextBlock Text="目标语言" FontSize="11" Foreground="{StaticResource InkMuted}" VerticalAlignment="Center"/>
+                                        <ComboBox x:Name="InkTargetLanguage" Grid.Column="1" Theme="{StaticResource InkComboTheme}"
+                                                  SelectedIndex="{Binding Session.ConfigVM.TargetLanguageIndex, Mode=TwoWay}"
+                                                  IsEnabled="{Binding Session.ConfigVM.IsConfigurationEnabled}"
+                                                  AutomationProperties.Name="目标语言">
+                                            <ComboBoxItem Tag="en" Content="英语"/>
+                                            <ComboBoxItem Tag="zh-Hans" Content="中文"/>
+                                            <ComboBoxItem Tag="ja" Content="日语"/>
+                                            <ComboBoxItem Tag="ko" Content="韩语"/>
+                                            <ComboBoxItem Tag="fr" Content="法语"/>
+                                            <ComboBoxItem Tag="de" Content="德语"/>
+                                            <ComboBoxItem Tag="es" Content="西班牙语"/>
+                                        </ComboBox>
+                                    </Grid>
+                                </Grid>
+                                <Grid Grid.Row="3" ColumnDefinitions="Auto,Auto,*" VerticalAlignment="Center">
+                                    <TextBlock Text="采集电平" FontSize="10" Foreground="{StaticResource InkMuted}" VerticalAlignment="Center"/>
+                                    <ItemsControl Grid.Column="1" ItemsSource="{Binding Session.AudioDevices.AudioLevelHistory}"
+                                                  Margin="8,0" Height="18" Width="76" ClipToBounds="True" IsHitTestVisible="False"
+                                                  AutomationProperties.Name="实际音频采集电平">
+                                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="1" VerticalAlignment="Bottom"/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Width="2" Height="{Binding Converter={StaticResource InkLevelToHeight}}"
+                                                        Background="{StaticResource InkJade}" VerticalAlignment="Bottom" CornerRadius="1"/>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    <TextBlock Grid.Column="2" Text="非音量调节" FontSize="10" Foreground="{StaticResource InkMuted}" VerticalAlignment="Center"/>
+                                </Grid>
+                                <Grid Grid.Row="4" Grid.RowSpan="2" ColumnDefinitions="*,8,82">
+                                    <Grid ColumnDefinitions="76,6,*,6,*" RowDefinitions="Auto,*" Margin="0,4,0,0">
+                                        <TextBlock Classes="ink-label" Text="正文字号"/>
+                                        <ComboBox Grid.Row="1" Theme="{StaticResource InkComboTheme}" ItemsSource="{Binding FontSizes}"
+                                                  SelectedItem="{Binding ConversationFontSize, Mode=TwoWay, Converter={StaticResource InkFontSizeSelection}}"
+                                                  AutomationProperties.Name="本页对话字号" VerticalAlignment="Top"/>
+                                        <Button x:Name="InkSubtitleButton" Grid.Column="2" Grid.Row="1" Theme="{StaticResource InkButtonTheme}"
+                                                Content="字幕" Padding="4,5" VerticalAlignment="Top" AutomationProperties.Name="字幕浮窗与分源字幕">
+                                            <Button.Flyout>
+                                                <Flyout Placement="TopEdgeAlignedRight" FlyoutPresenterTheme="{StaticResource InkFlyoutTheme}">
+                                                    <StackPanel Width="270" Spacing="7">
+                                                        <TextBlock Classes="ink-section-title" Text="字幕浮窗" Margin="0,0,0,5"/>
+                                                        <Button Theme="{StaticResource InkButtonTheme}" Content="全部字幕" Command="{Binding Session.ShowFloatingSubtitlesCommand}"/>
+                                                        <Button Theme="{StaticResource InkButtonTheme}" Content="麦克风字幕" Command="{Binding Session.ShowFloatingMicSubtitleCommand}"/>
+                                                        <Button Theme="{StaticResource InkButtonTheme}" Content="系统回环字幕" Command="{Binding Session.ShowFloatingLoopbackSubtitleCommand}"/>
+                                                        <Button Theme="{StaticResource InkButtonTheme}" Content="恢复字幕交互（取消穿透）"
+                                                                Command="{Binding Session.RestoreFloatingSubtitleInteractionCommand}" IsEnabled="{Binding Session.IsAnySubtitleOpen}"/>
+                                                    </StackPanel>
+                                                </Flyout>
+                                            </Button.Flyout>
+                                        </Button>
+                                        <Button x:Name="InkMoreButton" Grid.Column="4" Grid.Row="1" Theme="{StaticResource InkButtonTheme}"
+                                                Content="更多" Padding="4,5" VerticalAlignment="Top" AutomationProperties.Name="更多翻译辅助动作">
+                                            <Button.Flyout>
+                                                <Flyout Placement="TopEdgeAlignedRight" FlyoutPresenterTheme="{StaticResource InkFlyoutTheme}">
+                                                    <StackPanel Width="300" Spacing="8">
+                                                        <TextBlock Classes="ink-section-title" Text="译事辅助"/>
+                                                        <Button Theme="{StaticResource InkButtonTheme}" Content="打开历史文件夹" Command="{Binding Session.OpenHistoryFolderCommand}"/>
+                                                        <Button Theme="{StaticResource InkButtonTheme}" Content="浮动 AI 洞察" Command="{Binding Session.ShowFloatingInsightCommand}"/>
+                                                        <Button Theme="{StaticResource InkButtonTheme}" Content="清空翻译历史" Command="{Binding Session.ClearHistoryCommand}"/>
+                                                        <Border Height="1" Background="{StaticResource InkLine}"/>
+                                                        <TextBlock Text="{Binding Session.ConfigVM.SubscriptionValidationStatusMessage}" FontSize="11"
+                                                                   TextWrapping="Wrap" Foreground="{StaticResource InkMuted}"/>
+                                                        <TextBlock Text="{Binding Session.AudioPipelineStatusText}" FontSize="11" TextWrapping="Wrap"
+                                                                   Foreground="{StaticResource InkMuted}"/>
+                                                    </StackPanel>
+                                                </Flyout>
+                                            </Button.Flyout>
+                                        </Button>
+                                    </Grid>
+                                    <!-- 主动作不在 Flyout/折叠区内，固定在译事设置的右下角。 -->
+                                    <Button x:Name="InkStartButton" Grid.Column="2" Theme="{StaticResource InkSealTheme}"
+                                            VerticalAlignment="Bottom" Command="{Binding Session.ToggleTranslationCommand}"
+                                            AutomationProperties.Name="开始或停止翻译" ToolTip.Tip="F5 开始翻译，F6 停止翻译">
+                                        <TextBlock Text="{Binding Session.TranslationToggleButtonText}" TextWrapping="Wrap" TextAlignment="Center"
+                                                   MaxWidth="44" FontFamily="{StaticResource InkSongFont}" FontSize="17"
+                                                   FontWeight="SemiBold" Foreground="White"/>
+                                    </Button>
+                                </Grid>
+                                <TextBlock Grid.Row="5" Text="{Binding Session.StatusMessage}" FontSize="10" Margin="0,2,94,0"
+                                           Foreground="{StaticResource InkMuted}" VerticalAlignment="Bottom" TextTrimming="CharacterEllipsis"
+                                           ToolTip.Tip="{Binding Session.StatusMessage}" AutomationProperties.Name="翻译状态"/>
+                            </Grid>
+                        </Border>
+                    </Grid>
+                </Grid>
+            </Grid>
+        </Grid>
+    </ScrollViewer>
+</UserControl>

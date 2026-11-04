@@ -21,16 +21,20 @@ public partial class MainWindow
     private readonly ShellAppearancePreferencesService _appearancePreferences;
     private ResourceInclude? _studyPalette;
     private long _appearanceVersion;
+    private const string InkStudyCacheKey = "live-ink-study";
+    private string _currentNavTag = TrueFluentPro.ViewModels.MainWindowViewModel.NavTagLive;
 
     public ShellAppearancePreference CurrentShellAppearance { get; private set; }
     public bool IsSongStudyAppearance => CurrentShellAppearance == ShellAppearancePreference.SongStudy;
+    public bool IsInkStudyAppearance => CurrentShellAppearance == ShellAppearancePreference.InkStudy;
 
     /// <summary>仅应用 UI；菜单另行保存偏好。外部调用可用相同入口接入其他呈现方案。</summary>
     public void ApplyShellAppearance(ShellAppearancePreference appearance)
     {
         var focused = FocusManager?.GetFocusedElement() as InputElement;
         var version = ++_appearanceVersion;
-        if (appearance is not ShellAppearancePreference.Classic and not ShellAppearancePreference.SongStudy)
+        if (appearance is not ShellAppearancePreference.Classic and not ShellAppearancePreference.SongStudy
+            and not ShellAppearancePreference.InkStudy)
             appearance = ShellAppearancePreference.Classic;
 
         CurrentShellAppearance = appearance;
@@ -66,6 +70,11 @@ public partial class MainWindow
             if (page is LiveTranslationView live)
                 live.ApplyAppearance(IsSongStudyAppearance);
 
+        // 仅切换呈现。ShowPage 不重建主 VM、服务或非翻译页面。
+        if (_currentPage != null && (IsInkStudyAppearance || _currentPage is InkStudyTranslationView))
+            ShowPage(_currentNavTag);
+        else
+            UpdateInkStudyHost();
         UpdateThemePresentation();
         // 模板与主题重排可能暂时清除焦点；只恢复仍在本窗口内的原控件，不触碰内容。
         if (focused != null && TopLevel.GetTopLevel(focused) == this)
@@ -88,19 +97,23 @@ public partial class MainWindow
     private void UpdateThemePresentation()
     {
         if (ThemeNavButton == null || ShellThemeIcon == null) return;
-        ShellThemeIcon.Value = IsSongStudyAppearance ? "fa-solid fa-book-open"
+        ShellThemeIcon.Value = IsSongStudyAppearance || IsInkStudyAppearance ? "fa-solid fa-book-open"
             : _viewModel?.ThemeToggleIconValue ?? "fa-solid fa-circle-half-stroke";
-        var current = IsSongStudyAppearance ? "宋人书斋 · 明亮"
+        var current = IsInkStudyAppearance ? "宋人书斋 · 原稿" : IsSongStudyAppearance ? "宋人书斋 · 明亮"
             : $"经典 · {ThemeModeLabel(_viewModel?.CurrentThemeMode ?? ThemeModePreference.System)}";
         ToolTip.SetTip(ThemeNavButton, $"当前：{current}；点击选择主题与界面外观");
     }
 
     private void ThemeNavButton_Click(object? sender, RoutedEventArgs e)
+        => ShowAppearanceMenu(ThemeNavButton);
+
+    private void ShowAppearanceMenu(Control target)
     {
         var menu = new MenuFlyout();
         foreach (var mode in new[] { ThemeModePreference.System, ThemeModePreference.Light, ThemeModePreference.Dark })
         {
-            var selected = !IsSongStudyAppearance && (_viewModel?.CurrentThemeMode ?? ThemeModePreference.System) == mode;
+            var selected = CurrentShellAppearance == ShellAppearancePreference.Classic
+                && (_viewModel?.CurrentThemeMode ?? ThemeModePreference.System) == mode;
             var item = new MenuItem { Header = $"{(selected ? "✓ " : "　")}经典 · {ThemeModeLabel(mode)}" };
             item.Click += (_, _) =>
             {
@@ -114,8 +127,21 @@ public partial class MainWindow
         var study = new MenuItem { Header = $"{(IsSongStudyAppearance ? "✓ " : "　")}宋人书斋 · 明亮" };
         study.Click += (_, _) => SaveAndApplyAppearance(ShellAppearancePreference.SongStudy);
         menu.Items.Add(study);
-        ThemeNavButton.Flyout = menu;
-        menu.ShowAt(ThemeNavButton);
+        var ink = new MenuItem { Header = $"{(IsInkStudyAppearance ? "✓ " : "　")}宋人书斋 · 原稿（独立翻译页）" };
+        ink.Click += (_, _) => SaveAndApplyAppearance(ShellAppearancePreference.InkStudy);
+        menu.Items.Add(ink);
+        if (target is Button button) button.Flyout = menu;
+        menu.ShowAt(target);
+    }
+
+    private void UpdateInkStudyHost()
+    {
+        var active = IsInkStudyAppearance && _currentNavTag == TrueFluentPro.ViewModels.MainWindowViewModel.NavTagLive;
+        Classes.Set("ink-study", active);
+        LegacyWorkspace.IsVisible = !active;
+        InkStudyHost.IsVisible = active;
+        // 新主题只覆盖自己的翻译呈现；其他页面恢复经典主题继承。
+        RequestedThemeVariant = active || IsSongStudyAppearance ? ThemeVariant.Light : ThemeVariant.Default;
     }
 
     private bool SaveAndApplyAppearance(ShellAppearancePreference appearance)

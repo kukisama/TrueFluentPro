@@ -243,7 +243,7 @@ internal static class ShellAppearanceRegression
                 menu.Hide();
                 await PumpAsync(window, token);
             }
-            await SelectAppearanceAsync("宋人书斋");
+            await SelectAppearanceAsync("宋人书斋 · 明亮");
             CheckTheme(true);
             CheckRetained();
             Check(new ShellAppearancePreferencesService(preferencePath).Load() == ShellAppearancePreference.SongStudy,
