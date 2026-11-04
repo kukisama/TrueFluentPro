@@ -21,12 +21,16 @@ internal static class Program
         Console.OutputEncoding = new UTF8Encoding(false);
         var project = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../.."));
         var repo = Path.GetFullPath(Path.Combine(project, "../.."));
-        Artifacts = Path.Combine(project, "artifacts", DateTime.Now.ToString("yyyyMMdd-HHmmss") + "-" + Guid.NewGuid().ToString("N"));
+        var hostDeploymentOnly = args.SequenceEqual(new[] { "--host-deployment" });
+        Artifacts = Path.Combine(hostDeploymentOnly ? Path.Combine(Directory.GetCurrentDirectory(), "artifacts", "voice-ime-host-deployment")
+            : Path.Combine(project, "artifacts"), DateTime.Now.ToString("yyyyMMdd-HHmmss") + "-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(Artifacts);
         using var log = new StreamWriter(Path.Combine(Artifacts, "run.log"), false, new UTF8Encoding(false)) { AutoFlush = true };
         _log = log;
         var failures = 0;
-        if (args.SequenceEqual(new[] { "--shared" }))
+        if (hostDeploymentOnly)
+            await Group("host deployment file fixture only (no processes/registration/native helpers)", HostDeploymentRegression.VerifyAsync);
+        else if (args.SequenceEqual(new[] { "--shared" }))
             await Group("shared owner fixture only (duplex pipes, fake voice/auth/UI)", SharedSessionRegression.VerifyAsync);
         else if (args.SequenceEqual(new[] { "--lifecycle" }))
             await Group("lifecycle fixture only (no native helper/system registration)", LifecycleRegression.VerifyAsync);
@@ -46,7 +50,9 @@ internal static class Program
         File.WriteAllText(Path.Combine(Artifacts, "results.json"), JsonSerializer.Serialize(new
         {
             startedFrom = Directory.GetCurrentDirectory(), productionAssembly = typeof(VoiceImeHost).Assembly.Location,
-            exitCode = exit, groups = Results, constraints = "synthetic configuration; fake voice only; registration denial and fixture-only no-footprint cleanup; no system registration/unregistration, helper execution, UAC, user config, token, microphone or cloud"
+            exitCode = exit, groups = Results, constraints = hostDeploymentOnly
+                ? "file-only helper; synthetic files retained under repository artifacts; no process queries/start/stop, registry, registration/unregistration, native helpers, UAC, user config, microphone or cloud"
+                : "synthetic configuration; fake voice only; registration denial and fixture-only no-footprint cleanup; no system registration/unregistration, helper execution, UAC, user config, token, microphone or cloud"
         }, new JsonSerializerOptions { WriteIndented = true }));
         Note($"TEST_EXIT={exit}");
         Note($"ARTIFACTS={Artifacts}");

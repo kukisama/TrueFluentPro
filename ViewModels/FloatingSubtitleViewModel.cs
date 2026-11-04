@@ -17,6 +17,7 @@ namespace TrueFluentPro.ViewModels
         private bool _isFontSizeLocked;
         private bool _isClickThrough;
         private bool _isClosed;
+        private long _latestAcceptedSegmentId;
         private VadGateController.ActiveSource _displayedSource;
         private readonly SubtitleSyncService _syncService;
 
@@ -308,9 +309,17 @@ namespace TrueFluentPro.ViewModels
             if (_isClosed) return;
 
             var processedText = ProcessSubtitleText(update.Text);
-            CurrentUpdate = update with { Text = processedText };
+            if (update.SegmentId >= 0)
+            {
+                if (update.SegmentId < _latestAcceptedSegmentId || processedText.Length == 0) return;
+                if (CurrentUpdate is { IsFinal: true } current && current.SegmentId == update.SegmentId && !update.IsFinal) return;
+                _latestAcceptedSegmentId = update.SegmentId;
+            }
+            var normalizedUpdate = update with { Text = processedText };
+            if (CurrentUpdate == normalizedUpdate) return;
+            CurrentUpdate = normalizedUpdate;
             SubtitleText = processedText;
-            // 当前页由窗口的真实字形测量统一生成，不再被完整句覆盖。
+            // 可见两行由窗口的真实字形测量统一生成，不被完整句覆盖。
             SubtitleReceived?.Invoke(CurrentUpdate);
         }
 

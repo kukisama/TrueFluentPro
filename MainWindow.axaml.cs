@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Input;
@@ -43,6 +44,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        UpdateCaptionState();
 
         try
         {
@@ -57,6 +59,52 @@ public partial class MainWindow : Window
             // ignore icon failures
         }
     }
+
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+        if (change.Property == WindowStateProperty || change.Property == CanMaximizeProperty
+            || change.Property == CanMinimizeProperty)
+            UpdateCaptionState();
+    }
+
+    private void UpdateCaptionState()
+    {
+        // Window 基类构造及 XAML 加载期间也可能收到属性通知。
+        if (ShellMaximizeButton == null || ShellMinimizeButton == null || ShellMaximizeIcon == null) return;
+        var maximized = WindowState == WindowState.Maximized;
+        var label = maximized ? "还原" : "最大化";
+        ShellMaximizeIcon.Value = maximized ? "fa-regular fa-window-restore" : "fa-regular fa-window-maximize";
+        ToolTip.SetTip(ShellMaximizeButton, label);
+        AutomationProperties.SetName(ShellMaximizeButton, label);
+        ShellMaximizeButton.IsEnabled = CanMaximize;
+        ShellMinimizeButton.IsEnabled = CanMinimize;
+    }
+
+    private void ShellTitleDragArea_PointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
+        if (e.ClickCount == 2)
+            ToggleMaximize();
+        else
+            BeginMoveDrag(e);
+        e.Handled = true;
+    }
+
+    private void ToggleMaximize()
+    {
+        if (CanMaximize)
+            WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+    }
+
+    private void ShellMinimizeButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (CanMinimize) WindowState = WindowState.Minimized;
+    }
+
+    private void ShellMaximizeButton_Click(object? sender, RoutedEventArgs e) => ToggleMaximize();
+
+    private void ShellCloseButton_Click(object? sender, RoutedEventArgs e) => Close();
 
     protected override void OnDataContextChanged(EventArgs e)
     {

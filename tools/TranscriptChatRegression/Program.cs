@@ -28,13 +28,16 @@ internal static class Program
     {
         IconProvider.Current.Register<FontAwesomeIconProvider>();
         AppBuilder.Configure<RegressionApplication>().UsePlatformDetect().WithInterFont().SetupWithoutStarting();
-        using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(45));
+        // Chrome 专项自己管理 45 秒 deadline，清理窗口/主题后才退出消息循环。
+        using var stop = args.Contains("--window-chrome")
+            ? new CancellationTokenSource() : new CancellationTokenSource(TimeSpan.FromSeconds(45));
         var exitCode = 1;
         Dispatcher.UIThread.Post(async () =>
         {
             try
             {
-                if (args.Contains("--floating-subtitle")) await FloatingSubtitleRegression.VerifyAsync();
+                if (args.Contains("--window-chrome")) await WindowChromeRegression.VerifyAsync();
+                else if (args.Contains("--floating-subtitle")) await FloatingSubtitleRegression.VerifyAsync();
                 else await VerifyAsync();
                 exitCode = 0;
             }

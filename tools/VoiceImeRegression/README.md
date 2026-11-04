@@ -20,6 +20,15 @@
 - [MsgWaitForMultipleObjectsEx](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-msgwaitformultipleobjectsex)：在原生进程句柄和消息队列之间等待，包含硬期限。
 - [Single-Threaded Apartments](https://learn.microsoft.com/en-us/windows/win32/com/single-threaded-apartments)：COM 为 STA 创建隐藏的 `OleMainThreadWndClass`。实测无效参数进程会创建一个此类辅助窗口；仅排除此类、匹配标题且不可见的 CREATE，任何 SHOW、未知类、splash/Avalonia 类创建均失败。
 
+## 独立 Host 文件专项
+
+- 从仓库根执行已构建的 `VoiceImeRegression.exe --host-deployment`，仅运行纯文件专项。假文件与报告保存在根目录 `artifacts/voice-ime-host-deployment/<时间-GUID>/`。
+- 验证运行清单：主程序 EXE、主程序 deps/runtimeconfig、依赖 DLL（不含 Updater.dll）、完整 runtimes，以及包中实际存在的 x64/x86/arm64 输入法 DLL 与注册助手。
+- 不复制 Updater、其他顶层 EXE/JSON、PDB/Markdown、物理 Assets、输入法源码、中间文件或测试程序。主发布包的 LGPL 对应源码、许可证和重链接入口仍保留，不因运行缓存精简而移除。
+- 相同内容计划及复制均为零、mtime 不变；同长度且同 mtime 的单文件变化仍能识别且只复制一个；另验证缺失补齐、自路径不复制、路径防护、源文件变更拒绝执行旧计划。旧缓存未知或已排除文件不覆盖、不主动删除。
+- 不构造登记服务、不查询／启动／停止真实 Host，不访问注册表、原生助手、UAC、用户配置、麦克风或云端。此专项证明复制契约，不证明 MDE 扫描次数或实际安装耗时。
+- 本次生命周期部署入口改动另用既有 `--lifecycle` 注入式回归验证，不执行系统登记。普通 Build 会触发开发用 Sync-Host；需保留现场时，生产与测试项目用 CoreBuild 和相同绝对 OutputPath 隔离编译，再直接运行隔离产物。
+
 ## 已复现生产缺陷（2026-11-02）
 
 `callback-error-connecting`：识别源 Start 尚未完成时触发 Failed，Host 虽已发送脱敏 E 帧，却仍等待 `voice.StartAsync(token)`，没有取消源 token，也没有 Stop/Dispose。4s 硬期限时假麦克风仍占用。测试先记录失败状态，随后外部取消兜底，确认全部任务与假资源均收尾；该用例保留 FAIL，不修改生产代码。

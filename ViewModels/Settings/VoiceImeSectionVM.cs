@@ -319,7 +319,19 @@ namespace TrueFluentPro.ViewModels.Settings
                     Views.VoiceImeElevationDialog.ConfirmAsync, VoiceImeMaintenanceElevation.RunElevatedAsync);
                 OperationMessage = result.Message;
                 // 子模式不拉起高权限语音后台；回到原权限进程后仅在确认仍安装时部署。
-                if (register && result.Succeeded) await _registration.RefreshStandaloneHostAsync();
+                if (register && result.Succeeded)
+                {
+                    try
+                    {
+                        var refresh = await _registration.RefreshStandaloneHostAsync();
+                        if (!refresh.Succeeded)
+                            OperationMessage = result.Message + "\n系统登记已完成，但后台同步未完成：" + refresh.Message;
+                    }
+                    catch
+                    {
+                        OperationMessage = result.Message + "\n系统登记已完成，但后台同步未完成：请稍后重试并刷新状态。";
+                    }
+                }
                 try { RegistrationStatus = (await _registration.RefreshStatusAsync()).Message; }
                 catch { RegistrationStatus = "安装状态查询失败，当前状态未知，请稍后刷新；上方操作结果保留。"; }
             }

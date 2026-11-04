@@ -6,7 +6,9 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
+using Avalonia.Media;
 using Avalonia.Media.Imaging;
+using Avalonia.Media.TextFormatting;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Projektanker.Icons.Avalonia;
@@ -69,7 +71,7 @@ internal static class FloatingSubtitleRegression
             await FlushAsync();
             Check(window.TryGetPlatformHandle()?.Handle != IntPtr.Zero, "没有真实桌面 HWND");
 
-            var sentence = "我们希望字幕最多显示两行，文字不要一直横向移动。这样阅读时眼睛就能停留在固定位置，长句按页推进，保留足够的阅读时间。"
+            var sentence = "我们希望字幕最多显示两行，文字不要一直横向移动。这样阅读时眼睛就能停留在固定位置，长句逐行上推，不再整页替换。"
                 + "调整窗口宽度会改变每行的容量，调整高度可以放大字体；还可以锁定字号，并在暂停讲话后继续追加内容。";
             manager.UpdateSubtitle(new FloatingSubtitleUpdate(1, sentence, false, VadGateController.ActiveSource.Mic));
             await FlushAsync();
@@ -81,36 +83,58 @@ internal static class FloatingSubtitleRegression
             Check(textTop >= toolbarBottom, "控制栏覆盖字幕正文");
             Check(toolbar.Bounds.Height <= 28 && textTop - toolbarBottom <= 5, "顶部控制区保留空间过高");
             Check(text.RenderTransform == null, "字幕仍有横向位移");
-            var firstEnd = Value<int>(window, "_pageEnd");
-            Check(firstEnd > 0 && firstEnd < sentence.Length, "长句未被分成多页");
-            Console.WriteLine($"PASS rendered two lines, no overflow/overlay/translation; pageEnd={firstEnd}, font={text.FontSize:F2}, host={host.Bounds.Size}");
+            Check(text.Text!.Replace("\n", "").EndsWith("继续追加内容。", StringComparison.Ordinal), "突发长句没有直接显示最新末两行");
+            CheckFullLayout(text, host);
+            Console.WriteLine($"PASS latest two complete visual lines, no overflow/overlay/translation; font={text.FontSize:F2}, host={host.Bounds.Size}");
             Save(window, Path.Combine(root, "two-lines.png"));
 
-            await UntilAsync(() => Value<int>(window, "_pageStart") > 0, "真实分页计时器没有推进", 8);
-            var advancedStart = Value<int>(window, "_pageStart");
-            manager.UpdateSubtitle(new FloatingSubtitleUpdate(1, sentence + "继续补充。", true, VadGateController.ActiveSource.Mic));
+            manager.ClearSubtitle();
+            using var capacityLayout = Measure(new string('甲', 256), text, host);
+            var capacity = capacityLayout.TextLines[0].Length;
+            var firstRow = new string('甲', capacity);
+            var secondRow = new string('乙', capacity);
+            var rolling = firstRow + secondRow;
+            manager.UpdateSubtitle(new FloatingSubtitleUpdate(2, rolling, false, VadGateController.ActiveSource.Mic));
             await FlushAsync();
-            Check(Value<int>(window, "_pageStart") == advancedStart, "同句追加/终稿导致重复回首页");
-            manager.UpdateSubtitle(new FloatingSubtitleUpdate(1, "最终结论。", true, VadGateController.ActiveSource.Mic));
+            Check(text.Text == firstRow + "\n" + secondRow, "两行检查点与实际字形容量不一致");
+            rolling += "丙";
+            manager.UpdateSubtitle(new FloatingSubtitleUpdate(2, rolling, false, VadGateController.ActiveSource.Mic));
             await FlushAsync();
-            Check(text.Text == "最终结论。" && Value<int>(window, "_pageStart") == 0, "大幅缩短终稿只显示尾字/标点");
-            Console.WriteLine("PASS real timer page advance, append/final merge and rewritten final restart");
+            Check(text.Text == secondRow + "\n丙", "第三行出现时，原下行没有原样上推");
+            rolling += "丁";
+            manager.UpdateSubtitle(new FloatingSubtitleUpdate(2, rolling, false, VadGateController.ActiveSource.Mic));
+            Check(vm.FormattedSubtitleText == secondRow + "\n丙丁", "下行追加改变了上行或重复追加 partial");
+            manager.UpdateSubtitle(new FloatingSubtitleUpdate(2, rolling, false, VadGateController.ActiveSource.Mic));
+            Check(vm.FormattedSubtitleText == secondRow + "\n丙丁", "重复快照不是幂等的");
+            await Task.Delay(1700);
+            Check(vm.FormattedSubtitleText == secondRow + "\n丙丁", "静默期间仍自行翻页或清屏");
+            manager.UpdateSubtitle(new FloatingSubtitleUpdate(2, "最终结论。", true, VadGateController.ActiveSource.Mic));
+            await FlushAsync();
+            Check(text.Text == "最终结论。", "缩短终稿残留 partial 或只显示尾字/标点");
+            manager.UpdateSubtitle(new FloatingSubtitleUpdate(2, rolling + "迟到", false, VadGateController.ActiveSource.Mic));
+            Check(vm.FormattedSubtitleText == "最终结论。" && vm.CurrentUpdate!.IsFinal, "迟到 partial 覆盖终稿快照");
+            Console.WriteLine($"PASS line roll-up: capacity={capacity}, old lower row became upper unchanged; partial idempotence, idle hold and final rewrite");
 
             var visibleTop = text.TranslatePoint(default, window)!.Value.Y;
             Check(visibleTop - toolbarBottom <= 5, "短句仍在剩余区域垂直居中，顶部出现大块留白");
             var followWatch = Stopwatch.StartNew();
-            manager.UpdateSubtitle(new FloatingSubtitleUpdate(2, "那又怎样？", true, VadGateController.ActiveSource.Mic));
-            manager.UpdateSubtitle(new FloatingSubtitleUpdate(3, "价值差距正在扩大。", false, VadGateController.ActiveSource.Mic));
-            Check(vm.FormattedSubtitleText == "价值差距正在扩大。" && Value<int>(window, "_pageStart") == 0,
-                "新句仍在等待旧句阅读计时或排队");
+            manager.UpdateSubtitle(new FloatingSubtitleUpdate(3, "那又怎样？", true, VadGateController.ActiveSource.Mic));
+            Check(vm.FormattedSubtitleText == "最终结论。 那又怎样？", "短新句整页替换，未保留原有上下文");
+            manager.UpdateSubtitle(new FloatingSubtitleUpdate(4, "价值差距正在扩大。", false, VadGateController.ActiveSource.Mic));
+            Check(vm.FormattedSubtitleText.Replace("\n", "").EndsWith("价值差距正在扩大。", StringComparison.Ordinal)
+                && vm.FormattedSubtitleText.Contains("那又怎样？"), "新句未衔接旧下行或仍排队");
+            var beforeOldFrame = vm.FormattedSubtitleText;
             manager.UpdateSubtitle(new FloatingSubtitleUpdate(1, "迟到的旧终稿。", true, VadGateController.ActiveSource.Mic));
-            Check(vm.FormattedSubtitleText == "价值差距正在扩大。", "旧句终稿把浮窗拉回历史内容");
-            manager.UpdateSubtitle(new FloatingSubtitleUpdate(4, "第四句实时内容。", false, VadGateController.ActiveSource.Mic));
+            manager.UpdateSubtitle(new FloatingSubtitleUpdate(1, "", true, VadGateController.ActiveSource.Loopback));
+            manager.UpdateSubtitle(new FloatingSubtitleUpdate(4, "", true, VadGateController.ActiveSource.Mic));
+            Check(vm.FormattedSubtitleText == beforeOldFrame && vm.CurrentUpdate!.SegmentId == 4
+                && vm.SubtitleText == "价值差距正在扩大。", "旧终稿/空帧污染显示或最新快照");
             manager.UpdateSubtitle(new FloatingSubtitleUpdate(5, "第五句最新内容。", true, VadGateController.ActiveSource.Mic));
-            Check(vm.FormattedSubtitleText == "第五句最新内容。", "快速连续新句产生待播积压");
+            Check(vm.FormattedSubtitleText.Replace("\n", "").EndsWith("第五句最新内容。", StringComparison.Ordinal), "快速连续新句产生待播积压");
             followWatch.Stop();
             await FlushAsync();
-            Console.WriteLine($"PASS immediate new-sentence follow, no backlog/old-final replay; dispatchMs={followWatch.Elapsed.TotalMilliseconds:F1}, toolbarHeight={toolbar.Bounds.Height:F1}, textGap={visibleTop - toolbarBottom:F1}");
+            CheckFullLayout(text, host);
+            Console.WriteLine($"PASS new-sentence context retained, no backlog/old-final/empty-frame regression; dispatchMs={followWatch.Elapsed.TotalMilliseconds:F1}, toolbarHeight={toolbar.Bounds.Height:F1}, textGap={visibleTop - toolbarBottom:F1}");
             Save(window, Path.Combine(root, "compact-live-follow.png"));
 
             var fontBeforeWidth = text.FontSize;
@@ -203,11 +227,15 @@ internal static class FloatingSubtitleRegression
             Console.WriteLine("PASS physical click-through to underlying button and production menu restore");
 
             Save(window, Path.Combine(root, "final-window.png"));
-            var timer = (DispatcherTimer)Field(typeof(FloatingSubtitleWindow), "_pageTimer").GetValue(window)!;
+            manager.ClearSubtitle();
+            await FlushAsync();
+            Check(vm.FormattedSubtitleText == "等待字幕内容...", "显式清空没有重置字幕上下文");
+            manager.UpdateSubtitle(new FloatingSubtitleUpdate(6, "清空后的新句。", true, VadGateController.ActiveSource.Mic));
+            Check(vm.FormattedSubtitleText == "清空后的新句。", "清空后仍拼接了旧上下文");
             var oldText = vm.FormattedSubtitleText;
             manager.CloseWindow();
             await FlushAsync();
-            Check(!timer.IsEnabled && !manager.IsWindowOpen && !window.IsVisible, "关闭未停止计时器/清理窗口状态");
+            Check(!manager.IsWindowOpen && !window.IsVisible, "关闭未清理窗口状态");
             manager.UpdateSubtitle("关闭后的迟到文字");
             Check(vm.FormattedSubtitleText == oldText, "关闭后迟到更新仍写入旧 VM");
             manager.OpenWindow();
@@ -237,7 +265,16 @@ internal static class FloatingSubtitleRegression
 
     private static FieldInfo Field(Type type, string name) => type.GetField(name, PrivateInstance)
         ?? throw new MissingFieldException(type.Name, name);
-    private static T Value<T>(object target, string name) => (T)Field(target.GetType(), name).GetValue(target)!;
+    private static TextLayout Measure(string value, TextBlock text, Border host) => new(value,
+        new Typeface(text.FontFamily, text.FontStyle, text.FontWeight, text.FontStretch), text.FontSize, Brushes.White,
+        textWrapping: TextWrapping.Wrap, flowDirection: text.FlowDirection,
+        maxWidth: host.Bounds.Width - host.Padding.Left - host.Padding.Right, lineHeight: text.LineHeight);
+    private static void CheckFullLayout(TextBlock text, Border host)
+    {
+        using var full = Measure(text.Text!, text, host);
+        Check(full.TextLines.Count <= 2 && full.TextLines.All(line => !line.HasOverflowed),
+            "完整输出超过两行，不能靠 MaxLines 裁掉第三行冒充通过");
+    }
     private static bool Near(double a, double b) => Math.Abs(a - b) < 0.1;
     private static void Check(bool success, string message)
     {
@@ -250,13 +287,7 @@ internal static class FloatingSubtitleRegression
         await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
         await Task.Delay(100);
     }
-    private static async Task UntilAsync(Func<bool> ready, string error, int seconds)
-    {
-        var watch = Stopwatch.StartNew();
-        while (!ready() && watch.Elapsed < TimeSpan.FromSeconds(seconds)) await Task.Delay(50);
-        Check(ready(), error);
-    }
-    private static async Task ClickAsync(Control control)
+    internal static async Task ClickAsync(Control control)
     {
         var point = control.PointToScreen(new Point(control.Bounds.Width / 2, control.Bounds.Height / 2));
         Check(SetCursorPos(point.X, point.Y), "无法移动系统鼠标");
@@ -268,13 +299,13 @@ internal static class FloatingSubtitleRegression
         Console.WriteLine($"NATIVE_CLICK requested={point}, cursor={cursor.X},{cursor.Y}, target={top.TryGetPlatformHandle()?.Handle}, hit={WindowFromPoint(cursor)}, foreground={GetForegroundWindow()}, over={control.IsPointerOver}, enabled={control.IsEffectivelyEnabled}, hitTest={control.IsHitTestVisible}, bounds={control.Bounds}, scale={top.RenderScaling}, client={clientPoint}, visualHit={visualHit?.GetType().Name}");
         await MouseClickAsync(point);
     }
-    private static async Task MouseClickAsync(PixelPoint point)
+    internal static async Task MouseClickAsync(PixelPoint point)
     {
         Check(SetCursorPos(point.X, point.Y), "无法定位系统鼠标");
         Send(new[] { Mouse(2), Mouse(4) });
         await FlushAsync();
     }
-    private static async Task DragAsync(PixelPoint start, PixelPoint end)
+    internal static async Task DragAsync(PixelPoint start, PixelPoint end)
     {
         Check(SetCursorPos(start.X, start.Y), "无法定位拖动起点");
         await Task.Delay(100);

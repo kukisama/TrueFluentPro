@@ -15,6 +15,7 @@
         x:DataType="vm:MainWindowViewModel"
         x:CompileBindings="False"
         Title="译见 Pro"
+        SystemDecorations="BorderOnly"
         Width="1440"
         Height="860"
         MinWidth="1000"
@@ -29,6 +30,34 @@
     </Window.Resources>
 
     <Window.Styles>
+        <Style Selector="Button.shell-caption">
+            <Setter Property="Width" Value="46"/>
+            <Setter Property="Height" Value="40"/>
+            <Setter Property="MinHeight" Value="0"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Margin" Value="0"/>
+            <Setter Property="CornerRadius" Value="0"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="Button.shell-caption:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource SurfaceHoverBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+        </Style>
+        <Style Selector="Button.shell-caption:pressed /template/ ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource SubCardBackgroundBrush}"/>
+        </Style>
+        <Style Selector="Button.shell-caption-close:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#C42B1C"/>
+            <Setter Property="Foreground" Value="White"/>
+        </Style>
+        <Style Selector="Button.shell-caption-close:pressed /template/ ContentPresenter">
+            <Setter Property="Background" Value="#A92215"/>
+            <Setter Property="Foreground" Value="White"/>
+        </Style>
         <Style Selector="Button.shell-nav-action">
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderBrush" Value="Transparent"/>
@@ -85,8 +114,52 @@
         </Style>
     </Window.Styles>
 
-    <Grid ColumnDefinitions="Auto,*"
+    <Grid RowDefinitions="Auto,*"
           Background="{DynamicResource PageBackgroundBrush}">
+        <!-- 与正文使用同一 DIP 布局及绘制缩放，不使用系统标题栏的物理像素高度。 -->
+        <Border Name="ShellTitleBar"
+                Background="{DynamicResource NavPanelBackgroundBrush}"
+                BorderBrush="{DynamicResource CardBorderBrush}"
+                BorderThickness="0,0,0,1">
+            <Grid ColumnDefinitions="*,Auto">
+                <Border Name="ShellTitleDragArea"
+                        Height="40"
+                        Background="Transparent"
+                        PointerPressed="ShellTitleDragArea_PointerPressed">
+                    <TextBlock Text="{Binding Title, RelativeSource={RelativeSource AncestorType=Window}}"
+                               Margin="14,0"
+                               FontSize="13"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextPrimaryBrush}"
+                               VerticalAlignment="Center"
+                               TextTrimming="CharacterEllipsis"/>
+                </Border>
+                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                    <Button Name="ShellMinimizeButton"
+                            Classes="shell-caption"
+                            Click="ShellMinimizeButton_Click"
+                            ToolTip.Tip="最小化"
+                            AutomationProperties.Name="最小化">
+                        <icons:Icon Value="fa-solid fa-minus" FontSize="12"/>
+                    </Button>
+                    <Button Name="ShellMaximizeButton"
+                            Classes="shell-caption"
+                            Click="ShellMaximizeButton_Click"
+                            ToolTip.Tip="最大化"
+                            AutomationProperties.Name="最大化">
+                        <icons:Icon Name="ShellMaximizeIcon" Value="fa-regular fa-window-maximize" FontSize="12"/>
+                    </Button>
+                    <Button Name="ShellCloseButton"
+                            Classes="shell-caption shell-caption-close"
+                            Click="ShellCloseButton_Click"
+                            ToolTip.Tip="关闭"
+                            AutomationProperties.Name="关闭">
+                        <icons:Icon Value="fa-solid fa-xmark" FontSize="14"/>
+                    </Button>
+                </StackPanel>
+            </Grid>
+        </Border>
+        <Grid Grid.Row="1" ColumnDefinitions="Auto,*">
         <Border Name="ShellNavRail"
                 Grid.Column="0"
                 Width="52"
@@ -299,5 +372,6 @@
                         MaxWidth="760"
                         Margin="0,0,20,16"/>
         </Panel>
+        </Grid>
     </Grid>
 </Window>

@@ -129,7 +129,7 @@ public sealed partial class VoiceImeRegistrationService
                 manifest.Phase = "installed";
                 WriteLifecycleManifest(manifest);
                 RemoveMaintenanceGate(manifest);
-                DeployStandaloneHostDirectory(plan.HostPath);
+                // Host 部署统一留给原权限 UI 的 RefreshStandaloneHostAsync，事务/worker 不重复部署。
                 return new Result(true, "同版输入法已完整安装，无需重复安装。" +
                     CleanupSummary(manifest)) { CleanupPending = manifest.PendingCleanup.Count > 0 };
             }
@@ -209,7 +209,7 @@ public sealed partial class VoiceImeRegistrationService
             manifest.Phase = "installed";
             WriteLifecycleManifest(manifest);
             RemoveMaintenanceGate(manifest);
-            DeployStandaloneHostDirectory(plan.HostPath);
+            // 与同版维修一致；UAC worker 也只完成安装事务，不启动高权限 Host。
             return new Result(true, "输入法安装/修复完成（当前用户 SID；未更改默认输入法）。" +
                 CleanupSummary(manifest)) { CleanupPending = manifest.PendingCleanup.Count > 0 };
         }
@@ -532,98 +532,116 @@ public sealed partial class VoiceImeRegistrationService
     private void DeployStandaloneHostDirectory(string sourceHostExe)
     {
         if (_lifecycleBackend != null || !OperatingSystem.IsWindows() || VoiceImeMaintenanceElevation.IsWorker) return;
+        VoiceImeMaintenance.GuardPath(_legacyInstallRoot);
+        if (IsDeletionQueued(_legacyInstallRoot))
+            throw new RegistrationException("独立后台根目录有重启删除记录，未创建锁或复用该目录。");
+        using var installLock = AcquireInstallLock();
+        if (VoiceImeMaintenance.Exists(MaintenancePath)) return;
+        var sourceDir = Path.GetDirectoryName(Path.GetFullPath(sourceHostExe))!;
+        VoiceImeMaintenance.GuardPath(sourceHostExe);
+        VoiceImeMaintenance.GuardPath(Path.Combine(sourceDir, "TrueFluentPro.dll"));
+        if (!File.Exists(sourceHostExe) || !File.Exists(Path.Combine(sourceDir, "TrueFluentPro.dll"))) return;
+        var hostDir = Path.Combine(_legacyInstallRoot, "host");
+        VoiceImeMaintenance.GuardPath(hostDir);
+        var legacyRuntime = Path.Combine(hostDir, "hostfxr.dll");
+        VoiceImeMaintenance.GuardPath(legacyRuntime);
+        if (VoiceImeMaintenance.Exists(legacyRuntime))
+            throw new RegistrationException("独立后台包含旧自包含运行时，本次未覆盖、删除或启动；请保留现场核对部署布局。");
+
+        var deployment = VoiceImeHostDeployment.Create(sourceDir, hostDir);
+        var manifest = ReadLifecycleManifest();
+        // 包括未变文件及目录：已排队的路径不能因为文件暂时缺失就被重新使用。
+        foreach (var path in deployment.DestinationPaths)
+            if (manifest.PendingCleanup.Any(p => SamePath(p.Path, path)) || IsDeletionQueued(path))
+                throw new RegistrationException("独立后台路径有重启删除记录，未复用、覆盖或启动该目录。");
+
+        var standaloneExe = Path.Combine(hostDir, "TrueFluentPro.exe");
+        var hosts = FindStandaloneHostProcesses(standaloneExe);
         try
         {
-            var sourceDir = Path.GetDirectoryName(_baseDirectory.TrimEnd(Path.DirectorySeparatorChar)) != null
-                ? _baseDirectory : Path.GetDirectoryName(Path.GetFullPath(sourceHostExe));
-            if (string.IsNullOrEmpty(sourceDir) || !Directory.Exists(sourceDir)
-                || !File.Exists(Path.Combine(sourceDir, "TrueFluentPro.dll"))) return;
-            var hostDir = Path.Combine(_legacyInstallRoot, "host");
-            VoiceImeMaintenance.GuardPath(hostDir);
-            if (!File.Exists(MaintenancePath))
+            if (deployment.Changes.Count > 0)
             {
-                try
+                if (hosts.Any(p => p.Id == Environment.ProcessId))
+                    throw new RegistrationException("当前程序正在使用独立后台路径，本次未停止自身或覆盖文件。");
+                foreach (var host in hosts)
                 {
-                    foreach (var p in Process.GetProcessesByName("TrueFluentPro"))
-                    {
-                        using (p)
-                        {
-                            try
-                            {
-                                var exePath = p.MainModule?.FileName;
-                                if (!string.IsNullOrEmpty(exePath) && exePath.StartsWith(hostDir + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
-                                {
-                                    p.Kill();
-                                    p.WaitForExit(1500);
-                                }
-                            }
-                            catch { }
-                        }
-                    }
-                }
-                catch { }
-            }
-            if (Directory.Exists(hostDir) && File.Exists(Path.Combine(hostDir, "hostfxr.dll")))
-            {
-                try { Directory.Delete(hostDir, recursive: true); } catch { }
-            }
-            Directory.CreateDirectory(hostDir);
-            foreach (var file in Directory.EnumerateFiles(sourceDir, "*", SearchOption.TopDirectoryOnly))
-            {
-                var ext = Path.GetExtension(file);
-                if (!ext.Equals(".dll", StringComparison.OrdinalIgnoreCase)
-                    && !ext.Equals(".exe", StringComparison.OrdinalIgnoreCase)
-                    && !ext.Equals(".json", StringComparison.OrdinalIgnoreCase)
-                    && !ext.Equals(".pdb", StringComparison.OrdinalIgnoreCase)
-                    && !ext.Equals(".md", StringComparison.OrdinalIgnoreCase)) continue;
-                var dest = Path.Combine(hostDir, Path.GetFileName(file));
-                try { File.Copy(file, dest, overwrite: true); } catch { }
-            }
-            var standaloneExe = Path.Combine(hostDir, "TrueFluentPro.exe");
-            foreach (var sub in new[] { "runtimes", "Assets", "voice-ime" })
-            {
-                var subSource = Path.Combine(sourceDir, sub);
-                if (!Directory.Exists(subSource)) continue;
-                foreach (var dirPath in Directory.EnumerateDirectories(subSource, "*", SearchOption.AllDirectories))
-                {
-                    var rel = Path.GetRelativePath(sourceDir, dirPath);
-                    Directory.CreateDirectory(Path.Combine(hostDir, rel));
-                }
-                foreach (var filePath in Directory.EnumerateFiles(subSource, "*", SearchOption.AllDirectories))
-                {
-                    var rel = Path.GetRelativePath(sourceDir, filePath);
-                    var dest = Path.Combine(hostDir, rel);
-                    Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
-                    try { File.Copy(filePath, dest, overwrite: true); } catch { }
+                    if (host.HasExited) continue;
+                    VoiceImeMaintenance.GuardPath(standaloneExe);
+                    if (VoiceImeMaintenance.Exists(MaintenancePath)) return;
+                    if (host.MainModule?.FileName is not { } actual || !SamePath(actual, standaloneExe))
+                        throw new RegistrationException("独立后台进程路径已变化，未停止或覆盖文件。");
+                    host.Kill();
+                    if (!host.WaitForExit(1500))
+                        throw new RegistrationException("独立后台尚未确认退出，未覆盖或启动新后台。");
                 }
             }
+            if (VoiceImeMaintenance.Exists(MaintenancePath)) return;
+            deployment.Synchronize(); // 任一文件失败则向上传递，不以部分复制成功启动 Host。
             foreach (var view in Architectures.Select(ViewFor))
             {
                 using var user = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, view);
                 using var uiConfig = user.CreateSubKey(@"Software\TrueFluentPro\VoiceImeUI", writable: true);
                 if (uiConfig != null)
                 {
-                    uiConfig.SetValue("MainAppExe", Path.Combine(sourceDir, "TrueFluentPro.exe"), RegistryValueKind.String);
-                    uiConfig.SetValue("StandaloneHostExe", standaloneExe, RegistryValueKind.String);
+                    // Host 自己打开的设置页不覆盖原主程序路径，也不猜测其所在目录。
+                    if (!SamePath(sourceHostExe, standaloneExe)
+                        && !string.Equals(uiConfig.GetValue("MainAppExe") as string, sourceHostExe, StringComparison.OrdinalIgnoreCase))
+                        uiConfig.SetValue("MainAppExe", sourceHostExe, RegistryValueKind.String);
+                    if (!string.Equals(uiConfig.GetValue("StandaloneHostExe") as string, standaloneExe, StringComparison.OrdinalIgnoreCase))
+                        uiConfig.SetValue("StandaloneHostExe", standaloneExe, RegistryValueKind.String);
                 }
             }
-            if (!File.Exists(MaintenancePath) && File.Exists(standaloneExe))
+            // 精确进程存在仅用于避免重复拉起，不等于 owner/管道已就绪；仍由既有 owner.lock 协议仲裁。
+            if (!VoiceImeMaintenance.Exists(MaintenancePath) && File.Exists(standaloneExe)
+                && !hosts.Any(p => !p.HasExited))
             {
+                // 复制期间可能已有 native/另一个入口拉起 Host，启动前再查一次精确路径。
+                var current = FindStandaloneHostProcesses(standaloneExe);
                 try
                 {
-                    Process.Start(new ProcessStartInfo
+                    if (current.Length == 0 && !VoiceImeMaintenance.Exists(MaintenancePath))
                     {
-                        FileName = standaloneExe,
-                        Arguments = "--voice-ime-host --shared",
-                        WorkingDirectory = hostDir,
-                        UseShellExecute = false,
-                        CreateNoWindow = true
-                    });
+                        VoiceImeMaintenance.GuardPath(standaloneExe);
+                        using var started = Process.Start(new ProcessStartInfo
+                        {
+                            FileName = standaloneExe,
+                            Arguments = "--voice-ime-host --shared",
+                            WorkingDirectory = hostDir,
+                            UseShellExecute = false,
+                            CreateNoWindow = true
+                        });
+                    }
                 }
-                catch { }
+                finally { foreach (var process in current) process.Dispose(); }
             }
         }
-        catch { }
+        finally { foreach (var process in hosts) process.Dispose(); }
+    }
+
+    private static Process[] FindStandaloneHostProcesses(string standaloneExe)
+    {
+        VoiceImeMaintenance.GuardPath(standaloneExe);
+        var candidates = Process.GetProcessesByName("TrueFluentPro"); // 名称仅缩小候选，绝不作为 Host 身份。
+        var matches = new List<Process>();
+        try
+        {
+            foreach (var process in candidates)
+            {
+                _ = process.SafeHandle; // 先固定同一个进程对象的句柄，再核验路径并保留到后续操作结束。
+                if (process.HasExited) continue;
+                var actual = process.MainModule?.FileName
+                    ?? throw new RegistrationException("无法核验独立后台进程路径，本次未按无后台处理。");
+                if (SamePath(actual, standaloneExe)) matches.Add(process);
+            }
+        }
+        catch
+        {
+            foreach (var process in candidates) process.Dispose();
+            // 权限不足、进程查询竞态等均为未知；不能吞掉后启动第二个 Host。
+            throw new RegistrationException("无法核验独立后台进程的精确路径，本次未覆盖、停止或重复启动；请稍后刷新状态。");
+        }
+        foreach (var process in candidates.Except(matches)) process.Dispose();
+        return matches.ToArray();
     }
 
     private void CheckPlanDestinations(PackagePlan plan, InstallManifest manifest)

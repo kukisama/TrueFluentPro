@@ -1,7 +1,6 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
-using System.Diagnostics;
-using System.Globalization;
 using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Controls;
@@ -9,7 +8,6 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Media.TextFormatting;
-using Avalonia.Threading;
 using Avalonia.VisualTree;
 using TrueFluentPro.Services;
 using TrueFluentPro.Services.Audio;
@@ -23,25 +21,19 @@ namespace TrueFluentPro.Views
         private const double LineHeightScale = 1.25;
         // 外边距 20 + 紧凑控制栏 28 + 主体上下边距 12 + Padding 2。
         private const double VerticalChrome = 62;
-        private readonly DispatcherTimer _pageTimer = new() { Interval = TimeSpan.FromMilliseconds(100) };
-        private readonly Stopwatch _clock = Stopwatch.StartNew();
         private FloatingSubtitleUpdate? _currentCue;
-        // 每个来源浮窗独立前进，已被新句替代的旧终稿不能再抢回显示权。
-        private long _latestSegmentId;
+        // 只保存当前句开始前已在屏幕上的两行，不保存待播历史队列。
+        private string _segmentPrefix = "";
+        private string _visibleText = "";
         private FloatingSubtitleViewModel? _subscribedViewModel;
         private bool _updatingLayout;
         private double _availableWidth;
-        private int _pageStart;
-        private int _pageEnd;
-        private string _pageText = "";
-        private double _readUntil;
 
         public FloatingSubtitleWindow()
         {
             InitializeComponent();
             // 等实际排版后的可用区域变化再测量，不使用窗口尺寸猜文本宽度。
             SubtitleHost.SizeChanged += OnSubtitleHostSizeChanged;
-            _pageTimer.Tick += OnPageTimerTick;
             SetInitialPosition();
             UpdateSubtitleLayout();
         }
@@ -62,9 +54,8 @@ namespace TrueFluentPro.Views
 
             base.OnDataContextChanged(e);
             _currentCue = null;
-            _latestSegmentId = 0;
-            _pageStart = 0;
-            _pageText = "";
+            _segmentPrefix = "";
+            _visibleText = "";
 
             if (DataContext is FloatingSubtitleViewModel vm)
             {
@@ -138,7 +129,7 @@ namespace TrueFluentPro.Views
                         MinAutoFontSize, MaxAutoFontSize));
                 SubtitleTextBlock.FontSize = fontSize;
                 SubtitleTextBlock.LineHeight = fontSize * LineHeightScale;
-                RenderPage(resetTiming: false);
+                RenderSubtitle();
             }
             finally
             {
@@ -148,157 +139,60 @@ namespace TrueFluentPro.Views
 
         private void OnSubtitleReceived(FloatingSubtitleUpdate update)
         {
-            if (string.IsNullOrWhiteSpace(update.Text))
+            if (update.SegmentId < 0)
             {
-                _currentCue = null;
-                _pageStart = 0;
-                RenderPage(resetTiming: true);
+                // 负编号为显式清空或重连提示，不拼进对话上下文。
+                _currentCue = string.IsNullOrWhiteSpace(update.Text) ? null : update;
+                _segmentPrefix = "";
+                _visibleText = "";
+                RenderSubtitle();
                 return;
             }
-            // 正编号为主程序按句分配的进度；负编号为重连等独立状态提示。
-            if (update.SegmentId > 0 && update.SegmentId < _latestSegmentId) return;
-            if (update.SegmentId > 0) _latestSegmentId = update.SegmentId;
-
             var sameSentence = _currentCue is { } current && current.SegmentId == update.SegmentId;
-            var restartPage = !sameSentence;
-            if (sameSentence)
+            if (!sameSentence)
             {
-                _pageStart = RemapPageStart(_currentCue!.Text, update.Text, _pageStart, out restartPage);
-            }
-            else
-            {
-                // 实时字幕不排队补播旧句：新译文立即显示，同句才保留两行分页的阅读时间。
-                _pageStart = 0;
+                // 换句不清屏；同句检查点保持不变，partial/final 全文修订不会重复追加。
+                _segmentPrefix = _currentCue is { SegmentId: > 0 } ? _visibleText : "";
             }
             _currentCue = update;
-            RenderPage(resetTiming: restartPage);
+            RenderSubtitle();
         }
 
-        private void OnPageTimerTick(object? sender, EventArgs e)
-        {
-            if (_currentCue == null || _availableWidth <= 0) return;
-            var now = _clock.Elapsed.TotalSeconds;
-            if (now < _readUntil) return;
-
-            if (_pageEnd < _currentCue.Text.Length)
-            {
-                _pageStart = _pageEnd;
-                RenderPage(resetTiming: true);
-            }
-            // 没有后续内容时保留末页，不闪空、不反复重播。
-        }
-
-        private void RenderPage(bool resetTiming)
+        private void RenderSubtitle()
         {
             if (_subscribedViewModel == null || _availableWidth <= 0) return;
             if (_currentCue == null)
             {
                 _subscribedViewModel.UpdateFormattedSubtitleText("等待字幕内容...");
                 _subscribedViewModel.SetDisplayedSource(VadGateController.ActiveSource.None);
-                _pageText = "";
-                _pageEnd = 0;
+                _visibleText = "";
                 return;
             }
 
             var update = _currentCue;
-            if (_pageStart >= update.Text.Length) _pageStart = 0;
-            while (_pageStart < update.Text.Length - 1 && char.IsWhiteSpace(update.Text[_pageStart])) _pageStart++;
-            var remaining = update.Text[_pageStart..];
-            using var layout = MeasurePage(remaining);
-            var length = 0;
-            foreach (var line in layout.TextLines) length += line.Length;
-            length = Math.Min(remaining.Length, length);
-            if (length == 0) length = StringInfo.GetNextTextElement(remaining).Length;
-
-            // 页面溢出时优先在后半页的标点处切开，避免为一个短尾巴重排整页。
-            if (length < remaining.Length)
+            var content = _segmentPrefix.Length == 0 ? update.Text : _segmentPrefix + " " + update.Text;
+            // 必须测量全部视觉行，再选择末两行；maxLines=2 只会测到全文开头。
+            using var layout = MeasureLines(content);
+            var rows = new List<string>(2);
+            for (var index = Math.Max(0, layout.TextLines.Count - 2); index < layout.TextLines.Count; index++)
             {
-                for (var i = length - 1; i >= length / 2; i--)
-                {
-                    var ch = remaining[i];
-                    if ("。！？；，、!?;".Contains(ch)
-                        || ((ch == '.' || ch == ',') && i + 1 < remaining.Length && char.IsWhiteSpace(remaining[i + 1])))
-                    {
-                        length = i + 1;
-                        break;
-                    }
-                }
+                var line = layout.TextLines[index];
+                var start = Math.Clamp(line.FirstTextSourceIndex, 0, content.Length);
+                var length = Math.Clamp(line.Length - line.NewLineLength, 0, content.Length - start);
+                rows.Add(content.Substring(start, length).Trim());
             }
-
-            _pageEnd = _pageStart + length;
-            var page = remaining[..length].TrimEnd();
-            using var pageLayout = MeasurePage(page);
-            if (pageLayout.TextLines.Count > 1)
-            {
-                var firstLineLength = pageLayout.TextLines[0].Length;
-                page = page[..firstLineLength].TrimEnd() + "\n" + page[firstLineLength..].TrimStart();
-            }
-
-            var now = _clock.Elapsed.TotalSeconds;
-            // 这是实时阅读节奏的初始值，不套用预制影片的帧间隔规则。
-            var readingSeconds = Math.Clamp(1 + StringInfo.ParseCombiningCharacters(page).Length / 8.0, 1.5, 6);
-            if (resetTiming || _pageText.Length == 0)
-            {
-                _readUntil = now + readingSeconds;
-            }
-            else if (_pageText != page)
-            {
-                // 按新增/替换的可见文字补阅读预算；仅重新换行不重复计时。
-                var before = _pageText.Replace("\n", " ");
-                var after = page.Replace("\n", " ");
-                var common = 0;
-                while (common < before.Length && common < after.Length && before[common] == after[common]) common++;
-                var changedCharacters = StringInfo.ParseCombiningCharacters(after[common..]).Length;
-                if (changedCharacters > 0)
-                {
-                    _readUntil = Math.Min(now + 6, Math.Max(now, _readUntil) + changedCharacters / 8.0);
-                    var minimumReadUntil = now + Math.Min(1.5, Math.Max(0.8, changedCharacters / 8.0));
-                    _readUntil = Math.Max(_readUntil, minimumReadUntil);
-                }
-            }
-            _pageText = page;
+            _visibleText = string.Join("\n", rows);
             _subscribedViewModel.SetDisplayedSource(update.Source);
-            _subscribedViewModel.UpdateFormattedSubtitleText(page);
+            _subscribedViewModel.UpdateFormattedSubtitleText(_visibleText);
         }
 
-        private TextLayout MeasurePage(string text)
+        private TextLayout MeasureLines(string text)
         {
             var typeface = new Typeface(SubtitleTextBlock.FontFamily, SubtitleTextBlock.FontStyle,
                 SubtitleTextBlock.FontWeight, SubtitleTextBlock.FontStretch);
             return new TextLayout(text, typeface, SubtitleTextBlock.FontSize, Brushes.White,
                 textWrapping: TextWrapping.Wrap, flowDirection: SubtitleTextBlock.FlowDirection,
-                maxWidth: _availableWidth, lineHeight: SubtitleTextBlock.LineHeight, maxLines: 2);
-        }
-
-        private static int RemapPageStart(string previous, string current, int start, out bool restartPage)
-        {
-            restartPage = false;
-            // 前缀追加保持已读边界；前文修订且后缀仍可对齐时随修订长度移动边界。
-            var prefix = 0;
-            while (prefix < previous.Length && prefix < current.Length && previous[prefix] == current[prefix]) prefix++;
-            var suffix = 0;
-            while (suffix < previous.Length - prefix && suffix < current.Length - prefix
-                && previous[previous.Length - suffix - 1] == current[current.Length - suffix - 1]) suffix++;
-            var mapped = start <= prefix
-                ? start
-                : start >= previous.Length - suffix && suffix > 0
-                    ? start + current.Length - previous.Length
-                    : -1;
-            // 前文被整体改写而无法对齐时，从完整新句重读，不能压到末字或标点。
-            if (mapped < 0 || mapped >= current.Length)
-            {
-                restartPage = true;
-                return 0;
-            }
-            // 所有映射分支都要校正字素边界，不能从组合重音或代理对中间开始。
-            var boundaries = StringInfo.ParseCombiningCharacters(current);
-            var result = 0;
-            foreach (var boundary in boundaries)
-            {
-                if (boundary > mapped) break;
-                result = boundary;
-            }
-            return result;
+                maxWidth: _availableWidth, lineHeight: SubtitleTextBlock.LineHeight);
         }
 
         private void OnSurfacePointerPressed(object? sender, PointerPressedEventArgs e)
@@ -459,7 +353,6 @@ namespace TrueFluentPro.Views
         {
             base.OnOpened(e);
             UpdateSubtitleLayout();
-            _pageTimer.Start();
             ApplyClickThrough();
         }
 
@@ -470,10 +363,10 @@ namespace TrueFluentPro.Views
 
         protected override void OnClosed(EventArgs e)
         {
-            _pageTimer.Stop();
-            _pageTimer.Tick -= OnPageTimerTick;
             SubtitleHost.SizeChanged -= OnSubtitleHostSizeChanged;
             _currentCue = null;
+            _segmentPrefix = "";
+            _visibleText = "";
             if (_subscribedViewModel != null)
             {
                 _subscribedViewModel.PropertyChanged -= OnViewModelPropertyChanged;

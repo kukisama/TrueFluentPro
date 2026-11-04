@@ -15,8 +15,18 @@
 
 - 先从仓库根执行 `dotnet build`，再运行 `tools/TranscriptChatRegression/bin/Debug/net10.0/TranscriptChatRegression.exe --floating-subtitle`，仅运行字幕专项，不启动默认聊天／听写回归。
 - 需要可交互的 Windows 桌面，会暂时操作系统鼠标和键盘；运行期间请勿同时操作。使用生产字幕窗口、LiveTranslationView 恢复菜单及命令，跳过真实主业务初始化，不加载用户配置、不访问麦克风或云端。
-- 验证实际字形两行、无横向溢出／控制栏遮挡、真实定时翻页、partial/final 合并、终稿缩短、宽度换行与高度自动字号、字号锁定和重置、背景循环、系统键盘快捷键、原生拖动及缩放把手、下层按钮实际接收穿透点击、生产菜单恢复，以及关闭清理和重新打开。
-- 实时同步专项确认：同句仍可两行分页，但新句立即替换，不等待旧句阅读计时；快速连续新句不积压，已被替代旧句的迟到终稿不回放。顶部控制栏不超过 28，单行／两行正文与控制栏间距不超过 5，防止垂直居中再次制造顶部留白。
+- 验证实际字形两行、无横向溢出／控制栏遮挡、第三行出现时旧下行原样上推、同句 partial 幂等修订、终稿缩短、静默保留、宽度换行与高度自动字号、字号锁定和重置、背景循环、系统键盘快捷键、原生拖动及缩放把手、下层按钮实际接收穿透点击、生产菜单恢复，以及关闭清理和重新打开。
+- 实时同步专项确认：新句衔接旧下行，不整页清屏；同句从固定检查点重新排版，不重复追加，不再按计时器翻页。快速连续新句直接显示最新末两行；旧终稿、旧空帧、终稿后迟到 partial 不污染显示及 VM 最新快照，只有显式清空才重置上下文。另以不限行 TextLayout 确认输出本身不超过两行，不能仅凭 MaxLines 裁剪后的结果通过。顶部控制栏不超过 28，正文与控制栏间距不超过 5。
 - 字号使用 `Ctrl+加减号`、`Ctrl+0`；窗口移动使用 `Alt+方向键`，缩放使用 `Ctrl+Alt+方向键`。不再使用本机实测会丢失 Shift 修饰键的 `Alt+Shift` 组合。
 - 原生鼠标检查包含 HWND、实际光标坐标和命中控件；下层窗口激活排序后确认真正位于字幕下方，不能只看 WS_EX_TRANSPARENT 样式位。拖动分阶段送入系统输入，避免移动消息合并及原生移动循环尚未进入造成假失败。
 - 结果和生产控件渲染图保存在 `artifacts/floating-subtitle-validation/<时间戳>`；成功输出 `FLOATING_SUBTITLE_EXIT=0` 并返回 0。这是受控字幕的真实桌面 UI 验收，不代表真实音频／云端翻译已通过。
+- 若必须保留现用程序和输入法后台，可将生产项目与专项项目分别以 `dotnet msbuild <项目> -target:CoreBuild -property:OutputPath=<同一绝对隔离目录>/ -property:BuildProjectReferences=false` 编译，再直接运行隔离目录的 `TranscriptChatRegression.dll --floating-subtitle`。普通 Build 的后置步骤会执行独立的 Host 热同步，不属于无干扰验证。
+
+## 主窗口自绘标题栏验收
+
+- 运行已构建的 `TranscriptChatRegression.dll --window-chrome`，只执行主窗口外壳专项。复用生产 `MainWindow` 与主题，不构造主 VM、不加载业务配置或真实服务；使用真实 HWND 和系统鼠标，结束后关闭测试窗口并恢复主题。
+- 检查系统 caption 已移除、正常状态仍保留原生缩放边框；顶部为 40 DIP 拖动／按钮区加 1 DIP 分隔线，按钮为 46×40 DIP，业务导航及页面从标题栏下方开始，不重叠。
+- 真实点击最小化、最大化／还原和关闭，并同时核验 Avalonia 状态、IsIconic／IsZoomed、图标／辅助功能名称；检查最大化客户区不覆盖任务栏。真实标题拖动和双击，以及原生 HTBOTTOMRIGHT 边缘拖动、WM_SIZING 和实际尺寸增长均须通过。
+- 若 Windows 拒绝 Activate，测试只临时置顶自己的窗口，核验 WindowFromPoint 后点击自身标题区取得焦点，再恢复置顶状态；不绕过系统前台策略、不向其他窗口注入输入。
+- 记录现有屏幕 Scaling。只有实际存在且工作区能容纳当前主窗口最小尺寸的 200%／400% 屏幕才执行相应原生交互；否则明确 SKIP，不修改系统 DPI、不伪造 WM_DPICHANGED。
+- 标题栏另以 2×／4×、192／384 DPI 渲染，检查 DIP／像素比例、文字与图标边界并保存 PNG；这是倍率绘制检查，不代表原生高 DPI 跨屏通过。报告位于 `artifacts/window-chrome-validation/<时间戳>/result.txt`，成功输出 `WINDOW_CHROME_EXIT=0`。
