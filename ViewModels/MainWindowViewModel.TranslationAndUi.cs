@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
@@ -20,6 +21,31 @@ namespace TrueFluentPro.ViewModels
 {
     public partial class MainWindowViewModel
     {
+        // 仅浮窗使用，优先使用服务提供的句身份；旧服务保留顺序编号兼容。
+        private long _floatingSubtitleSegmentId;
+        private long _legacyFloatingSubtitleSegmentId;
+        private long _floatingSubtitleEpoch;
+        private volatile bool _suspendFloatingSubtitleUpdates;
+        private readonly Dictionary<string, long> _floatingSubtitleKeys = new(StringComparer.Ordinal);
+        private readonly Dictionary<long, FloatingSubtitleUpdate> _floatingSubtitleFrames = new();
+        private readonly Dictionary<(long Id, VadGateController.ActiveSource Source), FloatingSubtitleUpdate> _floatingSourceFrames = new();
+        private readonly Queue<(string? Key, long Id)> _floatingSubtitleKeyOrder = new();
+        private FloatingSubtitleUpdate? _latestFloatingSubtitleUpdate;
+        private FloatingSubtitleUpdate? _latestFloatingMicUpdate;
+        private FloatingSubtitleUpdate? _latestFloatingLoopbackUpdate;
+        private ICommand? _restoreFloatingSubtitleInteractionCommand;
+
+        public ICommand RestoreFloatingSubtitleInteractionCommand => _restoreFloatingSubtitleInteractionCommand
+            ??= new RelayCommand(_ => RestoreFloatingSubtitleInteraction());
+
+        private void RestoreFloatingSubtitleInteraction()
+        {
+            _floatingSubtitleManager?.RestoreInteraction();
+            _floatingMicSubtitleManager?.RestoreInteraction();
+            _floatingLoopbackSubtitleManager?.RestoreInteraction();
+            StatusMessage = "已恢复字幕交互，可拖动和调整字幕";
+        }
+
         public string CurrentOriginal
         {
             get => _currentOriginal;
@@ -626,6 +652,7 @@ namespace TrueFluentPro.ViewModels
                 return;
             }
 
+            ResetFloatingSubtitleSession();
             var started = await translationService.StartTranslationAsync();
             if (!started)
             {
@@ -656,15 +683,19 @@ namespace TrueFluentPro.ViewModels
                 return;
             }
 
-            if (!_realtimeTranslationServiceFactory.TryResolveConnectorFamily(config, out var desiredFamily, out _))
+            if (!_realtimeTranslationServiceFactory.TryResolveConnectorFamily(config, out var desiredFamily, out _)
+                || _translationService.ConnectorFamily == desiredFamily)
             {
-                await _translationService.UpdateConfigAsync(config);
-                return;
-            }
-
-            if (_translationService.ConnectorFamily == desiredFamily)
-            {
-                await _translationService.UpdateConfigAsync(config);
+                _suspendFloatingSubtitleUpdates = true;
+                ResetFloatingSubtitleSession();
+                try
+                {
+                    await _translationService.UpdateConfigAsync(config);
+                }
+                finally
+                {
+                    _suspendFloatingSubtitleUpdates = false;
+                }
                 return;
             }
 
@@ -695,6 +726,7 @@ namespace TrueFluentPro.ViewModels
                 return;
             }
 
+            ResetFloatingSubtitleSession();
             var started = await _translationService!.StartTranslationAsync();
             if (!started)
             {
@@ -799,13 +831,11 @@ namespace TrueFluentPro.ViewModels
 
         private void OnReconnectTriggered(object? sender, string reason)
         {
-            if (!_config.ShowReconnectMarkerInSubtitle)
-            {
-                return;
-            }
-
             Dispatcher.UIThread.Post(() =>
             {
+                if (!ReferenceEquals(sender, _translationService)) return;
+                ResetFloatingSubtitleSession();
+                if (!_config.ShowReconnectMarkerInSubtitle) return;
                 var marker = "*触发重连*";
                 if (string.IsNullOrWhiteSpace(CurrentTranslated))
                 {
@@ -818,15 +848,15 @@ namespace TrueFluentPro.ViewModels
 
                 if (_floatingSubtitleManager?.IsWindowOpen == true)
                 {
-                    _floatingSubtitleManager.UpdateSubtitle(CurrentTranslated);
+                    _floatingSubtitleManager.UpdateSubtitle(marker);
                 }
                 if (_floatingMicSubtitleManager?.IsWindowOpen == true)
                 {
-                    _floatingMicSubtitleManager.UpdateSubtitle(CurrentTranslated);
+                    _floatingMicSubtitleManager.UpdateSubtitle(marker);
                 }
                 if (_floatingLoopbackSubtitleManager?.IsWindowOpen == true)
                 {
-                    _floatingLoopbackSubtitleManager.UpdateSubtitle(CurrentTranslated);
+                    _floatingLoopbackSubtitleManager.UpdateSubtitle(marker);
                 }
             });
         }
@@ -837,6 +867,7 @@ namespace TrueFluentPro.ViewModels
 
             CurrentOriginal = "";
             CurrentTranslated = "";
+            ResetFloatingSubtitleSession();
 
             ((RelayCommand)ClearHistoryCommand).RaiseCanExecuteChanged();
         }
@@ -993,10 +1024,7 @@ namespace TrueFluentPro.ViewModels
                 {
                     StatusMessage = "全部字幕窗口已打开";
 
-                    if (!string.IsNullOrEmpty(CurrentTranslated))
-                    {
-                        _floatingSubtitleManager.UpdateSubtitle(CurrentTranslated);
-                    }
+                    InitializeFloatingSubtitle(_floatingSubtitleManager);
                 }
             }
             catch (Exception ex)
@@ -1038,6 +1066,7 @@ namespace TrueFluentPro.ViewModels
 
                 _floatingMicSubtitleManager.ToggleWindow();
                 IsFloatingMicSubtitleOpen = _floatingMicSubtitleManager.IsWindowOpen;
+                if (IsFloatingMicSubtitleOpen) InitializeFloatingSubtitle(_floatingMicSubtitleManager);
 
                 StatusMessage = _floatingMicSubtitleManager.IsWindowOpen
                     ? "我的语音字幕窗口已打开"
@@ -1062,6 +1091,7 @@ namespace TrueFluentPro.ViewModels
 
                 _floatingLoopbackSubtitleManager.ToggleWindow();
                 IsFloatingLoopbackSubtitleOpen = _floatingLoopbackSubtitleManager.IsWindowOpen;
+                if (IsFloatingLoopbackSubtitleOpen) InitializeFloatingSubtitle(_floatingLoopbackSubtitleManager);
 
                 StatusMessage = _floatingLoopbackSubtitleManager.IsWindowOpen
                     ? "对方语音字幕窗口已打开"
@@ -1107,31 +1137,142 @@ namespace TrueFluentPro.ViewModels
 
         private void OnRealtimeTranslationReceived(object? sender, TranslationItem item)
         {
+            var subtitleEpoch = System.Threading.Volatile.Read(ref _floatingSubtitleEpoch);
+            var acceptSubtitle = !_suspendFloatingSubtitleUpdates;
             Dispatcher.UIThread.Post(() =>
             {
                 CurrentOriginal = TrimRealtimeDisplayText(item.OriginalText);
                 CurrentTranslated = TrimRealtimeDisplayText(item.TranslatedText);
 
-                // 通用浮动字幕（不区分来源）
-                if (_floatingSubtitleManager?.IsWindowOpen == true && !string.IsNullOrEmpty(CurrentTranslated))
+                if (acceptSubtitle && !_suspendFloatingSubtitleUpdates
+                    && subtitleEpoch == _floatingSubtitleEpoch && ReferenceEquals(sender, _translationService))
                 {
-                    _floatingSubtitleManager.UpdateSubtitle(CurrentTranslated, item.Source);
-                }
-
-                // 按来源分发到对应的浮动窗口
-                if (item.Source == VadGateController.ActiveSource.Mic
-                    && _floatingMicSubtitleManager?.IsWindowOpen == true
-                    && !string.IsNullOrEmpty(CurrentTranslated))
-                {
-                    _floatingMicSubtitleManager.UpdateSubtitle(CurrentTranslated, item.Source);
-                }
-                else if (item.Source == VadGateController.ActiveSource.Loopback
-                    && _floatingLoopbackSubtitleManager?.IsWindowOpen == true
-                    && !string.IsNullOrEmpty(CurrentTranslated))
-                {
-                    _floatingLoopbackSubtitleManager.UpdateSubtitle(CurrentTranslated, item.Source);
+                    UpdateFloatingSubtitle(item, isFinal: false);
                 }
             });
+        }
+
+        private void UpdateFloatingSubtitle(TranslationItem item, bool isFinal)
+        {
+            // 浮窗自行按两行分页，不能复用正文已截尾的 CurrentTranslated。
+            if (item.SubtitleSegmentKey == "" || (!isFinal && string.IsNullOrWhiteSpace(item.TranslatedText))) return;
+            if (_translationService is SpeechTranslationService speech
+                && !speech.IsCurrentFloatingSubtitleKey(item.SubtitleSegmentKey)) return;
+            long segmentId;
+            if (item.SubtitleSegmentKey is { } key)
+            {
+                if (!_floatingSubtitleKeys.TryGetValue(key, out segmentId))
+                {
+                    segmentId = ++_floatingSubtitleSegmentId;
+                    _floatingSubtitleKeys[key] = segmentId;
+                    _floatingSubtitleKeyOrder.Enqueue((key, segmentId));
+                }
+            }
+            else
+            {
+                if (_legacyFloatingSubtitleSegmentId == 0)
+                {
+                    _legacyFloatingSubtitleSegmentId = ++_floatingSubtitleSegmentId;
+                    _floatingSubtitleKeyOrder.Enqueue((null, _legacyFloatingSubtitleSegmentId));
+                }
+                segmentId = _legacyFloatingSubtitleSegmentId;
+                if (isFinal) _legacyFloatingSubtitleSegmentId = 0;
+            }
+
+            while (_floatingSubtitleKeyOrder.Count > 128)
+            {
+                var expired = _floatingSubtitleKeyOrder.Dequeue();
+                if (expired.Key != null) _floatingSubtitleKeys.Remove(expired.Key);
+                _floatingSubtitleFrames.Remove(expired.Id);
+                _floatingSourceFrames.Remove((expired.Id, VadGateController.ActiveSource.Mic));
+                _floatingSourceFrames.Remove((expired.Id, VadGateController.ActiveSource.Loopback));
+            }
+
+            var source = item.SubtitleSource ?? item.Source;
+            var text = item.TranslatedText;
+            var hasTranslatedText = !string.IsNullOrWhiteSpace(text);
+            if (_floatingSubtitleFrames.TryGetValue(segmentId, out var previous))
+            {
+                // VAD 在终稿到来前可能已静音；保留本句最后一个有效来源。
+                if (source == VadGateController.ActiveSource.None) source = previous.Source;
+                if (isFinal && !hasTranslatedText)
+                {
+                    text = previous.Text;
+                    source = previous.Source;
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                var update = new FloatingSubtitleUpdate(segmentId, text, isFinal, source);
+                _floatingSubtitleFrames[segmentId] = update;
+                if (_latestFloatingSubtitleUpdate == null || _latestFloatingSubtitleUpdate.SegmentId <= segmentId)
+                    _latestFloatingSubtitleUpdate = update;
+                _floatingSubtitleManager?.UpdateSubtitle(update);
+                if (source != VadGateController.ActiveSource.None && (!isFinal || hasTranslatedText))
+                {
+                    _floatingSourceFrames[(segmentId, source)] = update;
+                    DispatchFloatingSource(update);
+                }
+            }
+
+            if (isFinal)
+            {
+                // 句中切源时，只终结另一方自己的最后快照，不能灌入当前来源的整句终稿。
+                foreach (var other in new[] { VadGateController.ActiveSource.Mic, VadGateController.ActiveSource.Loopback })
+                {
+                    if ((other != source || !hasTranslatedText)
+                        && _floatingSourceFrames.TryGetValue((segmentId, other), out var ownFrame))
+                    {
+                        var finalFrame = ownFrame with { IsFinal = true };
+                        _floatingSourceFrames[(segmentId, other)] = finalFrame;
+                        DispatchFloatingSource(finalFrame);
+                    }
+                }
+            }
+        }
+
+        private void DispatchFloatingSource(FloatingSubtitleUpdate update)
+        {
+            if (update.Source == VadGateController.ActiveSource.Mic)
+            {
+                if (_latestFloatingMicUpdate == null || _latestFloatingMicUpdate.SegmentId <= update.SegmentId)
+                    _latestFloatingMicUpdate = update;
+                _floatingMicSubtitleManager?.UpdateSubtitle(update);
+            }
+            else if (update.Source == VadGateController.ActiveSource.Loopback)
+            {
+                if (_latestFloatingLoopbackUpdate == null || _latestFloatingLoopbackUpdate.SegmentId <= update.SegmentId)
+                    _latestFloatingLoopbackUpdate = update;
+                _floatingLoopbackSubtitleManager?.UpdateSubtitle(update);
+            }
+        }
+
+        private void InitializeFloatingSubtitle(FloatingSubtitleManager manager)
+        {
+            var update = manager.SourceFilter switch
+            {
+                VadGateController.ActiveSource.Mic => _latestFloatingMicUpdate,
+                VadGateController.ActiveSource.Loopback => _latestFloatingLoopbackUpdate,
+                _ => _latestFloatingSubtitleUpdate
+            };
+            if (update != null) manager.UpdateSubtitle(update);
+        }
+
+        private void ResetFloatingSubtitleSession()
+        {
+            System.Threading.Interlocked.Increment(ref _floatingSubtitleEpoch);
+            _legacyFloatingSubtitleSegmentId = 0;
+            _floatingSubtitleKeys.Clear();
+            _floatingSubtitleFrames.Clear();
+            _floatingSourceFrames.Clear();
+            _floatingSubtitleKeyOrder.Clear();
+            _latestFloatingSubtitleUpdate = null;
+            _latestFloatingMicUpdate = null;
+            _latestFloatingLoopbackUpdate = null;
+            _floatingSubtitleManager?.ClearSubtitle();
+            _floatingMicSubtitleManager?.ClearSubtitle();
+            _floatingLoopbackSubtitleManager?.ClearSubtitle();
         }
 
         private string TrimRealtimeDisplayText(string? text)
@@ -1152,8 +1293,15 @@ namespace TrueFluentPro.ViewModels
 
         private void OnFinalTranslationReceived(object? sender, TranslationItem item)
         {
+            var subtitleEpoch = System.Threading.Volatile.Read(ref _floatingSubtitleEpoch);
+            var acceptSubtitle = !_suspendFloatingSubtitleUpdates;
             Dispatcher.UIThread.Post(() =>
             {
+                if (acceptSubtitle && !_suspendFloatingSubtitleUpdates
+                    && subtitleEpoch == _floatingSubtitleEpoch && ReferenceEquals(sender, _translationService))
+                {
+                    UpdateFloatingSubtitle(item, isFinal: true);
+                }
                 History.Insert(0, item);
 
                 while (History.Count > _config.MaxHistoryItems)

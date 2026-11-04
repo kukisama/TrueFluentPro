@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -48,6 +49,48 @@ namespace TrueFluentPro.Services
         private readonly IAzureTokenProviderStore? _azureTokenProviderStore;
         private readonly Action<string>? _auditLog;
         private TranslationRecognizer? _recognizer;
+        private readonly ConditionalWeakTable<object, FloatingSubtitleSentence> _floatingSubtitleSentences = new();
+
+        private sealed class FloatingSubtitleSentence
+        {
+            public string SessionKey { get; } = Guid.NewGuid().ToString("N");
+            public string? Key;
+        }
+
+        internal bool IsCurrentFloatingSubtitleKey(string? key)
+        {
+            var recognizer = _recognizer;
+            return key != null && recognizer != null
+                && _floatingSubtitleSentences.TryGetValue(recognizer, out var sentence)
+                && key.StartsWith(sentence.SessionKey + ":", StringComparison.Ordinal);
+        }
+
+        private string GetFloatingSubtitleKey(object? recognizer, bool isFinal)
+        {
+            // 已停止/替换的 recognizer 只能走原有正文处理，不再进入浮窗新会话。
+            if (recognizer == null || !ReferenceEquals(recognizer, _recognizer)) return "";
+            var sentence = _floatingSubtitleSentences.GetValue(recognizer, static _ => new FloatingSubtitleSentence());
+            lock (sentence)
+            {
+                var key = sentence.Key ??= sentence.SessionKey + ":" + Guid.NewGuid().ToString("N");
+                if (isFinal) sentence.Key = null;
+                return key;
+            }
+        }
+
+        private VadGateController.ActiveSource GetFloatingSubtitleSource()
+        {
+            if (_naudioSource == null) return VadGateController.ActiveSource.Mic;
+            var source = _audioCoordinator?.VadGate?.Current ?? VadGateController.ActiveSource.None;
+            if (source != VadGateController.ActiveSource.None) return source;
+            return (_recognizeMicEnabled, _recognizeLoopbackEnabled) switch
+            {
+                (true, false) => VadGateController.ActiveSource.Mic,
+                (false, true) => VadGateController.ActiveSource.Loopback,
+                _ => VadGateController.ActiveSource.None
+            };
+        }
+
         private bool _isTranslating; private string _currentSessionFilePath = string.Empty;
 
         private string _currentRunStamp = "";
@@ -253,6 +296,8 @@ namespace TrueFluentPro.Services
 
         private void OnRecognized(object? sender, TranslationRecognitionEventArgs e)
         {
+            // 即使终结结果为 NoMatch，也必须结束浮窗句身份，避免下一句串接旧页。
+            var subtitleKey = GetFloatingSubtitleKey(sender, isFinal: true);
             if (e.Result.Reason == ResultReason.TranslatedSpeech)
             {
                 _lastRecognitionUtc = DateTime.UtcNow;
@@ -274,7 +319,9 @@ namespace TrueFluentPro.Services
                     Timestamp = DateTime.Now,
                     OriginalText = originalText,
                     TranslatedText = translatedText,
-                    Source = currentVadSource
+                    Source = currentVadSource,
+                    SubtitleSegmentKey = subtitleKey,
+                    SubtitleSource = GetFloatingSubtitleSource()
                 };
 
                 // 句子结束，释放 VAD 句级锁
@@ -319,6 +366,8 @@ namespace TrueFluentPro.Services
                     Timestamp = DateTime.Now,
                     OriginalText = originalText,
                     TranslatedText = translatedText,
+                    SubtitleSegmentKey = GetFloatingSubtitleKey(sender, isFinal: false),
+                    SubtitleSource = GetFloatingSubtitleSource(),
                     Source = _audioCoordinator?.VadGate?.Current
                         ?? VadGateController.ActiveSource.None
                 };
@@ -330,6 +379,7 @@ namespace TrueFluentPro.Services
 
         private void OnCanceled(object? sender, TranslationRecognitionCanceledEventArgs e)
         {
+            _ = GetFloatingSubtitleKey(sender, isFinal: true);
             if (e.Reason == CancellationReason.Error)
             {
                 _auditLog?.Invoke(
@@ -352,6 +402,7 @@ namespace TrueFluentPro.Services
 
         private void OnSessionStopped(object? sender, SessionEventArgs e)
         {
+            _ = GetFloatingSubtitleKey(sender, isFinal: true);
             OnStatusChanged?.Invoke(this, "翻译会话已结束");
         }
 
@@ -1490,14 +1541,15 @@ namespace TrueFluentPro.Services
                     return false;
                 }
 
+                var previousRecognizer = _recognizer;
+                _recognizer = null;
                 OnReconnectTriggered?.Invoke(this, reason);
                 OnStatusChanged?.Invoke(this, $"{reason}，正在恢复语音连接...");
-
                 try
                 {
-                    if (_recognizer != null)
+                    if (previousRecognizer != null)
                     {
-                        await _recognizer.StopContinuousRecognitionAsync().ConfigureAwait(false);
+                        await previousRecognizer.StopContinuousRecognitionAsync().ConfigureAwait(false);
                     }
                 }
                 catch
@@ -1505,15 +1557,15 @@ namespace TrueFluentPro.Services
                     // ignore stop failures
                 }
 
-                if (_recognizer != null)
+                if (previousRecognizer != null)
                 {
-                    _recognizer.Recognized -= OnRecognized;
-                    _recognizer.Recognizing -= OnRecognizing;
-                    _recognizer.Canceled -= OnCanceled;
-                    _recognizer.SessionStarted -= OnSessionStarted;
-                    _recognizer.SessionStopped -= OnSessionStopped;
+                    previousRecognizer.Recognized -= OnRecognized;
+                    previousRecognizer.Recognizing -= OnRecognizing;
+                    previousRecognizer.Canceled -= OnCanceled;
+                    previousRecognizer.SessionStarted -= OnSessionStarted;
+                    previousRecognizer.SessionStopped -= OnSessionStopped;
 
-                    _recognizer.Dispose();
+                    previousRecognizer.Dispose();
                 }
                 _recognizer = null;
 

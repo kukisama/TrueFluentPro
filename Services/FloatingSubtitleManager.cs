@@ -85,12 +85,27 @@ namespace TrueFluentPro.Services
             }
         }
 
-        public void UpdateSubtitle(string subtitle, Audio.VadGateController.ActiveSource source)
+        public void UpdateSubtitle(string subtitle, Audio.VadGateController.ActiveSource source, bool isFinal = false)
         {
             if (_isWindowOpen && _syncService != null)
             {
-                _syncService.UpdateSubtitle(subtitle, source);
+                _syncService.UpdateSubtitle(subtitle, source, isFinal);
             }
+        }
+
+        public void UpdateSubtitle(FloatingSubtitleUpdate update)
+        {
+            if (_isWindowOpen) _syncService?.UpdateSubtitle(update);
+        }
+
+        public void ClearSubtitle()
+        {
+            if (_isWindowOpen) _syncService?.ClearSubtitle();
+        }
+
+        public void RestoreInteraction()
+        {
+            if (_isWindowOpen) _window?.RestoreInteraction();
         }
 
         /// <summary>从音频管线推送的"争抢窗口"状态：进入/退出。</summary>

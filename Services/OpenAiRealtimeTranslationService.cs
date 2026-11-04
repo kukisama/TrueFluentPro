@@ -46,6 +46,8 @@ namespace TrueFluentPro.Services
         private string _liveTranslated = string.Empty;
         private string _lastDiagnostics = "诊断: 未启动";
         private string? _activeResponseId;
+        private string? _floatingSubtitleResponseKey;
+        private VadGateController.ActiveSource _floatingSubtitleInputSource;
         private RealtimeSessionMode _activeSessionMode = RealtimeSessionMode.Conversation;
         private string _activeInputTranscriptionModel = DefaultConversationInputTranscriptionModel;
         private DateTime _lastAudioChunkUtc = DateTime.MinValue;
@@ -72,6 +74,7 @@ namespace TrueFluentPro.Services
         private sealed class TranscriptTranslationWorkItem
         {
             public required string OriginalText { get; init; }
+            public VadGateController.ActiveSource Source { get; init; }
         }
 
         public RealtimeConnectorFamily ConnectorFamily => RealtimeConnectorFamily.OpenAiRealtimeWebSocket;
@@ -201,6 +204,7 @@ namespace TrueFluentPro.Services
 
             var (enableLoopback, enableMic) = GetRecognitionRouting();
             _audioSource.UpdateRouting(enableLoopback, enableMic, Math.Clamp(fadeMilliseconds, 10, 50));
+            SetFloatingSubtitleRouting(enableLoopback, enableMic);
             PublishDiagnostics(force: true);
             return true;
         }
@@ -297,6 +301,7 @@ namespace TrueFluentPro.Services
             _audioChannel = null;
             _translationChannel = null;
             _activeResponseId = null;
+            _floatingSubtitleResponseKey = null;
             _activeSessionMode = RealtimeSessionMode.Conversation;
             _activeInputTranscriptionModel = DefaultConversationInputTranscriptionModel;
             _liveOriginal = string.Empty;
@@ -393,6 +398,7 @@ namespace TrueFluentPro.Services
         private WasapiPcm16AudioSource CreateAudioSource()
         {
             var (enableLoopback, enableMic) = GetRecognitionRouting();
+            SetFloatingSubtitleRouting(enableLoopback, enableMic);
             return new WasapiPcm16AudioSource(
                 _config.SelectedOutputDeviceId,
                 _config.SelectedAudioDeviceId,
@@ -730,6 +736,7 @@ namespace TrueFluentPro.Services
 
                 case "response.created":
                     _activeResponseId = GetNestedString(element, "response", "id");
+                    _floatingSubtitleResponseKey = Guid.NewGuid().ToString("N");
                     _liveTranslated = string.Empty;
                     break;
 
@@ -782,7 +789,7 @@ namespace TrueFluentPro.Services
                 _liveOriginal = delta.Trim();
             }
 
-            PublishRealtimeItem();
+            PublishRealtimeItem(isSubtitleUpdate: false);
         }
 
         private void CompleteOriginalTranscript(string? transcript)
@@ -804,7 +811,7 @@ namespace TrueFluentPro.Services
                 }
             }
 
-            PublishRealtimeItem();
+            PublishRealtimeItem(isSubtitleUpdate: false);
         }
 
         private void EnqueueTranscriptForTranslation(string transcript)
@@ -816,7 +823,8 @@ namespace TrueFluentPro.Services
 
             if (_translationChannel?.Writer.TryWrite(new TranscriptTranslationWorkItem
                 {
-                    OriginalText = transcript
+                    OriginalText = transcript,
+                    Source = GetFloatingSubtitleSource()
                 }) == true)
             {
                 OnStatusChanged?.Invoke(this, "收到实时转写结果，正在翻译...");
@@ -869,7 +877,9 @@ namespace TrueFluentPro.Services
             {
                 Timestamp = DateTime.Now,
                 OriginalText = finalOriginal,
-                TranslatedText = finalTranslated
+                TranslatedText = finalTranslated,
+                SubtitleSegmentKey = _floatingSubtitleResponseKey ??= Guid.NewGuid().ToString("N"),
+                SubtitleSource = GetFloatingSubtitleSource()
             };
 
             SaveTranslationToFile(item);
@@ -877,17 +887,24 @@ namespace TrueFluentPro.Services
             OnStatusChanged?.Invoke(this, "收到最终翻译结果");
 
             _activeResponseId = null;
+            _floatingSubtitleResponseKey = null;
             _liveOriginal = string.Empty;
             _liveTranslated = string.Empty;
         }
 
-        private void PublishRealtimeItem()
+        private void PublishRealtimeItem(string? subtitleKey = null, string? originalSnapshot = null,
+            string? translatedSnapshot = null, bool isSubtitleUpdate = true,
+            VadGateController.ActiveSource? subtitleSource = null)
         {
             var item = new TranslationItem
             {
                 Timestamp = DateTime.Now,
-                OriginalText = _liveOriginal,
-                TranslatedText = _liveTranslated
+                OriginalText = originalSnapshot ?? _liveOriginal,
+                TranslatedText = translatedSnapshot ?? _liveTranslated,
+                SubtitleSegmentKey = !isSubtitleUpdate ? "" : subtitleKey
+                    ?? (_activeSessionMode == RealtimeSessionMode.Transcription ? ""
+                        : _floatingSubtitleResponseKey ??= Guid.NewGuid().ToString("N")),
+                SubtitleSource = subtitleSource ?? GetFloatingSubtitleSource()
             };
 
             OnRealtimeTranslationReceived?.Invoke(this, item);
@@ -899,7 +916,7 @@ namespace TrueFluentPro.Services
             {
                 try
                 {
-                    await TranslateTranscriptAsync(workItem.OriginalText, cancellationToken).ConfigureAwait(false);
+                    await TranslateTranscriptAsync(workItem.OriginalText, workItem.Source, cancellationToken).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException)
                 {
@@ -912,7 +929,8 @@ namespace TrueFluentPro.Services
             }
         }
 
-        private async Task TranslateTranscriptAsync(string originalText, CancellationToken cancellationToken)
+        private async Task TranslateTranscriptAsync(string originalText, VadGateController.ActiveSource source,
+            CancellationToken cancellationToken)
         {
             if (!TryResolveTextTranslationRuntime(out var runtime, out var errorMessage) || runtime == null)
             {
@@ -923,10 +941,11 @@ namespace TrueFluentPro.Services
             var tokenProvider = await TryCreateTextTokenProviderAsync(runtime, cancellationToken).ConfigureAwait(false);
             var service = new AiInsightService(tokenProvider);
             var translatedBuilder = new StringBuilder();
+            var subtitleKey = Guid.NewGuid().ToString("N");
 
             _liveOriginal = originalText;
             _liveTranslated = string.Empty;
-            PublishRealtimeItem();
+            PublishRealtimeItem(subtitleKey, originalText, string.Empty, subtitleSource: source);
 
             await service.StreamChatAsync(
                 runtime.CreateChatRequest(summaryEnableReasoning: false),
@@ -940,9 +959,10 @@ namespace TrueFluentPro.Services
                     }
 
                     translatedBuilder.Append(chunk);
+                    var snapshot = translatedBuilder.ToString();
                     _liveOriginal = originalText;
-                    _liveTranslated = translatedBuilder.ToString();
-                    PublishRealtimeItem();
+                    _liveTranslated = snapshot;
+                    PublishRealtimeItem(subtitleKey, originalText, snapshot, subtitleSource: source);
                 },
                 cancellationToken,
                 AiChatProfile.Quick,
@@ -958,7 +978,9 @@ namespace TrueFluentPro.Services
             {
                 Timestamp = DateTime.Now,
                 OriginalText = originalText,
-                TranslatedText = translatedText
+                TranslatedText = translatedText,
+                SubtitleSegmentKey = subtitleKey,
+                SubtitleSource = source
             };
 
             SaveTranslationToFile(item);
@@ -1139,6 +1161,15 @@ namespace TrueFluentPro.Services
 
             return (_config.UseOutputForRecognition, _config.UseInputForRecognition);
         }
+
+        private VadGateController.ActiveSource GetFloatingSubtitleSource() => _floatingSubtitleInputSource;
+
+        private void SetFloatingSubtitleRouting(bool loopback, bool mic) => _floatingSubtitleInputSource = (loopback, mic) switch
+        {
+            (true, false) => VadGateController.ActiveSource.Loopback,
+            (false, true) => VadGateController.ActiveSource.Mic,
+            _ => VadGateController.ActiveSource.None
+        };
 
         private void UpdateAudioLevel(byte[] chunk)
         {

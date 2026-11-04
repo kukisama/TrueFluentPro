@@ -41,7 +41,9 @@ namespace TrueFluentPro.Services.RealtimeSpeech
         private Task? _uplinkLoopTask;
         private Task? _translationLoopTask;
         private Channel<byte[]>? _uplinkChannel;
-        private Channel<string>? _translationChannel;
+        private Channel<SubtitleTranslationWorkItem>? _translationChannel;
+        private sealed record SubtitleTranslationWorkItem(string OriginalText, VadGateController.ActiveSource Source);
+        private VadGateController.ActiveSource _floatingSubtitleInputSource;
         private readonly SemaphoreSlim _sendLock = new(1, 1);
         private AudioPipeline? _pipeline;
         private Mp3RecordingSink? _recordingSink;
@@ -155,7 +157,7 @@ namespace TrueFluentPro.Services.RealtimeSpeech
                     SingleWriter = false
                 });
 
-                _translationChannel = Channel.CreateUnbounded<string>(new UnboundedChannelOptions
+                _translationChannel = Channel.CreateUnbounded<SubtitleTranslationWorkItem>(new UnboundedChannelOptions
                 {
                     SingleReader = true,
                     SingleWriter = false
@@ -241,6 +243,7 @@ namespace TrueFluentPro.Services.RealtimeSpeech
 
             var (enableLoopback, enableMic) = GetRecognitionRouting();
             _audioSource.UpdateRouting(enableLoopback, enableMic, Math.Clamp(fadeMilliseconds, 10, 50));
+            SetFloatingSubtitleRouting(enableLoopback, enableMic);
             PublishDiagnostics(force: true);
             return true;
         }
@@ -279,6 +282,7 @@ namespace TrueFluentPro.Services.RealtimeSpeech
         private WasapiPcm16AudioSource CreateAudioSource()
         {
             var (enableLoopback, enableMic) = GetRecognitionRouting();
+            SetFloatingSubtitleRouting(enableLoopback, enableMic);
             return new WasapiPcm16AudioSource(
                 _config.SelectedOutputDeviceId,
                 _config.SelectedAudioDeviceId,
@@ -388,13 +392,13 @@ namespace TrueFluentPro.Services.RealtimeSpeech
             }
         }
 
-        private async Task TranslateLoopAsync(ChannelReader<string> reader, CancellationToken cancellationToken)
+        private async Task TranslateLoopAsync(ChannelReader<SubtitleTranslationWorkItem> reader, CancellationToken cancellationToken)
         {
             await foreach (var sentence in reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
             {
                 try
                 {
-                    await TranslateSentenceAsync(sentence, cancellationToken).ConfigureAwait(false);
+                    await TranslateSentenceAsync(sentence.OriginalText, sentence.Source, cancellationToken).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException)
                 {
@@ -407,11 +411,13 @@ namespace TrueFluentPro.Services.RealtimeSpeech
             }
         }
 
-        private async Task TranslateSentenceAsync(string originalText, CancellationToken cancellationToken)
+        private async Task TranslateSentenceAsync(string originalText, VadGateController.ActiveSource source,
+            CancellationToken cancellationToken)
         {
+            var subtitleKey = Guid.NewGuid().ToString("N");
             _liveOriginal = originalText;
             _liveTranslated = string.Empty;
-            PublishRealtimeItem();
+            PublishRealtimeItem(subtitleKey, originalText, string.Empty, source);
 
             string translatedText = string.Empty;
             if (_translation?.IsConfigured == true)
@@ -446,13 +452,15 @@ namespace TrueFluentPro.Services.RealtimeSpeech
 
             _liveOriginal = originalText;
             _liveTranslated = translatedText;
-            PublishRealtimeItem();
+            PublishRealtimeItem(subtitleKey, originalText, translatedText, source);
 
             var item = new TranslationItem
             {
                 Timestamp = DateTime.Now,
                 OriginalText = originalText,
-                TranslatedText = translatedText
+                TranslatedText = translatedText,
+                SubtitleSegmentKey = subtitleKey,
+                SubtitleSource = source
             };
 
             SaveTranslationToFile(item);
@@ -464,13 +472,16 @@ namespace TrueFluentPro.Services.RealtimeSpeech
             _liveTranslated = string.Empty;
         }
 
-        private void PublishRealtimeItem()
+        private void PublishRealtimeItem(string subtitleKey = "", string? originalSnapshot = null,
+            string? translatedSnapshot = null, VadGateController.ActiveSource? subtitleSource = null)
         {
             var item = new TranslationItem
             {
                 Timestamp = DateTime.Now,
-                OriginalText = _liveOriginal,
-                TranslatedText = _liveTranslated
+                OriginalText = originalSnapshot ?? _liveOriginal,
+                TranslatedText = translatedSnapshot ?? _liveTranslated,
+                SubtitleSegmentKey = subtitleKey,
+                SubtitleSource = subtitleSource ?? GetFloatingSubtitleSource()
             };
 
             OnRealtimeTranslationReceived?.Invoke(this, item);
@@ -497,7 +508,7 @@ namespace TrueFluentPro.Services.RealtimeSpeech
             _liveTranslated = string.Empty;
             PublishRealtimeItem();
 
-            if (_translationChannel?.Writer.TryWrite(sentence) != true)
+            if (_translationChannel?.Writer.TryWrite(new SubtitleTranslationWorkItem(sentence, GetFloatingSubtitleSource())) != true)
             {
                 _auditLog?.Invoke("[翻译流] CascadedFinalDropped translation-channel-unavailable");
             }
@@ -862,6 +873,15 @@ namespace TrueFluentPro.Services.RealtimeSpeech
 
             return (_config.UseOutputForRecognition, _config.UseInputForRecognition);
         }
+
+        private VadGateController.ActiveSource GetFloatingSubtitleSource() => _floatingSubtitleInputSource;
+
+        private void SetFloatingSubtitleRouting(bool loopback, bool mic) => _floatingSubtitleInputSource = (loopback, mic) switch
+        {
+            (true, false) => VadGateController.ActiveSource.Loopback,
+            (false, true) => VadGateController.ActiveSource.Mic,
+            _ => VadGateController.ActiveSource.None
+        };
 
         private (bool enabled, double targetRms, double minGain, double maxGain, double smoothing) GetAutoGainSettings()
         {

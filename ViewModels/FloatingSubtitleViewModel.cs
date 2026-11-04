@@ -1,9 +1,8 @@
 using System;
-using System.Collections.Generic;
 using System.ComponentModel;
-using System.Linq;
 using System.Runtime.CompilerServices;
 using Avalonia.Media;
+using Avalonia.Threading;
 using TrueFluentPro.Services;
 using TrueFluentPro.Services.Audio;
 
@@ -14,11 +13,25 @@ namespace TrueFluentPro.ViewModels
         private string _formattedSubtitleText = "等待字幕内容...";
         private int _backgroundMode = 0;
         private double _fontScaleBias = 1.0;
+        private double _fixedFontSize = 32;
+        private bool _isFontSizeLocked;
         private bool _isClickThrough;
+        private bool _isClosed;
+        private VadGateController.ActiveSource _displayedSource;
         private readonly SubtitleSyncService _syncService;
+
+        public event Action<FloatingSubtitleUpdate>? SubtitleReceived;
+        public FloatingSubtitleUpdate? CurrentUpdate { get; private set; }
 
         /// <summary>该浮动窗口关注的音频来源（None 表示不区分来源，显示所有）。</summary>
         public VadGateController.ActiveSource SourceFilter { get; }
+
+        public string CaptionTitle => SourceFilter switch
+        {
+            VadGateController.ActiveSource.Mic => "我的字幕",
+            VadGateController.ActiveSource.Loopback => "对方字幕",
+            _ => "全部字幕"
+        };
 
         /// <summary>标题标签</summary>
         public string SourceLabel => SourceFilter switch
@@ -39,7 +52,7 @@ namespace TrueFluentPro.ViewModels
         /// <summary>当前生效的"说话源"：综合窗口跟随实际说话人，过滤窗口固定为各自来源。</summary>
         private VadGateController.ActiveSource EffectiveSource
             => SourceFilter == VadGateController.ActiveSource.None
-                ? _syncService.CurrentSource
+                ? _displayedSource
                 : SourceFilter;
 
         /// <summary>左侧说话源图标（FontAwesome）</summary>
@@ -75,7 +88,7 @@ namespace TrueFluentPro.ViewModels
         {
             _syncService = syncService;
             SourceFilter = sourceFilter;
-            _syncService.SubtitleUpdated += OnSubtitleUpdated;
+            _syncService.SubtitleFrameUpdated += OnSubtitleUpdated;
             _syncService.ContestStateChanged += OnContestStateChanged;
         }        public string SubtitleText
         {
@@ -132,6 +145,28 @@ namespace TrueFluentPro.ViewModels
                     OnPropertyChanged();
                 }
             }
+        }
+
+        public bool IsFontSizeLocked => _isFontSizeLocked;
+        public double FixedFontSize => _fixedFontSize;
+        public string FontModeIconValue => _isFontSizeLocked ? "fa-solid fa-lock" : "fa-solid fa-lock-open";
+        public string FontModeToolTip => _isFontSizeLocked
+            ? "当前为固定字号；点击恢复随窗口高度自动调整"
+            : "当前随窗口高度自动调整字号；点击锁定当前字号";
+
+        public void ToggleFontSizeLock(double displayedFontSize)
+        {
+            _fixedFontSize = Math.Clamp(displayedFontSize, 18, 96);
+            _isFontSizeLocked = !_isFontSizeLocked;
+            NotifyFontModeChanged();
+        }
+
+        private void NotifyFontModeChanged()
+        {
+            OnPropertyChanged(nameof(IsFontSizeLocked));
+            OnPropertyChanged(nameof(FixedFontSize));
+            OnPropertyChanged(nameof(FontModeIconValue));
+            OnPropertyChanged(nameof(FontModeToolTip));
         }
 
         public IBrush BackgroundBrush
@@ -222,58 +257,88 @@ namespace TrueFluentPro.ViewModels
 
         public void IncreaseFontSize()
         {
-            FontScaleBias += 0.08;
+            AdjustFontSize(1);
         }
 
         public void DecreaseFontSize()
         {
-            FontScaleBias -= 0.08;
+            AdjustFontSize(-1);
+        }
+
+        private void AdjustFontSize(int direction)
+        {
+            if (_isFontSizeLocked)
+            {
+                _fixedFontSize = Math.Clamp(_fixedFontSize + direction * 2, 18, 96);
+                OnPropertyChanged(nameof(FixedFontSize));
+            }
+            else
+            {
+                FontScaleBias += direction * 0.08;
+            }
         }
 
         public void ResetFontSize()
         {
+            _isFontSizeLocked = false;
             FontScaleBias = 1.0;
+            NotifyFontModeChanged();
         }
 
         public void UpdateFormattedSubtitleText(string text)
         {
-            FormattedSubtitleText = string.IsNullOrWhiteSpace(text) ? SubtitleText : text;
-        }        private void OnSubtitleUpdated(string newSubtitle)
+            FormattedSubtitleText = text;
+        }
+
+        public void SetDisplayedSource(VadGateController.ActiveSource source)
         {
-            var processedText = ProcessSubtitleText(newSubtitle);
+            _displayedSource = source;
+            OnPropertyChanged(nameof(SourceIconValue));
+            OnPropertyChanged(nameof(SourceIconBrush));
+            OnPropertyChanged(nameof(IsSecondaryVisible));
+        }
 
-            SubtitleText = processedText;
-            FormattedSubtitleText = processedText;
-
-            // 综合窗口需要随当前说话人切换图标
-            if (SourceFilter == VadGateController.ActiveSource.None)
+        private void OnSubtitleUpdated(FloatingSubtitleUpdate update)
+        {
+            if (!Dispatcher.UIThread.CheckAccess())
             {
-                OnPropertyChanged(nameof(SourceIconValue));
-                OnPropertyChanged(nameof(SecondaryIconValue));
-                OnPropertyChanged(nameof(SecondaryIconBrush));
+                Dispatcher.UIThread.Post(() => OnSubtitleUpdated(update));
+                return;
             }
+            if (_isClosed) return;
+
+            var processedText = ProcessSubtitleText(update.Text);
+            CurrentUpdate = update with { Text = processedText };
+            SubtitleText = processedText;
+            // 当前页由窗口的真实字形测量统一生成，不再被完整句覆盖。
+            SubtitleReceived?.Invoke(CurrentUpdate);
         }
 
         private void OnContestStateChanged(bool active)
         {
+            if (!Dispatcher.UIThread.CheckAccess())
+            {
+                Dispatcher.UIThread.Post(() => OnContestStateChanged(active));
+                return;
+            }
+            if (_isClosed) return;
             // 争抢窗口开/关：通知副轨可见性与图标
             OnPropertyChanged(nameof(IsSecondaryVisible));
             OnPropertyChanged(nameof(SecondaryIconValue));
             OnPropertyChanged(nameof(SecondaryIconBrush));
         }
 
-        private string ProcessSubtitleText(string text)
+        private static string ProcessSubtitleText(string text)
         {
             if (string.IsNullOrWhiteSpace(text))
-                return "等待字幕内容...";
+                return "";
 
             text = System.Text.RegularExpressions.Regex.Replace(text, "<.*?>", string.Empty);
             text = text.Trim().Replace('\n', ' ').Replace('\r', ' ');
 
             if (string.IsNullOrEmpty(text))
-                return "等待字幕内容...";
+                return "";
 
-                _syncService.ContestStateChanged -= OnContestStateChanged;
             text = System.Text.RegularExpressions.Regex.Replace(text, @"\s+", " ");
 
             return text;
@@ -281,10 +346,9 @@ namespace TrueFluentPro.ViewModels
 
         public void OnWindowClosed()
         {
-            if (_syncService != null)
-            {
-                _syncService.SubtitleUpdated -= OnSubtitleUpdated;
-            }
+            _isClosed = true;
+            _syncService.SubtitleFrameUpdated -= OnSubtitleUpdated;
+            _syncService.ContestStateChanged -= OnContestStateChanged;
         }
 
         public event PropertyChangedEventHandler? PropertyChanged;

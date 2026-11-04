@@ -116,7 +116,7 @@ jobs:
           echo "tag=${notes_ver}" >> "$GITHUB_OUTPUT"
           echo "checkout_ref=${GITHUB_SHA_VAL}" >> "$GITHUB_OUTPUT"
 
-  # ── 第一阶段 A：TrueFluentPro + Updater + GPT Image CLI（按 RID 并行） ──
+  # ── 第一阶段 A：TrueFluentPro + Updater（按 RID 并行；画图 skill 仅保留源码） ──
   build:
     needs: [prepare]
     if: needs.prepare.outputs.should_release == 'true'
@@ -156,14 +156,6 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Updater 发布失败' }
           Copy-Item "artifacts/updater-${{ matrix.rid }}/Updater.exe" `
             "artifacts/publish/TrueFluentPro-${{ matrix.rid }}-fdd/Updater.exe"
-
-      - name: Publish GPT Image CLI (${{ matrix.rid }})
-        shell: pwsh
-        run: |
-          & pwsh -NoProfile -File tools/GptImageCli/Publish.ps1 `
-            -Runtime ${{ matrix.rid }} -Mode NativeAot `
-            -OutputDirectory "artifacts/publish/TrueFluentPro-${{ matrix.rid }}-fdd/skills/gpt-image-cli"
-          if ($LASTEXITCODE -ne 0) { throw 'GPT Image CLI 发布失败' }
 
       - name: Create zip
         run: |

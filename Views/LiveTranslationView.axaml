@@ -752,6 +752,10 @@
                                     <icons:Icon Value="fa-solid fa-volume-high" FontSize="12"/>
                                 </MenuItem.Icon>
                             </MenuItem>
+                            <Separator/>
+                            <MenuItem Header="恢复字幕交互 — 取消所有字幕穿透"
+                                      Command="{Binding RestoreFloatingSubtitleInteractionCommand}"
+                                      IsEnabled="{Binding IsAnySubtitleOpen}"/>
                         </MenuFlyout>
                     </ToggleSplitButton.Flyout>
                 </ToggleSplitButton>

@@ -24,7 +24,7 @@ using TrueFluentPro.Views;
 internal static class Program
 {
     [STAThread]
-    private static int Main()
+    private static int Main(string[] args)
     {
         IconProvider.Current.Register<FontAwesomeIconProvider>();
         AppBuilder.Configure<RegressionApplication>().UsePlatformDetect().WithInterFont().SetupWithoutStarting();
@@ -34,7 +34,8 @@ internal static class Program
         {
             try
             {
-                await VerifyAsync();
+                if (args.Contains("--floating-subtitle")) await FloatingSubtitleRegression.VerifyAsync();
+                else await VerifyAsync();
                 exitCode = 0;
             }
             catch (Exception ex) { Console.Error.WriteLine(ex); }

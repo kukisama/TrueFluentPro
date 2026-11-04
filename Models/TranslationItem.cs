@@ -2,6 +2,7 @@
 using System;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using System.Text.Json.Serialization;
 using TrueFluentPro.Services.Audio;
 
 namespace TrueFluentPro.Models
@@ -13,6 +14,14 @@ namespace TrueFluentPro.Models
         private string _translatedText = "";
         private bool _hasBeenWrittenToFile = false;
         private VadGateController.ActiveSource _source = VadGateController.ActiveSource.None;
+
+        /// <summary>浮窗专用：null=旧服务未提供，空串=仅原文更新，非空=同句的稳定标识。</summary>
+        [JsonIgnore]
+        public string? SubtitleSegmentKey { get; set; }
+
+        /// <summary>浮窗专用的实际音频路由，不改变历史记录的来源显示。</summary>
+        [JsonIgnore]
+        public VadGateController.ActiveSource? SubtitleSource { get; set; }
 
         public DateTime Timestamp
         {
