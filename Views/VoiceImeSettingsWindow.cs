@@ -29,7 +29,7 @@ public sealed class VoiceImeSettingsWindow : Window
 
     public VoiceImeSettingsWindow()
     {
-        var ver = VoiceImeRegistrationService.GetProductVersionString();
+        var ver = VoiceImeRegistrationService.GetVoiceImeVersionString();
         Title = $"译见pro输入法设置 v{ver}";
         Width = 640;
         Height = 620;

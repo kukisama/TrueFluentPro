@@ -14,10 +14,20 @@ $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Componen
 if (-not $vs) { throw '需要已安装的 Visual Studio C++ x64/x86 工具；本脚本不会安装。' }
 $vcvars = Join-Path $vs 'VC\Auxiliary\Build\vcvarsall.bat'
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
+$versionsJsonPath = Join-Path $repoRoot 'Assets\versions.json'
 $releaseNotesPath = Join-Path $repoRoot 'Assets\RELEASE_NOTES.md'
 $productVersionStr = '2.2.3'
 $productVersionCsv = '2,2,3,0'
-if (Test-Path -LiteralPath $releaseNotesPath) {
+if (Test-Path -LiteralPath $versionsJsonPath) {
+    try {
+        $verObj = Get-Content -LiteralPath $versionsJsonPath -Raw | ConvertFrom-Json -DateKind String
+        $candidate = if ($verObj.voiceImeVersion) { [string]$verObj.voiceImeVersion } elseif ($verObj.appVersion) { [string]$verObj.appVersion } else { '' }
+        if ($candidate -match '^v?(\d+)\.(\d+)\.(\d+)$') {
+            $productVersionStr = "$($Matches[1]).$($Matches[2]).$($Matches[3])"
+            $productVersionCsv = "$($Matches[1]),$($Matches[2]),$($Matches[3]),0"
+        }
+    } catch { }
+} elseif (Test-Path -LiteralPath $releaseNotesPath) {
     $firstLine = Get-Content -LiteralPath $releaseNotesPath -TotalCount 1
     if ($firstLine -match 'v(\d+)\.(\d+)\.(\d+)') {
         $productVersionStr = "$($Matches[1]).$($Matches[2]).$($Matches[3])"

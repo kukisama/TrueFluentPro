@@ -255,27 +255,10 @@ public sealed partial class AboutSectionService : ObservableObject, IAboutSectio
     {
         try
         {
-            var candidates = new[]
+            var ver = AppVersionInfo.AppVersionString;
+            if (!string.IsNullOrWhiteSpace(ver))
             {
-                Path.Combine(AppContext.BaseDirectory, "Assets", "RELEASE_NOTES.md"),
-                Path.Combine(AppContext.BaseDirectory, "RELEASE_NOTES.md"),
-                Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "Assets", "RELEASE_NOTES.md"),
-                Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "RELEASE_NOTES.md")
-            };
-
-            foreach (var path in candidates)
-            {
-                if (!File.Exists(path))
-                {
-                    continue;
-                }
-
-                var firstLine = File.ReadLines(path).FirstOrDefault() ?? string.Empty;
-                var match = Regex.Match(firstLine, @"v(\d+\.\d+\.\d+)");
-                if (match.Success)
-                {
-                    return $"版本 {match.Groups[1].Value}";
-                }
+                return $"版本 {ver}";
             }
         }
         catch

@@ -15,6 +15,7 @@ on:
     branches:
       - main
     paths:
+      - 'Assets/versions.json'
       - 'Assets/RELEASE_NOTES.md'
       - 'RELEASE_NOTES.md'
     tags:
@@ -42,6 +43,7 @@ jobs:
         with:
           ref: ${{ inputs.tag || github.ref }}
           sparse-checkout: |
+            Assets/versions.json
             Assets/RELEASE_NOTES.md
             RELEASE_NOTES.md
 
@@ -65,12 +67,20 @@ jobs:
             exit 1
           fi
 
-          first_line=$(head -n 1 "$notes_path" | tr -d '\r')
           notes_ver=""
-          if [[ "$first_line" =~ v([0-9]+\.[0-9]+\.[0-9]+) ]]; then
-            notes_ver="${BASH_REMATCH[1]}"
+          if [ -f "Assets/versions.json" ]; then
+            json_ver=$(grep -oE '"appVersion"[[:space:]]*:[[:space:]]*"v?[0-9]+\.[0-9]+\.[0-9]+"' Assets/versions.json | head -n 1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || true)
+            if [ -n "$json_ver" ]; then
+              notes_ver="$json_ver"
+            fi
           fi
-          echo "Detected version in $notes_path: ${notes_ver:-<none>}"
+          if [ -z "$notes_ver" ]; then
+            first_line=$(head -n 1 "$notes_path" | tr -d '\r')
+            if [[ "$first_line" =~ v([0-9]+\.[0-9]+\.[0-9]+) ]]; then
+              notes_ver="${BASH_REMATCH[1]}"
+            fi
+          fi
+          echo "Detected version: ${notes_ver:-<none>}"
 
           if [ -n "$INPUT_TAG" ]; then
             echo "should_release=true" >> "$GITHUB_OUTPUT"

@@ -132,23 +132,18 @@ int wmain() {
         UserBindingResult original{S_OK, S_OK};
         check(original.preferences == S_OK && original.Status() == S_OK,
             "two-field fake binding result retains default successful preferences");
-        const auto script = UserProfileBindingScript(true);
-        const auto call = script.find(L"$api.Change($apiTip, $enable)");
-        const auto skip = script.find(L"if (-not $enable -and -not $ownControlProfile)");
-        check(script.find(L"$registryTip = '0804:" + GuidString(VoiceClsid) + GuidString(VoiceProfile) + L"'") != script.npos &&
-            script.find(L"$apiTip = '0x' + $registryTip") != script.npos && call != script.npos &&
-            script.find(L"$api.Change(", call + 1) == script.npos && skip != script.npos &&
-            skip < script.find(L"$api = [VoiceImeTargetInputApi]::new()") &&
-            script.find(L"Set-WinUserLanguageList") == script.npos && script.find(L"Get-WinUserLanguageList") == script.npos,
-            "fresh writer uses one documented API TIP; only disable may skip before loading input.dll");
-        const auto guardCode = script.find(L"$code = 16", call);
-        const auto guard = script.find(L"if ((Protected-Registry) -cne $before)", call);
-        const auto outcome = script.find(L"$code = if ($changed) { 0 } else { 13 }", call);
-        check(script.find(L"$path -ieq $targetPath -and $name -ieq $registryTip") != script.npos &&
-            script.find(L"InputMethodTips = @($tips | Sort-Object Value | ForEach-Object { $_.Name })") != script.npos &&
-            guardCode != script.npos && guard != script.npos && outcome != script.npos &&
-            call < guardCode && guardCode < guard && guard < outcome,
-            "fixed script guards non-own TIP order and postchecks even a FALSE API result");
+        const auto regTip = RegistryTipValueName();
+        const auto apiTip = ApiTipArgument();
+        check(regTip == L"0804:" + GuidString(VoiceClsid) + GuidString(VoiceProfile) &&
+            apiTip == L"0x" + regTip &&
+            IsTipLayoutPattern(regTip) &&
+            IsTipLayoutPattern(L"0409:00000409") &&
+            !IsTipLayoutPattern(L"CachedLanguageName") &&
+            IsSimplifiedChineseTag(L"zh-Hans") &&
+            IsSimplifiedChineseTag(L"zh-CN") &&
+            !IsSimplifiedChineseTag(L"zh-TW") &&
+            !IsSimplifiedChineseTag(L"en-US"),
+            "native user profile binding helpers match documented TIP and zh-Hans/0x0804 rules without PowerShell");
     }
     {
         Memory m; m.freshLayout = true;

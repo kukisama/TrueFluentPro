@@ -1,5 +1,6 @@
 #include "Common.h"
 #include "RegistrationQuery.h"
+#include "UserProfileBinding.h"
 #include <cstdio>
 
 namespace {
@@ -22,6 +23,13 @@ int Probe() {
 
 int wmain(int argc, wchar_t** argv) {
     // No implicit command, elevation, shell execution, regsvr32, or credential output.
+    if (argc == 3 && std::wstring(argv[1]) == L"--bind-user-tip") {
+        std::wstring mode = argv[2];
+        if (mode != L"enable" && mode != L"disable") return 2;
+        int code = VoiceRegistration::ExecuteNativeUserProfileBindingProcess(mode == L"enable");
+        std::printf("voice-target-tip:%d\n", code);
+        return code;
+    }
     if (argc < 3 && !(argc == 2 && (std::wstring(argv[1]) == L"--probe" || std::wstring(argv[1]) == L"--tsf-facts" ||
         std::wstring(argv[1]) == L"--tsf-diagnostics"))) {
         std::puts("usage: --register <dllAbsolute> <hostExeAbsolute> | --unregister <dllAbsolute> | --status <dllAbsolute> | --probe"); return 2;

@@ -170,10 +170,14 @@ namespace TrueFluentPro.Services
         }
 
         /// <summary>
-        /// 从 RELEASE_NOTES.md 解析当前版本号。
+        /// 从编译期嵌入的 Assets/versions.json 解析当前主程序版本号（兼容回退 RELEASE_NOTES.md）。
         /// </summary>
         public static Version ParseCurrentVersion()
         {
+            var embedded = AppVersionInfo.ParseAppVersion();
+            if (embedded.Major > 0 || embedded.Minor > 0 || embedded.Build > 0)
+                return embedded;
+
             var candidates = new[]
             {
                 Path.Combine(AppContext.BaseDirectory, "Assets", "RELEASE_NOTES.md"),

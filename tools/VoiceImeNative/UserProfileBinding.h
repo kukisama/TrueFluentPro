@@ -1,163 +1,319 @@
 #pragma once
 #include "RegistrationQuery.h"
-#include <wincrypt.h>
-#pragma comment(lib, "Crypt32.lib")
+#include <algorithm>
+#include <cstdio>
+#include <cstring>
 
 namespace VoiceRegistration {
-// Independently authored fixed-profile operation, not the GPL Weasel migration script.
-// Fresh same-token writer: never initialize International/TSF enumeration before ILOT.
-inline std::wstring UserProfileBindingScript(bool enable) {
-    return std::wstring(enable ? L"$enable = $true\n" : L"$enable = $false\n") +
-    L"$registryTip = '0804:" + GuidString(VoiceClsid) + GuidString(VoiceProfile) + L"'\n" + LR"PS(
-$apiTip = '0x' + $registryTip
-$ErrorActionPreference = 'Stop'
-$WarningPreference = 'SilentlyContinue'
-$InformationPreference = 'SilentlyContinue'
-$ProgressPreference = 'SilentlyContinue'
-Set-StrictMode -Version 2.0
-$code = 10
-$api = $null
-$base = $null
-function Registry-Values([string]$path, [string[]]$names, [bool]$language = $false) {
-    $key = $base.OpenSubKey($path, $false)
-    try {
-        $tips = @()
-        $rows = @(if ($null -ne $key) {
-            foreach ($name in ($key.GetValueNames() | Sort-Object)) {
-                if ($null -ne $names -and $names -cnotcontains $name) { continue }
-                if ($language -and ($name -ieq 'CachedLanguageName' -or
-                    ($path -ieq $targetPath -and $name -ieq $registryTip))) { continue }
-                $row = [ordered]@{ Name = $name; Kind = $key.GetValueKind($name).ToString()
-                    Value = $key.GetValue($name, $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames) }
-                if ($language -and $row.Kind -eq 'DWord' -and
-                    $name -match '^[0-9a-f]{4}:(?:[0-9a-f]{8}|\{[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\}\{[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\})$') {
-                    $tips += $row
-                } else { $row }
+
+inline std::wstring RegistryTipValueName() {
+    return L"0804:" + GuidString(VoiceClsid) + GuidString(VoiceProfile);
+}
+
+inline std::wstring ApiTipArgument() {
+    return L"0x" + RegistryTipValueName();
+}
+
+inline std::wstring LowercaseAscii(const std::wstring& s) {
+    std::wstring out = s;
+    for (wchar_t& c : out) {
+        if (c >= L'A' && c <= L'Z') c = static_cast<wchar_t>(c - L'A' + L'a');
+    }
+    return out;
+}
+
+inline bool IsTipLayoutPattern(const std::wstring& name) {
+    // Matches ^[0-9a-f]{4}:(?:[0-9a-f]{8}|\{[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\}\{[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\})$
+    auto hex = [](const std::wstring& s, size_t pos, size_t len) {
+        if (pos + len > s.size()) return false;
+        for (size_t i = 0; i < len; ++i) {
+            wchar_t c = s[pos + i];
+            if (!((c >= L'0' && c <= L'9') || (c >= L'a' && c <= L'f') || (c >= L'A' && c <= L'F'))) return false;
+        }
+        return true;
+    };
+    auto guid = [&](const std::wstring& s, size_t pos) {
+        return pos + 38 <= s.size() && s[pos] == L'{' && hex(s, pos + 1, 8) && s[pos + 9] == L'-' &&
+            hex(s, pos + 10, 4) && s[pos + 14] == L'-' && hex(s, pos + 15, 4) && s[pos + 19] == L'-' &&
+            hex(s, pos + 20, 4) && s[pos + 24] == L'-' && hex(s, pos + 25, 12) && s[pos + 37] == L'}';
+    };
+    if (!hex(name, 0, 4) || name.size() < 5 || name[4] != L':') return false;
+    if (name.size() == 13) return hex(name, 5, 8);
+    if (name.size() == 81) return guid(name, 5) && guid(name, 43);
+    return false;
+}
+
+inline bool IsSimplifiedChineseTag(const std::wstring& tag) {
+    if (_wcsicmp(tag.c_str(), L"zh-Hans") == 0) return true;
+    LCID lcid = LocaleNameToLCID(tag.c_str(), 0);
+    return lcid == 0x0804;
+}
+
+inline bool ReadMultiSzLanguages(HKEY key, std::vector<std::wstring>& tags) {
+    tags.clear();
+    DWORD type = 0, bytes = 0;
+    LONG err = RegQueryValueExW(key, L"Languages", nullptr, &type, nullptr, &bytes);
+    if (err != ERROR_SUCCESS || type != REG_MULTI_SZ || bytes < sizeof(wchar_t) || bytes % sizeof(wchar_t) != 0)
+        return false;
+    std::vector<wchar_t> buf(bytes / sizeof(wchar_t));
+    err = RegQueryValueExW(key, L"Languages", nullptr, &type, reinterpret_cast<BYTE*>(buf.data()), &bytes);
+    if (err != ERROR_SUCCESS || type != REG_MULTI_SZ) return false;
+    size_t count = bytes / sizeof(wchar_t);
+    size_t start = 0;
+    while (start < count && buf[start] != L'\0') {
+        size_t end = start;
+        while (end < count && buf[end] != L'\0') ++end;
+        tags.emplace_back(buf.data() + start, end - start);
+        start = end + 1;
+    }
+    return !tags.empty();
+}
+
+inline bool AppendKeySnapshot(const std::wstring& subPath, const std::vector<std::wstring>* filterNames,
+    bool languageMode, const std::wstring& targetPath, const std::wstring& ownRegistryTip, std::wstring& out) {
+    HKEY key{};
+    LONG err = RegOpenKeyExW(HKEY_CURRENT_USER, subPath.c_str(), 0, KEY_READ | KEY_WOW64_64KEY, &key);
+    out += L"[Key:" + subPath + L"|Exists:";
+    if (err == ERROR_FILE_NOT_FOUND || err == ERROR_PATH_NOT_FOUND) {
+        out += L"0]";
+        return true;
+    }
+    if (err != ERROR_SUCCESS) return false;
+    out += L"1|";
+
+    struct ValEntry {
+        std::wstring sortKey;
+        std::wstring name;
+        DWORD type = 0;
+        std::vector<BYTE> data;
+    };
+    std::vector<ValEntry> entries;
+    for (DWORD idx = 0;; ++idx) {
+        wchar_t nameBuf[16384]{};
+        DWORD nameLen = ARRAYSIZE(nameBuf), type = 0, dataLen = 0;
+        err = RegEnumValueW(key, idx, nameBuf, &nameLen, nullptr, &type, nullptr, &dataLen);
+        if (err == ERROR_NO_MORE_ITEMS) break;
+        if (err != ERROR_SUCCESS) { RegCloseKey(key); return false; }
+        std::wstring name(nameBuf, nameLen);
+        if (filterNames) {
+            bool match = false;
+            for (const auto& f : *filterNames) if (name == f) { match = true; break; }
+            if (!match) continue;
+        }
+        if (languageMode) {
+            if (_wcsicmp(name.c_str(), L"CachedLanguageName") == 0) continue;
+            if (_wcsicmp(subPath.c_str(), targetPath.c_str()) == 0 &&
+                _wcsicmp(name.c_str(), ownRegistryTip.c_str()) == 0) continue;
+        }
+        std::vector<BYTE> data(dataLen);
+        nameLen = ARRAYSIZE(nameBuf);
+        err = RegEnumValueW(key, idx, nameBuf, &nameLen, nullptr, &type,
+            dataLen ? data.data() : nullptr, &dataLen);
+        if (err != ERROR_SUCCESS) { RegCloseKey(key); return false; }
+        data.resize(dataLen);
+        entries.push_back({LowercaseAscii(name), name, type, std::move(data)});
+    }
+    RegCloseKey(key);
+
+    std::sort(entries.begin(), entries.end(), [](const ValEntry& a, const ValEntry& b) {
+        return a.sortKey != b.sortKey ? a.sortKey < b.sortKey : a.name < b.name;
+    });
+
+    struct TipRank { DWORD rank; std::wstring sortKey; std::wstring name; };
+    std::vector<TipRank> tips;
+    for (const auto& e : entries) {
+        if (languageMode && e.type == REG_DWORD && e.data.size() == sizeof(DWORD) && IsTipLayoutPattern(e.name)) {
+            DWORD val = 0;
+            std::memcpy(&val, e.data.data(), sizeof(DWORD));
+            tips.push_back({val, e.sortKey, e.name});
+        } else {
+            wchar_t hdr[64]{};
+            std::swprintf(hdr, ARRAYSIZE(hdr), L"%lu:%zu:", static_cast<unsigned long>(e.type), e.data.size());
+            out += e.name + L"=" + hdr;
+            for (BYTE b : e.data) {
+                wchar_t hx[4]{};
+                std::swprintf(hx, ARRAYSIZE(hx), L"%02X", static_cast<unsigned>(b));
+                out += hx;
             }
-        })
-        # Only TIP ranks are relative: retain every non-own TIP in rank order.
-        # Unknown values, spelling/handwriting, defaults, Preload and Substitutes stay exact.
-        return [ordered]@{ Exists = $null -ne $key; Values = $rows
-            InputMethodTips = @($tips | Sort-Object Value | ForEach-Object { $_.Name }) }
-    } finally { if ($null -ne $key) { $key.Dispose() } }
-}
-function Protected-Registry {
-    $state = @((Registry-Values 'Control Panel\International\User Profile' @('Languages', 'Default')),
-        (Registry-Values 'Keyboard Layout\Preload' $null), (Registry-Values 'Keyboard Layout\Substitutes' $null))
-    foreach ($tag in $tags) {
-        $state += [ordered]@{ LanguageTag = $tag
-            Settings = (Registry-Values ('Control Panel\International\User Profile\' + $tag) $null $true) }
+            out += L";";
+        }
     }
-    return Microsoft.PowerShell.Utility\ConvertTo-Json -InputObject $state -Depth 10 -Compress
+    std::sort(tips.begin(), tips.end(), [](const TipRank& a, const TipRank& b) {
+        return a.rank != b.rank ? a.rank < b.rank : a.sortKey < b.sortKey;
+    });
+    out += L"|Tips:";
+    for (const auto& t : tips) out += t.name + L",";
+    out += L"]";
+    return true;
 }
-try {
-    if ($PSVersionTable.PSVersion.Major -ne 5 -or $PSVersionTable.PSVersion.Minor -ne 1 -or
-        -not [Environment]::Is64BitProcess) { throw 'host' }
-    $code = 11
-    $base = [Microsoft.Win32.RegistryKey]::OpenBaseKey('CurrentUser', 'Registry64')
-    $root = $base.OpenSubKey('Control Panel\International\User Profile', $false)
+
+inline bool SnapshotProtectedRegistry(const std::vector<std::wstring>& tags, const std::wstring& targetPath,
+    const std::wstring& ownRegistryTip, std::wstring& snapshot) {
+    snapshot.clear();
+    const std::vector<std::wstring> rootFilter = {L"Languages", L"Default"};
+    if (!AppendKeySnapshot(L"Control Panel\\International\\User Profile", &rootFilter, false, targetPath, ownRegistryTip, snapshot))
+        return false;
+    if (!AppendKeySnapshot(L"Keyboard Layout\\Preload", nullptr, false, targetPath, ownRegistryTip, snapshot))
+        return false;
+    if (!AppendKeySnapshot(L"Keyboard Layout\\Substitutes", nullptr, false, targetPath, ownRegistryTip, snapshot))
+        return false;
+    for (const auto& tag : tags) {
+        if (!AppendKeySnapshot(L"Control Panel\\International\\User Profile\\" + tag, nullptr, true, targetPath, ownRegistryTip, snapshot))
+            return false;
+    }
+    return true;
+}
+
+// Fresh 64-bit native process worker: never initializes TSF COM before calling input.dll!InstallLayoutOrTip.
+inline int ExecuteNativeUserProfileBindingProcess(bool enable) {
+#ifndef _WIN64
+    (void)enable;
+    return 10;
+#else
+    const std::wstring ownRegistryTip = RegistryTipValueName();
+    const std::wstring apiTip = ApiTipArgument();
+
+    HKEY rootKey{};
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Control Panel\\International\\User Profile",
+        0, KEY_READ | KEY_WOW64_64KEY, &rootKey) != ERROR_SUCCESS) {
+        return 11;
+    }
+    std::vector<std::wstring> tags;
+    bool okLanguages = ReadMultiSzLanguages(rootKey, tags);
+    RegCloseKey(rootKey);
+    if (!okLanguages) return 11;
+
+    std::vector<std::wstring> targets;
+    for (const auto& tag : tags) {
+        if (IsSimplifiedChineseTag(tag)) targets.push_back(tag);
+    }
+    if (targets.size() != 1) return 11;
+
+    const std::wstring targetPath = L"Control Panel\\International\\User Profile\\" + targets[0];
+    HKEY targetKey{};
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, targetPath.c_str(), 0, KEY_READ | KEY_WOW64_64KEY, &targetKey) != ERROR_SUCCESS) {
+        return 11;
+    }
+    DWORD tipType = 0, tipBytes = 0;
+    bool ownControlProfile = RegQueryValueExW(targetKey, ownRegistryTip.c_str(), nullptr, &tipType, nullptr, &tipBytes) == ERROR_SUCCESS;
+    RegCloseKey(targetKey);
+
+    std::wstring before, checkBefore;
+    if (!SnapshotProtectedRegistry(tags, targetPath, ownRegistryTip, before) ||
+        !SnapshotProtectedRegistry(tags, targetPath, ownRegistryTip, checkBefore) ||
+        before != checkBefore) {
+        return 12;
+    }
+
+    if (!enable && !ownControlProfile) {
+        // Exact registry entry absent: read-only skip, not proof of TSF detachment.
+        return 1;
+    }
+
+    HMODULE inputModule = LoadLibraryExW(L"input.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
+    if (!inputModule) return 15;
+    using InstallLayoutOrTipFn = BOOL(WINAPI*)(LPCWSTR psz, DWORD dwFlags);
+    auto installFn = reinterpret_cast<InstallLayoutOrTipFn>(GetProcAddress(inputModule, "InstallLayoutOrTip"));
+    if (!installFn) {
+        FreeLibrary(inputModule);
+        return 15;
+    }
+
+    BOOL changed = FALSE;
     try {
-        if ($null -eq $root -or $root.GetValueNames() -notcontains 'Languages' -or
-            $root.GetValueKind('Languages') -ne [Microsoft.Win32.RegistryValueKind]::MultiString) { throw 'languages' }
-        $tags = @($root.GetValue('Languages'))
-        $targets = @(foreach ($tag in $tags) {
-            $culture = [Globalization.CultureInfo]::GetCultureInfo($tag)
-            if ($culture.IsNeutralCulture -and $culture.Name -ieq 'zh-Hans') {
-                $culture = [Globalization.CultureInfo]::CreateSpecificCulture($culture.Name)
+        // Flags: 0 (enable) or 1 (ILOT_UNINSTALL).
+        changed = installFn(apiTip.c_str(), enable ? 0u : 1u);
+    } catch (...) {
+        FreeLibrary(inputModule);
+        return 14;
+    }
+    FreeLibrary(inputModule);
+
+    std::wstring after;
+    if (!SnapshotProtectedRegistry(tags, targetPath, ownRegistryTip, after) || after != before) {
+        return 16;
+    }
+    return changed ? 0 : 13;
+#endif
+}
+
+inline HRESULT ResolveNative64BitRegisterHelper(std::wstring& exePath) {
+    exePath.clear();
+    wchar_t image[32768]{};
+    DWORD size = GetModuleFileNameW(nullptr, image, ARRAYSIZE(image));
+    if (!size || size >= ARRAYSIZE(image)) return HRESULT_FROM_WIN32(ERROR_INSUFFICIENT_BUFFER);
+    std::wstring current(image, size);
+#ifdef _WIN64
+    auto slash = current.find_last_of(L'\\');
+    if (slash != current.npos && _wcsicmp(current.c_str() + slash + 1, L"VoiceImeRegister.exe") == 0 && AbsoluteFile(current)) {
+        exePath = current;
+        return S_OK;
+    }
+#endif
+    HMODULE module{};
+    if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+        reinterpret_cast<LPCWSTR>(&QueryTsfRegistrationFacts), &module)) {
+        return HRESULT_FROM_WIN32(GetLastError());
+    }
+    size = GetModuleFileNameW(module, image, ARRAYSIZE(image));
+    if (!size || size >= ARRAYSIZE(image)) return E_FAIL;
+    std::wstring modPath(image, size);
+
+    auto findX64Helper = [](const std::wstring& baseRoot, std::wstring& out) -> bool {
+        const std::wstring x64Dir = baseRoot + L"\\win-x64";
+        const std::wstring direct = x64Dir + L"\\VoiceImeRegister.exe";
+        if (AbsoluteFile(direct)) { out = direct; return true; }
+        WIN32_FIND_DATAW fd{};
+        HANDLE hFind = FindFirstFileW((x64Dir + L"\\*").c_str(), &fd);
+        if (hFind == INVALID_HANDLE_VALUE) return false;
+        do {
+            if ((fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) &&
+                wcscmp(fd.cFileName, L".") != 0 && wcscmp(fd.cFileName, L"..") != 0) {
+                std::wstring candidate = x64Dir + L"\\" + fd.cFileName + L"\\VoiceImeRegister.exe";
+                if (AbsoluteFile(candidate)) {
+                    FindClose(hFind);
+                    out = candidate;
+                    return true;
+                }
             }
-            if (-not $culture.IsNeutralCulture -and $culture.LCID -eq 0x0804) { $tag }
-        })
-        if ($targets.Count -ne 1) { throw 'target-not-unique' }
-    } finally { if ($null -ne $root) { $root.Dispose() } }
-    $targetPath = 'Control Panel\International\User Profile\' + $targets[0]
-    $target = $base.OpenSubKey($targetPath, $false)
-    try {
-        if ($null -eq $target) { throw 'target-language-missing' }
-        $ownControlProfile = $target.GetValueNames() -icontains $registryTip
-    } finally { if ($null -ne $target) { $target.Dispose() } }
-    $code = 12
-    $before = Protected-Registry
-    if ((Protected-Registry) -cne $before) { throw 'concurrent-change' }
-    if (-not $enable -and -not $ownControlProfile) {
-        $code = 1 # Exact registry entry absent: read-only skip, not proof of TSF detachment.
-    } else {
-        $code = 15
-        Add-Type -TypeDefinition @'
-using System;
-using System.IO;
-using System.Runtime.InteropServices;
-public sealed class VoiceImeTargetInputApi : IDisposable {
-    [DllImport("kernel32.dll", CharSet=CharSet.Unicode, ExactSpelling=true)]
-    static extern IntPtr LoadLibraryExW(string path, IntPtr file, uint flags);
-    [DllImport("kernel32.dll", CharSet=CharSet.Ansi, ExactSpelling=true)]
-    static extern IntPtr GetProcAddress(IntPtr module, string name);
-    [DllImport("kernel32.dll", ExactSpelling=true)]
-    [return: MarshalAs(UnmanagedType.Bool)] static extern bool FreeLibrary(IntPtr module);
-    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    delegate bool Install([MarshalAs(UnmanagedType.LPWStr)] string psz, uint dwFlags);
-    IntPtr module;
-    Install install;
-    public VoiceImeTargetInputApi() {
-        module = LoadLibraryExW(Path.Combine(Environment.SystemDirectory, "input.dll"), IntPtr.Zero, 0x00000800);
-        if (module == IntPtr.Zero) throw new InvalidOperationException("SystemInputUnavailable");
-        IntPtr address = GetProcAddress(module, "InstallLayoutOrTip");
-        if (address == IntPtr.Zero) { Dispose(); throw new InvalidOperationException("TargetApiUnavailable"); }
-        install = (Install)Marshal.GetDelegateForFunctionPointer(address, typeof(Install));
+        } while (FindNextFileW(hFind, &fd));
+        FindClose(hFind);
+        return false;
+    };
+
+    std::wstring cur = modPath;
+    for (int depth = 0; depth < 4; ++depth) {
+        auto pos = cur.find_last_of(L'\\');
+        if (pos == cur.npos) break;
+        cur.resize(pos);
+        auto parentPos = cur.find_last_of(L'\\');
+        if (parentPos == cur.npos) break;
+        std::wstring folder = cur.substr(parentPos + 1);
+        if (_wcsicmp(folder.c_str(), L"win-x64") == 0 || _wcsicmp(folder.c_str(), L"win-x86") == 0) {
+            std::wstring pkgRoot = cur.substr(0, parentPos);
+            if (findX64Helper(pkgRoot, exePath)) return S_OK;
+        }
     }
-    public bool Change(string tip, bool enable) { return install(tip, enable ? 0u : 1u); }
-    public void Dispose() {
-        if (module != IntPtr.Zero) { FreeLibrary(module); module = IntPtr.Zero; }
-    }
+    return HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND);
 }
-'@
-        $api = [VoiceImeTargetInputApi]::new()
-        $code = 14
-        # Exactly one fixed TIP with the documented 0x LangID; flags are 0 or ILOT_UNINSTALL.
-        $changed = $api.Change($apiTip, $enable)
-        $code = 16
-        if ((Protected-Registry) -cne $before) { throw 'protected-registry-changed' }
-        $code = if ($changed) { 0 } else { 13 } # FALSE is unspecified failure, not GetLastError.
-    }
-    # Disk guard only. External fresh-process input checks and native EnumProfiles/State/probe
-    # remain mandatory; a successful BOOL is not a complete installation verdict.
-} catch { # No broad compensation here: the outer native policy rolls back only this TIP.
-} finally {
-    if ($null -ne $base) { $base.Dispose() }
-    if ($null -ne $api) { $api.Dispose() }
-}
-[Console]::WriteLine(('voice-target-tip:{0}' -f $code))
-exit $code
-)PS";
-}
+
 inline HRESULT ChangeUserProfileBinding(bool enable) {
     wchar_t windows[MAX_PATH]{};
     UINT size = GetWindowsDirectoryW(windows, ARRAYSIZE(windows));
     if (!size) return HRESULT_FROM_WIN32(GetLastError());
     if (size >= ARRAYSIZE(windows)) return HRESULT_FROM_WIN32(ERROR_INSUFFICIENT_BUFFER);
-    std::wstring directory = windows;
-#ifdef _WIN64
-    directory += L"\\System32";
-#else
+#ifndef _WIN64
     BOOL wow64 = FALSE;
     if (!IsWow64Process(GetCurrentProcess(), &wow64)) return HRESULT_FROM_WIN32(GetLastError());
-    if (!wow64) return HRESULT_FROM_WIN32(ERROR_NOT_SUPPORTED); // This operation requires the native 64-bit host.
-    directory += L"\\Sysnative";
+    if (!wow64) return HRESULT_FROM_WIN32(ERROR_NOT_SUPPORTED);
 #endif
-    const auto exe = directory + L"\\WindowsPowerShell\\v1.0\\powershell.exe";
-    const auto script = UserProfileBindingScript(enable);
-    DWORD chars = 0;
-    const auto bytes = reinterpret_cast<const BYTE*>(script.data());
-    const auto count = static_cast<DWORD>(script.size() * sizeof(wchar_t)); // Windows wchar_t is UTF-16LE.
-    constexpr DWORD flags = CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF;
-    if (!CryptBinaryToStringW(bytes, count, flags, nullptr, &chars)) return HRESULT_FROM_WIN32(GetLastError());
-    std::wstring encoded(chars, L'\0');
-    if (!CryptBinaryToStringW(bytes, count, flags, encoded.data(), &chars)) return HRESULT_FROM_WIN32(GetLastError());
-    encoded.resize(chars);
-    std::wstring command = QuoteArgument(exe) + L" -NoLogo -NoProfile -NonInteractive -EncodedCommand " + encoded;
+    std::wstring exe;
+    HRESULT resolveHr = ResolveNative64BitRegisterHelper(exe);
+    if (FAILED(resolveHr)) return resolveHr;
+
+    std::wstring command = QuoteArgument(exe) + (enable ? L" --bind-user-tip enable" : L" --bind-user-tip disable");
     if (command.size() >= 32767) return HRESULT_FROM_WIN32(ERROR_INSUFFICIENT_BUFFER);
-    // Same process primary token, no runas/Explorer token, no PATH lookup, no temporary ps1.
-    // NUL prevents either stream from filling a pipe; the script emits only a fixed safe code.
+
     SECURITY_ATTRIBUTES security{sizeof(SECURITY_ATTRIBUTES), nullptr, TRUE};
     QueryHandle io, process, thread;
     io.value = CreateFileW(L"NUL", GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
@@ -166,8 +322,6 @@ inline HRESULT ChangeUserProfileBinding(bool enable) {
     STARTUPINFOW startup{}; startup.cb = sizeof(startup); startup.dwFlags = STARTF_USESTDHANDLES;
     startup.hStdInput = startup.hStdOutput = startup.hStdError = io.value;
     PROCESS_INFORMATION child{};
-    // Sysnative selects the native executable from an x86 parent, but is not a
-    // real directory in that x64 child's namespace (Add-Type/csc requires one).
     if (!CreateProcessW(exe.c_str(), command.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW,
         nullptr, windows, &startup, &child)) return HRESULT_FROM_WIN32(GetLastError());
     process.value = child.hProcess; thread.value = child.hThread;

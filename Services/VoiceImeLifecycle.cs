@@ -408,16 +408,9 @@ public sealed partial class VoiceImeRegistrationService
         }
     }
 
-    public static string GetProductVersionString()
-    {
-        var ver = UpdateService.ParseCurrentVersion();
-        if (ver.Major > 0 || ver.Minor > 0 || ver.Build > 0)
-            return $"{ver.Major}.{ver.Minor}.{Math.Max(0, ver.Build)}";
-        var asmVer = typeof(VoiceImeRegistrationService).Assembly.GetName().Version;
-        if (asmVer != null && (asmVer.Major > 0 || asmVer.Minor > 0))
-            return $"{asmVer.Major}.{asmVer.Minor}.{Math.Max(0, asmVer.Build)}";
-        return "2.2.3";
-    }
+    public static string GetProductVersionString() => AppVersionInfo.AppVersionString;
+
+    public static string GetVoiceImeVersionString() => AppVersionInfo.VoiceImeVersionString;
 
     private PackagePlan PlanPackage()
     {
@@ -426,8 +419,9 @@ public sealed partial class VoiceImeRegistrationService
         if (!File.Exists(host)) throw new RegistrationException("缺少主程序 TrueFluentPro.exe，无法安装/修复输入法。");
         var version = ReadPackageVersion(Architectures.Select(GetPackageEntry))
             ?? throw new RegistrationException("输入法组件缺少版本信息或双架构版本不一致，请重新构建完整组件后再安装。");
-        if (version != GetProductVersionString())
-            throw new RegistrationException($"待安装输入法版本 v{version} 与主程序 v{GetProductVersionString()} 不一致，请使用同版本完整包。");
+        var expectedImeVersion = GetVoiceImeVersionString();
+        if (version != expectedImeVersion)
+            throw new RegistrationException($"待安装输入法版本 v{version} 与配置版本 v{expectedImeVersion}（主程序 v{GetProductVersionString()}）不一致，请使用同版本完整包。");
         var plan = new PackagePlan { Package = GetPackageIdentity(), HostPath = host, HostHash = HashFile(host),
             PackageVersion = version };
         // 包内容身份与部署目录分开：旧目录若已排队删除，同版重装也改用新目录，
@@ -580,7 +574,8 @@ public sealed partial class VoiceImeRegistrationService
                 if (!ext.Equals(".dll", StringComparison.OrdinalIgnoreCase)
                     && !ext.Equals(".exe", StringComparison.OrdinalIgnoreCase)
                     && !ext.Equals(".json", StringComparison.OrdinalIgnoreCase)
-                    && !ext.Equals(".pdb", StringComparison.OrdinalIgnoreCase)) continue;
+                    && !ext.Equals(".pdb", StringComparison.OrdinalIgnoreCase)
+                    && !ext.Equals(".md", StringComparison.OrdinalIgnoreCase)) continue;
                 var dest = Path.Combine(hostDir, Path.GetFileName(file));
                 try { File.Copy(file, dest, overwrite: true); } catch { }
             }

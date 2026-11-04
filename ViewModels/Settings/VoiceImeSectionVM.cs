@@ -52,7 +52,17 @@ namespace TrueFluentPro.ViewModels.Settings
         }
 
         public bool IsWindows => OperatingSystem.IsWindows();
-        public string ImeVersionText => $"版本 v{VoiceImeRegistrationService.GetProductVersionString()}（跟随主产品版本）";
+        public string ImeVersionText
+        {
+            get
+            {
+                var imeVer = VoiceImeRegistrationService.GetVoiceImeVersionString();
+                var appVer = VoiceImeRegistrationService.GetProductVersionString();
+                return imeVer == appVer
+                    ? $"版本 v{imeVer}（主程序 v{appVer}）"
+                    : $"输入法版本 v{imeVer}（主程序 v{appVer}）";
+            }
+        }
         public bool CanManageRegistration => IsWindows && !IsRegistrationBusy;
         public List<ResourceOption> SpeechResources => _speechResources;
         public List<ModelOption> SpeechModels => _speechModels;

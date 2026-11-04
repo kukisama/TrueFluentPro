@@ -216,7 +216,7 @@ HRESULT Enumerate(ITfInputProcessorProfileMgr* manager, ITfCategoryMgr* categori
 }
 class WindowsBackend final : public Backend {
     HANDLE mutex{};
-    bool locked = false, initialized = false, uninitialize = false, changedTsf = false;
+    bool locked = false, initialized = false, uninitialize = false, changedTsf = false, enabledTsf = false;
     ComPtr<ITfInputProcessorProfileMgr> profiles;
     ComPtr<ITfCategoryMgr> categories;
     HRESULT Managers() {
@@ -332,6 +332,23 @@ public:
                 }
                 hr = FreshTsfFacts(facts);
                 Trace("AwaitUnregisterVisibility", hr);
+            }
+        }
+        // Observed after fast native InstallLayoutOrTip: HKLM TIP/profile/category and HKCU
+        // language-list binding are persisted, while fresh EnumProfiles may take a few hundred
+        // milliseconds to reflect profile=1/enabled=1/keyboard=1 (previously masked by ~1s PowerShell startup).
+        if (hr == S_OK && enabledTsf && s.machine[0].owned && s.profileKeys && !s.otherProfiles &&
+            (!facts.profile || !facts.enabled || !facts.keyboard)) {
+            const auto deadline = GetTickCount64() + 3000;
+            while (hr == S_OK && (!facts.profile || !facts.enabled || !facts.keyboard) && GetTickCount64() < deadline) {
+                const DWORD wait = MsgWaitForMultipleObjectsEx(0, nullptr, 100, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
+                if (wait == WAIT_FAILED) { hr = HRESULT_FROM_WIN32(GetLastError()); break; }
+                MSG message{};
+                while (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE)) {
+                    TranslateMessage(&message); DispatchMessageW(&message);
+                }
+                hr = FreshTsfFacts(facts);
+                Trace("AwaitRegisterVisibility", hr);
             }
         }
         if (SUCCEEDED(hr)) {
@@ -635,6 +652,7 @@ public:
     UserBindingResult Enable(bool enable) override {
         HRESULT ready = WriteManagers();
         changedTsf = true;
+        enabledTsf = enable;
         HRESULT preferences = S_OK;
         auto result = ChangeUserBinding(enable, [&](bool value) {
             ComPtr<ITfInputProcessorProfiles> userProfiles;

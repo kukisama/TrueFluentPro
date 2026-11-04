@@ -12,9 +12,12 @@
 
     <AppIconPng>Assets\AppIcon.png</AppIconPng>
     <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
-    <Version>2.2.3</Version>
-    <FileVersion>2.2.3.0</FileVersion>
-    <AssemblyVersion>2.2.3.0</AssemblyVersion>
+    <_VersionsJsonContent Condition="Exists('Assets\versions.json')">$([System.IO.File]::ReadAllText('$(MSBuildProjectDirectory)\Assets\versions.json'))</_VersionsJsonContent>
+    <_ParsedAppVersion Condition="'$(_VersionsJsonContent)' != ''">$([System.Text.RegularExpressions.Regex]::Match('$(_VersionsJsonContent)', '"appVersion"\s*:\s*"(\d+\.\d+\.\d+)"').Groups[1].Value)</_ParsedAppVersion>
+    <Version Condition="'$(_ParsedAppVersion)' != ''">$(_ParsedAppVersion)</Version>
+    <Version Condition="'$(Version)' == ''">2.2.3</Version>
+    <FileVersion>$(Version).0</FileVersion>
+    <AssemblyVersion>$(Version).0</AssemblyVersion>
   </PropertyGroup>
 
   <!-- macOS 构建时添加条件编译符号 -->
@@ -76,6 +79,7 @@
     <AvaloniaResource Include="Assets\**" />
     <EmbeddedResource Include="Assets\billing-tiers.json" LogicalName="TrueFluentPro.Assets.billing-tiers.json" />
     <EmbeddedResource Include="Assets\image-models.json" LogicalName="TrueFluentPro.Assets.image-models.json" />
+    <EmbeddedResource Include="Assets\versions.json" LogicalName="TrueFluentPro.Assets.versions.json" Link="versions.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

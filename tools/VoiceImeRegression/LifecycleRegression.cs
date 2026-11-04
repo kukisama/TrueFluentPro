@@ -39,23 +39,24 @@ internal static class LifecycleRegression
                 File.WriteAllText(path, saved.ToJsonString());
             var writes = f.Writes;
             var productVersion = VoiceImeRegistrationService.GetProductVersionString();
+            var imeVersion = VoiceImeRegistrationService.GetVoiceImeVersionString();
             var status = await f.Instance.RefreshStatusAsync();
-            Check(status.Succeeded && status.Message.Contains("已安装组件 v" + productVersion)
+            Check(status.Succeeded && status.Message.Contains("已安装组件 v" + imeVersion)
                 && !status.Message.Contains("v1.0.0.0"), "旧清单版本覆盖了实际组件版本：" + status.Message);
             Check((await f.Instance.RegisterAsync()).Succeeded && f.Writes == writes
-                && JsonNode.Parse(File.ReadAllText(f.Manifest))!["PackageVersion"]!.GetValue<string>() == productVersion,
+                && JsonNode.Parse(File.ReadAllText(f.Manifest))!["PackageVersion"]!.GetValue<string>() == imeVersion,
                 "同包版本元数据修复未收敛，或重复登记组件");
             f.BinaryVersion = "2.2.1.0";
             status = await f.Instance.RefreshStatusAsync();
             Check(status.Succeeded && status.Message.Contains("已安装组件 v2.2.1")
                 && status.Message.Contains("当前主程序 v" + productVersion), "旧组件被当前程序版本冒充");
             var rejected = await f.Instance.RegisterAsync();
-            Check(!rejected.Succeeded && rejected.Message.Contains("与主程序") && f.Writes == writes,
+            Check(!rejected.Succeeded && rejected.Message.Contains("与配置版本") && f.Writes == writes,
                 "版本不一致的待安装包没有在写入前拒绝");
             f.BinaryVersion = null;
             status = await f.Instance.RefreshStatusAsync();
             Check(status.Succeeded && status.Message.Contains("已安装组件版本未知")
-                && !status.Message.Contains("已安装组件 v" + productVersion), "无版本资源的旧组件被伪报新版");
+                && !status.Message.Contains("已安装组件 v" + imeVersion), "无版本资源的旧组件被伪报新版");
         });
         await Case("observed-reboot-queue-prefix-reserves-exact-path-only", () =>
         {
@@ -498,7 +499,7 @@ internal static class LifecycleRegression
     {
         internal readonly string Root, SystemRoot, UserRoot;
         internal string Source = "", Sid = "S-1-5-21-111-222-333-1001", Host = "";
-        internal string? BinaryVersion = VoiceImeRegistrationService.GetProductVersionString() + ".0";
+        internal string? BinaryVersion = VoiceImeRegistrationService.GetVoiceImeVersionString() + ".0";
         internal string? ExpectedStage, FailRegisterRoot, FailDeletePath, MappedImage;
         internal bool Admin = true, Partial, ApiOnly, FailRemove, WaitFails;
         internal int Writes, Removals, HelperCalls, ScheduleCalls, TransientSharing;

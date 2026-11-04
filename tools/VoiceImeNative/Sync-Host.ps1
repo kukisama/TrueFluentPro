@@ -25,7 +25,7 @@ if ((Test-Path -LiteralPath $hostDir) -and (Test-Path -LiteralPath (Join-Path $h
 New-Item -ItemType Directory -Force -Path $hostDir | Out-Null
 
 foreach ($file in (Get-ChildItem -LiteralPath $TargetDir -File)) {
-    if ($file.Extension -in @('.dll', '.exe', '.json', '.pdb')) {
+    if ($file.Extension -in @('.dll', '.exe', '.json', '.pdb', '.md')) {
         Copy-Item -LiteralPath $file.FullName -Destination (Join-Path $hostDir $file.Name) -Force -ErrorAction SilentlyContinue
     }
 }
