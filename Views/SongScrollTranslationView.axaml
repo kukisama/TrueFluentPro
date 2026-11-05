@@ -1,0 +1,168 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ xmlns:views="using:TrueFluentPro.Views" xmlns:controls="using:TrueFluentPro.Controls" xmlns:icons="https://github.com/projektanker/icons.avalonia"
+ x:Class="TrueFluentPro.Views.SongScrollTranslationView" x:CompileBindings="False" Background="#E6DFD1" Foreground="#111823" FontFamily="Microsoft YaHei UI, Microsoft YaHei">
+  <UserControl.Styles><StyleInclude Source="avares://TrueFluentPro/Styles/SongScrollControls.axaml"/></UserControl.Styles>
+  <UserControl.Resources><views:SongScrollFontLabelConverter x:Key="ScrollFontLabel"/><controls:LevelToHeightConverter x:Key="ScrollLevelHeight" MaxHeight="26"/></UserControl.Resources>
+  <Grid Name="ScrollViewport" ClipToBounds="True">
+    <Viewbox Name="ScrollScale" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Top">
+      <Canvas Name="ScrollStage" Width="2560" Height="1440" UseLayoutRounding="False">
+        <Canvas.Background><ImageBrush Source="avares://TrueFluentPro/Assets/Appearance/SongScroll/desk-paper.png" TileMode="Tile" DestinationRect="0,0,180,180"/></Canvas.Background>
+        <Canvas Name="ScrollOrnaments" Width="2560" Height="1440" IsHitTestVisible="False"/>
+        <Grid Canvas.Left="0" Canvas.Top="0" Width="2560" Height="66" ZIndex="30" ColumnDefinitions="*,80,80,80">
+          <Grid.Background><LinearGradientBrush StartPoint="0%,50%" EndPoint="100%,50%"><GradientStop Offset="0.12" Color="#00FFFAF3"/><GradientStop Offset="0.6" Color="#40FFFAF3"/><GradientStop Offset="1" Color="#A6FFFAF6"/></LinearGradientBrush></Grid.Background>
+          <Border Name="ScrollTitleDrag" Background="Transparent" PointerPressed="TitleDrag">
+            <TextBlock Text="译以载道 · 见行更远" FontFamily="{StaticResource ScrollKai}" FontSize="27" LetterSpacing="3" Foreground="#32332F" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,46,0"/>
+          </Border>
+          <Button Name="ScrollMinimize" Grid.Column="1" Classes="caption" Click="Minimize" AutomationProperties.Name="最小化"><Path Data="M1 12 H23" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="2.5" Width="24" Height="24"/></Button>
+          <Button Name="ScrollMaximize" Grid.Column="2" Classes="caption" Click="Maximize" AutomationProperties.Name="最大化"><Path Name="ScrollMaximizeMark" Data="M2 2 H22 V22 H2 Z" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="2.5" Width="24" Height="24"/></Button>
+          <Button Name="ScrollClose" Grid.Column="3" Classes="caption close" Click="CloseWindow" AutomationProperties.Name="关闭"><Path Data="M1 1 L24 24 M24 1 L1 24" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="2.5" Width="25" Height="25"/></Button>
+        </Grid>
+        <StackPanel Canvas.Left="70" Canvas.Top="109" Width="270" Height="98" ZIndex="25" Spacing="14">
+          <StackPanel Orientation="Horizontal" Spacing="14">
+            <Border Width="49" Height="49" BorderThickness="3" BorderBrush="#A33A2A" CornerRadius="3" Background="#B44731"><TextBlock Text="译见&#10;无界" TextAlignment="Center" Foreground="#FFF5E6" FontFamily="{StaticResource ScrollKai}" FontSize="21" LineHeight="21"/></Border>
+            <TextBlock Text="译见" FontFamily="{StaticResource ScrollKai}" FontWeight="Bold" FontSize="44"/><TextBlock Text="Pro" FontFamily="{StaticResource ScrollEnglish}" FontSize="38" VerticalAlignment="Center"/>
+          </StackPanel>
+          <TextBlock Text="让世界的声音，被更多人听见" FontFamily="{StaticResource ScrollKai}" FontSize="18" LetterSpacing="1"/>
+        </StackPanel>
+        <StackPanel Canvas.Left="64" Canvas.Top="251" ZIndex="25" Spacing="5">
+          <Button Name="ScrollLiveNav" Classes="bookmark selected" Tag="live" Click="Navigate"><StackPanel Orientation="Horizontal" Spacing="25"><views:SongScrollIcon Kind="mic" Width="38" Height="38" Ink="#9E3A21" Margin="0,6,0,0"/><StackPanel Spacing="12"><TextBlock Classes="nav-title" Text="实时翻译"/><TextBlock Classes="nav-subtitle" Text="即时语音&#10;多语互译"/></StackPanel></StackPanel></Button>
+          <Button Classes="bookmark" Tag="media" Click="Navigate"><StackPanel Orientation="Horizontal" Spacing="25"><views:SongScrollIcon Kind="pen" Width="38" Height="38" Ink="#655B49" Margin="0,6,0,0"/><StackPanel Spacing="12"><TextBlock Classes="nav-title" Text="创作工坊"/><TextBlock Classes="nav-subtitle" Text="AI 润色&#10;多语创作"/></StackPanel></StackPanel></Button>
+          <Button Classes="bookmark" Tag="mediav2" Click="Navigate"><StackPanel Orientation="Horizontal" Spacing="25"><views:SongScrollIcon Kind="play" Width="38" Height="38" Ink="#655B49" Margin="0,6,0,0"/><StackPanel Spacing="12"><TextBlock Classes="nav-title" Text="媒体中心"/><TextBlock Classes="nav-subtitle" Text="音视频翻译&#10;文件处理"/></StackPanel></StackPanel></Button>
+          <Button Classes="bookmark" Tag="audiolab" Click="Navigate"><StackPanel Orientation="Horizontal" Spacing="25"><views:SongScrollIcon Kind="headphones" Width="38" Height="38" Ink="#655B49" Margin="0,6,0,0"/><StackPanel Spacing="12"><TextBlock Classes="nav-title" Text="听析中心"/><TextBlock Classes="nav-subtitle" Text="语音转写&#10;智能总结"/></StackPanel></StackPanel></Button>
+          <Button Classes="bookmark" Tag="taskmonitor" Click="Navigate"><StackPanel Orientation="Horizontal" Spacing="25"><views:SongScrollIcon Kind="chart" Width="38" Height="38" Ink="#655B49" Margin="0,6,0,0"/><StackPanel Spacing="12"><TextBlock Classes="nav-title" Text="任务监控"/><TextBlock Classes="nav-subtitle" Text="任务进度&#10;运行状态"/></StackPanel></StackPanel></Button>
+        </StackPanel>
+        <Border Name="ScrollSidebarFooter" Canvas.Left="98" Canvas.Top="1133" Width="220" Height="262" Padding="28,30" BorderBrush="#D9B386" BorderThickness="2,0,0,3" CornerRadius="0,0,3,20" ZIndex="25">
+          <Border.Background><ImageBrush Source="avares://TrueFluentPro/Assets/Appearance/SongScroll/nav-paper.png"/></Border.Background>
+          <StackPanel Spacing="9">
+            <Button Classes="text" Tag="settings" Click="Navigate" Padding="0,16" HorizontalContentAlignment="Left"><StackPanel Orientation="Horizontal" Spacing="23"><views:SongScrollIcon Kind="settings" Width="33" Height="33" Ink="#40392D"/><StackPanel Spacing="4"><TextBlock Text="设置" FontSize="24"/><TextBlock Text="系统偏好" FontSize="22" Foreground="#625E53"/></StackPanel></StackPanel></Button>
+            <Button Name="ScrollTheme" Classes="text" Click="ThemeClick" Padding="0,16" HorizontalContentAlignment="Left"><StackPanel Orientation="Horizontal" Spacing="23"><views:SongScrollIcon Kind="theme" Width="33" Height="33" Ink="#40392D"/><StackPanel Spacing="4"><TextBlock Text="主题" FontSize="24"/><TextBlock Text="风格切换" FontSize="22" Foreground="#625E53"/></StackPanel></StackPanel></Button>
+          </StackPanel>
+        </Border>
+        <StackPanel Canvas.Left="456" Canvas.Top="139" Height="91" Orientation="Horizontal" Spacing="21" ZIndex="8">
+          <TextBlock Name="ScrollHeading" Text="实时翻译" FontFamily="{StaticResource ScrollCalligraphy}" FontSize="68" Foreground="#030705" VerticalAlignment="Center"/>
+          <TextBlock Text="跨越语言的边界，连接更大的世界" FontFamily="{StaticResource ScrollKai}" FontSize="25" Foreground="#565B5B" LetterSpacing="1" Margin="0,14,0,0" VerticalAlignment="Center"/>
+        </StackPanel>
+        <TextBlock Canvas.Left="1478" Canvas.Top="172" Text="海内存知己，天涯若比邻。" FontFamily="{StaticResource ScrollKai}" FontSize="29" LetterSpacing="5" Foreground="#65665E" ZIndex="7"/>
+        <Path Canvas.Left="430" Canvas.Top="237" Width="2032" Height="40" Data="M0 9 Q900 6 950 28 Q1050 2 2020 10" Stroke="#C7BCA8" StrokeThickness="2" Opacity="0.65" Stretch="Fill" IsHitTestVisible="False" ZIndex="5"/>
+        <Border Name="ScrollConversationPaper" Canvas.Left="406" Canvas.Top="268" Width="970" Height="1090" BorderBrush="#CCE5DED4" BorderThickness="1.5,1.5,0,0" CornerRadius="17" ZIndex="6">
+          <Border.Background><LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,100%"><GradientStop Offset="0" Color="#96FFFFFF"/><GradientStop Offset="1" Color="#63FFFFFF"/></LinearGradientBrush></Border.Background>
+        </Border>
+        <Border Canvas.Left="992" Canvas.Top="293" Width="335" Height="57" BorderThickness="1.5" BorderBrush="#CDD0D0" CornerRadius="14" Background="#70F0F1EF" ZIndex="9">
+          <Grid ColumnDefinitions="*,*,*"><Button Name="ScrollOriginal" Classes="segment" Classes.selected="{Binding IsOriginal}" Content="原文" Tag="original" Click="DisplayClick"/><Button Grid.Column="1" Name="ScrollTranslated" Classes="segment" Classes.selected="{Binding IsTranslated}" Content="译文" Tag="translated" Click="DisplayClick"/><Button Grid.Column="2" Name="ScrollBilingual" Classes="segment" Classes.selected="{Binding IsBilingual}" Content="双语" Tag="bilingual" Click="DisplayClick"/></Grid>
+        </Border>
+        <ScrollViewer Name="ScrollConversation" Canvas.Left="453" Canvas.Top="365" Width="878" Height="585" ZIndex="10" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+          <Panel>
+            <StackPanel IsVisible="{Binding !HasConversation}" Margin="20,60"><TextBlock Text="书页尚新，静候片语。" FontFamily="{StaticResource ScrollKai}" FontSize="32" Foreground="#6B7267"/><TextBlock Text="开始翻译后，原文与译文会在这里显示。" FontFamily="{StaticResource ScrollKai}" FontSize="24" Margin="0,15,0,0"/></StackPanel>
+            <ItemsControl ItemsSource="{Binding Conversation}" Margin="0,0,8,0">
+              <ItemsControl.ItemTemplate><DataTemplate>
+                <StackPanel MinHeight="{Binding ConversationHeight}">
+                  <Grid Height="70" ColumnDefinitions="58,*,Auto" ColumnSpacing="20">
+                    <Border Width="58" Height="58" CornerRadius="29" Background="#E1EBE4" BorderBrush="#A8BBB0" BorderThickness="1"><views:SongScrollIcon Kind="mic" Width="32" Height="32" Ink="#4D7979" VerticalAlignment="Center" HorizontalAlignment="Center"/></Border>
+                    <TextBlock Grid.Column="1" Text="{Binding SourceLabel}" FontFamily="{StaticResource ScrollKai}" FontSize="32" FontWeight="Bold" VerticalAlignment="Center"/>
+                    <TextBlock Grid.Column="2" Text="{Binding TimeText}" FontFamily="{StaticResource ScrollEnglish}" FontSize="25" Foreground="#91959C" VerticalAlignment="Center" Margin="0,0,17,0"/>
+                  </Grid>
+                  <Border IsVisible="{Binding DataContext.ShowOriginal, RelativeSource={RelativeSource AncestorType=UserControl}}" Background="#B8E8EEE9" CornerRadius="24" MinHeight="102" Margin="4,-4,0,0" Padding="32,23,29,23">
+                    <SelectableTextBlock Text="{Binding OriginalText}" FontFamily="{StaticResource ScrollSans}" FontSize="{Binding DataContext.OriginalSize, RelativeSource={RelativeSource AncestorType=UserControl}}" TextWrapping="Wrap"/>
+                  </Border>
+                  <SelectableTextBlock IsVisible="{Binding DataContext.ShowTranslated, RelativeSource={RelativeSource AncestorType=UserControl}}" Text="{Binding TranslatedText}" FontFamily="{StaticResource ScrollEnglish}" FontSize="{Binding DataContext.TranslatedSize, RelativeSource={RelativeSource AncestorType=UserControl}}" TextWrapping="Wrap" MinHeight="70" Margin="36,19,28,0"/>
+                </StackPanel>
+              </DataTemplate></ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </Panel>
+        </ScrollViewer>
+        <TextBlock Name="ScrollColophon" Canvas.Left="457" Canvas.Top="1296" Text="言之无界，心之相通。" FontFamily="{StaticResource ScrollKai}" FontSize="26" LetterSpacing="2" Foreground="#59625D" ZIndex="10"/>
+        <Grid Name="ScrollRightPage" Canvas.Left="1425" Canvas.Top="270" Width="1038" Height="1074" RowDefinitions="*,Auto,132" RowSpacing="12" ZIndex="22">
+          <Border Name="ScrollReading" CornerRadius="17" BorderBrush="#CCE5DED4" BorderThickness="1.5">
+            <Border.Background><LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,100%"><GradientStop Offset="0" Color="#86FFFFFF"/><GradientStop Offset="1" Color="#55FFFFFF"/></LinearGradientBrush></Border.Background>
+            <Grid RowDefinitions="72,*">
+              <Border BorderBrush="#88CDD1CE" BorderThickness="0,0,0,1" Margin="18,0">
+                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="18">
+                  <StackPanel Orientation="Horizontal" Spacing="25"><Button Name="ScrollHistoryTab" Classes="tab" Classes.selected="{Binding IsHistory}" Content="历史记录" Tag="history" Click="TabClick"/><Button Name="ScrollInsightTab" Classes="tab" Classes.selected="{Binding IsInsight}" Content="AI洞察" Tag="insight" Click="TabClick"/></StackPanel>
+                  <StackPanel Grid.Column="1" IsVisible="{Binding IsHistory}" Orientation="Horizontal" Spacing="12" HorizontalAlignment="Right" VerticalAlignment="Center"><Button Name="ScrollHistoryAll" Content="{Binding HistoryToggleText}" Click="HistoryAll"/><Button Content="历史文件夹" Command="{Binding Session.OpenHistoryFolderCommand}"/><Button Name="ScrollHistoryClear" Classes="danger" Content="清空" Click="HistoryClear"/></StackPanel>
+                  <StackPanel Grid.Column="1" IsVisible="{Binding IsInsight}" Orientation="Horizontal" Spacing="12" HorizontalAlignment="Right" VerticalAlignment="Center"><Button Name="ScrollPresets" Content="预设 ▾" Click="PresetsClick"/><Button Name="ScrollAuto" Content="自动分析" Click="AutoClick"/><Button Name="ScrollAdvanced" Content="高级配置" Click="AdvancedClick"/><Button Name="ScrollFloatOpen" Content="浮动洞察" Click="FloatClick"/></StackPanel>
+                </Grid>
+              </Border>
+              <Grid Name="ScrollHistoryPanel" Grid.Row="1" IsVisible="{Binding IsHistory}" RowDefinitions="30,*" RowSpacing="8" Margin="18,8">
+                <TextBlock Text="{Binding HistorySummary}" FontFamily="{StaticResource ScrollKai}" FontSize="20" Foreground="#71756B"/>
+                <ScrollViewer Name="ScrollHistoryContent" Grid.Row="1" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                  <ItemsControl ItemsSource="{Binding VisibleHistory}"><ItemsControl.ItemTemplate><DataTemplate>
+                    <Border Margin="0,0,0,8" Padding="17,11" CornerRadius="12" Background="{Binding HistoryBackground}">
+                      <StackPanel>
+                        <Grid ColumnDefinitions="74,*,32" ColumnSpacing="16">
+                          <TextBlock Text="{Binding TimeText}" FontFamily="{StaticResource ScrollEnglish}" FontSize="23" Foreground="#657078" TextWrapping="Wrap"/>
+                          <StackPanel Grid.Column="1"><SelectableTextBlock Text="{Binding OriginalText}" FontFamily="{StaticResource ScrollKai}" FontSize="{Binding DataContext.InsightSize, RelativeSource={RelativeSource AncestorType=UserControl}}" TextWrapping="Wrap"/><SelectableTextBlock Text="{Binding TranslatedText}" FontFamily="{StaticResource ScrollEnglish}" FontSize="{Binding DataContext.InsightSize, RelativeSource={RelativeSource AncestorType=UserControl}}" Foreground="#5E6874" TextWrapping="Wrap"/></StackPanel>
+                          <Button Grid.Column="2" Name="ScrollHistoryExpand" Classes="text" Content="{Binding ExpandMark}" FontSize="28" Padding="0" Click="HistoryEntryClick" VerticalAlignment="Top" AutomationProperties.Name="展开或收起记录"/>
+                        </Grid>
+                        <Border IsVisible="{Binding IsExpanded}" Margin="90,14,0,2" Padding="17,12" Background="#66EEE8DB" BorderBrush="#B5C6BB" BorderThickness="2,0,0,0"><StackPanel Spacing="6"><TextBlock Text="{Binding SourceLabel}" FontFamily="{StaticResource ScrollKai}" FontSize="21"/><SelectableTextBlock Text="{Binding OriginalText}" FontFamily="{StaticResource ScrollKai}" FontSize="21" TextWrapping="Wrap"/><SelectableTextBlock Text="{Binding TranslatedText}" FontFamily="{StaticResource ScrollEnglish}" FontSize="21" TextWrapping="Wrap"/></StackPanel></Border>
+                      </StackPanel>
+                    </Border>
+                  </DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+                </ScrollViewer>
+                <TextBlock Grid.Row="1" IsVisible="{Binding !HasHistory}" Text="书页尚新，静候片语。" FontFamily="{StaticResource ScrollKai}" FontSize="32" Foreground="#6B7267" HorizontalAlignment="Center" Margin="0,60,0,0"/>
+              </Grid>
+              <Grid Name="ScrollInsightPanel" Grid.Row="1" IsVisible="{Binding IsInsight}" RowDefinitions="*,Auto,50" RowSpacing="8" Margin="18,8">
+                <ScrollViewer Name="ScrollInsightContent" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                  <Panel>
+                    <views:SongScrollMarkdownBlock Name="ScrollMarkdown" Markdown="{Binding Session.AiInsight.InsightMarkdown}" ReadingFontSize="{Binding InsightSize}" MaxContentWidth="960" Margin="13,6,13,24"/>
+                    <StackPanel IsVisible="{Binding Session.AiInsight.IsInsightEmpty}" Margin="20,60" HorizontalAlignment="Center"><TextBlock Text="静候片语，洞见自来。" FontFamily="{StaticResource ScrollKai}" FontWeight="Bold" FontSize="32" Foreground="#6B7267"/><TextBlock Text="选择一项预设，或在页底写下你的问题。" FontFamily="{StaticResource ScrollKai}" FontSize="24" Margin="0,12,0,0"/></StackPanel>
+                  </Panel>
+                </ScrollViewer>
+                <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="10">
+                  <TextBlock Text="{Binding Session.StatusMessage}" FontFamily="{StaticResource ScrollKai}" FontSize="19" Foreground="#69756D" TextWrapping="Wrap"/>
+                  <TextBlock Grid.Column="1" Text="{Binding Session.AiInsight.AutoInsightToggleText}" FontFamily="{StaticResource ScrollKai}" FontSize="19" Foreground="#45665C"/>
+                  <Button Name="ScrollInsightStop" Grid.Column="2" Classes="text danger" FontSize="19" Content="停止生成" IsVisible="{Binding Session.AiInsight.IsInsightLoading}" Command="{Binding Session.AiInsight.StopInsightCommand}"/>
+                  <Button Name="ScrollInsightClear" Grid.Column="3" Classes="text" FontSize="19" Content="清除结果" Click="InsightClear"/>
+                </Grid>
+                <Grid Grid.Row="2" ColumnDefinitions="*,92" ColumnSpacing="12"><TextBox Name="ScrollQuestion" Text="{Binding Session.AiInsight.InsightUserInput, Mode=TwoWay}" Watermark="写下你的问题，获取更深入的分析…" AcceptsReturn="True" MaxLength="2000" Padding="18,9"/><Button Grid.Column="1" Name="ScrollSend" Classes="primary" Content="发送" Command="{Binding Session.AiInsight.SendInsightCommand}"/></Grid>
+              </Grid>
+            </Grid>
+          </Border>
+          <Border Grid.Row="1" Name="ScrollSettings" Background="#48FFFFFF" BorderBrush="#AAD5B485" BorderThickness="1.5" CornerRadius="12">
+            <StackPanel>
+              <Button Name="ScrollSettingsToggle" Classes="text" MinHeight="72" Padding="22,12" Click="SettingsClick" HorizontalContentAlignment="Stretch"><Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="22"><TextBlock Text="⚙ 译事设置" FontFamily="{StaticResource ScrollKai}" FontSize="29" FontWeight="Bold"/><TextBlock Name="ScrollSettingsSummary" Grid.Column="1" Text="{Binding Session.ConfigVM.ActiveSpeechResourceStatus}" FontFamily="{StaticResource ScrollKai}" FontSize="20" Foreground="#62695E" VerticalAlignment="Center"/><TextBlock Grid.Column="2" Text="{Binding SettingsToggleText}" FontFamily="{StaticResource ScrollKai}" FontSize="23"/></Grid></Button>
+              <Grid Name="ScrollSettingsForm" IsVisible="{Binding SettingsExpanded}" ColumnDefinitions="*,*,*" RowDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="20" RowSpacing="12" Margin="22,16">
+                <StackPanel Spacing="5" IsEnabled="{Binding Session.ConfigVM.IsConfigurationEnabled}"><TextBlock Text="语音资源" FontFamily="{StaticResource ScrollKai}" FontSize="21"/><ComboBox ItemsSource="{Binding Session.ConfigVM.SpeechResourceNames}" SelectedIndex="{Binding Session.ConfigVM.ActiveSpeechResourceIndex, Mode=TwoWay}"/></StackPanel>
+                <StackPanel Grid.Column="1" Spacing="5" IsEnabled="{Binding Session.ConfigVM.IsConfigurationEnabled}"><TextBlock Text="麦克风设备" FontFamily="{StaticResource ScrollKai}" FontSize="21"/><ComboBox ItemsSource="{Binding Session.AudioDevices.AudioDevicesList}" SelectedItem="{Binding Session.AudioDevices.SelectedAudioDevice, Mode=TwoWay}"/></StackPanel>
+                <StackPanel Grid.Column="2" Spacing="5" IsEnabled="{Binding Session.ConfigVM.IsConfigurationEnabled}"><TextBlock Text="系统回环设备" FontFamily="{StaticResource ScrollKai}" FontSize="21"/><ComboBox ItemsSource="{Binding Session.AudioDevices.OutputDevicesList}" SelectedItem="{Binding Session.AudioDevices.SelectedOutputDevice, Mode=TwoWay}"/></StackPanel>
+                <StackPanel Grid.Row="1" Spacing="5" IsEnabled="{Binding Session.ConfigVM.IsConfigurationEnabled}"><TextBlock Text="识别来源" FontFamily="{StaticResource ScrollKai}" FontSize="21"/><ComboBox Name="ScrollRecognition" SelectionChanged="RecognitionChanged"><ComboBoxItem Content="麦克风"/><ComboBoxItem Content="系统音频"/><ComboBoxItem Content="麦克风 + 系统音频"/></ComboBox></StackPanel>
+                <StackPanel Grid.Row="1" Grid.Column="1" Spacing="5" IsEnabled="{Binding Session.ConfigVM.IsConfigurationEnabled}"><TextBlock Text="录制来源" FontFamily="{StaticResource ScrollKai}" FontSize="21"/><ComboBox Name="ScrollRecording" SelectionChanged="RecordingChanged"><ComboBoxItem Content="麦克风"/><ComboBoxItem Content="系统音频"/><ComboBoxItem Content="麦克风 + 系统音频"/></ComboBox></StackPanel>
+                <StackPanel Grid.Row="1" Grid.Column="2" Spacing="5" IsEnabled="{Binding Session.ConfigVM.IsConfigurationEnabled}"><TextBlock Text="源语言" FontFamily="{StaticResource ScrollKai}" FontSize="21"/><ComboBox Name="ScrollSourceLanguage" SelectedIndex="{Binding Session.ConfigVM.SourceLanguageIndex, Mode=TwoWay}"><ComboBoxItem Content="自动识别"/><ComboBoxItem Content="英语"/><ComboBoxItem Content="中文"/><ComboBoxItem Content="日语"/><ComboBoxItem Content="韩语"/><ComboBoxItem Content="法语"/><ComboBoxItem Content="德语"/><ComboBoxItem Content="西班牙语"/></ComboBox></StackPanel>
+                <StackPanel Grid.Row="2" Spacing="5" IsEnabled="{Binding Session.ConfigVM.IsConfigurationEnabled}"><TextBlock Text="目标语言" FontFamily="{StaticResource ScrollKai}" FontSize="21"/><ComboBox Name="ScrollTargetLanguage" SelectedIndex="{Binding Session.ConfigVM.TargetLanguageIndex, Mode=TwoWay}"><ComboBoxItem Content="英语"/><ComboBoxItem Content="中文"/><ComboBoxItem Content="日语"/><ComboBoxItem Content="韩语"/><ComboBoxItem Content="法语"/><ComboBoxItem Content="德语"/><ComboBoxItem Content="西班牙语"/></ComboBox></StackPanel>
+                <StackPanel Grid.Row="2" Grid.Column="1" Spacing="5"><TextBlock Text="阅读字号" FontFamily="{StaticResource ScrollKai}" FontSize="21"/><ComboBox Name="ScrollFont" ItemsSource="{Binding FontSizes}" SelectedItem="{Binding ReadingSize, Mode=TwoWay}"><ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Converter={StaticResource ScrollFontLabel}}"/></DataTemplate></ComboBox.ItemTemplate></ComboBox></StackPanel>
+                <StackPanel Grid.Row="2" Grid.Column="2" Spacing="5" IsEnabled="{Binding Session.ConfigVM.IsConfigurationEnabled}"><TextBlock Text="设备列表" FontFamily="{StaticResource ScrollKai}" FontSize="21"/><Button Name="ScrollRefresh" MinHeight="42" FontSize="21" Content="刷新设备" Command="{Binding Session.AudioDevices.RefreshAudioDevicesCommand}"/></StackPanel>
+                <TextBlock Grid.Row="3" Grid.ColumnSpan="3" Text="资源配置不代表云端连通；会话中锁定资源、语言与路由，字号和字幕仍可调整。" FontFamily="{StaticResource ScrollKai}" FontSize="18" Foreground="#77796A" TextWrapping="Wrap"/>
+              </Grid>
+            </StackPanel>
+          </Border>
+          <Border Name="ScrollSessionControls" Grid.Row="2" Padding="22,3,16,3" BorderThickness="1" BorderBrush="#66E4D8C6" CornerRadius="12" Background="#5EFFFAF4">
+            <Grid ColumnDefinitions="*,268,152" ColumnSpacing="16">
+              <StackPanel VerticalAlignment="Center" Spacing="6"><TextBlock Name="ScrollConnectionState" Text="{Binding Session.StatusMessage}" FontFamily="{StaticResource ScrollKai}" FontSize="25" Foreground="#345B4B" TextWrapping="Wrap" MaxLines="2"/><TextBlock Name="ScrollSourceSummary" FontFamily="{StaticResource ScrollKai}" FontSize="20"/><TextBlock Text="{Binding Session.AudioPipelineStatusText}" FontFamily="{StaticResource ScrollKai}" FontSize="18" Foreground="#78796A" TextTrimming="CharacterEllipsis"/></StackPanel>
+              <Button Name="ScrollSubtitle" Grid.Column="1" Classes="text" FontSize="23" Padding="0" Command="{Binding Session.ShowFloatingSubtitlesCommand}" VerticalAlignment="Center" AutomationProperties.Name="字幕浮窗">
+                <Grid ColumnDefinitions="27,*,70" ColumnSpacing="14"><views:SongScrollIcon Kind="screen" Width="27" Height="27" Ink="#2C535A"/><TextBlock Grid.Column="1" Text="字幕浮窗" VerticalAlignment="Center"/><Border Name="ScrollSubtitleTrack" Grid.Column="2" Width="70" Height="39" CornerRadius="40" Background="#D1D3D6"><Border Name="ScrollSubtitleThumb" Width="32" Height="32" CornerRadius="16" Background="White" HorizontalAlignment="Left" Margin="3.5"/></Border></Grid>
+                <Button.ContextFlyout><MenuFlyout><MenuItem Header="麦克风字幕" Command="{Binding Session.ShowFloatingMicSubtitleCommand}"/><MenuItem Header="系统音频字幕" Command="{Binding Session.ShowFloatingLoopbackSubtitleCommand}"/><MenuItem Header="恢复字幕交互" Command="{Binding Session.RestoreFloatingSubtitleInteractionCommand}"/></MenuFlyout></Button.ContextFlyout>
+              </Button>
+              <Button Name="ScrollStart" Grid.Column="2" Classes="seal" Command="{Binding Session.ToggleTranslationCommand}" HorizontalAlignment="Right" VerticalAlignment="Center">
+                <StackPanel Spacing="6" Margin="0,4,0,0"><TextBlock Name="ScrollStartLabel" Text="{Binding Session.TranslationToggleButtonText}" FontFamily="{StaticResource ScrollKai}" FontSize="27" Foreground="#FFF8E7" HorizontalAlignment="Center"/>
+                  <ItemsControl Name="ScrollAggregateLevel" ItemsSource="{Binding Session.AudioDevices.AudioLevelHistory}" Height="28" Width="113" ToolTip.Tip="采集汇总电平，不表示人物或单条发言音量">
+                    <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="1.5" HorizontalAlignment="Center" VerticalAlignment="Center"/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate><DataTemplate><Border Width="3" Height="{Binding Converter={StaticResource ScrollLevelHeight}}" CornerRadius="3" Background="#F6D8C5" VerticalAlignment="Center"/></DataTemplate></ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </StackPanel>
+              </Button>
+            </Grid>
+          </Border>
+        </Grid>
+      </Canvas>
+    </Viewbox>
+    <!-- 浮纸是客户区 overlay，绝不放进 Viewbox。 -->
+    <Canvas Name="ScrollOverlay" IsHitTestVisible="True">
+      <Border Name="ScrollFloatingPaper" IsVisible="False" Width="560" Height="480" Padding="15" BorderBrush="#BCA27B" BorderThickness="1" CornerRadius="12" Background="#F6F1E8" BoxShadow="0 14 45 0 #40302B2A">
+        <Grid RowDefinitions="Auto,*,Auto" RowSpacing="10">
+          <Grid Name="ScrollFloatDrag" ColumnDefinitions="*,Auto" Background="Transparent" PointerPressed="FloatDragStart" PointerMoved="FloatDragMove" PointerReleased="FloatDragEnd" PointerCaptureLost="FloatDragLost"><TextBlock Text="浮动洞察" FontFamily="{StaticResource ScrollKai}" FontSize="23"/><StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="3"><Button Name="ScrollFloatPin" Classes="text" FontSize="15" Content="置顶" Click="FloatPin"/><Button Classes="text" FontSize="15" Content="A−" Tag="-2" Click="FloatFont"/><Button Classes="text" FontSize="15" Content="A+" Tag="2" Click="FloatFont"/><Button Name="ScrollFloatClose" Classes="text" FontSize="15" Content="×" Click="FloatClick"/></StackPanel></Grid>
+          <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto"><views:SongScrollMarkdownBlock Name="ScrollFloatMarkdown" Markdown="{Binding Session.AiInsight.InsightMarkdown}" ReadingFontSize="18" MajorHeadingOffset="6" MinorHeadingOffset="2" MaxContentWidth="520"/></ScrollViewer>
+          <TextBlock Grid.Row="2" Text="页面内浮纸 · 拖动标题移动 · 同步当前结果" FontFamily="{StaticResource ScrollKai}" FontSize="12" Foreground="#7B7C6E"/>
+        </Grid>
+      </Border>
+    </Canvas>
+  </Grid>
+</UserControl>

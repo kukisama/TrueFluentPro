@@ -22,11 +22,13 @@ public partial class MainWindow
         // 只改颜色，不去掉 WS_THICKFRAME，不改边缘命中、客户区或 DWM 阴影。
         // https://learn.microsoft.com/windows/win32/api/dwmapi/ne-dwmapi-dwmwindowattribute
         if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000) || Design.IsDesignMode
-            || ShellTitleBar?.Background is not ISolidColorBrush brush
             || TryGetPlatformHandle() is not { Handle: var hwnd } || hwnd == IntPtr.Zero)
             return;
 
-        var color = brush.Color;
+        // 新页顶栏右缘为纸纹上叠 65% 暖白；不从已隐藏的旧标题栏取色。
+        var scrollActive = IsSongScrollAppearance && SongScrollHost?.IsVisible == true;
+        if (!scrollActive && ShellTitleBar?.Background is not ISolidColorBrush) return;
+        var color = scrollActive ? Color.Parse("#F7F1E8") : ((ISolidColorBrush)ShellTitleBar!.Background!).Color;
         var colorRef = (uint)(color.R | color.G << 8 | color.B << 16);
         SetNativeCaptionColor(hwnd, 35, colorRef); // DWMWA_CAPTION_COLOR：上沿非客户区填色。
         SetNativeCaptionColor(hwnd, 34, colorRef); // DWMWA_BORDER_COLOR：保留外框，以相同底色融入。

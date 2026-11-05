@@ -5,5 +5,6 @@ public enum ShellAppearancePreference
 {
     Classic,
     SongStudy,
-    InkStudy
+    InkStudy,
+    SongScroll
 }

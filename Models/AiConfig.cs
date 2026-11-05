@@ -124,6 +124,12 @@ namespace TrueFluentPro.Models
 
         public bool AutoInsightBufferOutput { get; set; } = true;
 
+        // 长卷页的配置选项，不代表调度已经运行；旧主题默认操作保持原样。
+        public bool SongScrollAutoAvailable { get; set; } = true;
+        public int SongScrollAutoModeIndex { get; set; }
+        public int SongScrollAutoIntervalSeconds { get; set; } = 30;
+        public string? SongScrollAutoPrompt { get; set; }
+
         public List<InsightPresetButton> PresetButtons { get; set; } = new()
         {
             new() { Name = "会议摘要", Prompt = "请对以上翻译记录进行会议摘要。总结会议的主要议题、关键讨论内容和结论。" },

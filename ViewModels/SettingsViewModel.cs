@@ -411,6 +411,21 @@ namespace TrueFluentPro.ViewModels
             StatusNotificationRequested?.Invoke(message);
         }
 
+        /// <summary>长卷的窄事务入口；仅保存时提交深拷贝草稿，取消不接触分区 setter。</summary>
+        public async Task SaveSongScrollInsightAsync(SongScrollInsightDraft draft)
+        {
+            draft.Validate();
+            PauseAutoSave();
+            ApplyToConfig(); // 保留其他分区尚未自动保存的实际编辑。
+            draft.ApplyTo(_config.AiConfig ??= new AiConfig());
+            _suppressDirtyTracking = true;
+            try { if (_insightVm.IsValueCreated) ConfigureInsightSection(_insightVm.Value); }
+            finally { _suppressDirtyTracking = false; }
+            await _configService.SaveConfigAsync(_config);
+            AutoSaveStatus = "✓ 洞察配置已保存";
+            ConfigSaved?.Invoke(_config);
+        }
+
         private Lazy<T> CreateLazySection<T>(Func<T> factory, Action<T> configure)
             where T : class, ISettingsSection, INotifyPropertyChanged
         {

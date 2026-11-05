@@ -22,11 +22,13 @@ public partial class MainWindow
     private ResourceInclude? _studyPalette;
     private long _appearanceVersion;
     private const string InkStudyCacheKey = "live-ink-study";
+    private const string SongScrollCacheKey = "live-song-scroll";
     private string _currentNavTag = TrueFluentPro.ViewModels.MainWindowViewModel.NavTagLive;
 
     public ShellAppearancePreference CurrentShellAppearance { get; private set; }
     public bool IsSongStudyAppearance => CurrentShellAppearance == ShellAppearancePreference.SongStudy;
     public bool IsInkStudyAppearance => CurrentShellAppearance == ShellAppearancePreference.InkStudy;
+    public bool IsSongScrollAppearance => CurrentShellAppearance == ShellAppearancePreference.SongScroll;
 
     /// <summary>仅应用 UI；菜单另行保存偏好。外部调用可用相同入口接入其他呈现方案。</summary>
     public void ApplyShellAppearance(ShellAppearancePreference appearance)
@@ -34,7 +36,7 @@ public partial class MainWindow
         var focused = FocusManager?.GetFocusedElement() as InputElement;
         var version = ++_appearanceVersion;
         if (appearance is not ShellAppearancePreference.Classic and not ShellAppearancePreference.SongStudy
-            and not ShellAppearancePreference.InkStudy)
+            and not ShellAppearancePreference.InkStudy and not ShellAppearancePreference.SongScroll)
             appearance = ShellAppearancePreference.Classic;
 
         CurrentShellAppearance = appearance;
@@ -71,7 +73,8 @@ public partial class MainWindow
                 live.ApplyAppearance(IsSongStudyAppearance);
 
         // 仅切换呈现。ShowPage 不重建主 VM、服务或非翻译页面。
-        if (_currentPage != null && (IsInkStudyAppearance || _currentPage is InkStudyTranslationView))
+        if (_currentPage != null && (IsInkStudyAppearance || IsSongScrollAppearance
+            || _currentPage is InkStudyTranslationView or SongScrollTranslationView))
             ShowPage(_currentNavTag);
         else
             UpdateInkStudyHost();
@@ -97,9 +100,9 @@ public partial class MainWindow
     private void UpdateThemePresentation()
     {
         if (ThemeNavButton == null || ShellThemeIcon == null) return;
-        ShellThemeIcon.Value = IsSongStudyAppearance || IsInkStudyAppearance ? "fa-solid fa-book-open"
+        ShellThemeIcon.Value = IsSongStudyAppearance || IsInkStudyAppearance || IsSongScrollAppearance ? "fa-solid fa-book-open"
             : _viewModel?.ThemeToggleIconValue ?? "fa-solid fa-circle-half-stroke";
-        var current = IsInkStudyAppearance ? "宋人书斋 · 原稿" : IsSongStudyAppearance ? "宋人书斋 · 明亮"
+        var current = IsSongScrollAppearance ? "宋人书斋 · 长卷" : IsInkStudyAppearance ? "宋人书斋 · 原稿" : IsSongStudyAppearance ? "宋人书斋 · 明亮"
             : $"经典 · {ThemeModeLabel(_viewModel?.CurrentThemeMode ?? ThemeModePreference.System)}";
         ToolTip.SetTip(ThemeNavButton, $"当前：{current}；点击选择主题与界面外观");
     }
@@ -130,6 +133,9 @@ public partial class MainWindow
         var ink = new MenuItem { Header = $"{(IsInkStudyAppearance ? "✓ " : "　")}宋人书斋 · 原稿（独立翻译页）" };
         ink.Click += (_, _) => SaveAndApplyAppearance(ShellAppearancePreference.InkStudy);
         menu.Items.Add(ink);
+        var scroll = new MenuItem { Header = $"{(IsSongScrollAppearance ? "✓ " : "　")}宋人书斋 · 长卷（独立翻译页）" };
+        scroll.Click += (_, _) => SaveAndApplyAppearance(ShellAppearancePreference.SongScroll);
+        menu.Items.Add(scroll);
         if (target is Button button) button.Flyout = menu;
         menu.ShowAt(target);
     }
@@ -137,11 +143,16 @@ public partial class MainWindow
     private void UpdateInkStudyHost()
     {
         var active = IsInkStudyAppearance && _currentNavTag == TrueFluentPro.ViewModels.MainWindowViewModel.NavTagLive;
+        var scrollActive = IsSongScrollAppearance && _currentNavTag == TrueFluentPro.ViewModels.MainWindowViewModel.NavTagLive;
         Classes.Set("ink-study", active);
-        LegacyWorkspace.IsVisible = !active;
+        Classes.Set("song-scroll", scrollActive);
+        LegacyWorkspace.IsVisible = !active && !scrollActive;
+        ShellTitleBar.IsVisible = !scrollActive;
         InkStudyHost.IsVisible = active;
+        SongScrollHost.IsVisible = scrollActive;
         // 新主题只覆盖自己的翻译呈现；其他页面恢复经典主题继承。
-        RequestedThemeVariant = active || IsSongStudyAppearance ? ThemeVariant.Light : ThemeVariant.Default;
+        RequestedThemeVariant = active || scrollActive || IsSongStudyAppearance ? ThemeVariant.Light : ThemeVariant.Default;
+        UpdateNativeCaptionColors();
     }
 
     private bool SaveAndApplyAppearance(ShellAppearancePreference appearance)

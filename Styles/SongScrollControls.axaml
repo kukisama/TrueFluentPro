@@ -1,0 +1,73 @@
+<Styles xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Styles.Resources>
+    <FontFamily x:Key="ScrollKai">STKaiti, KaiTi, 华文楷体, 楷体, SimSun</FontFamily>
+    <FontFamily x:Key="ScrollCalligraphy">STXingkai, 华文行楷, STKaiti, KaiTi</FontFamily>
+    <FontFamily x:Key="ScrollSans">Microsoft YaHei UI, Microsoft YaHei</FontFamily>
+    <FontFamily x:Key="ScrollEnglish">Times New Roman, SimSun</FontFamily>
+    <ControlTheme x:Key="ScrollButton" TargetType="Button">
+      <Setter Property="FocusAdorner" Value="{x:Null}"/>
+      <Setter Property="Template">
+        <ControlTemplate>
+          <Grid>
+            <Border x:Name="Surface" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="{TemplateBinding CornerRadius}">
+              <ContentPresenter Name="PART_ContentPresenter" Background="Transparent" Padding="{TemplateBinding Padding}" Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}" Foreground="{TemplateBinding Foreground}" HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"/>
+            </Border>
+            <Border Name="FocusRing" BorderBrush="#BC382C" BorderThickness="3" CornerRadius="8" Margin="-3" Opacity="0" IsHitTestVisible="False"/>
+          </Grid>
+        </ControlTemplate>
+      </Setter>
+    </ControlTheme>
+  </Styles.Resources>
+  <!-- 本 Styles 只在长卷 UserControl 内加载，绝不覆盖旧窗口。 -->
+  <Style Selector="Button">
+    <Setter Property="Theme" Value="{StaticResource ScrollButton}"/>
+    <Setter Property="FontFamily" Value="{StaticResource ScrollKai}"/>
+    <Setter Property="FontSize" Value="24"/>
+    <Setter Property="Foreground" Value="#111823"/>
+    <Setter Property="Background" Value="#70F0F3F2"/>
+    <Setter Property="BorderBrush" Value="#C9D1D0"/>
+    <Setter Property="BorderThickness" Value="1.5"/>
+    <Setter Property="CornerRadius" Value="9"/>
+    <Setter Property="Padding" Value="17,8"/>
+    <Setter Property="MinHeight" Value="50"/>
+    <Setter Property="HorizontalContentAlignment" Value="Center"/>
+    <Setter Property="VerticalContentAlignment" Value="Center"/>
+    <Setter Property="Cursor" Value="Hand"/>
+  </Style>
+  <Style Selector="Button:pointerover"><Setter Property="Background" Value="#E7EEE9"/></Style>
+  <Style Selector="Button:pressed"><Setter Property="RenderTransform" Value="translate(0px,2px)"/></Style>
+  <Style Selector="Button:disabled"><Setter Property="Opacity" Value="0.48"/></Style>
+  <Style Selector="Button:focus-visible /template/ Border#FocusRing"><Setter Property="Opacity" Value="1"/></Style>
+  <Style Selector="Button.primary"><Setter Property="Background" Value="#4D7979"/><Setter Property="Foreground" Value="#FFFAF0"/><Setter Property="BorderBrush" Value="#4D7979"/></Style>
+  <Style Selector="Button.primary:pointerover"><Setter Property="Background" Value="#3D6666"/></Style>
+  <Style Selector="Button.text"><Setter Property="Background" Value="Transparent"/><Setter Property="BorderThickness" Value="0"/><Setter Property="Padding" Value="7,4"/><Setter Property="MinHeight" Value="0"/><Setter Property="Foreground" Value="#536762"/></Style>
+  <Style Selector="Button.text:pointerover"><Setter Property="Foreground" Value="#AC3B2E"/></Style>
+  <Style Selector="Button.danger"><Setter Property="Foreground" Value="#B82E24"/><Setter Property="BorderBrush" Value="#EDD2CF"/></Style>
+  <Style Selector="Button.danger:pointerover"><Setter Property="Background" Value="#F2DCD4"/></Style>
+  <Style Selector="Button.tab"><Setter Property="Background" Value="Transparent"/><Setter Property="BorderThickness" Value="0,0,0,4"/><Setter Property="BorderBrush" Value="Transparent"/><Setter Property="CornerRadius" Value="0"/><Setter Property="FontSize" Value="30"/><Setter Property="Padding" Value="5,0"/><Setter Property="Foreground" Value="#39535A"/></Style>
+  <Style Selector="Button.tab.selected"><Setter Property="BorderBrush" Value="#AF332B"/><Setter Property="Foreground" Value="#070B0A"/><Setter Property="FontWeight" Value="Bold"/></Style>
+  <Style Selector="Button.segment"><Setter Property="Background" Value="Transparent"/><Setter Property="Foreground" Value="#164F53"/><Setter Property="BorderThickness" Value="0"/><Setter Property="CornerRadius" Value="13"/><Setter Property="FontSize" Value="28"/><Setter Property="Padding" Value="0"/></Style>
+  <Style Selector="Button.segment.selected"><Setter Property="Background" Value="#4D7979"/><Setter Property="Foreground" Value="#FAF8F1"/></Style>
+  <Style Selector="Button.bookmark">
+    <Setter Property="Width" Value="310"/><Setter Property="Height" Value="172"/><Setter Property="Padding" Value="45,42,28,24"/><Setter Property="BorderThickness" Value="0"/>
+    <Setter Property="Background"><ImageBrush Source="avares://TrueFluentPro/Assets/Appearance/SongScroll/bookmark-idle.png" Stretch="Fill" DestinationRect="0,0,310,174"/></Setter>
+    <Setter Property="HorizontalContentAlignment" Value="Left"/><Setter Property="VerticalContentAlignment" Value="Top"/><Setter Property="RenderTransformOrigin" Value="10%,50%"/>
+    <Setter Property="Effect"><DropShadowEffect OffsetX="4" OffsetY="8" BlurRadius="5" Color="#55483C2C"/></Setter>
+  </Style>
+  <Style Selector="Button.bookmark.selected"><Setter Property="Background"><ImageBrush Source="avares://TrueFluentPro/Assets/Appearance/SongScroll/bookmark-active.png" Stretch="Fill" DestinationRect="0,0,310,180"/></Setter></Style>
+  <Style Selector="Button.bookmark:pointerover"><Setter Property="RenderTransform" Value="translate(3px,-5px) rotate(-0.6deg) scale(1.045)"/><Setter Property="Effect"><DropShadowEffect OffsetX="7" OffsetY="14" BlurRadius="7" Color="#66493625"/></Setter></Style>
+  <Style Selector="Button.bookmark:pressed"><Setter Property="RenderTransform" Value="translate(0px,-1px)"/></Style>
+  <Style Selector="Button.bookmark TextBlock.nav-title"><Setter Property="FontSize" Value="32"/><Setter Property="FontWeight" Value="Bold"/><Setter Property="Foreground" Value="#080B0A"/><Setter Property="LetterSpacing" Value="1"/></Style>
+  <Style Selector="Button.bookmark TextBlock.nav-subtitle"><Setter Property="FontSize" Value="23"/><Setter Property="LineHeight" Value="28.52"/><Setter Property="Foreground" Value="#54554E"/><Setter Property="LetterSpacing" Value="1"/></Style>
+  <Style Selector="Button.seal"><Setter Property="Width" Value="136"/><Setter Property="Height" Value="124"/><Setter Property="Padding" Value="0"/><Setter Property="BorderThickness" Value="0"/><Setter Property="FontSize" Value="27"/><Setter Property="Foreground" Value="#FFF8E7"/>
+    <Setter Property="Background"><ImageBrush Source="avares://TrueFluentPro/Assets/Appearance/SongScroll/seal-blank.png" Stretch="Uniform"/></Setter>
+    <Setter Property="Effect"><DropShadowEffect OffsetX="3" OffsetY="7" BlurRadius="3" Color="#44765140"/></Setter>
+  </Style>
+  <Style Selector="Button.seal:pointerover"><Setter Property="RenderTransform" Value="translate(0px,-2px)"/><Setter Property="Effect"><DropShadowEffect OffsetX="4" OffsetY="10" BlurRadius="4" Color="#55765140"/></Setter></Style>
+  <Style Selector="Button.seal:pressed"><Setter Property="RenderTransform" Value="translate(0px,3px)"/></Style>
+  <Style Selector="Button.caption"><Setter Property="Width" Value="80"/><Setter Property="Height" Value="66"/><Setter Property="Padding" Value="0"/><Setter Property="BorderThickness" Value="0"/><Setter Property="CornerRadius" Value="0"/><Setter Property="Background" Value="#6BFCF9F6"/></Style>
+  <Style Selector="Button.caption:pointerover"><Setter Property="Background" Value="#ECE3D8"/></Style>
+  <Style Selector="Button.caption.close:pointerover"><Setter Property="Background" Value="#B94739"/><Setter Property="Foreground" Value="White"/></Style>
+  <Style Selector="ComboBox"><Setter Property="FontFamily" Value="{StaticResource ScrollKai}"/><Setter Property="FontSize" Value="21"/><Setter Property="MinHeight" Value="42"/><Setter Property="Padding" Value="12,7"/><Setter Property="Background" Value="#88FAFAFA"/><Setter Property="BorderBrush" Value="#D5D8D8"/><Setter Property="CornerRadius" Value="8"/><Setter Property="HorizontalAlignment" Value="Stretch"/></Style>
+  <Style Selector="TextBox"><Setter Property="FontFamily" Value="{StaticResource ScrollKai}"/><Setter Property="FontSize" Value="24"/><Setter Property="Background" Value="#88FAFAFA"/><Setter Property="BorderBrush" Value="#C9D1D0"/><Setter Property="CornerRadius" Value="9"/></Style>
+</Styles>

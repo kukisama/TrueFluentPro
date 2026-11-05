@@ -629,6 +629,8 @@ namespace TrueFluentPro.ViewModels
 
         private async void StartTranslation()
         {
+            if (_songScrollConnecting || _songScrollStopping) return;
+            _songScrollFrameGuard = false; // 旧入口保留原有帧接收语义。
             if (!EnsureRealtimeTranslationService(out var errorMessage))
             {
                 StatusMessage = errorMessage;
@@ -813,6 +815,12 @@ namespace TrueFluentPro.ViewModels
 
         private async void StopTranslation()
         {
+            if (_songScrollFrameGuard) _songScrollIgnoreFrames = true;
+            if (_songScrollConnecting || _songScrollStopping)
+            {
+                await ToggleSongScrollTranslationAsync();
+                return;
+            }
             if (_translationService != null)
             {
                 await _translationService.StopTranslationAsync();
@@ -1147,6 +1155,8 @@ namespace TrueFluentPro.ViewModels
             var acceptSubtitle = !_suspendFloatingSubtitleUpdates;
             Dispatcher.UIThread.Post(() =>
             {
+                if (_songScrollFrameGuard && (_songScrollIgnoreFrames || subtitleEpoch != _floatingSubtitleEpoch
+                    || !ReferenceEquals(sender, _translationService))) return;
                 CurrentOriginal = TrimRealtimeDisplayText(item.OriginalText);
                 CurrentTranslated = TrimRealtimeDisplayText(item.TranslatedText);
                 PublishPresentationFrame(item, isFinal: false);
@@ -1304,6 +1314,8 @@ namespace TrueFluentPro.ViewModels
             var acceptSubtitle = !_suspendFloatingSubtitleUpdates;
             Dispatcher.UIThread.Post(() =>
             {
+                if (_songScrollFrameGuard && (_songScrollIgnoreFrames || subtitleEpoch != _floatingSubtitleEpoch
+                    || !ReferenceEquals(sender, _translationService))) return;
                 if (acceptSubtitle && !_suspendFloatingSubtitleUpdates
                     && subtitleEpoch == _floatingSubtitleEpoch && ReferenceEquals(sender, _translationService))
                 {

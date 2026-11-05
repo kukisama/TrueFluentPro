@@ -73,6 +73,8 @@ namespace TrueFluentPro.ViewModels
 
         public void Dispose()
         {
+            if (_songScrollConnecting) _songScrollCancel = true;
+            _songScrollIgnoreFrames = true;
             if (_translationService != null)
             {
                 DetachTranslationService(_translationService);

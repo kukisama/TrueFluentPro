@@ -35,6 +35,7 @@ public sealed class ShellAppearancePreferencesService
             {
                 nameof(ShellAppearancePreference.SongStudy) => ShellAppearancePreference.SongStudy,
                 nameof(ShellAppearancePreference.InkStudy) => ShellAppearancePreference.InkStudy,
+                nameof(ShellAppearancePreference.SongScroll) => ShellAppearancePreference.SongScroll,
                 _ => ShellAppearancePreference.Classic
             };
         }
@@ -47,7 +48,7 @@ public sealed class ShellAppearancePreferencesService
     public void Save(ShellAppearancePreference appearance)
     {
         if (appearance is not ShellAppearancePreference.Classic and not ShellAppearancePreference.SongStudy
-            and not ShellAppearancePreference.InkStudy)
+            and not ShellAppearancePreference.InkStudy and not ShellAppearancePreference.SongScroll)
         {
             throw new ArgumentOutOfRangeException(nameof(appearance), appearance, "无法保存未定义的窗口外观。");
         }

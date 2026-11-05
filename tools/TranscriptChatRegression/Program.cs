@@ -37,6 +37,8 @@ internal static class Program
             try
             {
                 if (args.Contains("--window-chrome-visual")) await WindowChromeRegression.VerifyVisualAsync();
+                else if (args.Contains("--song-scroll-fit")) await SongScrollRegression.VerifyViewportFitAsync();
+                else if (args.Contains("--song-scroll")) await SongScrollRegression.VerifyAsync();
                 else if (args.Contains("--window-chrome")) await WindowChromeRegression.VerifyAsync();
                 else if (args.Contains("--ink-study")) await InkStudyRegression.VerifyAsync();
                 else if (args.Contains("--appearance")) await ShellAppearanceRegression.VerifyAsync();

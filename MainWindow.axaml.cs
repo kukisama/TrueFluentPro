@@ -152,6 +152,7 @@ public partial class MainWindow : Window
         ShellTitleBar.PropertyChanged -= OnShellTitleBarPropertyChanged;
         _workshopChatWindow?.Close();
         GetCachedPage<InkStudyTranslationView>(InkStudyCacheKey)?.DisposePresentation();
+        GetCachedPage<SongScrollTranslationView>(SongScrollCacheKey)?.DisposePresentation();
         MediaStudioViewPage?.Cleanup();
         MediaCenterV2ViewPage?.Cleanup();
         _viewModel?.Dispose();
@@ -216,7 +217,7 @@ public partial class MainWindow : Window
     {
         base.OnSizeChanged(e);
 
-        if (IsSongStudyAppearance || IsInkStudyAppearance || _isApplyingNavPaneState || _viewModel?.IsMainNavPaneOpen != true)
+        if (IsSongStudyAppearance || IsInkStudyAppearance || IsSongScrollAppearance || _isApplyingNavPaneState || _viewModel?.IsMainNavPaneOpen != true)
         {
             return;
         }
@@ -316,7 +317,7 @@ public partial class MainWindow : Window
                 _currentPage.IsVisible = false;
 
             // 独立原稿翻译页有自己的全页宿主；业务页面从不跨宿主迁移。
-            var host = page is InkStudyTranslationView ? InkStudyHost : PageHost;
+            var host = page is SongScrollTranslationView ? SongScrollHost : page is InkStudyTranslationView ? InkStudyHost : PageHost;
             if (!host.Children.Contains(page))
             {
                 PagePlaceholder.IsVisible = false;
@@ -445,6 +446,19 @@ public partial class MainWindow : Window
     private Control GetOrCreatePage(string tag)
     {
         tag = NormalizeNavTag(tag);
+        if (tag == MainWindowViewModel.NavTagLive && IsSongScrollAppearance)
+        {
+            if (!_pageCache.TryGetValue(SongScrollCacheKey, out var scroll))
+            {
+                var view = new SongScrollTranslationView();
+                view.NavigationRequested += ShowPage;
+                view.ThemeRequested += ShowAppearanceMenu;
+                scroll = view;
+                _pageCache[SongScrollCacheKey] = scroll;
+            }
+            UpdatePageDataContext(scroll);
+            return scroll;
+        }
         if (tag == MainWindowViewModel.NavTagLive && IsInkStudyAppearance)
         {
             if (!_pageCache.TryGetValue(InkStudyCacheKey, out var ink))
@@ -495,6 +509,11 @@ public partial class MainWindow : Window
 
     private void UpdatePageDataContext(Control page)
     {
+        if (page is SongScrollTranslationView scroll)
+        {
+            scroll.BindSession(_viewModel);
+            return;
+        }
         if (page is InkStudyTranslationView ink)
         {
             ink.BindSession(_viewModel);
@@ -570,7 +589,7 @@ public partial class MainWindow : Window
         _isApplyingNavPaneState = true;
         try
         {
-            if (!IsSongStudyAppearance && !IsInkStudyAppearance)
+            if (!IsSongStudyAppearance && !IsInkStudyAppearance && !IsSongScrollAppearance)
                 ApplyWindowWidthForPaneState(isOpen);
             if (ShellNavRail != null)
             {

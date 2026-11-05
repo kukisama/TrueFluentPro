@@ -13,7 +13,7 @@ using TrueFluentPro.Services;
 
 namespace TrueFluentPro.ViewModels
 {
-    public class AiInsightViewModel : ViewModelBase
+    public partial class AiInsightViewModel : ViewModelBase
     {
         private readonly IAzureTokenProviderStore _azureTokenProviderStore;
         private readonly IAiInsightService _aiInsightService;
@@ -111,6 +111,7 @@ namespace TrueFluentPro.ViewModels
                 if (SetProperty(ref _insightUserInput, value))
                 {
                     ((RelayCommand)SendInsightCommand).RaiseCanExecuteChanged();
+                    NotifySongScrollCommands();
                 }
             }
         }
@@ -126,6 +127,7 @@ namespace TrueFluentPro.ViewModels
                     ((RelayCommand)SendInsightCommand).RaiseCanExecuteChanged();
                     ((RelayCommand)StopInsightCommand).RaiseCanExecuteChanged();
                     ((RelayCommand)SendPresetInsightCommand).RaiseCanExecuteChanged();
+                    NotifySongScrollCommands();
                 }
             }
         }
@@ -235,8 +237,13 @@ namespace TrueFluentPro.ViewModels
             SendInsight(AutoInsightPrompt, bufferOutput);
         }
 
-        private async void SendInsight(string userQuestion, bool bufferOutput = false)
+        private async void SendInsight(string userQuestion, bool bufferOutput = false, bool songScroll = false)
         {
+            // 新页在鉴权前取得单飞资格，取消/清除也覆盖鉴权阶段；旧入口默认路径不变。
+            if (_songScrollPending || (songScroll && IsInsightLoading)) return;
+            var scrollVersion = songScroll ? BeginSongScrollGeneration() : 0;
+            var writeEpoch = _songScrollWriteEpoch;
+            bool AcceptWrite() => writeEpoch == _songScrollWriteEpoch && (!songScroll || scrollVersion == _songScrollGeneration);
             var config = _configProvider();
             if (!TryBuildInsightRuntimeConfig(config, out var runtimeRequest, out var endpoint, out var errorMessage))
             {
@@ -244,17 +251,30 @@ namespace TrueFluentPro.ViewModels
                 {
                     _statusSetter(errorMessage);
                 }
+                if (songScroll) EndSongScrollGeneration(scrollVersion);
                 return;
             }
 
             AzureTokenProvider? tokenProvider = null;
             if (runtimeRequest.AzureAuthMode == AzureAuthMode.AAD)
             {
-                tokenProvider = await _azureTokenProviderStore.GetAuthenticatedProviderAsync(
-                    endpoint != null ? GetEndpointProfileKey(endpoint) : "ai",
-                    runtimeRequest.AzureTenantId,
-                    runtimeRequest.AzureClientId);
+                try
+                {
+                    tokenProvider = await _azureTokenProviderStore.GetAuthenticatedProviderAsync(
+                        endpoint != null ? GetEndpointProfileKey(endpoint) : "ai",
+                        runtimeRequest.AzureTenantId,
+                        runtimeRequest.AzureClientId,
+                        songScroll ? _songScrollAuthCts?.Token ?? CancellationToken.None : CancellationToken.None);
+                }
+                catch (Exception ex) when (songScroll)
+                {
+                    if (AcceptWrite()) _statusSetter($"洞察认证未完成：{ex.Message}");
+                    EndSongScrollGeneration(scrollVersion);
+                    return;
+                }
             }
+
+            if (!AcceptWrite()) { if (songScroll) EndSongScrollGeneration(scrollVersion); return; }
 
             var runtimeService = new AiInsightService(tokenProvider);
 
@@ -293,6 +313,7 @@ namespace TrueFluentPro.ViewModels
                     fullUserContent,
                     chunk =>
                     {
+                        if (!AcceptWrite()) return;
                         if (bufferOutput)
                         {
                             sb.Append(chunk);
@@ -301,6 +322,7 @@ namespace TrueFluentPro.ViewModels
 
                         Dispatcher.UIThread.Post(() =>
                         {
+                            if (!AcceptWrite()) return;
                             sb.Append(chunk);
                             InsightMarkdown = sb.ToString();
                         });
@@ -313,6 +335,7 @@ namespace TrueFluentPro.ViewModels
                 {
                     Dispatcher.UIThread.Post(() =>
                     {
+                        if (!AcceptWrite()) return;
                         InsightMarkdown = sb.ToString();
                     });
                 }
@@ -326,6 +349,7 @@ namespace TrueFluentPro.ViewModels
                 var message = $"\n\n---\n**错误**: {ex.Message}";
                 Dispatcher.UIThread.Post(() =>
                 {
+                    if (!AcceptWrite()) return;
                     InsightMarkdown = bufferOutput
                         ? sb.ToString() + message
                         : InsightMarkdown + message;
@@ -336,6 +360,7 @@ namespace TrueFluentPro.ViewModels
                 var message = $"\n\n---\n**错误**: {ex.Message}";
                 Dispatcher.UIThread.Post(() =>
                 {
+                    if (!AcceptWrite()) return;
                     InsightMarkdown = bufferOutput
                         ? sb.ToString() + message
                         : InsightMarkdown + message;
@@ -343,7 +368,8 @@ namespace TrueFluentPro.ViewModels
             }
             finally
             {
-                IsInsightLoading = false;
+                if (songScroll) EndSongScrollGeneration(scrollVersion);
+                else IsInsightLoading = false;
             }
         }
 
@@ -473,6 +499,8 @@ namespace TrueFluentPro.ViewModels
 
         public void Dispose()
         {
+            ++_songScrollWriteEpoch;
+            _songScrollAuthCts?.Cancel(); _songScrollAuthCts?.Dispose(); _songScrollAuthCts = null;
             _insightCts?.Cancel();
             _insightCts?.Dispose();
             _autoInsightTimer?.Stop();
