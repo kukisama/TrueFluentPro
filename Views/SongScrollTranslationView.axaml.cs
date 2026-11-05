@@ -27,6 +27,7 @@ namespace TrueFluentPro.Views;
 /// <summary>以 2560 为设计宽度，书页高度随窗口调整；换页/换主题不会停止业务。</summary>
 public partial class SongScrollTranslationView : UserControl
 {
+    private const double SceneTopTrim = 64;
     private ILiveTranslationPresentationSource? _source;
     private readonly List<INotifyPropertyChanged> _subscriptions = new();
     private readonly List<Bitmap> _bitmaps = new();
@@ -76,9 +77,11 @@ public partial class SongScrollTranslationView : UserControl
         // 不设 1440 高度下限，否则较宽的最大化窗口又会出现左右空边。
         var height = Bounds.Height * 2560 / Bounds.Width;
         if (!double.IsFinite(height)) return;
-        var extra = height - 1440;
+        var sceneHeight = height + SceneTopTrim;
+        var extra = sceneHeight - 1440;
         this.FindControl<Canvas>("ScrollStage")!.Height = height;
-        this.FindControl<Canvas>("ScrollOrnaments")!.Height = height;
+        this.FindControl<Canvas>("ScrollScene")!.Height = sceneHeight;
+        this.FindControl<Canvas>("ScrollOrnaments")!.Height = sceneHeight;
         foreach (var item in _verticalDecorations)
         {
             Canvas.SetTop(item.Control, item.Top + (item.StretchHeight ? 0 : extra));
@@ -303,7 +306,7 @@ public partial class SongScrollTranslationView : UserControl
     { var image = Asset(name); return new ImageBrush(image) { TileMode = TileMode.Tile, DestinationRect = new RelativeRect(new Rect(image.Size), RelativeUnit.Absolute) }; }
     private void BuildOrnaments()
     {
-        var canvas = this.FindControl<Canvas>("ScrollStage")!;
+        var canvas = this.FindControl<Canvas>("ScrollScene")!;
         canvas.Background = Texture("desk-paper");
         this.FindControl<Border>("ScrollFloatingPaper")!.Background = Texture("page-paper");
         void Place(Control control, double x, double y, double w, double h, int z, bool stretchHeight = false, bool anchorBottom = false)
@@ -312,7 +315,7 @@ public partial class SongScrollTranslationView : UserControl
             if (stretchHeight || anchorBottom) _verticalDecorations.Add((control, y, h, stretchHeight));
         }
         void Image(string name, double x, double y, double w, double h, int z, IBrush? mask = null, bool stretchHeight = false, bool anchorBottom = false)
-        { Place(new Image { Source = Asset(name), Stretch = Stretch.Fill, OpacityMask = mask }, x, y, w, h, z, stretchHeight, anchorBottom); }
+        { Place(new Image { Name = name == "book-top" ? "ScrollBookTop" : null, Source = Asset(name), Stretch = Stretch.Fill, OpacityMask = mask }, x, y, w, h, z, stretchHeight, anchorBottom); }
         LinearGradientBrush Gradient(params (double Offset, string Color)[] stops)
         { var gradient = new LinearGradientBrush { StartPoint = new RelativePoint(0, .5, RelativeUnit.Relative), EndPoint = new RelativePoint(1, .5, RelativeUnit.Relative) }; foreach (var stop in stops) gradient.GradientStops.Add(new GradientStop(Color.Parse(stop.Color), stop.Offset)); return gradient; }
         Image("bamboo-top", 0, 0, 307, 103, 1); Image("bamboo-side", 0, 103, 64, 802, 1); Image("bamboo-foot", 0, 907, 54, 288, 1);

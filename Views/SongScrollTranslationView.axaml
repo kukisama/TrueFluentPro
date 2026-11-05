@@ -5,17 +5,16 @@
   <UserControl.Resources><views:SongScrollFontLabelConverter x:Key="ScrollFontLabel"/><controls:LevelToHeightConverter x:Key="ScrollLevelHeight" MaxHeight="26"/></UserControl.Resources>
   <Grid Name="ScrollViewport" ClipToBounds="True">
     <Viewbox Name="ScrollScale" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Top">
-      <Canvas Name="ScrollStage" Width="2560" Height="1440" UseLayoutRounding="False">
+      <Canvas Name="ScrollStage" Width="2560" Height="1440" UseLayoutRounding="False" ClipToBounds="True">
         <Canvas.Background><ImageBrush Source="avares://TrueFluentPro/Assets/Appearance/SongScroll/desk-paper.png" TileMode="Tile" DestinationRect="0,0,180,180"/></Canvas.Background>
+        <!-- 去除原稿书册上方的案面留白；保留完整书册顶边，不拉伸文字或按钮。 -->
+        <Canvas Name="ScrollScene" Canvas.Top="-64" Width="2560" Height="1504" UseLayoutRounding="False">
         <Canvas Name="ScrollOrnaments" Width="2560" Height="1440" IsHitTestVisible="False"/>
-        <Grid Canvas.Left="0" Canvas.Top="0" Width="2560" Height="66" ZIndex="30" ColumnDefinitions="*,80,80,80">
-          <Grid.Background><LinearGradientBrush StartPoint="0%,50%" EndPoint="100%,50%"><GradientStop Offset="0.12" Color="#00FFFAF3"/><GradientStop Offset="0.6" Color="#40FFFAF3"/><GradientStop Offset="1" Color="#A6FFFAF6"/></LinearGradientBrush></Grid.Background>
-          <Border Name="ScrollTitleDrag" Background="Transparent" PointerPressed="TitleDrag">
-            <TextBlock Text="译以载道 · 见行更远" FontFamily="{StaticResource ScrollKai}" FontSize="27" LetterSpacing="3" Foreground="#32332F" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,46,0"/>
-          </Border>
-          <Button Name="ScrollMinimize" Grid.Column="1" Classes="caption" Click="Minimize" AutomationProperties.Name="最小化"><Path Data="M1 12 H23" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="2.5" Width="24" Height="24"/></Button>
-          <Button Name="ScrollMaximize" Grid.Column="2" Classes="caption" Click="Maximize" AutomationProperties.Name="最大化"><Path Name="ScrollMaximizeMark" Data="M2 2 H22 V22 H2 Z" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="2.5" Width="24" Height="24"/></Button>
-          <Button Name="ScrollClose" Grid.Column="3" Classes="caption close" Click="CloseWindow" AutomationProperties.Name="关闭"><Path Data="M1 1 L24 24 M24 1 L1 24" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="2.5" Width="25" Height="25"/></Button>
+        <!-- 窗口动作融入右页上沿，不再单独绘制横贯窗口的顶栏。 -->
+        <Grid Name="ScrollWindowButtons" Canvas.Left="2223" Canvas.Top="158" Width="240" Height="66" ZIndex="30" ColumnDefinitions="80,80,80">
+          <Button Name="ScrollMinimize" Classes="caption" Click="Minimize" ToolTip.Tip="最小化" AutomationProperties.Name="最小化"><Path Data="M1 12 H23" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="2.5" Width="24" Height="24"/></Button>
+          <Button Name="ScrollMaximize" Grid.Column="1" Classes="caption" Click="Maximize" AutomationProperties.Name="最大化"><Path Name="ScrollMaximizeMark" Data="M2 2 H22 V22 H2 Z" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="2.5" Width="24" Height="24"/></Button>
+          <Button Name="ScrollClose" Grid.Column="2" Classes="caption close" Click="CloseWindow" ToolTip.Tip="关闭" AutomationProperties.Name="关闭"><Path Data="M1 1 L24 24 M24 1 L1 24" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="2.5" Width="25" Height="25"/></Button>
         </Grid>
         <StackPanel Canvas.Left="70" Canvas.Top="109" Width="270" Height="98" ZIndex="25" Spacing="14">
           <StackPanel Orientation="Horizontal" Spacing="14">
@@ -42,7 +41,7 @@
           <TextBlock Name="ScrollHeading" Text="实时翻译" FontFamily="{StaticResource ScrollCalligraphy}" FontSize="68" Foreground="#030705" VerticalAlignment="Center"/>
           <TextBlock Text="跨越语言的边界，连接更大的世界" FontFamily="{StaticResource ScrollKai}" FontSize="25" Foreground="#565B5B" LetterSpacing="1" Margin="0,14,0,0" VerticalAlignment="Center"/>
         </StackPanel>
-        <TextBlock Canvas.Left="1478" Canvas.Top="172" Text="海内存知己，天涯若比邻。" FontFamily="{StaticResource ScrollKai}" FontSize="29" LetterSpacing="5" Foreground="#65665E" ZIndex="7"/>
+        <TextBlock Name="ScrollRightMotto" Canvas.Left="1478" Canvas.Top="172" Text="海内存知己，天涯若比邻。" FontFamily="{StaticResource ScrollKai}" FontSize="29" LetterSpacing="5" Foreground="#65665E" ZIndex="7"/>
         <Path Canvas.Left="430" Canvas.Top="237" Width="2032" Height="40" Data="M0 9 Q900 6 950 28 Q1050 2 2020 10" Stroke="#C7BCA8" StrokeThickness="2" Opacity="0.65" Stretch="Fill" IsHitTestVisible="False" ZIndex="5"/>
         <Border Name="ScrollConversationPaper" Canvas.Left="406" Canvas.Top="268" Width="970" Height="1090" BorderBrush="#CCE5DED4" BorderThickness="1.5,1.5,0,0" CornerRadius="17" ZIndex="6">
           <Border.Background><LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,100%"><GradientStop Offset="0" Color="#96FFFFFF"/><GradientStop Offset="1" Color="#63FFFFFF"/></LinearGradientBrush></Border.Background>
@@ -152,8 +151,12 @@
             </Grid>
           </Border>
         </Grid>
+        </Canvas>
       </Canvas>
     </Viewbox>
+    <!-- 客户区内固定 24 DIP 的透明拖动热区，不参与书页缩放，也不占一行高度。 -->
+    <Border Name="ScrollTitleDrag" Height="24" HorizontalAlignment="Stretch" VerticalAlignment="Top"
+            Background="Transparent" PointerPressed="TitleDrag"/>
     <!-- 浮纸是客户区 overlay，绝不放进 Viewbox。 -->
     <Canvas Name="ScrollOverlay" IsHitTestVisible="True">
       <Border Name="ScrollFloatingPaper" IsVisible="False" Width="560" Height="480" Padding="15" BorderBrush="#BCA27B" BorderThickness="1" CornerRadius="12" Background="#F6F1E8" BoxShadow="0 14 45 0 #40302B2A">

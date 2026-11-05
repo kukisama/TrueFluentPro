@@ -7,6 +7,29 @@ using TrueFluentPro;
 // 只扩展旧 native helper 的可访问入口，不改旧专项断言。
 internal static partial class WindowChromeRegression
 {
+    internal static void ScrollCheckFrame(MainWindow window, bool flat, Action<string> log)
+    {
+        var hwnd = window.TryGetPlatformHandle()!.Handle;
+        Check(window.ExtendClientAreaToDecorationsHint == flat, "主题窗口装饰没有正确切换");
+        if (OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000))
+        {
+            Check(ScrollGetDwmValue(hwnd, 33, out var corner, sizeof(uint)) == 0, "无法读取实际窗口圆角设置");
+            Check(corner == (flat ? 1u : 0u), "实际系统外框圆角设置未生效");
+            log($"DWM_CORNER state={window.WindowState};value={corner};flat={flat}");
+        }
+        if (!flat || window.WindowState != WindowState.Normal) return;
+        Check(GetWindowRect(hwnd, out var frame), "无法读取实际外框坐标");
+        var client = window.PointToScreen(default);
+        Check(Math.Abs(client.Y - frame.Top) <= 1, "自绘顶栏上方仍有额外非客户区顶边");
+        var packed = new IntPtr(((frame.Bottom - 2) << 16) | ((frame.Right - 2) & 0xFFFF));
+        Check(SendMessageTimeout(hwnd, 0x0084, IntPtr.Zero, packed, 2, 250, out var hit) != IntPtr.Zero
+            && hit.ToInt64() == 17, "移除顶部装饰后丢失了原生右下缩放边缘");
+        log($"FLAT_FRAME topRows={client.Y - frame.Top};resizeHit={hit.ToInt64()}");
+    }
+
+    [System.Runtime.InteropServices.DllImport("dwmapi.dll", EntryPoint = "DwmGetWindowAttribute")]
+    private static extern int ScrollGetDwmValue(IntPtr hwnd, uint attribute, out uint value, int size);
+
     internal static async Task ScrollForegroundAsync(MainWindow window, Control drag, CancellationToken token)
     {
         window.Activate(); await Dispatcher.UIThread.InvokeAsync(() => {}, DispatcherPriority.Background);

@@ -21,9 +21,9 @@ using TrueFluentPro.Views;
 
 internal static class SongScrollRegression
 {
-    internal static async Task VerifyViewportFitAsync()
+    internal static async Task VerifyViewportFitAsync(bool verifyChrome = false)
     {
-        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(verifyChrome ? 40 : 20));
         var token = deadline.Token;
         var root = Path.Combine(Directory.GetCurrentDirectory(), "artifacts", "song-scroll-fit", DateTime.Now.ToString("yyyyMMdd-HHmmss-fff"));
         Directory.CreateDirectory(root);
@@ -33,6 +33,15 @@ internal static class SongScrollRegression
         {
             window.Show();
             await Pump(window, token);
+            var oldAppearances = new[] { ShellAppearancePreference.Classic, ShellAppearancePreference.SongStudy, ShellAppearancePreference.InkStudy };
+            var fonts = new Dictionary<ShellAppearancePreference, (string Navigation, string Caption)>();
+            if (verifyChrome)
+                foreach (var appearance in oldAppearances)
+                {
+                    window.ApplyShellAppearance(appearance);
+                    await Pump(window, token);
+                    fonts[appearance] = LegacyFonts(window);
+                }
             window.ApplyShellAppearance(ShellAppearancePreference.SongScroll);
             await Pump(window, token);
             var view = Find<Panel>(window, "SongScrollHost").Children.OfType<SongScrollTranslationView>().Single();
@@ -41,9 +50,13 @@ internal static class SongScrollRegression
             {
                 window.WindowState = state;
                 await Pump(window, token);
+                WindowChromeRegression.ScrollCheckFrame(window, true, Console.WriteLine);
                 var stage = Bounds(Find<Canvas>(view, "ScrollStage"), window);
                 var footer = Bounds(Find<Border>(view, "ScrollSessionControls"), window);
                 var seal = Bounds(Find<Button>(view, "ScrollStart"), window);
+                var bookTop = Bounds(Find<Image>(view, "ScrollBookTop"), window);
+                if (verifyChrome) CheckIntegratedCaption(window, view);
+                Check(Math.Abs(bookTop.Top) < 1, "书册上方仍有额外案面空带");
                 Check(Math.Abs(stage.Bottom - window.ClientSize.Height) < 1, "舞台下方仍留有整条窗体底色");
                 Check(Math.Abs(stage.Left) < 1 && Math.Abs(stage.Right - window.ClientSize.Width) < 1, "舞台左右仍留有整条窗体底色");
                 Check(Math.Abs(seal.Width / seal.Height - 136d / 124) < .001, "高度适配拉伸了朱印");
@@ -55,11 +68,89 @@ internal static class SongScrollRegression
                 Check(Math.Abs(Bounds(Find<Border>(view, "ScrollSessionControls"), window).Top - footer.Top) < 1, "展开设置移动了常驻主控");
                 view.Presentation.SettingsExpanded = false;
                 await Pump(window, token);
-                Console.WriteLine($"PASS viewport-fit state={state};client={window.ClientSize};stage={stage};footer={footer};sealRatio={seal.Width / seal.Height:F6}");
+                Console.WriteLine($"PASS viewport-fit state={state};client={window.ClientSize};stage={stage};bookTop={bookTop.Top:F3};footer={footer};sealRatio={seal.Width / seal.Height:F6}");
             }
-            Console.WriteLine("SONG_SCROLL_FIT_EXIT=0");
+            foreach (var appearance in oldAppearances)
+            {
+                window.ApplyShellAppearance(appearance);
+                await Pump(window, token);
+                WindowChromeRegression.ScrollCheckFrame(window, false, Console.WriteLine);
+                if (verifyChrome)
+                {
+                    Check(LegacyFonts(window) == fonts[appearance], "切回旧主题后字体未恢复");
+                    Console.WriteLine($"PASS font-isolation theme={appearance};fonts={fonts[appearance]}");
+                }
+            }
+            if (verifyChrome)
+            {
+                window.ApplyShellAppearance(ShellAppearancePreference.SongScroll);
+                await Pump(window, token);
+                view.BindSession(new SongScrollFakeSession());
+                await Pump(window, token);
+                Check(Find<TextBlock>(view, "ScrollHeading").FontFamily.ToString().Contains("STXingkai", StringComparison.Ordinal)
+                    && Find<TextBox>(view, "ScrollQuestion").FontFamily.ToString().Contains("STKaiti", StringComparison.Ordinal), "长卷专属字体未保留");
+                await VerifyCaptionActions(window, view, root, token);
+            }
+            Console.WriteLine(verifyChrome ? "SONG_SCROLL_CHROME_EXIT=0" : "SONG_SCROLL_FIT_EXIT=0");
         }
         finally { window.Close(); }
+    }
+
+    private static (string Navigation, string Caption) LegacyFonts(MainWindow window)
+    {
+        var navigation = Find<Button>(window, "LiveNavButton").GetVisualDescendants().OfType<TextBlock>().First(t => t.Text == "实时翻译");
+        var caption = Find<Border>(window, "ShellTitleBar").GetVisualDescendants().OfType<TextBlock>().First();
+        return (navigation.FontFamily.ToString(), caption.FontFamily.ToString());
+    }
+
+    private static void CheckIntegratedCaption(MainWindow window, SongScrollTranslationView view)
+    {
+        var drag = Find<Border>(view, "ScrollTitleDrag");
+        var dragBounds = Bounds(drag, window);
+        var buttons = Find<Grid>(view, "ScrollWindowButtons");
+        var groupBounds = Bounds(buttons, window);
+        Check(drag.Child == null && drag.Background is ISolidColorBrush brush && brush.Color.A == 0
+            && Math.Abs(dragBounds.Height - 24) < 1 && Math.Abs(dragBounds.Width - window.ClientSize.Width) < 1, "顶部不是固定透明拖动热区");
+        Check(buttons.Background == null && groupBounds.Top > dragBounds.Bottom
+            && groupBounds.Bottom < Bounds(Find<Border>(view, "ScrollReading"), window).Top
+            && !groupBounds.Intersects(Bounds(Find<TextBlock>(view, "ScrollRightMotto"), window)), "窗口按钮没有融入书页或遮挡题句/正文");
+        Console.WriteLine($"PASS integrated-caption state={window.WindowState};drag={dragBounds};buttons={groupBounds};no separate title surface");
+    }
+
+    private static async Task VerifyCaptionActions(MainWindow window, SongScrollTranslationView view, string root, CancellationToken token)
+    {
+        var drag = Find<Border>(view, "ScrollTitleDrag");
+        await WindowChromeRegression.ScrollForegroundAsync(window, drag, token);
+        WindowChromeRegression.ScrollHover(window, drag);
+        await Pump(window, token);
+        foreach (var name in new[] { "ScrollMinimize", "ScrollMaximize", "ScrollClose" })
+            Check(Find<Button>(view, name).Background is ISolidColorBrush brush && brush.Color.A == 0, "窗口按钮常态仍有独立底色");
+        var capture = Path.Combine(root, "integrated-window-buttons.png");
+        WindowChromeRegression.ScrollCapture(window, capture);
+        Console.WriteLine("SNAPSHOT=" + capture);
+        await Click(window, view, "ScrollMaximize", token);
+        await WindowChromeRegression.ScrollStateAsync(window, WindowState.Maximized, token);
+        await Click(window, view, "ScrollMaximize", token);
+        await WindowChromeRegression.ScrollStateAsync(window, WindowState.Normal, token);
+        await Click(window, view, "ScrollMinimize", token);
+        await WindowChromeRegression.ScrollStateAsync(window, WindowState.Minimized, token);
+        WindowChromeRegression.ScrollRestore(window);
+        await WindowChromeRegression.ScrollStateAsync(window, WindowState.Normal, token);
+        await WindowChromeRegression.ScrollForegroundAsync(window, drag, token);
+        await WindowChromeRegression.ScrollDoubleClickAsync(window, drag, token);
+        await WindowChromeRegression.ScrollStateAsync(window, WindowState.Maximized, token);
+        await WindowChromeRegression.ScrollDoubleClickAsync(window, drag, token);
+        await WindowChromeRegression.ScrollStateAsync(window, WindowState.Normal, token);
+        var before = window.Position;
+        var start = drag.PointToScreen(new Point(drag.Bounds.Width / 2, 12));
+        await FloatingSubtitleRegression.DragAsync(start, new PixelPoint(start.X + 24, start.Y + 16));
+        await Pump(window, token);
+        Check(window.Position.X > before.X + 8 && window.Position.Y > before.Y + 5, "透明拖动区未移动真实窗口");
+        var closed = 0;
+        window.Closed += (_, _) => closed++;
+        await Click(window, view, "ScrollClose", token);
+        Check(closed == 1 && !window.IsVisible, "右页关闭按钮未关闭真实窗口");
+        Console.WriteLine("PASS native caption minimize/maximize/restore/close; transparent strip double-click and drag; original theme fonts retained");
     }
 
     internal static async Task VerifyAsync()
@@ -90,12 +181,12 @@ internal static class SongScrollRegression
             WindowChromeRegression.ScrollStyle(window,Log);
             var captureClient=window.ClientSize;
             var stageHeight=captureClient.Height*2560/captureClient.Width;
-            var extraHeight=stageHeight-1440;
+            var extraHeight=stageHeight+64-1440;
             var scale=Math.Min(captureClient.Width/2560,captureClient.Height/stageHeight);
             var stage=Find<Canvas>(view,"ScrollStage"); var stageRect=Bounds(stage,window);
             Check(Math.Abs(stageRect.Width-2560*scale)<1&&Math.Abs(stageRect.Height-stageHeight*scale)<1&&Math.Abs(stageRect.Top)<1&&Math.Abs(stageRect.Bottom-captureClient.Height)<1,"Viewbox未保持等比并填满客户区高度");
             var right=Bounds(Find<Grid>(view,"ScrollRightPage"),window); var footer=Bounds(Find<Border>(view,"ScrollSessionControls"),window);
-            Check(Math.Abs(right.Left-stageRect.Left-1425*scale)<1&&Math.Abs(right.Top-270*scale)<1&&Math.Abs(right.Width-1038*scale)<1&&Math.Abs(right.Height-(1074+extraHeight)*scale)<1,"右页未按窗口高度延展");
+            Check(Math.Abs(right.Left-stageRect.Left-1425*scale)<1&&Math.Abs(right.Top-(270-64)*scale)<1&&Math.Abs(right.Width-1038*scale)<1&&Math.Abs(right.Height-(1074+extraHeight)*scale)<1,"右页未按窗口高度延展并移除顶部空带");
             Check(Math.Abs(footer.Height-132*scale)<1,"底栏未保持132设计像素");
             Log($"GEOMETRY client={window.ClientSize};stage={stageRect};scale={scale};right={right};footer={footer}");
             var insight=Find<ScrollViewer>(view,"ScrollInsightContent"); var history=Find<ScrollViewer>(view,"ScrollHistoryContent");
@@ -188,7 +279,7 @@ internal static class SongScrollRegression
             await Click(window,view,"ScrollMaximize",token);await WindowChromeRegression.ScrollStateAsync(window,WindowState.Normal,token);
             await Click(window,view,"ScrollMinimize",token);await WindowChromeRegression.ScrollStateAsync(window,WindowState.Minimized,token);WindowChromeRegression.ScrollRestore(window);await WindowChromeRegression.ScrollStateAsync(window,WindowState.Normal,token);
             await WindowChromeRegression.ScrollForegroundAsync(window,title,token);
-            var oldPosition=window.Position;var p=title.PointToScreen(new Point(1000,30));await FloatingSubtitleRegression.DragAsync(p,new PixelPoint(p.X+24,p.Y+16));await Pump(window,token);Check(window.Position.X>oldPosition.X+8&&window.Position.Y>oldPosition.Y+5,"真实拖动失败");
+            var oldPosition=window.Position;var p=title.PointToScreen(new Point(title.Bounds.Width/2,title.Bounds.Height/2));await FloatingSubtitleRegression.DragAsync(p,new PixelPoint(p.X+24,p.Y+16));await Pump(window,token);Check(window.Position.X>oldPosition.X+8&&window.Position.Y>oldPosition.Y+5,"真实拖动失败");
             var closed=0;window.Closed+=(_,_)=>closed++;await Click(window,view,"ScrollClose",token);Check(closed==1&&!window.IsVisible,"原生关闭失败");
             Check(fake.DisposeCount==0&&fake.StopCount==0,"呈现释放停止业务");
             Log("PASS four appearance routes/cache; native minimize/maximize/restore/drag/close; BorderOnly thickframe retained");pass=true;
