@@ -1,0 +1,94 @@
+# 译见 Pro · 宋人书斋 HTML 原型
+
+## 入口与预览
+
+入口：`C:\Scripts\TranslationToolUI\design\宋人书斋HTML原型_20261105\index.html`
+
+直接双击 `index.html`，或将文件拖到本机 Edge / Chrome。全部脚本、样式和图片使用相对路径，可以离线直接打开；不需要安装依赖、启动服务器或构建应用。
+
+默认按 2560 × 1440 原稿画布等比适配浏览器视口。建议浏览器缩放保持 100%；如需对照原像素，打开原型验收状态，勾选「原像素 100%」，然后滚动查看。
+
+左页页脚靠右的「···」打开验收状态，也可用 `Ctrl+Shift+P`；`Esc` 收起。可切换两段／长对话、空洞察、原像素；「恢复默认状态」会停止生成、自动调度和模拟连接，恢复全部本页状态。
+
+## 构图
+
+- 固定原稿几何的双页书册：封皮、窄书缘、纸页、中缝、上／下边饰及原稿山水。
+- 左侧品牌与竹枝、五枚有纸面厚边和浮动投影的书签、底部设置／主题。
+- 左页可选书法标题与同行副标题、音源图标和时间、两段完整双语内容；默认两段均来自麦克风，不再交替「我／对方」或红蓝人像。
+- 右页按认可的新图改为历史／AI 洞察两枚互斥 tabs、同一大阅读区。默认洞察为七节 42 条正文，加标题与段标题约 51 行；正文 26px，不压缩为微型字，剩余内容独立滚动。
+- 历史默认显示最近 15 条，可切全部 30 条；每条都有实际双语正文，展开可读附近记录上下文。
+- 译事设置默认只留摘要与「展开」；展开后阅读区缩小但仍可滚动。开始／停止、状态及字幕入口独立常驻页底，不放在滚动区或设置表单里。
+- 内容面是半透明纸面，不是实心白色后台卡片。所有文字、按钮、内容、图标、选择器均为独立 DOM / SVG；没有整页截图背景。
+- 默认双语标签高亮且显示双语；原文／译文过滤与标签一致。去掉假章、重复小章、人物音量、静音、朗读、收藏、卡片复制与语言交换。
+
+## 本地交互
+
+- 书签 hover 放大 1.045、上抬 5px、轻转角、投影加强，不再让未选书签悬停时变成第二个朱红选中。朱印仍有提亮／按下反馈。
+- 开始后 850ms 本地模拟连接，期间可「取消连接」，运行后可停止。资源、设备、源／目标语言与识别／录制路由锁定；字号与字幕仍可调整。
+- 设置包含已配置资源、麦克风、系统回环、识别来源、录制来源、源／目标语言、阅读字号和刷新设备。资源默认已配置，不代表已连通云端；刷新只更新本地设备示例状态。修改更新摘要，字号同步影响左页、历史、洞察与字幕阅读。
+- tabs 使用独立 `hidden` tabpanel。切换不重建历史 DOM，保存各自滚动位置、展开状态和提问草稿，不清洞察结果。
+- 历史清空先确认，可取消；只清本页 fixture。恢复按钮还原 30 条，洞察与会话保持不变。历史文件夹入口展示模拟文件列表，不打开系统路径。
+- 预设包含会议摘要／知识点提取／客户投诉识别／行动项提取／情绪分析，点击实际选中并模拟生成不同重点的多节长文。自定义输入可发送，保留草稿；约 1 秒后反馈，生成期间可停止。取消不会迟到写回；清除结果同时清输入，不清历史、不停止自动模式。
+- 自动分析提供启用开关、定时循环／新数据触发、间隔（默认 30 秒、下限 10）、提示词、缓冲输出。启动立即分析一次；停止自动只取消未来调度，当前生成另用「停止生成」，与停止翻译独立。新句按钮及长对话切换只发本地信号，不向历史灌数据。非缓冲模式先呈现部分文字，停止会撤回到原结果。
+- 高级配置浮纸按提示词／预设管理／模型配置分组：系统提示词、含 `{history}`／`{question}` 的模板、预设添加／编辑／删除、本地模型占位名称。保存提交本页状态，取消丢弃草稿；下次生成应用新配置，可展开结果底部查看本次模板与提示词。
+- 自动配置的「保存配置」和「启动自动」都是明确应用动作；「取消编辑」不提交尚未应用的字段，但不回滚已启动的自动任务。
+- 浮动洞察首次在右页阅读区打开：同步同一结果、可关闭、置顶状态、A−／A+ 和标题拖动；按实际阅读区和视口坐标定位，边界限制在控制带上方，不发新请求。字幕开关打开页面内双语预览。
+- 主操作朱印为 136×124 画布像素，素材使用 `contain` 保留原比例，不横向拉伸；墨砚退到案面右下，不能遮挡主按钮。
+- 设置书签展开右页设置，主题切换暮纸；另外四枚只演示书签选中并在页内说明，不伪造业务页。页底「本地演示」可打开能力说明，无遮挡式连续 toast。
+- tabs 支持左右键／Home／End／Tab，预设菜单支持上下键、Home／End；Escape 关闭菜单、原生对话框、浮纸或设置。对话框关闭焦点回触发器（清空后触发器已禁用则回历史 tab）。`focus-visible`、pressed、disabled 均可见；reduced-motion 只取消动效，状态仍变化。
+
+这些状态均由本页内存 fixture 与低频 timer 驱动，刷新即恢复，不构成持久业务能力。
+
+## 素材与生图
+
+19 个 PNG 均在 `assets/`，基于授权原稿制作，保留原像素尺度：
+
+`desk-paper.png`、`page-paper.png`、`nav-paper.png`、`wood-edge.png`；
+`bamboo-top.png`、`bamboo-side.png`、`bamboo-foot.png`、`bamboo-page.png`、`bamboo-insight.png`；
+`book-top.png`、`book-bottom.png`、`book-left.png`、`book-right.png`、`book-spine.png`；
+`landscape.png`、`inkstone.png`、`bookmark-idle.png`、`bookmark-active.png`、`seal-blank.png`。
+
+书签内部与印章正文区已用原稿同类材质补为空白，文字／图标重新实现；竹枝和墨砚做暖纸去底／透明化，不覆盖旧资产。素材制作工具为本目录 `Export-Assets.ps1`。原稿为 2560 × 1440；没有把低分辨率组件放大冒称 2K。
+
+本轮未调用生图；没有生成模型、质量参数、jobid 或排队任务，也没有读取密钥、改共享配额或操作共享队列。
+
+字体只引用本机 `STXingkai`、`STKaiti` / `KaiTi`、`Microsoft YaHei` 与 `Times New Roman`，不复制分发 Windows 商业字体。
+
+## 浏览器验证
+
+验证入口：本目录 `Verify-Browser.cjs`，Node 24 自带 WebSocket，无第三方测试依赖。它只启动独立 profile 的 Edge，以 `file://` 打开本页，通过真实渲染器和 CDP 鼠标／键盘／滚轮派发验收，并只关闭自己启动的浏览器；不会停止现用程序。没有页面 HTTP 服务，CDP 使用临时本机端口，执行时输出端口。
+
+已在 VS Code 集成浏览器的实际本地页面（1256×831 视口）执行点击、键盘和滚轮验证：历史／洞察互斥、历史展开与清空／恢复、各页滚动位置与提问草稿保留、设置折叠与字号应用、会话运行锁定、预设／提问／取消生成、配置保存／取消、自动停止不取消当前生成、浮纸定位／拖动／字号／关闭均通过。设置展开前后控制带位置不变；浮纸保持在主按钮上方，朱印素材等比显示。
+
+原共享页句柄失效后，重新打开了同一个本地 HTML；这是集成预览页面交互验证，不是已登录日常浏览器、真实音频或云端业务验收。已恢复默认洞察、折叠设置和待开始状态，未保留测试中的自动调度。两份 JS 的 Node 语法检查通过，编辑器无新增诊断，页面检查无运行时错误。
+
+`Verify-Browser.cjs` 的旧人物／音量／三面板断言已替换，未来显式执行时使用新 `browser-mutual-tabs-result.json` 和 `prototype-mutual-tabs-*.png` 文件名；本轮未执行它，不声称其断言已通过。
+
+旧版证据仍原样保留，不作为新版通过证据：
+- `verification/browser-result.json`
+- `verification/prototype-baseline-2560x1440.png`
+- `verification/prototype-long-empty-2560x1440.png`
+
+新版尚不宣称用户视觉验收通过。
+
+## 与原稿仍有的差距／未覆盖
+
+- 标题使用可选文字的本机行楷，不是原稿完全相同的手写字形；品牌／小印也为文字 DOM 重做。字体轮廓、渲染 hinting 和局部字重仍有差异，其他设备可能字体回退。
+- 书页曲面由纸面、窄原稿书缘及阴影共同实现，不是完整三维书页；边缘拼接、纸纹颗粒、侧栏封皮和书签厚边仍需用户在目标视口目视校准。
+- 原稿精细回纹采用原书缘切片保留；线性图标及章内波形是独立 SVG/CSS 近似，未宣称像素完全相同。新设计图仅用来对照构图，不作为背景或整页切片。
+- 未接实时修订、语音流、历史持久化或真实洞察生成。实时来源与文件转写分人是不同能力，不据本页推断整个仓库没有分人。
+- 小视口目前等比缩放或 100% 滚动，没有手机重排，也未做 Safari / Firefox 跨浏览器验收。
+- 顶部暖纸条及最小／最大／关闭是外观模拟，点击只显示说明；**不修真实桌面白条，不接真实系统窗口按钮**。原生标题栏由另一代理处理。
+- 本轮仅修改 HTML 原型及统一变更日志，不改 C#／XAML／应用 Assets／项目／收工文档／发布说明／版本，不提交推送、不运行 `dotnet build`、不停止 TrueFluentPro / Updater。
+
+当前仍为独立原型，待用户确认视觉与交互后再决定迁移 Avalonia。
+
+## 本轮使用的官方资料
+
+- [W3C tabs 模式](https://www.w3.org/WAI/ARIA/apg/patterns/tabs/)：每个 tab 对应独立 panel，支持箭头、Home／End 与 roving tabindex。
+- [MDN dialog](https://developer.mozilla.org/en-US/docs/Web/HTML/Element/dialog)、[showModal](https://developer.mozilla.org/en-US/docs/Web/API/HTMLDialogElement/showModal)：原生模态对话框进入 top layer，支持 Escape；关闭后代码显式恢复触发焦点。
+- [MDN minmax](https://developer.mozilla.org/en-US/docs/Web/CSS/minmax)：使用零下限与剩余空间分配，阅读项配合 `min-height: 0` 和独立滚动。
+- [MDN setPointerCapture](https://developer.mozilla.org/en-US/docs/Web/API/Element/setPointerCapture)：拖动在标题区域捕获 pointer，移出区域仍可继续，pointerup 释放。
+- [MDN background-size](https://developer.mozilla.org/en-US/docs/Web/CSS/background-size)：`contain` 不裁切或拉伸素材；[getBoundingClientRect](https://developer.mozilla.org/en-US/docs/Web/API/Element/getBoundingClientRect) 返回视口坐标，用于页面内固定浮纸定位。
+- [Git apply](https://git-scm.com/docs/git-apply)：补丁应匹配实际上下文；首次补丁遇旧畸形 option 后重新读回再替换，没有终端重写。
+- [PowerShell 引号规则](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_quoting_rules)：原生命令参数先经过 shell 引号解析；额外内联审计引号失败后改用只读 PowerShell，非应用语法故障。

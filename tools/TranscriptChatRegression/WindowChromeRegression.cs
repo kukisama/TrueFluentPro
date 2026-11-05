@@ -15,7 +15,7 @@ using Avalonia.VisualTree;
 using Projektanker.Icons.Avalonia;
 using TrueFluentPro;
 
-internal static class WindowChromeRegression
+internal static partial class WindowChromeRegression
 {
     private const int WsCaption = 0x00C00000, WsDlgFrame = 0x00400000, WsThickFrame = 0x00040000;
 

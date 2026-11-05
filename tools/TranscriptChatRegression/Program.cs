@@ -29,14 +29,15 @@ internal static class Program
         IconProvider.Current.Register<FontAwesomeIconProvider>();
         AppBuilder.Configure<RegressionApplication>().UsePlatformDetect().WithInterFont().SetupWithoutStarting();
         // Chrome 专项自己管理 45 秒 deadline，清理窗口/主题后才退出消息循环。
-        using var stop = args.Contains("--window-chrome")
+        using var stop = args.Contains("--window-chrome") || args.Contains("--window-chrome-visual")
             ? new CancellationTokenSource() : new CancellationTokenSource(TimeSpan.FromSeconds(45));
         var exitCode = 1;
         Dispatcher.UIThread.Post(async () =>
         {
             try
             {
-                if (args.Contains("--window-chrome")) await WindowChromeRegression.VerifyAsync();
+                if (args.Contains("--window-chrome-visual")) await WindowChromeRegression.VerifyVisualAsync();
+                else if (args.Contains("--window-chrome")) await WindowChromeRegression.VerifyAsync();
                 else if (args.Contains("--ink-study")) await InkStudyRegression.VerifyAsync();
                 else if (args.Contains("--appearance")) await ShellAppearanceRegression.VerifyAsync();
                 else if (args.Contains("--floating-subtitle")) await FloatingSubtitleRegression.VerifyAsync();

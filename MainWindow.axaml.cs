@@ -49,6 +49,7 @@ public partial class MainWindow : Window
     {
         _appearancePreferences = appearancePreferences ?? throw new ArgumentNullException(nameof(appearancePreferences));
         InitializeComponent();
+        ShellTitleBar.PropertyChanged += OnShellTitleBarPropertyChanged;
         UpdateCaptionState();
         ApplyShellAppearance(_appearancePreferences.Load());
 
@@ -72,6 +73,8 @@ public partial class MainWindow : Window
         if (change.Property == WindowStateProperty || change.Property == CanMaximizeProperty
             || change.Property == CanMinimizeProperty)
             UpdateCaptionState();
+        if (change.Property == WindowStateProperty || change.Property == IsActiveProperty)
+            UpdateNativeCaptionColors();
     }
 
     private void UpdateCaptionState()
@@ -146,6 +149,7 @@ public partial class MainWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
+        ShellTitleBar.PropertyChanged -= OnShellTitleBarPropertyChanged;
         _workshopChatWindow?.Close();
         GetCachedPage<InkStudyTranslationView>(InkStudyCacheKey)?.DisposePresentation();
         MediaStudioViewPage?.Cleanup();
@@ -157,6 +161,7 @@ public partial class MainWindow : Window
     protected override void OnOpened(EventArgs e)
     {
         base.OnOpened(e);
+        UpdateNativeCaptionColors();
         NativePrelaunchSplash.CloseIfOpen();
         ApplyMainNavPaneState(_viewModel?.IsMainNavPaneOpen ?? false);
 

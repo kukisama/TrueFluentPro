@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="description" content="宋人书斋实时翻译 · 原稿比例可交互 HTML 验收原型。仅本地模拟。">
+  <title>译见 Pro · 宋人书斋 HTML 原型</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <svg class="icon-definitions" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <defs>
+      <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="13" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3m-4 0h8M11 5h2m-2 3h2m-2 3h2"/></symbol>
+      <symbol id="i-pen" viewBox="0 0 24 24"><path d="m4 17 2-6L17 2l5 5-11 10-7 2Zm2-6 5 6m4-13 5 5M3 22h18"/><path d="m4 17 4 1"/></symbol>
+      <symbol id="i-play" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="3" fill="currentColor" stroke="none"/><path d="m10 8 6 4-6 4Z" fill="var(--paper)" stroke="none"/></symbol>
+      <symbol id="i-headphones" viewBox="0 0 24 24"><path d="M3 17v-6a9 9 0 0 1 18 0v6"/><rect x="2" y="12" width="5" height="9" rx="2"/><rect x="17" y="12" width="5" height="9" rx="2"/></symbol>
+      <symbol id="i-chart" viewBox="0 0 24 24"><path d="M3 3v18h19M7 17v-5m5 5V6m5 11V9m5 8V4"/></symbol>
+      <symbol id="i-settings" viewBox="0 0 24 24"><path d="m10 2 4 0 1 3 3 1 3-1 2 4-2 2v3l2 2-2 4-3-1-3 1-1 3h-4l-1-3-3-1-3 1-2-4 2-2v-3L1 9l2-4 3 1 3-1Z" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="4" fill="var(--paper)" stroke="none"/></symbol>
+      <symbol id="i-theme" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18Z" fill="currentColor"/></symbol>
+      <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 6h16M9 3h6m-9 3 1 15h10l1-15M10 9v8m4-8v8"/></symbol>
+      <symbol id="i-list" viewBox="0 0 24 24"><path d="M10 5h12M10 12h12M10 19h12m-20-14 2 2 3-4m-5 9 2 2 3-4m-5 9 2 2 3-4"/></symbol>
+      <symbol id="i-insight" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 1v4m0 14v4M1 12h4m14 0h4M4 4l3 3m10 10 3 3M4 20l3-3M17 7l3-3"/><circle cx="12" cy="1" r="1"/><circle cx="1" cy="12" r="1"/><circle cx="23" cy="12" r="1"/><circle cx="12" cy="23" r="1"/></symbol>
+      <symbol id="i-screen" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="15" rx="1"/><path d="M8 22h8m-4-4v4M9 9h6m-3-3v6"/></symbol>
+      <symbol id="i-dots" viewBox="0 0 24 24"><circle cx="4" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="20" cy="12" r="1.4" fill="currentColor" stroke="none"/></symbol>
+    </defs>
+  </svg>
+
+  <main id="viewport" aria-label="宋人书斋原比例画布">
+    <div id="stage" data-session="idle" data-display="bilingual">
+      <div class="desk-ornaments" aria-hidden="true">
+        <img class="bamboo-top" src="assets/bamboo-top.png" alt="">
+        <img class="bamboo-side" src="assets/bamboo-side.png" alt="">
+        <img class="bamboo-foot" src="assets/bamboo-foot.png" alt="">
+      </div>
+      <header class="window-strip">
+        <p>译以载道 · 见行更远</p>
+        <div class="window-actions" aria-label="窗口按钮外观模拟">
+          <button type="button" data-window="minimize" aria-label="模拟最小化" title="仅外观模拟"><span class="minimize-mark"></span></button>
+          <button type="button" data-window="maximize" aria-label="模拟最大化" title="仅外观模拟"><span class="maximize-mark"></span></button>
+          <button type="button" data-window="close" aria-label="模拟关闭" title="仅外观模拟"><span class="close-mark"></span></button>
+        </div>
+      </header>
+
+      <aside class="sidebar" aria-label="功能书签">
+        <div class="brand"><span class="brand-seal" aria-hidden="true">译见<br>无界</span><span class="brand-name">译见 <b>Pro</b></span><p>让世界的声音，被更多人听见</p></div>
+        <div class="sidebar-cover" aria-hidden="true"></div>
+        <nav class="bookmarks">
+          <button class="bookmark selected" type="button" aria-current="page" data-page="实时翻译"><svg class="nav-icon icon"><use href="#i-mic"/></svg><span class="bookmark-copy"><strong>实时翻译</strong><span>即时语音<br>多语互译</span></span></button>
+          <button class="bookmark" type="button" data-page="创作工坊"><svg class="nav-icon icon"><use href="#i-pen"/></svg><span class="bookmark-copy"><strong>创作工坊</strong><span>AI 润色<br>多语创作</span></span></button>
+          <button class="bookmark" type="button" data-page="媒体中心"><svg class="nav-icon icon"><use href="#i-play"/></svg><span class="bookmark-copy"><strong>媒体中心</strong><span>音视频翻译<br>文件处理</span></span></button>
+          <button class="bookmark" type="button" data-page="听析中心"><svg class="nav-icon icon"><use href="#i-headphones"/></svg><span class="bookmark-copy"><strong>听析中心</strong><span>语音转写<br>智能总结</span></span></button>
+          <button class="bookmark" type="button" data-page="任务监控"><svg class="nav-icon icon"><use href="#i-chart"/></svg><span class="bookmark-copy"><strong>任务监控</strong><span>任务进度<br>运行状态</span></span></button>
+        </nav>
+        <div class="sidebar-bottom">
+          <button type="button" id="settings-link"><svg class="icon"><use href="#i-settings"/></svg><span>设置<small>系统偏好</small></span></button>
+          <button type="button" id="theme-toggle" aria-pressed="false"><svg class="icon"><use href="#i-theme"/></svg><span>主题<small>风格切换</small></span></button>
+        </div>
+      </aside>
+
+      <div class="book-cover" aria-hidden="true"></div>
+      <div class="paper-page left-paper" aria-hidden="true"></div>
+      <div class="paper-page right-paper" aria-hidden="true"></div>
+      <div class="book-edges" aria-hidden="true">
+        <img class="book-top" src="assets/book-top.png" alt="">
+        <img class="book-bottom" src="assets/book-bottom.png" alt="">
+        <img class="book-left" src="assets/book-left.png" alt="">
+        <img class="book-right" src="assets/book-right.png" alt="">
+        <img class="book-spine" src="assets/book-spine.png" alt="">
+      </div>
+      <img class="page-bamboo" src="assets/bamboo-page.png" alt="" aria-hidden="true">
+      <div class="page-heading"><h1>实时翻译</h1><p>跨越语言的边界，连接更大的世界</p></div>
+      <p class="right-motto">海内存知己，天涯若比邻。</p>
+      <svg class="heading-rule" viewBox="0 0 2020 40" preserveAspectRatio="none" aria-hidden="true"><path d="M0 9 Q900 6 950 28 Q1050 2 2020 10"/></svg>
+
+      <section class="conversation-panel translucent-panel" aria-label="实时翻译对话">
+        <div class="segment-control" role="tablist" aria-label="原译文显示方式">
+          <button type="button" role="tab" id="display-original" aria-selected="false" aria-controls="conversation-scroll" tabindex="-1" data-display="original">原文</button>
+          <button type="button" role="tab" id="display-translated" aria-selected="false" aria-controls="conversation-scroll" tabindex="-1" data-display="translated">译文</button>
+          <button type="button" role="tab" id="display-bilingual" aria-selected="true" aria-controls="conversation-scroll" data-display="bilingual">双语</button>
+        </div>
+        <div id="conversation-scroll" class="conversation-scroll" role="tabpanel" aria-labelledby="display-bilingual" tabindex="0"></div>
+        <img class="landscape" src="assets/landscape.png" alt="" aria-hidden="true">
+        <p class="page-colophon">言之无界，心之相通。</p>
+        <button class="prototype-trigger icon-button" id="prototype-toggle" type="button" aria-label="打开原型验收状态" title="原型验收状态 · Ctrl+Shift+P"><svg class="icon"><use href="#i-dots"/></svg></button>
+      </section>
+
+      <section id="right-page" class="right-page" aria-label="历史与 AI 洞察书页">
+        <div id="reading-workspace" class="reading-workspace">
+          <header class="reading-header">
+            <div class="history-tabs" role="tablist" aria-label="右页内容">
+              <button id="history-tab" type="button" role="tab" aria-selected="false" aria-controls="history-panel" tabindex="-1" data-tab="history">历史记录</button>
+              <button id="insight-tab" type="button" role="tab" aria-selected="true" aria-controls="insight-panel" data-tab="insight">AI洞察</button>
+            </div>
+            <div id="history-actions" class="page-tools" hidden><button id="history-all" class="paper-button" type="button" aria-pressed="false">查看全部</button><button id="history-folder" class="paper-button" type="button" aria-haspopup="dialog">历史文件夹</button><button id="history-clear" class="paper-button danger" type="button" aria-haspopup="dialog">清空</button></div>
+            <div id="insight-actions" class="page-tools"><button id="preset-toggle" class="paper-button" type="button" aria-expanded="false" aria-controls="preset-menu" aria-haspopup="menu">预设 ▾</button><button id="auto-open" class="paper-button" type="button" aria-haspopup="dialog">自动分析</button><button id="advanced-open" class="paper-button" type="button" aria-haspopup="dialog">高级配置</button><button id="float-open" class="paper-button" type="button" aria-expanded="false" aria-controls="insight-float">浮动洞察</button></div>
+          </header>
+          <div id="preset-menu" class="paper-menu" role="menu" aria-label="洞察预设" hidden></div>
+          <section id="history-panel" class="reading-tab history-panel" role="tabpanel" aria-labelledby="history-tab" hidden>
+            <div class="reading-meta"><span id="history-count">最近 15 条 / 共 30 条</span><button id="history-restore" type="button" class="text-button" hidden>恢复演示历史</button></div>
+            <div id="history-content" class="reading-scroll history-content" tabindex="0" aria-label="双语历史记录"></div>
+            <div id="history-empty" class="empty-state" hidden><h2>书页尚新，静候片语。</h2><p>本页演示历史已清空，可随时恢复。</p></div>
+          </section>
+          <section id="insight-panel" class="reading-tab insight-panel" role="tabpanel" aria-labelledby="insight-tab">
+            <div id="insight-scroll" class="reading-scroll" tabindex="0" aria-label="洞察长文阅读"><article id="insight-result" class="report"></article><div id="insight-empty" class="empty-state" hidden><h2>静候片语，洞见自来。</h2><p>选择一项预设，或在页底写下你的问题。</p></div></div>
+            <div class="insight-feedback"><span id="insight-state" role="status" aria-live="polite">会议摘要 · 本地示例</span><span id="auto-state">自动分析未启动</span><button id="generation-stop" class="text-button danger" type="button" hidden>停止生成</button><button id="insight-clear" class="text-button" type="button">清除结果</button></div>
+            <form id="question-form" class="question-form"><label class="sr-only" for="insight-question">自定义提问</label><textarea id="insight-question" rows="1" maxlength="2000" placeholder="写下你的问题，获取更深入的分析…"></textarea><button id="question-send" class="paper-button primary" type="submit">发送</button></form>
+          </section>
+        </div>
+        <section class="settings-panel" aria-labelledby="settings-heading">
+          <button id="settings-toggle" class="settings-summary" type="button" aria-expanded="false" aria-controls="translation-settings"><span id="settings-heading"><svg class="icon" aria-hidden="true"><use href="#i-settings"/></svg>译事设置</span><span id="settings-summary-text">已配置 · 东南亚 | 麦克风 | 自动识别 → 英语 | 中字号</span><span id="settings-toggle-label">展开 ▾</span></button>
+          <form id="translation-settings" class="settings-grid" aria-label="本地翻译设置" hidden>
+            <label class="field">语音资源<select id="region" name="region" data-session-lock><option value="southeastasia">东南亚 · 已配置</option><option value="eastasia">东亚 · 演示配置</option><option value="local">本地演示资源</option></select></label>
+            <label class="field">麦克风设备<select id="device" name="device" data-session-lock><option>系统默认麦克风</option><option>演示 USB 麦克风</option></select></label>
+            <label class="field">系统回环设备<select id="loopback-device" name="loopback-device" data-session-lock><option>系统默认扬声器</option><option>演示耳机回环</option></select></label>
+            <label class="field">识别来源<select id="recognition-source" name="recognition-source" data-session-lock><option value="mic">麦克风</option><option value="system">系统音频</option><option value="both">麦克风 + 系统音频</option></select></label>
+            <label class="field">录制来源<select id="recording-source" name="recording-source" data-session-lock><option value="mic">麦克风</option><option value="system">系统音频</option><option value="both">麦克风 + 系统音频</option></select></label>
+            <label class="field">源语言<select id="source-language" name="source-language" data-session-lock><option value="auto">自动识别</option><option value="zh">中文</option><option value="en">英语</option><option value="ja">日语</option></select></label>
+            <label class="field">目标语言<select id="target-language" name="target-language" data-session-lock><option value="en">英语</option><option value="zh">中文</option><option value="ja">日语</option></select></label>
+            <label class="field">阅读字号<select id="font-size" name="font-size"><option value="16">中（16）</option><option value="20">大（20）</option><option value="24">特大（24）</option></select></label>
+            <div class="field"><span>设备列表</span><button id="refresh-devices" class="paper-button" type="button" data-session-lock>刷新设备</button></div>
+            <p id="settings-note" class="settings-note" role="status">资源已配置，不代表云端连通；设备与路由均为本地示例。</p>
+          </form>
+        </section>
+        <footer id="session-controls" class="session-controls">
+          <div class="session-info"><strong id="connection-state" role="status" aria-live="polite">待开始</strong><span id="source-summary">识别：麦克风 · 录制：麦克风</span><button id="demo-info" class="text-button demo-label" type="button" aria-haspopup="dialog">本地演示</button><span id="page-notice" role="status"></span></div>
+          <label class="subtitle-field"><svg class="icon" aria-hidden="true"><use href="#i-screen"/></svg><span>字幕浮窗</span><input id="subtitle-toggle" type="checkbox" role="switch" aria-label="字幕浮窗"><span class="switch-track" aria-hidden="true"></span></label>
+          <button class="seal-button" id="start-button" type="button" aria-pressed="false"><span id="start-label">开始翻译</span><span class="wave seal-wave" aria-hidden="true"></span></button>
+        </footer>
+      </section>
+      <div class="subtitle-preview" id="subtitle-preview" hidden><button id="subtitle-close" class="text-button" type="button" aria-label="关闭页面内字幕浮窗">×</button><span>让交流跨越语言的边界。</span><span lang="en">Let every conversation flow naturally.</span><small>页面内字幕预览</small></div>
+    </div>
+  </main>
+
+  <aside class="prototype-controls" id="prototype-controls" hidden aria-label="原型验收状态">
+    <header><strong>原型验收状态</strong><button class="paper-button" type="button" id="prototype-close" aria-label="关闭原型验收状态">×</button></header>
+    <p>仅改变本地演示内容，不连接业务或云端。</p>
+    <fieldset><legend>对话内容</legend><label><input type="radio" name="fixture" value="reference" checked>原稿两段</label><label><input type="radio" name="fixture" value="long">长对话</label></fieldset>
+    <label class="control-line"><input type="checkbox" id="empty-insight">空洞察</label>
+    <label class="control-line"><input type="checkbox" id="actual-size">原像素 100%（允许滚动）</label>
+    <button class="paper-button" id="reset-prototype" type="button">恢复默认状态</button>
+    <small>Ctrl+Shift+P 打开／关闭 · Esc 收起</small>
+  </aside>
+  <dialog id="history-clear-dialog" class="paper-dialog" aria-labelledby="clear-title"><h2 id="clear-title">清空演示历史？</h2><p>只清空本页的 30 条本地示例。洞察、翻译状态不受影响，之后可恢复。</p><div class="dialog-actions"><button class="paper-button" type="button" data-close-dialog autofocus>取消</button><button id="history-confirm-clear" class="paper-button danger" type="button">确认清空</button></div></dialog>
+  <dialog id="auto-dialog" class="paper-dialog" aria-labelledby="auto-title">
+    <header class="dialog-heading"><h2 id="auto-title">自动分析</h2><button class="text-button" type="button" data-close-dialog aria-label="关闭自动分析">×</button></header>
+    <form id="auto-form" class="dialog-form">
+      <label class="check-line"><input id="auto-enabled" type="checkbox" checked>启用自动洞察</label>
+      <label>触发方式<select id="auto-mode"><option value="interval">定时循环</option><option value="data">新数据触发</option></select></label>
+      <label>间隔 / 最短触发间隔（秒）<input id="auto-interval" type="number" min="10" max="3600" value="30" required></label>
+      <label>自动提示词<textarea id="auto-prompt" rows="3" maxlength="2000" required>总结会议进展、共识与下一步行动。</textarea></label>
+      <label class="check-line"><input id="auto-buffer" type="checkbox" checked>缓冲输出，完成后一次呈现</label>
+      <p id="auto-dialog-state" role="status">自动分析未启动</p><p class="quiet-note">停止自动只停止后续调度；当前生成请使用「停止生成」。</p>
+      <div class="dialog-actions"><button id="auto-start" class="paper-button primary" type="button">启动自动</button><button id="simulate-data" class="paper-button" type="button">触发演示新句</button></div>
+      <p id="auto-event-note" class="quiet-note" role="status">演示新句仅更新触发信号，不写入历史。</p>
+      <div class="dialog-actions"><button class="paper-button" type="button" data-close-dialog>取消编辑</button><button class="paper-button" type="submit">保存配置</button></div>
+    </form>
+  </dialog>
+  <dialog id="advanced-dialog" class="paper-dialog wide-dialog" aria-labelledby="advanced-title">
+    <header class="dialog-heading"><h2 id="advanced-title">洞察高级配置</h2><button class="text-button" type="button" data-close-dialog aria-label="关闭高级配置">×</button></header>
+    <div class="config-tabs" role="tablist" aria-label="高级配置分组"><button id="config-prompts-tab" type="button" role="tab" aria-selected="true" aria-controls="config-prompts" data-config="prompts">提示词</button><button id="config-presets-tab" type="button" role="tab" aria-selected="false" tabindex="-1" aria-controls="config-presets" data-config="presets">预设管理</button><button id="config-model-tab" type="button" role="tab" aria-selected="false" tabindex="-1" aria-controls="config-model" data-config="model">模型配置</button></div>
+    <form id="advanced-form" class="dialog-form">
+      <section id="config-prompts" role="tabpanel" aria-labelledby="config-prompts-tab"><label>系统提示词<textarea id="system-prompt" rows="4" maxlength="4000" required></textarea></label><label>用户内容模板<textarea id="user-template" rows="4" maxlength="4000" required></textarea></label><small>保留 {history} 与 {question}，分别带入本地历史与提问。</small></section>
+      <section id="config-presets" role="tabpanel" aria-labelledby="config-presets-tab" hidden><label>选择预设<select id="preset-editor-select"></select></label><label>预设名称<input id="preset-name" maxlength="40"></label><label>预设提示词<textarea id="preset-prompt" rows="5" maxlength="4000"></textarea></label><div class="dialog-actions"><button id="preset-add" class="paper-button" type="button">添加预设</button><button id="preset-delete" class="paper-button danger" type="button">删除所选</button></div></section>
+      <section id="config-model" role="tabpanel" aria-labelledby="config-model-tab" hidden><label>本地模型占位名称<input id="model-name" maxlength="80" required></label><p class="quiet-note">仅为本页模型配置界面，不填写云端地址或密钥，不请求真实模型。</p></section>
+      <p id="config-state" role="status">修改仅在保存后应用；取消不提交。</p><div class="dialog-actions"><button class="paper-button" type="button" data-close-dialog>取消</button><button class="paper-button primary" type="submit">保存</button></div>
+    </form>
+  </dialog>
+  <dialog id="info-dialog" class="paper-dialog" aria-labelledby="info-title"><header class="dialog-heading"><h2 id="info-title">本地演示</h2><button class="text-button" type="button" data-close-dialog aria-label="关闭说明" autofocus>×</button></header><div id="info-content"></div></dialog>
+  <aside id="insight-float" class="floating-paper" role="dialog" aria-modal="false" aria-labelledby="float-title" hidden><header id="float-drag"><strong id="float-title">浮动洞察</strong><span class="float-actions"><button id="float-pin" class="text-button" type="button" aria-pressed="false">置顶</button><button id="float-smaller" class="text-button" type="button" aria-label="减小浮动洞察字号">A−</button><button id="float-larger" class="text-button" type="button" aria-label="增大浮动洞察字号">A+</button><button id="float-close" class="text-button" type="button" aria-label="关闭浮动洞察">×</button></span></header><div id="float-result" class="floating-scroll" tabindex="0" aria-label="同步洞察结果"></div><small>页面内浮纸 · 拖动标题移动 · 同步当前结果</small></aside>
+  <noscript>请启用 JavaScript，以使用本地原型交互。</noscript>
+</body>
+</html>

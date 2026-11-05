@@ -1,0 +1,377 @@
+{
+  "status": "pass",
+  "browser": "Edg/156.0.4314.58",
+  "javascript": "15.6.12.10",
+  "viewport": [
+    2560,
+    1440
+  ],
+  "mode": "owned headless Edge, real renderer/CDP input, file://; not desktop physical input",
+  "screenshots": [
+    "C:\\Scripts\\TranslationToolUI\\design\\宋人书斋HTML原型_20261105\\verification\\prototype-baseline-2560x1440.png",
+    "C:\\Scripts\\TranslationToolUI\\design\\宋人书斋HTML原型_20261105\\verification\\prototype-long-empty-2560x1440.png"
+  ],
+  "checks": [
+    {
+      "name": "local image resources loaded",
+      "status": "pass",
+      "actual": [
+        {
+          "src": "assets/bamboo-top.png",
+          "loaded": true,
+          "width": 307,
+          "height": 103
+        },
+        {
+          "src": "assets/bamboo-side.png",
+          "loaded": true,
+          "width": 64,
+          "height": 802
+        },
+        {
+          "src": "assets/bamboo-foot.png",
+          "loaded": true,
+          "width": 54,
+          "height": 288
+        },
+        {
+          "src": "assets/book-top.png",
+          "loaded": true,
+          "width": 2252,
+          "height": 56
+        },
+        {
+          "src": "assets/book-bottom.png",
+          "loaded": true,
+          "width": 2252,
+          "height": 62
+        },
+        {
+          "src": "assets/book-left.png",
+          "loaded": true,
+          "width": 98,
+          "height": 1232
+        },
+        {
+          "src": "assets/book-right.png",
+          "loaded": true,
+          "width": 75,
+          "height": 1232
+        },
+        {
+          "src": "assets/book-spine.png",
+          "loaded": true,
+          "width": 37,
+          "height": 1237
+        },
+        {
+          "src": "assets/bamboo-page.png",
+          "loaded": true,
+          "width": 116,
+          "height": 117
+        },
+        {
+          "src": "assets/landscape.png",
+          "loaded": true,
+          "width": 950,
+          "height": 356
+        },
+        {
+          "src": "assets/bamboo-insight.png",
+          "loaded": true,
+          "width": 296,
+          "height": 133
+        }
+      ]
+    },
+    {
+      "name": "CSS background resources decode",
+      "status": "pass",
+      "actual": [
+        {
+          "src": "assets/desk-paper.png",
+          "loaded": true
+        },
+        {
+          "src": "assets/inkstone.png",
+          "loaded": true
+        },
+        {
+          "src": "assets/wood-edge.png",
+          "loaded": true
+        },
+        {
+          "src": "assets/bookmark-idle.png",
+          "loaded": true
+        },
+        {
+          "src": "assets/bookmark-active.png",
+          "loaded": true
+        },
+        {
+          "src": "assets/nav-paper.png",
+          "loaded": true
+        },
+        {
+          "src": "assets/page-paper.png",
+          "loaded": true
+        },
+        {
+          "src": "assets/seal-blank.png",
+          "loaded": true
+        }
+      ]
+    },
+    {
+      "name": "baseline canvas and major panels",
+      "status": "pass",
+      "actual": [
+        {
+          "selector": "#stage",
+          "x": 0,
+          "y": 0,
+          "width": 2560,
+          "height": 1440
+        },
+        {
+          "selector": ".conversation-panel",
+          "x": 406,
+          "y": 268,
+          "width": 970,
+          "height": 1090
+        },
+        {
+          "selector": ".history-panel",
+          "x": 1425,
+          "y": 270,
+          "width": 1038,
+          "height": 415
+        },
+        {
+          "selector": ".insight-panel",
+          "x": 1425,
+          "y": 707,
+          "width": 1038,
+          "height": 216
+        },
+        {
+          "selector": ".settings-panel",
+          "x": 1425,
+          "y": 946,
+          "width": 1038,
+          "height": 392
+        }
+      ]
+    },
+    {
+      "name": "default substantive content",
+      "status": "pass",
+      "actual": {
+        "messages": 2,
+        "history": 3,
+        "insights": 3,
+        "english": "Let every conversation flow naturally."
+      }
+    },
+    {
+      "name": "reference initial highlight and vertical quote",
+      "status": "pass",
+      "actual": {
+        "initial": "reference",
+        "selected": "true",
+        "quote": [
+          {
+            "text": "必先利其器",
+            "width": 33,
+            "height": 165,
+            "nowrap": "nowrap"
+          },
+          {
+            "text": "工欲善其事",
+            "width": 33,
+            "height": 165,
+            "nowrap": "nowrap"
+          }
+        ]
+      }
+    },
+    {
+      "name": "default content fits without artificial scrollbars",
+      "status": "pass",
+      "actual": [
+        {
+          "selector": "#conversation-scroll",
+          "content": 585,
+          "visible": 585
+        },
+        {
+          "selector": "#history-content",
+          "content": 315,
+          "visible": 315
+        }
+      ]
+    },
+    {
+      "name": "bookmark actual hover",
+      "status": "pass",
+      "actual": {
+        "restingBookmark": {
+          "y": 251,
+          "filter": "drop-shadow(rgba(72, 60, 44, 0.333) 4px 8px 5px)"
+        },
+        "hoveringBookmark": {
+          "y": 246,
+          "filter": "drop-shadow(rgba(73, 54, 37, 0.4) 7px 14px 7px)"
+        }
+      }
+    },
+    {
+      "name": "original segmentation",
+      "status": "pass",
+      "actual": true
+    },
+    {
+      "name": "keyboard translated segmentation and focus",
+      "status": "pass",
+      "actual": true
+    },
+    {
+      "name": "keyboard focus-visible",
+      "status": "pass",
+      "actual": {
+        "id": "conversation-scroll",
+        "width": "3px",
+        "style": "solid"
+      }
+    },
+    {
+      "name": "seal hover/pressed",
+      "status": "pass",
+      "actual": {
+        "hoverY": 1165,
+        "pressedY": 1170
+      }
+    },
+    {
+      "name": "connecting disabled state",
+      "status": "pass",
+      "actual": true
+    },
+    {
+      "name": "running waveform",
+      "status": "pass",
+      "actual": {
+        "label": "停止翻译",
+        "animation": "waveform"
+      }
+    },
+    {
+      "name": "stop restores initial",
+      "status": "pass",
+      "actual": true
+    },
+    {
+      "name": "volume actual keyboard input",
+      "status": "pass",
+      "actual": {
+        "value": "1",
+        "output": "1"
+      }
+    },
+    {
+      "name": "other volume mute",
+      "status": "pass",
+      "actual": true
+    },
+    {
+      "name": "other volume restore",
+      "status": "pass",
+      "actual": true
+    },
+    {
+      "name": "font actual native selection",
+      "status": "pass",
+      "actual": {
+        "value": "20",
+        "size": "42px"
+      }
+    },
+    {
+      "name": "subtitle switch",
+      "status": "pass",
+      "actual": true
+    },
+    {
+      "name": "history expand",
+      "status": "pass",
+      "actual": true
+    },
+    {
+      "name": "insight tab",
+      "status": "pass",
+      "actual": true
+    },
+    {
+      "name": "long dialogue and empty insight",
+      "status": "pass",
+      "actual": {
+        "messages": 5,
+        "scroll": 3353,
+        "height": 585,
+        "empty": true
+      }
+    },
+    {
+      "name": "long dialogue real wheel scroll",
+      "status": "pass",
+      "actual": true
+    },
+    {
+      "name": "reduced motion removes lift",
+      "status": "pass",
+      "actual": true
+    },
+    {
+      "name": "proportional 1280 viewport",
+      "status": "pass",
+      "actual": {
+        "width": 1280,
+        "height": 720,
+        "scroll": 1280
+      }
+    },
+    {
+      "name": "no page external requests or errors",
+      "status": "pass",
+      "actual": {
+        "requests": 22,
+        "errors": []
+      }
+    }
+  ],
+  "observedRequests": [
+    "file:///C:/Scripts/TranslationToolUI/design/%E5%AE%8B%E4%BA%BA%E4%B9%A6%E6%96%8BHTML%E5%8E%9F%E5%9E%8B_20261105/index.html",
+    "file:///C:/Scripts/TranslationToolUI/design/%E5%AE%8B%E4%BA%BA%E4%B9%A6%E6%96%8BHTML%E5%8E%9F%E5%9E%8B_20261105/styles.css",
+    "file:///C:/Scripts/TranslationToolUI/design/%E5%AE%8B%E4%BA%BA%E4%B9%A6%E6%96%8BHTML%E5%8E%9F%E5%9E%8B_20261105/app.js",
+    "file:///C:/Scripts/TranslationToolUI/design/%E5%AE%8B%E4%BA%BA%E4%B9%A6%E6%96%8BHTML%E5%8E%9F%E5%9E%8B_20261105/assets/bamboo-top.png",
+    "file:///C:/Scripts/TranslationToolUI/design/%E5%AE%8B%E4%BA%BA%E4%B9%A6%E6%96%8BHTML%E5%8E%9F%E5%9E%8B_20261105/assets/bamboo-side.png",
+    "file:///C:/Scripts/TranslationToolUI/design/%E5%AE%8B%E4%BA%BA%E4%B9%A6%E6%96%8BHTML%E5%8E%9F%E5%9E%8B_20261105/assets/bamboo-foot.png",
+    "file:///C:/Scripts/TranslationToolUI/design/%E5%AE%8B%E4%BA%BA%E4%B9%A6%E6%96%8BHTML%E5%8E%9F%E5%9E%8B_20261105/assets/book-top.png",
+    "file:///C:/Scripts/TranslationToolUI/design/%E5%AE%8B%E4%BA%BA%E4%B9%A6%E6%96%8BHTML%E5%8E%9F%E5%9E%8B_20261105/assets/book-bottom.png",
+    "file:///C:/Scripts/TranslationToolUI/design/%E5%AE%8B%E4%BA%BA%E4%B9%A6%E6%96%8BHTML%E5%8E%9F%E5%9E%8B_20261105/assets/book-left.png",
+    "file:///C:/Scripts/TranslationToolUI/design/%E5%AE%8B%E4%BA%BA%E4%B9%A6%E6%96%8BHTML%E5%8E%9F%E5%9E%8B_20261105/assets/book-right.png",
+    "file:///C:/Scripts/TranslationToolUI/design/%E5%AE%8B%E4%BA%BA%E4%B9%A6%E6%96%8BHTML%E5%8E%9F%E5%9E%8B_20261105/assets/book-spine.png",
+    "file:///C:/Scripts/TranslationToolUI/design/%E5%AE%8B%E4%BA%BA%E4%B9%A6%E6%96%8BHTML%E5%8E%9F%E5%9E%8B_20261105/assets/bamboo-page.png",
+    "file:///C:/Scripts/TranslationToolUI/design/%E5%AE%8B%E4%BA%BA%E4%B9%A6%E6%96%8BHTML%E5%8E%9F%E5%9E%8B_20261105/assets/landscape.png",
+    "file:///C:/Scripts/TranslationToolUI/design/%E5%AE%8B%E4%BA%BA%E4%B9%A6%E6%96%8BHTML%E5%8E%9F%E5%9E%8B_20261105/assets/bamboo-insight.png",
+    "file:///C:/Scripts/TranslationToolUI/design/%E5%AE%8B%E4%BA%BA%E4%B9%A6%E6%96%8BHTML%E5%8E%9F%E5%9E%8B_20261105/assets/desk-paper.png",
+    "file:///C:/Scripts/TranslationToolUI/design/%E5%AE%8B%E4%BA%BA%E4%B9%A6%E6%96%8BHTML%E5%8E%9F%E5%9E%8B_20261105/assets/wood-edge.png",
+    "file:///C:/Scripts/TranslationToolUI/design/%E5%AE%8B%E4%BA%BA%E4%B9%A6%E6%96%8BHTML%E5%8E%9F%E5%9E%8B_20261105/assets/bookmark-idle.png",
+    "file:///C:/Scripts/TranslationToolUI/design/%E5%AE%8B%E4%BA%BA%E4%B9%A6%E6%96%8BHTML%E5%8E%9F%E5%9E%8B_20261105/assets/bookmark-active.png",
+    "file:///C:/Scripts/TranslationToolUI/design/%E5%AE%8B%E4%BA%BA%E4%B9%A6%E6%96%8BHTML%E5%8E%9F%E5%9E%8B_20261105/assets/nav-paper.png",
+    "file:///C:/Scripts/TranslationToolUI/design/%E5%AE%8B%E4%BA%BA%E4%B9%A6%E6%96%8BHTML%E5%8E%9F%E5%9E%8B_20261105/assets/page-paper.png",
+    "file:///C:/Scripts/TranslationToolUI/design/%E5%AE%8B%E4%BA%BA%E4%B9%A6%E6%96%8BHTML%E5%8E%9F%E5%9E%8B_20261105/assets/seal-blank.png",
+    "file:///C:/Scripts/TranslationToolUI/design/%E5%AE%8B%E4%BA%BA%E4%B9%A6%E6%96%8BHTML%E5%8E%9F%E5%9E%8B_20261105/assets/inkstone.png"
+  ],
+  "errors": []
+}

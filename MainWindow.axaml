@@ -27,6 +27,28 @@
 
     <Window.Resources>
         <controls:LevelToHeightConverter x:Key="LevelToHeight" MaxHeight="16"/>
+        <!-- 只用于原稿标题按钮，不替换经典或旧书斋的全局 Button 主题。 -->
+        <ControlTheme x:Key="InkStudyCaptionButtonTheme" TargetType="Button">
+            <Setter Property="FocusAdorner" Value="{x:Null}"/>
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <Border x:Name="PART_CaptionSurface" Background="{TemplateBinding Background}">
+                        <Grid>
+                            <ContentPresenter x:Name="PART_ContentPresenter"
+                                              Background="Transparent"
+                                              Content="{TemplateBinding Content}"
+                                              ContentTemplate="{TemplateBinding ContentTemplate}"
+                                              Foreground="{TemplateBinding Foreground}"
+                                              HorizontalContentAlignment="Center"
+                                              VerticalContentAlignment="Center"/>
+                            <Border x:Name="PART_CaptionFocus" Margin="4"
+                                    BorderThickness="2" CornerRadius="2"
+                                    BorderBrush="#79613A" Opacity="0" IsHitTestVisible="False"/>
+                        </Grid>
+                    </Border>
+                </ControlTemplate>
+            </Setter>
+        </ControlTheme>
     </Window.Resources>
 
     <Window.Styles>
@@ -113,6 +135,14 @@
             <Setter Property="MaxLines" Value="1"/>
         </Style>
         <StyleInclude Source="avares://TrueFluentPro/Styles/SongStudy.axaml"/>
+        <!-- 将默认值放在 Style 层级，避免内联 LocalValue 压住 ink-study 覆盖。 -->
+        <Style Selector="Border#ShellTitleBar">
+            <Setter Property="Background" Value="{DynamicResource NavPanelBackgroundBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource CardBorderBrush}"/>
+        </Style>
+        <Style Selector="Border#ShellTitleBar TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+        </Style>
         <Style Selector=":is(Window).ink-study Border#ShellTitleBar">
             <Setter Property="Background" Value="#EEE9DF"/>
             <Setter Property="BorderBrush" Value="#D5C4A5"/>
@@ -121,14 +151,43 @@
             <Setter Property="Foreground" Value="#263832"/>
             <Setter Property="FontFamily" Value="SimSun, Songti SC, serif"/>
         </Style>
+        <Style Selector=":is(Window).ink-study Button.shell-caption">
+            <Setter Property="Theme" Value="{StaticResource InkStudyCaptionButtonTheme}"/>
+            <Setter Property="Foreground" Value="#263832"/>
+        </Style>
+        <Style Selector=":is(Window).ink-study Button.shell-caption:pointerover">
+            <Setter Property="Background" Value="#E2D8C5"/>
+        </Style>
+        <Style Selector=":is(Window).ink-study Button.shell-caption:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="#263832"/>
+        </Style>
+        <Style Selector=":is(Window).ink-study Button.shell-caption:pressed">
+            <Setter Property="Background" Value="#D2C4AB"/>
+        </Style>
+        <Style Selector=":is(Window).ink-study Button.shell-caption:focus-visible /template/ Border#PART_CaptionFocus">
+            <Setter Property="Opacity" Value="1"/>
+        </Style>
+        <Style Selector=":is(Window).ink-study Button.shell-caption:disabled">
+            <Setter Property="Opacity" Value="0.4"/>
+        </Style>
+        <Style Selector=":is(Window).ink-study Button.shell-caption-close:pointerover">
+            <Setter Property="Background" Value="#AD4436"/>
+            <Setter Property="Foreground" Value="White"/>
+        </Style>
+        <Style Selector=":is(Window).ink-study Button.shell-caption-close:pointerover /template/ ContentPresenter">
+            <Setter Property="Foreground" Value="White"/>
+        </Style>
+        <Style Selector=":is(Window).ink-study Button.shell-caption-close:pressed">
+            <Setter Property="Background" Value="#8B3028"/>
+            <Setter Property="Foreground" Value="White"/>
+        </Style>
     </Window.Styles>
 
     <Grid RowDefinitions="Auto,*"
           Background="{DynamicResource PageBackgroundBrush}">
         <!-- 与正文使用同一 DIP 布局及绘制缩放，不使用系统标题栏的物理像素高度。 -->
         <Border Name="ShellTitleBar"
-                Background="{DynamicResource NavPanelBackgroundBrush}"
-                BorderBrush="{DynamicResource CardBorderBrush}"
                 BorderThickness="0,0,0,1">
             <Grid ColumnDefinitions="*,Auto">
                 <Border Name="ShellTitleDragArea"
@@ -139,7 +198,6 @@
                                Margin="14,0"
                                FontSize="13"
                                FontWeight="SemiBold"
-                               Foreground="{DynamicResource TextPrimaryBrush}"
                                VerticalAlignment="Center"
                                TextTrimming="CharacterEllipsis"/>
                 </Border>
