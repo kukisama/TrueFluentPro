@@ -20,7 +20,8 @@ namespace TrueFluentPro.Views
 {
     public partial class AudioLabView : UserControl
     {
-        private AudioLabViewModel? ViewModel => DataContext as AudioLabViewModel;
+        public AudioLabViewModel? ViewModel => DataContext as AudioLabViewModel;
+        private AudioLabViewModel? _boundViewModel;
         private bool _initialized;
         private bool _isExportPickerOpen;
 
@@ -31,9 +32,14 @@ namespace TrueFluentPro.Views
         /// <summary>展开宽度。</summary>
         private const double ExpandedPanelWidth = 200;
 
-        public AudioLabView()
+        public AudioLabView() : this(true)
         {
-            InitializeComponent();
+        }
+
+        protected AudioLabView(bool loadDefaultView)
+        {
+            if (loadDefaultView)
+                InitializeComponent();
 
             // 拖拽支持
             AddHandler(DragDrop.DropEvent, OnDrop);
@@ -72,16 +78,49 @@ namespace TrueFluentPro.Views
                 folderLauncher,
                 queueService,
                 eventBus);
-            vm.FilePanelStateChanged += OnFilePanelStateChanged;
-            DataContext = vm;
-            ApplyFilePanelState(vm.IsFilePanelOpen);
+            BindViewModel(vm);
             _ = vm.RefreshAudioFilesAsync();
+        }
+
+        /// <summary>仅绑定呈现层；会话、播放器和控制面板由宿主共享并在最终关闭时释放。</summary>
+        public void BindViewModel(AudioLabViewModel vm)
+        {
+            ArgumentNullException.ThrowIfNull(vm);
+            _initialized = true;
+            DataContext = vm;
+            ObserveViewModel(vm);
+            ApplyFilePanelState(vm.IsFilePanelOpen);
+        }
+
+        private void ObserveViewModel(AudioLabViewModel? vm)
+        {
+            if (ReferenceEquals(_boundViewModel, vm)) return;
+            if (_boundViewModel != null)
+                _boundViewModel.FilePanelStateChanged -= OnFilePanelStateChanged;
+            _boundViewModel = vm;
+            if (vm != null)
+                vm.FilePanelStateChanged += OnFilePanelStateChanged;
+        }
+
+        protected override void OnDataContextChanged(EventArgs e)
+        {
+            base.OnDataContextChanged(e);
+            ObserveViewModel(ViewModel);
+            ApplyFilePanelState(ViewModel?.IsFilePanelOpen ?? false);
         }
 
         protected override void OnLoaded(RoutedEventArgs e)
         {
             base.OnLoaded(e);
+            ObserveViewModel(ViewModel);
             ApplyFilePanelState(ViewModel?.IsFilePanelOpen ?? false);
+        }
+
+        protected override void OnUnloaded(RoutedEventArgs e)
+        {
+            ObserveViewModel(null);
+            // 只解除本视图订阅；不能在换页/换主题时 Dispose 共享 VM。
+            base.OnUnloaded(e);
         }
 
         // ── 空格键 播放/暂停 ─────────────────────────────────
@@ -114,48 +153,48 @@ namespace TrueFluentPro.Views
             ApplyFilePanelState(isOpen);
         }
 
-        private void ApplyFilePanelState(bool isOpen)
+        protected virtual void ApplyFilePanelState(bool isOpen)
         {
-            if (FilePanelRail != null)
-                FilePanelRail.Width = isOpen ? ExpandedPanelWidth : CompactPanelWidth;
+            if (this.FindControl<Border>("FilePanelRail") is { } rail)
+                rail.Width = isOpen ? ExpandedPanelWidth : CompactPanelWidth;
         }
 
-        private void ToggleFilePanel_Click(object? sender, RoutedEventArgs e)
+        protected void ToggleFilePanel_Click(object? sender, RoutedEventArgs e)
         {
             if (ViewModel != null)
                 ViewModel.IsFilePanelOpen = !ViewModel.IsFilePanelOpen;
         }
 
         // ── 生命周期面板展开/收起 ────────────────────────────
-        private void ToggleLifecyclePanel_Click(object? sender, RoutedEventArgs e)
+        protected void ToggleLifecyclePanel_Click(object? sender, RoutedEventArgs e)
         {
-            if (LifecycleOverlay != null)
-                LifecycleOverlay.IsVisible = !LifecycleOverlay.IsVisible;
+            if (this.FindControl<Panel>("LifecycleOverlay") is { } overlay)
+                overlay.IsVisible = !overlay.IsVisible;
         }
 
-        private void LifecycleOverlayBackdrop_PointerPressed(object? sender, PointerPressedEventArgs e)
+        protected void LifecycleOverlayBackdrop_PointerPressed(object? sender, PointerPressedEventArgs e)
         {
-            if (LifecycleOverlay != null)
-                LifecycleOverlay.IsVisible = false;
+            if (this.FindControl<Panel>("LifecycleOverlay") is { } overlay)
+                overlay.IsVisible = false;
         }
 
         // ── 标签页切换 ───────────────────────────────────────
-        private void Tab_Summary_Click(object? sender, RoutedEventArgs e)
+        protected void Tab_Summary_Click(object? sender, RoutedEventArgs e)
             => SetTab(AudioLabTabKind.Summary);
-        private void Tab_Transcript_Click(object? sender, RoutedEventArgs e)
+        protected void Tab_Transcript_Click(object? sender, RoutedEventArgs e)
             => SetTab(AudioLabTabKind.Transcript);
-        private void Tab_MindMap_Click(object? sender, RoutedEventArgs e)
+        protected void Tab_MindMap_Click(object? sender, RoutedEventArgs e)
             => SetTab(AudioLabTabKind.MindMap);
-        private void Tab_Insight_Click(object? sender, RoutedEventArgs e)
+        protected void Tab_Insight_Click(object? sender, RoutedEventArgs e)
             => SetTab(AudioLabTabKind.Insight);
-        private void Tab_Research_Click(object? sender, RoutedEventArgs e)
+        protected void Tab_Research_Click(object? sender, RoutedEventArgs e)
             => SetTab(AudioLabTabKind.Research);
-        private void Tab_Podcast_Click(object? sender, RoutedEventArgs e)
+        protected void Tab_Podcast_Click(object? sender, RoutedEventArgs e)
             => SetTab(AudioLabTabKind.Podcast);
-        private void Tab_Translation_Click(object? sender, RoutedEventArgs e)
+        protected void Tab_Translation_Click(object? sender, RoutedEventArgs e)
             => SetTab(AudioLabTabKind.Translation);
 
-        private void Tab_Custom_Click(object? sender, RoutedEventArgs e)
+        protected void Tab_Custom_Click(object? sender, RoutedEventArgs e)
         {
             if (ViewModel == null) return;
             if (sender is RadioButton rb && rb.Tag is string stageKey)
@@ -172,7 +211,7 @@ namespace TrueFluentPro.Views
         }
 
         // ── 打开文件 ─────────────────────────────────────────
-        private async void OpenFile_Click(object? sender, RoutedEventArgs e)
+        protected async void OpenFile_Click(object? sender, RoutedEventArgs e)
         {
             var topLevel = TopLevel.GetTopLevel(this);
             if (topLevel == null) return;
@@ -369,7 +408,7 @@ namespace TrueFluentPro.Views
         }
 
         // ── 通用导出 ─────────────────────────────────────────
-        private async void ExportCurrent_Click(object? sender, RoutedEventArgs e)
+        protected async void ExportCurrent_Click(object? sender, RoutedEventArgs e)
         {
             var topLevel = TopLevel.GetTopLevel(this);
             var viewModel = ViewModel;
@@ -433,7 +472,7 @@ namespace TrueFluentPro.Views
 
         // ── 转录列表交互 ─────────────────────────────────────
 
-        private void TranscriptSegment_Tapped(object? sender, TappedEventArgs e)
+        protected void TranscriptSegment_Tapped(object? sender, TappedEventArgs e)
         {
             if (sender is ListBox lb && lb.SelectedItem is TranscriptSegment seg)
             {
@@ -442,7 +481,7 @@ namespace TrueFluentPro.Views
             }
         }
 
-        private void TranscriptSegment_PointerReleased(object? sender, PointerReleasedEventArgs e)
+        protected void TranscriptSegment_PointerReleased(object? sender, PointerReleasedEventArgs e)
         {
             if (e.InitialPressMouseButton != MouseButton.Right) return;
             if (sender is not ListBox listBox) return;

@@ -1,0 +1,204 @@
+<views:TaskQueueMonitorView xmlns="https://github.com/avaloniaui"
+                           xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                           xmlns:views="using:TrueFluentPro.Views"
+                           xmlns:icons="https://github.com/projektanker/icons.avalonia"
+                           x:Class="TrueFluentPro.Views.SongScrollTaskQueueMonitorView"
+                           x:Name="TaskMonitorRoot" x:CompileBindings="False" FontSize="28">
+  <views:TaskQueueMonitorView.Resources>
+    <views:SongScrollTaskQueueMonitorViewSortCaptionConverter x:Key="SortCaption"/>
+  </views:TaskQueueMonitorView.Resources>
+  <views:TaskQueueMonitorView.Styles>
+    <!-- 已有传递依赖；样式只安装在本页，不改公共 Shell / App。 -->
+    <StyleInclude Source="avares://Avalonia.Controls.DataGrid/Themes/Fluent.xaml"/>
+    <Style Selector=".task-content TextBlock"><Setter Property="FontSize" Value="28"/></Style>
+    <Style Selector=".task-content SelectableTextBlock"><Setter Property="FontSize" Value="26"/><Setter Property="Foreground" Value="{DynamicResource ScrollInk}"/></Style>
+    <Style Selector=".task-content TextBlock.task-muted"><Setter Property="FontSize" Value="26"/><Setter Property="Foreground" Value="{DynamicResource ScrollMuted}"/></Style>
+    <Style Selector=".task-content Button"><Setter Property="FontSize" Value="28"/><Setter Property="MinHeight" Value="54"/><Setter Property="Padding" Value="18,10"/></Style>
+    <Style Selector="Button.task-sort"><Setter Property="FontSize" Value="26"/><Setter Property="Padding" Value="8,8"/><Setter Property="Background" Value="Transparent"/><Setter Property="BorderThickness" Value="0"/><Setter Property="Foreground" Value="{DynamicResource ScrollInk}"/></Style>
+    <Style Selector=".task-content NumericUpDown"><Setter Property="FontSize" Value="28"/><Setter Property="MinHeight" Value="54"/></Style>
+    <Style Selector=".task-content ListBoxItem"><Setter Property="HorizontalContentAlignment" Value="Stretch"/><Setter Property="Padding" Value="18,22"/></Style>
+    <Style Selector=".task-content Expander"><Setter Property="FontSize" Value="28"/><Setter Property="HorizontalContentAlignment" Value="Stretch"/></Style>
+    <Style Selector="Border.task-rule"><Setter Property="BorderBrush" Value="#30958568"/><Setter Property="BorderThickness" Value="0,0,0,1"/></Style>
+    <Style Selector="DataGridColumnHeader"><Setter Property="FontSize" Value="26"/><Setter Property="Background" Value="#18537674"/><Setter Property="Foreground" Value="{DynamicResource ScrollInk}"/></Style>
+    <Style Selector="DataGridCell"><Setter Property="Padding" Value="14,12"/><Setter Property="FontSize" Value="26"/></Style>
+  </views:TaskQueueMonitorView.Styles>
+
+  <!-- 唯一分界由 Shell 左右纸页定义；本页绝不另画书脊或另套双栏 Grid。 -->
+  <views:SongScrollShell x:Name="BookShell" PageKey="taskmonitor" PageTitle="任务监控"
+                         PageSubtitle="静听时光流转，记录每一次声音的抵达" DefaultLeftRatio="0.25">
+    <views:SongScrollShell.LeftPage>
+      <ScrollViewer Classes="task-content" Margin="30,22,32,28" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Spacing="24" Margin="0,0,12,16">
+          <TextBlock Classes="scroll-section-title" Text="任务分类" FontSize="34"/>
+          <ListBox Classes="scroll-list" ItemsSource="{Binding Buckets}" SelectedItem="{Binding SelectedBucket, Mode=TwoWay}"
+                   Background="Transparent" BorderThickness="0" SelectionMode="Single">
+            <ListBox.ItemTemplate>
+              <DataTemplate>
+                <Grid ColumnDefinitions="40,*,Auto" ColumnSpacing="20">
+                  <icons:Icon Value="{Binding IconValue}" FontSize="30" VerticalAlignment="Center"/>
+                  <TextBlock Grid.Column="1" Text="{Binding Title}" VerticalAlignment="Center"/>
+                  <TextBlock Grid.Column="2" Text="{Binding Count}" FontSize="30" VerticalAlignment="Center"/>
+                </Grid>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+          <Border Classes="task-rule"/>
+          <Expander Header="并发设置" IsExpanded="False">
+            <Grid ColumnDefinitions="*,150" RowDefinitions="Auto,Auto" ColumnSpacing="18" RowSpacing="16" Margin="0,20,0,0">
+              <TextBlock Text="转录并发" VerticalAlignment="Center"/>
+              <NumericUpDown Grid.Column="1" Classes="scroll-input" Minimum="1" Maximum="20" Increment="1" FormatString="0" Value="{Binding MaxTranscriptionConcurrency, Mode=TwoWay}"/>
+              <TextBlock Grid.Row="1" Text="AI 并发" VerticalAlignment="Center"/>
+              <NumericUpDown Grid.Row="1" Grid.Column="1" Classes="scroll-input" Minimum="1" Maximum="20" Increment="1" FormatString="0" Value="{Binding MaxAiConcurrency, Mode=TwoWay}"/>
+            </Grid>
+          </Expander>
+          <Border Classes="task-rule"/>
+          <Expander Header="转录超时" IsExpanded="False">
+            <StackPanel Spacing="16" Margin="0,20,0,0">
+              <TextBlock Classes="task-muted" Text="转录超时（分钟）"/>
+              <NumericUpDown Classes="scroll-input" Minimum="1" Maximum="60" Increment="1" FormatString="0" Value="{Binding TranscriptionTimeoutMinutes, Mode=TwoWay}" HorizontalAlignment="Stretch"/>
+            </StackPanel>
+          </Expander>
+          <Border Classes="task-rule"/>
+          <Expander Header="执行与 Token 统计" IsExpanded="True">
+            <StackPanel Spacing="18" Margin="0,20,0,0">
+              <Grid ColumnDefinitions="*,Auto"><TextBlock Classes="task-muted" Text="累计执行"/><TextBlock Grid.Column="1" Text="{Binding TotalExecutions}"/></Grid>
+              <Grid ColumnDefinitions="*,Auto"><TextBlock Classes="task-muted" Text="计费执行"/><TextBlock Grid.Column="1" Text="{Binding BillableExecutions}"/></Grid>
+              <TextBlock Classes="task-muted" Text="计费 Token 用量"/>
+              <TextBlock Text="{Binding TokensDisplayText}" TextWrapping="Wrap"/>
+            </StackPanel>
+          </Expander>
+        </StackPanel>
+      </ScrollViewer>
+    </views:SongScrollShell.LeftPage>
+
+    <views:SongScrollShell.RightPage>
+      <Grid Classes="task-content" Margin="30,22,32,28" RowDefinitions="Auto,*,Auto" RowSpacing="20" ClipToBounds="True">
+        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="14">
+          <TextBlock Classes="scroll-section-title" VerticalAlignment="Center" TextWrapping="Wrap">
+            <TextBlock.Text><MultiBinding StringFormat="任务列表 · {0}（{1}）"><Binding Path="SelectedBucket.Title"/><Binding Path="SelectedBucket.Count"/></MultiBinding></TextBlock.Text>
+          </TextBlock>
+          <Button Grid.Column="1" Classes="scroll-quiet" Content="刷新" Command="{Binding RefreshCommand}"/>
+          <Button Grid.Column="2" Classes="scroll-quiet" Content="清理旧任务" Command="{Binding CleanupCompletedCommand}"
+                  ToolTip.Tip="清理 7 天前已完成或已取消的任务"/>
+        </Grid>
+
+        <Grid Grid.Row="1" MinHeight="160">
+          <ThemeVariantScope RequestedThemeVariant="Light">
+            <DataGrid x:Name="TaskGrid" ItemsSource="{Binding CurrentBucketTasks}" SelectedItem="{Binding SelectedTask, Mode=TwoWay}"
+                      AutoGenerateColumns="False" IsReadOnly="True" SelectionMode="Single" CanUserSortColumns="False"
+                      CanUserResizeColumns="True" CanUserReorderColumns="False" RowHeight="68" ColumnHeaderHeight="72"
+                      HeadersVisibility="Column" GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="#24958568"
+                      Background="Transparent" RowBackground="Transparent" BorderThickness="1" BorderBrush="#30958568"
+                      Foreground="{DynamicResource ScrollInk}" FontSize="26"
+                      HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+              <DataGrid.Columns>
+                <DataGridTextColumn Binding="{Binding ShortTaskId}" FontSize="26" Width="250" MinWidth="220">
+                  <DataGridTextColumn.Header>
+                    <Button Classes="task-sort" Tag="TaskId" Click="SortHeader_Click">
+                      <Button.Content><MultiBinding Converter="{StaticResource SortCaption}" ConverterParameter="TaskId"><Binding Path="#BookShell.DataContext.SortColumn"/><Binding Path="#BookShell.DataContext.SortAscending"/></MultiBinding></Button.Content>
+                    </Button>
+                  </DataGridTextColumn.Header>
+                </DataGridTextColumn>
+                <DataGridTemplateColumn Width="2*" MinWidth="330" ClipboardContentBinding="{Binding AudioFileName}">
+                  <DataGridTemplateColumn.Header>
+                    <Button Classes="task-sort" Tag="AudioFileName" Click="SortHeader_Click">
+                      <Button.Content><MultiBinding Converter="{StaticResource SortCaption}" ConverterParameter="AudioFileName"><Binding Path="#BookShell.DataContext.SortColumn"/><Binding Path="#BookShell.DataContext.SortAscending"/></MultiBinding></Button.Content>
+                    </Button>
+                  </DataGridTemplateColumn.Header>
+                  <DataGridTemplateColumn.CellTemplate><DataTemplate><TextBlock Text="{Binding AudioFileName}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding AudioFileName}" VerticalAlignment="Center" FontSize="26"/></DataTemplate></DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTextColumn Binding="{Binding StageDisplayName}" FontSize="26" Width="170" MinWidth="140">
+                  <DataGridTextColumn.Header>
+                    <Button Classes="task-sort" Tag="Stage" Click="SortHeader_Click">
+                      <Button.Content><MultiBinding Converter="{StaticResource SortCaption}" ConverterParameter="Stage"><Binding Path="#BookShell.DataContext.SortColumn"/><Binding Path="#BookShell.DataContext.SortAscending"/></MultiBinding></Button.Content>
+                    </Button>
+                  </DataGridTextColumn.Header>
+                </DataGridTextColumn>
+                <DataGridTemplateColumn Header="状态" Width="*" MinWidth="200" ClipboardContentBinding="{Binding StatusDisplayName}">
+                  <DataGridTemplateColumn.CellTemplate><DataTemplate><TextBlock Text="{Binding StatusDisplayName}" FontSize="26" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding StatusDisplayName}" VerticalAlignment="Center"/></DataTemplate></DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTextColumn Binding="{Binding SubmittedAtDisplay}" FontSize="26" Width="240" MinWidth="220">
+                  <DataGridTextColumn.Header>
+                    <Button Classes="task-sort" Tag="SubmittedAt" Click="SortHeader_Click">
+                      <Button.Content><MultiBinding Converter="{StaticResource SortCaption}" ConverterParameter="SubmittedAt"><Binding Path="#BookShell.DataContext.SortColumn"/><Binding Path="#BookShell.DataContext.SortAscending"/></MultiBinding></Button.Content>
+                    </Button>
+                  </DataGridTextColumn.Header>
+                </DataGridTextColumn>
+                <DataGridTextColumn Header="耗时" Binding="{Binding ElapsedTime}" FontSize="26" Width="140" MinWidth="120"/>
+                <DataGridTextColumn Header="重试" Binding="{Binding RetryCount}" FontSize="26" Width="110" MinWidth="100"/>
+                <DataGridTextColumn Header="优先级" Binding="{Binding Priority}" FontSize="26" Width="130" MinWidth="110"/>
+              </DataGrid.Columns>
+            </DataGrid>
+          </ThemeVariantScope>
+          <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="18" IsVisible="{Binding !CurrentBucketTasks.Count}" IsHitTestVisible="False">
+            <TextBlock Classes="task-muted" Text="当前分类暂无任务" FontSize="32"/>
+            <TextBlock Classes="task-muted" Text="任务状态更新后会自动显示在对应分类。"/>
+          </StackPanel>
+        </Grid>
+
+        <!-- 下方详情有自己的滚动区，不让长响应/历史挤掉表格。 -->
+        <Border Grid.Row="2" Classes="scroll-paper" IsVisible="{Binding HasSelectedTask}" Padding="24,18"
+                BorderThickness="1" BorderBrush="#30958568" CornerRadius="10" MaxHeight="470">
+          <Grid RowDefinitions="Auto,*" RowSpacing="16">
+            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="14">
+              <TextBlock Classes="scroll-section-title" Text="任务详情与执行历史" VerticalAlignment="Center"/>
+              <Button Grid.Column="1" Classes="scroll-quiet" Content="重试" Command="{Binding RetryTaskCommand}"/>
+              <Button Grid.Column="2" Classes="scroll-quiet" Content="取消" Command="{Binding CancelTaskCommand}"/>
+            </Grid>
+            <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+              <StackPanel Spacing="18" Margin="0,0,16,12">
+                <TextBlock Text="{Binding SelectedTask.AudioFileName}" FontSize="32" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                <SelectableTextBlock Text="{Binding SelectedTask.TaskId, StringFormat='任务 ID：{0}'}" TextWrapping="Wrap"/>
+                <WrapPanel>
+                  <TextBlock Text="{Binding SelectedTask.StageDisplayName}" Margin="0,0,24,10"/>
+                  <TextBlock Text="{Binding SelectedTask.StatusDisplayName}" FontWeight="SemiBold" Margin="0,0,24,10" TextWrapping="Wrap"/>
+                  <TextBlock Classes="task-muted" Text="{Binding SelectedTask.RetryCount, StringFormat='重试 {0} 次'}" Margin="0,0,24,10"/>
+                  <TextBlock Classes="task-muted" Text="{Binding SelectedTask.Priority, StringFormat='优先级 {0}'}" Margin="0,0,24,10"/>
+                </WrapPanel>
+                <WrapPanel>
+                  <TextBlock Classes="task-muted" Text="{Binding SelectedTask.SubmittedAt, StringFormat='提交：{0:yyyy-MM-dd HH:mm:ss}'}" Margin="0,0,26,10"/>
+                  <TextBlock Classes="task-muted" Text="{Binding SelectedTask.StartedAt, StringFormat='开始：{0:yyyy-MM-dd HH:mm:ss}'}" Margin="0,0,26,10"/>
+                  <TextBlock Classes="task-muted" Text="{Binding SelectedTask.CompletedAt, StringFormat='结束：{0:yyyy-MM-dd HH:mm:ss}'}" Margin="0,0,26,10"/>
+                  <TextBlock Classes="task-muted" Text="{Binding SelectedTask.ElapsedTime, StringFormat='耗时：{0}'}" Margin="0,0,26,10"/>
+                </WrapPanel>
+                <TextBlock Text="{Binding SelectedTask.ErrorMessage}" Foreground="#A63B32" TextWrapping="Wrap" IsVisible="{Binding SelectedTask.ErrorMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                <TextBlock Classes="task-muted" Text="{Binding SelectedTask.ProgressMessage}" TextWrapping="Wrap" IsVisible="{Binding SelectedTask.ProgressMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                <Border Classes="task-rule"/>
+                <TextBlock Text="执行历史" FontSize="30" FontWeight="SemiBold"/>
+                <TextBlock Classes="task-muted" Text="当前任务暂无执行记录。" IsVisible="{Binding !HasExecutions}"/>
+                <ItemsControl ItemsSource="{Binding Executions}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <Border Classes="task-rule" Padding="0,12,0,20" Margin="0,0,0,12">
+                        <StackPanel Spacing="14">
+                          <WrapPanel>
+                            <TextBlock Text="{Binding StatusDisplayName}" FontWeight="SemiBold" Margin="0,0,26,10"/>
+                            <TextBlock Classes="task-muted" Text="{Binding BillableDisplay, StringFormat='计费：{0}'}" Margin="0,0,26,10"/>
+                            <TextBlock Text="{Binding TokensDisplay}" Margin="0,0,26,10"/>
+                            <TextBlock Classes="task-muted" Text="{Binding DurationDisplay, StringFormat='耗时：{0}'}" Margin="0,0,26,10"/>
+                            <TextBlock Classes="task-muted" Text="{Binding ModelName, StringFormat='模型：{0}'}" Margin="0,0,26,10"/>
+                          </WrapPanel>
+                          <SelectableTextBlock Text="{Binding ExecutionId, StringFormat='执行 ID：{0}'}" TextWrapping="Wrap"/>
+                          <WrapPanel>
+                            <TextBlock Classes="task-muted" Text="{Binding StartedAt, StringFormat='开始：{0:yyyy-MM-dd HH:mm:ss}'}" Margin="0,0,26,10"/>
+                            <TextBlock Classes="task-muted" Text="{Binding FinishedAt, StringFormat='结束：{0:yyyy-MM-dd HH:mm:ss}'}" Margin="0,0,26,10"/>
+                          </WrapPanel>
+                          <TextBlock Text="{Binding ErrorMessage}" Foreground="#A63B32" TextWrapping="Wrap" IsVisible="{Binding ErrorMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                          <TextBlock Classes="task-muted" Text="{Binding CancelReason}" TextWrapping="Wrap" IsVisible="{Binding CancelReason, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                          <WrapPanel IsVisible="{Binding HasDebugData}">
+                            <Button Classes="scroll-quiet" Content="查看提示词" Tag="{Binding DebugPrompt}" Click="ShowDebugText_Click" IsEnabled="{Binding DebugPrompt, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" Margin="0,0,16,8"/>
+                            <Button Classes="scroll-quiet" Content="查看响应" Tag="{Binding DebugResponse}" Click="ShowDebugText_Click" IsEnabled="{Binding DebugResponse, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" Margin="0,0,16,8"/>
+                          </WrapPanel>
+                        </StackPanel>
+                      </Border>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+            </ScrollViewer>
+          </Grid>
+        </Border>
+      </Grid>
+    </views:SongScrollShell.RightPage>
+  </views:SongScrollShell>
+</views:TaskQueueMonitorView>

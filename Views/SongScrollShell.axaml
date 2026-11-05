@@ -1,0 +1,81 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:views="using:TrueFluentPro.Views" x:Class="TrueFluentPro.Views.SongScrollShell"
+             x:Name="ShellRoot" x:CompileBindings="False" Background="#E6DFD1"
+             Foreground="#27332F" FontFamily="STKaiti, KaiTi, 华文楷体, 楷体, SimSun" FontSize="28">
+  <UserControl.Styles><StyleInclude Source="avares://TrueFluentPro/Styles/SongScrollWorkspace.axaml"/></UserControl.Styles>
+  <Grid ClipToBounds="True">
+    <Viewbox Name="ShellScale" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Top">
+      <Canvas Name="ShellStage" Width="2560" Height="1440" ClipToBounds="True" UseLayoutRounding="False">
+        <Canvas.Background><ImageBrush Source="avares://TrueFluentPro/Assets/Appearance/SongScroll/desk-paper.png" TileMode="Tile" DestinationRect="0,0,180,180"/></Canvas.Background>
+        <Canvas Name="ShellScene" Canvas.Top="-64" Width="2560" Height="1504" UseLayoutRounding="False">
+          <Image Canvas.Left="0" Canvas.Top="0" Width="307" Height="103" Source="avares://TrueFluentPro/Assets/Appearance/SongScroll/bamboo-top.png" Stretch="Fill" IsHitTestVisible="False"/>
+          <Image Canvas.Left="0" Canvas.Top="103" Width="64" Height="802" Source="avares://TrueFluentPro/Assets/Appearance/SongScroll/bamboo-side.png" Stretch="Fill" IsHitTestVisible="False"/>
+          <Image Canvas.Left="0" Canvas.Top="907" Width="54" Height="288" Source="avares://TrueFluentPro/Assets/Appearance/SongScroll/bamboo-foot.png" Stretch="Fill" IsHitTestVisible="False"/>
+          <Border Name="ShellSidebar" Canvas.Left="50" Canvas.Top="226" Width="275" Height="1165" CornerRadius="17,5,5,17" BorderBrush="#856755" BorderThickness="2" BoxShadow="4 12 21 0 #55554334" IsHitTestVisible="False">
+            <Border.Background><ImageBrush Source="avares://TrueFluentPro/Assets/Appearance/SongScroll/wood-edge.png" TileMode="Tile" DestinationRect="0,0,180,180"/></Border.Background>
+            <Border CornerRadius="17,5,5,17"><Border.Background><LinearGradientBrush StartPoint="0%,50%" EndPoint="100%,50%"><GradientStop Offset="0" Color="#66604733"/><GradientStop Offset="0.2" Color="#44D5BBA3"/><GradientStop Offset="0.75" Color="#77A69B6F"/><GradientStop Offset="1" Color="#AA395A45"/></LinearGradientBrush></Border.Background></Border>
+          </Border>
+          <views:SongScrollBookSurface Name="ShellBookSurface" Width="2560" Height="1504" ZIndex="2"
+                                      SpinePosition="{Binding SpinePosition, ElementName=ShellRoot}"/>
+          <Image Canvas.Left="2345" Canvas.Top="120" Width="116" Height="117" Source="avares://TrueFluentPro/Assets/Appearance/SongScroll/bamboo-page.png" Stretch="Fill" ZIndex="3" IsHitTestVisible="False"/>
+          <Canvas Name="ShellLandscapeClip" Canvas.Left="406" Canvas.Top="940" Width="950" Height="356" ClipToBounds="True" ZIndex="3" IsHitTestVisible="False">
+            <Image Name="ShellLandscape" Width="950" Height="356" Source="avares://TrueFluentPro/Assets/Appearance/SongScroll/landscape.png" Stretch="Fill">
+              <Image.OpacityMask><LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%"><GradientStop Offset="0" Color="Transparent"/><GradientStop Offset="0.15" Color="Black"/><GradientStop Offset="0.93" Color="Black"/><GradientStop Offset="1" Color="Transparent"/></LinearGradientBrush></Image.OpacityMask>
+            </Image>
+          </Canvas>
+          <Image Name="ShellInkstone" Canvas.Left="2468" Canvas.Top="1270" Width="92" Height="160" Source="avares://TrueFluentPro/Assets/Appearance/SongScroll/inkstone.png" Stretch="Uniform" ZIndex="3" IsHitTestVisible="False"/>
+
+          <StackPanel Canvas.Left="70" Canvas.Top="109" Width="270" Height="98" ZIndex="25" Spacing="14" IsHitTestVisible="False">
+            <StackPanel Orientation="Horizontal" Spacing="14">
+              <Border Width="49" Height="49" BorderThickness="3" BorderBrush="#A33A2A" CornerRadius="3" Background="#B44731"><TextBlock Text="译见&#10;无界" TextAlignment="Center" Foreground="#FFF5E6" FontSize="21" LineHeight="21"/></Border>
+              <TextBlock Text="译见" FontWeight="Bold" FontSize="44"/><TextBlock Text="Pro" FontFamily="Times New Roman, SimSun" FontSize="38" VerticalAlignment="Center"/>
+            </StackPanel>
+            <TextBlock Text="让世界的声音，被更多人听见" FontSize="18" LetterSpacing="1"/>
+          </StackPanel>
+          <StackPanel Name="ShellNavigation" Canvas.Left="64" Canvas.Top="251" ZIndex="25" Spacing="5">
+            <Button Classes="bookmark" Tag="live" Click="Navigate"><StackPanel Orientation="Horizontal" Spacing="25"><views:SongScrollIcon Kind="mic" Width="38" Height="38" Ink="#655B49" Margin="0,6,0,0"/><StackPanel Spacing="12"><TextBlock Classes="nav-title" Text="实时翻译"/><TextBlock Classes="nav-subtitle" Text="即时语音&#10;多语互译"/></StackPanel></StackPanel></Button>
+            <Button Classes="bookmark" Tag="media" Click="Navigate"><StackPanel Orientation="Horizontal" Spacing="25"><views:SongScrollIcon Kind="pen" Width="38" Height="38" Ink="#655B49" Margin="0,6,0,0"/><StackPanel Spacing="12"><TextBlock Classes="nav-title" Text="创作工坊"/><TextBlock Classes="nav-subtitle" Text="AI 润色&#10;多语创作"/></StackPanel></StackPanel></Button>
+            <Button Classes="bookmark" Tag="mediav2" Click="Navigate"><StackPanel Orientation="Horizontal" Spacing="25"><views:SongScrollIcon Kind="play" Width="38" Height="38" Ink="#655B49" Margin="0,6,0,0"/><StackPanel Spacing="12"><TextBlock Classes="nav-title" Text="媒体中心"/><TextBlock Classes="nav-subtitle" Text="音视频翻译&#10;文件处理"/></StackPanel></StackPanel></Button>
+            <Button Classes="bookmark" Tag="audiolab" Click="Navigate"><StackPanel Orientation="Horizontal" Spacing="25"><views:SongScrollIcon Kind="headphones" Width="38" Height="38" Ink="#655B49" Margin="0,6,0,0"/><StackPanel Spacing="12"><TextBlock Classes="nav-title" Text="听析中心"/><TextBlock Classes="nav-subtitle" Text="语音转写&#10;智能总结"/></StackPanel></StackPanel></Button>
+            <Button Classes="bookmark" Tag="taskmonitor" Click="Navigate"><StackPanel Orientation="Horizontal" Spacing="25"><views:SongScrollIcon Kind="chart" Width="38" Height="38" Ink="#655B49" Margin="0,6,0,0"/><StackPanel Spacing="12"><TextBlock Classes="nav-title" Text="任务监控"/><TextBlock Classes="nav-subtitle" Text="任务进度&#10;运行状态"/></StackPanel></StackPanel></Button>
+          </StackPanel>
+          <Border Name="ShellSidebarFooter" Canvas.Left="98" Canvas.Top="1133" Width="220" Height="262" Padding="28,30" BorderBrush="#D9B386" BorderThickness="2,0,0,3" CornerRadius="0,0,3,20" ZIndex="25">
+            <Border.Background><ImageBrush Source="avares://TrueFluentPro/Assets/Appearance/SongScroll/nav-paper.png"/></Border.Background>
+            <StackPanel Spacing="9">
+              <Button Name="ShellSettings" Classes="text" Tag="settings" Click="Navigate" MinHeight="80" Padding="0,16" HorizontalContentAlignment="Left"><StackPanel Orientation="Horizontal" Spacing="23"><views:SongScrollIcon Kind="settings" Width="33" Height="33" Ink="#40392D"/><StackPanel Spacing="4"><TextBlock Text="设置" FontSize="24"/><TextBlock Text="系统偏好" FontSize="22" Foreground="#625E53"/></StackPanel></StackPanel></Button>
+              <Button Name="ShellTheme" Classes="text" Click="ThemeClick" MinHeight="80" Padding="0,16" HorizontalContentAlignment="Left"><StackPanel Orientation="Horizontal" Spacing="23"><views:SongScrollIcon Kind="theme" Width="33" Height="33" Ink="#40392D"/><StackPanel Spacing="4"><TextBlock Text="主题" FontSize="24"/><TextBlock Text="风格切换" FontSize="22" Foreground="#625E53"/></StackPanel></StackPanel></Button>
+            </StackPanel>
+          </Border>
+
+          <Grid Name="ShellHeading" Canvas.Left="456" Canvas.Top="139" Height="91" ColumnDefinitions="Auto,*" ColumnSpacing="21" ClipToBounds="True" ZIndex="8" IsHitTestVisible="False">
+            <TextBlock Text="{Binding PageTitle, ElementName=ShellRoot}" FontFamily="STXingkai, 华文行楷, STKaiti, KaiTi" FontSize="68" Foreground="#030705" VerticalAlignment="Center"/>
+            <TextBlock Name="ShellSubtitle" Grid.Column="1" Text="{Binding PageSubtitle, ElementName=ShellRoot}" FontSize="26" Foreground="#565B5B" LetterSpacing="1" Margin="0,14,0,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+          </Grid>
+          <TextBlock Name="ShellRightMotto" Canvas.Top="172" FontSize="29" LetterSpacing="5" Foreground="#65665E" TextTrimming="CharacterEllipsis" ZIndex="7" IsHitTestVisible="False"/>
+          <Path Name="ShellLeftRule" Canvas.Left="430" Canvas.Top="237" Stroke="#C7BCA8" StrokeThickness="2" Opacity="0.65" IsHitTestVisible="False" ZIndex="5"/>
+          <Path Name="ShellRightRule" Canvas.Left="430" Canvas.Top="237" Stroke="#C7BCA8" StrokeThickness="2" Opacity="0.65" IsHitTestVisible="False" ZIndex="5"/>
+          <ContentControl Name="ShellLeftPage" Canvas.Left="406" Canvas.Top="270" Content="{Binding LeftPage, ElementName=ShellRoot}"
+                          HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" ClipToBounds="True" ZIndex="10"/>
+          <ContentControl Name="ShellRightPage" Canvas.Top="270" Content="{Binding RightPage, ElementName=ShellRoot}"
+                          HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" ClipToBounds="True" ZIndex="10"/>
+          <Border Name="ShellSpineHandle" Canvas.Top="120" Width="56" Height="1232" Background="Transparent" Focusable="True" FocusAdorner="{x:Null}"
+                  Cursor="SizeWestEast" ZIndex="28" AutomationProperties.Name="调整左右书页宽度"
+                  AutomationProperties.HelpText="左右方向键微调，Shift 快调，Home 和 End 到边界，Enter 复位，Escape 撤销本次调整。"
+                  PointerPressed="SpinePressed" PointerMoved="SpineMoved" PointerReleased="SpineReleased" PointerCaptureLost="SpineCaptureLost"
+                  KeyDown="SpineKeyDown" GotFocus="SpineGotFocus" LostFocus="SpineLostFocus">
+            <Border Name="ShellSpineGrip" Width="30" Height="82" HorizontalAlignment="Center" VerticalAlignment="Center" CornerRadius="7" Padding="6">
+              <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False"><Border Width="2" Height="34" CornerRadius="1" Background="#697A69"/><Border Width="2" Height="34" CornerRadius="1" Background="#697A69"/></StackPanel>
+            </Border>
+          </Border>
+          <Grid Name="ShellWindowButtons" Canvas.Left="2223" Canvas.Top="158" Width="240" Height="66" ZIndex="30" ColumnDefinitions="80,80,80">
+            <Button Name="ShellMinimize" Classes="caption" Click="Minimize" AutomationProperties.Name="最小化"><Path Data="M1 12 H23" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="2.5" Width="24" Height="24"/></Button>
+            <Button Name="ShellMaximize" Grid.Column="1" Classes="caption" Click="Maximize" AutomationProperties.Name="最大化"><Path Name="ShellMaximizeMark" Data="M2 2 H22 V22 H2 Z" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="2.5" Width="24" Height="24"/></Button>
+            <Button Grid.Column="2" Classes="caption close" Click="CloseWindow" AutomationProperties.Name="关闭"><Path Data="M1 1 L24 24 M24 1 L1 24" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="2.5" Width="25" Height="25"/></Button>
+          </Grid>
+        </Canvas>
+      </Canvas>
+    </Viewbox>
+    <!-- 客户区的 24 DIP 热区不占行高，右端始终避开窗口按钮。 -->
+    <Border Name="ShellTitleDrag" Height="24" HorizontalAlignment="Left" VerticalAlignment="Top" Background="Transparent" PointerPressed="TitleDrag"/>
+  </Grid>
+</UserControl>

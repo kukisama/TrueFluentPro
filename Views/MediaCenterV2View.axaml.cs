@@ -26,10 +26,16 @@ namespace TrueFluentPro.Views
     {
         private MediaCenterV2ViewModel? _viewModel;
         private bool _initialized;
+        private bool _ownsViewModel;
+        public MediaCenterV2ViewModel? ViewModel => _viewModel;
 
-        public MediaCenterV2View()
+        public MediaCenterV2View() : this(true)
         {
-            InitializeComponent();
+        }
+
+        protected MediaCenterV2View(bool loadDefaultView)
+        {
+            if (loadDefaultView) InitializeComponent();
         }
 
         public void Initialize(
@@ -40,10 +46,21 @@ namespace TrueFluentPro.Views
             Action<AzureSpeechConfig>? onGlobalConfigUpdated = null)
         {
             if (_initialized) return;
-            _initialized = true;
 
-            _viewModel = new MediaCenterV2ViewModel(aiConfig, genConfig, endpoints, modelRuntimeResolver, azureTokenProviderStore,
-                configurationService, configProvider, onGlobalConfigUpdated);
+            BindViewModel(new MediaCenterV2ViewModel(aiConfig, genConfig, endpoints, modelRuntimeResolver, azureTokenProviderStore,
+                configurationService, configProvider, onGlobalConfigUpdated));
+            _ownsViewModel = true;
+        }
+
+        /// <summary>Bind a borrowed VM without creating a second workspace or acquiring disposal ownership.</summary>
+        public virtual void BindViewModel(MediaCenterV2ViewModel vm)
+        {
+            ArgumentNullException.ThrowIfNull(vm);
+            if (ReferenceEquals(_viewModel, vm)) return;
+            if (_initialized) throw new InvalidOperationException("请先解绑当前媒体中心视图，再绑定其他业务实例。");
+            _initialized = true;
+            _viewModel = vm;
+            _ownsViewModel = false;
             DataContext = _viewModel;
 
             var workspaceScroll = this.FindControl<ScrollViewer>("WorkspaceScrollViewer");
@@ -72,7 +89,26 @@ namespace TrueFluentPro.Views
 
         public void Cleanup()
         {
-            _viewModel?.Dispose();
+            var ownedVm = _ownsViewModel ? _viewModel : null;
+            UnbindViewModel();
+            ownedVm?.Dispose();
+        }
+
+        /// <summary>Unbind presentation only. The shared VM and its running tasks remain alive.</summary>
+        public virtual void UnbindViewModel()
+        {
+            var workspaceScroll = this.FindControl<ScrollViewer>("WorkspaceScrollViewer");
+            if (workspaceScroll != null)
+            {
+                workspaceScroll.ScrollChanged -= WorkspaceScrollViewer_ScrollChanged;
+                workspaceScroll.LayoutUpdated -= WorkspaceScrollViewer_InitialFill;
+            }
+            RemoveHandler(InputElement.KeyDownEvent, PromptTextBox_KeyDown);
+            RemoveHandler(InputElement.KeyDownEvent, ArrowKeys_KeyDown);
+            DataContext = null;
+            _viewModel = null;
+            _initialized = false;
+            _ownsViewModel = false;
         }
 
         private void WorkspaceScrollViewer_ScrollChanged(object? sender, ScrollChangedEventArgs e)
@@ -121,6 +157,11 @@ namespace TrueFluentPro.Views
 
         private void ArrowKeys_KeyDown(object? sender, KeyEventArgs e)
         {
+            // Tunnel 先于书脊自己的 KeyDown；焦点在分隔条时必须让它调整页宽，
+            // 不能触发媒体资产/画布的上一项、下一项导航。
+            if (this is ISongScrollPage themed
+                && themed.Shell.FindControl<Border>("ShellSpineHandle")?.IsFocused == true)
+                return;
             // 输入框内不拦截方向键
             if (e.Source is TextBox) return;
             if (_viewModel == null) return;
@@ -152,7 +193,7 @@ namespace TrueFluentPro.Views
             }
         }
 
-        private async void AttachReferenceImage_Click(object? sender, RoutedEventArgs e)
+        protected async void AttachReferenceImage_Click(object? sender, RoutedEventArgs e)
         {
             if (_viewModel?.WorkspaceSession == null)
             {
@@ -373,7 +414,7 @@ namespace TrueFluentPro.Views
             }
         }
 
-        private async void ReferenceImageThumbnail_PointerPressed(object? sender, PointerPressedEventArgs e)
+        protected async void ReferenceImageThumbnail_PointerPressed(object? sender, PointerPressedEventArgs e)
         {
             if (_viewModel?.WorkspaceSession == null)
                 return;
@@ -408,7 +449,7 @@ namespace TrueFluentPro.Views
             e.Handled = true;
         }
 
-        private void PreviewSurface_PointerPressed(object? sender, PointerPressedEventArgs e)
+        protected void PreviewSurface_PointerPressed(object? sender, PointerPressedEventArgs e)
         {
             if (_viewModel?.SelectedAsset == null)
             {
@@ -425,12 +466,12 @@ namespace TrueFluentPro.Views
             e.Handled = true;
         }
 
-        private void PreviewNavButton_PointerPressed(object? sender, PointerPressedEventArgs e)
+        protected void PreviewNavButton_PointerPressed(object? sender, PointerPressedEventArgs e)
         {
             e.Handled = true;
         }
 
-        private void WorkspaceTabButton_PointerPressed(object? sender, PointerPressedEventArgs e)
+        protected void WorkspaceTabButton_PointerPressed(object? sender, PointerPressedEventArgs e)
         {
             if (_viewModel == null || sender is not Control control || control.DataContext is not MediaWorkspaceTabViewModel tab)
             {
@@ -447,7 +488,7 @@ namespace TrueFluentPro.Views
             }
         }
 
-        private void WorkspaceTabButton_PointerReleased(object? sender, PointerReleasedEventArgs e)
+        protected void WorkspaceTabButton_PointerReleased(object? sender, PointerReleasedEventArgs e)
         {
             if (e.InitialPressMouseButton != MouseButton.Right
                 || _viewModel == null
@@ -466,7 +507,7 @@ namespace TrueFluentPro.Views
             e.Handled = true;
         }
 
-        private void RailThumbButton_PointerReleased(object? sender, PointerReleasedEventArgs e)
+        protected void RailThumbButton_PointerReleased(object? sender, PointerReleasedEventArgs e)
         {
             if (e.InitialPressMouseButton != MouseButton.Right
                 || _viewModel == null
@@ -490,7 +531,7 @@ namespace TrueFluentPro.Views
             e.Handled = true;
         }
 
-        private MenuFlyout BuildWorkspaceFlyout(MediaWorkspaceTabViewModel tab)
+        protected MenuFlyout BuildWorkspaceFlyout(MediaWorkspaceTabViewModel tab)
         {
             var flyout = new MenuFlyout();
 
@@ -719,7 +760,7 @@ namespace TrueFluentPro.Views
 
         // ──────────── 视频：调用系统播放器 ────────────
 
-        private void PlayVideoButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        protected void PlayVideoButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
         {
             var filePath = _viewModel?.SelectedAsset?.FilePath;
             if (string.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath))

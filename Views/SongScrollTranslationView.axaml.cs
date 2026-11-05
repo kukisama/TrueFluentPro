@@ -48,14 +48,29 @@ public partial class SongScrollTranslationView : UserControl
     public SongScrollTranslationView()
     {
         AvaloniaXamlLoader.Load(this);
-        BuildOrnaments();
+        UpdateSpineLayout();
         AttachedToVisualTree += (_, _) =>
         {
+            BuildOrnaments();
             _window = TopLevel.GetTopLevel(this) as Window;
-            if (_window != null) _window.PropertyChanged += WindowChanged;
+            if (_window != null)
+            {
+                _window.PropertyChanged += WindowChanged;
+                _window.Deactivated += SpineWindowDeactivated;
+            }
             UpdateStageHeight(); UpdateCaption(); SyncSession();
         };
-        DetachedFromVisualTree += (_, _) => { if (_window != null) _window.PropertyChanged -= WindowChanged; _window = null; };
+        DetachedFromVisualTree += (_, _) =>
+        {
+            FinishSpineDrag();
+            if (_window != null)
+            {
+                _window.PropertyChanged -= WindowChanged;
+                _window.Deactivated -= SpineWindowDeactivated;
+            }
+            _window = null;
+            ReleaseOrnaments();
+        };
         SizeChanged += (_, _) =>
         {
             UpdateStageHeight();
@@ -82,6 +97,9 @@ public partial class SongScrollTranslationView : UserControl
         this.FindControl<Canvas>("ScrollStage")!.Height = height;
         this.FindControl<Canvas>("ScrollScene")!.Height = sceneHeight;
         this.FindControl<Canvas>("ScrollOrnaments")!.Height = sceneHeight;
+        var surface = this.FindControl<SongScrollBookSurface>("ScrollBookSurface")!;
+        surface.Height = sceneHeight;
+        surface.SceneHeight = sceneHeight;
         foreach (var item in _verticalDecorations)
         {
             Canvas.SetTop(item.Control, item.Top + (item.StretchHeight ? 0 : extra));
@@ -95,6 +113,7 @@ public partial class SongScrollTranslationView : UserControl
         Canvas.SetTop(sidebarFooter, 1133 + Math.Max(0, extra));
         sidebarFooter.Height = Math.Max(0, 262 + Math.Min(0, extra));
         Canvas.SetTop(this.FindControl<TextBlock>("ScrollColophon")!, 1296 + extra);
+        UpdateSpineLayout();
     }
 
     public void BindSession(ILiveTranslationPresentationSource? source)
@@ -126,8 +145,9 @@ public partial class SongScrollTranslationView : UserControl
         var old = Presentation; Presentation = null; _source = null; DataContext = null; old?.Dispose();
         if (old != null) old.PropertyChanged -= PresentationChanged;
         _draftConfigProvider = null; _saveDraft = null;
+        FinishSpineDrag();
         CloseDialog(); this.FindControl<Border>("ScrollFloatingPaper")!.IsVisible = false;
-        // 不停止或释放业务；素材跟随页面缓存，由应用退出回收。
+        // 不停止或释放业务；页面自身素材与共用 surface 一样随视觉树挂载存活。
     }
     private static object? Property(object? owner, string name) => owner?.GetType().GetProperty(name)?.GetValue(owner);
     private bool AudioFlag(string name) => Property(Property(_source, "AudioDevices"), name) is true;
@@ -235,6 +255,7 @@ public partial class SongScrollTranslationView : UserControl
     { var button = new Button { Content = text, FontSize = 19, MinHeight = 40 }; button.Click += action; return button; }
     private void ShowDialog(Control content, Control? focus = null)
     {
+        FinishSpineDrag();
         CloseDialog();
         _dialogFocus = TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement() as InputElement;
         var overlay = new Grid { Background = new SolidColorBrush(Color.Parse("#4426352D")), Width = Bounds.Width, Height = Bounds.Height };
@@ -254,9 +275,11 @@ public partial class SongScrollTranslationView : UserControl
     }
     protected override void OnKeyDown(KeyEventArgs e)
     {
+        if (e.Handled) return;
         base.OnKeyDown(e);
+        if (e.Handled) return;
         if (e.Key == Key.Escape)
-        { if (_dialog != null) CloseDialog(); else this.FindControl<Border>("ScrollFloatingPaper")!.IsVisible = false; e.Handled = true; }
+        { if (_dialog != null) CloseDialog(); else this.FindControl<Border>("ScrollFloatingPaper")!.IsVisible = false; e.Handled = true; return; }
         if (e.Key is Key.Left or Key.Right or Key.Home or Key.End && TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement() is Button focused)
         {
             var tabs = new[] { "ScrollHistoryTab", "ScrollInsightTab" }.Select(name => this.FindControl<Button>(name)!).ToArray();
@@ -301,13 +324,14 @@ public partial class SongScrollTranslationView : UserControl
     private void FloatDragLost(object? sender, PointerCaptureLostEventArgs e) => _floatDrag = null;
 
     private Bitmap Asset(string name)
-    { var bitmap = new Bitmap(AssetLoader.Open(new Uri($"avares://TrueFluentPro/Assets/Appearance/SongScroll/{name}.png"))); _bitmaps.Add(bitmap); return bitmap; }
+    { using var stream = AssetLoader.Open(new Uri($"avares://TrueFluentPro/Assets/Appearance/SongScroll/{name}.png")); var bitmap = new Bitmap(stream); _bitmaps.Add(bitmap); return bitmap; }
     private ImageBrush Texture(string name)
     { var image = Asset(name); return new ImageBrush(image) { TileMode = TileMode.Tile, DestinationRect = new RelativeRect(new Rect(image.Size), RelativeUnit.Absolute) }; }
     private void BuildOrnaments()
     {
-        var canvas = this.FindControl<Canvas>("ScrollScene")!;
-        canvas.Background = Texture("desk-paper");
+        if (_bitmaps.Count != 0) return;
+        var canvas = this.FindControl<Canvas>("ScrollOrnaments")!;
+        this.FindControl<Canvas>("ScrollScene")!.Background = Texture("desk-paper");
         this.FindControl<Border>("ScrollFloatingPaper")!.Background = Texture("page-paper");
         void Place(Control control, double x, double y, double w, double h, int z, bool stretchHeight = false, bool anchorBottom = false)
         {
@@ -315,21 +339,29 @@ public partial class SongScrollTranslationView : UserControl
             if (stretchHeight || anchorBottom) _verticalDecorations.Add((control, y, h, stretchHeight));
         }
         void Image(string name, double x, double y, double w, double h, int z, IBrush? mask = null, bool stretchHeight = false, bool anchorBottom = false)
-        { Place(new Image { Name = name == "book-top" ? "ScrollBookTop" : null, Source = Asset(name), Stretch = Stretch.Fill, OpacityMask = mask }, x, y, w, h, z, stretchHeight, anchorBottom); }
+        { Place(new Image { Source = Asset(name), Stretch = Stretch.Fill, OpacityMask = mask }, x, y, w, h, z, stretchHeight, anchorBottom); }
         LinearGradientBrush Gradient(params (double Offset, string Color)[] stops)
         { var gradient = new LinearGradientBrush { StartPoint = new RelativePoint(0, .5, RelativeUnit.Relative), EndPoint = new RelativePoint(1, .5, RelativeUnit.Relative) }; foreach (var stop in stops) gradient.GradientStops.Add(new GradientStop(Color.Parse(stop.Color), stop.Offset)); return gradient; }
         Image("bamboo-top", 0, 0, 307, 103, 1); Image("bamboo-side", 0, 103, 64, 802, 1); Image("bamboo-foot", 0, 907, 54, 288, 1);
         var sidebar = new Border { Background = Texture("wood-edge"), BorderBrush = new SolidColorBrush(Color.Parse("#856755")), BorderThickness = new Thickness(2), CornerRadius = new CornerRadius(17,5,5,17), BoxShadow = BoxShadows.Parse("4 12 21 0 #55554334") };
         sidebar.Child = new Border { Background = Gradient((0,"#66604733"),(.2,"#44D5BBA3"),(.75,"#77A69B6F"),(1,"#AA395A45")), CornerRadius = sidebar.CornerRadius };
         Place(sidebar,50,226,275,1165,2,stretchHeight: true);
-        Place(new Border { Background = new SolidColorBrush(Color.Parse("#56716B")), BorderBrush = new SolidColorBrush(Color.Parse("#786B55")), BorderThickness = new Thickness(8), CornerRadius = new CornerRadius(21,19,17,19), BoxShadow = BoxShadows.Parse("1 20 28 0 #554B3C28") },312,68,2248,1337,2,stretchHeight: true);
-        foreach (var (x,w,radius,shadow) in new[] { (343d,1035d,new CornerRadius(1,24,16,0),"-15 0 22 0 #228C7951 inset"),(1378d,1143d,new CornerRadius(23,0,0,13),"16 0 24 0 #2D8D7965 inset") })
-        { var page = new Border { Background = Texture("page-paper"), CornerRadius = radius, BoxShadow = BoxShadows.Parse(shadow), Child = new Border { CornerRadius = radius, Background = Gradient((0,"#A0F2ECDF"),(.22,"#A0FFFBF2"),(.72,"#BBFFFDF8"),(1,"#88E9DECD")) } }; Place(page,x,80,w,1308,3,stretchHeight: true); }
         Image("bamboo-page",2345,120,116,117,4);
         var fade = new LinearGradientBrush { StartPoint = new RelativePoint(0,0,RelativeUnit.Relative), EndPoint = new RelativePoint(0,1,RelativeUnit.Relative), GradientStops = new GradientStops { new(Colors.Transparent,0),new(Colors.Black,.15),new(Colors.Black,.93),new(Colors.Transparent,1) } };
-        Image("landscape",406,940,950,356,7,fade,anchorBottom: true);
-        Image("book-top",308,64,2252,56,20); Image("book-bottom",308,1352,2252,62,20,anchorBottom: true); Image("book-left",308,120,98,1232,20,stretchHeight: true); Image("book-right",2485,120,75,1232,20,stretchHeight: true); Image("book-spine",1359,115,37,1237,20,stretchHeight: true);
+        _landscapeClip = new Canvas { Name = "ScrollLandscapeClip", ClipToBounds = true };
+        _landscapeClip.Children.Add(new Image { Source = Asset("landscape"), Width = 950, Height = 356, Stretch = Stretch.Fill, OpacityMask = fade });
+        Place(_landscapeClip,406,940,950,356,7,anchorBottom: true);
         Place(new Image { Source = Asset("inkstone"), Stretch = Stretch.Uniform },2468,1270,92,160,5,anchorBottom: true);
+    }
+    private void ReleaseOrnaments()
+    {
+        this.FindControl<Canvas>("ScrollScene")!.Background = null;
+        this.FindControl<Border>("ScrollFloatingPaper")!.Background = new SolidColorBrush(Color.Parse("#F6F1E8"));
+        this.FindControl<Canvas>("ScrollOrnaments")!.Children.Clear();
+        _landscapeClip = null;
+        _verticalDecorations.Clear();
+        foreach (var bitmap in _bitmaps) bitmap.Dispose();
+        _bitmaps.Clear();
     }
     private void AutoClick(object? sender, RoutedEventArgs e) => OpenAutoDraft();
     private void AdvancedClick(object? sender, RoutedEventArgs e) => OpenAdvancedDraft();

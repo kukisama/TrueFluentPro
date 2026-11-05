@@ -1,0 +1,389 @@
+<views:MediaStudioView xmlns="https://github.com/avaloniaui"
+                      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                      xmlns:views="using:TrueFluentPro.Views"
+                      xmlns:controls="using:TrueFluentPro.Controls"
+                      x:Class="TrueFluentPro.Views.SongScrollMediaStudioView"
+                      x:CompileBindings="False">
+    <views:MediaStudioView.Resources>
+        <controls:CitationsToUrlDictionaryConverter x:Key="ScrollStudioCitations"/>
+        <controls:FirstFrameBadgeVisibilityConverter x:Key="ScrollStudioVideoBadge"/>
+        <!-- Atomic MarkdownRenderer resources, confined to this new presentation. -->
+        <SolidColorBrush x:Key="TextPrimaryBrush" Color="#243C3B"/>
+        <SolidColorBrush x:Key="TextMutedBrush" Color="#7C766C"/>
+        <SolidColorBrush x:Key="CodeBlockBackgroundBrush" Color="#EEEAE1"/>
+        <SolidColorBrush x:Key="CodeInlineForegroundBrush" Color="#963F32"/>
+        <SolidColorBrush x:Key="BorderSubtleBrush" Color="#D9D0C2"/>
+        <SolidColorBrush x:Key="PrimaryBrush" Color="#426E6C"/>
+    </views:MediaStudioView.Resources>
+    <views:MediaStudioView.Styles>
+        <Style Selector="Grid.scroll-studio-page TextBlock">
+            <Setter Property="FontSize" Value="28"/>
+            <Setter Property="Foreground" Value="{DynamicResource ScrollInk}"/>
+        </Style>
+        <Style Selector="Grid.scroll-studio-page SelectableTextBlock">
+            <Setter Property="FontSize" Value="28"/>
+            <Setter Property="Foreground" Value="{DynamicResource ScrollInk}"/>
+        </Style>
+        <Style Selector="Grid.scroll-studio-page Button">
+            <Setter Property="FontSize" Value="26"/>
+            <Setter Property="MinHeight" Value="54"/>
+            <Setter Property="Padding" Value="18,8"/>
+            <Setter Property="CornerRadius" Value="10"/>
+        </Style>
+        <Style Selector="Grid.scroll-studio-page ToggleButton">
+            <Setter Property="FontSize" Value="26"/>
+            <Setter Property="MinHeight" Value="54"/>
+            <Setter Property="Padding" Value="16,8"/>
+        </Style>
+        <Style Selector="Grid.scroll-studio-page TextBox">
+            <Setter Property="FontSize" Value="28"/>
+            <Setter Property="MinHeight" Value="58"/>
+            <Setter Property="Padding" Value="18,12"/>
+        </Style>
+        <Style Selector="Grid.scroll-studio-page ComboBox">
+            <Setter Property="FontSize" Value="26"/>
+            <Setter Property="MinHeight" Value="54"/>
+        </Style>
+        <Style Selector="Grid.scroll-studio-page TextBlock.scroll-studio-muted">
+            <Setter Property="FontSize" Value="26"/>
+            <Setter Property="Foreground" Value="{DynamicResource ScrollMuted}"/>
+        </Style>
+        <Style Selector="Grid.scroll-studio-page Button.scroll-studio-filter.selected">
+            <Setter Property="Foreground" Value="{DynamicResource ScrollAccent}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource ScrollAccent}"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+        </Style>
+        <Style Selector="ListBox.scroll-studio-directory ListBoxItem">
+            <Setter Property="Padding" Value="18,18"/>
+            <Setter Property="Margin" Value="0,4"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="CornerRadius" Value="14"/>
+        </Style>
+        <Style Selector="ListBox.scroll-studio-directory ListBoxItem:selected">
+            <Setter Property="Background" Value="#1B426E6C"/>
+        </Style>
+        <Style Selector="ListBox.chat-message-list ListBoxItem">
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Margin" Value="0"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="Focusable" Value="False"/>
+        </Style>
+        <Style Selector="Button.scroll-studio-voice.voice-active">
+            <Setter Property="Background" Value="#AE4234"/>
+            <Setter Property="Foreground" Value="White"/>
+        </Style>
+        <Style Selector="Button.scroll-studio-web.enabled">
+            <Setter Property="BorderBrush" Value="{DynamicResource ScrollAccent}"/>
+            <Setter Property="Foreground" Value="{DynamicResource ScrollAccent}"/>
+        </Style>
+        <!-- Renderer controls are already doubled by their local layout transform. -->
+        <Style Selector="controls|ChatMarkdownBlock TextBlock">
+            <Setter Property="FontSize" Value="14"/>
+        </Style>
+        <Style Selector="controls|ChatMarkdownBlock Button">
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="MinHeight" Value="26"/>
+        </Style>
+    </views:MediaStudioView.Styles>
+
+    <views:SongScrollShell x:Name="BookShell" PageKey="media"
+                           PageTitle="创作工坊" PageSubtitle="妙笔生花，创意无界" DefaultLeftRatio="0.30">
+        <views:SongScrollShell.LeftPage>
+            <Grid Classes="scroll-studio-page" RowDefinitions="Auto,Auto,Auto,*,Auto" RowSpacing="20"
+                  Margin="32,24,30,22" ClipToBounds="True">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+                    <Button Classes="scroll-primary" Content="＋ 新建会话" Command="{Binding NewSessionCommand}"
+                            HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"/>
+                    <Button Grid.Column="1" Classes="scroll-quiet" Content="导出" ToolTip.Tip="导出当前完整对话"
+                            Command="{Binding CurrentSession.ExportConversationCommand}"/>
+                </Grid>
+                <TextBox Grid.Row="1" x:Name="SessionFilterTextBox" Classes="scroll-input"
+                         Watermark="搜索会话标题…" TextChanged="DirectoryFilter_Changed"/>
+                <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="16">
+                    <Button x:Name="AllSessionsButton" Classes="scroll-quiet scroll-studio-filter selected"
+                            Content="全部会话" Click="AllSessions_Click"/>
+                    <Button x:Name="RunningSessionsButton" Classes="scroll-quiet scroll-studio-filter"
+                            Content="进行中" Click="RunningSessions_Click"/>
+                </StackPanel>
+                <ListBox Grid.Row="3" x:Name="SessionListBox" Classes="scroll-list scroll-studio-directory"
+                         ItemsSource="{Binding Sessions}" SelectedItem="{Binding CurrentSession, Mode=OneWay}"
+                         SelectionChanged="DirectorySelection_Changed" KeyDown="SessionListBox_KeyDown"
+                         Background="Transparent" BorderThickness="0" Padding="0"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="12"
+                                  PointerPressed="SessionItem_PointerPressed">
+                                <TextBlock Text="{Binding SessionName}" FontWeight="SemiBold"
+                                           TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding SessionName}"/>
+                                <Ellipse Grid.Column="1" Width="14" Height="14" Fill="{DynamicResource ScrollAccent}"
+                                         IsVisible="{Binding HasBadge}" Margin="14,0,0,0"/>
+                                <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Classes="scroll-studio-muted"
+                                           Text="{Binding StatusText}" TextTrimming="CharacterEllipsis"/>
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+                <TextBlock Grid.Row="4" Classes="scroll-studio-muted" Text="纸上有山河，笔下有远方。"
+                           FontFamily="KaiTi, STKaiti, serif" Margin="10,12,0,0"/>
+            </Grid>
+        </views:SongScrollShell.LeftPage>
+        <views:SongScrollShell.RightPage>
+            <Grid Classes="scroll-studio-page" Margin="34,24,34,20" RowDefinitions="Auto,*,Auto"
+                  RowSpacing="18" ClipToBounds="True">
+                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="12">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="{Binding CurrentSession.SessionName}" FontSize="38" FontWeight="SemiBold"
+                                   TextTrimming="CharacterEllipsis"/>
+                        <TextBlock Classes="scroll-studio-muted" Text="{Binding CurrentSession.SourceSummaryText}"
+                                   IsVisible="{Binding CurrentSession.HasSourceInfo}" TextWrapping="Wrap"/>
+                    </StackPanel>
+                    <Button Grid.Column="1" Classes="scroll-quiet" Content="题名" Click="RenameSession_Click"
+                            IsEnabled="{Binding HasCurrentSession}" ToolTip.Tip="重命名当前会话 (F2)"/>
+                    <Button Grid.Column="2" Classes="scroll-quiet" Content="更多">
+                        <Button.Flyout>
+                            <MenuFlyout>
+                                <MenuItem Header="恢复已取消的视频作业" FontSize="28" Click="ResumeVideoTasks_Click"/>
+                                <MenuItem Header="删除当前会话" FontSize="28" Click="DeleteSession_Click"/>
+                            </MenuFlyout>
+                        </Button.Flyout>
+                    </Button>
+                </Grid>
+                <Grid Grid.Row="1" x:Name="SessionViewsHost" DragDrop.AllowDrop="True">
+                    <controls:CachedContentControl x:Name="SessionContentHost" Content="{Binding CurrentSession}"
+                                                   MaxCachedViews="8" IsVisible="{Binding HasCurrentSession}">
+                        <controls:CachedContentControl.ContentTemplate>
+                            <DataTemplate>
+                                <Grid x:Name="SessionContentRoot" RowDefinitions="*,Auto" RowSpacing="18">
+                                    <Grid RowDefinitions="Auto,*">
+                                        <Border Classes="scroll-paper" Padding="16" Margin="0,0,0,12"
+                                                IsVisible="{Binding IsSearchVisible}">
+                                            <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto" ColumnSpacing="10">
+                                                <TextBox x:Name="SearchTextBox" Text="{Binding SearchQuery, Mode=TwoWay}"
+                                                         Watermark="搜索对话内容…"/>
+                                                <TextBlock Grid.Column="1" Classes="scroll-studio-muted"
+                                                           Text="{Binding SearchStatus}" VerticalAlignment="Center"/>
+                                                <Button Grid.Column="2" Content="上条" Click="SearchPrevious_Click"/>
+                                                <Button Grid.Column="3" Content="下条" Click="SearchNext_Click"/>
+                                                <Button Grid.Column="4" Content="关闭" Click="CloseSearch_Click"/>
+                                            </Grid>
+                                        </Border>
+                                        <Grid Grid.Row="1">
+                                            <ListBox x:Name="MessageListBox" Classes="chat-message-list"
+                                                     ItemsSource="{Binding Messages}" Background="Transparent"
+                                                     BorderThickness="0" Padding="0,0,12,66" Focusable="False"
+                                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                                <ListBox.ItemsPanel>
+                                                    <ItemsPanelTemplate><StackPanel/></ItemsPanelTemplate>
+                                                </ListBox.ItemsPanel>
+                                                <ListBox.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <Panel Margin="0,0,0,28">
+                                                            <Border IsVisible="{Binding IsUser}" Background="#E9EDEE"
+                                                                    Padding="26,20" Margin="110,8,0,12" CornerRadius="14"
+                                                                    HorizontalAlignment="Right"
+                                                                    PointerReleased="ChatMessageBorder_PointerReleased">
+                                                                <StackPanel Spacing="14">
+                                                                    <ItemsControl ItemsSource="{Binding Attachments}" IsVisible="{Binding HasAttachments}">
+                                                                        <ItemsControl.ItemTemplate>
+                                                                            <DataTemplate>
+                                                                                <TextBlock Text="{Binding FileName, StringFormat=附 · {0}}"
+                                                                                           Classes="scroll-studio-muted" TextWrapping="Wrap"/>
+                                                                            </DataTemplate>
+                                                                        </ItemsControl.ItemTemplate>
+                                                                    </ItemsControl>
+                                                                    <SelectableTextBlock Text="{Binding Text}" TextWrapping="Wrap" ContextFlyout="{x:Null}"
+                                                                                         IsVisible="{Binding IsNotEditing}"/>
+                                                                    <StackPanel IsVisible="{Binding IsEditing}" Spacing="12">
+                                                                        <TextBox Text="{Binding EditText, Mode=TwoWay}" AcceptsReturn="True"
+                                                                                 TextWrapping="Wrap" MinHeight="100" MaxHeight="320"/>
+                                                                        <WrapPanel Orientation="Horizontal">
+                                                                            <Button Content="取消" Command="{Binding $parent[ListBox].DataContext.CancelEditCommand}" CommandParameter="{Binding}"/>
+                                                                            <Button Content="保存" Command="{Binding $parent[ListBox].DataContext.SaveEditCommand}" CommandParameter="{Binding}" Margin="10,0"/>
+                                                                            <Button Classes="scroll-primary" Content="保存并发送" Command="{Binding $parent[ListBox].DataContext.SendEditCommand}" CommandParameter="{Binding}"/>
+                                                                        </WrapPanel>
+                                                                    </StackPanel>
+                                                                    <WrapPanel IsVisible="{Binding IsNotEditing}" Orientation="Horizontal">
+                                                                        <Button Classes="scroll-quiet" Content="编辑" Command="{Binding $parent[ListBox].DataContext.EditMessageCommand}" CommandParameter="{Binding}"/>
+                                                                        <Button Classes="scroll-quiet" Content="复制" Command="{Binding $parent[ListBox].DataContext.CopyMessageCommand}" CommandParameter="{Binding}"/>
+                                                                        <Button Classes="scroll-quiet" Content="删除" Command="{Binding $parent[ListBox].DataContext.DeleteMessageCommand}" CommandParameter="{Binding}"/>
+                                                                        <Button Classes="scroll-quiet" Content="分支" Command="{Binding $parent[ListBox].DataContext.ForkFromMessageCommand}" CommandParameter="{Binding}"/>
+                                                                    </WrapPanel>
+                                                                </StackPanel>
+                                                            </Border>
+                                                            <Border IsVisible="{Binding IsAssistant}" Padding="18,12" Margin="0,6,0,0"
+                                                                    PointerReleased="ChatMessageBorder_PointerReleased">
+                                                                <Grid ColumnDefinitions="64,*" ColumnSpacing="22">
+                                                                    <Border Width="58" Height="58" CornerRadius="29" Background="{DynamicResource ScrollAccent}"
+                                                                            VerticalAlignment="Top">
+                                                                        <TextBlock Text="译" FontSize="32" Foreground="White" FontFamily="KaiTi, STKaiti, serif"
+                                                                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                                    </Border>
+                                                                    <StackPanel Grid.Column="1" Spacing="18">
+                                                                        <StackPanel IsVisible="{Binding HasReasoning}" Spacing="12">
+                                                                            <Button Classes="scroll-quiet" Content="思考过程 · 展开／收起" Click="ToggleReasoning_Click"
+                                                                                    HorizontalAlignment="Left"/>
+                                                                            <Border Classes="scroll-paper" Padding="20" IsVisible="{Binding IsReasoningExpanded}">
+                                                                                <LayoutTransformControl>
+                                                                                    <LayoutTransformControl.LayoutTransform><ScaleTransform ScaleX="2" ScaleY="2"/></LayoutTransformControl.LayoutTransform>
+                                                                                    <controls:ChatMarkdownBlock Markdown="{Binding ReasoningText}" IsReasoning="True"/>
+                                                                                </LayoutTransformControl>
+                                                                            </Border>
+                                                                        </StackPanel>
+                                                                        <!-- The mature renderer's body is 14px internally; transform its layout to 28 design pixels. -->
+                                                                        <LayoutTransformControl>
+                                                                            <LayoutTransformControl.LayoutTransform><ScaleTransform ScaleX="2" ScaleY="2"/></LayoutTransformControl.LayoutTransform>
+                                                                            <controls:ChatMarkdownBlock Markdown="{Binding Text}"
+                                                                                CitationUrls="{Binding Citations, Converter={StaticResource ScrollStudioCitations}}"/>
+                                                                        </LayoutTransformControl>
+                                                                        <TextBlock Classes="scroll-studio-muted" Text="{Binding SearchSummary}"
+                                                                                   IsVisible="{Binding HasSearchSummary}" TextWrapping="Wrap"/>
+                                                                        <Expander Header="搜索调试详情" FontSize="28" IsExpanded="{Binding IsSearchDebugExpanded}"
+                                                                                  IsVisible="{Binding HasSearchDebugInfo}">
+                                                                            <ScrollViewer MaxHeight="500">
+                                                                                <LayoutTransformControl>
+                                                                                    <LayoutTransformControl.LayoutTransform><ScaleTransform ScaleX="2" ScaleY="2"/></LayoutTransformControl.LayoutTransform>
+                                                                                    <controls:ChatMarkdownBlock Markdown="{Binding SearchDebugInfo}"/>
+                                                                                </LayoutTransformControl>
+                                                                            </ScrollViewer>
+                                                                        </Expander>
+                                                                        <ProgressBar Height="6" IsIndeterminate="True" IsVisible="{Binding IsLoading}"/>
+                                                                        <ItemsControl ItemsSource="{Binding MediaPaths}" IsVisible="{Binding HasMedia}">
+                                                                            <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                                                            <ItemsControl.ItemTemplate>
+                                                                                <DataTemplate>
+                                                                                    <Border Padding="6" Margin="0,0,16,16" CornerRadius="12" Background="#EEEAE1"
+                                                                                            Cursor="Hand" Tag="{Binding $parent[ItemsControl].DataContext}"
+                                                                                            PointerPressed="MediaThumbnail_PointerPressed">
+                                                                                        <Grid>
+                                                                                            <controls:ViewportLazyImage x:Name="PreviewImage" FilePath="{Binding}" MaxWidth="540" MaxHeight="560" Stretch="Uniform"/>
+                                                                                            <Border Background="#C0223938" Padding="22,12" CornerRadius="12" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                                                                    IsVisible="{Binding Converter={StaticResource ScrollStudioVideoBadge}}">
+                                                                                                <TextBlock Text="▶ 播放视频" Foreground="White"/>
+                                                                                            </Border>
+                                                                                        </Grid>
+                                                                                    </Border>
+                                                                                </DataTemplate>
+                                                                            </ItemsControl.ItemTemplate>
+                                                                        </ItemsControl>
+                                                                        <WrapPanel IsVisible="{Binding !IsLoading}">
+                                                                            <Button Classes="scroll-quiet" Content="复制" Command="{Binding $parent[ListBox].DataContext.CopyMessageCommand}" CommandParameter="{Binding}"/>
+                                                                            <Button Classes="scroll-quiet" Content="重新生成" IsVisible="{Binding IsTextContent}" Command="{Binding $parent[ListBox].DataContext.RegenerateMessageCommand}" CommandParameter="{Binding}"/>
+                                                                            <Button Classes="scroll-quiet" Content="分支" Command="{Binding $parent[ListBox].DataContext.ForkFromMessageCommand}" CommandParameter="{Binding}"/>
+                                                                            <Button Classes="scroll-quiet" Content="删除" Command="{Binding $parent[ListBox].DataContext.DeleteMessageCommand}" CommandParameter="{Binding}"/>
+                                                                            <Button Classes="scroll-quiet" Content="来源" Click="SourceButton_Click" IsVisible="{Binding HasCitations}" ToolTip.Tip="{Binding SourceTooltipText}"/>
+                                                                            <TextBlock Text="{Binding TimeText}" Classes="scroll-studio-muted" Margin="12,0" VerticalAlignment="Center" ToolTip.Tip="{Binding TimestampText}"/>
+                                                                            <TextBlock Text="{Binding TokenUsageCompactText}" Classes="scroll-studio-muted" IsVisible="{Binding HasTokenUsage}" VerticalAlignment="Center" ToolTip.Tip="{Binding TokenUsageText}"/>
+                                                                        </WrapPanel>
+                                                                    </StackPanel>
+                                                                </Grid>
+                                                            </Border>
+                                                        </Panel>
+                                                    </DataTemplate>
+                                                </ListBox.ItemTemplate>
+                                            </ListBox>
+                                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Bottom" Spacing="10" Margin="0,0,10,6">
+                                                <Button Classes="scroll-quiet" Content="搜对话" Click="ToggleSearch_Click" ToolTip.Tip="搜索 (Ctrl+F)"/>
+                                                <Button x:Name="ScrollToTopButton" Classes="scroll-quiet" Content="↑" IsVisible="False" Click="ScrollToTop_Click" ToolTip.Tip="回到顶部"/>
+                                                <Button x:Name="ScrollToBottomButton" Classes="scroll-quiet" Content="↓" Click="ScrollToBottom_Click" ToolTip.Tip="回到底部"/>
+                                            </StackPanel>
+                                        </Grid>
+                                    </Grid>
+                                    <Border Grid.Row="1" Classes="scroll-paper" Padding="20,16">
+                                        <Grid RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="14">
+                                            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" IsVisible="{Binding HasPendingAttachments}">
+                                                <ItemsControl ItemsSource="{Binding PendingAttachments}">
+                                                    <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="12"/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <Border Background="#E4EAE4" CornerRadius="10" Padding="14,8">
+                                                                <StackPanel Orientation="Horizontal" Spacing="12">
+                                                                    <TextBlock Text="{Binding FileName}" MaxWidth="340" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                                                    <Button Content="×" Command="{Binding $parent[ItemsControl].DataContext.RemoveAttachmentCommand}" CommandParameter="{Binding}" ToolTip.Tip="移除此附件"/>
+                                                                </StackPanel>
+                                                            </Border>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </ScrollViewer>
+                                            <WrapPanel Grid.Row="1">
+                                                <Button Classes="scroll-quiet" Content="＋ 附件" Click="AttachFileOrImage_Click" Margin="0,0,10,10"/>
+                                                <Button x:Name="RatioFlyoutButton" Classes="scroll-quiet" Content="{Binding SelectedRatioDisplayText}" Margin="0,0,10,10">
+                                                    <Button.Flyout>
+                                                        <Flyout Placement="TopEdgeAlignedLeft">
+                                                            <ListBox FontSize="28" MinWidth="380" ItemsSource="{Binding AspectRatioPresets}" SelectedItem="{Binding SelectedAspectRatio}" SelectionChanged="RatioList_SelectionChanged">
+                                                                <ListBox.ItemTemplate><DataTemplate><TextBlock FontSize="28" Text="{Binding Ratio}" Margin="18,12"/></DataTemplate></ListBox.ItemTemplate>
+                                                            </ListBox>
+                                                        </Flyout>
+                                                    </Button.Flyout>
+                                                </Button>
+                                                <Button Classes="scroll-quiet" Margin="0,0,10,10">
+                                                    <TextBlock Text="{Binding CurrentModelDisplayName}" MaxWidth="290" TextTrimming="CharacterEllipsis"/>
+                                                    <Button.Flyout>
+                                                        <Flyout Placement="TopEdgeAlignedLeft">
+                                                            <ListBox MinWidth="420" MaxHeight="620" ItemsSource="{Binding AvailableTextModels}" SelectedItem="{Binding SelectedConversationModel}" SelectionChanged="ModelList_SelectionChanged">
+                                                                <ListBox.ItemTemplate>
+                                                                    <DataTemplate><StackPanel Margin="16,12" Spacing="8"><TextBlock Text="{Binding ModelDisplayName}" FontSize="28"/><TextBlock Text="{Binding EndpointName}" FontSize="26"/></StackPanel></DataTemplate>
+                                                                </ListBox.ItemTemplate>
+                                                            </ListBox>
+                                                        </Flyout>
+                                                    </Button.Flyout>
+                                                </Button>
+                                                <ToggleButton Classes="scroll-quiet" Content="深度思考" IsChecked="{Binding EnableReasoning}" Margin="0,0,10,10"/>
+                                                <Button Classes="scroll-quiet scroll-studio-web" Content="联网搜索" Click="WebSearchSelector_Click" ToolTip.Tip="{Binding WebSearchButtonToolTip}"
+                                                    Classes.enabled="{Binding EnableWebSearch}" Margin="0,0,10,10"/>
+                                                <Button Classes="scroll-quiet" Content="更多" Margin="0,0,0,10">
+                                                    <Button.Flyout>
+                                                        <Flyout Placement="TopEdgeAlignedRight">
+                                                            <StackPanel Width="500" Spacing="20" Margin="20">
+                                                                <TextBlock Text="对话历史轮数" FontSize="30"/>
+                                                                <Grid ColumnDefinitions="*,80">
+                                                                    <Slider Minimum="1" Maximum="100" Value="{Binding MaxConversationTurns}" TickFrequency="1" IsSnapToTickEnabled="True"/>
+                                                                    <TextBlock Grid.Column="1" Text="{Binding MaxConversationTurns}" FontSize="28" HorizontalAlignment="Right"/>
+                                                                </Grid>
+                                                                <CheckBox FontSize="28" Content="携带最近一张历史图片" IsChecked="{Binding EnableRecentImageCarry}"/>
+                                                                <Button FontSize="28" MinHeight="56" Content="优化提示词" Command="{Binding OptimizePromptCommand}"/>
+                                                            </StackPanel>
+                                                        </Flyout>
+                                                    </Button.Flyout>
+                                                </Button>
+                                            </WrapPanel>
+                                            <Grid Grid.Row="2" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="14">
+                                                <controls:VoiceInputTextBox x:Name="PromptTextBox" Text="{Binding PromptText, Mode=TwoWay}"
+                                                    CursorState="{Binding InputCursor}" ClearSelectionOnLostFocus="False"
+                                                    FontSize="28" MinHeight="90" MaxHeight="240" Padding="20,16"
+                                                    AcceptsReturn="True" TextWrapping="Wrap" Watermark="写下你的构想… (Ctrl+Enter 发送)"/>
+                                                <Button Grid.Column="1" Classes="scroll-studio-voice" Content="语音"
+                                                    Classes.voice-active="{Binding $parent[UserControl].DataContext.VoiceInput.IsActive}"
+                                                    Command="{Binding $parent[UserControl].DataContext.VoiceInput.ToggleCommand}"
+                                                    ToolTip.Tip="{Binding $parent[UserControl].DataContext.VoiceInput.HotkeyHint}"
+                                                    AutomationProperties.Name="开始或停止语音输入 (F8)" Focusable="False" VerticalAlignment="Bottom"/>
+                                                <StackPanel Grid.Column="2" Spacing="10" VerticalAlignment="Bottom">
+                                                    <Button Classes="scroll-primary" Content="发送" Command="{Binding GenerateCommand}"/>
+                                                    <Button Classes="scroll-quiet" Content="停止" Command="{Binding StopChatCommand}" IsVisible="{Binding IsChatStreaming}"/>
+                                                </StackPanel>
+                                            </Grid>
+                                            <StackPanel Grid.Row="3" Spacing="8">
+                                                <TextBlock Classes="scroll-studio-muted" Text="{Binding $parent[UserControl].DataContext.VoiceInput.StatusText}"
+                                                           IsVisible="{Binding $parent[UserControl].DataContext.VoiceInput.HasStatus}" TextWrapping="Wrap"/>
+                                                <TextBlock Classes="scroll-studio-muted" Text="{Binding StatusText}" TextWrapping="Wrap"/>
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </Grid>
+                            </DataTemplate>
+                        </controls:CachedContentControl.ContentTemplate>
+                    </controls:CachedContentControl>
+                    <TextBlock Text="新建会话，开始落笔。" IsVisible="{Binding !HasCurrentSession}"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="36"/>
+                </Grid>
+                <Grid Grid.Row="2" ColumnDefinitions="*,Auto" ColumnSpacing="18">
+                    <TextBlock Classes="scroll-studio-muted" Text="{Binding VoiceInput.HotkeyHint}" TextTrimming="CharacterEllipsis"/>
+                    <TextBlock Grid.Column="1" Classes="scroll-studio-muted" Text="{Binding ActiveTaskCount, StringFormat=活跃任务 · {0}}"/>
+                </Grid>
+            </Grid>
+        </views:SongScrollShell.RightPage>
+    </views:SongScrollShell>
+</views:MediaStudioView>

@@ -36,10 +36,10 @@ public partial class MainWindow : Window
     private Control? _currentPage;
     private Window? _workshopChatWindow;
 
-    private MediaStudioView? MediaStudioViewPage => GetCachedPage<MediaStudioView>(MainWindowViewModel.NavTagMedia);
-    private MediaCenterV2View? MediaCenterV2ViewPage => GetCachedPage<MediaCenterV2View>(MainWindowViewModel.NavTagMediaV2);
-    private AudioLabView? AudioLabViewPage => GetCachedPage<AudioLabView>(MainWindowViewModel.NavTagAudioLab);
-    private TaskQueueMonitorView? TaskMonitorViewPage => GetCachedPage<TaskQueueMonitorView>(MainWindowViewModel.NavTagTaskMonitor);
+    private MediaStudioView? MediaStudioViewPage => GetCachedPage<MediaStudioView>(GetPresentationCacheKey(MainWindowViewModel.NavTagMedia));
+    private MediaCenterV2View? MediaCenterV2ViewPage => GetCachedPage<MediaCenterV2View>(GetPresentationCacheKey(MainWindowViewModel.NavTagMediaV2));
+    private AudioLabView? AudioLabViewPage => GetCachedPage<AudioLabView>(GetPresentationCacheKey(MainWindowViewModel.NavTagAudioLab));
+    private TaskQueueMonitorView? TaskMonitorViewPage => GetCachedPage<TaskQueueMonitorView>(GetPresentationCacheKey(MainWindowViewModel.NavTagTaskMonitor));
 
     public MainWindow() : this(new ShellAppearancePreferencesService())
     {
@@ -149,12 +149,20 @@ public partial class MainWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
+        _isClosingBusinessPages = true;
         ShellTitleBar.PropertyChanged -= OnShellTitleBarPropertyChanged;
+        if (_viewModel != null)
+        {
+            _viewModel.Settings.ConfigSaved -= OnSettingsConfigSaved;
+            _viewModel.ThemeModeChanged -= OnThemeModeChanged;
+            _viewModel.MainNavPaneStateChanged -= OnMainNavPaneStateChanged;
+            _viewModel.NavigateToSettings = null;
+            _viewModel.NavigateToWorkshopWithAttachments = null;
+        }
         _workshopChatWindow?.Close();
         GetCachedPage<InkStudyTranslationView>(InkStudyCacheKey)?.DisposePresentation();
         GetCachedPage<SongScrollTranslationView>(SongScrollCacheKey)?.DisposePresentation();
-        MediaStudioViewPage?.Cleanup();
-        MediaCenterV2ViewPage?.Cleanup();
+        DisposeBusinessPages();
         _viewModel?.Dispose();
         base.OnClosed(e);
     }
@@ -170,6 +178,7 @@ public partial class MainWindow : Window
 
         Dispatcher.UIThread.Post(() =>
         {
+            if (_isClosingBusinessPages) return;
             var initialTag = !string.IsNullOrWhiteSpace(startupAudioPath)
                 ? MainWindowViewModel.NavTagAudioLab
                 : (_viewModel?.SelectedNavTag ?? MainWindowViewModel.NavTagLive);
@@ -182,10 +191,13 @@ public partial class MainWindow : Window
             Topmost = true;
             Dispatcher.UIThread.Post(async () =>
             {
+                if (_isClosingBusinessPages) return;
                 Topmost = false;
-                if (!string.IsNullOrWhiteSpace(startupAudioPath) && AudioLabViewPage != null)
+                if (!string.IsNullOrWhiteSpace(startupAudioPath)
+                    && AudioLabViewPage is { } audioLab)
                 {
-                    await AudioLabViewPage.LoadAudioFileWithFormatCheckAsync(startupAudioPath);
+                    EnsureAudioLabInitialized(audioLab);
+                    await audioLab.LoadAudioFileWithFormatCheckAsync(startupAudioPath);
                 }
             }, DispatcherPriority.Background);
         }, DispatcherPriority.Loaded);
@@ -301,13 +313,14 @@ public partial class MainWindow : Window
 
     private void ShowPage(string tag)
     {
+        if (_isClosingBusinessPages) return;
         tag = NormalizeNavTag(tag);
-        _currentNavTag = tag;
         if (tag == MainWindowViewModel.NavTagMedia && _workshopChatWindow != null)
         {
             ActivateWorkshopChatWindow();
             return;
         }
+        _currentNavTag = tag;
         var page = GetOrCreatePage(tag);
 
         if (!ReferenceEquals(_currentPage, page))
@@ -316,8 +329,9 @@ public partial class MainWindow : Window
             if (_currentPage != null)
                 _currentPage.IsVisible = false;
 
-            // 独立原稿翻译页有自己的全页宿主；业务页面从不跨宿主迁移。
-            var host = page is SongScrollTranslationView ? SongScrollHost : page is InkStudyTranslationView ? InkStudyHost : PageHost;
+            // 长卷的独立业务页共用全页宿主；各外观的缓存树仍留在自己的宿主。
+            var host = page is SongScrollTranslationView or ISongScrollPage
+                ? SongScrollHost : page is InkStudyTranslationView ? InkStudyHost : PageHost;
             if (!host.Children.Contains(page))
             {
                 PagePlaceholder.IsVisible = false;
@@ -344,83 +358,7 @@ public partial class MainWindow : Window
                 DispatcherPriority.Background);
         }
 
-        if (tag == MainWindowViewModel.NavTagMedia && _viewModel != null && !_mediaStudioInitialized)
-        {
-            Dispatcher.UIThread.Post(EnsureMediaStudioInitialized, DispatcherPriority.Background);
-        }
-
-        if (tag == MainWindowViewModel.NavTagMediaV2 && !_mediaCenterV2Initialized)
-        {
-            _mediaCenterV2Initialized = true;
-            Dispatcher.UIThread.Post(() =>
-            {
-                if (_viewModel != null)
-                {
-                    var config = _viewModel.ConfigVM.Config;
-                    MediaCenterV2ViewPage?.Initialize(
-                        config.AiConfig ?? new AiConfig(),
-                        config.MediaGenConfig,
-                        config.Endpoints,
-                        App.Services.GetRequiredService<IModelRuntimeResolver>(),
-                        App.Services.GetRequiredService<IAzureTokenProviderStore>(),
-                        App.Services.GetRequiredService<ConfigurationService>(),
-                        () => _viewModel.ConfigVM.Config,
-                        updatedConfig =>
-                        {
-                            _viewModel.ConfigVM.SetConfig(updatedConfig);
-                            _viewModel.Settings.Initialize(updatedConfig);
-                        });
-                }
-            }, DispatcherPriority.Background);
-        }
-
-        if (tag == MainWindowViewModel.NavTagAudioLab && !_audioLabInitialized)
-        {
-            _audioLabInitialized = true;
-            Dispatcher.UIThread.Post(() =>
-            {
-                if (_viewModel != null)
-                {
-                    var pipeline = App.Services.GetRequiredService<AudioLifecyclePipelineService>();
-                    var ttsService = App.Services.GetRequiredService<Services.Speech.SpeechSynthesisService>();
-                    var tokenStore = App.Services.GetRequiredService<IAzureTokenProviderStore>();
-                    var configService = App.Services.GetRequiredService<ConfigurationService>();
-                    Func<AzureSpeechConfig> configProvider = () => _viewModel.ConfigVM.Config ?? new AzureSpeechConfig();
-                    var controlPanelVm = new AudioLabControlPanelViewModel(pipeline, ttsService, configProvider, tokenStore, configService);
-
-                    AudioLabViewPage?.Initialize(
-                        App.Services.GetRequiredService<IAiInsightService>(),
-                        tokenStore,
-                        App.Services.GetRequiredService<IModelRuntimeResolver>(),
-                        App.Services.GetRequiredService<ISpeechResourceRuntimeResolver>(),
-                        App.Services.GetRequiredService<IAiAudioTranscriptionService>(),
-                        configProvider,
-                        configService,
-                        pipeline,
-                        controlPanelVm,
-                        App.Services.GetRequiredService<IAudioLabExportService>(),
-                        App.Services.GetRequiredService<IDesktopFolderLauncher>(),
-                        App.Services.GetRequiredService<IAudioTaskQueueService>(),
-                        App.Services.GetRequiredService<ITaskEventBus>());
-                    AudioLabViewPage!.OpenTranscriptChatAsync = OpenTranscriptChatAsync;
-                }
-            }, DispatcherPriority.Background);
-        }
-
-        if (tag == MainWindowViewModel.NavTagTaskMonitor && !_taskMonitorInitialized)
-        {
-            _taskMonitorInitialized = true;
-            Dispatcher.UIThread.Post(() =>
-            {
-                var queueService = App.Services.GetRequiredService<IAudioTaskQueueService>();
-                var eventBus = App.Services.GetRequiredService<ITaskEventBus>();
-                var audioRepo = App.Services.GetRequiredService<IAudioLibraryRepository>();
-                var executor = App.Services.GetRequiredService<IAudioTaskExecutor>();
-                var executionRepo = App.Services.GetRequiredService<ITaskExecutionRepository>();
-                var vm = new TaskQueueMonitorViewModel(queueService, eventBus, audioRepo, executor, executionRepo);
-                TaskMonitorViewPage!.DataContext = vm;
-            }, DispatcherPriority.Background);
-        }
+        ScheduleBusinessPageInitialization(page);
     }
 
     private static string NormalizeNavTag(string? tag)
@@ -446,6 +384,8 @@ public partial class MainWindow : Window
     private Control GetOrCreatePage(string tag)
     {
         tag = NormalizeNavTag(tag);
+        if (TryGetOrCreateSongScrollPage(tag, out var scrollPage))
+            return scrollPage;
         if (tag == MainWindowViewModel.NavTagLive && IsSongScrollAppearance)
         {
             if (!_pageCache.TryGetValue(SongScrollCacheKey, out var scroll))
@@ -521,6 +461,7 @@ public partial class MainWindow : Window
         }
         if (page is MediaStudioView || page is MediaCenterV2View || page is AudioLabView || page is TaskQueueMonitorView)
         {
+            BindBusinessPage(page);
             return;
         }
 
@@ -532,26 +473,18 @@ public partial class MainWindow : Window
 
     private void OnSettingsConfigSaved(AzureSpeechConfig config)
     {
-        // 听析中心 Tab 可见性实时跟随配置变更
-        if (_audioLabInitialized)
-        {
-            (AudioLabViewPage?.DataContext as ViewModels.AudioLabViewModel)?.RefreshStagePresetVisibility();
-        }
-
-        if (!_mediaStudioInitialized && !_mediaCenterV2Initialized)
-        {
-            return;
-        }
-
+        if (_isClosingBusinessPages) return;
+        // 每份业务只更新一次；不能让两个呈现重复刷新历史、鉴权或播放器。
+        _audioLabBusiness?.RefreshStagePresetVisibility();
         var aiConfig = config.AiConfig ?? new AiConfig();
-
-        if (_mediaStudioInitialized)
+        // 原 UpdateConfiguration 会清空自己的终结点列表，传入快照避免别名清空源配置。
+        var endpoints = config.Endpoints.ToList();
+        if (_mediaStudioBusiness != null)
         {
-            var mediaStudioView = MediaStudioViewPage;
-            mediaStudioView?.UpdateConfiguration(
+            _mediaStudioBusiness.UpdateConfiguration(
                 aiConfig,
                 config.MediaGenConfig,
-                config.Endpoints,
+                endpoints,
                 config.WebSearchProviderId,
                 config.WebSearchTriggerMode,
                 config.WebSearchMaxResults,
@@ -563,13 +496,12 @@ public partial class MainWindow : Window
                 config.WebSearchDebugMode);
         }
 
-        if (_mediaCenterV2Initialized)
+        if (_mediaCenterBusiness != null)
         {
-            var mediaCenterV2View = MediaCenterV2ViewPage;
-            mediaCenterV2View?.UpdateConfiguration(
+            _mediaCenterBusiness.UpdateConfiguration(
                 aiConfig,
                 config.MediaGenConfig,
-                config.Endpoints);
+                endpoints);
         }
     }
 
@@ -669,40 +601,37 @@ public partial class MainWindow : Window
 
     private void EnsureMediaStudioInitialized()
     {
-        if (_mediaStudioInitialized || _viewModel == null) return;
-        var config = _viewModel.ConfigVM.Config;
+        if (_isClosingBusinessPages || _viewModel == null) return;
+        if (_workshopChatWindow?.Content is MediaStudioView floatingStudio)
+        {
+            BindBusinessPage(floatingStudio);
+            return;
+        }
         var studio = (MediaStudioView)GetOrCreatePage(MainWindowViewModel.NavTagMedia);
-        studio.Initialize(
-            config.AiConfig ?? new AiConfig(), config.MediaGenConfig, config.Endpoints,
-            App.Services.GetRequiredService<IModelRuntimeResolver>(),
-            App.Services.GetRequiredService<IAzureTokenProviderStore>(),
-            App.Services.GetRequiredService<ConfigurationService>(),
-            () => _viewModel.ConfigVM.Config,
-            updatedConfig =>
-            {
-                _viewModel.ConfigVM.SetConfig(updatedConfig);
-                _viewModel.Settings.Initialize(updatedConfig);
-            });
-        _mediaStudioInitialized = true;
+        EnsureMediaStudioInitialized(studio);
     }
 
     private async Task OpenTranscriptChatAsync(string sourcePath, string transcript, string selectedQuote)
     {
+        if (_isClosingBusinessPages) return;
         EnsureMediaStudioInitialized();
-        var studio = MediaStudioViewPage
+        var studio = _workshopChatWindow?.Content as MediaStudioView ?? MediaStudioViewPage
             ?? throw new InvalidOperationException("创作工坊尚未就绪。");
         var vm = studio.ViewModel
             ?? throw new InvalidOperationException("聊天服务尚未就绪。");
         await vm.InitializationTask;
+        if (_isClosingBusinessPages) return;
         vm.CreateNewSession();
         var session = vm.CurrentSession!;
         await session.InitializeTranscriptConversationAsync(sourcePath, transcript, selectedQuote);
+        if (_isClosingBusinessPages) return;
 
         if (_workshopChatWindow == null)
         {
             // 移动已有视图，不创建第二份会话管理器或历史缓存。
-            PageHost.Children.Remove(studio);
-            if (ReferenceEquals(_currentPage, studio))
+            RemovePageFromHost(studio);
+            var wasMainPage = ReferenceEquals(_currentPage, studio);
+            if (wasMainPage)
                 _currentPage = null;
             studio.IsVisible = true;
             var window = new Window
@@ -722,8 +651,13 @@ public partial class MainWindow : Window
                 window.Content = null;
                 studio.IsVisible = false;
                 _workshopChatWindow = null;
+                // 保留原缓存与共享业务；若主窗此时没有页面，重新接回当前外观。
+                if (!_isClosingBusinessPages && _currentPage == null)
+                    ShowPage(MainWindowViewModel.NavTagMedia);
             };
             window.Show(this);
+            if (wasMainPage)
+                ShowPage(MainWindowViewModel.NavTagAudioLab);
         }
         ActivateWorkshopChatWindow();
     }
@@ -742,6 +676,7 @@ public partial class MainWindow : Window
         {
             foreach (var path in filePaths)
             {
+                if (_isClosingBusinessPages) return;
                 if (!File.Exists(path))
                     throw new FileNotFoundException("字幕文件不存在，请重新加载字幕。", path);
                 await OpenTranscriptChatAsync(path, await File.ReadAllTextAsync(path), "");
@@ -749,7 +684,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            if (MediaStudioViewPage?.ViewModel is { } vm)
+            if (_mediaStudioBusiness is { } vm)
                 vm.StatusText = $"打开字幕问答失败：{ex.Message}";
             CrashLogger.AddBreadcrumb($"打开字幕问答失败：{ex.Message}");
         }

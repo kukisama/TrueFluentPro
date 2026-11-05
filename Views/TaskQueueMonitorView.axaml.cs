@@ -9,12 +9,24 @@ namespace TrueFluentPro.Views
 {
     public partial class TaskQueueMonitorView : UserControl
     {
-        public TaskQueueMonitorView()
+        public TaskQueueMonitorView() : this(true)
         {
-            InitializeComponent();
         }
 
-        private TaskQueueMonitorViewModel? ViewModel => DataContext as TaskQueueMonitorViewModel;
+        protected TaskQueueMonitorView(bool loadDefaultView)
+        {
+            if (loadDefaultView)
+                InitializeComponent();
+        }
+
+        public TaskQueueMonitorViewModel? ViewModel => DataContext as TaskQueueMonitorViewModel;
+
+        /// <summary>VM 由宿主创建；绑定不刷新队列、不修改配置，也不接管 Dispose。</summary>
+        public void BindViewModel(TaskQueueMonitorViewModel vm)
+        {
+            System.ArgumentNullException.ThrowIfNull(vm);
+            DataContext = vm;
+        }
 
         internal void TaskRow_PointerReleased(object? sender, PointerReleasedEventArgs e)
         {

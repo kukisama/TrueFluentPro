@@ -46,6 +46,10 @@ namespace TrueFluentPro.Views
         private int _capturedSelEnd;
         private TrueFluentPro.Controls.Markdown.MarkdownRenderer? _capturedRenderer;
         private bool _initialized;
+        private bool _ownsViewModel;
+        private bool _presentationVisible;
+        private int _presentationVersion;
+        private MediaSessionViewModel? _lastPresentedSession;
         private ChatVoiceInputHotkey? _voiceHotkey;
         private Window? _voiceHotkeyWindow;
         private bool _voiceKeyDown;
@@ -53,10 +57,17 @@ namespace TrueFluentPro.Views
         // ── 高度缓存：防 VirtualizingStackPanel 估算误差 ──
         private ListBox? _messageListBox;
 
-        public MediaStudioView()
+        public MediaStudioView() : this(true)
         {
-            InitializeComponent();
         }
+
+        protected MediaStudioView(bool loadDefaultView)
+        {
+            if (loadDefaultView) InitializeComponent();
+        }
+
+        // Different presentations have different pixel metrics; do not share their height cache.
+        protected virtual bool UseMessageHeightCache => true;
 
         public void Initialize(
             AiConfig aiConfig, MediaGenConfig genConfig, List<AiEndpoint> endpoints,
@@ -65,9 +76,8 @@ namespace TrueFluentPro.Views
             Action<AzureSpeechConfig>? onGlobalConfigUpdated = null)
         {
             if (_initialized) return;
-            _initialized = true;
 
-            _viewModel = new MediaStudioViewModel(
+            BindViewModel(new MediaStudioViewModel(
                 aiConfig,
                 genConfig,
                 endpoints,
@@ -75,8 +85,22 @@ namespace TrueFluentPro.Views
                 azureTokenProviderStore,
                 configurationService,
                 configProvider,
-                onGlobalConfigUpdated);
-            DataContext = _viewModel;
+                onGlobalConfigUpdated));
+            _ownsViewModel = true;
+            var sessionContentHost = this.FindControl<Controls.CachedContentControl>("SessionContentHost");
+            if (sessionContentHost != null)
+                sessionContentHost.MaxCachedViews = Math.Clamp(genConfig?.MaxLoadedSessionsInMemory ?? 8, 1, 64);
+        }
+
+        /// <summary>Bind a borrowed business VM. Repeated binding of the same instance is a no-op.</summary>
+        public virtual void BindViewModel(MediaStudioViewModel vm)
+        {
+            ArgumentNullException.ThrowIfNull(vm);
+            if (ReferenceEquals(_viewModel, vm)) return;
+            if (_initialized) throw new InvalidOperationException("请先解绑当前创作工坊视图，再绑定其他业务实例。");
+            _initialized = true;
+            _viewModel = vm;
+            _ownsViewModel = false;
 
             _sessionListBox = this.FindControl<ListBox>("SessionListBox");
 
@@ -87,32 +111,24 @@ namespace TrueFluentPro.Views
                 sessionContentHost.KeySelector = content =>
                     (content as MediaSessionViewModel)?.SessionId;
                 sessionContentHost.MaxCachedViews = Math.Clamp(
-                    genConfig?.MaxLoadedSessionsInMemory ?? 8, 1, 64);
+                    vm.CurrentSession?.GenConfig.MaxLoadedSessionsInMemory ?? 8, 1, 64);
             }
 
+                    DataContext = _viewModel;
             AttachSession(_viewModel.CurrentSession);
 
-            _viewModel.PropertyChanged += (_, e) =>
-            {
-                if (e.PropertyName == nameof(MediaStudioViewModel.CurrentSession))
-                {
-                    AttachSession(_viewModel.CurrentSession);
-                }
-            };
+            _viewModel.PropertyChanged += ViewModel_PropertyChanged;
 
             // 在隧道阶段订阅 KeyDown，确保在 TextBox 内部处理 Ctrl+V / Ctrl+Enter 之前拦截
             this.AddHandler(
                 InputElement.KeyDownEvent,
                 PromptTextBox_KeyDown,
                 Avalonia.Interactivity.RoutingStrategies.Tunnel);
-            this.AddHandler(InputElement.KeyUpEvent, (_, e) =>
-            {
-                if (e.Key == Key.F8) _voiceKeyDown = false;
-            }, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+            this.AddHandler(InputElement.KeyUpEvent, VoiceKeyUp, Avalonia.Interactivity.RoutingStrategies.Tunnel);
             UpdateVoiceHotkey();
 
             // 用 MenuFlyout 替代原生 ContextMenu（ContextMenu 在 NavigationView 内 Popup 不渲染）
-            _sessionListBox!.AddHandler(
+            _sessionListBox?.AddHandler(
                 InputElement.PointerReleasedEvent,
                 SessionListBox_PointerReleased,
                 Avalonia.Interactivity.RoutingStrategies.Tunnel);
@@ -153,30 +169,92 @@ namespace TrueFluentPro.Views
 
         public void Cleanup()
         {
+            var ownedVm = _ownsViewModel ? _viewModel : null;
+            UnbindViewModel();
+            ownedVm?.Dispose();
+        }
+
+        /// <summary>Release presentation subscriptions only; MainWindow may dispose its shared VM once.</summary>
+        public virtual void UnbindViewModel()
+        {
+            if (_presentationVisible) _ = _viewModel?.VoiceInput.StopAsync();
+            _presentationVisible = false;
             ReleaseVoiceHotkey();
-            _viewModel?.Dispose();
+            if (_viewModel != null) _viewModel.PropertyChanged -= ViewModel_PropertyChanged;
+            AttachSession(null);
+            this.RemoveHandler(InputElement.KeyDownEvent, PromptTextBox_KeyDown);
+            this.RemoveHandler(InputElement.KeyUpEvent, VoiceKeyUp);
+            this.RemoveHandler(InputElement.PointerPressedEvent, CaptureSelectionBeforeRightClick);
+            this.RemoveHandler(InputElement.PointerReleasedEvent, HandleRightClickContextMenu);
+            _sessionListBox?.RemoveHandler(InputElement.PointerReleasedEvent, SessionListBox_PointerReleased);
+            var dropZone = this.FindControl<Grid>("SessionViewsHost");
+            dropZone?.RemoveHandler(DragDrop.DragOverEvent, ChatArea_DragOver);
+            dropZone?.RemoveHandler(DragDrop.DropEvent, ChatArea_Drop);
+            DataContext = null;
+            this.FindControl<Controls.CachedContentControl>("SessionContentHost")?.ClearAllCache();
+            _capturedSelection = null;
+            _capturedStb = null;
+            _capturedRenderer = null;
+            _lastPresentedSession = null;
+            _viewModel = null;
+            _sessionListBox = null;
+            _initialized = false;
+            _ownsViewModel = false;
+        }
+
+        private void ViewModel_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(MediaStudioViewModel.CurrentSession))
+                AttachSession(_viewModel?.CurrentSession);
+        }
+
+        private void VoiceKeyUp(object? sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.F8) _voiceKeyDown = false;
         }
 
         protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
         {
             base.OnAttachedToVisualTree(e);
-            Dispatcher.UIThread.Post(UpdateVoiceHotkey, DispatcherPriority.Loaded);
+            Dispatcher.UIThread.Post(() =>
+            {
+                UpdateVoiceHotkey();
+                AttachSession(_viewModel?.CurrentSession, refreshPresentation: true);
+            }, DispatcherPriority.Loaded);
         }
 
         protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
         {
             ReleaseVoiceHotkey();
-            _ = _viewModel?.VoiceInput.StopAsync();
+            if (_presentationVisible) _ = _viewModel?.VoiceInput.StopAsync();
+            _presentationVisible = false;
+            AttachSession(null);
             base.OnDetachedFromVisualTree(e);
         }
 
         protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
         {
             base.OnPropertyChanged(change);
+            // 11.3.11 的 IsEffectivelyVisible 是普通只读属性；页面显隐由
+            // IsVisibleProperty 通知，base 已先更新有效可见性。
             if (change.Property == IsVisibleProperty)
+                RefreshPresentationVisibility();
+        }
+
+        // 跨外观宿主切换时，页面可能先显示、父宿主后显示；父级的有效可见性
+        // 不会触发本页 AvaloniaProperty 通知，因此由宿主完成切换后再同步一次。
+        internal void RefreshPresentationVisibility()
+        {
+            UpdateVoiceHotkey();
+            if (!IsEffectivelyVisible || TopLevel.GetTopLevel(this) == null)
             {
-                UpdateVoiceHotkey();
-                if (!IsVisible) _ = _viewModel?.VoiceInput.StopAsync();
+                if (_presentationVisible) _ = _viewModel?.VoiceInput.StopAsync();
+                _presentationVisible = false;
+                AttachSession(null);
+            }
+            else if (_viewModel != null)
+            {
+                Dispatcher.UIThread.Post(() => AttachSession(_viewModel?.CurrentSession, refreshPresentation: true), DispatcherPriority.Loaded);
             }
         }
 
@@ -188,6 +266,7 @@ namespace TrueFluentPro.Views
                 ReleaseVoiceHotkey();
                 return;
             }
+            _presentationVisible = true;
             if (_voiceHotkey != null && ReferenceEquals(window, _voiceHotkeyWindow)) return;
             ReleaseVoiceHotkey();
             _voiceHotkeyWindow = window;
@@ -294,10 +373,15 @@ namespace TrueFluentPro.Views
             }
         }
 
-        private void AttachSession(MediaSessionViewModel? session)
+        private void AttachSession(MediaSessionViewModel? session, bool refreshPresentation = false)
         {
-            if (ReferenceEquals(_attachedSession, session))
+            if (session != null && (!IsEffectivelyVisible || TopLevel.GetTopLevel(this) == null)) return;
+            var sameSession = ReferenceEquals(_attachedSession, session);
+            if (sameSession && !refreshPresentation)
                 return;
+            var version = ++_presentationVersion;
+            _pendingScrollAfterReset = false;
+            _isLoadingOlderMessages = false;
 
             // 解除旧诊断订阅
             if (_diagScrollViewer != null)
@@ -310,6 +394,13 @@ namespace TrueFluentPro.Views
             if (_attachedSession != null)
                 _attachedSession.Messages.CollectionChanged -= OnAttachedSessionMessagesReset;
 
+            if (_messageListBox != null)
+            {
+                _messageListBox.ContainerPrepared -= MessageListBox_ContainerPrepared;
+                _messageListBox.ContainerClearing -= MessageListBox_ContainerClearing;
+                _messageListBox = null;
+            }
+
             _attachedSession = session;
 
             if (_attachedSession == null)
@@ -317,7 +408,8 @@ namespace TrueFluentPro.Views
 
             // 判断是否缓存命中（CachedContentControl 已保留滚动位置）
             var sessionContentHost = this.FindControl<Controls.CachedContentControl>("SessionContentHost");
-            var isCacheHit = sessionContentHost?.LastSwitchWasCacheHit ?? false;
+            var isCacheHit = (sessionContentHost?.LastSwitchWasCacheHit ?? false)
+                || ReferenceEquals(_lastPresentedSession, session);
 
             // 通用策略：监听 Messages 集合重置（ReplaceAllMessages 会 Clear + Add）
             // 无论 HIT/MISS，只要 Messages 从空→有数据，就 scroll-to-bottom。
@@ -327,9 +419,11 @@ namespace TrueFluentPro.Views
             // 延迟到视觉树就绪后订阅
             Dispatcher.UIThread.Post(() =>
             {
+                if (version != _presentationVersion || !IsEffectivelyVisible) return;
+                _lastPresentedSession = session;
                 // 订阅 ListBox 容器生命周期事件，实现高度缓存
                 var newListBox = FindMessageListBox();
-                if (newListBox != null && !ReferenceEquals(newListBox, _messageListBox))
+                if (UseMessageHeightCache && newListBox != null && !ReferenceEquals(newListBox, _messageListBox))
                 {
                     if (_messageListBox != null)
                     {
@@ -354,10 +448,11 @@ namespace TrueFluentPro.Views
                 }
 
                 // 缓存未命中 且 已有数据 → 立即滚到底（首会话在启动时已加载）
-                if (!isCacheHit && session!.Messages.Count > 0)
+                if (!sameSession && !isCacheHit && session!.Messages.Count > 0)
                 {
                     ScrollToBottomReliable();
                 }
+                FlushPendingMessagesDeferred();
                 // 其余情况（MISS+空数据、HIT+数据被卸载）由 OnAttachedSessionMessagesReset 兜底
             }, DispatcherPriority.Loaded);
         }
@@ -383,8 +478,10 @@ namespace TrueFluentPro.Views
                 && _attachedSession?.Messages.Count > 0)
             {
                 _pendingScrollAfterReset = false;
+                var version = _presentationVersion;
                 Dispatcher.UIThread.Post(() =>
                 {
+                    if (version != _presentationVersion || !IsEffectivelyVisible) return;
                     ScrollToBottomReliable();
                     // 首批渲染+滚动完成后，补充第二批（插入到头部）
                     FlushPendingMessagesDeferred();
@@ -400,22 +497,25 @@ namespace TrueFluentPro.Views
             if (_attachedSession == null || !_attachedSession.HasPendingMessages)
                 return;
 
+            var session = _attachedSession;
+            var version = _presentationVersion;
             // 再延一帧，确保首批渲染和 scroll-to-bottom 的 layout 都已完成
             Dispatcher.UIThread.Post(() =>
             {
-                if (_attachedSession == null || !_attachedSession.HasPendingMessages)
+                if (version != _presentationVersion || !IsEffectivelyVisible || !session.HasPendingMessages)
                     return;
 
                 var sv = FindChatScrollViewer();
                 var oldExtent = sv?.Extent.Height ?? 0;
 
-                _attachedSession.FlushPendingMessages();
+                session.FlushPendingMessages();
 
                 // 补偿滚动位置：新内容插入头部，Extent 增长了多少就补偿多少
                 if (sv != null)
                 {
                     Dispatcher.UIThread.Post(() =>
                     {
+                        if (version != _presentationVersion || !IsEffectivelyVisible) return;
                         var delta = sv.Extent.Height - oldExtent;
                         if (delta > 0)
                         {
@@ -437,8 +537,10 @@ namespace TrueFluentPro.Views
                 lb.ScrollIntoView(lb.ItemCount - 1);
             sv.ScrollToEnd();
 
+            var version = _presentationVersion;
             Dispatcher.UIThread.Post(() =>
             {
+                if (version != _presentationVersion || !IsEffectivelyVisible) return;
                 if (lb != null && lb.ItemCount > 0)
                     lb.ScrollIntoView(lb.ItemCount - 1);
                 sv.ScrollToEnd();
@@ -447,7 +549,7 @@ namespace TrueFluentPro.Views
 
         private void DiagScrollViewer_ScrollChanged(object? sender, ScrollChangedEventArgs e)
         {
-            if (_diagScrollViewer == null || _attachedSession == null) return;
+            if (_diagScrollViewer == null || _attachedSession == null || !IsEffectivelyVisible) return;
 
             var offsetY = _diagScrollViewer.Offset.Y;
             var extentH = _diagScrollViewer.Extent.Height;
@@ -460,6 +562,7 @@ namespace TrueFluentPro.Views
 
                 // 记住当前锚点：最顶部可见项及其相对偏移
                 var oldExtent = extentH;
+                var version = _presentationVersion;
 
                 var loaded = _attachedSession.LoadOlderMessages();
                 if (loaded > 0)
@@ -467,6 +570,7 @@ namespace TrueFluentPro.Views
                     // 布局后补偿滚动位置，使用户看到的内容不跳动
                     Dispatcher.UIThread.Post(() =>
                     {
+                        if (version != _presentationVersion) return;
                         if (_diagScrollViewer != null)
                         {
                             var newExtent = _diagScrollViewer.Extent.Height;
@@ -504,7 +608,7 @@ namespace TrueFluentPro.Views
             _diagLastExtentH = extentH;
         }
 
-        private void ScrollToTop_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        protected void ScrollToTop_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
         {
             var sv = FindChatScrollViewer();
             if (sv != null)
@@ -512,7 +616,7 @@ namespace TrueFluentPro.Views
             e.Handled = true;
         }
 
-        private void ScrollToBottom_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        protected void ScrollToBottom_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
         {
             var sv = FindChatScrollViewer();
             sv?.ScrollToEnd();
@@ -523,7 +627,7 @@ namespace TrueFluentPro.Views
             e.Handled = true;
         }
 
-        private void ToggleReasoning_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        protected void ToggleReasoning_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
         {
             if (sender is Avalonia.Controls.Button btn && btn.DataContext is ChatMessageViewModel msg)
             {
@@ -531,7 +635,7 @@ namespace TrueFluentPro.Views
             }
         }
 
-        private void ToggleSearchDebug_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        protected void ToggleSearchDebug_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
         {
             if (sender is Avalonia.Controls.Button btn && btn.DataContext is ChatMessageViewModel msg)
             {
@@ -670,7 +774,7 @@ namespace TrueFluentPro.Views
         }
 
         /// <summary>比例选择后自动关闭 Flyout。</summary>
-        private void RatioList_SelectionChanged(object? sender, Avalonia.Controls.SelectionChangedEventArgs e)
+        protected void RatioList_SelectionChanged(object? sender, Avalonia.Controls.SelectionChangedEventArgs e)
         {
             if (e.AddedItems.Count > 0 && sender is Avalonia.Controls.ListBox listBox)
             {
@@ -689,7 +793,7 @@ namespace TrueFluentPro.Views
         }
 
         /// <summary>模型选择后自动关闭 Flyout。</summary>
-        private void ModelList_SelectionChanged(object? sender, Avalonia.Controls.SelectionChangedEventArgs e)
+        protected void ModelList_SelectionChanged(object? sender, Avalonia.Controls.SelectionChangedEventArgs e)
         {
             if (e.AddedItems.Count > 0 && sender is Avalonia.Controls.ListBox listBox)
             {
@@ -707,7 +811,7 @@ namespace TrueFluentPro.Views
         }
 
         /// <summary>附件按钮：打开图片+文本选择器，添加到附件列表。</summary>
-        private async void AttachFileOrImage_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        protected async void AttachFileOrImage_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
         {
             var session = _viewModel?.CurrentSession;
             if (session == null) return;
@@ -967,7 +1071,7 @@ namespace TrueFluentPro.Views
 
         private const uint CF_BITMAP = 2;
 
-        private void SessionListBox_KeyDown(object? sender, KeyEventArgs e)
+        protected void SessionListBox_KeyDown(object? sender, KeyEventArgs e)
         {
             if (e.Key == Key.F2)
             {
@@ -976,7 +1080,7 @@ namespace TrueFluentPro.Views
             }
         }
 
-        private void SessionItem_PointerPressed(object? sender, PointerPressedEventArgs e)
+        protected void SessionItem_PointerPressed(object? sender, PointerPressedEventArgs e)
         {
             if (sender is not Control control)
                 return;
@@ -992,12 +1096,12 @@ namespace TrueFluentPro.Views
             }
         }
 
-        private void RenameSession_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        protected void RenameSession_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
         {
             _ = StartRenameSessionAsync();
         }
 
-        private void ResumeVideoTasks_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        protected void ResumeVideoTasks_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
         {
             if (_viewModel?.CurrentSession == null) return;
 
@@ -1019,7 +1123,7 @@ namespace TrueFluentPro.Views
             }
         }
 
-        private void DeleteSession_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        protected void DeleteSession_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
         {
             if (_viewModel == null)
             {
@@ -1145,7 +1249,7 @@ namespace TrueFluentPro.Views
             }
         }
 
-        private void MediaThumbnail_PointerPressed(object? sender, PointerPressedEventArgs e)
+        protected void MediaThumbnail_PointerPressed(object? sender, PointerPressedEventArgs e)
         {
             if (e.ClickCount >= 1 && sender is Border border)
             {
@@ -1448,7 +1552,7 @@ namespace TrueFluentPro.Views
             }
         }
 
-        private void ChatMessageBorder_PointerReleased(object? sender, PointerReleasedEventArgs e)
+        protected void ChatMessageBorder_PointerReleased(object? sender, PointerReleasedEventArgs e)
         {
             // 此方法现在只处理右键未命中 STB 的情况（如时间戳、空白区域）
             // STB 右键已由 HandleRightClickContextMenu 隧道处理器接管
@@ -1479,22 +1583,22 @@ namespace TrueFluentPro.Views
 
         // ── 搜索相关事件 ─────────────────────────────────
 
-        private void ToggleSearch_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        protected void ToggleSearch_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
         {
             _viewModel?.CurrentSession?.ToggleSearch();
         }
 
-        private void SearchNext_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        protected void SearchNext_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
         {
             _viewModel?.CurrentSession?.SearchNext();
         }
 
-        private void SearchPrevious_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        protected void SearchPrevious_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
         {
             _viewModel?.CurrentSession?.SearchPrevious();
         }
 
-        private async void WebSearchSelector_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        protected async void WebSearchSelector_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
         {
             if (sender is not Button button || _viewModel == null)
                 return;
@@ -1582,7 +1686,7 @@ namespace TrueFluentPro.Views
             return fallback;
         }
 
-        private void SourceButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        protected void SourceButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
         {
             if (sender is not Button button || button.DataContext is not ChatMessageViewModel msg || msg.Citations.Count == 0)
                 return;
@@ -1631,7 +1735,7 @@ namespace TrueFluentPro.Views
             e.Handled = true;
         }
 
-        private void CloseSearch_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        protected void CloseSearch_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
         {
             if (_viewModel?.CurrentSession != null)
                 _viewModel.CurrentSession.IsSearchVisible = false;

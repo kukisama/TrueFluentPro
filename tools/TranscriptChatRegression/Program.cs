@@ -28,8 +28,10 @@ internal static class Program
     {
         IconProvider.Current.Register<FontAwesomeIconProvider>();
         AppBuilder.Configure<RegressionApplication>().UsePlatformDetect().WithInterFont().SetupWithoutStarting();
-        // Chrome 专项自己管理 45 秒 deadline，清理窗口/主题后才退出消息循环。
+        // 自管 deadline 的桌面专项清理窗口/主题后才退出消息循环。
         using var stop = args.Contains("--window-chrome") || args.Contains("--window-chrome-visual")
+            || args.Contains("--song-scroll-workspace") || args.Contains("--song-scroll-workspace-layout")
+            || args.Contains("--song-scroll-business-binding")
             ? new CancellationTokenSource() : new CancellationTokenSource(TimeSpan.FromSeconds(45));
         var exitCode = 1;
         Dispatcher.UIThread.Post(async () =>
@@ -37,6 +39,9 @@ internal static class Program
             try
             {
                 if (args.Contains("--window-chrome-visual")) await WindowChromeRegression.VerifyVisualAsync();
+                else if (args.Contains("--song-scroll-business-binding")) await SongScrollBusinessBindingRegression.VerifyAsync();
+                else if (args.Contains("--song-scroll-workspace")) await SongScrollWorkspaceRegression.VerifyAsync();
+                else if (args.Contains("--song-scroll-workspace-layout")) await SongScrollWorkspaceRegression.VerifyAsync(interactive: false);
                 else if (args.Contains("--song-scroll-chrome")) await SongScrollRegression.VerifyViewportFitAsync(verifyChrome: true);
                 else if (args.Contains("--song-scroll-fit")) await SongScrollRegression.VerifyViewportFitAsync();
                 else if (args.Contains("--song-scroll")) await SongScrollRegression.VerifyAsync();

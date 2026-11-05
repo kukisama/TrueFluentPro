@@ -1,0 +1,64 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:views="using:TrueFluentPro.Views"
+             x:Class="TrueFluentPro.Views.SongScrollAudioLabViewControlPanel"
+             x:Name="ControlPanelRoot" x:CompileBindings="False"
+             FontSize="26" Foreground="{DynamicResource ScrollInk}">
+  <UserControl.Resources>
+    <views:SongScrollAudioLabViewStageStateConverter x:Key="StageState"/>
+  </UserControl.Resources>
+  <UserControl.Styles>
+    <Style Selector="Button"><Setter Property="MinHeight" Value="54"/><Setter Property="FontSize" Value="26"/></Style>
+    <Style Selector="ComboBox"><Setter Property="MinHeight" Value="54"/><Setter Property="FontSize" Value="26"/></Style>
+    <Style Selector="TextBlock.panel-heading"><Setter Property="FontSize" Value="30"/><Setter Property="FontWeight" Value="SemiBold"/></Style>
+    <Style Selector="TextBlock.state"><Setter Property="Foreground" Value="{DynamicResource ScrollAccent}"/><Setter Property="HorizontalAlignment" Value="Right"/></Style>
+  </UserControl.Styles>
+  <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+    <StackPanel Spacing="24" Margin="24">
+      <TextBlock Classes="panel-heading" Text="处理进度"/>
+      <TextBlock Text="{Binding CurrentFileName}" TextWrapping="Wrap"/>
+      <StackPanel Spacing="14">
+        <Grid ColumnDefinitions="*,Auto"><TextBlock Text="转录"/><TextBlock Grid.Column="1" Classes="state" Text="{Binding HasTranscription, Converter={StaticResource StageState}}"/></Grid>
+        <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding IsSummaryStageVisible}"><TextBlock Text="AI 总结"/><TextBlock Grid.Column="1" Classes="state" Text="{Binding HasSummary, Converter={StaticResource StageState}}"/></Grid>
+        <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding IsMindMapStageVisible}"><TextBlock Text="思维导图"/><TextBlock Grid.Column="1" Classes="state" Text="{Binding HasMindMap, Converter={StaticResource StageState}}"/></Grid>
+        <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding IsInsightStageVisible}"><TextBlock Text="顿悟分析"/><TextBlock Grid.Column="1" Classes="state" Text="{Binding HasInsight, Converter={StaticResource StageState}}"/></Grid>
+        <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding IsResearchStageVisible}"><TextBlock Text="深度研究"/><TextBlock Grid.Column="1" Classes="state" Text="{Binding HasResearch, Converter={StaticResource StageState}}"/></Grid>
+        <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding IsPodcastStageVisible}"><TextBlock Text="播客台本"/><TextBlock Grid.Column="1" Classes="state" Text="{Binding HasPodcastScript, Converter={StaticResource StageState}}"/></Grid>
+        <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding IsTranslationStageVisible}"><TextBlock Text="翻译"/><TextBlock Grid.Column="1" Classes="state" Text="{Binding HasTranslation, Converter={StaticResource StageState}}"/></Grid>
+        <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding IsPodcastStageVisible}"><TextBlock Text="播客音频"/><TextBlock Grid.Column="1" Classes="state" Text="{Binding HasPodcastAudio, Converter={StaticResource StageState}}"/></Grid>
+      </StackPanel>
+      <Button Classes="scroll-quiet" Content="自动补齐缺失" Command="{Binding AutoFillMissingCommand}" HorizontalAlignment="Stretch"/>
+      <Separator/>
+      <StackPanel Spacing="16" IsVisible="{Binding IsPodcastStageVisible}">
+        <TextBlock Classes="panel-heading" Text="播客语音与合成"/>
+        <Button Classes="scroll-quiet" Content="加载语音列表" Command="{Binding LoadVoicesCommand}" IsVisible="{Binding !VoicesLoaded}" IsEnabled="{Binding !IsBusy}"/>
+        <StackPanel Spacing="16" IsVisible="{Binding VoicesLoaded}">
+          <TextBlock Text="语言筛选"/>
+          <ComboBox Classes="scroll-input" ItemsSource="{Binding AvailableLanguages}" SelectedItem="{Binding SelectedLanguage, Mode=TwoWay}" HorizontalAlignment="Stretch"/>
+          <ItemsControl ItemsSource="{Binding SpeakerProfiles}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <StackPanel Spacing="8" Margin="0,8">
+                  <TextBlock Text="{Binding DisplayName}"/>
+                  <ComboBox Classes="scroll-input" ItemsSource="{Binding #ControlPanelRoot.DataContext.AvailableVoices}"
+                            SelectedItem="{Binding Voice, Mode=TwoWay}" PlaceholderText="选择语音" HorizontalAlignment="Stretch">
+                    <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding PreferredDisplayName}" FontSize="26"/></DataTemplate></ComboBox.ItemTemplate>
+                  </ComboBox>
+                </StackPanel>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+          <TextBlock Text="输出格式"/>
+          <ComboBox Classes="scroll-input" ItemsSource="{Binding AvailableOutputFormats}" SelectedItem="{Binding SelectedOutputFormat, Mode=TwoWay}" HorizontalAlignment="Stretch">
+            <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Label}" FontSize="26"/></DataTemplate></ComboBox.ItemTemplate>
+          </ComboBox>
+          <Button Classes="scroll-primary" Content="合成播客音频" Command="{Binding SynthesizePodcastCommand}" HorizontalAlignment="Stretch"/>
+        </StackPanel>
+        <TextBlock Text="{Binding PodcastAudioPath}" TextWrapping="Wrap" IsVisible="{Binding HasPodcastAudioFile}"/>
+      </StackPanel>
+      <TextBlock Text="{Binding StatusMessage}" TextWrapping="Wrap" Foreground="{DynamicResource ScrollMuted}"/>
+      <ProgressBar Height="6" IsIndeterminate="{Binding IsBusy}" IsVisible="{Binding IsBusy}"/>
+      <Button Classes="scroll-quiet" Content="取消当前操作" Command="{Binding CancelCommand}" IsVisible="{Binding IsBusy}"/>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

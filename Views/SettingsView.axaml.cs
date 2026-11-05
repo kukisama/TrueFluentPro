@@ -58,20 +58,40 @@ public partial class SettingsView : UserControl
     private readonly Dictionary<string, Control> _createdSections = new(StringComparer.Ordinal);
     private bool _isUpdatingSelection;
     private string? _currentSectionName;
+    private ListBox? _sectionNavigation;
+    private ScrollViewer? _sectionScroller;
+    private ContentControl? _sectionHost;
 
-    public SettingsView()
+    public SettingsView() : this(true)
     {
-        InitializeComponent();
+    }
+
+    /// <summary>派生呈现自建外层树，不先构造一个隐藏的经典设置页面。</summary>
+    protected SettingsView(bool loadDefaultView)
+    {
+        if (loadDefaultView)
+        {
+            InitializeComponent();
+            InitializeSections(NavListBox, SettingsScroller, SelectedSectionHost);
+        }
+    }
+
+    /// <summary>复用同一分区工厂与 VM 映射，仅由各外观提供自己的导航和单分区宿主。</summary>
+    protected void InitializeSections(ListBox navigation, ScrollViewer scroller, ContentControl sectionHost)
+    {
+        if (_sectionNavigation != null)
+            _sectionNavigation.SelectionChanged -= OnNavSectionChanged;
+        _sectionNavigation = navigation ?? throw new ArgumentNullException(nameof(navigation));
+        _sectionScroller = scroller ?? throw new ArgumentNullException(nameof(scroller));
+        _sectionHost = sectionHost ?? throw new ArgumentNullException(nameof(sectionHost));
+        // 经典 XAML 已订阅此事件；先移除再订阅，两个入口均只连接一次。
+        _sectionNavigation.SelectionChanged -= OnNavSectionChanged;
+        _sectionNavigation.SelectionChanged += OnNavSectionChanged;
     }
 
     protected override void OnDataContextChanged(EventArgs e)
     {
         base.OnDataContextChanged(e);
-
-        if (_createdSections.Count == 0)
-        {
-            return;
-        }
 
         foreach (var pair in _createdSections)
         {
@@ -86,6 +106,7 @@ public partial class SettingsView : UserControl
                 pair.Value.DataContext = resolvedDataContext;
             }
         }
+        ShowSelectedSection();
     }
 
     protected override void OnLoaded(RoutedEventArgs e)
@@ -93,17 +114,19 @@ public partial class SettingsView : UserControl
         base.OnLoaded(e);
 
         // 默认选中第一项
-        if (NavListBox.SelectedIndex < 0 && NavListBox.ItemCount > 0)
+        if (_sectionNavigation == null) return;
+        if (_sectionNavigation.SelectedIndex < 0 && _sectionNavigation.ItemCount > 0)
         {
-            NavListBox.SelectedIndex = 0;
+            _sectionNavigation.SelectedIndex = 0;
         }
 
         Dispatcher.UIThread.Post(ShowSelectedSection, DispatcherPriority.Loaded);
     }
 
     /// <summary>点击左侧导航 → 显示对应分区</summary>
-    private void OnNavSectionChanged(object? sender, SelectionChangedEventArgs e)
+    protected void OnNavSectionChanged(object? sender, SelectionChangedEventArgs e)
     {
+        if (_sectionNavigation == null) return;
         if (_isUpdatingSelection) return;
         if (e.AddedItems.Count == 0) return;
 
@@ -124,7 +147,7 @@ public partial class SettingsView : UserControl
 
     private void ShowSelectedSection()
     {
-        if (NavListBox.SelectedItem is not null)
+        if (_sectionNavigation?.SelectedItem is not null)
         {
             var tag = GetSelectedSectionTag();
             if (!string.IsNullOrWhiteSpace(tag))
@@ -134,9 +157,11 @@ public partial class SettingsView : UserControl
         }
     }
 
-    private void ShowSection(string sectionName)
+    protected void ShowSection(string sectionName)
     {
-        if (string.IsNullOrWhiteSpace(sectionName) || DataContext is not MainWindowViewModel vm)
+        if (_sectionNavigation == null || _sectionHost == null || _sectionScroller == null
+            || string.IsNullOrWhiteSpace(sectionName) || DataContext is not MainWindowViewModel vm
+            || !SectionFactories.ContainsKey(sectionName))
         {
             return;
         }
@@ -159,18 +184,28 @@ public partial class SettingsView : UserControl
             _createdSections[sectionName] = section;
         }
 
-        if (SelectedSectionHost.Content != section)
+        PrepareSection(sectionName, section);
+        if (_sectionHost.Content != section)
         {
-            SelectedSectionHost.Content = section;
+            _sectionHost.Content = section;
         }
 
         _currentSectionName = sectionName;
-        SettingsScroller.Offset = new Vector(SettingsScroller.Offset.X, 0);
+        _sectionScroller.Offset = new Vector(_sectionScroller.Offset.X, 0);
+        OnSectionShown(sectionName);
 
         if (sectionName == "Section_VoiceIme")
         {
             _ = vm.Settings.VoiceImeVM.RefreshAsync();
         }
+    }
+
+    protected virtual void OnSectionShown(string sectionName)
+    {
+    }
+
+    protected virtual void PrepareSection(string sectionName, Control section)
+    {
     }
 
     private string? GetSectionTagFromSelection(SelectionChangedEventArgs e)
@@ -185,34 +220,37 @@ public partial class SettingsView : UserControl
             return listBoxItem.Tag as string;
         }
 
-        return e.AddedItems[0] is { } item && NavListBox.ContainerFromItem(item) is ListBoxItem container
+        return e.AddedItems[0] is { } item && _sectionNavigation?.ContainerFromItem(item) is ListBoxItem container
             ? container.Tag as string
             : null;
     }
 
     private void EnsureNavSelection(string? sectionName)
     {
-        if (string.IsNullOrWhiteSpace(sectionName))
+        if (_sectionNavigation == null || string.IsNullOrWhiteSpace(sectionName))
         {
             return;
         }
 
         var targetIndex = GetNavIndexBySectionName(sectionName);
-        if (targetIndex < 0 || NavListBox.SelectedIndex == targetIndex)
+        if (targetIndex < 0 || _sectionNavigation.SelectedIndex == targetIndex)
         {
             return;
         }
 
         _isUpdatingSelection = true;
-        NavListBox.SelectedIndex = targetIndex;
-        _isUpdatingSelection = false;
+        try { _sectionNavigation.SelectedIndex = targetIndex; }
+        finally { _isUpdatingSelection = false; }
     }
 
     private int GetNavIndexBySectionName(string sectionName)
     {
-        for (int i = 0; i < NavListBox.ItemCount; i++)
+        if (_sectionNavigation == null) return -1;
+        for (int i = 0; i < _sectionNavigation.ItemCount; i++)
         {
-            if (NavListBox.ContainerFromIndex(i) is ListBoxItem li
+            var li = _sectionNavigation.Items[i] as ListBoxItem
+                ?? _sectionNavigation.ContainerFromIndex(i) as ListBoxItem;
+            if (li != null
                 && string.Equals(li.Tag as string, sectionName, StringComparison.Ordinal))
             {
                 return i;
@@ -222,7 +260,7 @@ public partial class SettingsView : UserControl
         return -1;
     }
 
-    private void OpenConfigLocationButton_Click(object? sender, RoutedEventArgs e)
+    protected void OpenConfigLocationButton_Click(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not MainWindowViewModel vm)
         {
@@ -262,12 +300,12 @@ public partial class SettingsView : UserControl
 
     private string? GetSelectedSectionTag()
     {
-        if (NavListBox.SelectedItem is ListBoxItem listBoxItem)
+        if (_sectionNavigation?.SelectedItem is ListBoxItem listBoxItem)
         {
             return listBoxItem.Tag as string;
         }
 
-        return NavListBox.SelectedItem is { } item && NavListBox.ContainerFromItem(item) is ListBoxItem container
+        return _sectionNavigation?.SelectedItem is { } item && _sectionNavigation.ContainerFromItem(item) is ListBoxItem container
             ? container.Tag as string
             : _currentSectionName;
     }

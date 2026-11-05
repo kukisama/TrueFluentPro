@@ -465,7 +465,7 @@
                         Margin="0,0,20,16"/>
         </Panel>
         </Grid>
-        <!-- 新翻译页拥有自己的完整呈现树；旧页面留在原宿主，不迁移业务或控件。 -->
+        <!-- 独立原稿翻译页与长卷各页的全页宿主；经典树仍留在原宿主。 -->
         <Panel Name="InkStudyHost" Grid.Row="1" IsVisible="False"/>
         <Panel Name="SongScrollHost" Grid.Row="0" Grid.RowSpan="2" IsVisible="False"/>
     </Grid>

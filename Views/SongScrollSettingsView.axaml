@@ -1,0 +1,141 @@
+<views:SettingsView xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:views="using:TrueFluentPro.Views"
+                    xmlns:icons="https://github.com/projektanker/icons.avalonia"
+                    x:Class="TrueFluentPro.Views.SongScrollSettingsView"
+                    x:CompileBindings="False"
+                    FontFamily="STKaiti, KaiTi, SimSun"
+                    FontSize="26"
+                    Foreground="#27332F">
+  <views:SettingsView.Resources>
+    <views:SongScrollSettingsFormWidthConverter x:Key="ScrollSettingsFormWidth"/>
+  </views:SettingsView.Resources>
+  <views:SettingsView.Styles>
+    <Style Selector="ListBox.scroll-settings-nav">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="Padding" Value="0"/>
+    </Style>
+    <Style Selector="ListBox.scroll-settings-nav ListBoxItem">
+      <Setter Property="Padding" Value="16,12"/>
+      <Setter Property="Margin" Value="0,0,0,4"/>
+      <Setter Property="MinHeight" Value="74"/>
+      <Setter Property="CornerRadius" Value="10"/>
+      <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+      <Setter Property="BorderThickness" Value="4,0,0,0"/>
+      <Setter Property="BorderBrush" Value="Transparent"/>
+      <Setter Property="Foreground" Value="{DynamicResource ScrollInk}"/>
+    </Style>
+    <Style Selector="ListBox.scroll-settings-nav ListBoxItem:selected">
+      <Setter Property="Background" Value="#264D7979"/>
+      <Setter Property="BorderBrush" Value="#B77C37"/>
+      <Setter Property="Foreground" Value="{DynamicResource ScrollAccent}"/>
+    </Style>
+    <Style Selector="ListBox.scroll-settings-nav ListBoxItem:pointerover">
+      <Setter Property="Background" Value="#184D7979"/>
+    </Style>
+    <Style Selector="ListBox.scroll-settings-nav TextBlock.section-name">
+      <Setter Property="FontSize" Value="26"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="TextWrapping" Value="Wrap"/>
+    </Style>
+    <Style Selector="ListBox.scroll-settings-nav TextBlock.section-note">
+      <Setter Property="FontSize" Value="21"/>
+      <Setter Property="Foreground" Value="{DynamicResource ScrollMuted}"/>
+      <Setter Property="TextWrapping" Value="Wrap"/>
+    </Style>
+    <Style Selector="Button.scroll-settings-location">
+      <Setter Property="FontSize" Value="24"/>
+      <Setter Property="MinHeight" Value="52"/>
+      <Setter Property="Padding" Value="16,10"/>
+      <Setter Property="HorizontalContentAlignment" Value="Left"/>
+    </Style>
+  </views:SettingsView.Styles>
+
+  <views:SongScrollShell x:Name="BookShell" PageKey="settings" PageTitle="配置中心"
+                         PageSubtitle="随心配置，得心应手" DefaultLeftRatio="0.25">
+    <views:SongScrollShell.LeftPage>
+      <!-- 目录与表单的边界就是 Shell 的可变书脊，不另造固定中缝或 GridSplitter。 -->
+      <Grid Margin="20,16,24,20" RowDefinitions="Auto,*,Auto" RowSpacing="16">
+        <TextBlock Text="配置目录" Classes="scroll-section-title" FontSize="34"/>
+        <ListBox x:Name="ScrollSectionNavigation" Grid.Row="1" Classes="scroll-list scroll-settings-nav"
+                 SelectionMode="Single" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                 AutomationProperties.Name="配置分区目录">
+          <ListBoxItem Tag="Section_Endpoints"><Grid ColumnDefinitions="32,*" ColumnSpacing="18"><icons:Icon Value="fa-solid fa-plug" FontSize="28" VerticalAlignment="Center"/><StackPanel Grid.Column="1" Spacing="4"><TextBlock Classes="section-name" Text="AI 终结点"/><TextBlock Classes="section-note" Text="模型接入与调用"/></StackPanel></Grid></ListBoxItem>
+          <ListBoxItem Tag="Section_ModelSelection"><Grid ColumnDefinitions="32,*" ColumnSpacing="18"><icons:Icon Value="fa-solid fa-robot" FontSize="28" VerticalAlignment="Center"/><StackPanel Grid.Column="1" Spacing="4"><TextBlock Classes="section-name" Text="AI 资源与模型"/><TextBlock Classes="section-note" Text="模型与批量转写资源"/></StackPanel></Grid></ListBoxItem>
+          <ListBoxItem Tag="Section_Storage"><Grid ColumnDefinitions="32,*" ColumnSpacing="18"><icons:Icon Value="fa-solid fa-hard-drive" FontSize="28" VerticalAlignment="Center"/><StackPanel Grid.Column="1" Spacing="4"><TextBlock Classes="section-name" Text="录音与存储"/><TextBlock Classes="section-note" Text="录音设置与文件管理"/></StackPanel></Grid></ListBoxItem>
+          <ListBoxItem Tag="Section_Insight"><Grid ColumnDefinitions="32,*" ColumnSpacing="18"><icons:Icon Value="fa-solid fa-lightbulb" FontSize="28" VerticalAlignment="Center"/><StackPanel Grid.Column="1" Spacing="4"><TextBlock Classes="section-name" Text="洞察"/><TextBlock Classes="section-note" Text="数据洞察与分析"/></StackPanel></Grid></ListBoxItem>
+          <ListBoxItem Tag="Section_WebSearch"><Grid ColumnDefinitions="32,*" ColumnSpacing="18"><icons:Icon Value="fa-solid fa-magnifying-glass" FontSize="28" VerticalAlignment="Center"/><StackPanel Grid.Column="1" Spacing="4"><TextBlock Classes="section-name" Text="网页搜索"/><TextBlock Classes="section-note" Text="搜索引擎与结果设置"/></StackPanel></Grid></ListBoxItem>
+          <ListBoxItem Tag="Section_Review"><Grid ColumnDefinitions="32,*" ColumnSpacing="18"><icons:Icon Value="fa-solid fa-clipboard-list" FontSize="28" VerticalAlignment="Center"/><StackPanel Grid.Column="1" Spacing="4"><TextBlock Classes="section-name" Text="复盘预设"/><TextBlock Classes="section-note" Text="复盘模板与提示词"/></StackPanel></Grid></ListBoxItem>
+          <ListBoxItem Tag="Section_ImageGen"><Grid ColumnDefinitions="32,*" ColumnSpacing="18"><icons:Icon Value="fa-solid fa-image" FontSize="28" VerticalAlignment="Center"/><StackPanel Grid.Column="1" Spacing="4"><TextBlock Classes="section-name" Text="图片生成"/><TextBlock Classes="section-note" Text="图像模型与生成设置"/></StackPanel></Grid></ListBoxItem>
+          <ListBoxItem Tag="Section_VideoGen"><Grid ColumnDefinitions="32,*" ColumnSpacing="18"><icons:Icon Value="fa-solid fa-video" FontSize="28" VerticalAlignment="Center"/><StackPanel Grid.Column="1" Spacing="4"><TextBlock Classes="section-name" Text="视频生成"/><TextBlock Classes="section-note" Text="视频模型与生成设置"/></StackPanel></Grid></ListBoxItem>
+          <ListBoxItem Tag="Section_Audio"><Grid ColumnDefinitions="32,*" ColumnSpacing="18"><icons:Icon Value="fa-solid fa-headphones" FontSize="28" VerticalAlignment="Center"/><StackPanel Grid.Column="1" Spacing="4"><TextBlock Classes="section-name" Text="音频设备"/><TextBlock Classes="section-note" Text="输入输出设备设置"/></StackPanel></Grid></ListBoxItem>
+          <ListBoxItem Tag="Section_AudioLab"><Grid ColumnDefinitions="32,*" ColumnSpacing="18"><icons:Icon Value="fa-solid fa-ear-listen" FontSize="28" VerticalAlignment="Center"/><StackPanel Grid.Column="1" Spacing="4"><TextBlock Classes="section-name" Text="听析中心"/><TextBlock Classes="section-note" Text="听析与转写相关设置"/></StackPanel></Grid></ListBoxItem>
+          <ListBoxItem Tag="Section_Recognition"><Grid ColumnDefinitions="32,*" ColumnSpacing="18"><icons:Icon Value="fa-solid fa-wave-square" FontSize="28" VerticalAlignment="Center"/><StackPanel Grid.Column="1" Spacing="4"><TextBlock Classes="section-name" Text="语音识别"/><TextBlock Classes="section-note" Text="识别引擎与语言设置"/></StackPanel></Grid></ListBoxItem>
+          <ListBoxItem Tag="Section_VoiceIme"><Grid ColumnDefinitions="32,*" ColumnSpacing="18"><icons:Icon Value="fa-solid fa-microphone" FontSize="28" VerticalAlignment="Center"/><StackPanel Grid.Column="1" Spacing="4"><TextBlock Classes="section-name" Text="语音输入法"/><TextBlock Classes="section-note" Text="语音输入与快捷功能"/></StackPanel></Grid></ListBoxItem>
+          <ListBoxItem Tag="Section_Text"><Grid ColumnDefinitions="32,*" ColumnSpacing="18"><icons:Icon Value="fa-solid fa-closed-captioning" FontSize="28" VerticalAlignment="Center"/><StackPanel Grid.Column="1" Spacing="4"><TextBlock Classes="section-name" Text="字幕与文本"/><TextBlock Classes="section-note" Text="字幕导出与文本设置"/></StackPanel></Grid></ListBoxItem>
+          <ListBoxItem Tag="Section_Transfer"><Grid ColumnDefinitions="32,*" ColumnSpacing="18"><icons:Icon Value="fa-solid fa-right-left" FontSize="28" VerticalAlignment="Center"/><StackPanel Grid.Column="1" Spacing="4"><TextBlock Classes="section-name" Text="配置迁移"/><TextBlock Classes="section-note" Text="导入导出与配置迁移"/></StackPanel></Grid></ListBoxItem>
+          <ListBoxItem Tag="Section_About"><Grid ColumnDefinitions="32,*" ColumnSpacing="18"><icons:Icon Value="fa-solid fa-circle-info" FontSize="28" VerticalAlignment="Center"/><StackPanel Grid.Column="1" Spacing="4"><TextBlock Classes="section-name" Text="关于"/><TextBlock Classes="section-note" Text="版本与应用信息"/></StackPanel></Grid></ListBoxItem>
+          <ListBoxItem Tag="Section_Cloud"><Grid ColumnDefinitions="32,*" ColumnSpacing="18"><icons:Icon Value="fa-solid fa-cloud" FontSize="28" VerticalAlignment="Center"/><StackPanel Grid.Column="1" Spacing="4"><TextBlock Classes="section-name" Text="Cloud 模式"/><TextBlock Classes="section-note" Text="云服务模式配置"/></StackPanel></Grid></ListBoxItem>
+        </ListBox>
+        <Button Grid.Row="2" Classes="scroll-quiet scroll-settings-location" Click="OpenConfigLocation_Click"
+                ToolTip.Tip="打开配置文件所在位置" AutomationProperties.Name="打开配置文件位置">
+          <StackPanel Orientation="Horizontal" Spacing="12"><icons:Icon Value="fa-regular fa-folder-open" FontSize="25"/><TextBlock Text="打开配置位置"/></StackPanel>
+        </Button>
+      </Grid>
+    </views:SongScrollShell.LeftPage>
+
+    <views:SongScrollShell.RightPage>
+      <Grid Margin="28,18,24,22" RowDefinitions="Auto,*,Auto" RowSpacing="22">
+        <Border BorderBrush="{DynamicResource ScrollAccent}" BorderThickness="5,0,0,0" Padding="24,0,0,0">
+          <StackPanel Spacing="12">
+            <TextBlock x:Name="ScrollSectionHeading" Text="配置详情" FontSize="42" FontWeight="SemiBold"/>
+            <TextBlock x:Name="ScrollSectionDescription" Text="更改后自动保存。" FontSize="25" Foreground="{DynamicResource ScrollMuted}" TextWrapping="Wrap"/>
+          </StackPanel>
+        </Border>
+        <ScrollViewer x:Name="ScrollSettingsScroller" Grid.Row="1"
+                      HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+          <!-- 只缩放新外观内的原子分区；旧表单仍按原来的 DIP/字号布局。 -->
+          <LayoutTransformControl HorizontalAlignment="Left" VerticalAlignment="Top">
+            <LayoutTransformControl.LayoutTransform><ScaleTransform ScaleX="2" ScaleY="2"/></LayoutTransformControl.LayoutTransform>
+            <ContentControl x:Name="ScrollSelectedSectionHost" Classes="scroll-settings-form"
+                            Width="{Binding #ScrollSettingsScroller.Viewport.Width, Converter={StaticResource ScrollSettingsFormWidth}}"
+                            FontSize="14" FontFamily="STKaiti, KaiTi, SimSun" Foreground="#27332F"
+                            HorizontalContentAlignment="Stretch" VerticalContentAlignment="Top">
+              <ContentControl.Resources>
+                <SolidColorBrush x:Key="TextPrimaryBrush" Color="#27332F"/>
+                <SolidColorBrush x:Key="TextSubtleBrush" Color="#686F66"/>
+                <SolidColorBrush x:Key="TextMutedBrush" Color="#777C70"/>
+                <SolidColorBrush x:Key="AccentBlueBrush" Color="#4D7979"/>
+                <SolidColorBrush x:Key="PageBackgroundBrush" Color="#00FFFFFF"/>
+                <SolidColorBrush x:Key="CardBackgroundBrush" Color="#38FFFCF5"/>
+                <SolidColorBrush x:Key="CardBackgroundFillColorDefaultBrush" Color="#38FFFCF5"/>
+                <SolidColorBrush x:Key="SubCardBackgroundBrush" Color="#48F2EDE3"/>
+                <SolidColorBrush x:Key="CardBorderBrush" Color="#CFC3AD"/>
+                <SolidColorBrush x:Key="CardStrokeColorDefaultBrush" Color="#CFC3AD"/>
+                <SolidColorBrush x:Key="SubCardBorderBrush" Color="#D9CFBD"/>
+              </ContentControl.Resources>
+              <ContentControl.Styles>
+                <!-- 阻断外层 26px 的继承，不覆盖原子表单自身的显式字号与布局。 -->
+                <Style Selector="TextBlock"><Setter Property="FontSize" Value="14"/></Style>
+                <Style Selector="Button"><Setter Property="FontSize" Value="14"/><Setter Property="MinHeight" Value="32"/><Setter Property="Padding" Value="10,5"/></Style>
+                <Style Selector="TextBox"><Setter Property="FontSize" Value="14"/><Setter Property="MinHeight" Value="32"/><Setter Property="Padding" Value="8,5"/></Style>
+                <Style Selector="ComboBox"><Setter Property="FontSize" Value="14"/><Setter Property="MinHeight" Value="32"/><Setter Property="Padding" Value="8,5"/></Style>
+                <Style Selector="CheckBox"><Setter Property="FontSize" Value="14"/><Setter Property="MinHeight" Value="32"/></Style>
+                <Style Selector="RadioButton"><Setter Property="FontSize" Value="14"/><Setter Property="MinHeight" Value="32"/></Style>
+              </ContentControl.Styles>
+            </ContentControl>
+          </LayoutTransformControl>
+        </ScrollViewer>
+        <Border Grid.Row="2" BorderBrush="#70C7BCA8" BorderThickness="0,1,0,0" Padding="4,18,4,0">
+          <StackPanel Spacing="8">
+            <TextBlock Text="更改后自动保存" FontSize="23" Foreground="{DynamicResource ScrollMuted}"/>
+            <TextBlock x:Name="ScrollAutoSaveStatus" Text="{Binding Settings.AutoSaveStatus}" FontSize="25"
+                       Foreground="{DynamicResource ScrollAccent}" TextWrapping="Wrap"
+                       AutomationProperties.Name="配置自动保存状态"/>
+          </StackPanel>
+        </Border>
+      </Grid>
+    </views:SongScrollShell.RightPage>
+  </views:SongScrollShell>
+</views:SettingsView>

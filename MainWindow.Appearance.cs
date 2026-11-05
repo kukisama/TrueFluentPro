@@ -72,9 +72,9 @@ public partial class MainWindow
             if (page is LiveTranslationView live)
                 live.ApplyAppearance(IsSongStudyAppearance);
 
-        // 仅切换呈现。ShowPage 不重建主 VM、服务或非翻译页面。
+        // 仅切换呈现。独立长卷业务页与经典树共用同一业务 VM。
         if (_currentPage != null && (IsInkStudyAppearance || IsSongScrollAppearance
-            || _currentPage is InkStudyTranslationView or SongScrollTranslationView))
+            || _currentPage is InkStudyTranslationView or SongScrollTranslationView or ISongScrollPage))
             ShowPage(_currentNavTag);
         else
             UpdateInkStudyHost();
@@ -133,7 +133,7 @@ public partial class MainWindow
         var ink = new MenuItem { Header = $"{(IsInkStudyAppearance ? "✓ " : "　")}宋人书斋 · 原稿（独立翻译页）" };
         ink.Click += (_, _) => SaveAndApplyAppearance(ShellAppearancePreference.InkStudy);
         menu.Items.Add(ink);
-        var scroll = new MenuItem { Header = $"{(IsSongScrollAppearance ? "✓ " : "　")}宋人书斋 · 长卷（独立翻译页）" };
+        var scroll = new MenuItem { Header = $"{(IsSongScrollAppearance ? "✓ " : "　")}宋人书斋 · 长卷" };
         scroll.Click += (_, _) => SaveAndApplyAppearance(ShellAppearancePreference.SongScroll);
         menu.Items.Add(scroll);
         if (target is Button button) button.Flyout = menu;
@@ -143,15 +143,17 @@ public partial class MainWindow
     private void UpdateInkStudyHost()
     {
         var active = IsInkStudyAppearance && _currentNavTag == TrueFluentPro.ViewModels.MainWindowViewModel.NavTagLive;
-        var scrollActive = IsSongScrollAppearance && _currentNavTag == TrueFluentPro.ViewModels.MainWindowViewModel.NavTagLive;
+        var scrollActive = IsSongScrollAppearance && (_currentPage is SongScrollTranslationView or ISongScrollPage);
         Classes.Set("ink-study", active);
         Classes.Set("song-scroll", scrollActive);
         LegacyWorkspace.IsVisible = !active && !scrollActive;
         ShellTitleBar.IsVisible = !scrollActive;
         InkStudyHost.IsVisible = active;
         SongScrollHost.IsVisible = scrollActive;
-        // 新主题只覆盖自己的翻译呈现；其他页面恢复经典主题继承。
+        // 只为当前独立呈现启用纸面；未迁移的隐藏入口仍走经典宿主。
         RequestedThemeVariant = active || scrollActive || IsSongStudyAppearance ? ThemeVariant.Light : ThemeVariant.Default;
+        if (_currentPage is MediaStudioView studio)
+            studio.RefreshPresentationVisibility();
         UpdateNativeCaptionColors();
     }
 

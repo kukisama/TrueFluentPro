@@ -1,0 +1,381 @@
+<views:MediaCenterV2View xmlns="https://github.com/avaloniaui"
+                        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                        xmlns:views="using:TrueFluentPro.Views"
+                        xmlns:controls="using:TrueFluentPro.Controls"
+                        x:Class="TrueFluentPro.Views.SongScrollMediaCenterV2View"
+                        x:CompileBindings="False">
+    <views:MediaCenterV2View.Resources>
+        <controls:FilePathToBitmapConverter x:Key="ScrollMediaBitmap"/>
+    </views:MediaCenterV2View.Resources>
+    <views:MediaCenterV2View.Styles>
+        <Style Selector="Grid.scroll-media-page TextBlock">
+            <Setter Property="FontSize" Value="28"/>
+            <Setter Property="Foreground" Value="{DynamicResource ScrollInk}"/>
+        </Style>
+        <Style Selector="Grid.scroll-media-page SelectableTextBlock">
+            <Setter Property="FontSize" Value="28"/>
+            <Setter Property="Foreground" Value="{DynamicResource ScrollInk}"/>
+        </Style>
+        <Style Selector="Grid.scroll-media-page Button">
+            <Setter Property="FontSize" Value="26"/>
+            <Setter Property="MinHeight" Value="54"/>
+            <Setter Property="Padding" Value="18,10"/>
+            <Setter Property="CornerRadius" Value="10"/>
+        </Style>
+        <Style Selector="Grid.scroll-media-page RadioButton">
+            <Setter Property="FontSize" Value="28"/>
+            <Setter Property="MinHeight" Value="64"/>
+            <Setter Property="Padding" Value="22,12"/>
+        </Style>
+        <Style Selector="RadioButton.scroll-media-kind">
+            <Setter Property="Background" Value="#EEEDE7"/>
+            <Setter Property="Foreground" Value="{DynamicResource ScrollInk}"/>
+            <Setter Property="BorderBrush" Value="#D9D0C2"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="12" Padding="{TemplateBinding Padding}">
+                        <ContentPresenter Name="PART_ContentPresenter" Content="{TemplateBinding Content}"
+                                          ContentTemplate="{TemplateBinding ContentTemplate}"
+                                          HorizontalContentAlignment="Center" VerticalContentAlignment="Center"/>
+                    </Border>
+                </ControlTemplate>
+            </Setter>
+        </Style>
+        <Style Selector="RadioButton.scroll-media-kind:checked">
+            <Setter Property="Background" Value="{DynamicResource ScrollAccent}"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource ScrollAccent}"/>
+        </Style>
+        <Style Selector="RadioButton.scroll-media-kind:focus-visible">
+            <Setter Property="BorderThickness" Value="3"/>
+            <Setter Property="BorderBrush" Value="#B34B3A"/>
+        </Style>
+        <Style Selector="Grid.scroll-media-page ComboBox">
+            <Setter Property="FontSize" Value="28"/>
+            <Setter Property="MinHeight" Value="60"/>
+            <Setter Property="Padding" Value="16,10"/>
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+        </Style>
+        <Style Selector="Grid.scroll-media-page TextBox">
+            <Setter Property="FontSize" Value="28"/>
+            <Setter Property="MinHeight" Value="70"/>
+            <Setter Property="Padding" Value="22,16"/>
+        </Style>
+        <Style Selector="Grid.scroll-media-page TextBlock.scroll-media-muted">
+            <Setter Property="FontSize" Value="26"/>
+            <Setter Property="Foreground" Value="{DynamicResource ScrollMuted}"/>
+        </Style>
+        <Style Selector="Grid.scroll-media-page TextBlock.scroll-media-section">
+            <Setter Property="FontSize" Value="34"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+        </Style>
+        <Style Selector="Grid.scroll-media-page Border.scroll-media-selected">
+            <Setter Property="BorderBrush" Value="#B34B3A"/>
+            <Setter Property="BorderThickness" Value="3"/>
+            <Setter Property="CornerRadius" Value="12"/>
+            <Setter Property="IsHitTestVisible" Value="False"/>
+        </Style>
+        <Style Selector="Grid.scroll-media-page Button.scroll-media-thumb">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="4"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+        </Style>
+    </views:MediaCenterV2View.Styles>
+    <views:SongScrollShell x:Name="BookShell" PageKey="mediav2"
+                           PageTitle="媒体中心" PageSubtitle="以影像记录灵感，用 AI 创造更多可能" DefaultLeftRatio="0.34">
+        <views:SongScrollShell.LeftPage>
+            <Grid Classes="scroll-media-page" RowDefinitions="Auto,*" RowSpacing="24" Margin="32,24,30,22" ClipToBounds="True">
+                <TextBlock Classes="scroll-media-section" Text="创作参数"/>
+                <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                    <StackPanel Spacing="28" Margin="0,0,14,0">
+                        <Grid ColumnDefinitions="*,*" ColumnSpacing="14">
+                            <RadioButton Classes="scroll-media-kind" GroupName="ScrollMediaKind" Content="图片创作" IsChecked="{Binding IsImageKind, Mode=TwoWay}"/>
+                            <RadioButton Grid.Column="1" Classes="scroll-media-kind" GroupName="ScrollMediaKind" Content="视频创作" IsChecked="{Binding IsVideoKind, Mode=TwoWay}"/>
+                        </Grid>
+                        <StackPanel Spacing="14">
+                            <TextBlock Text="模型选择"/>
+                            <ComboBox Classes="scroll-input" ItemsSource="{Binding AvailableImageModels}"
+                                      SelectedItem="{Binding SelectedImageModel, Mode=TwoWay}" IsVisible="{Binding IsImageKind}">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate><TextBlock Text="{Binding ModelDisplayName}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding EndpointName}"/></DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
+                            <ComboBox Classes="scroll-input" ItemsSource="{Binding AvailableVideoModels}"
+                                      SelectedItem="{Binding SelectedVideoModel, Mode=TwoWay}" IsVisible="{Binding IsVideoKind}">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate><TextBlock Text="{Binding ModelDisplayName}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding EndpointName}"/></DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
+                            <TextBlock Classes="scroll-media-muted" Text="{Binding CurrentCanvasDescription}" TextWrapping="Wrap"/>
+                        </StackPanel>
+                        <StackPanel Spacing="16">
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="14">
+                                <TextBlock Text="参考素材（可选）" VerticalAlignment="Center"/>
+                                <Button Grid.Column="1" Classes="scroll-quiet" Content="＋ 添加" Click="AttachReferenceImage_Click"
+                                        IsVisible="{Binding CanAttachReferenceImages}" ToolTip.Tip="添加参考图；也可 Ctrl+V 粘贴"/>
+                            </Grid>
+                            <TextBlock Classes="scroll-media-muted" Text="{Binding ReferenceSummaryText}" TextWrapping="Wrap"/>
+                            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"
+                                          IsVisible="{Binding WorkspaceSession.HasReferenceImage}">
+                                <ItemsControl ItemsSource="{Binding WorkspaceSession.ReferenceImagePaths}">
+                                    <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="18"/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid Width="238" Height="160" Margin="0,8,0,8">
+                                                <Border Classes="scroll-paper" CornerRadius="12" ClipToBounds="True" Cursor="Hand"
+                                                        PointerPressed="ReferenceImageThumbnail_PointerPressed" ToolTip.Tip="视频模式下点击裁切到目标尺寸">
+                                                    <controls:ViewportLazyImage FilePath="{Binding}" Stretch="UniformToFill"/>
+                                                </Border>
+                                                <Button Content="×" HorizontalAlignment="Right" VerticalAlignment="Top" Padding="12,4"
+                                                        Command="{Binding $parent[UserControl].DataContext.WorkspaceSession.RemoveReferenceImageCommand}"
+                                                        CommandParameter="{Binding}" ToolTip.Tip="删除参考图"/>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                        </StackPanel>
+                        <Grid IsVisible="{Binding IsImageKind}" ColumnDefinitions="130,*,Auto" ColumnSpacing="14"
+                              RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="22">
+                            <TextBlock Text="图片尺寸" VerticalAlignment="Center"/>
+                            <ComboBox Grid.Column="1" Classes="scroll-input" ItemsSource="{Binding WorkspaceSession.ImageSizeOptions}" SelectedItem="{Binding WorkspaceSession.ImageSize, Mode=TwoWay}"/>
+                            <Button Grid.Column="2" Classes="scroll-quiet" Content="选尺寸" IsVisible="{Binding WorkspaceSession.IsCanvasSelectorAvailable}">
+                                <Button.Flyout>
+                                    <Flyout Placement="BottomEdgeAlignedRight">
+                                        <LayoutTransformControl>
+                                            <LayoutTransformControl.LayoutTransform><ScaleTransform ScaleX="1.7" ScaleY="1.7"/></LayoutTransformControl.LayoutTransform>
+                                            <controls:ImageSizeCanvasSelector SelectedSize="{Binding WorkspaceSession.ImageSize, Mode=TwoWay}" SelectedQuality="{Binding WorkspaceSession.ImageQuality, Mode=OneWay}"/>
+                                        </LayoutTransformControl>
+                                    </Flyout>
+                                </Button.Flyout>
+                            </Button>
+                            <TextBlock Grid.Row="1" Text="图片质量" VerticalAlignment="Center"/>
+                            <ComboBox Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Classes="scroll-input" ItemsSource="{Binding WorkspaceSession.ImageQualityOptions}" SelectedItem="{Binding WorkspaceSession.ImageQuality, Mode=TwoWay}"/>
+                            <TextBlock Grid.Row="2" Text="图片格式" VerticalAlignment="Center"/>
+                            <ComboBox Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Classes="scroll-input" ItemsSource="{Binding WorkspaceSession.ImageFormatOptions}" SelectedItem="{Binding WorkspaceSession.ImageFormat, Mode=TwoWay}"/>
+                            <TextBlock Grid.Row="3" Text="生成数量" VerticalAlignment="Center"/>
+                            <ComboBox Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="2" Classes="scroll-input" ItemsSource="{Binding WorkspaceSession.ImageCountOptions}" SelectedItem="{Binding WorkspaceSession.ImageCount, Mode=TwoWay}"/>
+                            <TextBlock Grid.Row="4" Text="背景" IsVisible="{Binding WorkspaceSession.IsTransparentBackgroundSupported}" VerticalAlignment="Center"/>
+                            <ComboBox Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="2" Classes="scroll-input" ItemsSource="{Binding WorkspaceSession.ImageBackgroundOptions}" SelectedItem="{Binding WorkspaceSession.ImageBackground, Mode=TwoWay}" IsVisible="{Binding WorkspaceSession.IsTransparentBackgroundSupported}"/>
+                            <TextBlock Grid.Row="5" Text="输入保真度" TextWrapping="Wrap" IsVisible="{Binding WorkspaceSession.IsInputFidelitySupported}" VerticalAlignment="Center"/>
+                            <ComboBox Grid.Row="5" Grid.Column="1" Grid.ColumnSpan="2" Classes="scroll-input" ItemsSource="{Binding WorkspaceSession.InputFidelityOptions}" SelectedItem="{Binding WorkspaceSession.InputFidelity, Mode=TwoWay}" IsVisible="{Binding WorkspaceSession.IsInputFidelitySupported}"/>
+                        </Grid>
+                        <Grid IsVisible="{Binding IsVideoKind}" ColumnDefinitions="130,*" ColumnSpacing="18"
+                              RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="22">
+                            <TextBlock Text="视频比例" VerticalAlignment="Center"/>
+                            <ComboBox Grid.Column="1" Classes="scroll-input" ItemsSource="{Binding WorkspaceSession.VideoAspectRatioOptions}" SelectedItem="{Binding WorkspaceSession.VideoAspectRatio, Mode=TwoWay}"/>
+                            <TextBlock Grid.Row="1" Text="分辨率" VerticalAlignment="Center"/>
+                            <ComboBox Grid.Row="1" Grid.Column="1" Classes="scroll-input" ItemsSource="{Binding WorkspaceSession.VideoResolutionOptions}" SelectedItem="{Binding WorkspaceSession.VideoResolution, Mode=TwoWay}"/>
+                            <TextBlock Grid.Row="2" Text="时长 / 秒" VerticalAlignment="Center"/>
+                            <ComboBox Grid.Row="2" Grid.Column="1" Classes="scroll-input" ItemsSource="{Binding WorkspaceSession.VideoDurationOptions}" SelectedItem="{Binding WorkspaceSession.VideoSeconds, Mode=TwoWay}"/>
+                            <TextBlock Grid.Row="3" Text="生成数量" VerticalAlignment="Center"/>
+                            <ComboBox Grid.Row="3" Grid.Column="1" Classes="scroll-input" ItemsSource="{Binding WorkspaceSession.VideoCountOptions}" SelectedItem="{Binding WorkspaceSession.VideoVariants, Mode=TwoWay}"/>
+                        </Grid>
+                        <Border Classes="scroll-paper" Padding="20">
+                            <StackPanel Spacing="12">
+                                <TextBlock Text="{Binding CurrentCanvasTitle}" FontWeight="SemiBold" Foreground="{DynamicResource ScrollAccent}"/>
+                                <TextBlock Classes="scroll-media-muted" Text="添加参考图后自动进入改图或图生视频流程。" TextWrapping="Wrap"/>
+                                <TextBlock Classes="scroll-media-muted" Text="{Binding WorkspaceLineageText}" IsVisible="{Binding HasWorkspaceLineage}" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </Grid>
+        </views:SongScrollShell.LeftPage>
+        <views:SongScrollShell.RightPage>
+            <Grid Classes="scroll-media-page" RowDefinitions="*,Auto" RowSpacing="22" Margin="30,24,32,20" ClipToBounds="True">
+                <Grid ColumnDefinitions="*,226" ColumnSpacing="22">
+                    <Grid RowDefinitions="Auto,*,Auto" RowSpacing="20">
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                            <StackPanel Spacing="8">
+                                <TextBlock Classes="scroll-media-section" Text="生成结果"/>
+                                <TextBlock Classes="scroll-media-muted" Text="{Binding WorkspaceName}" TextTrimming="CharacterEllipsis"/>
+                            </StackPanel>
+                            <WrapPanel Grid.Column="1" VerticalAlignment="Center">
+                                <Button Classes="scroll-quiet" Content="编辑" IsVisible="{Binding IsCanvasPreviewImage}"
+                                        Command="{Binding EditAssetCommand}" CommandParameter="{Binding SelectedAsset}"/>
+                                <Button Classes="scroll-quiet" Content="尾帧编辑" IsVisible="{Binding IsCanvasPreviewVideo}"
+                                        Command="{Binding EditAssetCommand}" CommandParameter="{Binding SelectedAsset}"/>
+                                <Button Classes="scroll-quiet" Content="移除" Click="SelectedWorkspaceMenu_Click" ToolTip.Tip="移除当前画布（保留原始文件），也可右键历史画布"/>
+                            </WrapPanel>
+                        </Grid>
+                        <Border Grid.Row="1" Classes="scroll-paper" CornerRadius="16" ClipToBounds="True" MinHeight="260">
+                            <Grid>
+                                <StackPanel IsVisible="{Binding HasNoCanvasPreview}" VerticalAlignment="Center" HorizontalAlignment="Center"
+                                            MaxWidth="760" Margin="76,28" Spacing="22">
+                                    <StackPanel Spacing="18" IsVisible="{Binding IsCanvasEmptyPlaceholderVisible}">
+                                        <TextBlock FontSize="38" Text="{Binding CanvasPlaceholderTitle}" TextWrapping="Wrap" TextAlignment="Center"/>
+                                        <TextBlock Classes="scroll-media-muted" Text="{Binding CurrentCanvasDescription}" TextWrapping="Wrap" TextAlignment="Center"/>
+                                    </StackPanel>
+                                    <StackPanel Spacing="20" IsVisible="{Binding IsSelectedAssetPending}">
+                                        <TextBlock FontSize="34" Text="{Binding SelectedAssetPendingPhase}" TextWrapping="Wrap" TextAlignment="Center"/>
+                                        <TextBlock FontSize="32" Text="{Binding SelectedAssetPendingElapsed}" TextAlignment="Center" Foreground="{DynamicResource ScrollAccent}"/>
+                                        <ProgressBar Height="8" Minimum="0" Maximum="100" Value="{Binding SelectedAssetPendingProgress}"/>
+                                        <TextBlock Classes="scroll-media-muted" Text="{Binding CanvasPlaceholderDescription}" TextWrapping="Wrap" TextAlignment="Center"/>
+                                    </StackPanel>
+                                    <StackPanel Spacing="18" IsVisible="{Binding IsSelectedAssetFailed}">
+                                        <TextBlock FontSize="34" Text="{Binding SelectedAssetFailedTitle}" Foreground="#AE4234" TextWrapping="Wrap" TextAlignment="Center"/>
+                                        <SelectableTextBlock Text="{Binding SelectedAssetFailedError}" TextWrapping="Wrap"/>
+                                    </StackPanel>
+                                </StackPanel>
+                                <Image Source="{Binding CanvasPreviewPath, Converter={StaticResource ScrollMediaBitmap}}"
+                                       Stretch="Uniform" Margin="10" IsVisible="{Binding HasCanvasPreview}" Cursor="Hand"
+                                       PointerPressed="CanvasPreview_PointerPressed"/>
+                                <Button Content="▶ 播放视频" IsVisible="{Binding IsCanvasPreviewVideo}" Click="PlayVideoButton_Click"
+                                        HorizontalAlignment="Center" VerticalAlignment="Center" Background="#CE243C3B" Foreground="White"/>
+                                <Button Content="‹" FontSize="42" Width="64" Height="64" CornerRadius="32" Margin="18,0,0,0"
+                                        HorizontalAlignment="Left" VerticalAlignment="Center" AutomationProperties.Name="上一张"
+                                        PointerPressed="PreviewNavButton_PointerPressed" Command="{Binding SelectPreviousAssetCommand}" IsEnabled="{Binding CanSelectPreviousAsset}"/>
+                                <Button Content="›" FontSize="42" Width="64" Height="64" CornerRadius="32" Margin="0,0,18,0"
+                                        HorizontalAlignment="Right" VerticalAlignment="Center" AutomationProperties.Name="下一张"
+                                        PointerPressed="PreviewNavButton_PointerPressed" Command="{Binding SelectNextAssetCommand}" IsEnabled="{Binding CanSelectNextAsset}"/>
+                                <Border Background="#C0243C3B" CornerRadius="8" Padding="16,10" HorizontalAlignment="Left" VerticalAlignment="Bottom"
+                                        Margin="18" MaxWidth="620" IsVisible="{Binding HasCanvasPreview}" IsHitTestVisible="False">
+                                    <TextBlock Text="{Binding CanvasPreviewMetaText}" Foreground="White" FontSize="26" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding CanvasPreviewMetaText}"/>
+                                </Border>
+                                <Border Background="#C0243C3B" CornerRadius="8" Padding="16,10" HorizontalAlignment="Right" VerticalAlignment="Top"
+                                        Margin="18" IsVisible="{Binding HasSelectedAsset}" IsHitTestVisible="False">
+                                    <TextBlock Text="{Binding SelectedAssetCounterText}" Foreground="White"/>
+                                </Border>
+                            </Grid>
+                        </Border>
+                        <StackPanel Grid.Row="2" Spacing="14">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Text="{Binding SelectedGroupResultSummary}" TextTrimming="CharacterEllipsis"/>
+                                <TextBlock Grid.Column="1" Classes="scroll-media-muted" Text="{Binding SelectedGroupWorkflowText}"/>
+                            </Grid>
+                            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                                <ItemsControl ItemsSource="{Binding SelectedGroup.Items}">
+                                    <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="14"/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Button Classes="scroll-media-thumb" Command="{Binding $parent[UserControl].DataContext.SelectAssetCommand}" CommandParameter="{Binding}"
+                                                    PointerReleased="RailThumbButton_PointerReleased" ToolTip.Tip="{Binding PromptSummaryText}">
+                                                <Grid Width="218" Height="148">
+                                                    <Border Classes="scroll-paper" CornerRadius="12" ClipToBounds="True">
+                                                        <Grid>
+                                                            <controls:ViewportLazyImage FilePath="{Binding PreviewPath}" Stretch="UniformToFill" IsVisible="{Binding HasPreview}"/>
+                                                            <TextBlock Text="{Binding PendingStatusText}" IsVisible="{Binding HasNoPreview}" TextWrapping="Wrap" Margin="14"
+                                                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                            <Border Background="#B0243C3B" Padding="12,4" CornerRadius="8" Margin="8" HorizontalAlignment="Left" VerticalAlignment="Top">
+                                                                <TextBlock Text="{Binding KindBadgeText}" Foreground="White" FontSize="26"/>
+                                                            </Border>
+                                                            <TextBlock Text="▶" FontSize="40" Foreground="White" IsVisible="{Binding IsVideo}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                        </Grid>
+                                                    </Border>
+                                                    <Border Classes="scroll-media-selected" IsVisible="{Binding IsSelected}"/>
+                                                </Grid>
+                                            </Button>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                            <Expander Header="本次提示词与画布反馈" FontSize="26" IsVisible="{Binding HasSelectedGroup}">
+                                <ScrollViewer MaxHeight="250">
+                                    <StackPanel Spacing="12" Margin="10">
+                                        <SelectableTextBlock Text="{Binding SelectedGroupPromptText}" TextWrapping="Wrap"/>
+                                        <TextBlock Classes="scroll-media-muted" Text="{Binding SelectedGroupMetaText}" TextWrapping="Wrap"/>
+                                        <TextBlock Classes="scroll-media-muted" Text="{Binding SelectedGroupSuggestedNextText}" TextWrapping="Wrap"/>
+                                        <ItemsControl ItemsSource="{Binding WorkspaceSession.Messages}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <SelectableTextBlock Text="{Binding Text}" IsVisible="{Binding IsAssistant}" TextWrapping="Wrap" Margin="0,8"/>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </ScrollViewer>
+                            </Expander>
+                        </StackPanel>
+                    </Grid>
+                    <Border Grid.Column="1" Classes="scroll-paper" Padding="10,16" CornerRadius="12">
+                        <Grid RowDefinitions="Auto,*,Auto" RowSpacing="18">
+                            <TextBlock Text="{Binding WorkspaceTabs.Count, StringFormat=历史画布 ({0})}" FontSize="28" HorizontalAlignment="Center"/>
+                            <ScrollViewer Grid.Row="1" x:Name="WorkspaceScrollViewer" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                                <ItemsControl ItemsSource="{Binding WorkspaceTabs}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Button Classes="scroll-media-thumb" Command="{Binding $parent[UserControl].DataContext.SelectWorkspaceTabCommand}" CommandParameter="{Binding}"
+                                                    PointerPressed="WorkspaceTabButton_PointerPressed" PointerReleased="WorkspaceTabButton_PointerReleased"
+                                                    Margin="0,0,0,18" ToolTip.Tip="{Binding SummaryText}">
+                                                <StackPanel Spacing="10">
+                                                    <Grid Height="146">
+                                                        <Border Classes="scroll-paper" CornerRadius="10" ClipToBounds="True">
+                                                            <Grid>
+                                                                <controls:ViewportLazyImage FilePath="{Binding PreviewPath}" Stretch="UniformToFill" IsVisible="{Binding HasPreview}"/>
+                                                                <TextBlock Text="{Binding StatusBadgeText}" IsVisible="{Binding HasNoPreview}" TextWrapping="Wrap"
+                                                                           HorizontalAlignment="Center" VerticalAlignment="Center" Margin="12"/>
+                                                                <Border Background="#BB243C3B" Padding="10,4" Margin="8" CornerRadius="6" HorizontalAlignment="Left" VerticalAlignment="Top">
+                                                                    <TextBlock Text="{Binding KindBadgeText}" FontSize="26" Foreground="White"/>
+                                                                </Border>
+                                                                <TextBlock Text="▶" Foreground="White" FontSize="38" IsVisible="{Binding IsVideo}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                                <ProgressBar Height="6" IsIndeterminate="True" VerticalAlignment="Bottom" IsVisible="{Binding HasRunningTasks}"/>
+                                                            </Grid>
+                                                        </Border>
+                                                        <Border Classes="scroll-media-selected" IsVisible="{Binding IsSelected}"/>
+                                                    </Grid>
+                                                    <TextBlock Text="{Binding Title}" FontSize="26" MaxLines="2" TextWrapping="Wrap" TextTrimming="CharacterEllipsis"/>
+                                                </StackPanel>
+                                            </Button>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                            <Button Grid.Row="2" Classes="scroll-quiet" Content="＋ 新画布" Command="{Binding NewWorkspaceCommand}"
+                                    HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"/>
+                        </Grid>
+                    </Border>
+                </Grid>
+                <Border Grid.Row="1" Classes="scroll-paper" Padding="22,18" CornerRadius="14">
+                    <Grid RowDefinitions="Auto,Auto,Auto" RowSpacing="14">
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+                            <TextBlock Classes="scroll-media-section" Text="提示词" VerticalAlignment="Center"/>
+                            <WrapPanel Grid.Column="1">
+                                <Button Classes="scroll-quiet" Content="画布目录" Command="{Binding OpenWorkspaceFolderCommand}"/>
+                                <Button Classes="scroll-quiet" Content="外部打开" Command="{Binding OpenSelectedAssetCommand}" Margin="10,0"/>
+                                <Button Classes="scroll-quiet" Content="所在文件夹" Command="{Binding OpenSelectedAssetInExplorerCommand}"/>
+                            </WrapPanel>
+                        </Grid>
+                        <Grid Grid.Row="1" ColumnDefinitions="*,Auto" ColumnSpacing="22">
+                            <TextBox x:Name="PromptTextBox" Classes="scroll-input" Text="{Binding DraftPromptText, Mode=TwoWay}"
+                                     Watermark="{Binding PromptWatermark}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="126" MaxHeight="240"/>
+                            <StackPanel Grid.Column="1" Spacing="12" VerticalAlignment="Bottom">
+                                <Button Classes="seal" Content="开始生成" Command="{Binding SubmitPromptCommand}" AutomationProperties.Name="开始创作"
+                                    Width="136" Height="124" Padding="0" FontSize="27" HorizontalAlignment="Right"/>
+                                <StackPanel Orientation="Horizontal" Spacing="10">
+                                    <Button Classes="scroll-quiet" Content="刷新" Command="{Binding RefreshWorkspaceCommand}"/>
+                                    <Button Classes="scroll-quiet" Content="停止" Command="{Binding WorkspaceSession.CancelCommand}" IsVisible="{Binding WorkspaceSession.IsGenerating}"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Grid>
+                        <StackPanel Grid.Row="2" Spacing="10">
+                            <TextBlock Classes="scroll-media-muted" Text="{Binding WorkspaceStatusSummary}" TextWrapping="Wrap"/>
+                            <TextBlock Text="{Binding WorkspaceSession.VideoReferenceLimitHint}" IsVisible="{Binding WorkspaceSession.IsVideoReferenceLimitExceeded}" Foreground="#AE4234" TextWrapping="Wrap"/>
+                            <TextBlock Text="{Binding WorkspaceSession.ReferenceImageValidationHint}" IsVisible="{Binding WorkspaceSession.IsReferenceImageSizeMismatch}" Foreground="#AE4234" TextWrapping="Wrap"/>
+                            <TextBlock Text="{Binding WorkspaceSession.ReferenceImageValidationHint}" IsVisible="{Binding WorkspaceSession.IsReferenceImageSizeMatched}" Foreground="{DynamicResource ScrollAccent}" TextWrapping="Wrap"/>
+                            <Expander Header="任务阶段与耗时" FontSize="26" IsVisible="{Binding WorkspaceSession.IsGenerating}">
+                                <ScrollViewer MaxHeight="220">
+                                <ItemsControl ItemsSource="{Binding WorkspaceSession.RunningTasks}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <StackPanel Margin="12" Spacing="10">
+                                                <TextBlock Text="{Binding PhaseText}" TextWrapping="Wrap"/>
+                                                <TextBlock Classes="scroll-media-muted" Text="{Binding ElapsedSeconds, StringFormat=已运行 {0:F0} 秒}"/>
+                                                <ProgressBar Height="6" Minimum="0" Maximum="100" Value="{Binding Progress}"/>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                </ScrollViewer>
+                            </Expander>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+            </Grid>
+        </views:SongScrollShell.RightPage>
+    </views:SongScrollShell>
+</views:MediaCenterV2View>

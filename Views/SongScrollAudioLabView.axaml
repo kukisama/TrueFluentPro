@@ -1,0 +1,359 @@
+<views:AudioLabView xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:views="using:TrueFluentPro.Views"
+                    xmlns:vm="using:TrueFluentPro.ViewModels"
+                    xmlns:icons="https://github.com/projektanker/icons.avalonia"
+                    x:Class="TrueFluentPro.Views.SongScrollAudioLabView"
+                    x:CompileBindings="False" FontSize="28">
+  <views:AudioLabView.Resources>
+    <views:SongScrollAudioLabViewCustomTabConverter x:Key="CustomTabSelected"/>
+    <views:SongScrollAudioLabViewStageStateConverter x:Key="StageState"/>
+  </views:AudioLabView.Resources>
+  <views:AudioLabView.Styles>
+    <Style Selector=".lab-content TextBlock"><Setter Property="FontSize" Value="28"/></Style>
+    <Style Selector=".lab-content TextBlock.lab-muted"><Setter Property="FontSize" Value="26"/><Setter Property="Foreground" Value="{DynamicResource ScrollMuted}"/></Style>
+    <Style Selector=".lab-content Button"><Setter Property="FontSize" Value="28"/><Setter Property="MinHeight" Value="54"/><Setter Property="Padding" Value="18,10"/></Style>
+    <Style Selector=".lab-content TextBox"><Setter Property="FontSize" Value="28"/><Setter Property="MinHeight" Value="54"/></Style>
+    <Style Selector=".lab-content RadioButton.lab-tab">
+      <Setter Property="FontSize" Value="28"/><Setter Property="MinHeight" Value="64"/>
+      <Setter Property="Padding" Value="20,12"/><Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="0,0,0,3"/><Setter Property="BorderBrush" Value="Transparent"/>
+      <Setter Property="Template">
+        <ControlTemplate>
+          <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                  BorderThickness="{TemplateBinding BorderThickness}" Padding="{TemplateBinding Padding}">
+            <ContentPresenter Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}"
+                              HorizontalAlignment="Center" VerticalAlignment="Center"
+                              Foreground="{TemplateBinding Foreground}" FontFamily="{TemplateBinding FontFamily}"
+                              FontSize="{TemplateBinding FontSize}"/>
+          </Border>
+        </ControlTemplate>
+      </Setter>
+    </Style>
+    <Style Selector=".lab-content RadioButton.lab-tab:pointerover"><Setter Property="Background" Value="#15537674"/></Style>
+    <Style Selector=".lab-content RadioButton.lab-tab:focus-visible"><Setter Property="BorderBrush" Value="{DynamicResource ScrollAccent}"/></Style>
+    <Style Selector=".lab-content RadioButton.lab-tab:checked"><Setter Property="Foreground" Value="{DynamicResource ScrollAccent}"/><Setter Property="BorderBrush" Value="{DynamicResource ScrollAccent}"/><Setter Property="Background" Value="#11537674"/></Style>
+    <Style Selector=".lab-content ListBoxItem"><Setter Property="HorizontalContentAlignment" Value="Stretch"/><Setter Property="Padding" Value="18,20"/></Style>
+    <Style Selector=".lab-content CheckBox"><Setter Property="FontSize" Value="28"/><Setter Property="MinHeight" Value="54"/></Style>
+    <Style Selector=".lab-content Border.lab-rule"><Setter Property="BorderBrush" Value="#30958568"/><Setter Property="BorderThickness" Value="0,0,0,1"/></Style>
+    <Style Selector="views|SongScrollAudioLabViewMarkdown TextBlock"><Setter Property="FontSize" Value="14"/></Style>
+    <Style Selector="views|SongScrollAudioLabViewMarkdown Button"><Setter Property="MinHeight" Value="26"/><Setter Property="Padding" Value="8,3"/></Style>
+  </views:AudioLabView.Styles>
+
+  <views:SongScrollShell x:Name="BookShell" PageKey="audiolab"
+                         PageTitle="听析中心" PageSubtitle="聆听思想的流动，发现知识的脉络"
+                         DefaultLeftRatio="0.30">
+    <views:SongScrollShell.LeftPage>
+      <Grid Classes="lab-content" Margin="30,22,32,28" RowDefinitions="Auto,Auto,*,Auto" RowSpacing="22">
+        <Border Classes="lab-rule" Padding="0,0,0,20">
+          <TextBlock Classes="lab-muted" Text="{Binding BreadcrumbText}" TextWrapping="Wrap"/>
+        </Border>
+        <Grid Grid.Row="1" ColumnDefinitions="*,Auto" ColumnSpacing="12">
+          <Button Classes="scroll-quiet" Click="ToggleFilePanel_Click" HorizontalContentAlignment="Left"
+                  ToolTip.Tip="展开或收起文件目录" AutomationProperties.Name="展开或收起文件目录">
+            <StackPanel Orientation="Horizontal" Spacing="12">
+              <icons:Icon Value="fa-solid fa-folder-open" FontSize="28"/>
+              <TextBlock Text="文件目录"/>
+              <TextBlock Classes="lab-muted" Text="{Binding AudioFiles.Count}"/>
+            </StackPanel>
+          </Button>
+          <Button Grid.Column="1" Classes="scroll-quiet" Command="{Binding RefreshAudioFilesCommand}"
+                  Content="刷新" ToolTip.Tip="刷新本地音频目录"/>
+        </Grid>
+        <!-- 无第二道宽度约束：目录始终属于 Shell 的左纸页。 -->
+        <Border Grid.Row="2" x:Name="FilePanelRail" Background="Transparent">
+          <Grid>
+            <ListBox Classes="scroll-list" ItemsSource="{Binding AudioFiles}"
+                     SelectedItem="{Binding SelectedAudioFile, Mode=TwoWay}"
+                     SelectionMode="Single" IsVisible="{Binding IsFilePanelOpen}"
+                     Background="Transparent" BorderThickness="0">
+              <ListBox.ItemTemplate>
+                <DataTemplate>
+                  <Grid ColumnDefinitions="54,*" ColumnSpacing="16">
+                    <Border Background="#12537674" CornerRadius="8" Width="54" Height="62">
+                      <icons:Icon Value="fa-solid fa-file-audio" FontSize="28" Foreground="{DynamicResource ScrollAccent}"/>
+                    </Border>
+                    <StackPanel Grid.Column="1" Spacing="10">
+                      <TextBlock Text="{Binding Name}" TextWrapping="Wrap"/>
+                      <TextBlock Classes="lab-muted" Text="{Binding FullPath}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding FullPath}"/>
+                    </StackPanel>
+                  </Grid>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+            <TextBlock Classes="lab-muted" Text="目录已收起，可继续阅读右页。" TextWrapping="Wrap"
+                       IsVisible="{Binding !IsFilePanelOpen}" Margin="18,24"/>
+            <Border IsVisible="{Binding IsFilePanelOpen}" IsHitTestVisible="False">
+              <StackPanel Margin="18,24" Spacing="14" IsVisible="{Binding !AudioFiles.Count}">
+                <TextBlock Classes="lab-muted" Text="尚无音频文件"/>
+                <TextBlock Classes="lab-muted" Text="从文件加载，或将音频拖入此页。" TextWrapping="Wrap"/>
+              </StackPanel>
+            </Border>
+          </Grid>
+        </Border>
+        <StackPanel Grid.Row="3" Spacing="16">
+          <Button Classes="scroll-primary" Content="从文件加载" Click="OpenFile_Click" HorizontalAlignment="Stretch"/>
+          <Button x:Name="LifecycleToggleBtn" Classes="scroll-quiet" Content="处理进度与播客语音"
+                  Click="ToggleLifecyclePanel_Click" HorizontalAlignment="Stretch"/>
+        </StackPanel>
+      </Grid>
+    </views:SongScrollShell.LeftPage>
+
+    <views:SongScrollShell.RightPage>
+      <Panel Classes="lab-content" Margin="30,22,32,28" ClipToBounds="True">
+        <Grid x:Name="MainContentArea" RowDefinitions="Auto,Auto,Auto,*,Auto" RowSpacing="18">
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="20">
+            <StackPanel Spacing="10">
+              <TextBlock Text="{Binding CurrentFileName}" FontSize="38" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+              <TextBlock Classes="lab-muted" Text="{Binding StatusMessage}" TextWrapping="Wrap"/>
+            </StackPanel>
+            <Button Grid.Column="1" Classes="scroll-quiet" Content="导出当前页" Click="ExportCurrent_Click"
+                    IsEnabled="{Binding !IsExporting}" VerticalAlignment="Top"/>
+          </Grid>
+
+          <!-- 常驻播放器：不依赖当前阅读标签。 -->
+          <Border Grid.Row="1" Classes="scroll-paper" Padding="20,16" CornerRadius="12" BorderThickness="1" BorderBrush="#30958568">
+            <Grid RowDefinitions="Auto,Auto" RowSpacing="12">
+              <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto" ColumnSpacing="14">
+                <Button Classes="scroll-primary" Command="{Binding Playback.TogglePlayPauseCommand}" ToolTip.Tip="播放或暂停" AutomationProperties.Name="播放或暂停">
+                  <Panel><icons:Icon Value="fa-solid fa-play" FontSize="30" IsVisible="{Binding !Playback.IsPlaying}"/><icons:Icon Value="fa-solid fa-pause" FontSize="30" IsVisible="{Binding Playback.IsPlaying}"/></Panel>
+                </Button>
+                <Button Grid.Column="1" Classes="scroll-quiet" Command="{Binding Playback.PreviousSegmentCommand}" ToolTip.Tip="上一段" AutomationProperties.Name="上一段"><icons:Icon Value="fa-solid fa-backward-step" FontSize="28"/></Button>
+                <Button Grid.Column="2" Classes="scroll-quiet" Command="{Binding Playback.NextSegmentCommand}" ToolTip.Tip="下一段" AutomationProperties.Name="下一段"><icons:Icon Value="fa-solid fa-forward-step" FontSize="28"/></Button>
+                <Slider Grid.Column="3" Minimum="0" Maximum="1" Value="{Binding Playback.Progress, Mode=TwoWay}" MinWidth="120" VerticalAlignment="Center" IsEnabled="{Binding Playback.IsStopEnabled}" AutomationProperties.Name="播放进度"/>
+                <TextBlock Grid.Column="4" Classes="lab-muted" Text="{Binding Playback.TimeText}" VerticalAlignment="Center"/>
+                <Button Grid.Column="5" Classes="scroll-quiet" Content="{Binding Playback.PlaybackSpeedText}" ToolTip.Tip="播放倍速">
+                  <Button.Flyout>
+                    <MenuFlyout>
+                      <MenuItem Header="0.5X" Command="{Binding Playback.SetPlaybackSpeedCommand}" CommandParameter="0.5" FontSize="28"/>
+                      <MenuItem Header="0.75X" Command="{Binding Playback.SetPlaybackSpeedCommand}" CommandParameter="0.75" FontSize="28"/>
+                      <MenuItem Header="1.0X" Command="{Binding Playback.SetPlaybackSpeedCommand}" CommandParameter="1" FontSize="28"/>
+                      <MenuItem Header="1.25X" Command="{Binding Playback.SetPlaybackSpeedCommand}" CommandParameter="1.25" FontSize="28"/>
+                      <MenuItem Header="1.5X" Command="{Binding Playback.SetPlaybackSpeedCommand}" CommandParameter="1.5" FontSize="28"/>
+                      <MenuItem Header="2.0X" Command="{Binding Playback.SetPlaybackSpeedCommand}" CommandParameter="2" FontSize="28"/>
+                    </MenuFlyout>
+                  </Button.Flyout>
+                </Button>
+              </Grid>
+              <WrapPanel Grid.Row="1" Orientation="Horizontal">
+                <TextBlock Classes="lab-muted" Text="时间戳跳转" VerticalAlignment="Center" Margin="0,0,16,0"/>
+                <TextBox x:Name="JumpTimeInput" Classes="scroll-input" Watermark="分:秒 / 时:分:秒" Width="290" KeyDown="JumpTime_KeyDown" IsEnabled="{Binding Playback.IsStopEnabled}"/>
+                <Button Classes="scroll-quiet" Content="跳转" Click="JumpToTime_Click" IsEnabled="{Binding Playback.IsStopEnabled}" Margin="12,0,0,0"/>
+                <Button Classes="scroll-quiet" Content="停止播放" Command="{Binding Playback.StopCommand}" Margin="12,0,0,0"/>
+              </WrapPanel>
+            </Grid>
+          </Border>
+
+          <Border Grid.Row="2" Classes="lab-rule">
+            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+              <StackPanel Orientation="Horizontal" Spacing="4">
+                <RadioButton Classes="lab-tab" GroupName="SongScrollAudioTabs" Content="总结" Click="Tab_Summary_Click" IsVisible="{Binding IsSummaryTabVisible}"
+                             IsChecked="{Binding SelectedTab, Mode=OneWay, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static vm:AudioLabTabKind.Summary}}"/>
+                <RadioButton Classes="lab-tab" GroupName="SongScrollAudioTabs" Content="转录" Click="Tab_Transcript_Click"
+                             IsChecked="{Binding SelectedTab, Mode=OneWay, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static vm:AudioLabTabKind.Transcript}}"/>
+                <RadioButton Classes="lab-tab" GroupName="SongScrollAudioTabs" Content="导图" Click="Tab_MindMap_Click" IsVisible="{Binding IsMindMapTabVisible}"
+                             IsChecked="{Binding SelectedTab, Mode=OneWay, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static vm:AudioLabTabKind.MindMap}}"/>
+                <RadioButton Classes="lab-tab" GroupName="SongScrollAudioTabs" Content="顿悟" Click="Tab_Insight_Click" IsVisible="{Binding IsInsightTabVisible}"
+                             IsChecked="{Binding SelectedTab, Mode=OneWay, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static vm:AudioLabTabKind.Insight}}"/>
+                <RadioButton Classes="lab-tab" GroupName="SongScrollAudioTabs" Content="研究" Click="Tab_Research_Click" IsVisible="{Binding IsResearchTabVisible}"
+                             IsChecked="{Binding SelectedTab, Mode=OneWay, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static vm:AudioLabTabKind.Research}}"/>
+                <RadioButton Classes="lab-tab" GroupName="SongScrollAudioTabs" Content="播客" Click="Tab_Podcast_Click" IsVisible="{Binding IsPodcastTabVisible}"
+                             IsChecked="{Binding SelectedTab, Mode=OneWay, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static vm:AudioLabTabKind.Podcast}}"/>
+                <RadioButton Classes="lab-tab" GroupName="SongScrollAudioTabs" Content="翻译" Click="Tab_Translation_Click" IsVisible="{Binding IsTranslationTabVisible}"
+                             IsChecked="{Binding SelectedTab, Mode=OneWay, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static vm:AudioLabTabKind.Translation}}"/>
+                <ItemsControl x:Name="CustomTabsHost" ItemsSource="{Binding CustomVisibleStages}">
+                  <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="4"/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <RadioButton Classes="lab-tab" GroupName="SongScrollAudioTabs" Content="{Binding DisplayName}" Tag="{Binding Stage}" Click="Tab_Custom_Click">
+                        <RadioButton.IsChecked>
+                          <MultiBinding Converter="{StaticResource CustomTabSelected}" Mode="OneWay">
+                            <Binding Path="#BookShell.DataContext.SelectedTab"/>
+                            <Binding Path="#BookShell.DataContext.CustomStageKey"/>
+                            <Binding Path="Stage"/>
+                          </MultiBinding>
+                        </RadioButton.IsChecked>
+                      </RadioButton>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+            </ScrollViewer>
+          </Border>
+
+          <Grid Grid.Row="3" ClipToBounds="True">
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="22" IsVisible="{Binding !CurrentFilePath.Length}">
+              <icons:Icon Value="fa-solid fa-headphones" FontSize="74" Foreground="{DynamicResource ScrollAccent}"/>
+              <TextBlock FontSize="34" Text="静候一段声音" HorizontalAlignment="Center"/>
+              <TextBlock Classes="lab-muted" Text="从左页选择音频，或拖入文件开始听析。" TextWrapping="Wrap"/>
+              <Button Classes="scroll-primary" Content="打开音频文件" Click="OpenFile_Click" HorizontalAlignment="Center"/>
+            </StackPanel>
+            <Panel IsVisible="{Binding CurrentFilePath.Length}">
+              <Grid RowDefinitions="Auto,*" RowSpacing="16" IsVisible="{Binding SelectedTab, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static vm:AudioLabTabKind.Summary}}">
+                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="12">
+                  <TextBlock Classes="scroll-section-title" Text="音频总结" VerticalAlignment="Center"/>
+                  <Button Grid.Column="1" Classes="scroll-quiet" Command="{Binding ToggleEditModeCommand}"><Panel><TextBlock Text="编辑总结" IsVisible="{Binding !IsSummaryEditing}"/><TextBlock Text="保存编辑" IsVisible="{Binding IsSummaryEditing}"/></Panel></Button>
+                  <Button Grid.Column="2" Classes="scroll-quiet" Content="重新生成" Command="{Binding GenerateSummaryCommand}"/>
+                </Grid>
+                <Grid Grid.Row="1">
+                  <ScrollViewer IsVisible="{Binding !IsSummaryEditing}" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel Spacing="18" Margin="0,0,16,28">
+                      <ItemsControl ItemsSource="{Binding AutoTags}">
+                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate><DataTemplate><Border Background="#12537674" Padding="16,6" Margin="0,0,12,8" CornerRadius="8"><TextBlock Text="{Binding}" FontSize="26"/></Border></DataTemplate></ItemsControl.ItemTemplate>
+                      </ItemsControl>
+                      <views:SongScrollAudioLabViewMarkdown Markdown="{Binding SummaryMarkdown}"/>
+                      <StackPanel Spacing="12" IsVisible="{Binding !SummaryMarkdown.Length}">
+                        <TextBlock Classes="lab-muted" Text="{Binding SummaryState, Converter={StaticResource StageState}}"/>
+                        <TextBlock Classes="lab-muted" Text="{Binding StatusMessage}" TextWrapping="Wrap"/>
+                      </StackPanel>
+                    </StackPanel>
+                  </ScrollViewer>
+                  <TextBox Classes="scroll-input" Text="{Binding SummaryEditText, Mode=TwoWay}" AcceptsReturn="True" TextWrapping="Wrap"
+                           IsVisible="{Binding IsSummaryEditing}" VerticalContentAlignment="Top" ScrollViewer.VerticalScrollBarVisibility="Auto"/>
+                </Grid>
+              </Grid>
+
+              <Grid RowDefinitions="Auto,*" RowSpacing="16" IsVisible="{Binding SelectedTab, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static vm:AudioLabTabKind.Transcript}}">
+                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="12">
+                  <TextBlock Classes="scroll-section-title" Text="转录全文" VerticalAlignment="Center"/>
+                  <Button Grid.Column="1" Classes="scroll-quiet" Content="以此向AI提问" Click="AskTranscript_Click" IsEnabled="{Binding Segments.Count}"/>
+                  <Button Grid.Column="2" Classes="scroll-quiet" Content="重新转录" Command="{Binding TranscribeCommand}"/>
+                </Grid>
+                <Grid Grid.Row="1">
+                  <ListBox x:Name="TranscriptListBox" Classes="scroll-list" ItemsSource="{Binding Segments}"
+                           SelectedItem="{Binding CurrentSegment, Mode=TwoWay}" Background="Transparent" BorderThickness="0"
+                           Tapped="TranscriptSegment_Tapped" PointerReleased="TranscriptSegment_PointerReleased">
+                    <ListBox.ItemTemplate>
+                      <DataTemplate>
+                        <Border Classes="lab-rule" Padding="0,0,0,22">
+                          <StackPanel Spacing="14">
+                            <StackPanel Orientation="Horizontal" Spacing="22">
+                              <TextBlock Classes="lab-muted" Text="{Binding TimeText}"/>
+                              <TextBlock Text="{Binding Speaker}" FontWeight="SemiBold"/>
+                              <icons:Icon Value="fa-solid fa-volume-high" FontSize="26" IsVisible="{Binding IsCurrent}"/>
+                            </StackPanel>
+                            <TextBlock Text="{Binding Text}" TextWrapping="Wrap" LineHeight="44"/>
+                          </StackPanel>
+                        </Border>
+                      </DataTemplate>
+                    </ListBox.ItemTemplate>
+                  </ListBox>
+                  <StackPanel Margin="18,24" Spacing="12" IsVisible="{Binding !Segments.Count}" IsHitTestVisible="False">
+                    <TextBlock Classes="lab-muted" Text="{Binding TranscribeState, Converter={StaticResource StageState}}"/>
+                    <TextBlock Classes="lab-muted" Text="{Binding StatusMessage}" TextWrapping="Wrap"/>
+                  </StackPanel>
+                </Grid>
+              </Grid>
+
+              <Grid RowDefinitions="Auto,*" RowSpacing="16" IsVisible="{Binding SelectedTab, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static vm:AudioLabTabKind.MindMap}}">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+                  <TextBlock Classes="scroll-section-title" Text="思维导图" VerticalAlignment="Center"/>
+                  <Button Grid.Column="1" Classes="scroll-quiet" Content="重新生成" Command="{Binding GenerateMindMapCommand}"/>
+                </Grid>
+                <Border Grid.Row="1" Classes="scroll-paper" ClipToBounds="True" Padding="20">
+                  <Panel Background="Transparent">
+                    <views:SongScrollAudioLabViewMindMap Root="{Binding MindMapRoot}"/>
+                    <StackPanel Spacing="12" IsVisible="{Binding MindMapRoot, Converter={x:Static ObjectConverters.IsNull}}">
+                      <TextBlock Classes="lab-muted" Text="{Binding MindMapState, Converter={StaticResource StageState}}"/>
+                      <TextBlock Classes="lab-muted" Text="{Binding StatusMessage}" TextWrapping="Wrap"/>
+                    </StackPanel>
+                  </Panel>
+                </Border>
+              </Grid>
+
+              <Grid RowDefinitions="Auto,*" RowSpacing="16" IsVisible="{Binding SelectedTab, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static vm:AudioLabTabKind.Insight}}">
+                <Grid ColumnDefinitions="*,Auto"><TextBlock Classes="scroll-section-title" Text="顿悟分析" VerticalAlignment="Center"/><Button Grid.Column="1" Classes="scroll-quiet" Content="重新生成" Command="{Binding GenerateInsightCommand}"/></Grid>
+                <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled">
+                  <StackPanel Spacing="18" Margin="0,0,16,28">
+                    <views:SongScrollAudioLabViewMarkdown Markdown="{Binding InsightMarkdown}"/>
+                    <StackPanel Spacing="12" IsVisible="{Binding !InsightMarkdown.Length}"><TextBlock Classes="lab-muted" Text="{Binding InsightState, Converter={StaticResource StageState}}"/><TextBlock Classes="lab-muted" Text="{Binding StatusMessage}" TextWrapping="Wrap"/></StackPanel>
+                  </StackPanel>
+                </ScrollViewer>
+              </Grid>
+
+              <Grid RowDefinitions="Auto,*" RowSpacing="16" IsVisible="{Binding SelectedTab, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static vm:AudioLabTabKind.Research}}">
+                <Grid ColumnDefinitions="*,Auto"><TextBlock Classes="scroll-section-title" Text="深度研究" VerticalAlignment="Center"/><Button Grid.Column="1" Classes="scroll-quiet" Content="生成研究" Command="{Binding GenerateResearchCommand}"/></Grid>
+                <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled">
+                  <StackPanel Spacing="18" Margin="0,0,16,28">
+                    <Expander Header="研究方向" IsExpanded="True" IsVisible="{Binding ResearchTopics.Count}">
+                      <ItemsControl ItemsSource="{Binding ResearchTopics}"><ItemsControl.ItemTemplate><DataTemplate><CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}" Margin="0,8"><TextBlock Text="{Binding Title}" TextWrapping="Wrap"/></CheckBox></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+                    </Expander>
+                    <views:SongScrollAudioLabViewMarkdown Markdown="{Binding ResearchReportMarkdown}"/>
+                    <StackPanel Spacing="12" IsVisible="{Binding !ResearchReportMarkdown.Length}"><TextBlock Classes="lab-muted" Text="{Binding ResearchState, Converter={StaticResource StageState}}"/><TextBlock Classes="lab-muted" Text="{Binding StatusMessage}" TextWrapping="Wrap"/></StackPanel>
+                  </StackPanel>
+                </ScrollViewer>
+              </Grid>
+
+              <Grid RowDefinitions="Auto,*,Auto" RowSpacing="16" IsVisible="{Binding SelectedTab, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static vm:AudioLabTabKind.Podcast}}">
+                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="12"><TextBlock Classes="scroll-section-title" Text="播客台本" VerticalAlignment="Center"/><Button Grid.Column="1" Classes="scroll-quiet" Content="语音与合成" Click="ToggleLifecyclePanel_Click"/><Button Grid.Column="2" Classes="scroll-quiet" Content="重新生成" Command="{Binding GeneratePodcastCommand}"/></Grid>
+                <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled">
+                  <StackPanel Spacing="18" Margin="0,0,16,28">
+                    <views:SongScrollAudioLabViewMarkdown Markdown="{Binding PodcastMarkdown}"/>
+                    <StackPanel Spacing="12" IsVisible="{Binding !PodcastMarkdown.Length}"><TextBlock Classes="lab-muted" Text="{Binding PodcastState, Converter={StaticResource StageState}}"/><TextBlock Classes="lab-muted" Text="{Binding StatusMessage}" TextWrapping="Wrap"/></StackPanel>
+                  </StackPanel>
+                </ScrollViewer>
+                <Border Grid.Row="2" Classes="scroll-paper" Padding="18,12" IsVisible="{Binding ShowPodcastPlayback}">
+                  <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="16">
+                    <Button Classes="scroll-quiet" Content="播客播放 / 暂停" Command="{Binding PodcastPlayback.TogglePlayPauseCommand}"/>
+                    <Button Grid.Column="1" Classes="scroll-quiet" Content="停止" Command="{Binding PodcastPlayback.StopCommand}"/>
+                    <Slider Grid.Column="2" Minimum="0" Maximum="1" Value="{Binding PodcastPlayback.Progress, Mode=TwoWay}" VerticalAlignment="Center" AutomationProperties.Name="播客音频进度"/>
+                    <TextBlock Grid.Column="3" Classes="lab-muted" Text="{Binding PodcastPlayback.TimeText}" VerticalAlignment="Center"/>
+                  </Grid>
+                </Border>
+              </Grid>
+
+              <Grid RowDefinitions="Auto,*" RowSpacing="16" IsVisible="{Binding SelectedTab, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static vm:AudioLabTabKind.Translation}}">
+                <Grid ColumnDefinitions="*,Auto"><TextBlock Classes="scroll-section-title" Text="翻译稿" VerticalAlignment="Center"/><Button Grid.Column="1" Classes="scroll-quiet" Content="重新生成" Command="{Binding GenerateTranslationCommand}"/></Grid>
+                <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled">
+                  <StackPanel Spacing="18" Margin="0,0,16,28">
+                    <views:SongScrollAudioLabViewMarkdown Markdown="{Binding TranslationMarkdown}"/>
+                    <StackPanel Spacing="12" IsVisible="{Binding !TranslationMarkdown.Length}"><TextBlock Classes="lab-muted" Text="{Binding TranslationState, Converter={StaticResource StageState}}"/><TextBlock Classes="lab-muted" Text="{Binding StatusMessage}" TextWrapping="Wrap"/></StackPanel>
+                  </StackPanel>
+                </ScrollViewer>
+              </Grid>
+
+              <Grid RowDefinitions="Auto,*" RowSpacing="16" IsVisible="{Binding IsCustomStageSelected}">
+                <Grid ColumnDefinitions="*,Auto"><TextBlock Classes="scroll-section-title" Text="{Binding CustomStageKey}" VerticalAlignment="Center"/><Button Grid.Column="1" Classes="scroll-quiet" Content="重新生成" Command="{Binding RegenerateCustomStageCommand}"/></Grid>
+                <Grid Grid.Row="1">
+                  <ScrollViewer IsVisible="{Binding !IsCustomStageMindMap}" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel Spacing="18" Margin="0,0,16,28">
+                      <views:SongScrollAudioLabViewMarkdown Markdown="{Binding CustomStageContent}"/>
+                      <StackPanel Spacing="12" IsVisible="{Binding !CustomStageContent.Length}"><TextBlock Classes="lab-muted" Text="此阶段暂无内容。"/><TextBlock Classes="lab-muted" Text="{Binding StatusMessage}" TextWrapping="Wrap"/></StackPanel>
+                    </StackPanel>
+                  </ScrollViewer>
+                  <Border Classes="scroll-paper" ClipToBounds="True" Padding="20" IsVisible="{Binding IsCustomStageMindMap}">
+                    <Panel Background="Transparent">
+                      <views:SongScrollAudioLabViewMindMap Root="{Binding CustomStageMindMapRoot}"/>
+                      <TextBlock Classes="lab-muted" Text="{Binding StatusMessage}" TextWrapping="Wrap" IsVisible="{Binding CustomStageMindMapRoot, Converter={x:Static ObjectConverters.IsNull}}"/>
+                    </Panel>
+                  </Border>
+                </Grid>
+              </Grid>
+            </Panel>
+          </Grid>
+
+          <Border Grid.Row="4" Classes="lab-rule" BorderThickness="0,1,0,0" Padding="0,16,0,0">
+            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="16">
+              <ProgressBar Width="100" Height="6" IsIndeterminate="True" IsVisible="{Binding ShowFooterProgress}" VerticalAlignment="Center"/>
+              <TextBlock Grid.Column="1" Classes="lab-muted" Text="{Binding StatusMessage}" TextWrapping="Wrap" VerticalAlignment="Center"/>
+              <Button Grid.Column="2" Classes="scroll-quiet" Content="停止生成" Command="{Binding StopGenerationCommand}" IsVisible="{Binding IsGenerating}"/>
+            </Grid>
+          </Border>
+        </Grid>
+
+        <!-- 按需打开，不占据阅读区固定宽度；沿用原页生命周期开关事件。 -->
+        <Panel x:Name="LifecycleOverlay" IsVisible="False">
+          <Border Background="#40000000" PointerPressed="LifecycleOverlayBackdrop_PointerPressed"/>
+          <Border Classes="scroll-paper" Background="{DynamicResource ScrollPaper}" HorizontalAlignment="Right"
+                  Width="650" MaxWidth="{Binding #MainContentArea.Bounds.Width}" BorderThickness="1" BorderBrush="#60958568" CornerRadius="12" Margin="12">
+            <Grid RowDefinitions="Auto,*">
+              <Button Classes="scroll-quiet" Content="收起处理面板" Click="ToggleLifecyclePanel_Click" HorizontalAlignment="Right" Margin="20,16"/>
+              <views:SongScrollAudioLabViewControlPanel Grid.Row="1" DataContext="{Binding ControlPanel}"/>
+            </Grid>
+          </Border>
+        </Panel>
+      </Panel>
+    </views:SongScrollShell.RightPage>
+  </views:SongScrollShell>
+</views:AudioLabView>
