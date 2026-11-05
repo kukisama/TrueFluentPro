@@ -10,9 +10,22 @@
 
 左页页脚靠右的「···」打开验收状态，也可用 `Ctrl+Shift+P`；`Esc` 收起。可切换两段／长对话、空洞察、原像素；「恢复默认状态」会停止生成、自动调度和模拟连接，恢复全部本页状态。
 
+## 可拖动书脊预览
+
+- 直接拖动中缝，左右纸面、阴影、上下书缘折口、标题分隔线和内容边界一起变化；封皮外轮廓、四角边饰、导航与右下砚台不随书脊横移或拉伸。
+- 右页题句下提供 25%、35%、原比例、50% 快捷位置。比例按书内纸面计算，不含左侧全局导航；允许左页占 25%–55%，原比例约 47.5%。双击书脊恢复原比例。
+- 窄左页隐藏次要副题与音频波形，正文保持字号并正常换行；右页工具栏可换行，长文限制舒适行宽。山水在左页内裁切，不横跨装订线；底部控制带不随设置展开移动。
+- 书脊可用 Tab 聚焦；左右键每次调整 1%，Shift 加方向键调整 5%，Home / End 到达最窄／最宽，Enter 复位；拖动时 Escape 撤销本次位移。鼠标移出拖柄后仍保持捕获，松手或取消时结束。
+- 拖柄正常态没有贯穿全页的红色矩形；键盘焦点只突出中间的小把手，保留可访问性提示，不将通用红色焦点轮廓套在整条书脊上。
+- 书脊不显示悬浮教学文案或原生 `title` 提示；双击复位与读屏键盘说明仍保留。
+- 上下书缘在运行时各分为五段 SVG 视口：外角、平直纸边、固定宽中央折口、平直纸边、外角。只伸缩平直段，原始 PNG 不改动。书缘靠正文的一端以 14px 渐变融合，装订线与上下折口交叠并做横／纵向蒙版，避免不透明贴图纸色形成硬接头。
+- 只有书脊位置在同一标签页的 `sessionStorage` 中保留，刷新仍可继续比较；无法使用本地存储时回退默认构图。恢复默认状态同时复位书脊，不读取或修改桌面应用配置。
+
+后续五页生图的统一约束、参考素材和业务布局见 [可变书脊设计与后续生图说明](../../Docs/可变书脊设计与后续生图说明1105.md)。比例快捷条和读数仅供原型比较，不照画到正式设计图。
+
 ## 构图
 
-- 固定原稿几何的双页书册：封皮、窄书缘、纸页、中缝、上／下边饰及原稿山水。
+- 以原稿几何为默认的可变双页书册：封皮、窄书缘、纸页、中缝、上／下边饰及原稿山水；书脊横向联动，外框保持固定。
 - 左侧品牌与竹枝、五枚有纸面厚边和浮动投影的书签、底部设置／主题。
 - 左页可选书法标题与同行副标题、音源图标和时间、两段完整双语内容；默认两段均来自麦克风，不再交替「我／对方」或红蓝人像。
 - 右页按认可的新图改为历史／AI 洞察两枚互斥 tabs、同一大阅读区。默认洞察为七节 42 条正文，加标题与段标题约 51 行；正文 26px，不压缩为微型字，剩余内容独立滚动。
@@ -37,7 +50,7 @@
 - 设置书签展开右页设置，主题切换暮纸；另外四枚只演示书签选中并在页内说明，不伪造业务页。页底「本地演示」可打开能力说明，无遮挡式连续 toast。
 - tabs 支持左右键／Home／End／Tab，预设菜单支持上下键、Home／End；Escape 关闭菜单、原生对话框、浮纸或设置。对话框关闭焦点回触发器（清空后触发器已禁用则回历史 tab）。`focus-visible`、pressed、disabled 均可见；reduced-motion 只取消动效，状态仍变化。
 
-这些状态均由本页内存 fixture 与低频 timer 驱动，刷新即恢复，不构成持久业务能力。
+业务示例状态由本页内存 fixture 与低频 timer 驱动，刷新即恢复；书脊布局位置单独在同一标签页记忆，不构成持久业务能力。
 
 ## 素材与生图
 
@@ -71,6 +84,14 @@
 
 新版尚不宣称用户视觉验收通过。
 
+### 可变书脊定向检查
+
+本次只验证与书脊联动有关的操作，没有重跑完整业务回归或应用构建。1391×1053 集成预览中，25%、35%、50% 与原比例的两页总宽约 2178 设计像素，上下折口与装订线的横向误差小于 0.01 视口像素；正文和右页工具栏无横向溢出。鼠标横移约 90px 后中缝同步移动，松手后不再跟随，双击恢复原比例；键盘焦点仅在把手上显示青黛轮廓，整条拖柄无红框。展开设置前后底部控制带 y 不变，朱印比例不变。
+
+接缝采用相同位置的截图像素 A/B：未融合时，顶部接头两处 RGB 最大通道差为 11／14，底部为 17／7；启用融合后分别为 1／2、6／2。仅说明本机取样处硬边减弱，不将纸纹或天然折痕宣称为零差异。已截图目视检查修复后的整体书册。
+
+自动点击首次因集成预览处于 `document.visibilityState=hidden` 而停在稳定帧等待；根据 Playwright 的稳定性检查机制，改为先核对命中目标，再派发浏览器鼠标／键盘操作，没有强制点击或因此改动页面逻辑。Node 语法、编辑器诊断和定向 `git diff --check` 通过。
+
 ## 与原稿仍有的差距／未覆盖
 
 - 标题使用可选文字的本机行楷，不是原稿完全相同的手写字形；品牌／小印也为文字 DOM 重做。字体轮廓、渲染 hinting 和局部字重仍有差异，其他设备可能字体回退。
@@ -89,6 +110,10 @@
 - [MDN dialog](https://developer.mozilla.org/en-US/docs/Web/HTML/Element/dialog)、[showModal](https://developer.mozilla.org/en-US/docs/Web/API/HTMLDialogElement/showModal)：原生模态对话框进入 top layer，支持 Escape；关闭后代码显式恢复触发焦点。
 - [MDN minmax](https://developer.mozilla.org/en-US/docs/Web/CSS/minmax)：使用零下限与剩余空间分配，阅读项配合 `min-height: 0` 和独立滚动。
 - [MDN setPointerCapture](https://developer.mozilla.org/en-US/docs/Web/API/Element/setPointerCapture)：拖动在标题区域捕获 pointer，移出区域仍可继续，pointerup 释放。
+- [W3C Window Splitter](https://www.w3.org/WAI/ARIA/apg/patterns/windowsplitter/)：可聚焦分隔条提供方向、控制目标与当前／最小／最大值，支持方向键及 Home／End。
+- [MDN focus-visible](https://developer.mozilla.org/en-US/docs/Web/CSS/:focus-visible)：焦点提示受输入方式和浏览器启发式影响；书脊使用局部把手轮廓，不能依赖红框在生产中自动消失。
+- [MDN mask-image](https://developer.mozilla.org/en-US/docs/Web/CSS/mask-image) 与 [mask-composite](https://developer.mozilla.org/en-US/docs/Web/CSS/mask-composite)：渐变 alpha 控制贴图边缘透明度，`intersect` 将装订线横向和纵向的柔边共同生效；不使用本地图片 URL 作蒙版。
+- [Playwright Auto-waiting](https://playwright.dev/docs/actionability)：自动点击的稳定性要求连续两个动画帧中包围盒不变，不将后台稳定帧等待误诊为页面布局故障。
 - [MDN background-size](https://developer.mozilla.org/en-US/docs/Web/CSS/background-size)：`contain` 不裁切或拉伸素材；[getBoundingClientRect](https://developer.mozilla.org/en-US/docs/Web/API/Element/getBoundingClientRect) 返回视口坐标，用于页面内固定浮纸定位。
 - [Git apply](https://git-scm.com/docs/git-apply)：补丁应匹配实际上下文；首次补丁遇旧畸形 option 后重新读回再替换，没有终端重写。
 - [PowerShell 引号规则](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_quoting_rules)：原生命令参数先经过 shell 引号解析；额外内联审计引号失败后改用只读 PowerShell，非应用语法故障。

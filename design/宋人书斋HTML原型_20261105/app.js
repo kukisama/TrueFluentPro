@@ -5,6 +5,12 @@
   const $$ = (selector) => Array.from(document.querySelectorAll(selector));
   const stage = $("#stage");
   const viewport = $("#viewport");
+  const spineHandle = $("#book-spine-handle");
+  const book = { left: 343, right: 2521, original: 1378, minimum: .25, maximum: .55 };
+  const spineStorageKey = "song-study-html-spine-v1";
+  let spineX = book.original;
+  let spineDrag = null;
+  const edgeSlices = [];
   const transcript = $("#conversation-scroll");
   const reference = [
     { source: "mic", time: "10:24:17", original: "让交流跨越语言的边界。", translated: "Let every conversation flow naturally." },
@@ -325,6 +331,122 @@
     clampFloat();
   }
 
+  function buildBookEdge(selector, file, height, fold, rightCap) {
+    const root = $(selector);
+    const ns = "http://www.w3.org/2000/svg";
+    // Clip the original artwork into five slices. Only the plain paper runs
+    // stretch; outer ornaments and the 128px fold keep their original scale.
+    const cuts = [0, 160, fold - 64, fold + 64, 2252 - rightCap, 2252];
+    const slices = cuts.slice(0, -1).map((start, index) => {
+      const slice = document.createElementNS(ns, "svg");
+      slice.setAttribute("viewBox", `${start} 0 ${cuts[index + 1] - start} ${height}`);
+      slice.setAttribute("height", String(height));
+      slice.setAttribute("preserveAspectRatio", "none");
+      slice.setAttribute("overflow", "hidden");
+      slice.dataset.slice = ["outer-left", "paper-left", "fold", "paper-right", "outer-right"][index];
+      const image = document.createElementNS(ns, "image");
+      image.setAttribute("href", `assets/${file}`);
+      image.setAttribute("width", "2252");
+      image.setAttribute("height", String(height));
+      slice.append(image);
+      root.append(slice);
+      return slice;
+    });
+    edgeSlices.push({ root, slices, rightCap });
+  }
+
+  function setSpine(position, remember = false) {
+    const width = book.right - book.left;
+    spineX = Math.max(book.left + width * book.minimum, Math.min(book.left + width * book.maximum, position));
+    const ratio = (spineX - book.left) / width;
+    stage.style.setProperty("--spine-x", `${spineX}px`);
+    stage.dataset.leftCompact = String(spineX - 430 < 760);
+    stage.dataset.rightCompact = String(2416 - spineX < 970);
+    spineHandle.setAttribute("aria-valuenow", (ratio * 100).toFixed(1));
+    spineHandle.setAttribute("aria-valuetext", `左页 ${(ratio * 100).toFixed(1)}%，右页 ${((1 - ratio) * 100).toFixed(1)}%`);
+    $("#spine-value").textContent = `左页 ${(ratio * 100).toFixed(1)}% · 右页 ${((1 - ratio) * 100).toFixed(1)}%`;
+    $$("[data-spine-ratio]").forEach((button) => {
+      const target = button.dataset.spineRatio === "default" ? book.original : book.left + width * Number(button.dataset.spineRatio);
+      button.setAttribute("aria-pressed", String(Math.abs(spineX - target) < 1));
+    });
+    const fold = spineX - 308;
+    edgeSlices.forEach(({ root, slices, rightCap }) => {
+      const stops = [0, 160, fold - 64, fold + 64, 2252 - rightCap, 2252];
+      slices.forEach((slice, index) => {
+        slice.setAttribute("x", String(stops[index]));
+        slice.setAttribute("width", String(stops[index + 1] - stops[index]));
+      });
+      root.dataset.foldX = String(spineX);
+    });
+    const middle = spineX - 430;
+    $("#heading-rule-left").setAttribute("d", `M0 10 Q${middle - 160} 6 ${middle - 26} 30`);
+    $("#heading-rule-right").setAttribute("d", `M${middle + 26} 30 Q${middle + 120} 4 2032 10`);
+    if (remember) {
+      try { sessionStorage.setItem(spineStorageKey, String(spineX)); } catch { /* Local file storage may be unavailable; dragging still works. */ }
+    }
+    clampFloat();
+  }
+
+  function finishSpineDrag(remember = true) {
+    if (!spineDrag) return;
+    const { pointerId } = spineDrag;
+    spineDrag = null;
+    stage.classList.remove("spine-dragging");
+    document.body.classList.remove("spine-dragging");
+    if (spineHandle.hasPointerCapture(pointerId)) spineHandle.releasePointerCapture(pointerId);
+    if (remember) setSpine(spineX, true);
+  }
+
+  function initializeSpine() {
+    buildBookEdge(".book-top", "book-top.png", 56, 1068, 160);
+    buildBookEdge(".book-bottom", "book-bottom.png", 62, 1072, 360);
+    let restored;
+    try { restored = Number.parseFloat(sessionStorage.getItem(spineStorageKey)); } catch { /* Use the original composition. */ }
+    setSpine(Number.isFinite(restored) ? restored : book.original);
+    $$("[data-spine-ratio]").forEach((button) => button.addEventListener("click", () => {
+      finishSpineDrag(false);
+      const ratio = button.dataset.spineRatio;
+      setSpine(ratio === "default" ? book.original : book.left + (book.right - book.left) * Number(ratio), true);
+    }));
+    spineHandle.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0 || !event.isPrimary) return;
+      const rect = stage.getBoundingClientRect();
+      spineDrag = { pointerId: event.pointerId, initial: spineX, offset: (event.clientX - rect.left) * 2560 / rect.width - spineX };
+      spineHandle.focus({ preventScroll: true });
+      spineHandle.setPointerCapture(event.pointerId);
+      stage.classList.add("spine-dragging");
+      document.body.classList.add("spine-dragging");
+      event.preventDefault();
+    });
+    spineHandle.addEventListener("pointermove", (event) => {
+      if (!spineDrag || event.pointerId !== spineDrag.pointerId) return;
+      const rect = stage.getBoundingClientRect();
+      setSpine((event.clientX - rect.left) * 2560 / rect.width - spineDrag.offset);
+    });
+    spineHandle.addEventListener("pointerup", (event) => { if (event.pointerId === spineDrag?.pointerId) finishSpineDrag(); });
+    spineHandle.addEventListener("pointercancel", (event) => { if (event.pointerId === spineDrag?.pointerId) finishSpineDrag(); });
+    spineHandle.addEventListener("lostpointercapture", () => finishSpineDrag());
+    spineHandle.addEventListener("dblclick", () => { finishSpineDrag(false); setSpine(book.original, true); });
+    spineHandle.addEventListener("keydown", (event) => {
+      const step = (book.right - book.left) * (event.shiftKey ? .05 : .01);
+      let next;
+      if (event.key === "ArrowLeft") next = spineX - step;
+      if (event.key === "ArrowRight") next = spineX + step;
+      if (event.key === "Home") next = book.left + (book.right - book.left) * book.minimum;
+      if (event.key === "End") next = book.left + (book.right - book.left) * book.maximum;
+      if (event.key === "Enter") next = book.original;
+      if (event.key === "Escape" && spineDrag) {
+        next = spineDrag.initial;
+        finishSpineDrag(false);
+      }
+      if (next === undefined) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setSpine(next, true);
+    });
+    window.addEventListener("blur", () => finishSpineDrag());
+  }
+
   function setDisplay(mode) {
     stage.dataset.display = mode;
     $$(".segment-control button").forEach((button) => {
@@ -621,6 +743,8 @@
 
   function resetPrototype() {
     stopAuto();
+    finishSpineDrag(false);
+    setSpine(book.original, true);
     drag = null;
     cancelGeneration("已恢复会议摘要示例");
     clearTimeout(connectionTimer);
@@ -846,5 +970,6 @@
   updateAutoState();
   setSession("idle");
   setDisplay("bilingual");
+  initializeSpine();
   fitCanvas();
 })();

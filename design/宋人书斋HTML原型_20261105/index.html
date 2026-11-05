@@ -63,18 +63,25 @@
       <div class="paper-page left-paper" aria-hidden="true"></div>
       <div class="paper-page right-paper" aria-hidden="true"></div>
       <div class="book-edges" aria-hidden="true">
-        <img class="book-top" src="assets/book-top.png" alt="">
-        <img class="book-bottom" src="assets/book-bottom.png" alt="">
+        <svg class="book-top" viewBox="0 0 2252 56" preserveAspectRatio="none"></svg>
+        <svg class="book-bottom" viewBox="0 0 2252 62" preserveAspectRatio="none"></svg>
         <img class="book-left" src="assets/book-left.png" alt="">
         <img class="book-right" src="assets/book-right.png" alt="">
         <img class="book-spine" src="assets/book-spine.png" alt="">
       </div>
+      <div id="book-spine-handle" class="book-spine-handle" role="separator" tabindex="0" aria-label="实时翻译对话页宽" aria-orientation="vertical" aria-controls="conversation-page" aria-valuemin="25" aria-valuemax="55" aria-valuenow="47.5" aria-describedby="book-spine-help">
+        <span class="spine-grip" aria-hidden="true"><span>‹</span><i></i><span>›</span></span>
+        <span id="book-spine-help" class="sr-only">左右方向键微调，Shift 加方向键快调，Home 和 End 到达最窄和最宽，回车恢复原比例。拖动时按 Escape 取消本次调整。</span>
+      </div>
       <img class="page-bamboo" src="assets/bamboo-page.png" alt="" aria-hidden="true">
       <div class="page-heading"><h1>实时翻译</h1><p>跨越语言的边界，连接更大的世界</p></div>
       <p class="right-motto">海内存知己，天涯若比邻。</p>
-      <svg class="heading-rule" viewBox="0 0 2020 40" preserveAspectRatio="none" aria-hidden="true"><path d="M0 9 Q900 6 950 28 Q1050 2 2020 10"/></svg>
+      <div class="spine-layout-tools" role="group" aria-label="书脊布局预览">
+        <span>书脊布局</span><button type="button" data-spine-ratio="0.25" aria-pressed="false">25%</button><button type="button" data-spine-ratio="0.35" aria-pressed="false">35%</button><button type="button" data-spine-ratio="default" aria-pressed="true">原比例</button><button type="button" data-spine-ratio="0.5" aria-pressed="false">50%</button><output id="spine-value">左页 47.5% · 右页 52.5%</output>
+      </div>
+      <svg class="heading-rule" viewBox="0 0 2032 40" preserveAspectRatio="none" aria-hidden="true"><path id="heading-rule-left"/><path id="heading-rule-right"/></svg>
 
-      <section class="conversation-panel translucent-panel" aria-label="实时翻译对话">
+      <section id="conversation-page" class="conversation-panel translucent-panel" aria-label="实时翻译对话">
         <div class="segment-control" role="tablist" aria-label="原译文显示方式">
           <button type="button" role="tab" id="display-original" aria-selected="false" aria-controls="conversation-scroll" tabindex="-1" data-display="original">原文</button>
           <button type="button" role="tab" id="display-translated" aria-selected="false" aria-controls="conversation-scroll" tabindex="-1" data-display="translated">译文</button>
