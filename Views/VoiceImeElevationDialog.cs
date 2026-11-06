@@ -1,4 +1,5 @@
 using System.Threading.Tasks;
+using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
@@ -21,7 +22,8 @@ internal static class VoiceImeElevationDialog
 
     private static async Task<bool> ShowAsync(bool install)
     {
-        var owner = (Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.MainWindow;
+        var desktop = Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime;
+        var owner = ResolveOwner(desktop);
         if (owner == null || !owner.IsVisible) return false;
         var cancel = new Button { Content = "取消", Padding = new Thickness(16, 6) };
         var confirm = new Button
@@ -67,7 +69,11 @@ internal static class VoiceImeElevationDialog
             e.Handled = true;
             dialog.Close(false);
         };
-        // Owner 同时覆盖主界面和以独立设置窗口为 MainWindow 的桌面生命周期。
         return await dialog.ShowDialog<bool>(owner);
     }
+
+    internal static Window? ResolveOwner(IClassicDesktopStyleApplicationLifetime? desktop)
+        => VoiceImeSettingsWindow.Current
+            ?? desktop?.Windows.FirstOrDefault(window => window.IsVisible && window.IsActive)
+            ?? (desktop?.MainWindow is { IsVisible: true } main ? main : null);
 }

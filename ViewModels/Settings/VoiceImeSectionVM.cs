@@ -16,6 +16,8 @@ namespace TrueFluentPro.ViewModels.Settings
         private enum EditedField { None = 0, Resource = 1, Model = 2, Microphone = 4, Language = 8, Silence = 16, Prewarm = 32 }
 
         private readonly VoiceImeRegistrationService _registration;
+        private readonly Func<bool, Task<VoiceImeRegistrationService.Result>> _manage;
+        private readonly Func<Task<VoiceImeRegistrationService.Result>> _refreshHost, _status;
         private AzureSpeechConfig? _config;
         private EditedField _edited;
         private bool _refreshing;
@@ -40,9 +42,20 @@ namespace TrueFluentPro.ViewModels.Settings
         private string _registrationStatus = "尚未查询输入法安装状态。";
         private string _operationMessage = "";
 
-        public VoiceImeSectionVM(VoiceImeRegistrationService registration)
+        public VoiceImeSectionVM(VoiceImeRegistrationService registration) : this(registration, null, null, null) { }
+
+        // 仅隔离 fixture 注入维护结果；生产按钮仍使用原有一次授权/原权限刷新链。
+        internal VoiceImeSectionVM(VoiceImeRegistrationService registration,
+            Func<bool, Task<VoiceImeRegistrationService.Result>>? manage,
+            Func<Task<VoiceImeRegistrationService.Result>>? refreshHost,
+            Func<Task<VoiceImeRegistrationService.Result>>? status)
         {
             _registration = registration;
+            _manage = manage ?? (register => VoiceImeRegistrationService.ManageFromUiAsync(register,
+                install => install ? _registration.RegisterAsync() : _registration.UnregisterAsync(),
+                Views.VoiceImeElevationDialog.ConfirmAsync, VoiceImeMaintenanceElevation.RunElevatedAsync));
+            _refreshHost = refreshHost ?? _registration.RefreshStandaloneHostAsync;
+            _status = status ?? _registration.RefreshStatusAsync;
             RefreshOptionsCommand = new RelayCommand(_ => _ = RefreshOptionsAsync());
             RefreshMicrophonesCommand = new RelayCommand(_ => _ = RefreshMicrophonesAsync(),
                 _ => IsWindows && !IsRefreshingMicrophones);
@@ -301,7 +314,7 @@ namespace TrueFluentPro.ViewModels.Settings
         {
             if (IsRegistrationBusy) return;
             IsRegistrationBusy = true;
-            try { RegistrationStatus = (await _registration.RefreshStatusAsync()).Message; }
+            try { RegistrationStatus = (await _status()).Message; }
             catch { RegistrationStatus = "安装状态查询失败，当前状态未知，请稍后刷新。"; }
             finally { IsRegistrationBusy = false; }
         }
@@ -314,16 +327,14 @@ namespace TrueFluentPro.ViewModels.Settings
                 : "正在停止本用户输入法后台、移除系统入口并清理自有文件…";
             try
             {
-                var result = await VoiceImeRegistrationService.ManageFromUiAsync(register,
-                    install => install ? _registration.RegisterAsync() : _registration.UnregisterAsync(),
-                    Views.VoiceImeElevationDialog.ConfirmAsync, VoiceImeMaintenanceElevation.RunElevatedAsync);
+                var result = await _manage(register);
                 OperationMessage = result.Message;
                 // 子模式不拉起高权限语音后台；回到原权限进程后仅在确认仍安装时部署。
                 if (register && result.Succeeded)
                 {
                     try
                     {
-                        var refresh = await _registration.RefreshStandaloneHostAsync();
+                        var refresh = await _refreshHost();
                         if (!refresh.Succeeded)
                             OperationMessage = result.Message + "\n系统登记已完成，但后台同步未完成：" + refresh.Message;
                     }
@@ -332,7 +343,7 @@ namespace TrueFluentPro.ViewModels.Settings
                         OperationMessage = result.Message + "\n系统登记已完成，但后台同步未完成：请稍后重试并刷新状态。";
                     }
                 }
-                try { RegistrationStatus = (await _registration.RefreshStatusAsync()).Message; }
+                try { RegistrationStatus = (await _status()).Message; }
                 catch { RegistrationStatus = "安装状态查询失败，当前状态未知，请稍后刷新；上方操作结果保留。"; }
             }
             catch { OperationMessage = "输入法维护未完成，主窗口和当前任务已保留；请刷新状态查看结果，不会自动重复操作。"; }

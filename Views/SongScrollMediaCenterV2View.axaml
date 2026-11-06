@@ -84,6 +84,7 @@
             <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
             <Setter Property="HorizontalAlignment" Value="Stretch"/>
         </Style>
+        <StyleInclude Source="avares://TrueFluentPro/Styles/SongScrollPopup.axaml"/>
     </views:MediaCenterV2View.Styles>
     <views:SongScrollShell x:Name="BookShell" PageKey="mediav2"
                            PageTitle="媒体中心" PageSubtitle="以影像记录灵感，用 AI 创造更多可能" DefaultLeftRatio="0.34">
@@ -98,16 +99,16 @@
                         </Grid>
                         <StackPanel Spacing="14">
                             <TextBlock Text="模型选择"/>
-                            <ComboBox Classes="scroll-input" ItemsSource="{Binding AvailableImageModels}"
+                            <ComboBox x:Name="ScrollMediaImageModels" Classes="scroll-input" ItemsSource="{Binding AvailableImageModels}"
                                       SelectedItem="{Binding SelectedImageModel, Mode=TwoWay}" IsVisible="{Binding IsImageKind}">
                                 <ComboBox.ItemTemplate>
-                                    <DataTemplate><TextBlock Text="{Binding ModelDisplayName}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding EndpointName}"/></DataTemplate>
+                                    <DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap" ToolTip.Tip="{Binding ToolTipText}"/></DataTemplate>
                                 </ComboBox.ItemTemplate>
                             </ComboBox>
-                            <ComboBox Classes="scroll-input" ItemsSource="{Binding AvailableVideoModels}"
+                            <ComboBox x:Name="ScrollMediaVideoModels" Classes="scroll-input" ItemsSource="{Binding AvailableVideoModels}"
                                       SelectedItem="{Binding SelectedVideoModel, Mode=TwoWay}" IsVisible="{Binding IsVideoKind}">
                                 <ComboBox.ItemTemplate>
-                                    <DataTemplate><TextBlock Text="{Binding ModelDisplayName}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding EndpointName}"/></DataTemplate>
+                                    <DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap" ToolTip.Tip="{Binding ToolTipText}"/></DataTemplate>
                                 </ComboBox.ItemTemplate>
                             </ComboBox>
                             <TextBlock Classes="scroll-media-muted" Text="{Binding CurrentCanvasDescription}" TextWrapping="Wrap"/>
@@ -143,14 +144,15 @@
                               RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="22">
                             <TextBlock Text="图片尺寸" VerticalAlignment="Center"/>
                             <ComboBox Grid.Column="1" Classes="scroll-input" ItemsSource="{Binding WorkspaceSession.ImageSizeOptions}" SelectedItem="{Binding WorkspaceSession.ImageSize, Mode=TwoWay}"/>
-                            <Button Grid.Column="2" Classes="scroll-quiet" Content="选尺寸" IsVisible="{Binding WorkspaceSession.IsCanvasSelectorAvailable}">
+                            <Button x:Name="ScrollMediaSizeButton" Grid.Column="2" Classes="scroll-quiet" Content="选尺寸" IsVisible="{Binding WorkspaceSession.IsCanvasSelectorAvailable}">
                                 <Button.Flyout>
-                                    <Flyout Placement="BottomEdgeAlignedRight">
-                                        <LayoutTransformControl>
-                                            <LayoutTransformControl.LayoutTransform><ScaleTransform ScaleX="1.7" ScaleY="1.7"/></LayoutTransformControl.LayoutTransform>
-                                            <controls:ImageSizeCanvasSelector SelectedSize="{Binding WorkspaceSession.ImageSize, Mode=TwoWay}" SelectedQuality="{Binding WorkspaceSession.ImageQuality, Mode=OneWay}"/>
-                                        </LayoutTransformControl>
-                                    </Flyout>
+                                    <views:SongScrollPopupFlyout Placement="BottomEdgeAlignedRight">
+                                        <Border x:Name="ScrollMediaSizePaper" Width="264">
+                                            <controls:ImageSizeCanvasSelector x:Name="ScrollMediaSizeSelector" Classes="scroll-popup-size"
+                                                SelectedSize="{Binding WorkspaceSession.ImageSize, Mode=TwoWay}"
+                                                SelectedQuality="{Binding WorkspaceSession.ImageQuality, Mode=TwoWay}"/>
+                                        </Border>
+                                    </views:SongScrollPopupFlyout>
                                 </Button.Flyout>
                             </Button>
                             <TextBlock Grid.Row="1" Text="图片质量" VerticalAlignment="Center"/>

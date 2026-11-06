@@ -18,7 +18,7 @@
                 <TextBlock Classes="field-note" TextWrapping="Wrap"
                            Text="Windows 纯语音输入法。切换到该输入法后，使用固定 F8 开始或停止听写；不需要保持主程序窗口打开。"/>
                 <TextBlock Classes="field-note" TextWrapping="Wrap"
-                           Text="配置由主程序自动保存，独立后台读取同一份配置；输入法自身没有配置页，也不会自动注册或设置为默认输入法。"/>
+                           Text="浮条“言”按钮可调整识别语言与翻译，图表按钮可查看本地用量，齿轮可打开独立设置；与主程序共用配置，不会自动注册或设为默认输入法。"/>
             </StackPanel>
             <Separator/>
 

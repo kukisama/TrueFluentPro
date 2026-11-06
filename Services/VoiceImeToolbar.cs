@@ -12,6 +12,7 @@ internal interface IVoiceImeToolbar : IAsyncDisposable
     Task Ready { get; }
     Task Completion { get; }
     void Update(bool visible, int state, bool stopped, bool error);
+    void UpdateHistory(bool enabled, bool available) { } // 兼容旧 fixture；默认不具备原文保存能力
     void Close();
 }
 
@@ -27,11 +28,13 @@ internal sealed class VoiceImeToolbar : IVoiceImeToolbar
     private CreateCallback? _callback;
     private Create? _create;
     private UpdateWindow? _update;
+    private SetHistory? _setHistory;
     private Run? _run;
     private CloseWindow? _close;
     private IntPtr _handle;
     private bool _closing;
     private (bool Visible, int State, bool Stopped, bool Error) _latest;
+    private (bool Enabled, bool Available) _history; // 数据库加载完成前不可用
 
     public VoiceImeToolbar(Action<int, int> notify)
     {
@@ -51,6 +54,16 @@ internal sealed class VoiceImeToolbar : IVoiceImeToolbar
             _latest = (visible, state, stopped, error);
             if (!_closing && _handle != IntPtr.Zero)
                 _update!(_handle, visible, state, stopped, error); // bridge 仅 Post 到自己的 dispatcher
+        }
+    }
+
+    public void UpdateHistory(bool enabled, bool available)
+    {
+        lock (_gate)
+        {
+            _history = (enabled, available);
+            if (!_closing && _handle != IntPtr.Zero)
+                _setHistory!(_handle, enabled, available); // 独立 Post，不重放录音状态/停止提示
         }
     }
 
@@ -91,6 +104,7 @@ internal sealed class VoiceImeToolbar : IVoiceImeToolbar
                 throw new IOException();
             _create = Export<Create>("VoiceImeToolbarCreate");
             _update = Export<UpdateWindow>("VoiceImeToolbarUpdate");
+            _setHistory = Export<SetHistory>("VoiceImeToolbarSetHistory");
             _run = Export<Run>("VoiceImeToolbarRun");
             _close = Export<CloseWindow>("VoiceImeToolbarClose");
             _callback = (kind, value, _) => { try { _notify(kind, value); } catch { } };
@@ -100,7 +114,11 @@ internal sealed class VoiceImeToolbar : IVoiceImeToolbar
             {
                 _handle = handle;
                 if (_closing) _close(handle);
-                else _update(handle, _latest.Visible, _latest.State, _latest.Stopped, _latest.Error);
+                else
+                {
+                    _setHistory(handle, _history.Enabled, _history.Available);
+                    _update(handle, _latest.Visible, _latest.State, _latest.Stopped, _latest.Error);
+                }
             }
             _ready.TrySetResult();
             _run(handle); // bridge Run 负责销毁窗口、撤销 TSF sink 和回收 handle
@@ -130,6 +148,9 @@ internal sealed class VoiceImeToolbar : IVoiceImeToolbar
     [UnmanagedFunctionPointer(CallingConvention.Winapi)]
     private delegate void UpdateWindow(IntPtr handle, [MarshalAs(UnmanagedType.Bool)] bool visible,
         int state, [MarshalAs(UnmanagedType.Bool)] bool stopped, [MarshalAs(UnmanagedType.Bool)] bool error);
+    [UnmanagedFunctionPointer(CallingConvention.Winapi)]
+    private delegate void SetHistory(IntPtr handle, [MarshalAs(UnmanagedType.Bool)] bool enabled,
+        [MarshalAs(UnmanagedType.Bool)] bool available);
     [UnmanagedFunctionPointer(CallingConvention.Winapi)]
     private delegate int Run(IntPtr handle);
     [UnmanagedFunctionPointer(CallingConvention.Winapi)]

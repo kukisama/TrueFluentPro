@@ -36,7 +36,7 @@ public sealed class EndpointPlatformDefaultPolicyService : IEndpointPlatformDefa
 
     private static EndpointPlatformDefaultCatalog LoadCatalog()
     {
-        using var stream = AssetLoader.Open(new Uri(PolicyAsset));
+        using var stream = EndpointProfileCatalogService.OpenBundledAsset(new Uri(PolicyAsset));
         var catalog = JsonSerializer.Deserialize<EndpointPlatformDefaultCatalog>(stream, JsonOptions)
                       ?? throw new InvalidOperationException($"无法从资源 {PolicyAsset} 解析 EndpointPlatformDefaultCatalog。\n");
 

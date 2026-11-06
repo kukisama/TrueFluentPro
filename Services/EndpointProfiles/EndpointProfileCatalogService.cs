@@ -11,6 +11,17 @@ namespace TrueFluentPro.Services.EndpointProfiles;
 
 public sealed class EndpointProfileCatalogService : IEndpointProfileCatalogService
 {
+    // 内置资料包既供 UI 也供无界面的输入法读取，不依赖 AvaloniaLocator 私有 API。
+    private static readonly IAssetLoader BundledAssets = CreateBundledAssets();
+
+    private static IAssetLoader CreateBundledAssets()
+    {
+        StandardAssetLoader.RegisterResUriParsers();
+        return new StandardAssetLoader(typeof(EndpointProfileCatalogService).Assembly);
+    }
+
+    internal static System.IO.Stream OpenBundledAsset(Uri uri) => BundledAssets.Open(uri);
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -74,7 +85,7 @@ public sealed class EndpointProfileCatalogService : IEndpointProfileCatalogServi
     private static IReadOnlyList<EndpointProfileDefinition> LoadProfiles()
     {
         // 自动发现：枚举 Profiles 目录下的全部 *.json（含内置与第三方贡献的厂商包）。
-        var profileUris = AssetLoader
+        var profileUris = BundledAssets
             .GetAssets(new Uri(ProfilesFolder), null)
             .Where(uri => uri.AbsolutePath.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
             .OrderBy(uri => uri.AbsolutePath, StringComparer.OrdinalIgnoreCase)
@@ -114,7 +125,7 @@ public sealed class EndpointProfileCatalogService : IEndpointProfileCatalogServi
 
     private static T LoadFromAsset<T>(string assetUri)
     {
-        using var stream = AssetLoader.Open(new Uri(assetUri));
+        using var stream = OpenBundledAsset(new Uri(assetUri));
         return JsonSerializer.Deserialize<T>(stream, JsonOptions)
                ?? throw new InvalidOperationException($"无法从资源 {assetUri} 解析 {typeof(T).Name}。\n");
     }

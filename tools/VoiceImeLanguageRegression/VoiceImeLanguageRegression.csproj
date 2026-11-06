@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <NoWarn>$(NoWarn);CS0436</NoWarn>
+  </PropertyGroup>
+  <!-- 无 ProjectReference，不构建/热同步主程序；只使用已存在的托管依赖。 -->
+  <ItemGroup>
+    <Reference Include="../../bin/Debug/net10.0/TrueFluentPro.dll;../../bin/Debug/net10.0/Avalonia*.dll;../../bin/Debug/net10.0/CommunityToolkit.Mvvm.dll" />
+    <Compile Include="../../Models/VoiceImeConfig.cs" Link="Production/VoiceImeConfig.cs" />
+    <Compile Include="../../Services/VoiceImeTranslationSession.cs" Link="Production/VoiceImeTranslationSession.cs" />
+    <Compile Include="../../ViewModels/Settings/VoiceImeLanguageViewModel.cs" Link="Production/VoiceImeLanguageViewModel.cs" />
+    <Compile Include="../../Views/VoiceImeLanguageWindow.cs" Link="Production/VoiceImeLanguageWindow.cs" />
+  </ItemGroup>
+</Project>

@@ -6,5 +6,6 @@ EXPORTS
     DllUnregisterServer=_DllUnregisterServer@0 PRIVATE
     VoiceImeToolbarCreate=_VoiceImeToolbarCreate@8
     VoiceImeToolbarUpdate=_VoiceImeToolbarUpdate@20
+    VoiceImeToolbarSetHistory=_VoiceImeToolbarSetHistory@12
     VoiceImeToolbarRun=_VoiceImeToolbarRun@4
     VoiceImeToolbarClose=_VoiceImeToolbarClose@4

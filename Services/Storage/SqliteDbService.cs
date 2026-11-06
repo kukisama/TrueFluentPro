@@ -6,21 +6,28 @@ namespace TrueFluentPro.Services.Storage
 {
     public sealed class SqliteDbService : ISqliteDbService
     {
-        private const int CurrentSchemaVersion = 7;
+        private const int CurrentSchemaVersion = 8;
         private readonly string _connectionString;
+        private readonly bool _diagnostics;
         private readonly object _initLock = new();
         private bool _initialized;
 
         public string DatabasePath { get; }
         public int SchemaVersion { get; private set; }
 
-        public SqliteDbService()
+        public SqliteDbService() : this(Path.Combine(PathManager.Instance.AppDataPath, "truefluentpro.db"), 30, true) { }
+
+        // 显式路径供隔离 fixture 使用；IME 单独选短超时，不改变主 UI 的默认30秒。
+        public SqliteDbService(string databasePath, int commandTimeoutSeconds = 2, bool diagnostics = false)
         {
-            DatabasePath = Path.Combine(PathManager.Instance.AppDataPath, "truefluentpro.db");
+            if (commandTimeoutSeconds < 1) throw new ArgumentOutOfRangeException(nameof(commandTimeoutSeconds));
+            DatabasePath = Path.GetFullPath(databasePath);
+            _diagnostics = diagnostics;
             _connectionString = new SqliteConnectionStringBuilder
             {
                 DataSource = DatabasePath,
-                Mode = SqliteOpenMode.ReadWriteCreate
+                Mode = SqliteOpenMode.ReadWriteCreate,
+                DefaultTimeout = commandTimeoutSeconds
             }.ConnectionString;
         }
 
@@ -52,24 +59,35 @@ namespace TrueFluentPro.Services.Storage
             var dir = Path.GetDirectoryName(DatabasePath);
             if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
 
-            SqliteDebugLogger.LogLifecycle($"初始化数据库: {DatabasePath}");
+            if (_diagnostics) SqliteDebugLogger.LogLifecycle($"初始化数据库: {DatabasePath}");
 
             using var conn = new SqliteConnection(_connectionString);
             conn.Open();
 
             ExecutePragmas(conn);
-            CreateAllTables(conn);
-            CreateAllIndexes(conn);
-            EnsureSchemaVersion(conn);
+            // 跨进程也串行化“读版本→迁移→写版本”。显式 SQL 事务让既有迁移命令同属一个事务。
+            Exec(conn, "BEGIN IMMEDIATE;");
+            try
+            {
+                CreateAllTables(conn);
+                CreateAllIndexes(conn);
+                EnsureSchemaVersion(conn);
+                Exec(conn, "COMMIT;");
+            }
+            catch
+            {
+                try { Exec(conn, "ROLLBACK;"); } catch { }
+                throw;
+            }
 
-            SqliteDebugLogger.LogLifecycle($"数据库初始化完成, schema v{SchemaVersion}");
+            if (_diagnostics) SqliteDebugLogger.LogLifecycle($"数据库初始化完成, schema v{SchemaVersion}");
         }
 
-        private static void ExecutePragmas(SqliteConnection conn)
+        private void ExecutePragmas(SqliteConnection conn)
         {
             Exec(conn, "PRAGMA journal_mode=WAL;");
             Exec(conn, "PRAGMA foreign_keys=ON;");
-            SqliteDebugLogger.LogLifecycle("已启用 WAL 模式和外键约束");
+            if (_diagnostics) SqliteDebugLogger.LogLifecycle("已启用 WAL 模式和外键约束");
         }
 
         private static void CreateAllTables(SqliteConnection conn)
@@ -85,6 +103,38 @@ CREATE TABLE IF NOT EXISTS _meta (
     key    TEXT PRIMARY KEY,
     value  TEXT NOT NULL
 );");
+
+            // 只统计系统 IME 识别定稿产出；不混入聊天/实时翻译，也不存音频或目标应用信息。
+            Exec(conn, @"
+CREATE TABLE IF NOT EXISTS voice_ime_sessions (
+    session_id TEXT PRIMARY KEY,
+    owner_scope TEXT NOT NULL,
+    created_utc TEXT NOT NULL,
+    created_local_date TEXT NOT NULL,
+    created_offset_minutes INTEGER NOT NULL,
+    recording_started_utc TEXT,
+    checkpoint_utc TEXT NOT NULL,
+    checkpoint_local_date TEXT NOT NULL,
+    checkpoint_offset_minutes INTEGER NOT NULL,
+    ended_utc TEXT,
+    recording_ms INTEGER NOT NULL DEFAULT 0 CHECK(recording_ms >= 0),
+    state TEXT NOT NULL,
+    stop_reason TEXT,
+    revision INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS voice_ime_utterances (
+    session_id TEXT NOT NULL,
+    sequence_no INTEGER NOT NULL,
+    finalized_utc TEXT NOT NULL,
+    local_date TEXT NOT NULL,
+    utc_offset_minutes INTEGER NOT NULL,
+    character_count INTEGER NOT NULL CHECK(character_count >= 0),
+    original_text TEXT,
+    PRIMARY KEY(session_id, sequence_no),
+    FOREIGN KEY(session_id) REFERENCES voice_ime_sessions(session_id)
+);
+CREATE INDEX IF NOT EXISTS idx_voice_ime_utterances_date ON voice_ime_utterances(local_date);
+CREATE INDEX IF NOT EXISTS idx_voice_ime_sessions_scope_state ON voice_ime_sessions(owner_scope, state);");
 
             Exec(conn, @"
 CREATE TABLE IF NOT EXISTS sessions (
@@ -448,7 +498,7 @@ CREATE TABLE IF NOT EXISTS task_staging (
                 insert.Parameters.AddWithValue("@t", DateTime.Now.ToString("o"));
                 insert.ExecuteNonQuery();
                 SchemaVersion = CurrentSchemaVersion;
-                SqliteDebugLogger.LogLifecycle($"写入初始 schema version: {CurrentSchemaVersion}");
+                if (_diagnostics) SqliteDebugLogger.LogLifecycle($"写入初始 schema version: {CurrentSchemaVersion}");
             }
             else
             {
@@ -462,7 +512,7 @@ CREATE TABLE IF NOT EXISTS task_staging (
 
         private void RunMigrations(SqliteConnection conn, int fromVersion)
         {
-            SqliteDebugLogger.LogLifecycle($"执行迁移: v{fromVersion} → v{CurrentSchemaVersion}");
+            if (_diagnostics) SqliteDebugLogger.LogLifecycle($"执行迁移: v{fromVersion} → v{CurrentSchemaVersion}");
 
             if (fromVersion < 2) MigrateToV2(conn);
             if (fromVersion < 3) MigrateToV3(conn);

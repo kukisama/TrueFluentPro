@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <ProductionDir>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\bin\Debug\net10.0\'))</ProductionDir>
+    <NuGetAudit>false</NuGetAudit>
+  </PropertyGroup>
+  <!-- Binary references only: no ProjectReference, source links, or main-build targets. -->
+  <ItemGroup>
+    <Reference Include="$(ProductionDir)Avalonia*.dll;$(ProductionDir)Projektanker*.dll;$(ProductionDir)Microsoft.Data.Sqlite.dll;$(ProductionDir)SQLitePCLRaw*.dll;$(ProductionDir)TrueFluentPro.dll">
+      <Private>true</Private>
+    </Reference>
+    <Content Include="$(ProductionDir)*.dll">
+      <Link>%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="$(ProductionDir)runtimes\win-x64\native\*.dll">
+      <Link>%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+</Project>

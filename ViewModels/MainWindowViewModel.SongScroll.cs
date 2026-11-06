@@ -8,6 +8,8 @@ public partial class MainWindowViewModel
 {
     private bool _songScrollConnecting, _songScrollStopping, _songScrollCancel;
     private bool _songScrollFrameGuard, _songScrollIgnoreFrames;
+    // 正文会话独立于浮动字幕的重连/配置刷新；不能因浮窗重置丢掉当前服务的正常识别。
+    private long _songScrollFrameEpoch;
     private ICommand? _songScrollToggle;
     public bool IsSongScrollConnecting => _songScrollConnecting;
     public string SongScrollToggleText => _songScrollStopping ? "正在停止" : _songScrollConnecting
@@ -49,6 +51,7 @@ public partial class MainWindowViewModel
         { StatusMessage = error; return; }
         var service = _translationService;
         _songScrollConnecting = true; _songScrollCancel = false;
+        System.Threading.Interlocked.Increment(ref _songScrollFrameEpoch);
         _songScrollFrameGuard = true; _songScrollIgnoreFrames = false;
         ConfigVM.IsConfigurationEnabled = false; StatusMessage = "正在连接语音服务…"; NotifySongScrollState();
         try

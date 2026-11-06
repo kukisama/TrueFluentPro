@@ -4,8 +4,11 @@
 
 namespace {
 using ToolbarCallback = void (WINAPI*)(int, int, void*);
+// Callback (kind, value, context): 1 toggle, 2 selection (0/1), 3 settings,
+// 4 history consent (0/1), 5 open usage, 6 open language/translation. Navigation values are 0.
 constexpr UINT BridgeUpdate = WM_APP + 0x591;
 constexpr UINT BridgeClose = WM_APP + 0x592;
+constexpr UINT BridgeHistory = WM_APP + 0x593;
 class ToolbarBridge;
 std::mutex bridgesMutex;
 std::vector<ToolbarBridge*> bridges;
@@ -30,6 +33,8 @@ class ToolbarBridge final : public ITfInputProcessorProfileActivationSink {
     std::mutex updateMutex;
     struct { bool visible = false; int state = 0; bool stopped = false, error = false; } update;
     bool updatePosted = false;
+    struct { bool enabled = false, available = false; } history;
+    bool historyPosted = false;
     void Notify(int event, int value) noexcept {
         if (closing || !callback) return;
         AddRef();
@@ -43,6 +48,12 @@ class ToolbarBridge final : public ITfInputProcessorProfileActivationSink {
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
         }
         if (self && msg == BridgeClose) { self->closing = true; return 0; }
+        if (self && msg == BridgeHistory) {
+            decltype(self->history) next;
+            { std::lock_guard<std::mutex> guard(self->updateMutex); next = self->history; self->historyPosted = false; }
+            if (!self->closing) self->toolbar.SetHistory(next.enabled, next.available);
+            return 0;
+        }
         if (self && msg == WM_TIMER && w == 1) {
             bool visible = false;
             { std::lock_guard<std::mutex> guard(self->updateMutex); visible = self->update.visible; }
@@ -131,7 +142,10 @@ public:
         if (!dispatcher || !SetTimer(dispatcher, 1, 500, nullptr) || !toolbar.Create(ModuleInstance,
             [](void* ctx) { auto* self = static_cast<ToolbarBridge*>(ctx); self->Notify(1, 0); },
             this,
-            [](void* ctx) { auto* self = static_cast<ToolbarBridge*>(ctx); self->Notify(3, 0); })) return false;
+            [](void* ctx) { auto* self = static_cast<ToolbarBridge*>(ctx); self->Notify(3, 0); },
+            [](void* ctx, bool enabled) { auto* self = static_cast<ToolbarBridge*>(ctx); self->Notify(4, enabled ? 1 : 0); },
+            [](void* ctx) { auto* self = static_cast<ToolbarBridge*>(ctx); self->Notify(5, 0); },
+            [](void* ctx) { auto* self = static_cast<ToolbarBridge*>(ctx); self->Notify(6, 0); })) return false;
         HRESULT hr = CoCreateInstance(CLSID_TF_ThreadMgr, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&manager));
         // These flags forbid selecting a TIP/layout/default in the dedicated owner thread.
         if (SUCCEEDED(hr)) hr = manager->ActivateEx(&client, TF_TMAE_NOACTIVATETIP | TF_TMAE_NOACTIVATEKEYBOARDLAYOUT);
@@ -166,6 +180,11 @@ public:
     void Close() {
         std::lock_guard<std::mutex> guard(updateMutex);
         if (dispatcher) PostMessageW(dispatcher, BridgeClose, 0, 0);
+    }
+    void SetHistory(BOOL enabled, BOOL available) {
+        std::lock_guard<std::mutex> guard(updateMutex);
+        history = {enabled != FALSE, available != FALSE};
+        if (dispatcher && !historyPosted) historyPosted = PostMessageW(dispatcher, BridgeHistory, 0, 0) != FALSE;
     }
     int Run() {
         if (GetCurrentThreadId() != thread || running) return -1;
@@ -220,6 +239,11 @@ extern "C" int WINAPI VoiceImeToolbarRun(void* handle) noexcept {
     HMODULE module = bridge->Module(); bridge->Release();
     // The owner's LoadLibrary reference remains until this ABI call has returned.
     FreeLibrary(module); return result;
+}
+extern "C" void WINAPI VoiceImeToolbarSetHistory(void* handle, BOOL enabled, BOOL available) noexcept {
+    auto* bridge = Acquire(handle); if (!bridge) return;
+    try { bridge->SetHistory(enabled, available); } catch (...) { }
+    bridge->Release();
 }
 extern "C" void WINAPI VoiceImeToolbarClose(void* handle) noexcept {
     auto* bridge = Acquire(handle); if (!bridge) return;

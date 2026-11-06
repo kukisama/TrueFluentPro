@@ -18,6 +18,8 @@ public partial class SongScrollSettingsView : SettingsView, ISongScrollPage
     {
         AvaloniaXamlLoader.Load(this);
         Shell = this.FindControl<SongScrollShell>("BookShell")!;
+        SongScrollSettingsTypography.InstallPalette(
+            this.FindControl<ContentControl>("ScrollSelectedSectionHost")!.Resources);
         InitializeSections(
             this.FindControl<ListBox>("ScrollSectionNavigation")!,
             this.FindControl<ScrollViewer>("ScrollSettingsScroller")!,

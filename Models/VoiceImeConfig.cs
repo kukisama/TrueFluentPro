@@ -16,6 +16,11 @@ namespace TrueFluentPro.Models
         public string MicrophoneDeviceId { get; set; } = "";
 
         public string RecognitionLanguage { get; set; } = "auto";
+
+        /// <summary>仅影响独立输入法；默认保持原文听写，不改变聊天听写或主界面翻译。</summary>
+        public bool EnableTranslation { get; set; } = false;
+
+        public string TargetLanguage { get; set; } = "en-US";
         public double EndSilenceTimeoutSeconds { get; set; } = 0.8;
     }
 }

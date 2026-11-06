@@ -32,6 +32,8 @@ internal static class Program
             await Group("host deployment file fixture only (no processes/registration/native helpers)", HostDeploymentRegression.VerifyAsync);
         else if (args.SequenceEqual(new[] { "--shared" }))
             await Group("shared owner fixture only (duplex pipes, fake voice/auth/UI)", SharedSessionRegression.VerifyAsync);
+        else if (args.SequenceEqual(new[] { "--usage" }))
+            await Group("IME usage only (repository-isolated SQLite, fake voice/auth/UI/clock)", UsageRegression.VerifyAsync);
         else if (args.SequenceEqual(new[] { "--lifecycle" }))
             await Group("lifecycle fixture only (no native helper/system registration)", LifecycleRegression.VerifyAsync);
         else

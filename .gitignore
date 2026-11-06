@@ -13,6 +13,10 @@ rustbackend/data/
 !/Rust/rustnew-backend/
 
 Docs/
+# 仅放行可共享的主题复盘规范，其余 Docs 内容继续忽略。
+!/Docs/
+/Docs/*
+!/Docs/主题开发事故复盘与防回归规范1105.md
 .github/copilot-instructions.md
 
 # NuGet packages

@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <NoWarn>$(NoWarn);CS0436</NoWarn>
+  </PropertyGroup>
+  <!-- 不引用主项目、不触发主构建/热同步。链接待测源码，仅复用已有的其它托管类型。 -->
+  <ItemGroup>
+    <Reference Include="../../bin/Debug/net10.0/TrueFluentPro.dll;../../bin/Debug/net10.0/Avalonia*.dll;../../bin/Debug/net10.0/CommunityToolkit.Mvvm.dll" />
+    <Compile Include="../../Services/ConfigurationService.cs" Link="Production/ConfigurationService.cs" />
+    <Compile Include="../../Services/FoundrySpeechEndpointResolver.cs" Link="Production/FoundrySpeechEndpointResolver.cs" />
+    <Compile Include="../../Models/AzureSpeechConfig.cs" Link="Production/AzureSpeechConfig.cs" />
+    <Compile Include="../../Models/VoiceImeConfig.cs" Link="Production/VoiceImeConfig.cs" />
+    <Compile Include="../../Models/SpeechResource.cs" Link="Production/SpeechResource.cs" />
+    <Compile Include="../../Models/AiEndpoint.cs" Link="Production/AiEndpoint.cs" />
+    <Compile Include="../../ViewModels/Settings/VoiceImeLanguageViewModel.cs" Link="Production/VoiceImeLanguageViewModel.cs" />
+    <Compile Include="../../Views/VoiceImeLanguageWindow.cs" Link="Production/VoiceImeLanguageWindow.cs" />
+  </ItemGroup>
+</Project>

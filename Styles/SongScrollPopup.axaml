@@ -1,0 +1,287 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="using:TrueFluentPro.Controls">
+  <!-- Loaded only by the two long-scroll media pages and their own flyout presenters.
+       All resources are local; none require a Shell ancestor or the app's accent. -->
+  <Styles.Resources>
+    <FontFamily x:Key="ScrollPopupKai">STKaiti, KaiTi, 华文楷体, 楷体, SimSun</FontFamily>
+    <SolidColorBrush x:Key="ScrollPopupPaper" Color="#FFF9ED"/>
+    <SolidColorBrush x:Key="ScrollPopupInk" Color="#27332F"/>
+    <SolidColorBrush x:Key="ScrollPopupMuted" Color="#6B7165"/>
+    <SolidColorBrush x:Key="ScrollPopupAccent" Color="#4D7979"/>
+    <SolidColorBrush x:Key="ScrollPopupLine" Color="#CBBDA4"/>
+    <SolidColorBrush x:Key="ScrollPopupHover" Color="#E8E9DB"/>
+    <SolidColorBrush x:Key="ScrollPopupSelected" Color="#DCE7DE"/>
+    <SolidColorBrush x:Key="ScrollPopupPressed" Color="#CBDDD3"/>
+
+    <!-- Preserve Fluent MenuItem interaction/submenus, replacing its actual template
+         resource keys (11.3.11), not only the outer control's Background. -->
+    <SolidColorBrush x:Key="MenuFlyoutItemBackground" Color="Transparent"/>
+    <SolidColorBrush x:Key="MenuFlyoutItemBackgroundPointerOver" Color="#E8E9DB"/>
+    <SolidColorBrush x:Key="MenuFlyoutItemBackgroundPressed" Color="#CBDDD3"/>
+    <SolidColorBrush x:Key="MenuFlyoutItemBackgroundDisabled" Color="Transparent"/>
+    <SolidColorBrush x:Key="MenuFlyoutItemForeground" Color="#27332F"/>
+    <SolidColorBrush x:Key="MenuFlyoutItemForegroundPointerOver" Color="#345D59"/>
+    <SolidColorBrush x:Key="MenuFlyoutItemForegroundPressed" Color="#27332F"/>
+    <SolidColorBrush x:Key="MenuFlyoutItemForegroundDisabled" Color="#8A8D80"/>
+    <SolidColorBrush x:Key="MenuFlyoutItemKeyboardAcceleratorTextForeground" Color="#6B7165"/>
+    <SolidColorBrush x:Key="MenuFlyoutItemKeyboardAcceleratorTextForegroundPointerOver" Color="#345D59"/>
+    <SolidColorBrush x:Key="MenuFlyoutItemKeyboardAcceleratorTextForegroundPressed" Color="#27332F"/>
+    <SolidColorBrush x:Key="MenuFlyoutItemKeyboardAcceleratorTextForegroundDisabled" Color="#8A8D80"/>
+    <SolidColorBrush x:Key="MenuFlyoutPresenterBackground" Color="#FFF9ED"/>
+    <SolidColorBrush x:Key="MenuFlyoutPresenterBorderBrush" Color="#CBBDA4"/>
+    <SolidColorBrush x:Key="MenuFlyoutSubItemChevron" Color="#4D7979"/>
+    <SolidColorBrush x:Key="MenuFlyoutSubItemChevronPointerOver" Color="#345D59"/>
+    <SolidColorBrush x:Key="MenuFlyoutSubItemChevronPressed" Color="#27332F"/>
+    <SolidColorBrush x:Key="MenuFlyoutSubItemChevronDisabled" Color="#8A8D80"/>
+    <SolidColorBrush x:Key="MenuFlyoutSubItemChevronSubMenuOpened" Color="#345D59"/>
+    <Thickness x:Key="FlyoutBorderThemePadding">8</Thickness>
+    <Thickness x:Key="MenuFlyoutScrollerMargin">0</Thickness>
+
+    <!-- More-options controls keep their native input/keyboard behavior. -->
+    <SolidColorBrush x:Key="CheckBoxForegroundUnchecked" Color="#27332F"/>
+    <SolidColorBrush x:Key="CheckBoxForegroundUncheckedPointerOver" Color="#345D59"/>
+    <SolidColorBrush x:Key="CheckBoxForegroundUncheckedPressed" Color="#27332F"/>
+    <SolidColorBrush x:Key="CheckBoxForegroundChecked" Color="#27332F"/>
+    <SolidColorBrush x:Key="CheckBoxForegroundCheckedPointerOver" Color="#345D59"/>
+    <SolidColorBrush x:Key="CheckBoxForegroundCheckedPressed" Color="#27332F"/>
+    <SolidColorBrush x:Key="CheckBoxCheckBackgroundFillUnchecked" Color="#FFF9ED"/>
+    <SolidColorBrush x:Key="CheckBoxCheckBackgroundFillUncheckedPointerOver" Color="#E8E9DB"/>
+    <SolidColorBrush x:Key="CheckBoxCheckBackgroundFillUncheckedPressed" Color="#CBDDD3"/>
+    <SolidColorBrush x:Key="CheckBoxCheckBackgroundStrokeUnchecked" Color="#8A9688"/>
+    <SolidColorBrush x:Key="CheckBoxCheckBackgroundStrokeUncheckedPointerOver" Color="#4D7979"/>
+    <SolidColorBrush x:Key="CheckBoxCheckBackgroundStrokeUncheckedPressed" Color="#345D59"/>
+    <SolidColorBrush x:Key="CheckBoxCheckBackgroundFillChecked" Color="#4D7979"/>
+    <SolidColorBrush x:Key="CheckBoxCheckBackgroundFillCheckedPointerOver" Color="#426B68"/>
+    <SolidColorBrush x:Key="CheckBoxCheckBackgroundFillCheckedPressed" Color="#345D59"/>
+    <SolidColorBrush x:Key="CheckBoxCheckBackgroundStrokeCheckedPointerOver" Color="#426B68"/>
+    <SolidColorBrush x:Key="CheckBoxCheckBackgroundStrokeCheckedPressed" Color="#345D59"/>
+    <SolidColorBrush x:Key="CheckBoxCheckGlyphForegroundChecked" Color="#FFF9ED"/>
+    <SolidColorBrush x:Key="CheckBoxCheckGlyphForegroundCheckedPointerOver" Color="#FFF9ED"/>
+    <SolidColorBrush x:Key="CheckBoxCheckGlyphForegroundCheckedPressed" Color="#FFF9ED"/>
+    <SolidColorBrush x:Key="SliderTrackFill" Color="#D9D0C2"/>
+    <SolidColorBrush x:Key="SliderTrackFillPointerOver" Color="#CBBDA4"/>
+    <SolidColorBrush x:Key="SliderTrackFillPressed" Color="#BBAF97"/>
+    <SolidColorBrush x:Key="SliderTrackFillDisabled" Color="#E4DED1"/>
+    <SolidColorBrush x:Key="SliderTrackValueFill" Color="#4D7979"/>
+    <SolidColorBrush x:Key="SliderTrackValueFillPointerOver" Color="#426B68"/>
+    <SolidColorBrush x:Key="SliderTrackValueFillPressed" Color="#345D59"/>
+    <SolidColorBrush x:Key="SliderTrackValueFillDisabled" Color="#A9B7AB"/>
+    <SolidColorBrush x:Key="SliderThumbBackground" Color="#4D7979"/>
+    <SolidColorBrush x:Key="SliderThumbBackgroundPointerOver" Color="#426B68"/>
+    <SolidColorBrush x:Key="SliderThumbBackgroundPressed" Color="#345D59"/>
+    <SolidColorBrush x:Key="SliderThumbBackgroundDisabled" Color="#A9B7AB"/>
+    <SolidColorBrush x:Key="SliderTickBarFill" Color="#6B7165"/>
+    <SolidColorBrush x:Key="SliderTickBarFillDisabled" Color="#A9B7AB"/>
+
+    <ControlTheme x:Key="ScrollPopupPresenterTheme" TargetType="FlyoutPresenter">
+      <Setter Property="FontFamily" Value="{StaticResource ScrollPopupKai}"/>
+      <Setter Property="FontSize" Value="16"/>
+      <Setter Property="Foreground" Value="{StaticResource ScrollPopupInk}"/>
+      <Setter Property="Background" Value="{StaticResource ScrollPopupPaper}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource ScrollPopupLine}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="12"/>
+      <Setter Property="Padding" Value="12"/>
+      <Setter Property="MaxWidth" Value="520"/>
+      <Setter Property="MaxHeight" Value="560"/>
+      <Setter Property="Template">
+        <ControlTemplate>
+          <Border Name="ScrollPopupPaper" Background="{TemplateBinding Background}"
+                  BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
+                  CornerRadius="{TemplateBinding CornerRadius}">
+            <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+              <ContentPresenter Name="PART_ContentPresenter" Margin="{TemplateBinding Padding}"
+                                Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}"
+                                HorizontalContentAlignment="Stretch"/>
+            </ScrollViewer>
+          </Border>
+        </ControlTemplate>
+      </Setter>
+    </ControlTheme>
+    <ControlTheme x:Key="ScrollPopupMenuTheme" TargetType="MenuFlyoutPresenter"
+                  BasedOn="{StaticResource {x:Type MenuFlyoutPresenter}}">
+      <Setter Property="FontFamily" Value="{StaticResource ScrollPopupKai}"/>
+      <Setter Property="FontSize" Value="16"/>
+      <Setter Property="Foreground" Value="{StaticResource ScrollPopupInk}"/>
+      <Setter Property="Background" Value="{StaticResource ScrollPopupPaper}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource ScrollPopupLine}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="12"/>
+      <Setter Property="MaxWidth" Value="520"/>
+      <Setter Property="MaxHeight" Value="560"/>
+    </ControlTheme>
+    <ControlTheme x:Key="ScrollPopupListItemTheme" TargetType="ListBoxItem">
+      <Setter Property="MinHeight" Value="36"/>
+      <Setter Property="Padding" Value="12,9"/>
+      <Setter Property="Margin" Value="0,2"/>
+      <Setter Property="CornerRadius" Value="7"/>
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="Foreground" Value="{StaticResource ScrollPopupInk}"/>
+      <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+      <Setter Property="FocusAdorner" Value="{x:Null}"/>
+      <Setter Property="Template">
+        <ControlTemplate>
+          <Grid>
+            <ContentPresenter Name="PART_ContentPresenter" Content="{TemplateBinding Content}"
+                              ContentTemplate="{TemplateBinding ContentTemplate}" Padding="{TemplateBinding Padding}"
+                              Background="{TemplateBinding Background}" Foreground="{TemplateBinding Foreground}"
+                              CornerRadius="{TemplateBinding CornerRadius}" HorizontalContentAlignment="Stretch"/>
+            <Border Name="ScrollPopupItemFocus" BorderBrush="{StaticResource ScrollPopupAccent}"
+                    BorderThickness="2" CornerRadius="7" Opacity="0" IsHitTestVisible="False"/>
+          </Grid>
+        </ControlTemplate>
+      </Setter>
+      <Style Selector="^:pointerover"><Setter Property="Background" Value="{StaticResource ScrollPopupHover}"/></Style>
+      <Style Selector="^:selected"><Setter Property="Background" Value="{StaticResource ScrollPopupSelected}"/></Style>
+      <Style Selector="^:selected:pointerover, ^:pressed"><Setter Property="Background" Value="{StaticResource ScrollPopupPressed}"/></Style>
+      <Style Selector="^:focus-visible /template/ Border#ScrollPopupItemFocus"><Setter Property="Opacity" Value="1"/></Style>
+      <Style Selector="^:disabled"><Setter Property="Opacity" Value="0.45"/></Style>
+    </ControlTheme>
+    <ControlTheme x:Key="ScrollPopupButtonTheme" TargetType="Button">
+      <Setter Property="FontFamily" Value="{StaticResource ScrollPopupKai}"/>
+      <Setter Property="Background" Value="{StaticResource ScrollPopupPaper}"/>
+      <Setter Property="Foreground" Value="{StaticResource ScrollPopupInk}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource ScrollPopupLine}"/>
+      <Setter Property="BorderThickness" Value="1.5"/>
+      <Setter Property="CornerRadius" Value="10"/>
+      <Setter Property="FocusAdorner" Value="{x:Null}"/>
+      <Setter Property="Template">
+        <ControlTemplate>
+          <Grid>
+            <ContentPresenter Name="PART_ContentPresenter" Content="{TemplateBinding Content}"
+                              ContentTemplate="{TemplateBinding ContentTemplate}" Padding="{TemplateBinding Padding}"
+                              Background="{TemplateBinding Background}" Foreground="{TemplateBinding Foreground}"
+                              BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
+                              CornerRadius="{TemplateBinding CornerRadius}" VerticalContentAlignment="Center"
+                              HorizontalContentAlignment="Center"/>
+                <Border Name="ScrollPopupButtonFocus" BorderBrush="{StaticResource ScrollPopupAccent}"
+                    BorderThickness="2" CornerRadius="10" Margin="-3" Opacity="0" IsHitTestVisible="False"/>
+          </Grid>
+        </ControlTemplate>
+      </Setter>
+      <Style Selector="^:pointerover"><Setter Property="Background" Value="{StaticResource ScrollPopupHover}"/></Style>
+      <Style Selector="^:pressed"><Setter Property="Background" Value="{StaticResource ScrollPopupPressed}"/></Style>
+      <Style Selector="^:focus-visible /template/ Border#ScrollPopupButtonFocus"><Setter Property="Opacity" Value="1"/></Style>
+      <Style Selector="^:disabled"><Setter Property="Opacity" Value="0.45"/></Style>
+    </ControlTheme>
+    <ControlTheme x:Key="ScrollPopupToggleTheme" TargetType="ToggleButton" BasedOn="{StaticResource ScrollPopupButtonTheme}">
+      <Style Selector="^:checked, ^:indeterminate">
+        <Setter Property="Background" Value="{StaticResource ScrollPopupSelected}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource ScrollPopupAccent}"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+      </Style>
+      <Style Selector="^:checked:pointerover, ^:indeterminate:pointerover, ^:pressed"><Setter Property="Background" Value="{StaticResource ScrollPopupPressed}"/></Style>
+    </ControlTheme>
+  </Styles.Resources>
+
+  <Style Selector="FlyoutPresenter.scroll-popup"><Setter Property="Theme" Value="{StaticResource ScrollPopupPresenterTheme}"/></Style>
+  <!-- Applies also to menus created by the original business handlers; Popup.SetPopupParent
+       connects them to this page's local styles, not to an assumed Shell visual ancestor. -->
+  <Style Selector="MenuFlyoutPresenter"><Setter Property="Theme" Value="{StaticResource ScrollPopupMenuTheme}"/></Style>
+    <!-- Class/property conditions intentionally use StyleTrigger priority, like the page's
+      Grid.scroll-*-page rules; a plain type style cannot override their 26/28px. -->
+    <Style Selector="FlyoutPresenter.scroll-popup TextBlock, MenuFlyoutPresenter[IsVisible=True] TextBlock">
+    <Setter Property="FontFamily" Value="{StaticResource ScrollPopupKai}"/>
+    <Setter Property="FontSize" Value="16"/>
+    <Setter Property="Foreground" Value="{StaticResource ScrollPopupInk}"/>
+    <Setter Property="TextWrapping" Value="Wrap"/>
+  </Style>
+  <Style Selector="FlyoutPresenter.scroll-popup TextBlock.scroll-popup-muted">
+    <Setter Property="FontSize" Value="14"/><Setter Property="Foreground" Value="{StaticResource ScrollPopupMuted}"/>
+  </Style>
+  <Style Selector="MenuFlyoutPresenter MenuItem">
+    <Setter Property="FontFamily" Value="{StaticResource ScrollPopupKai}"/>
+    <Setter Property="FontSize" Value="16"/>
+    <Setter Property="MinHeight" Value="36"/>
+    <Setter Property="Padding" Value="12,9"/>
+    <Setter Property="Margin" Value="0,2"/>
+    <Setter Property="CornerRadius" Value="7"/>
+    <Setter Property="FocusAdorner" Value="{x:Null}"/>
+    <Setter Property="BorderThickness" Value="2"/><Setter Property="BorderBrush" Value="Transparent"/>
+  </Style>
+  <Style Selector="MenuFlyoutPresenter MenuItem /template/ ContentPresenter#PART_HeaderPresenter">
+    <Setter Property="FontFamily" Value="{StaticResource ScrollPopupKai}"/>
+    <Setter Property="FontSize" Value="16"/><Setter Property="TextWrapping" Value="Wrap"/>
+    <Setter Property="MaxWidth" Value="432"/>
+  </Style>
+  <Style Selector="MenuFlyoutPresenter MenuItem:focus-visible /template/ Border#PART_LayoutRoot">
+    <Setter Property="BorderBrush" Value="{StaticResource ScrollPopupAccent}"/>
+  </Style>
+  <Style Selector="MenuFlyoutPresenter MenuItem:disabled"><Setter Property="Opacity" Value="0.45"/></Style>
+  <Style Selector="MenuFlyoutPresenter Separator"><Setter Property="Background" Value="{StaticResource ScrollPopupLine}"/></Style>
+  <Style Selector="FlyoutPresenter.scroll-popup ListBox.scroll-popup-list">
+    <Setter Property="FontFamily" Value="{StaticResource ScrollPopupKai}"/><Setter Property="FontSize" Value="16"/>
+    <Setter Property="Background" Value="{StaticResource ScrollPopupPaper}"/>
+    <Setter Property="Foreground" Value="{StaticResource ScrollPopupInk}"/>
+    <Setter Property="BorderThickness" Value="0"/><Setter Property="Padding" Value="0"/>
+    <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
+    <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto"/>
+    <Setter Property="ItemContainerTheme" Value="{StaticResource ScrollPopupListItemTheme}"/>
+  </Style>
+  <Style Selector="ToggleButton.scroll-studio-reasoning"><Setter Property="Theme" Value="{StaticResource ScrollPopupToggleTheme}"/></Style>
+  <Style Selector="FlyoutPresenter.scroll-popup CheckBox">
+    <Setter Property="FontFamily" Value="{StaticResource ScrollPopupKai}"/><Setter Property="FontSize" Value="16"/>
+    <Setter Property="MinHeight" Value="36"/><Setter Property="Padding" Value="10,0,0,0"/>
+  </Style>
+  <Style Selector="FlyoutPresenter.scroll-popup CheckBox, FlyoutPresenter.scroll-popup Slider">
+    <Setter Property="FocusAdorner" Value="{x:Null}"/>
+  </Style>
+  <Style Selector="FlyoutPresenter.scroll-popup CheckBox:focus-visible, FlyoutPresenter.scroll-popup Slider:focus-visible">
+    <Setter Property="BorderBrush" Value="{StaticResource ScrollPopupAccent}"/>
+    <Setter Property="BorderThickness" Value="1"/>
+  </Style>
+  <Style Selector="FlyoutPresenter.scroll-popup CheckBox:disabled"><Setter Property="Opacity" Value="0.45"/></Style>
+  <Style Selector="FlyoutPresenter.scroll-popup Button">
+    <Setter Property="FontFamily" Value="{StaticResource ScrollPopupKai}"/><Setter Property="FontSize" Value="16"/>
+    <Setter Property="MinHeight" Value="36"/><Setter Property="Padding" Value="12,8"/>
+    <Setter Property="Background" Value="{StaticResource ScrollPopupSelected}"/>
+    <Setter Property="Foreground" Value="{StaticResource ScrollPopupInk}"/>
+    <Setter Property="BorderBrush" Value="{StaticResource ScrollPopupAccent}"/>
+    <Setter Property="BorderThickness" Value="1"/>
+    <Setter Property="Theme" Value="{StaticResource ScrollPopupButtonTheme}"/>
+  </Style>
+
+  <!-- Only this instance gets a template. The business control's 240 DIP coordinate
+       system, template-part names, pointer capture and 16-pixel alignment stay intact. -->
+  <Style Selector="controls|ImageSizeCanvasSelector.scroll-popup-size">
+    <Setter Property="FontFamily" Value="{StaticResource ScrollPopupKai}"/>
+    <Setter Property="FontSize" Value="14"/>
+    <Setter Property="Template">
+      <ControlTemplate>
+        <StackPanel Width="264" Spacing="10">
+          <Panel Name="PART_CanvasArea" Width="240" Height="240" Background="#EEEAE1"
+                 Cursor="Cross" ClipToBounds="False" HorizontalAlignment="Center">
+            <Border Width="240" Height="240" BorderBrush="{StaticResource ScrollPopupLine}" BorderThickness="1">
+              <Grid ColumnDefinitions="60,60,60,60" RowDefinitions="60,60,60,60" Opacity="0.35">
+                <Border Grid.Column="0" Grid.RowSpan="4" BorderBrush="{StaticResource ScrollPopupLine}" BorderThickness="0,0,1,0"/>
+                <Border Grid.Column="1" Grid.RowSpan="4" BorderBrush="{StaticResource ScrollPopupLine}" BorderThickness="0,0,1,0"/>
+                <Border Grid.Column="2" Grid.RowSpan="4" BorderBrush="{StaticResource ScrollPopupLine}" BorderThickness="0,0,1,0"/>
+                <Border Grid.Row="0" Grid.ColumnSpan="4" BorderBrush="{StaticResource ScrollPopupLine}" BorderThickness="0,0,0,1"/>
+                <Border Grid.Row="1" Grid.ColumnSpan="4" BorderBrush="{StaticResource ScrollPopupLine}" BorderThickness="0,0,0,1"/>
+                <Border Grid.Row="2" Grid.ColumnSpan="4" BorderBrush="{StaticResource ScrollPopupLine}" BorderThickness="0,0,0,1"/>
+              </Grid>
+            </Border>
+            <Border Name="PART_SizeRect" HorizontalAlignment="Left" VerticalAlignment="Top"
+                    Background="#244D7979" BorderBrush="{StaticResource ScrollPopupAccent}" BorderThickness="2" CornerRadius="2"/>
+            <Border Name="PART_DragHandle" Width="14" Height="14" CornerRadius="7"
+                    Background="{StaticResource ScrollPopupAccent}" HorizontalAlignment="Left" VerticalAlignment="Top"
+                    Cursor="BottomRightCorner"/>
+          </Panel>
+          <!-- Outside PART_SizeRect: even a very narrow legal ratio cannot clip the dimensions. -->
+          <TextBlock Name="PART_DimensionLabel" FontSize="16" FontWeight="SemiBold" TextAlignment="Center"
+                     Foreground="{StaticResource ScrollPopupAccent}" TextWrapping="Wrap"/>
+          <TextBlock Name="PART_InfoText" Text="{TemplateBinding SizeInfoText}" FontSize="14"
+                     Foreground="{StaticResource ScrollPopupMuted}" TextWrapping="Wrap" LineHeight="20"/>
+        </StackPanel>
+      </ControlTemplate>
+    </Setter>
+  </Style>
+  <Style Selector="controls|ImageSizeCanvasSelector.scroll-popup-size /template/ TextBlock">
+    <Setter Property="FontFamily" Value="{StaticResource ScrollPopupKai}"/>
+    <Setter Property="FontSize" Value="14"/>
+  </Style>
+  <Style Selector="controls|ImageSizeCanvasSelector.scroll-popup-size /template/ TextBlock#PART_DimensionLabel">
+    <Setter Property="FontSize" Value="16"/><Setter Property="Foreground" Value="{StaticResource ScrollPopupAccent}"/>
+  </Style>
+</Styles>

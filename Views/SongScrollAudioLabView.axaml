@@ -112,17 +112,17 @@
           </Grid>
 
           <!-- 常驻播放器：不依赖当前阅读标签。 -->
-          <Border Grid.Row="1" Classes="scroll-paper" Padding="20,16" CornerRadius="12" BorderThickness="1" BorderBrush="#30958568">
-            <Grid RowDefinitions="Auto,Auto" RowSpacing="12">
-              <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto" ColumnSpacing="14">
-                <Button Classes="scroll-primary" Command="{Binding Playback.TogglePlayPauseCommand}" ToolTip.Tip="播放或暂停" AutomationProperties.Name="播放或暂停">
+          <Border x:Name="ScrollAudioPlayer" Grid.Row="1" Classes="scroll-paper lab-player" Padding="20,10" CornerRadius="12" BorderThickness="1" BorderBrush="#30958568">
+              <Grid x:Name="ScrollAudioPlayerRow" ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto" ColumnSpacing="14">
+                <!-- 显式最小高度避免上层 .lab-content Button 的54px条件样式撑高。 -->
+                <Button Classes="scroll-primary" Width="50" Height="48" MinHeight="48" Padding="8,4" Command="{Binding Playback.TogglePlayPauseCommand}" ToolTip.Tip="播放或暂停" AutomationProperties.Name="播放或暂停">
                   <Panel><icons:Icon Value="fa-solid fa-play" FontSize="30" IsVisible="{Binding !Playback.IsPlaying}"/><icons:Icon Value="fa-solid fa-pause" FontSize="30" IsVisible="{Binding Playback.IsPlaying}"/></Panel>
                 </Button>
-                <Button Grid.Column="1" Classes="scroll-quiet" Command="{Binding Playback.PreviousSegmentCommand}" ToolTip.Tip="上一段" AutomationProperties.Name="上一段"><icons:Icon Value="fa-solid fa-backward-step" FontSize="28"/></Button>
-                <Button Grid.Column="2" Classes="scroll-quiet" Command="{Binding Playback.NextSegmentCommand}" ToolTip.Tip="下一段" AutomationProperties.Name="下一段"><icons:Icon Value="fa-solid fa-forward-step" FontSize="28"/></Button>
+                <Button Grid.Column="1" Classes="scroll-quiet" Width="50" Height="48" MinHeight="48" Padding="8,4" Command="{Binding Playback.PreviousSegmentCommand}" ToolTip.Tip="上一段" AutomationProperties.Name="上一段"><icons:Icon Value="fa-solid fa-backward-step" FontSize="28"/></Button>
+                <Button Grid.Column="2" Classes="scroll-quiet" Width="50" Height="48" MinHeight="48" Padding="8,4" Command="{Binding Playback.NextSegmentCommand}" ToolTip.Tip="下一段" AutomationProperties.Name="下一段"><icons:Icon Value="fa-solid fa-forward-step" FontSize="28"/></Button>
                 <Slider Grid.Column="3" Minimum="0" Maximum="1" Value="{Binding Playback.Progress, Mode=TwoWay}" MinWidth="120" VerticalAlignment="Center" IsEnabled="{Binding Playback.IsStopEnabled}" AutomationProperties.Name="播放进度"/>
                 <TextBlock Grid.Column="4" Classes="lab-muted" Text="{Binding Playback.TimeText}" VerticalAlignment="Center"/>
-                <Button Grid.Column="5" Classes="scroll-quiet" Content="{Binding Playback.PlaybackSpeedText}" ToolTip.Tip="播放倍速">
+                <Button Grid.Column="5" Classes="scroll-quiet" Height="48" MinHeight="48" Padding="8,4" Content="{Binding Playback.PlaybackSpeedText}" ToolTip.Tip="播放倍速">
                   <Button.Flyout>
                     <MenuFlyout>
                       <MenuItem Header="0.5X" Command="{Binding Playback.SetPlaybackSpeedCommand}" CommandParameter="0.5" FontSize="28"/>
@@ -135,13 +135,6 @@
                   </Button.Flyout>
                 </Button>
               </Grid>
-              <WrapPanel Grid.Row="1" Orientation="Horizontal">
-                <TextBlock Classes="lab-muted" Text="时间戳跳转" VerticalAlignment="Center" Margin="0,0,16,0"/>
-                <TextBox x:Name="JumpTimeInput" Classes="scroll-input" Watermark="分:秒 / 时:分:秒" Width="290" KeyDown="JumpTime_KeyDown" IsEnabled="{Binding Playback.IsStopEnabled}"/>
-                <Button Classes="scroll-quiet" Content="跳转" Click="JumpToTime_Click" IsEnabled="{Binding Playback.IsStopEnabled}" Margin="12,0,0,0"/>
-                <Button Classes="scroll-quiet" Content="停止播放" Command="{Binding Playback.StopCommand}" Margin="12,0,0,0"/>
-              </WrapPanel>
-            </Grid>
           </Border>
 
           <Border Grid.Row="2" Classes="lab-rule">

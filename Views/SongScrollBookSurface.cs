@@ -94,7 +94,7 @@ public class SongScrollBookSurface : Control
         // 顶/底折口都是 128 设计 px，中心同源；不再整张横向拉伸或保留原中心折痕。
         DrawEdge(context, "book-top", 64, 56, 1068, 160, _topMask);
         DrawEdge(context, "book-bottom", 1352 + extra, 62, 1072, 360, _bottomMask);
-        DrawImage(context, "book-left", new Rect(308, 120, 98, Math.Max(0, 1232 + extra)));
+        DrawLeftEdge(context, new Rect(308, 120, 98, Math.Max(0, 1232 + extra)));
         DrawImage(context, "book-right", new Rect(2485, 120, 75, Math.Max(0, 1232 + extra)));
         var spineRect = new Rect(spine - 18.5, 106, 37, Math.Max(0, 1260 + extra));
         if (spineRect.Height > 0)
@@ -112,6 +112,46 @@ public class SongScrollBookSurface : Control
     {
         context.DrawRectangle(_paper, null, rect, 16, 16);
         context.DrawRectangle(_paperLight, null, rect, 16, 16, shadow);
+    }
+
+    private void DrawLeftEdge(DrawingContext context, Rect target)
+    {
+        if (target.Height <= 0) return;
+        var image = _images["book-left"];
+        // 98×1232 源像素：整段 y=[120,1040) 含五处旧纸签及阴影，完全不再采样。
+        // 只保留全宽上角 [0,120)、下角 [1040,1232)；正常高度均为 1:1。
+        // 极矮时从角纹内端裁切，不压扁、不重叠，也不产生负高度。
+        var topHeight = Math.Min(120, target.Height / 2);
+        var bottomHeight = Math.Min(192, target.Height - topHeight);
+        var middleHeight = Math.Max(0, target.Height - topHeight - bottomHeight);
+        DrawImagePixels(context, image, new Rect(0, 0, 98, topHeight),
+            new Rect(target.X, target.Y, 98, topHeight));
+        DrawImagePixels(context, image, new Rect(0, 1232 - bottomHeight, 98, bottomHeight),
+            new Rect(target.X, target.Bottom - bottomHeight, 98, bottomHeight));
+
+        // 上端干净样本：布边 (0,32,40,64)，纸边 (84,32,12,64)。
+        // 布边保留原宽，纸纹补满其余 58px；不取带纸签的中段，亦不重复金色角纹。
+        // 两条均按 64px 高平铺，最后一块只裁切；完整保留 x=308..406 的书缘。
+        for (double offset = 0; offset < middleHeight; offset += 64)
+        {
+            var height = Math.Min(64, middleHeight - offset);
+            var y = target.Y + topHeight + offset;
+            DrawImagePixels(context, image, new Rect(0, 32, 40, height),
+                new Rect(target.X, y, 40, height));
+            DrawImagePixels(context, image, new Rect(84, 32, 12, height),
+                new Rect(target.X + 40, y, 58, height));
+        }
+    }
+
+    private static void DrawImagePixels(DrawingContext context, Bitmap image, Rect pixels, Rect target)
+    {
+        if (target.Width <= 0 || target.Height <= 0) return;
+        // PNG 实测约 95.9866 DPI；源坐标必须由像素换算成 IImage.Size 的 DIP。
+        var scaleX = image.Size.Width / image.PixelSize.Width;
+        var scaleY = image.Size.Height / image.PixelSize.Height;
+        var source = new Rect(pixels.X * scaleX, pixels.Y * scaleY,
+            pixels.Width * scaleX, pixels.Height * scaleY);
+        context.DrawImage(image, source, target);
     }
 
     private void DrawEdge(DrawingContext context, string name, double y, double height,

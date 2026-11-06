@@ -48,3 +48,28 @@
 - 入口：已构建的 `TranscriptChatRegression.dll --ink-study` → `InkStudyRegression.VerifyAsync`；40 秒专项预算、45 秒总 deadline。本次仅编码，未构建/执行。真实主窗先 Show 再切 InkStudy，显式外观文件限定本次 `artifacts/ink-study-validation/<时间戳-随机后缀>/appearance.json`；公开源 fake 提供配置/设备/长洞察 Markdown/计数器命令，不构造主 VM、不读真实配置或服务、不访问 AppData/音频/云端。
 - 覆盖 partial 同卡、final→History 去重、未知来源中性、释放后不更新、本地模式/字号隔离；以 `CompositionBatch.Rendered` 同步三档窗口布局、三分区安全区/洞察视口/语言组/来源卡及主按钮。最小 1000×550 保留 704 高画布并外层滚动；只按 live/主题，核验菜单隔离保存、旧页缓存/资源恢复与 Application Dark 不变。
 - 成功输出 `PASS`、`ARTIFACTS`、`INK_STUDY_EXIT=0`；`finally` 关闭并恢复主题、写 `result.txt`。运行时保存 `ink-study-default.png`、`ink-study-minimum.png` 供主 agent 与原稿比较；不审查生成资产、不做 OCR/总览，不冒充真实音频/服务或物理输入验收。严格只写本次 artifacts 时须使用生产 Release 产物：生产 Debug Markdown 渲染器可能另写输出目录的 `scroll_diag.log`，本专项不修改该生产日志实现。
+
+## 长卷实时翻译链路专项（既有生产 DLL）
+
+- 仅编译测试项目：从仓库根执行 `dotnet build tools/TranscriptChatRegression/TranscriptChatRegression.csproj --no-restore -p:BuildProjectReferences=false`，再直接执行 `dotnet tools/TranscriptChatRegression/bin/Debug/net10.0/TranscriptChatRegression.dll --song-scroll-realtime-interaction`。不运行主项目构建、`dotnet run`、发布或输入法同步；不停止现用程序或系统 VoiceIme 宿主。
+- 与既有 `--song-scroll-audio-interaction` 独立分派。需要可显示窗口的桌面，使用真实生产 MainWindow、经典／长卷主题路由和文本控件；35 秒专项预算，保留 Program 原有总 deadline。
+- 初始服务为 null；对实际 `ScrollStart` 按钮派发 Enter 路由，由 Avalonia `OnKeyDown → OnClick → SongScrollToggleCommand → ToggleSongScrollTranslationAsync → EnsureRealtimeTranslationService → TryCreate → AttachTranslationService` 启动。工厂记录调用栈；假服务使用真实事件委托，检查六个订阅目标／方法均为生产 MainVM。没有反射调用翻译回调、直接设置快照或手工 Attach。
+- 验证后台线程 partial/final 经生产回调发布 `LatestRealtimeFrame`、同句合并至 `SongScrollPresentationViewModel.Conversation`，再检查实际 `SelectableTextBlock`（TextBlock 派生）的正文、可见性、布局、TextLayout 和阅读视口交集。final 必须完成真实 History 插入、清除命令刷新及 AiInsight 回调；另验证电平／诊断事件进入实际 AudioDevicesVM。
+- 覆盖停止前已排队及停止后迟到 partial/final 拒绝、停止再重启成功、经典／长卷往返仍同 MainVM／服务／历史／投影、经典实际编辑器更新、返回长卷的终稿呈现、关闭解除全部事件。UI 调度异常保留原始栈并使专项失败。
+- 隔离边界明示：MainVM 跳过含用户配置／服务／DB 初始化的构造器，只种必要字段并用生产窄方法重建命令；ConfigVM、AudioDevicesVM、AiInsightVM 均实际构造。ConfigurationService 跳过 PathManager 构造，只指向本次不存在的夹具文件；SettingsVM 仅为窗口 ConfigSaved 事件载体跳过构造，不测试保存。内存工厂／可发事件服务不连接音频；AI／凭据接口一旦调用立即抛错，模型解析明确返回未配置，自动洞察未启用。设备保存回调只计数，日志丢弃设备名称／ID；停止回调只读枚举系统设备，不创建录音器。
+- 成功输出 `SONG_SCROLL_REALTIME_INTERACTION_EXIT=0`；报告位于 `artifacts/transcript-chat-regression/<时间戳>-realtime-interaction-<随机后缀>/result.txt`，含被测 DLL 路径、时间、MVID、SHA256 和各阶段计数。2026-11-05 首轮以 20:28:20 生产 DLL 构建／执行均退出 0；未复现用户现场“不出字”，不能据此宣称已修复。
+- 未覆盖真实主 VM 构造／用户配置／DB、采集驱动、VAD、厂商识别协议及云连接、自动洞察生成、物理输入和高 DPI。按钮路由与可见文字验证不是用户真实音频端到端验收。
+- 按钮路径依据：[Avalonia 11.3.11 Button.cs](https://raw.githubusercontent.com/AvaloniaUI/Avalonia/11.3.11/src/Avalonia.Controls/Button.cs) 的 Enter／OnClick 与 Command 执行顺序；不能仅 Raise `ClickEvent` 冒充已执行命令。UI 异常记录参考 [Dispatcher.UnhandledException](https://api-docs.avaloniaui.net/docs/E_Avalonia_Threading_Dispatcher_UnhandledException)。
+
+### 主题差异 A/B 回归
+
+- 生产代码修改后先从仓库根执行普通 `dotnet build`；上面的“仅编测试”用于对同一既有生产 DLL 做复现，不可拿旧 DLL 验证新补丁。
+- 实时专项补充：分别走经典实际开始按钮和长卷实际开始命令，在当前服务的 partial／final 排队后执行生产浮窗重置，再检查正文、历史、快照和可见文本。浮窗刷新不应拒绝当前会话正文；同时保留清空／停止／跨重启的旧事件隔离。
+- 2026-11-05 的 A/B 失败证据为 `20261105-223527-052-realtime-interaction-dfa8f1d4`，正文与浮窗代次分离后的通过证据为 `20261105-223954-558-realtime-interaction-539ccdf3`，均在 `artifacts/transcript-chat-regression/`；不修改历史失败报告。
+
+## 听析主题双缓存交互专项
+
+- 构建后直接运行 `TranscriptChatRegression.dll --song-scroll-audio-interaction`。需真实可交互 Windows 桌面，前台 HWND、控件命中和 Click 回执不能静默跳过。
+- 使用实际 MainWindow 路由及经典／长卷缓存、同一真实 AudioLabViewModel；在本次 artifacts 制作一秒静音 WAV，由生产文件加载入口及内存生命周期仓库恢复 309 段转录、总结、导图和播客。不是只向假的 SelectedTab 属性赋值。
+- 两主题分别原生点击转录、导图、播客并返回总结，检查目标标签单次变化、互斥正文及实际首末段／导图节点／台本文字；主题往返仍同 VM／会话，文件只加载一次、没有重入或后续重选。只加载不播放，不读用户配置／数据库，不请求模型、语音或云服务。
+- 双缓存使隐藏经典 RadioButton 的 TwoWay 比较绑定反写 Summary；`Views/AudioLabView.axaml` 的比较绑定已改 OneWay，写入由已有 Click 负责。失败证据 `20261105-221410-241-audio-interaction-fcfbdb84`、通过证据 `20261105-224045-125-audio-interaction-bf1aaa41`；成功日志 `FAILURES=0`，不是用户真实音频端到端验收。

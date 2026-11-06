@@ -20,15 +20,35 @@ namespace TrueFluentPro.Views;
 /// <summary>独立语音输入法设置窗口（点击浮窗齿轮弹出），与主程序共享同一份 config.json。</summary>
 public sealed class VoiceImeSettingsWindow : Window
 {
-    private readonly ConfigurationService _configService = new();
+    private ConfigurationService? _configService;
+    private ConfigurationService Configuration => _configService ??= new ConfigurationService();
+    private readonly Func<Task<AzureSpeechConfig>> _load;
+    private readonly Func<AzureSpeechConfig, Task> _save;
+    private readonly Action<VoiceImeSectionVM> _refresh;
     private readonly VoiceImeRegistrationService _registrationService = new();
     private readonly VoiceImeSectionVM _vm;
     private readonly TextBlock _saveStatusText;
+    private readonly CancellationTokenSource _closedCts = new();
+    private static WeakReference<VoiceImeSettingsWindow>? _current;
+    internal static Window? Current => _current != null && _current.TryGetTarget(out var window) && window.IsVisible ? window : null;
+    private bool _closed;
     private AzureSpeechConfig? _config;
     private CancellationTokenSource? _saveDebounceCts;
 
-    public VoiceImeSettingsWindow()
+    public VoiceImeSettingsWindow() : this(null, null, null) { }
+
+    // 隔离首帧 fixture 注入内存配置与刷新，不提供生产命令行开关。
+    internal VoiceImeSettingsWindow(Func<Task<AzureSpeechConfig>>? load,
+        Func<AzureSpeechConfig, Task>? save, Action<VoiceImeSectionVM>? refresh, VoiceImeSectionVM? viewModel = null)
     {
+        _load = load ?? (() => Configuration.LoadConfigAsync());
+        _save = save ?? (config => Configuration.SaveConfigAsync(config));
+        _refresh = refresh ?? (vm =>
+        {
+            // 两条原有命令独立启动；设备枚举不再挡住安装状态查询。
+            vm.RefreshOptionsCommand.Execute(null);
+            vm.RefreshStatusCommand.Execute(null);
+        });
         var ver = VoiceImeRegistrationService.GetVoiceImeVersionString();
         Title = $"译见pro输入法设置 v{ver}";
         Width = 640;
@@ -40,12 +60,12 @@ public sealed class VoiceImeSettingsWindow : Window
         var args = Environment.GetCommandLineArgs();
         var autoCloseSelfTest = Array.IndexOf(args, "--self-test") >= 0;
 
-        _vm = new VoiceImeSectionVM(_registrationService);
+        _vm = viewModel ?? new VoiceImeSectionVM(_registrationService);
         _vm.Changed += OnVmChanged;
 
         _saveStatusText = new TextBlock
         {
-            Text = "修改后将自动保存到共享配置",
+            Text = "正在加载共享配置…",
             VerticalAlignment = VerticalAlignment.Center,
             FontSize = 12,
             Foreground = Brushes.Gray
@@ -81,6 +101,7 @@ public sealed class VoiceImeSettingsWindow : Window
         var sectionView = new VoiceImeSection
         {
             DataContext = _vm,
+            IsEnabled = false,
             Margin = new Thickness(16, 16, 16, 8)
         };
 
@@ -101,12 +122,28 @@ public sealed class VoiceImeSettingsWindow : Window
         Content = root;
         Opened += async (_, _) =>
         {
-            await InitializeAsync();
-            if (autoCloseSelfTest)
+            _current = new WeakReference<VoiceImeSettingsWindow>(this);
+            try
             {
-                await Task.Delay(300);
-                Close();
+                // Opened 不代表已经渲染；配置解析、迁移、设备/状态均让出真实第一帧。
+                await VoiceImeUiWindows.RenderedAsync(this, _closedCts.Token);
+                await InitializeAsync();
+                if (!_closed) sectionView.IsEnabled = _config != null;
+                if (autoCloseSelfTest && !_closed)
+                {
+                    await Task.Delay(300, _closedCts.Token);
+                    Close();
+                }
             }
+            catch (OperationCanceledException) when (_closed) { }
+            catch { if (!_closed) _saveStatusText.Text = "设置加载未完成，请关闭后重试。"; }
+        };
+        Closed += (_, _) =>
+        {
+            _closed = true;
+            _closedCts.Cancel();
+            _vm.Changed -= OnVmChanged;
+            if (_current != null && _current.TryGetTarget(out var current) && ReferenceEquals(current, this)) _current = null;
         };
     }
 
@@ -114,20 +151,23 @@ public sealed class VoiceImeSettingsWindow : Window
     {
         try
         {
-            _config = await _configService.LoadConfigAsync();
+            var loaded = await Task.Run(_load).WaitAsync(_closedCts.Token);
+            if (_closed) return;
+            _config = loaded;
             _vm.LoadFrom(_config);
-            await _vm.RefreshAsync();
             _saveStatusText.Text = "已加载当前配置（修改后自动保存）";
+            _refresh(_vm);
         }
-        catch (Exception ex)
+        catch (OperationCanceledException) when (_closed) { }
+        catch
         {
-            _saveStatusText.Text = "加载配置失败：" + ex.Message;
+            if (!_closed) _saveStatusText.Text = "加载配置失败，请检查共享配置后重新打开设置。";
         }
     }
 
     private void OnVmChanged()
     {
-        if (_config == null) return;
+        if (_closed || _config == null) return;
         _vm.ApplyTo(_config);
         _saveDebounceCts?.Cancel();
         var cts = new CancellationTokenSource();
@@ -141,18 +181,18 @@ public sealed class VoiceImeSettingsWindow : Window
         {
             await Task.Delay(200, token);
             if (_config == null) return;
-            await _configService.SaveConfigAsync(_config);
+            await _save(_config); // 保留原关闭后的已提交防抖保存语义，不丢用户最后一次修改。
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
-                _saveStatusText.Text = $"已自动保存（{DateTime.Now:HH:mm:ss}）";
+                if (!_closed) _saveStatusText.Text = $"已自动保存（{DateTime.Now:HH:mm:ss}）";
             });
         }
         catch (OperationCanceledException) { }
-        catch (Exception ex)
+        catch
         {
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
-                _saveStatusText.Text = "保存失败：" + ex.Message;
+                if (!_closed) _saveStatusText.Text = "保存失败，请检查共享配置写入权限后重试。";
             });
         }
     }
@@ -170,7 +210,7 @@ public sealed class VoiceImeSettingsWindow : Window
                 if (!string.IsNullOrWhiteSpace(candidate) && File.Exists(candidate))
                     mainAppPath = candidate;
             }
-            mainAppPath ??= Path.Combine(AppContext.BaseDirectory, "TrueFluentPro.exe");
+            mainAppPath ??= VoiceImeUiProtocol.SourceExecutable(Path.Combine(AppContext.BaseDirectory, "TrueFluentPro.exe"));
             if (!File.Exists(mainAppPath)) return;
             Process.Start(new ProcessStartInfo
             {

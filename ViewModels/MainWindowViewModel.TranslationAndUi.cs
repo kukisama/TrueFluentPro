@@ -871,6 +871,7 @@ namespace TrueFluentPro.ViewModels
 
         private void ClearHistory()
         {
+            System.Threading.Interlocked.Increment(ref _songScrollFrameEpoch);
             History.Clear();
 
             CurrentOriginal = "";
@@ -1152,10 +1153,11 @@ namespace TrueFluentPro.ViewModels
         private void OnRealtimeTranslationReceived(object? sender, TranslationItem item)
         {
             var subtitleEpoch = System.Threading.Volatile.Read(ref _floatingSubtitleEpoch);
+            var presentationEpoch = System.Threading.Volatile.Read(ref _songScrollFrameEpoch);
             var acceptSubtitle = !_suspendFloatingSubtitleUpdates;
             Dispatcher.UIThread.Post(() =>
             {
-                if (_songScrollFrameGuard && (_songScrollIgnoreFrames || subtitleEpoch != _floatingSubtitleEpoch
+                if (_songScrollFrameGuard && (_songScrollIgnoreFrames || presentationEpoch != _songScrollFrameEpoch
                     || !ReferenceEquals(sender, _translationService))) return;
                 CurrentOriginal = TrimRealtimeDisplayText(item.OriginalText);
                 CurrentTranslated = TrimRealtimeDisplayText(item.TranslatedText);
@@ -1311,10 +1313,11 @@ namespace TrueFluentPro.ViewModels
         private void OnFinalTranslationReceived(object? sender, TranslationItem item)
         {
             var subtitleEpoch = System.Threading.Volatile.Read(ref _floatingSubtitleEpoch);
+            var presentationEpoch = System.Threading.Volatile.Read(ref _songScrollFrameEpoch);
             var acceptSubtitle = !_suspendFloatingSubtitleUpdates;
             Dispatcher.UIThread.Post(() =>
             {
-                if (_songScrollFrameGuard && (_songScrollIgnoreFrames || subtitleEpoch != _floatingSubtitleEpoch
+                if (_songScrollFrameGuard && (_songScrollIgnoreFrames || presentationEpoch != _songScrollFrameEpoch
                     || !ReferenceEquals(sender, _translationService))) return;
                 if (acceptSubtitle && !_suspendFloatingSubtitleUpdates
                     && subtitleEpoch == _floatingSubtitleEpoch && ReferenceEquals(sender, _translationService))

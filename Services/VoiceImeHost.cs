@@ -81,9 +81,9 @@ public static partial class VoiceImeHost
                         config =>
                         {
                             VoiceImeMaintenance.Check(VoiceImeMaintenance.GatePath, lifetime);
-                            return new ChatVoiceInputFactory(resolver, new RealtimeConnectionSpecResolver(), tokens,
+                            return CreateVoiceInputSession(config, new ChatVoiceInputFactory(resolver, new RealtimeConnectionSpecResolver(), tokens,
                                 useConfiguredLanguage: true,
-                                endSilenceTimeoutSeconds: config.VoiceIme.EndSilenceTimeoutSeconds).Create(config);
+                                endSilenceTimeoutSeconds: config.VoiceIme.EndSilenceTimeoutSeconds), tokens);
                         }, lifetime.Token).ConfigureAwait(false);
                 }
             }
@@ -137,7 +137,10 @@ public static partial class VoiceImeHost
                 throw new InvalidOperationException("输入法语音资源不可用，请在主程序设置中重新选择。");
             config.ActiveSpeechResourceId = resource.Id;
         }
-        config.SourceLanguage = settings.RecognitionLanguage;
+        config.SourceLanguage = string.IsNullOrWhiteSpace(settings.RecognitionLanguage) ? "auto" : settings.RecognitionLanguage.Trim();
+        config.TargetLanguage = string.IsNullOrWhiteSpace(settings.TargetLanguage) ? "en-US" : settings.TargetLanguage.Trim();
+        if (settings.EnableTranslation && string.Equals(config.TargetLanguage, "auto", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("请选择输入法的翻译目标语言，不能使用自动检测。");
         config.SelectedAudioDeviceId = settings.MicrophoneDeviceId;
         config.EnableRecording = false;
         config.UseInputForRecognition = true;
@@ -145,6 +148,16 @@ public static partial class VoiceImeHost
         if (!double.IsFinite(settings.EndSilenceTimeoutSeconds) || settings.EndSilenceTimeoutSeconds is < 0.2 or > 3)
             throw new InvalidOperationException("输入法分句停顿应在 0.2 到 3 秒之间。");
         return config;
+    }
+
+    /// <summary>仅输入法使用此装配入口；聊天工厂仍然只做 ASR。参数须为本轮运行快照。</summary>
+    internal static IChatVoiceInputSession CreateVoiceInputSession(AzureSpeechConfig config,
+        IChatVoiceInputFactory recognitionFactory, IAzureTokenProviderStore? tokens = null)
+    {
+        var recognition = recognitionFactory.Create(config);
+        return config.VoiceIme.EnableTranslation
+            ? new VoiceImeTranslationSession(recognition, config, tokens)
+            : recognition;
     }
 
     // 可注入识别工厂的定向验证入口；生产仍只从上方固定配置路径读取，不接受外部配置/密钥参数。
@@ -212,7 +225,8 @@ public static partial class VoiceImeHost
         }
 
         void OnText(string text, bool final) => Publish(final ? 'F' : 'P', text);
-        void OnFailure(string _) => Publish('E', "语音识别中断，请在主程序中检查资源和麦克风后重试。");
+        void OnFailure(string message) => Publish('E', voice is VoiceImeTranslationSession
+            ? message : "语音识别中断，请在主程序中检查资源和麦克风后重试。");
 
         async Task ReadStopAsync()
         {

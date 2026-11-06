@@ -248,7 +248,7 @@
                     <StackPanel Orientation="Horizontal" Spacing="4">
                         <RadioButton Classes="tab-button" GroupName="AudioLabTab"
                                      IsVisible="{Binding IsSummaryTabVisible}"
-                                     IsChecked="{Binding SelectedTab, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static vm:AudioLabTabKind.Summary}}"
+                                     IsChecked="{Binding SelectedTab, Mode=OneWay, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static vm:AudioLabTabKind.Summary}}"
                                      Click="Tab_Summary_Click">
                             <StackPanel Orientation="Horizontal" Spacing="4">
                                 <TextBlock Text="📋" FontSize="14"/>
@@ -256,7 +256,7 @@
                             </StackPanel>
                         </RadioButton>
                         <RadioButton Classes="tab-button" GroupName="AudioLabTab"
-                                     IsChecked="{Binding SelectedTab, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static vm:AudioLabTabKind.Transcript}}"
+                                     IsChecked="{Binding SelectedTab, Mode=OneWay, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static vm:AudioLabTabKind.Transcript}}"
                                      Click="Tab_Transcript_Click">
                             <StackPanel Orientation="Horizontal" Spacing="4">
                                 <TextBlock Text="📝" FontSize="14"/>
@@ -265,7 +265,7 @@
                         </RadioButton>
                         <RadioButton Classes="tab-button" GroupName="AudioLabTab"
                                      IsVisible="{Binding IsMindMapTabVisible}"
-                                     IsChecked="{Binding SelectedTab, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static vm:AudioLabTabKind.MindMap}}"
+                                     IsChecked="{Binding SelectedTab, Mode=OneWay, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static vm:AudioLabTabKind.MindMap}}"
                                      Click="Tab_MindMap_Click">
                             <StackPanel Orientation="Horizontal" Spacing="4">
                                 <TextBlock Text="🧠" FontSize="14"/>
@@ -274,7 +274,7 @@
                         </RadioButton>
                         <RadioButton Classes="tab-button" GroupName="AudioLabTab"
                                      IsVisible="{Binding IsInsightTabVisible}"
-                                     IsChecked="{Binding SelectedTab, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static vm:AudioLabTabKind.Insight}}"
+                                     IsChecked="{Binding SelectedTab, Mode=OneWay, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static vm:AudioLabTabKind.Insight}}"
                                      Click="Tab_Insight_Click">
                             <StackPanel Orientation="Horizontal" Spacing="4">
                                 <TextBlock Text="💡" FontSize="14"/>
@@ -283,7 +283,7 @@
                         </RadioButton>
                         <RadioButton Classes="tab-button" GroupName="AudioLabTab"
                                      IsVisible="{Binding IsResearchTabVisible}"
-                                     IsChecked="{Binding SelectedTab, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static vm:AudioLabTabKind.Research}}"
+                                     IsChecked="{Binding SelectedTab, Mode=OneWay, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static vm:AudioLabTabKind.Research}}"
                                      Click="Tab_Research_Click">
                             <StackPanel Orientation="Horizontal" Spacing="4">
                                 <TextBlock Text="🔬" FontSize="14"/>
@@ -292,7 +292,7 @@
                         </RadioButton>
                         <RadioButton Classes="tab-button" GroupName="AudioLabTab"
                                      IsVisible="{Binding IsPodcastTabVisible}"
-                                     IsChecked="{Binding SelectedTab, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static vm:AudioLabTabKind.Podcast}}"
+                                     IsChecked="{Binding SelectedTab, Mode=OneWay, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static vm:AudioLabTabKind.Podcast}}"
                                      Click="Tab_Podcast_Click">
                             <StackPanel Orientation="Horizontal" Spacing="4">
                                 <TextBlock Text="🎙" FontSize="14"/>
@@ -301,7 +301,7 @@
                         </RadioButton>
                         <RadioButton Classes="tab-button" GroupName="AudioLabTab"
                                      IsVisible="{Binding IsTranslationTabVisible}"
-                                     IsChecked="{Binding SelectedTab, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static vm:AudioLabTabKind.Translation}}"
+                                     IsChecked="{Binding SelectedTab, Mode=OneWay, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static vm:AudioLabTabKind.Translation}}"
                                      Click="Tab_Translation_Click">
                             <StackPanel Orientation="Horizontal" Spacing="4">
                                 <TextBlock Text="🌐" FontSize="14"/>

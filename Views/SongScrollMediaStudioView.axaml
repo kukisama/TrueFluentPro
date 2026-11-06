@@ -2,6 +2,7 @@
                       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                       xmlns:views="using:TrueFluentPro.Views"
                       xmlns:controls="using:TrueFluentPro.Controls"
+                      xmlns:icons="https://github.com/projektanker/icons.avalonia"
                       x:Class="TrueFluentPro.Views.SongScrollMediaStudioView"
                       x:CompileBindings="False">
     <views:MediaStudioView.Resources>
@@ -14,6 +15,7 @@
         <SolidColorBrush x:Key="CodeInlineForegroundBrush" Color="#963F32"/>
         <SolidColorBrush x:Key="BorderSubtleBrush" Color="#D9D0C2"/>
         <SolidColorBrush x:Key="PrimaryBrush" Color="#426E6C"/>
+        <SolidColorBrush x:Key="AccentBlueBrush" Color="#426E6C"/>
     </views:MediaStudioView.Resources>
     <views:MediaStudioView.Styles>
         <Style Selector="Grid.scroll-studio-page TextBlock">
@@ -74,10 +76,6 @@
             <Setter Property="Background" Value="#AE4234"/>
             <Setter Property="Foreground" Value="White"/>
         </Style>
-        <Style Selector="Button.scroll-studio-web.enabled">
-            <Setter Property="BorderBrush" Value="{DynamicResource ScrollAccent}"/>
-            <Setter Property="Foreground" Value="{DynamicResource ScrollAccent}"/>
-        </Style>
         <!-- Renderer controls are already doubled by their local layout transform. -->
         <Style Selector="controls|ChatMarkdownBlock TextBlock">
             <Setter Property="FontSize" Value="14"/>
@@ -86,6 +84,7 @@
             <Setter Property="FontSize" Value="13"/>
             <Setter Property="MinHeight" Value="26"/>
         </Style>
+        <StyleInclude Source="avares://TrueFluentPro/Styles/SongScrollPopup.axaml"/>
     </views:MediaStudioView.Styles>
 
     <views:SongScrollShell x:Name="BookShell" PageKey="media"
@@ -145,8 +144,8 @@
                     <Button Grid.Column="2" Classes="scroll-quiet" Content="更多">
                         <Button.Flyout>
                             <MenuFlyout>
-                                <MenuItem Header="恢复已取消的视频作业" FontSize="28" Click="ResumeVideoTasks_Click"/>
-                                <MenuItem Header="删除当前会话" FontSize="28" Click="DeleteSession_Click"/>
+                                <MenuItem Header="恢复已取消的视频作业" Click="ResumeVideoTasks_Click"/>
+                                <MenuItem Header="删除当前会话" Click="DeleteSession_Click"/>
                             </MenuFlyout>
                         </Button.Flyout>
                     </Button>
@@ -312,41 +311,73 @@
                                                 <Button Classes="scroll-quiet" Content="＋ 附件" Click="AttachFileOrImage_Click" Margin="0,0,10,10"/>
                                                 <Button x:Name="RatioFlyoutButton" Classes="scroll-quiet" Content="{Binding SelectedRatioDisplayText}" Margin="0,0,10,10">
                                                     <Button.Flyout>
-                                                        <Flyout Placement="TopEdgeAlignedLeft">
-                                                            <ListBox FontSize="28" MinWidth="380" ItemsSource="{Binding AspectRatioPresets}" SelectedItem="{Binding SelectedAspectRatio}" SelectionChanged="RatioList_SelectionChanged">
-                                                                <ListBox.ItemTemplate><DataTemplate><TextBlock FontSize="28" Text="{Binding Ratio}" Margin="18,12"/></DataTemplate></ListBox.ItemTemplate>
+                                                        <views:SongScrollPopupFlyout Placement="TopEdgeAlignedLeft">
+                                                            <ListBox x:Name="ScrollStudioRatioList" Classes="scroll-popup-list" Width="264" MaxHeight="420"
+                                                                     ItemsSource="{Binding AspectRatioPresets}" SelectedItem="{Binding SelectedAspectRatio, Mode=TwoWay}" SelectionChanged="RatioList_SelectionChanged">
+                                                                <ListBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Ratio}"/></DataTemplate></ListBox.ItemTemplate>
                                                             </ListBox>
-                                                        </Flyout>
+                                                        </views:SongScrollPopupFlyout>
                                                     </Button.Flyout>
                                                 </Button>
                                                 <Button Classes="scroll-quiet" Margin="0,0,10,10">
                                                     <TextBlock Text="{Binding CurrentModelDisplayName}" MaxWidth="290" TextTrimming="CharacterEllipsis"/>
                                                     <Button.Flyout>
-                                                        <Flyout Placement="TopEdgeAlignedLeft">
-                                                            <ListBox MinWidth="420" MaxHeight="620" ItemsSource="{Binding AvailableTextModels}" SelectedItem="{Binding SelectedConversationModel}" SelectionChanged="ModelList_SelectionChanged">
+                                                        <views:SongScrollPopupFlyout Placement="TopEdgeAlignedLeft">
+                                                            <ListBox x:Name="ScrollStudioModelList" Classes="scroll-popup-list" Width="360" MaxHeight="440"
+                                                                     ItemsSource="{Binding AvailableTextModels}" SelectedItem="{Binding SelectedConversationModel, Mode=TwoWay}" SelectionChanged="ModelList_SelectionChanged">
                                                                 <ListBox.ItemTemplate>
-                                                                    <DataTemplate><StackPanel Margin="16,12" Spacing="8"><TextBlock Text="{Binding ModelDisplayName}" FontSize="28"/><TextBlock Text="{Binding EndpointName}" FontSize="26"/></StackPanel></DataTemplate>
+                                                                    <DataTemplate><StackPanel Spacing="4"><TextBlock Text="{Binding ModelDisplayName}"/><TextBlock Classes="scroll-popup-muted" Text="{Binding EndpointName}"/></StackPanel></DataTemplate>
                                                                 </ListBox.ItemTemplate>
                                                             </ListBox>
-                                                        </Flyout>
+                                                        </views:SongScrollPopupFlyout>
                                                     </Button.Flyout>
                                                 </Button>
-                                                <ToggleButton Classes="scroll-quiet" Content="深度思考" IsChecked="{Binding EnableReasoning}" Margin="0,0,10,10"/>
-                                                <Button Classes="scroll-quiet scroll-studio-web" Content="联网搜索" Click="WebSearchSelector_Click" ToolTip.Tip="{Binding WebSearchButtonToolTip}"
-                                                    Classes.enabled="{Binding EnableWebSearch}" Margin="0,0,10,10"/>
+                                                <ToggleButton x:Name="ScrollStudioReasoningToggle" Classes="scroll-quiet scroll-studio-reasoning" Content="深度思考" IsChecked="{Binding EnableReasoning, Mode=TwoWay}" Margin="0,0,10,10"/>
+                                                <Button x:Name="ScrollStudioWebSearchButton" Classes="scroll-quiet scroll-studio-web" Click="WebSearchSelector_Click" ToolTip.Tip="{Binding WebSearchButtonToolTip}"
+                                                        Classes.enabled="{Binding EnableWebSearch}" Margin="0,0,10,10">
+                                                    <Button.Styles>
+                                                        <!-- Nearest scope wins over Shell's scroll-quiet, including its zero border. -->
+                                                        <Style Selector="Button.scroll-studio-web">
+                                                            <Setter Property="BorderThickness" Value="1.5"/>
+                                                            <Setter Property="BorderBrush" Value="#CBBDA4"/>
+                                                            <Setter Property="Background" Value="#55FFFCF5"/>
+                                                            <Setter Property="Foreground" Value="#50675E"/>
+                                                        </Style>
+                                                        <Style Selector="Button.scroll-studio-web:pointerover"><Setter Property="Background" Value="#E8E9DB"/></Style>
+                                                        <Style Selector="Button.scroll-studio-web.enabled">
+                                                            <Setter Property="Background" Value="#DCE7DE"/>
+                                                            <Setter Property="BorderBrush" Value="#4D7979"/>
+                                                            <Setter Property="Foreground" Value="#345D59"/>
+                                                        </Style>
+                                                        <Style Selector="Button.scroll-studio-web.enabled:pointerover, Button.scroll-studio-web:pressed">
+                                                            <Setter Property="Background" Value="#CBDDD3"/>
+                                                        </Style>
+                                                        <Style Selector="Button.scroll-studio-web:focus-visible"><Setter Property="BorderBrush" Value="#345D59"/></Style>
+                                                    </Button.Styles>
+                                                    <StackPanel Orientation="Horizontal" Spacing="10">
+                                                        <icons:Icon Value="fa-solid fa-globe" FontSize="24" VerticalAlignment="Center"
+                                                                    Foreground="{Binding $parent[Button].Foreground}"/>
+                                                        <TextBlock Text="联网搜索" IsVisible="{Binding !EnableWebSearch}"
+                                                                   Foreground="{Binding $parent[Button].Foreground}"/>
+                                                        <TextBlock Text="联网搜索 · 已开" IsVisible="{Binding EnableWebSearch}"
+                                                                   Foreground="{Binding $parent[Button].Foreground}"/>
+                                                        <Ellipse x:Name="ScrollStudioWebSearchEnabledDot" Width="12" Height="12" Fill="#4D7979"
+                                                                 IsVisible="{Binding EnableWebSearch}" VerticalAlignment="Center"/>
+                                                    </StackPanel>
+                                                </Button>
                                                 <Button Classes="scroll-quiet" Content="更多" Margin="0,0,0,10">
                                                     <Button.Flyout>
-                                                        <Flyout Placement="TopEdgeAlignedRight">
-                                                            <StackPanel Width="500" Spacing="20" Margin="20">
-                                                                <TextBlock Text="对话历史轮数" FontSize="30"/>
-                                                                <Grid ColumnDefinitions="*,80">
-                                                                    <Slider Minimum="1" Maximum="100" Value="{Binding MaxConversationTurns}" TickFrequency="1" IsSnapToTickEnabled="True"/>
-                                                                    <TextBlock Grid.Column="1" Text="{Binding MaxConversationTurns}" FontSize="28" HorizontalAlignment="Right"/>
+                                                        <views:SongScrollPopupFlyout Placement="TopEdgeAlignedRight">
+                                                            <StackPanel x:Name="ScrollStudioMorePanel" Width="312" Spacing="14">
+                                                                <TextBlock Text="对话历史轮数"/>
+                                                                <Grid ColumnDefinitions="*,48" ColumnSpacing="12">
+                                                                    <Slider Minimum="1" Maximum="100" Value="{Binding MaxConversationTurns, Mode=TwoWay}" TickFrequency="1" IsSnapToTickEnabled="True"/>
+                                                                    <TextBlock Grid.Column="1" Text="{Binding MaxConversationTurns}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
                                                                 </Grid>
-                                                                <CheckBox FontSize="28" Content="携带最近一张历史图片" IsChecked="{Binding EnableRecentImageCarry}"/>
-                                                                <Button FontSize="28" MinHeight="56" Content="优化提示词" Command="{Binding OptimizePromptCommand}"/>
+                                                                <CheckBox Content="携带最近一张历史图片" IsChecked="{Binding EnableRecentImageCarry, Mode=TwoWay}"/>
+                                                                <Button Content="优化提示词" Command="{Binding OptimizePromptCommand}"/>
                                                             </StackPanel>
-                                                        </Flyout>
+                                                        </views:SongScrollPopupFlyout>
                                                     </Button.Flyout>
                                                 </Button>
                                             </WrapPanel>

@@ -2,8 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using System.Threading;
 using System.Threading.Tasks;
 using TrueFluentPro.Models;
 
@@ -26,6 +29,12 @@ namespace TrueFluentPro.Services
 
     public class ConfigurationService
     {
+        private static readonly SemaphoreSlim SaveGate = new(1, 1);
+        // 按对象身份跟踪，不能按值匹配：导入/新建对象的首次保存仍是完整替换。
+        private static readonly ConditionalWeakTable<AzureSpeechConfig, VoiceImeLanguageBaseline> VoiceImeBaselines = new();
+        private sealed record VoiceImeLanguageBaseline(
+            string FilePath, string? RecognitionLanguage, bool EnableTranslation, string? TargetLanguage);
+
         private readonly string _configFilePath;
         private readonly string _backupConfigFilePath;
         public ConfigurationLoadReport? LastLoadReport { get; private set; }
@@ -65,6 +74,7 @@ namespace TrueFluentPro.Services
                     config.EnsureSpeechSubscriptionsMigratedToEndpoints();
                     config.EnsureEndpointVendorCredentialsMigrated();
                     PathManager.Instance.SetSessionsPath(config.SessionDirectoryOverride);
+                    RememberVoiceImeLanguages(config, config.VoiceIme);
                     return config;
                 }
 
@@ -93,6 +103,7 @@ namespace TrueFluentPro.Services
                         InvalidConfigBackupPath = timestampBackupPath,
                         RecoverySourcePath = _backupConfigFilePath
                     };
+                    RememberVoiceImeLanguages(backupConfig, backupConfig.VoiceIme);
                     return backupConfig;
                 }
             }
@@ -111,6 +122,7 @@ namespace TrueFluentPro.Services
                 WarningMessage = BuildLoadFailureWarning(timestampBackupPath, null),
                 InvalidConfigBackupPath = timestampBackupPath
             };
+            RememberVoiceImeLanguages(fallbackDefaultConfig, fallbackDefaultConfig.VoiceIme);
             return fallbackDefaultConfig;
         }
 
@@ -125,6 +137,7 @@ namespace TrueFluentPro.Services
 
         public async Task SaveConfigAsync(AzureSpeechConfig config)
         {
+            await SaveGate.WaitAsync();
             try
             {
                 config.EnsureSpeechResourcesBackfilledFromLegacy();
@@ -133,7 +146,32 @@ namespace TrueFluentPro.Services
                 Directory.CreateDirectory(Path.GetDirectoryName(_configFilePath)!);
 
                 var tempFilePath = _configFilePath + ".tmp";
-                var json = JsonSerializer.Serialize(config, CreateSerializerOptions(writeIndented: true));
+                var options = CreateSerializerOptions(writeIndented: true);
+                var voiceIme = config.VoiceIme;
+                var snapshot = JsonSerializer.SerializeToNode(config, options)!;
+                var savedLanguages = snapshot[nameof(AzureSpeechConfig.VoiceIme)]?.Deserialize<VoiceImeConfig>(options);
+                var originalLanguages = savedLanguages == null ? null : CaptureVoiceImeLanguages(savedLanguages);
+                if (savedLanguages != null &&
+                    VoiceImeBaselines.TryGetValue(config, out var baseline) && baseline.FilePath == _configFilePath)
+                {
+                    var latest = await TryLoadVoiceImeLanguagesAsync();
+                    if (latest != null)
+                    {
+                        if (savedLanguages.RecognitionLanguage == baseline.RecognitionLanguage)
+                            savedLanguages.RecognitionLanguage = latest.RecognitionLanguage;
+                        if (savedLanguages.EnableTranslation == baseline.EnableTranslation)
+                            savedLanguages.EnableTranslation = latest.EnableTranslation;
+                        if (savedLanguages.TargetLanguage == baseline.TargetLanguage)
+                            savedLanguages.TargetLanguage = latest.TargetLanguage;
+
+                        var output = snapshot[nameof(AzureSpeechConfig.VoiceIme)]!;
+                        output[nameof(VoiceImeConfig.RecognitionLanguage)] = savedLanguages.RecognitionLanguage;
+                        output[nameof(VoiceImeConfig.EnableTranslation)] = savedLanguages.EnableTranslation;
+                        output[nameof(VoiceImeConfig.TargetLanguage)] = savedLanguages.TargetLanguage;
+                    }
+                }
+
+                var json = snapshot.ToJsonString(options);
                 await File.WriteAllTextAsync(tempFilePath, json);
 
                 if (File.Exists(_configFilePath))
@@ -142,11 +180,52 @@ namespace TrueFluentPro.Services
                 }
 
                 File.Move(tempFilePath, _configFilePath, overwrite: true);
+                // 主窗/齿轮反复保存同一对象。成功后同步合并值，但不覆盖等待 I/O 期间的新编辑。
+                if (voiceIme != null && savedLanguages != null && originalLanguages != null && ReferenceEquals(config.VoiceIme, voiceIme))
+                {
+                    if (voiceIme.RecognitionLanguage == originalLanguages.RecognitionLanguage)
+                        voiceIme.RecognitionLanguage = savedLanguages.RecognitionLanguage;
+                    if (voiceIme.EnableTranslation == originalLanguages.EnableTranslation)
+                        voiceIme.EnableTranslation = savedLanguages.EnableTranslation;
+                    if (voiceIme.TargetLanguage == originalLanguages.TargetLanguage)
+                        voiceIme.TargetLanguage = savedLanguages.TargetLanguage;
+                }
+                RememberVoiceImeLanguages(config, savedLanguages);
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"保存配置失败: {ex.Message}");
                 throw;
+            }
+            finally
+            {
+                SaveGate.Release();
+            }
+        }
+
+        private VoiceImeLanguageBaseline CaptureVoiceImeLanguages(VoiceImeConfig? settings)
+        {
+            settings ??= new VoiceImeConfig();
+            return new(_configFilePath, settings.RecognitionLanguage, settings.EnableTranslation, settings.TargetLanguage);
+        }
+
+        private void RememberVoiceImeLanguages(AzureSpeechConfig config, VoiceImeConfig? settings)
+        {
+            VoiceImeBaselines.Remove(config);
+            VoiceImeBaselines.Add(config, CaptureVoiceImeLanguages(settings));
+        }
+
+        private async Task<VoiceImeConfig?> TryLoadVoiceImeLanguagesAsync()
+        {
+            try
+            {
+                return (await TryLoadConfigAsync(_configFilePath))?.VoiceIme;
+            }
+            catch (JsonException ex)
+            {
+                // 保留现有损坏配置的恢复保存语义；I/O 错误仍向上传递，不能悄悄覆盖未读到的值。
+                System.Diagnostics.Debug.WriteLine($"无法合并输入法语言，沿用恢复配置: {ex.Message}");
+                return null;
             }
         }
 

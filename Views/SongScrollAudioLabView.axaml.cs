@@ -1,10 +1,8 @@
 using System;
 using System.ComponentModel;
-using System.Globalization;
 using System.IO;
 using System.Linq;
 using Avalonia.Controls;
-using Avalonia.Input;
 using Avalonia.Interactivity;
 using TrueFluentPro.Services;
 using TrueFluentPro.ViewModels;
@@ -91,31 +89,6 @@ public partial class SongScrollAudioLabView : AudioLabView, ISongScrollPage
         _selectingFallback = true;
         try { vm.SelectedTab = AudioLabTabKind.Transcript; }
         finally { _selectingFallback = false; }
-    }
-
-    private void JumpToTime_Click(object? sender, RoutedEventArgs e) => JumpToTime();
-
-    private void JumpTime_KeyDown(object? sender, KeyEventArgs e)
-    {
-        if (e.Key != Key.Enter) return;
-        JumpToTime();
-        e.Handled = true;
-    }
-
-    private void JumpToTime()
-    {
-        var vm = ViewModel;
-        if (vm == null || !vm.Playback.IsStopEnabled) return;
-        var text = this.FindControl<TextBox>("JumpTimeInput")?.Text?.Trim() ?? "";
-        if (TimeSpan.TryParseExact(text, new[] { @"m\:ss", @"mm\:ss", @"h\:mm\:ss", @"hh\:mm\:ss" },
-                CultureInfo.InvariantCulture, out var time)
-            && time >= TimeSpan.Zero && time <= vm.Playback.Duration)
-            vm.Playback.SeekToTime(time);
-        else
-        {
-            vm.StatusMessage = "请输入音频时长范围内的时间，例如 12:36 或 1:12:36。";
-            vm.HasExportFeedback = true;
-        }
     }
 
     private async void AskTranscript_Click(object? sender, RoutedEventArgs e)

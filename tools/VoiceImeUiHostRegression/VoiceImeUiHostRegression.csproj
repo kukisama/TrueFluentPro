@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <NuGetAudit>false</NuGetAudit>
+    <NoWarn>$(NoWarn);CS0436;CA1416</NoWarn>
+    <ProductionDir>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\bin\Debug\net10.0\'))</ProductionDir>
+  </PropertyGroup>
+  <!-- 不引用主项目、不加入 solution、不触发 native/Updater/Sync-Host。直接编译本次生产源码。 -->
+  <ItemGroup>
+    <Reference Include="$(ProductionDir)Avalonia*.dll;$(ProductionDir)CommunityToolkit.Mvvm.dll;$(ProductionDir)Microsoft.Data.Sqlite.dll;$(ProductionDir)SQLitePCLRaw*.dll;$(ProductionDir)TrueFluentPro.dll"><Private>true</Private></Reference>
+    <Content Include="$(ProductionDir)*.dll">
+      <Link>%(Filename)%(Extension)</Link><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="$(ProductionDir)runtimes\win-x64\native\*.dll">
+      <Link>%(Filename)%(Extension)</Link><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Compile Include="..\..\Services\VoiceImeUiClient.cs;..\..\Services\VoiceImeUiHost.cs;..\..\Services\VoiceImeUiTheme.cs;..\..\Services\VoiceImeMaintenance.cs;..\..\Services\WindowsDpiAwareness.cs;..\..\Services\VoiceImeUsageReportService.cs;..\..\Views\VoiceImeSettingsWindow.cs;..\..\Views\VoiceImeElevationDialog.cs;..\..\Views\VoiceImeLanguageWindow.cs;..\..\Views\VoiceImeUsageWindow.cs" />
+    <Compile Include="..\..\Services\VoiceImeHostDeployment.cs;..\..\Services\VoiceImeLifecycle.cs;..\..\Services\VoiceImeRegistrationService.cs;..\..\Services\VoiceImeMaintenanceElevation.cs;..\..\ViewModels\Settings\VoiceImeSectionVM.cs" />
+  </ItemGroup>
+</Project>

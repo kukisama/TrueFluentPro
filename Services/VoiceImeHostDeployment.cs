@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
+using System.Text;
 
 namespace TrueFluentPro.Services;
 
@@ -13,13 +14,24 @@ internal sealed class VoiceImeHostDeployment
     private readonly string _source, _destination;
     internal IReadOnlyList<Change> Changes { get; }
     internal IReadOnlyList<string> DestinationPaths { get; }
+    internal string ContentId { get; }
 
-    private VoiceImeHostDeployment(string source, string destination, List<Change> changes, HashSet<string> paths)
+    private VoiceImeHostDeployment(string source, string destination, List<Change> changes, HashSet<string> paths,
+        List<(string Path, string Hash)> contents)
     {
         _source = source;
         _destination = destination;
         Changes = changes.AsReadOnly();
         DestinationPaths = Array.AsReadOnly(paths.OrderBy(p => p, StringComparer.OrdinalIgnoreCase).ToArray());
+        // 全清单（包含无需复制的文件），相对路径 + 文件 SHA256；长度前缀避免路径拼接歧义。
+        using var manifest = new MemoryStream();
+        using (var writer = new BinaryWriter(manifest, Encoding.UTF8, leaveOpen: true))
+            foreach (var file in contents.OrderBy(p => p.Path, StringComparer.Ordinal))
+            {
+                writer.Write(file.Path);
+                writer.Write(file.Hash);
+            }
+        ContentId = Convert.ToHexString(SHA256.HashData(manifest.ToArray()));
     }
 
     internal static VoiceImeHostDeployment Create(string source, string destination)
@@ -33,6 +45,7 @@ internal sealed class VoiceImeHostDeployment
             throw new IOException("独立后台源目录与目标目录重叠，未规划复制。");
 
         var changes = new List<Change>();
+        var contents = new List<(string Path, string Hash)>();
         var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { destination };
         foreach (var file in Directory.EnumerateFiles(source))
         {
@@ -66,7 +79,7 @@ internal sealed class VoiceImeHostDeployment
                 }
             }
         }
-        return new VoiceImeHostDeployment(source, destination, changes, paths);
+        return new VoiceImeHostDeployment(source, destination, changes, paths, contents);
 
         string Target(string path)
         {
@@ -82,8 +95,9 @@ internal sealed class VoiceImeHostDeployment
         void AddFile(string path)
         {
             var target = Target(path);
-            if (Same(path, target)) return; // 包含不同写法的同一路径；绝不自行复制。
             var hash = Digest(path);
+            contents.Add((Path.GetRelativePath(source, path).Replace('\\', '/'), hash));
+            if (Same(path, target)) return; // 包含不同写法的同一路径；绝不自行复制。
             if (!VoiceImeMaintenance.Exists(target) || Digest(target) != hash)
                 changes.Add(new Change(path, target, hash));
         }

@@ -34,6 +34,19 @@
     <Style Selector="ListBox.scroll-settings-nav ListBoxItem:pointerover">
       <Setter Property="Background" Value="#184D7979"/>
     </Style>
+    <!-- Fluent 的选中态直接绘制 ContentPresenter，仅设 ListBoxItem.Background 不足以覆盖。 -->
+    <Style Selector="ListBox.scroll-settings-nav ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#184D7979"/>
+      <Setter Property="Foreground" Value="{DynamicResource ScrollInk}"/>
+    </Style>
+    <Style Selector="ListBox.scroll-settings-nav ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#264D7979"/>
+      <Setter Property="Foreground" Value="{DynamicResource ScrollAccent}"/>
+    </Style>
+    <Style Selector="ListBox.scroll-settings-nav ListBoxItem:selected:pointerover /template/ ContentPresenter#PART_ContentPresenter, ListBox.scroll-settings-nav ListBoxItem:selected:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#384D7979"/>
+      <Setter Property="Foreground" Value="{DynamicResource ScrollAccent}"/>
+    </Style>
     <Style Selector="ListBox.scroll-settings-nav TextBlock.section-name">
       <Setter Property="FontSize" Value="26"/>
       <Setter Property="FontWeight" Value="SemiBold"/>
@@ -56,9 +69,8 @@
                          PageSubtitle="随心配置，得心应手" DefaultLeftRatio="0.25">
     <views:SongScrollShell.LeftPage>
       <!-- 目录与表单的边界就是 Shell 的可变书脊，不另造固定中缝或 GridSplitter。 -->
-      <Grid Margin="20,16,24,20" RowDefinitions="Auto,*,Auto" RowSpacing="16">
-        <TextBlock Text="配置目录" Classes="scroll-section-title" FontSize="34"/>
-        <ListBox x:Name="ScrollSectionNavigation" Grid.Row="1" Classes="scroll-list scroll-settings-nav"
+      <Grid Margin="20,0,24,20" RowDefinitions="*,Auto">
+        <ListBox x:Name="ScrollSectionNavigation" Classes="scroll-list scroll-settings-nav"
                  SelectionMode="Single" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                  AutomationProperties.Name="配置分区目录">
           <ListBoxItem Tag="Section_Endpoints"><Grid ColumnDefinitions="32,*" ColumnSpacing="18"><icons:Icon Value="fa-solid fa-plug" FontSize="28" VerticalAlignment="Center"/><StackPanel Grid.Column="1" Spacing="4"><TextBlock Classes="section-name" Text="AI 终结点"/><TextBlock Classes="section-note" Text="模型接入与调用"/></StackPanel></Grid></ListBoxItem>
@@ -78,7 +90,7 @@
           <ListBoxItem Tag="Section_About"><Grid ColumnDefinitions="32,*" ColumnSpacing="18"><icons:Icon Value="fa-solid fa-circle-info" FontSize="28" VerticalAlignment="Center"/><StackPanel Grid.Column="1" Spacing="4"><TextBlock Classes="section-name" Text="关于"/><TextBlock Classes="section-note" Text="版本与应用信息"/></StackPanel></Grid></ListBoxItem>
           <ListBoxItem Tag="Section_Cloud"><Grid ColumnDefinitions="32,*" ColumnSpacing="18"><icons:Icon Value="fa-solid fa-cloud" FontSize="28" VerticalAlignment="Center"/><StackPanel Grid.Column="1" Spacing="4"><TextBlock Classes="section-name" Text="Cloud 模式"/><TextBlock Classes="section-note" Text="云服务模式配置"/></StackPanel></Grid></ListBoxItem>
         </ListBox>
-        <Button Grid.Row="2" Classes="scroll-quiet scroll-settings-location" Click="OpenConfigLocation_Click"
+        <Button Grid.Row="1" Margin="0,16,0,0" Classes="scroll-quiet scroll-settings-location" Click="OpenConfigLocation_Click"
                 ToolTip.Tip="打开配置文件所在位置" AutomationProperties.Name="打开配置文件位置">
           <StackPanel Orientation="Horizontal" Spacing="12"><icons:Icon Value="fa-regular fa-folder-open" FontSize="25"/><TextBlock Text="打开配置位置"/></StackPanel>
         </Button>
@@ -95,7 +107,8 @@
         </Border>
         <ScrollViewer x:Name="ScrollSettingsScroller" Grid.Row="1"
                       HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
-          <!-- 只缩放新外观内的原子分区；旧表单仍按原来的 DIP/字号布局。 -->
+          <!-- 保留原子表单的 DIP 布局；局部排版器将说明/正文/小标题/标题映射为
+            13/14/15/17 DIP，2× 后为 26/28/30/34 设计 px，不读取或改写业务字号。 -->
           <LayoutTransformControl HorizontalAlignment="Left" VerticalAlignment="Top">
             <LayoutTransformControl.LayoutTransform><ScaleTransform ScaleX="2" ScaleY="2"/></LayoutTransformControl.LayoutTransform>
             <ContentControl x:Name="ScrollSelectedSectionHost" Classes="scroll-settings-form"
@@ -114,15 +127,28 @@
                 <SolidColorBrush x:Key="CardBorderBrush" Color="#CFC3AD"/>
                 <SolidColorBrush x:Key="CardStrokeColorDefaultBrush" Color="#CFC3AD"/>
                 <SolidColorBrush x:Key="SubCardBorderBrush" Color="#D9CFBD"/>
+                <SolidColorBrush x:Key="CardBackgroundFillColorSecondaryBrush" Color="#48F2EDE3"/>
+                <SolidColorBrush x:Key="LayerFillColorDefaultBrush" Color="#48F2EDE3"/>
+                <SolidColorBrush x:Key="SurfaceBrush" Color="#F7F1E6"/>
+                <SolidColorBrush x:Key="SurfaceHoverBrush" Color="#284D7979"/>
+                <SolidColorBrush x:Key="TextFillColorPrimaryBrush" Color="#27332F"/>
+                <SolidColorBrush x:Key="TextFillColorSecondaryBrush" Color="#686F66"/>
+                <SolidColorBrush x:Key="DividerStrokeColorDefaultBrush" Color="#70C7BCA8"/>
               </ContentControl.Resources>
               <ContentControl.Styles>
-                <!-- 阻断外层 26px 的继承，不覆盖原子表单自身的显式字号与布局。 -->
-                <Style Selector="TextBlock"><Setter Property="FontSize" Value="14"/></Style>
-                <Style Selector="Button"><Setter Property="FontSize" Value="14"/><Setter Property="MinHeight" Value="32"/><Setter Property="Padding" Value="10,5"/></Style>
-                <Style Selector="TextBox"><Setter Property="FontSize" Value="14"/><Setter Property="MinHeight" Value="32"/><Setter Property="Padding" Value="8,5"/></Style>
-                <Style Selector="ComboBox"><Setter Property="FontSize" Value="14"/><Setter Property="MinHeight" Value="32"/><Setter Property="Padding" Value="8,5"/></Style>
-                <Style Selector="CheckBox"><Setter Property="FontSize" Value="14"/><Setter Property="MinHeight" Value="32"/></Style>
-                <Style Selector="RadioButton"><Setter Property="FontSize" Value="14"/><Setter Property="MinHeight" Value="32"/></Style>
+                <!-- Enabled 只赋给此子树的文字/表单控件，包含后来生成的数据项。
+                     排版器识别语义类、Theme、原字号和字重；跳过模板内部与字体绑定。 -->
+                <Style Selector="TextBlock, SelectableTextBlock, Button, TextBox, ComboBox, ComboBoxItem, ListBoxItem, CheckBox, RadioButton, ToggleButton, ToggleSwitch, NumericUpDown, AutoCompleteBox">
+                  <Setter Property="views:SongScrollSettingsTypography.Enabled" Value="True"/>
+                </Style>
+                <Style Selector="Button"><Setter Property="FontSize" Value="14"/><Setter Property="MinHeight" Value="28"/><Setter Property="Padding" Value="10,4"/></Style>
+                <Style Selector="Button.accent"><Setter Property="Background" Value="#4D7979"/><Setter Property="Foreground" Value="#FFF8E7"/></Style>
+                <Style Selector="TextBox"><Setter Property="FontSize" Value="14"/><Setter Property="MinHeight" Value="28"/><Setter Property="Padding" Value="8,4"/></Style>
+                <Style Selector="ComboBox, NumericUpDown, AutoCompleteBox"><Setter Property="FontSize" Value="14"/><Setter Property="MinHeight" Value="28"/><Setter Property="Padding" Value="8,4"/></Style>
+                <Style Selector="CheckBox, RadioButton, ToggleSwitch"><Setter Property="FontSize" Value="14"/><Setter Property="MinHeight" Value="28"/></Style>
+                <Style Selector="ToggleButton"><Setter Property="FontSize" Value="14"/></Style>
+                <Style Selector="Border.app-card"><Setter Property="BoxShadow" Value="none"/></Style>
+                <Style Selector="Button:focus-visible /template/ Border#FocusRing"><Setter Property="BorderBrush" Value="#4D7979"/><Setter Property="BorderThickness" Value="1.5"/></Style>
               </ContentControl.Styles>
             </ContentControl>
           </LayoutTransformControl>

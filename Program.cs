@@ -17,8 +17,13 @@ class Program
             Environment.ExitCode = VoiceImeMaintenanceElevation.RunWorkerAsync(args).GetAwaiter().GetResult();
             return;
         }
+        if (Array.Exists(args, value => value == VoiceImeUiProtocol.Switch))
+        {
+            Environment.ExitCode = VoiceImeUiHost.Run(args);
+            return;
+        }
         // 输入法独立设置窗口模式：只启动轻量设置弹窗，不初始化主窗口。
-        if (args.Length > 0 && args[0] == "--voice-ime-settings")
+        if (args.Length > 0 && args[0] is "--voice-ime-settings" or "--voice-ime-usage" or "--voice-ime-language")
         {
             WindowsDpiAwareness.TryEnablePerMonitorV2();
             Environment.ExitCode = BuildVoiceImeSettingsApp().StartWithClassicDesktopLifetime(args);
@@ -67,8 +72,6 @@ class Program
 
     public static AppBuilder BuildVoiceImeSettingsApp()
     {
-        IconProvider.Current.Register<FontAwesomeIconProvider>();
-
         return AppBuilder.Configure<VoiceImeSettingsApp>()
             .UsePlatformDetect()
             .WithInterFont()
@@ -80,8 +83,7 @@ public sealed class VoiceImeSettingsApp : Application
 {
     public override void Initialize()
     {
-        Styles.Add(new Avalonia.Themes.Fluent.FluentTheme());
-        Avalonia.Markup.Xaml.AvaloniaXamlLoader.Load(new Uri("avares://TrueFluentPro/App.axaml"));
+        VoiceImeUiTheme.Apply(this);
     }
 
     public override void OnFrameworkInitializationCompleted()
@@ -89,7 +91,12 @@ public sealed class VoiceImeSettingsApp : Application
         if (ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop)
         {
             desktop.ShutdownMode = Avalonia.Controls.ShutdownMode.OnMainWindowClose;
-            desktop.MainWindow = new TrueFluentPro.Views.VoiceImeSettingsWindow();
+            var args = desktop.Args ?? Array.Empty<string>();
+            desktop.MainWindow = Array.IndexOf(args, "--voice-ime-usage") >= 0
+                ? new TrueFluentPro.Views.VoiceImeUsageWindow()
+                : Array.IndexOf(args, "--voice-ime-language") >= 0
+                    ? new TrueFluentPro.Views.VoiceImeLanguageWindow()
+                    : new TrueFluentPro.Views.VoiceImeSettingsWindow();
         }
         base.OnFrameworkInitializationCompleted();
     }

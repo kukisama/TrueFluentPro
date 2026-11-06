@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <!-- 故意不引用主项目：不触发 native / Updater / Host 热同步或并行主项目构建。 -->
+  <ItemGroup>
+    <Compile Include="ReportTests.cs" />
+    <Compile Include="../../Services/VoiceImeUsageReportService.cs" Link="Production/VoiceImeUsageReportService.cs" />
+    <Compile Include="../../Views/VoiceImeUsageWindow.cs" Link="Production/VoiceImeUsageWindow.cs" />
+    <Compile Include="../../Services/PathManager.cs" Link="Production/PathManager.cs" />
+    <Compile Include="../../Services/Storage/SqliteDbService.cs" Link="Production/SqliteDbService.cs" />
+    <Compile Include="../../Services/Storage/ISqliteDbService.cs" Link="Production/ISqliteDbService.cs" />
+    <Compile Include="../../Services/Storage/SqliteDebugLogger.cs" Link="Production/SqliteDebugLogger.cs" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.3.11" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.11" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.22" />
+  </ItemGroup>
+</Project>

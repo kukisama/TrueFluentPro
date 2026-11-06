@@ -31,7 +31,7 @@ internal static class Program
         // 自管 deadline 的桌面专项清理窗口/主题后才退出消息循环。
         using var stop = args.Contains("--window-chrome") || args.Contains("--window-chrome-visual")
             || args.Contains("--song-scroll-workspace") || args.Contains("--song-scroll-workspace-layout")
-            || args.Contains("--song-scroll-business-binding")
+            || args.Contains("--song-scroll-business-binding") || args.Contains("--song-scroll-polish")
             ? new CancellationTokenSource() : new CancellationTokenSource(TimeSpan.FromSeconds(45));
         var exitCode = 1;
         Dispatcher.UIThread.Post(async () =>
@@ -39,6 +39,9 @@ internal static class Program
             try
             {
                 if (args.Contains("--window-chrome-visual")) await WindowChromeRegression.VerifyVisualAsync();
+                else if (args.Contains("--song-scroll-audio-interaction")) await SongScrollAudioInteractionRegression.VerifyAsync();
+                else if (args.Contains("--song-scroll-realtime-interaction")) await SongScrollRealtimeInteractionRegression.VerifyAsync();
+                else if (args.Contains("--song-scroll-polish")) await SongScrollPolishRegression.VerifyAsync();
                 else if (args.Contains("--song-scroll-business-binding")) await SongScrollBusinessBindingRegression.VerifyAsync();
                 else if (args.Contains("--song-scroll-workspace")) await SongScrollWorkspaceRegression.VerifyAsync();
                 else if (args.Contains("--song-scroll-workspace-layout")) await SongScrollWorkspaceRegression.VerifyAsync(interactive: false);

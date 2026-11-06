@@ -10,11 +10,13 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Security.Principal;
 using System.Text;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
 using Microsoft.Win32;
 using TrueFluentPro.Models;
+using TrueFluentPro.Services.Storage;
 
 namespace TrueFluentPro.Services;
 
@@ -46,12 +48,15 @@ public static partial class VoiceImeHost
                 var tokens = new AzureTokenProviderStore();
                 var authentication = new SharedAuthentication(process.SessionId, process.MainModule!.FileName);
                 using var configCache = new RuntimeConfigurationCache();
+                await using var usage = new VoiceImeUsageService(() => new SqliteDbService(
+                    Path.Combine(PathManager.Instance.AppDataPath, "truefluentpro.db")),
+                    process.SessionId.ToString(CultureInfo.InvariantCulture));
                 await using var session = new MainSharedSession(name, VoiceImeMaintenance.GatePath,
                     authentication.Authenticate, authentication.Foreground, configCache.GetAsync,
-                    config => new ChatVoiceInputFactory(resolver, new RealtimeConnectionSpecResolver(), tokens,
-                        useConfiguredLanguage: true, endSilenceTimeoutSeconds: config.VoiceIme.EndSilenceTimeoutSeconds).Create(config),
+                    config => CreateVoiceInputSession(config, new ChatVoiceInputFactory(resolver, new RealtimeConnectionSpecResolver(), tokens,
+                        useConfiguredLanguage: true, endSilenceTimeoutSeconds: config.VoiceIme.EndSilenceTimeoutSeconds), tokens),
                     Path.Combine(directory, "microphone.lock"), callback => new VoiceImeToolbar(callback), lifetime.Token,
-                    enablePrewarmRouting: true);
+                    enablePrewarmRouting: true, usage: usage);
                 return await session.RunAsync().ConfigureAwait(false);
             }
         }
@@ -64,10 +69,12 @@ public static partial class VoiceImeHost
         Func<NamedPipeServerStream, uint, bool> authenticate, Func<NamedPipeServerStream, uint, bool> foreground,
         Func<Task<AzureSpeechConfig>> load, Func<AzureSpeechConfig, IChatVoiceInputSession> create,
         Action<Action<int, int>> attachUi, Action<bool, int, bool, bool> updateUi, Action closeUi,
-        Task uiClosed, CancellationToken token)
+        Task uiClosed, CancellationToken token, TimeProvider? timeProvider = null,
+        VoiceImeUsageService? usage = null, Action<bool, bool>? updateHistory = null)
     {
         await using var session = new MainSharedSession(name, gate, authenticate, foreground, load, create,
-            null, callback => new FixtureToolbar(callback, attachUi, updateUi, closeUi, uiClosed), token);
+            null, callback => new FixtureToolbar(callback, attachUi, updateUi, closeUi, uiClosed, updateHistory), token,
+            timeProvider: timeProvider, usage: usage);
         return await session.RunAsync().ConfigureAwait(false);
     }
 
@@ -75,13 +82,15 @@ public static partial class VoiceImeHost
     {
         private readonly Action<bool, int, bool, bool> _update;
         private readonly Action _close;
+        private readonly Action<bool, bool>? _history;
         private int _closed;
         public FixtureToolbar(Action<int, int> callback, Action<Action<int, int>> attach,
-            Action<bool, int, bool, bool> update, Action close, Task completion)
-        { _update = update; _close = close; Completion = completion; attach(callback); }
+            Action<bool, int, bool, bool> update, Action close, Task completion, Action<bool, bool>? history)
+        { _update = update; _close = close; _history = history; Completion = completion; attach(callback); }
         public Task Ready => Task.CompletedTask;
         public Task Completion { get; }
         public void Update(bool visible, int state, bool stopped, bool error) => _update(visible, state, stopped, error);
+        public void UpdateHistory(bool enabled, bool available) => _history?.Invoke(enabled, available);
         public void Close() { if (Interlocked.Exchange(ref _closed, 1) == 0) _close(); }
         public ValueTask DisposeAsync() { Close(); return new ValueTask(Completion); }
     }
@@ -90,6 +99,7 @@ public static partial class VoiceImeHost
     private sealed class MainSharedSession : IAsyncDisposable
     {
         private static readonly UTF8Encoding StrictUtf8 = new(false, true);
+        private static readonly TimeSpan NoTextTimeout = TimeSpan.FromMinutes(1);
         private const string ErrorText = "语音输入已中断，请在主程序中检查语音资源和麦克风后重试。";
         private readonly string _name, _gate;
         private readonly string? _microphonePath;
@@ -99,6 +109,8 @@ public static partial class VoiceImeHost
         private readonly Func<AzureSpeechConfig, IChatVoiceInputSession> _create;
         private readonly CancellationTokenSource _lifetime;
         private readonly bool _enablePrewarmRouting;
+        private readonly TimeProvider _timeProvider;
+        private readonly VoiceImeUsageService? _usage;
         private readonly Channel<Action> _commands = Channel.CreateBounded<Action>(new BoundedChannelOptions(256)
         { SingleReader = true, SingleWriter = false, FullMode = BoundedChannelFullMode.Wait });
         private readonly HashSet<Peer> _peers = new(); // 仅 actor 访问
@@ -109,10 +121,11 @@ public static partial class VoiceImeHost
         private Task _released = Task.CompletedTask;
         private AudioRound? _audio;
         private PrewarmState? _prewarmed;
-        private Process? _settingsProcess;
+        private VoiceImeUiClient? _toolWindows;
         private Target? _target;
         private Target? _selection;
         private long _epoch;
+        private long _targetRevision;
         private string _sentence = "";
         private int _boundary, _delivered;
         private char _status = 'I';
@@ -123,11 +136,13 @@ public static partial class VoiceImeHost
             Func<NamedPipeServerStream, uint, bool> foreground, Func<Task<AzureSpeechConfig>> load,
             Func<AzureSpeechConfig, IChatVoiceInputSession> create, string? microphonePath,
             Func<Action<int, int>, IVoiceImeToolbar> toolbar, CancellationToken token,
-            bool enablePrewarmRouting = false)
+            bool enablePrewarmRouting = false, TimeProvider? timeProvider = null, VoiceImeUsageService? usage = null)
         {
             _name = name; _gate = gate; _authenticate = authenticate; _foreground = foreground;
             _load = load; _create = create; _microphonePath = microphonePath;
             _enablePrewarmRouting = enablePrewarmRouting;
+            _timeProvider = timeProvider ?? TimeProvider.System;
+            _usage = usage;
             _lifetime = CancellationTokenSource.CreateLinkedTokenSource(token);
             _toolbar = toolbar((kind, value) => Post(() =>
             {
@@ -135,7 +150,16 @@ public static partial class VoiceImeHost
                 else if (kind == 2 && value == 1) { _visible = true; UpdateUi(); MaybeTriggerPrewarm(); }
                 else if (kind == 2 && value == 0) OtherIme(); // native ACTIVE 的独立实际依据
                 else if (kind == 3) OpenSettingsWindow(); // 点击浮窗齿轮图标
+                else if (kind == 5) _toolWindows?.Request(VoiceImeUiCommand.Usage);
+                else if (kind == 6) { DiscardPrewarm(); _toolWindows?.Request(VoiceImeUiCommand.Language); }
+                else if (kind == 4 && value is 0 or 1)
+                {
+                    // native 已确认同意；不读写整份语音资源 config，不乐观亮灯。
+                    if (_usage != null) _ = _usage.SetHistoryAsync(value == 1);
+                    UpdateHistory();
+                }
             }));
+            if (_usage != null) _usage.StatusChanged += UsageStatusChanged;
         }
 
         public async Task<int> RunAsync()
@@ -146,7 +170,13 @@ public static partial class VoiceImeHost
             {
                 VoiceImeMaintenance.Check(_gate, _lifetime);
                 await _toolbar.Ready.WaitAsync(_lifetime.Token).ConfigureAwait(false);
+                Post(UpdateHistory);
                 _accept = AcceptAsync();
+                if (_enablePrewarmRouting)
+                {
+                    _toolWindows = new VoiceImeUiClient(_lifetime.Token);
+                    _toolWindows.Request(VoiceImeUiCommand.Warm); // owner 就绪后后台预热；actor 不等待启动/IPC。
+                }
                 await Task.WhenAny(_accept, _actor, _toolbar.Completion,
                     Task.Delay(Timeout.Infinite, _lifetime.Token)).ConfigureAwait(false);
                 return 0;
@@ -167,7 +197,7 @@ public static partial class VoiceImeHost
             catch { _lifetime.Cancel(); }
             finally
             {
-                StopAudio();
+                StopAudio("owner_exit");
                 DiscardPrewarm();
                 _visible = false;
                 UpdateUi();
@@ -284,6 +314,7 @@ public static partial class VoiceImeHost
                     _selection = new Target(peer, generation);
                     if (_target is { } old && old.Peer == peer && old.Generation == generation) return;
                     _boundary = Math.Max(_sentence.Length, _delivered);
+                    _targetRevision++;
                     Volatile.Write(ref _target, new Target(peer, generation));
                     MaybeTriggerPrewarm();
                     break;
@@ -314,6 +345,7 @@ public static partial class VoiceImeHost
                     return;
                 }
                 var config = CreateRuntimeConfiguration(raw);
+                state.Configuration = JsonSerializer.Serialize(config);
                 state.Cts.Token.ThrowIfCancellationRequested();
                 var session = _create(config);
                 if (!state.TryAttach(session))
@@ -323,6 +355,8 @@ public static partial class VoiceImeHost
                 }
                 if (session is ChatVoiceInputSession production)
                     await production.PrewarmAsync(state.Cts.Token).ConfigureAwait(false);
+                else if (session is VoiceImeTranslationSession translation)
+                    await translation.PrewarmAsync(state.Cts.Token).ConfigureAwait(false);
             }
             catch
             {
@@ -355,24 +389,16 @@ public static partial class VoiceImeHost
             {
                 try { await production.ResourcesReleased.ConfigureAwait(false); } catch { }
             }
+            else if (voice is VoiceImeTranslationSession translation)
+            {
+                try { await translation.ResourcesReleased.ConfigureAwait(false); } catch { }
+            }
         }
 
         private void OpenSettingsWindow()
         {
-            try
-            {
-                if (_settingsProcess is { HasExited: false }) return;
-                var exe = Environment.ProcessPath;
-                if (string.IsNullOrWhiteSpace(exe) || !File.Exists(exe)) return;
-                _settingsProcess = Process.Start(new ProcessStartInfo
-                {
-                    FileName = exe,
-                    Arguments = "--voice-ime-settings",
-                    WorkingDirectory = Path.GetDirectoryName(exe) ?? AppContext.BaseDirectory,
-                    UseShellExecute = false
-                });
-            }
-            catch { }
+            DiscardPrewarm();
+            _toolWindows?.Request(VoiceImeUiCommand.Settings);
         }
 
         private bool SafeForeground(Peer peer)
@@ -386,6 +412,7 @@ public static partial class VoiceImeHost
             if (_target is not { } target || target.Peer != peer
                 || (generation.HasValue && target.Generation != generation.Value)) return;
             Volatile.Write(ref _target, null);
+            _targetRevision++;
             _boundary = Math.Max(_sentence.Length, _delivered);
         }
 
@@ -395,13 +422,17 @@ public static partial class VoiceImeHost
             if (_target is not { } target || !SafeForeground(target.Peer)) return;
             VoiceImeMaintenance.Check(_gate, _lifetime);
             IChatVoiceInputSession? prewarmedVoice = null;
+            string? prewarmedConfiguration = null;
             if (_prewarmed is { } state)
             {
                 _prewarmed = null;
                 prewarmedVoice = state.Take();
+                prewarmedConfiguration = state.Configuration;
                 state.Dispose();
             }
             var round = new AudioRound(Interlocked.Increment(ref _epoch), _lifetime.Token, prewarmedVoice);
+            round.PrewarmedConfiguration = prewarmedConfiguration;
+            round.UsageSession = _usage?.BeginSession();
             _audio = round;
             _sentence = ""; _boundary = _delivered = 0;
             _status = 'C'; _stopped = _error = false;
@@ -410,11 +441,18 @@ public static partial class VoiceImeHost
             _released = Task.Run(() => RunAudioAsync(round, previous));
         }
 
-        private void StopAudio()
+        private void StopAudio(string reason = "manual_stop")
         {
             if (_audio is not { } round) return;
             _audio = null;
             Interlocked.Increment(ref _epoch); // 先隔离回调，再取消；连接中的第二个 T 不等 StartAsync
+            round.NoTextTimer?.Dispose();
+            round.NoTextTimer = null;
+            round.UsageTimer?.Dispose();
+            round.UsageTimer = null;
+            // F8 本地结束 composition 保留末句，不等云端 final；翻译尚未输出的 partial 不补定稿。
+            if (round.UsageSession is { } usageId)
+                _usage?.EndSession(usageId, reason, finalizePending: reason == "manual_stop" && !round.Translating);
             round.Stop.Cancel();
             _sentence = ""; _boundary = _delivered = 0;
             _status = 'S'; _stopped = true;
@@ -423,7 +461,7 @@ public static partial class VoiceImeHost
 
         private void OtherIme()
         {
-            StopAudio();
+            StopAudio("other_ime");
             DiscardPrewarm();
             _selection = null;
             Volatile.Write(ref _target, null);
@@ -437,7 +475,8 @@ public static partial class VoiceImeHost
             FileStream? microphone = null;
             Task? starting = null;
             Action<string, bool> text = (value, final) => Post(() => Recognized(round, value, final));
-            Action<string> failed = _ => Post(() => Failed(round));
+            Action<string, bool> source = (value, final) => Post(() => SourceRecognized(round, value, final));
+            Action<string> failed = message => Post(() => Failed(round, voice is VoiceImeTranslationSession ? message : null));
             var failure = false;
             try
             {
@@ -450,13 +489,20 @@ public static partial class VoiceImeHost
                     VoiceImeMaintenance.GuardPath(_microphonePath);
                     microphone = new FileStream(_microphonePath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
                 }
+                var config = CreateRuntimeConfiguration(await _load().WaitAsync(round.Stop.Token).ConfigureAwait(false));
+                if (voice != null && round.PrewarmedConfiguration != JsonSerializer.Serialize(config))
+                {
+                    await DisposeVoiceSessionAsync(voice).ConfigureAwait(false);
+                    voice = null;
+                }
                 if (voice == null)
                 {
-                    var config = CreateRuntimeConfiguration(await _load().WaitAsync(round.Stop.Token).ConfigureAwait(false));
                     round.Stop.Token.ThrowIfCancellationRequested();
                     VoiceImeMaintenance.Check(_gate, _lifetime);
                     voice = _create(config);
                 }
+                round.Translating = voice is VoiceImeTranslationSession;
+                if (voice is VoiceImeTranslationSession translation) translation.SourceRecognized += source;
                 voice.TextRecognized += text;
                 voice.Failed += failed;
                 starting = voice.StartAsync(round.Stop.Token);
@@ -465,6 +511,19 @@ public static partial class VoiceImeHost
                 {
                     if (!Current(round)) return;
                     _status = 'R'; Broadcast('R'); UpdateUi();
+                    round.LastTextTimestamp = _timeProvider.GetTimestamp();
+                    round.NoTextTimer = _timeProvider.CreateTimer(_ => Post(() => CheckNoTextTimeout(round)),
+                        null, NoTextTimeout, Timeout.InfiniteTimeSpan);
+                    if (round.UsageSession is { } usageId)
+                    {
+                        _usage!.RecordingStarted(usageId);
+                        round.UsageTimer = _timeProvider.CreateTimer(_ => Post(() =>
+                        {
+                            if (!Current(round) || round.UsageTimer == null) return;
+                            _usage.Checkpoint(usageId);
+                            round.UsageTimer.Change(TimeSpan.FromSeconds(15), Timeout.InfiniteTimeSpan);
+                        }), null, TimeSpan.FromSeconds(15), Timeout.InfiniteTimeSpan);
+                    }
                 });
                 await Task.Delay(Timeout.Infinite, round.Stop.Token).ConfigureAwait(false);
             }
@@ -476,12 +535,17 @@ public static partial class VoiceImeHost
                 if (voice != null)
                 {
                     voice.TextRecognized -= text;
+                    if (voice is VoiceImeTranslationSession translated) translated.SourceRecognized -= source;
                     voice.Failed -= failed;
                     try { await voice.StopAsync().ConfigureAwait(false); } catch { failure = true; }
                     try { await voice.DisposeAsync().ConfigureAwait(false); } catch { failure = true; }
                     if (voice is ChatVoiceInputSession production)
                     {
                         try { await production.ResourcesReleased.ConfigureAwait(false); } catch { failure = true; }
+                    }
+                    else if (voice is VoiceImeTranslationSession translation)
+                    {
+                        try { await translation.ResourcesReleased.ConfigureAwait(false); } catch { failure = true; }
                     }
                 }
                 // 不让忽略取消的迟到 Start 在下一轮已经拿锁之后重新占麦；异常在这里被观察。
@@ -497,17 +561,69 @@ public static partial class VoiceImeHost
 
         private bool Current(AudioRound round) => ReferenceEquals(_audio, round) && _epoch == round.Epoch;
 
-        private void Failed(AudioRound round)
+        private void CheckNoTextTimeout(AudioRound round)
+        {
+            // Timer 回调只入 actor；已排队的旧回调不能停止新一轮，也不能覆盖刚到的文字。
+            if (!Current(round) || round.NoTextTimer == null) return;
+            var remaining = NoTextTimeout - _timeProvider.GetElapsedTime(round.LastTextTimestamp);
+            if (remaining > TimeSpan.Zero)
+                round.NoTextTimer.Change(remaining, Timeout.InfiniteTimeSpan);
+            else StopAudio("inactivity_timeout"); // 立即广播 S，并实际停止/释放识别器和麦克风。
+        }
+
+        private void Failed(AudioRound round, string? message = null)
         {
             if (!Current(round)) return;
-            StopAudio();
+            StopAudio("failed");
             _status = 'E'; _error = true;
-            Broadcast('E', ErrorText); UpdateUi();
+            Broadcast('E', message ?? ErrorText); UpdateUi();
         }
 
         private void Recognized(AudioRound round, string text, bool final)
         {
             if (!Current(round)) return;
+            if (round.Translating)
+            {
+                if (!final || !round.TranslationTargets.TryDequeue(out var captured)) return;
+                if (captured.Target is { } destination && captured.Revision == _targetRevision
+                    && destination == _target && SafeForeground(destination.Peer))
+                    Send(destination.Peer, 'F', destination.Generation, text);
+                return;
+            }
+            TrackSource(round, text, final);
+            DeliverRecognized(text, final);
+        }
+
+        private void SourceRecognized(AudioRound round, string text, bool final)
+        {
+            if (!Current(round)) return;
+            TrackSource(round, text, final);
+            if (!string.IsNullOrWhiteSpace(text) && !round.SourceSentenceStarted)
+            {
+                round.SourceSentenceStarted = true;
+                round.SourceTarget = _target;
+                round.SourceRevision = _targetRevision;
+            }
+            if (!final) return;
+            if (!string.IsNullOrWhiteSpace(text))
+                round.TranslationTargets.Enqueue((round.SourceTarget, round.SourceRevision));
+            round.SourceSentenceStarted = false;
+            round.SourceTarget = null;
+        }
+
+        private void TrackSource(AudioRound round, string text, bool final)
+        {
+            if (round.UsageSession is { } usageId) _usage?.Recognized(usageId, text, final);
+            if (!string.IsNullOrWhiteSpace(text) && round.NoTextTimer != null)
+            {
+                // partial/final 都算出字；空白结果、音量和焦点切换不延长计费会话。
+                round.LastTextTimestamp = _timeProvider.GetTimestamp();
+                round.NoTextTimer.Change(NoTextTimeout, Timeout.InfiniteTimeSpan);
+            }
+            }
+
+            private void DeliverRecognized(string text, bool final)
+            {
             _sentence = text;
             if (_target is { } target)
             {
@@ -534,12 +650,20 @@ public static partial class VoiceImeHost
             try
             {
                 if (StrictUtf8.GetByteCount(payload) + 1 > MaximumFrame
-                    || !peer.Output.Writer.TryWrite(new Output(kind, payload, epoch, generation))) peer.Close();
+                    || !peer.Output.Writer.TryWrite(new Output(kind, payload, epoch, generation, _targetRevision))) peer.Close();
             }
             catch (EncoderFallbackException) { peer.Close(); }
         }
 
         private void UpdateUi() => _toolbar.Update(_visible, _status == 'C' ? 1 : _status == 'R' ? 2 : 0, _stopped, _error);
+
+        private void UsageStatusChanged(VoiceImeUsageStatus _) => Post(UpdateHistory);
+        private void UpdateHistory()
+        {
+            var status = _usage?.Status ?? new VoiceImeUsageStatus(false, false);
+            if (status.Updating) return; // native 已自行进入 pending；只回传最终成功或失败。
+            _toolbar.UpdateHistory(status.HistoryEnabled, status.Available);
+        }
 
         private async Task WritePeerAsync(Peer peer)
         {
@@ -551,6 +675,7 @@ public static partial class VoiceImeHost
                     {
                         var target = Volatile.Read(ref _target);
                         if (target == null || target.Peer != peer || target.Generation != frame.Generation
+                            || Volatile.Read(ref _targetRevision) != frame.TargetRevision
                             || Volatile.Read(ref _epoch) != frame.Epoch || !SafeForeground(peer)) continue;
                     }
                     await WriteFrameAsync(peer.Pipe, frame.Kind, frame.Payload, peer.Token).ConfigureAwait(false);
@@ -583,20 +708,31 @@ public static partial class VoiceImeHost
             _lifetime.Cancel();
             _commands.Writer.TryComplete();
             _toolbar.Close();
+            if (_toolWindows != null) await _toolWindows.DisposeAsync().ConfigureAwait(false);
             await Task.WhenAll(_actor, _accept, _monitor).ConfigureAwait(false);
             await Task.WhenAll(_connections).ConfigureAwait(false);
             await _released.ConfigureAwait(false);
+            if (_usage != null) _usage.StatusChanged -= UsageStatusChanged;
             await _toolbar.DisposeAsync().ConfigureAwait(false);
             _slots.Dispose(); _lifetime.Dispose();
         }
 
         private sealed record Target(Peer Peer, ulong Generation);
-        private sealed record Output(char Kind, string Payload, long Epoch, ulong Generation);
+        private sealed record Output(char Kind, string Payload, long Epoch, ulong Generation, long TargetRevision);
         private sealed class AudioRound(long epoch, CancellationToken token, IChatVoiceInputSession? prewarmedVoice = null)
         {
             internal readonly long Epoch = epoch;
             internal readonly IChatVoiceInputSession? PrewarmedVoice = prewarmedVoice;
             internal readonly CancellationTokenSource Stop = CancellationTokenSource.CreateLinkedTokenSource(token);
+            internal ITimer? NoTextTimer;
+            internal ITimer? UsageTimer;
+            internal Guid? UsageSession;
+            internal long LastTextTimestamp;
+            internal string? PrewarmedConfiguration;
+            internal bool Translating, SourceSentenceStarted;
+            internal Target? SourceTarget;
+            internal long SourceRevision;
+            internal readonly Queue<(Target? Target, long Revision)> TranslationTargets = new();
         }
         private sealed class PrewarmState(CancellationToken token) : IDisposable
         {
@@ -604,6 +740,7 @@ public static partial class VoiceImeHost
             private IChatVoiceInputSession? _session;
             private bool _disposed;
             internal readonly CancellationTokenSource Cts = CancellationTokenSource.CreateLinkedTokenSource(token);
+            internal string? Configuration;
             internal bool TryAttach(IChatVoiceInputSession session)
             {
                 lock (_gate)

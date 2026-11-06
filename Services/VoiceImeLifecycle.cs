@@ -414,7 +414,7 @@ public sealed partial class VoiceImeRegistrationService
 
     private PackagePlan PlanPackage()
     {
-        var host = Path.Combine(_baseDirectory, "TrueFluentPro.exe");
+        var host = VoiceImeUiProtocol.SourceExecutable(Path.Combine(_baseDirectory, "TrueFluentPro.exe"));
         VoiceImeMaintenance.GuardPath(host);
         if (!File.Exists(host)) throw new RegistrationException("缺少主程序 TrueFluentPro.exe，无法安装/修复输入法。");
         var version = ReadPackageVersion(Architectures.Select(GetPackageEntry))
@@ -525,7 +525,7 @@ public sealed partial class VoiceImeRegistrationService
     {
         var state = await InspectLifecycleAsync(ReadLifecycleManifest()).ConfigureAwait(false);
         if (state.Complete && !File.Exists(MaintenancePath))
-            DeployStandaloneHostDirectory(Path.Combine(_baseDirectory, "TrueFluentPro.exe"));
+            DeployStandaloneHostDirectory(VoiceImeUiProtocol.SourceExecutable(Path.Combine(_baseDirectory, "TrueFluentPro.exe")));
         return new Result(true, "后台部署检查完成。");
     }, writes: false);
 
