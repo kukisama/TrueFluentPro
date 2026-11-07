@@ -10,6 +10,8 @@
   </PropertyGroup>
   <!-- 不引用主项目、不加入 solution、不触发 native/Updater/Sync-Host。直接编译本次生产源码。 -->
   <ItemGroup>
+    <Compile Include="..\..\Services\VoiceImeWindowDesign.cs" />
+    <Compile Include="..\..\Views\VoiceImeToolPage.cs;..\..\Views\VoiceImeToolsWindow.cs" />
     <Reference Include="$(ProductionDir)Avalonia*.dll;$(ProductionDir)CommunityToolkit.Mvvm.dll;$(ProductionDir)Microsoft.Data.Sqlite.dll;$(ProductionDir)SQLitePCLRaw*.dll;$(ProductionDir)TrueFluentPro.dll"><Private>true</Private></Reference>
     <Content Include="$(ProductionDir)*.dll">
       <Link>%(Filename)%(Extension)</Link><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

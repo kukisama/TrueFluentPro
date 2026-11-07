@@ -17,8 +17,8 @@ using TrueFluentPro.Services;
 
 namespace TrueFluentPro.Views;
 
-/// <summary>独立只读用量窗口；可由主 UI 或原生浮条启动的 Avalonia 入口直接 Show。</summary>
-public sealed class VoiceImeUsageWindow : Window
+/// <summary>只读用量页；沿用完整报表与会话原文查询，不持有窗口。</summary>
+internal sealed class VoiceImeUsagePage : VoiceImeToolPage
 {
     private static readonly IBrush Ink = Brush("#132B49");
     private static readonly IBrush Muted = Brush("#62758B");
@@ -26,6 +26,11 @@ public sealed class VoiceImeUsageWindow : Window
     private static readonly IBrush Line = Brush("#E3EAF3");
     private static readonly CultureInfo Chinese = CultureInfo.GetCultureInfo("zh-CN");
     private readonly VoiceImeUsageReportService _service;
+    private readonly bool _unified;
+    private readonly Grid _sheetHost = new() { Name = "UsageSheetsHost" };
+    private readonly Dictionary<int, Button> _sheets = new();
+    private readonly Control?[] _sheetViews = new Control?[5];
+    internal int SelectedSheet { get; private set; }
     private readonly Button _refresh = new() { Content = "刷新报表", Name = "UsageRefresh" };
     private readonly Button[] _ranges;
     private readonly TextBlock _rangeCaption = Text("", 13, Muted);
@@ -37,11 +42,14 @@ public sealed class VoiceImeUsageWindow : Window
     private int _days = 7;
     private long _request;
     private bool _closed;
+    private bool _started;
     private CancellationTokenSource? _textCts;
     private long _textRequest;
     private string? _selectedSessionId;
     private long _textNextSequence;
     private ListBox? _sessionList;
+    private readonly Dictionary<string, StackPanel> _sessionRows = new();
+    private StackPanel? _detailHome;
     private Border? _textArea;
     private StackPanel? _textRows;
     private TextBlock? _textStatus;
@@ -50,33 +58,15 @@ public sealed class VoiceImeUsageWindow : Window
     private Button? _nextText;
     private Button? _cancelText;
 
-    public VoiceImeUsageWindow() : this(new VoiceImeUsageReportService()) { }
+    internal VoiceImeUsagePage(bool unified = false) : this(new VoiceImeUsageReportService(), unified) { }
 
     // 隔离 fixture 使用自己的数据库；生产入口始终保留无参构造。
-    internal VoiceImeUsageWindow(VoiceImeUsageReportService service)
+    internal VoiceImeUsagePage(VoiceImeUsageReportService service, bool unified = false)
     {
         _service = service;
-        Title = "译见pro · 语音输入用量";
-        Width = 1040;
-        Height = 820;
-        MinWidth = 760;
-        MinHeight = 600;
-        WindowStartupLocation = WindowStartupLocation.CenterScreen;
-        RequestedThemeVariant = ThemeVariant.Light;
-        Background = Brush("#F3F7FC");
-        FontFamily = new FontFamily("Microsoft YaHei UI, PingFang SC, Noto Sans CJK SC, sans-serif");
+        _unified = unified;
         _updated.TextWrapping = TextWrapping.Wrap;
 
-        Styles.Add(new Style(selector => selector.OfType<Button>())
-        {
-            Setters =
-            {
-                new Setter(Button.MinHeightProperty, 38d),
-                new Setter(Button.PaddingProperty, new Thickness(16, 8)),
-                new Setter(Button.CornerRadiusProperty, new CornerRadius(8)),
-                new Setter(Button.HorizontalContentAlignmentProperty, HorizontalAlignment.Center)
-            }
-        });
         Styles.Add(new Style(selector => selector.OfType<ListBoxItem>())
         {
             Setters =
@@ -86,21 +76,11 @@ public sealed class VoiceImeUsageWindow : Window
             }
         });
 
-        var titleStack = new StackPanel { Spacing = 8 };
-        titleStack.Children.Add(Text("VOICE INPUT  /  本地用量", 12, Brush("#98BAE6")));
-        titleStack.Children.Add(Text("让每一次表达，都看得见", 27, Brushes.White, FontWeight.SemiBold));
-        titleStack.Children.Add(Text("语音输入统计  ·  识别定稿产出，不代表成功插入字数或费用", 13, Brush("#CDDCF0")));
-        var header = new Border
-        {
-            Background = Ink, Padding = new Thickness(28, 22), Child = titleStack
-        };
-
         _ranges = new[] { RangeButton("今日", 1), RangeButton("7 天", 7), RangeButton("30 天", 30) };
         var rangeButtons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
         foreach (var button in _ranges) rangeButtons.Children.Add(button);
         SelectRangeVisuals();
-        _refresh.Background = Blue;
-        _refresh.Foreground = Brushes.White;
+        if (!_unified) _refresh.Classes.Add("accent");
         _refresh.Click += async (_, _) => await RefreshAsync();
         var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 16 };
         actions.Children.Add(rangeButtons);
@@ -126,20 +106,82 @@ public sealed class VoiceImeUsageWindow : Window
             Content = page, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto
         };
-        var footer = new Border
+        var footer = VoiceImeWindowDesign.Footer(_updated);
+        if (_unified)
         {
-            Background = Brushes.White, BorderBrush = Line, BorderThickness = new Thickness(0, 1, 0, 0),
-            Padding = new Thickness(28, 13), Child = _updated
-        };
-        var root = new Grid { RowDefinitions = new("Auto,*,Auto") };
-        root.Children.Add(header);
-        Grid.SetRow(scroll, 1);
+            page.Children.Clear(); // 固定工具栏/状态移出旧滚动容器，不能同时挂在两个父级。
+            _refresh.Content = new TextBlock
+            {
+                Text = "\uE72C", FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"), FontSize = 16
+            };
+            _refresh.Width = _refresh.Height = 32;
+            _refresh.MinHeight = 0;
+            _refresh.Padding = new Thickness(0);
+            _refresh.Background = Brushes.Transparent;
+            _refresh.BorderThickness = new Thickness(0);
+            AutomationProperties.SetName(_refresh, "刷新报表");
+            ToolTip.SetTip(_refresh, "刷新报表");
+            actions.Spacing = 8;
+            var title = Text("语音输入用量", 24, Ink, FontWeight.SemiBold);
+            toolbar.Children.Remove(_rangeCaption);
+            toolbar.Children.Insert(0, new StackPanel { Spacing = 4, Children = { title, _rangeCaption } });
+            var navigation = new Grid { Name = "UsageSheetNavigation", ColumnDefinitions = new("*,*,*,*,*"), ColumnSpacing = 6 };
+            var entries = new[]
+            {
+                ("Overview", "概览", "\uE9D2"), ("Daily", "每日趋势", "\uE8BF"),
+                ("Hours", "小时分布", "\uE917"), ("Distribution", "统计分布", "\uE9E9"),
+                ("Sessions", "会话记录", "\uE8A5")
+            };
+            for (var index = 0; index < entries.Length; index++)
+            {
+                var (name, label, glyph) = entries[index];
+                var selected = index;
+                var button = VoiceImeWindowDesign.SheetButton("UsageSheet" + name, label, glyph);
+                button.Click += (_, _) => SelectUsageSheet(selected);
+                Grid.SetColumn(button, index);
+                navigation.Children.Add(button);
+                _sheets.Add(index, button);
+            }
+            var header = new StackPanel
+            {
+                Name = "UsageFixedHeader", Margin = new Thickness(24, 20, 24, 16), Spacing = 16,
+                Children = { toolbar, navigation }
+            };
+            // 筛选与 Sheet 导航在滚动区之外，会话列表由剩余高度直接约束。
+            var sheetRoot = new Grid { RowDefinitions = new("Auto,Auto,*,Auto") };
+            sheetRoot.Children.Add(header);
+            _status.Margin = new Thickness(24, 0, 24, 12);
+            Grid.SetRow(_status, 1);
+            sheetRoot.Children.Add(_status);
+            _sheetHost.Margin = new Thickness(24, 0, 24, 16);
+            Grid.SetRow(_sheetHost, 2);
+            sheetRoot.Children.Add(_sheetHost);
+            Grid.SetRow(footer, 3);
+            sheetRoot.Children.Add(footer);
+            Content = sheetRoot;
+            SelectUsageSheet(0);
+            return;
+        }
+        var root = new Grid { RowDefinitions = new("*,Auto") };
         root.Children.Add(scroll);
-        Grid.SetRow(footer, 2);
+        Grid.SetRow(footer, 1);
         root.Children.Add(footer);
         Content = root;
-        Opened += async (_, _) => await RefreshAsync();
-        Closed += (_, _) => { _closed = true; _loadCts?.Cancel(); InvalidateSessionText(); };
+    }
+
+    internal override async Task InitializeAsync()
+    {
+        if (_closed || _started) return;
+        _started = true;
+        await RefreshAsync();
+    }
+
+    public override void Dispose()
+    {
+        if (_closed) return;
+        _closed = true;
+        _loadCts?.Cancel();
+        InvalidateSessionText();
     }
 
     private Button RangeButton(string label, int days)
@@ -147,7 +189,7 @@ public sealed class VoiceImeUsageWindow : Window
         var button = new Button { Content = label, Tag = days, Name = $"UsageRange{days}" };
         button.Click += async (_, _) =>
         {
-            if (_days == days) return;
+            if (_closed || _days == days) return;
             _days = days;
             SelectRangeVisuals();
             await RefreshAsync();
@@ -180,6 +222,7 @@ public sealed class VoiceImeUsageWindow : Window
         var request = ++_request;
         _refresh.IsEnabled = false;
         _reportContent.IsVisible = false; // 切换范围期间不把旧范围数据标成新范围。
+        _sheetHost.IsVisible = false;
         _rangeCaption.Text = _days == 1 ? "今日 · 本地自然日" : $"最近 {_days} 天 · 含今日";
         SetStatus("正在读取本地统计…", false);
         try
@@ -217,7 +260,7 @@ public sealed class VoiceImeUsageWindow : Window
     private void ShowReport(VoiceImeUsageReport report)
     {
         _rangeCaption.Text = $"{report.StartDate:yyyy.MM.dd} — {report.EndDate:yyyy.MM.dd}";
-        _updated.Text = $"更新于 {report.CapturedAt:HH:mm:ss} · 汇总不读取正文 · 原文仅在点击查看时读取";
+        _updated.Text = $"更新于 {report.CapturedAt:HH:mm:ss} · 汇总不读取正文 · 选中会话自动展开已保存原文";
         _reportContent.Children.Clear();
         if (report.Availability != VoiceImeUsageReportAvailability.Ready)
         {
@@ -242,8 +285,8 @@ public sealed class VoiceImeUsageWindow : Window
             comparisonCaption.Name = "UsageComparisonCaption";
             _reportContent.Children.Add(comparisonCaption);
         }
-        _reportContent.Children.Add(BuildChart(report));
-        _reportContent.Children.Add(BuildHours(report));
+        var daily = BuildChart(report);
+        var hours = BuildHours(report);
         var distributions = new Grid { ColumnDefinitions = new("*,*"), ColumnSpacing = 16 };
         distributions.Children.Add(BuildDistribution("表达的长度", "所选日期定稿 · 按保存的字素数分组",
             report.SentenceLengths, report.Utterances, "句", "UsageLengthDistribution"));
@@ -251,8 +294,7 @@ public sealed class VoiceImeUsageWindow : Window
             report.Outcomes, report.SessionCount, "次", "UsageOutcomeDistribution");
         Grid.SetColumn(outcomes, 1);
         distributions.Children.Add(outcomes);
-        _reportContent.Children.Add(distributions);
-        _reportContent.Children.Add(BuildSessions(report));
+        var sessions = BuildSessions(report);
 
         var definitions = new StackPanel { Spacing = 5 };
         definitions.Children.Add(Text("统计口径", 13, Ink, FontWeight.SemiBold));
@@ -261,8 +303,57 @@ public sealed class VoiceImeUsageWindow : Window
         definitions.Children.Add(Wrapped("关闭原文保存仍会统计全部维度；汇总不读取正文，已保存的历史原文仍可在会话详情查看。所有分布和上期对比基于完整范围，不受 200 条会话明细上限影响。", 12, Muted));
         definitions.Children.Add(Wrapped("活跃日指有定稿字数（> 0）的本地日期；连续活跃段只在选区内接续，日均产出除以所选全部自然日（含零产出日）。小时按每条定稿保存的 UTC 偏移还原，0 字定稿单列句长。", 12, Muted));
         definitions.Children.Add(Wrapped("进行中或异常中断会话只显示已保存的检查点时长，不按当前时间补算。数据不会自动轮询，点击刷新查看最新快照。", 12, Muted));
-        _reportContent.Children.Add(definitions);
-        _reportContent.IsVisible = true;
+        if (_unified)
+        {
+            var overview = new StackPanel { Spacing = 16 };
+            foreach (var child in _reportContent.Children.ToArray())
+            {
+                _reportContent.Children.Remove(child);
+                overview.Children.Add(child);
+            }
+            var activity = new Grid { ColumnDefinitions = new("*,*,*"), ColumnSpacing = 16 };
+            var values = new[]
+            {
+                ("活跃日", $"{report.ActiveDays} / {report.Days.Count} 天"),
+                ("最长连续", $"{report.LongestActiveStreak} 天"),
+                ("日均定稿", $"{report.DailyAverageCharacters.ToString("N1", Chinese)} 字")
+            };
+            for (var index = 0; index < values.Length; index++)
+            {
+                var item = new StackPanel { Spacing = 8, Children =
+                {
+                    Text(values[index].Item1, 12, Muted),
+                    Wrapped(values[index].Item2, 20, Ink, FontWeight.SemiBold)
+                } };
+                Grid.SetColumn(item, index);
+                activity.Children.Add(item);
+            }
+            overview.Children.Add(Card(activity, 20));
+            overview.Children.Add(new Expander { Header = "统计口径", Content = definitions, HorizontalAlignment = HorizontalAlignment.Stretch });
+            _sheetHost.Children.Clear();
+            _sheetViews[0] = SheetScroll(overview);
+            _sheetViews[1] = SheetScroll(daily);
+            _sheetViews[2] = SheetScroll(hours);
+            _sheetViews[3] = SheetScroll(distributions);
+            _sheetViews[4] = sessions;
+            for (var index = 0; index < _sheetViews.Length; index++)
+            {
+                var view = _sheetViews[index]!;
+                view.Name = "UsageSheetContent" + index;
+                view.IsVisible = index == SelectedSheet;
+                _sheetHost.Children.Add(view);
+            }
+            _sheetHost.IsVisible = true;
+        }
+        else
+        {
+            _reportContent.Children.Add(daily);
+            _reportContent.Children.Add(hours);
+            _reportContent.Children.Add(distributions);
+            _reportContent.Children.Add(sessions);
+            _reportContent.Children.Add(definitions);
+            _reportContent.IsVisible = true;
+        }
 
         void AddMetric(int column, string title, string value, string unit, string note, string name)
         {
@@ -302,6 +393,22 @@ public sealed class VoiceImeUsageWindow : Window
             metrics.Children.Add(card);
         }
     }
+
+    internal void SelectUsageSheet(int sheet)
+    {
+        if ((uint)sheet >= _sheetViews.Length) throw new ArgumentOutOfRangeException(nameof(sheet));
+        SelectedSheet = sheet;
+        foreach (var (index, button) in _sheets)
+            VoiceImeWindowDesign.SelectSheet(button, index == sheet, (string)button.Tag!);
+        for (var index = 0; index < _sheetViews.Length; index++)
+            if (_sheetViews[index] is { } view) view.IsVisible = index == sheet;
+    }
+
+    private static ScrollViewer SheetScroll(Control content) => new()
+    {
+        Content = content, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+        VerticalScrollBarVisibility = ScrollBarVisibility.Auto
+    };
 
     private static Border BuildChart(VoiceImeUsageReport report)
     {
@@ -481,56 +588,60 @@ public sealed class VoiceImeUsageWindow : Window
 
     private Border BuildSessions(VoiceImeUsageReport report)
     {
+        _sessionRows.Clear();
+        _sessionList = null;
         var stack = new StackPanel { Spacing = 12 };
         var heading = new Grid { ColumnDefinitions = new("*,Auto") };
-        heading.Children.Add(Text("会话明细", 16, Ink, FontWeight.SemiBold));
+        heading.Children.Add(Text(_unified ? "会话记录" : "会话明细", 16, Ink, FontWeight.SemiBold));
         var count = Text(report.MatchingSessions > report.Sessions.Count
             ? $"最近 {report.Sessions.Count} / 共 {Number(report.MatchingSessions)} 条"
             : $"共 {Number(report.MatchingSessions)} 条", 12, Muted);
         Grid.SetColumn(count, 1);
         heading.Children.Add(count);
         stack.Children.Add(heading);
-        _viewText = new Button { Content = "查看原文", Name = "UsageViewSessionText", IsEnabled = false,
-            Background = Blue, Foreground = Brushes.White };
+        _viewText = VoiceImeWindowDesign.IconButton("UsageViewSessionText", "\uE72C", "刷新原文");
+        _viewText.IsEnabled = false;
         _viewText.Click += async (_, _) => await LoadSessionTextAsync(0);
-        var openRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12 };
-        openRow.Children.Add(_viewText);
-        var selectionHint = Text("选择会话后查看识别原文；选择本身不会读取正文", 11, Muted);
-        selectionHint.VerticalAlignment = VerticalAlignment.Center;
-        openRow.Children.Add(selectionHint);
-        stack.Children.Add(openRow);
-        stack.Children.Add(SessionRow("会话创建时间", "定稿字数", "定稿句数", "归属录音时长", "状态", true));
+        if (!_unified) stack.Children.Add(Wrapped("点击会话，在当前条目展开识别原文；切换条目时，上一条自动收起。", 12, Muted));
+        var columnHeader = SessionRow("会话创建时间", "定稿字数", "定稿句数", "归属录音时长", "状态", true);
+        stack.Children.Add(columnHeader);
         if (report.Sessions.Count == 0)
             stack.Children.Add(new Border { Padding = new Thickness(12, 24), Child = Text("暂无会话明细", 13, Muted) });
         else
         {
+            // 明细最多 200 条；固定行宿主，唯一详情在选中行间移动，不为每行读取或缓存正文。
+            foreach (var session in report.Sessions)
+            {
+                var row = SessionRow(session.CreatedAt.ToString("MM-dd HH:mm:ss", Chinese),
+                    Number(session.Characters), Number(session.Utterances),
+                    session.DurationBelongsToRange ? Duration(session.RecordingMilliseconds) : "—（范围外）",
+                    StateLabel(session), false);
+                ToolTip.SetTip(row, $"创建于 {session.CreatedAt:yyyy-MM-dd HH:mm:ss zzz}\n" +
+                    $"录音时长 {Duration(session.RecordingMilliseconds)} 全部归属 {session.CreatedLocalDate:yyyy-MM-dd}；字数和句数仅统计所选日期。");
+                _sessionRows[session.SessionId] = new StackPanel { Tag = session.SessionId, Children = { row } };
+            }
             var list = new ListBox
             {
                 Name = "UsageSessionList", ItemsSource = report.Sessions,
-                MaxHeight = 330, Background = Brushes.Transparent, BorderThickness = new Thickness(0),
+                MaxHeight = 560, Background = Brushes.Transparent, BorderThickness = new Thickness(0),
+                ItemsPanel = new FuncTemplate<Panel?>(() => new StackPanel()),
                 ItemTemplate = new FuncDataTemplate<VoiceImeUsageReportSession>((session, _) =>
                 {
                     if (session == null) return new Border();
-                    var row = SessionRow(session.CreatedAt.ToString("MM-dd HH:mm:ss", Chinese),
-                        Number(session.Characters), Number(session.Utterances),
-                        session.DurationBelongsToRange ? Duration(session.RecordingMilliseconds) : "—（范围外）",
-                        StateLabel(session), false);
-                    ToolTip.SetTip(row, $"创建于 {session.CreatedAt:yyyy-MM-dd HH:mm:ss zzz}\n" +
-                        $"录音时长 {Duration(session.RecordingMilliseconds)} 全部归属 {session.CreatedLocalDate:yyyy-MM-dd}；字数和句数仅统计所选日期。");
-                    return row;
+                    return _sessionRows[session.SessionId];
                 })
             };
             ScrollViewer.SetHorizontalScrollBarVisibility(list, ScrollBarVisibility.Disabled);
             _sessionList = list;
-            list.SelectionChanged += (_, _) => SelectSession(list.SelectedItem as VoiceImeUsageReportSession);
+            list.SelectionChanged += async (_, _) => await SelectSessionAsync(list.SelectedItem as VoiceImeUsageReportSession);
             stack.Children.Add(list);
         }
-        stack.Children.Add(Wrapped("含范围内创建或有定稿的会话；跨日旧会话的录音时长标为范围外。列表截取不影响指标与每日趋势汇总。", 11, Muted));
+        if (!_unified) stack.Children.Add(Wrapped("含范围内创建或有定稿的会话；跨日旧会话的录音时长标为范围外。列表截取不影响指标与每日趋势汇总。", 11, Muted));
         _textCaption = Wrapped("", 15, Ink, FontWeight.SemiBold);
         _textCaption.Name = "UsageSessionTextCaption";
         _textStatus = Wrapped("", 12, Muted);
         _textStatus.Name = "UsageSessionTextStatus";
-        _textRows = new StackPanel { Spacing = 12, Name = "UsageSessionTextRows" };
+        _textRows = new StackPanel { Spacing = 8, Name = "UsageSessionTextRows" };
         _nextText = new Button { Content = "下一批（最多 100 句）", Name = "UsageSessionTextNext", IsVisible = false };
         _nextText.Click += async (_, _) => await LoadSessionTextAsync(_textNextSequence);
         _cancelText = new Button { Content = "取消读取", Name = "UsageSessionTextCancel", IsVisible = false };
@@ -538,32 +649,69 @@ public sealed class VoiceImeUsageWindow : Window
         {
             InvalidateSessionText();
             _textRows.Children.Clear();
-            _textStatus.Text = "已取消读取。点击“查看原文”重新加载。";
+            _textStatus.Text = "已取消读取。点击刷新图标重试。";
+            _textStatus.IsVisible = true;
             _viewText.IsEnabled = _selectedSessionId != null;
             _nextText.IsVisible = _cancelText.IsVisible = false;
         };
-        var close = new Button { Content = "关闭详情", Name = "UsageSessionTextClose" };
-        close.Click += (_, _) => { if (_sessionList != null) _sessionList.SelectedItem = null; };
         var detailActions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         detailActions.Children.Add(_nextText);
         detailActions.Children.Add(_cancelText);
-        detailActions.Children.Add(close);
-        var detail = new StackPanel { Spacing = 12 };
-        detail.Children.Add(_textCaption);
-        detail.Children.Add(Wrapped("识别原文 · 会话全部日期，不限当前统计范围。翻译模式保存的也是翻译前的识别文字，不是译文，也不是目标应用实际输入全文。", 12, Muted));
+        detailActions.IsVisible = false;
+        // 正常单批原文只保留标题、刷新图标与正文；分页/取消只在需要时占高度。
+        _nextText.PropertyChanged += (_, change) =>
+        {
+            if (change.Property == IsVisibleProperty) detailActions.IsVisible = _nextText.IsVisible || _cancelText.IsVisible;
+        };
+        _cancelText.PropertyChanged += (_, change) =>
+        {
+            if (change.Property == IsVisibleProperty) detailActions.IsVisible = _nextText.IsVisible || _cancelText.IsVisible;
+        };
+        var detailHeading = new Grid { ColumnDefinitions = new("*,Auto"), ColumnSpacing = 8 };
+        _textCaption.VerticalAlignment = VerticalAlignment.Center;
+        detailHeading.Children.Add(_textCaption);
+        Grid.SetColumn(_viewText, 1);
+        detailHeading.Children.Add(_viewText);
+        var detail = new StackPanel { Spacing = 8 };
+        detail.Children.Add(detailHeading);
         detail.Children.Add(_textStatus);
         detail.Children.Add(new ScrollViewer
         {
-            Content = _textRows, MaxHeight = 360, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            Content = _textRows, MaxHeight = 280, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto
         });
         detail.Children.Add(detailActions);
         _textArea = new Border
         {
-            Child = detail, Padding = new Thickness(18), Background = Brush("#F3F7FC"),
+            Name = "UsageSessionTextArea", Child = detail, Margin = new Thickness(8, 0, 8, 12),
+            Padding = new Thickness(12, 8), Background = Brush("#F3F7FC"),
             BorderBrush = Line, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(10), IsVisible = false
         };
-        stack.Children.Add(_textArea);
+        _detailHome = new StackPanel { Children = { _textArea } };
+        stack.Children.Add(_detailHome);
+        if (_unified)
+        {
+            stack.Children.Remove(heading);
+            stack.Children.Remove(columnHeader);
+            stack.Children.Remove(_detailHome);
+            var rows = new Grid { RowDefinitions = new("Auto,Auto,*,Auto"), RowSpacing = 8 };
+            rows.Children.Add(heading);
+            Grid.SetRow(columnHeader, 1);
+            rows.Children.Add(columnHeader);
+            Control body;
+            if (_sessionList != null)
+            {
+                stack.Children.Remove(_sessionList);
+                _sessionList.MaxHeight = double.PositiveInfinity;
+                body = _sessionList;
+            }
+            else body = new Border { Padding = new Thickness(12, 24), Child = Text("暂无会话记录", 13, Muted) };
+            Grid.SetRow(body, 2);
+            rows.Children.Add(body);
+            Grid.SetRow(_detailHome, 3);
+            rows.Children.Add(_detailHome);
+            return Card(rows, 20);
+        }
         return Card(stack);
     }
 
@@ -573,17 +721,23 @@ public sealed class VoiceImeUsageWindow : Window
         _textCts?.Cancel();
     }
 
-    private void SelectSession(VoiceImeUsageReportSession? session)
+    private async Task SelectSessionAsync(VoiceImeUsageReportSession? session)
     {
+        if (_closed) return;
         InvalidateSessionText();
         _selectedSessionId = session?.SessionId;
         _textNextSequence = 0;
         _textRows!.Children.Clear();
+        if (_textArea!.Parent is Panel previous) previous.Children.Remove(_textArea);
+        var host = session != null && _sessionRows.TryGetValue(session.SessionId, out var row) ? row : _detailHome!;
+        host.Children.Add(_textArea);
         _textArea!.IsVisible = session != null;
         _viewText!.IsEnabled = session != null;
         _nextText!.IsVisible = _cancelText!.IsVisible = false;
         _textCaption!.Text = session == null ? "" : $"识别原文 · 创建于 {session.CreatedAt:yyyy-MM-dd HH:mm:ss zzz}";
-        _textStatus!.Text = "尚未读取正文。点击“查看原文”加载此会话的历史文字。";
+        _textStatus!.Text = "";
+        _textStatus.IsVisible = false;
+        if (session != null) await LoadSessionTextAsync(0);
     }
 
     private async Task LoadSessionTextAsync(long afterSequence)
@@ -596,6 +750,7 @@ public sealed class VoiceImeUsageWindow : Window
         _textRows!.Children.Clear();
         _textStatus!.Foreground = Muted;
         _textStatus.Text = "正在读取此会话的识别原文…";
+        _textStatus.IsVisible = true;
         _viewText!.IsEnabled = false;
         _nextText!.IsVisible = false;
         _cancelText!.IsVisible = true;
@@ -613,19 +768,23 @@ public sealed class VoiceImeUsageWindow : Window
                 VoiceImeSessionTextAvailability.SessionMissing => "此会话已不存在，请刷新报表后重新选择。",
                 _ when page.Entries.Count == 0 => afterSequence == 0
                     ? "此会话暂无识别定稿记录。" : "此会话已没有更多识别记录。",
-                _ => $"当前批 {page.Entries.Count} 句 · 序号 {page.Entries[0].Sequence}–{page.NextSequence} · " +
-                    (page.HasMore ? "还有记录，可读取下一批" : "已到会话末尾")
+                _ => ""
             };
+            _textStatus.IsVisible = !string.IsNullOrEmpty(_textStatus.Text);
             foreach (var entry in page.Entries)
             {
-                var row = new StackPanel { Spacing = 7 };
+                var row = new StackPanel { Spacing = 5 };
                 row.Children.Add(Wrapped($"第 {entry.Sequence} 句 · {entry.FinalizedAt:yyyy-MM-dd HH:mm:ss zzz} · 定稿 {Number(entry.Characters)} 字", 11, Muted));
-                var body = Wrapped(entry.OriginalText ?? "当时未保存识别原文；现在开启保存也无法补回。",
-                    14, entry.OriginalText == null ? Muted : Ink);
+                var body = new SelectableTextBlock
+                {
+                    Text = entry.OriginalText ?? "当时未保存识别原文；现在开启保存也无法补回。",
+                    FontSize = 14, Foreground = entry.OriginalText == null ? Muted : Ink,
+                    TextWrapping = TextWrapping.Wrap, SelectionBrush = Brush("#DCE8FC"), SelectionForegroundBrush = Ink
+                };
                 body.Name = entry.OriginalText == null ? "UsageSessionTextMissing" : "UsageSessionOriginalText";
                 row.Children.Add(body);
                 if (entry.OriginalText == "") row.Children.Add(Text("该条已保存的识别原文为空。", 12, Muted));
-                _textRows.Children.Add(Card(row, 14));
+                _textRows.Children.Add(Card(row, 10));
             }
         }
         catch (OperationCanceledException) when (cts.IsCancellationRequested) { }
@@ -633,8 +792,9 @@ public sealed class VoiceImeUsageWindow : Window
         {
             if (!IsCurrent()) return;
             _textStatus.Foreground = Brush("#A54429");
+            _textStatus.IsVisible = true;
             _textStatus.Text = ex is SqliteException { SqliteErrorCode: 5 or 6 }
-                ? "数据库暂时繁忙，请稍后点击“查看原文”重试。"
+                ? "数据库暂时繁忙，请稍后点击刷新图标重试。"
                 : "暂时无法读取识别原文，请重试或检查存储权限与版本。未修改任何数据。";
         }
         finally
@@ -707,9 +867,37 @@ public sealed class VoiceImeUsageWindow : Window
         => new() { Text = text, FontSize = size, Foreground = color, TextWrapping = TextWrapping.Wrap,
             FontWeight = weight ?? FontWeight.Normal };
     private static Border Card(Control child, double padding = 22)
-        => new()
+        => VoiceImeWindowDesign.Card(child, padding);
+}
+
+/// <summary>保留旧独立窗口入口与 fixture 构造；业务字段由 _page 持有。</summary>
+public sealed class VoiceImeUsageWindow : Window
+{
+    private readonly VoiceImeUsagePage _page;
+
+    public VoiceImeUsageWindow() : this(new VoiceImeUsageReportService()) { }
+
+    internal VoiceImeUsageWindow(VoiceImeUsageReportService service)
+    {
+        _page = new VoiceImeUsagePage(service);
+        Title = "译见pro · 语音输入用量";
+        Width = 1040;
+        Height = 820;
+        MinWidth = 760;
+        MinHeight = 600;
+        WindowStartupLocation = WindowStartupLocation.CenterScreen;
+        VoiceImeWindowDesign.Apply(this);
+        Content = VoiceImeToolPage.Wrap(this, _page, "语音输入用量",
+            "让每一次表达，都看得见 · 识别定稿产出，不代表成功插入字数或费用");
+        Opened += async (_, _) =>
         {
-            Child = child, Padding = new Thickness(padding), Background = Brushes.White,
-            CornerRadius = new CornerRadius(12), BorderBrush = Line, BorderThickness = new Thickness(1)
+            try
+            {
+                await VoiceImeToolPage.RenderedAsync(this);
+                await _page.InitializeAsync();
+            }
+            catch (InvalidOperationException) when (!IsVisible) { }
         };
+        Closed += (_, _) => _page.Dispose();
+    }
 }

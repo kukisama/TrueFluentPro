@@ -92,11 +92,10 @@ public sealed class VoiceImeSettingsApp : Application
         {
             desktop.ShutdownMode = Avalonia.Controls.ShutdownMode.OnMainWindowClose;
             var args = desktop.Args ?? Array.Empty<string>();
-            desktop.MainWindow = Array.IndexOf(args, "--voice-ime-usage") >= 0
-                ? new TrueFluentPro.Views.VoiceImeUsageWindow()
-                : Array.IndexOf(args, "--voice-ime-language") >= 0
-                    ? new TrueFluentPro.Views.VoiceImeLanguageWindow()
-                    : new TrueFluentPro.Views.VoiceImeSettingsWindow();
+            var page = Array.IndexOf(args, "--voice-ime-usage") >= 0 ? TrueFluentPro.Views.VoiceImeToolTab.Usage
+                : Array.IndexOf(args, "--voice-ime-language") >= 0 ? TrueFluentPro.Views.VoiceImeToolTab.Language
+                : TrueFluentPro.Views.VoiceImeToolTab.Settings;
+            desktop.MainWindow = new TrueFluentPro.Views.VoiceImeToolsWindow(page);
         }
         base.OnFrameworkInitializationCompleted();
     }

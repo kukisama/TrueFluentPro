@@ -9,7 +9,7 @@
   </PropertyGroup>
   <!-- Binary references only: no ProjectReference, source links, or main-build targets. -->
   <ItemGroup>
-    <Reference Include="$(ProductionDir)Avalonia*.dll;$(ProductionDir)Projektanker*.dll;$(ProductionDir)Microsoft.Data.Sqlite.dll;$(ProductionDir)SQLitePCLRaw*.dll;$(ProductionDir)TrueFluentPro.dll">
+    <Reference Include="$(ProductionDir)Avalonia*.dll;$(ProductionDir)CommunityToolkit.Mvvm.dll;$(ProductionDir)Projektanker*.dll;$(ProductionDir)Microsoft.Data.Sqlite.dll;$(ProductionDir)SQLitePCLRaw*.dll;$(ProductionDir)TrueFluentPro.dll">
       <Private>true</Private>
     </Reference>
     <Content Include="$(ProductionDir)*.dll">

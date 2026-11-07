@@ -34,7 +34,7 @@ internal static class ReportTests
         {
             VerifyAsync().GetAwaiter().GetResult();
             if (args.Contains("--verify-ui")) VerifyWindow();
-            Console.WriteLine("PASS: report summaries and explicit session source-text reader; bounded paging, NULL history, parameter isolation, cancellation and read-only state.");
+            Console.WriteLine("PASS: report summaries; session selection auto loads source text; bounded paging, NULL history, parameter isolation, cancellation and read-only state.");
             if (args.Contains("--preview"))
                 AppBuilder.Configure<PreviewApplication>().UsePlatformDetect().StartWithClassicDesktopLifetime(args);
             return 0;
@@ -187,8 +187,8 @@ internal static class ReportTests
         SeedSession(writer, "empty-text", "2026-11-05", 0, "connecting");
         SeedSession(writer, "null-text", "2026-11-04", 1000, "ended");
         SeedUtterance(writer, "null-text", 1, "2026-11-04", 3, text: null);
-        SeedSession(writer, "other-text", "2026-10-01", 1000, "ended");
-        SeedUtterance(writer, "other-text", 1, "2026-10-01", 8, text: "其他会话的识别原文");
+        SeedSession(writer, "other-text", "2026-11-03", 1000, "ended");
+        SeedUtterance(writer, "other-text", 1, "2026-11-03", 8, text: "其他会话的识别原文");
         using (var transaction = writer.BeginTransaction())
         {
             // 逆序插入、有序号间隙；头两条在30天范围外，仍必须按会话返回。
@@ -476,31 +476,35 @@ internal static class ReportTests
                 var list = Find<ListBox>(window, "UsageSessionList");
                 ScrollTo(list);
                 await Render(window);
+                Require(TextIdle() && Rows().Children.Count == 0 && !Field<Border>("_textArea").IsVisible
+                    && ReferenceEquals(Field<Border>("_textArea").Parent, Field<StackPanel>("_detailHome")),
+                    "汇总未选择会话时读取正文或未隐藏停靠详情");
                 SelectNext();
-                await Render(window); // 隐藏详情显现后，等待 ScrollViewer 模板和内容进入实际视觉树。
+                await Wait(TextIdle); // 自动读取完成后，等待行内详情模板和内容进入实际视觉树。
                 Require((list.SelectedItem as VoiceImeUsageReportSession)?.SessionId == "text-session"
-                    && Rows().Children.Count == 0 && Find<Button>(window, "UsageViewSessionText").IsEnabled
-                    && Status().StartsWith("尚未读取正文"), "真实选择未生效或选择时主动读取了正文");
-                Click(Find<Button>(window, "UsageViewSessionText"));
-                await Wait(() => Find<Button>(window, "UsageViewSessionText").IsEnabled);
-                Require(Rows().Children.Count == 100 && Rows().GetVisualDescendants().OfType<TextBlock>()
+                    && Find<Button>(window, "UsageViewSessionText").IsEnabled
+                    && NormalText() && Field<long>("_textNextSequence") == 200
+                    && Rows().Children.Count == 100 && Rows().GetVisualDescendants().OfType<TextBlock>()
                     .Any(text => text.Name == "UsageSessionOriginalText" && text.Text == SavedText)
                     && Rows().GetVisualDescendants().OfType<TextBlock>().Any(text => text.Name == "UsageSessionTextMissing")
                     && Rows().GetVisualDescendants().OfType<TextBlock>().Any(text => text.Text?.Contains("09:45:00 +05:45 · 定稿 42 字") == true),
-                    "routed查看未显示非空历史识别正文/NULL/时间字数");
+                    "真实选择未自动显示非空历史识别正文/NULL/时间字数，或首批游标/正常状态错误");
+                var firstHost = AssertInline("text-session");
+                var detailArea = Find<Border>(window, "UsageSessionTextArea");
                 var original = Rows().GetVisualDescendants().OfType<TextBlock>()
                     .Single(text => text.Text == SavedText);
                 ScrollTo(original);
                 await Render(window);
                 Require(Visible(original), "已保存原文未实际可见");
                 Click(Find<Button>(window, "UsageSessionTextNext"));
-                await Wait(() => Find<Button>(window, "UsageViewSessionText").IsEnabled);
-                Require(Rows().Children.Count == 100 && Status().Contains("202–400")
+                await Wait(TextIdle);
+                Require(Rows().Children.Count == 100 && Field<long>("_textNextSequence") == 400 && NormalText()
                     && !Rows().GetVisualDescendants().OfType<TextBlock>().Any(text => text.Text == SavedText),
                     "下一批没有替换旧正文或无界累积");
                 Click(Find<Button>(window, "UsageSessionTextNext"));
-                await Wait(() => Find<Button>(window, "UsageViewSessionText").IsEnabled);
-                Require(Rows().Children.Count == 5 && !Find<Button>(window, "UsageSessionTextNext").IsVisible,
+                await Wait(TextIdle);
+                Require(Rows().Children.Count == 5 && Field<long>("_textNextSequence") == 410 && NormalText()
+                    && !Find<Button>(window, "UsageSessionTextNext").IsVisible,
                     "末批条数或更多按钮错误");
 
                 gate = (SemaphoreSlim)typeof(VoiceImeUsageReportService)
@@ -524,38 +528,96 @@ internal static class ReportTests
                     Click(Find<Button>(window, "UsageViewSessionText"));
                     SelectNext();
                     Require((list.SelectedItem as VoiceImeUsageReportSession)?.SessionId == "empty-text"
-                        && Status().StartsWith("尚未读取正文"), "切选没有清除旧详情");
+                        && Status().StartsWith("正在读取") && Rows().Children.Count == 0
+                        && !TextIdle() && !Find<Button>(window, "UsageViewSessionText").IsEnabled,
+                        "切选没有清除旧详情并自动排队读取新会话");
                 }
                 finally { gate.Release(); }
                 await Wait(TextIdle);
-                Require(Rows().Children.Count == 0 && Status().StartsWith("尚未读取正文"), "切选后旧会话正文迟到");
-                Click(Find<Button>(window, "UsageViewSessionText"));
-                await Wait(() => Find<Button>(window, "UsageViewSessionText").IsEnabled);
-                Require(Status() == "此会话暂无识别定稿记录。", "会话空态错误");
+                Require(Rows().Children.Count == 0 && Status() == "此会话暂无识别定稿记录。",
+                    "自动读取空会话失败或切选后旧会话正文迟到");
+                AssertInline("empty-text");
                 SelectNext();
-                Click(Find<Button>(window, "UsageViewSessionText"));
-                await Wait(() => Find<Button>(window, "UsageViewSessionText").IsEnabled);
-                Require(Rows().Children.Count == 1 && Rows().GetVisualDescendants().OfType<TextBlock>()
+                await Wait(TextIdle);
+                AssertInline("null-text");
+                Require(Rows().Children.Count == 1 && NormalText() && Rows().GetVisualDescendants().OfType<TextBlock>()
                     .Single(text => text.Name == "UsageSessionTextMissing").Text!.Contains("当时未保存"), "全NULL未解释历史未保存");
+
+                SelectSession(Key.Home);
+                await Wait(TextIdle);
+                Require(ReferenceEquals(AssertInline("text-session"), firstHost) && Rows().Children.Count == 100
+                    && Field<long>("_textNextSequence") == 200 && NormalText()
+                    && Rows().GetVisualDescendants().OfType<TextBlock>().Any(text => text.Text == SavedText),
+                    "非空会话切换前首个会话未自动恢复正文");
+                SelectSession(Key.End); // 直接 A→B→A，切换前旧行必须确实持有非空正文。
+                await Wait(TextIdle);
+                var otherHost = AssertInline("other-text");
+                Require(Rows().Children.Count == 1 && NormalText() && Rows().GetVisualDescendants().OfType<TextBlock>()
+                    .Single(text => text.Name == "UsageSessionOriginalText").Text == "其他会话的识别原文"
+                    && !firstHost.GetVisualDescendants().OfType<TextBlock>().Any(text => text.Text == SavedText)
+                    && ReferenceEquals(Find<Border>(window, "UsageSessionTextArea"), detailArea),
+                    "切换非空会话未自动显示新正文、旧行残留正文或创建了第二个详情");
+                var otherOriginal = Rows().GetVisualDescendants().OfType<TextBlock>()
+                    .Single(text => text.Name == "UsageSessionOriginalText");
+                ScrollTo(otherOriginal);
+                await Render(window);
+                Require(Visible(otherOriginal), "另一非空会话原文未实际可见");
+                var normalText = Rows().GetVisualDescendants().OfType<TextBlock>()
+                    .Append(Field<TextBlock>("_textCaption"))
+                    .Append((TextBlock)Find<Button>(window, "UsageViewSessionText").Content!).ToHashSet();
+                Require(detailArea.GetVisualDescendants().OfType<TextBlock>()
+                    .Where(text => text.IsEffectivelyVisible).All(normalText.Contains),
+                    "正常单句详情仍显示批次状态或已删除的说明文字");
+                Require(!Find<Button>(window, "UsageSessionTextNext").IsVisible
+                    && !Find<Button>(window, "UsageSessionTextCancel").IsVisible
+                    && detailArea.Bounds.Height > 0 && detailArea.Bounds.Height <= 150,
+                    $"Render完成后正常单句详情不够紧凑：实际高度 {detailArea.Bounds.Height:0.##}，要求≤150");
+                SelectSession(Key.Home);
+                await Wait(TextIdle);
+                Require(ReferenceEquals(AssertInline("text-session"), firstHost)
+                    && ReferenceEquals(Find<Border>(window, "UsageSessionTextArea"), detailArea)
+                    && Rows().Children.Count == 100 && Field<long>("_textNextSequence") == 200 && NormalText()
+                    && Rows().GetVisualDescendants().OfType<TextBlock>().Any(text => text.Text == SavedText)
+                    && !otherHost.GetVisualDescendants().OfType<TextBlock>().Any(text => text.Text == "其他会话的识别原文"),
+                    "返回首个非空会话未重新显示首批正文或旧行仍保留详情正文");
+                original = Rows().GetVisualDescendants().OfType<TextBlock>().Single(text => text.Text == SavedText);
+                ScrollTo(original);
+                await Render(window);
+                Require(Visible(original), "返回首个非空会话后原文未实际可见");
                 await gate.WaitAsync(deadline.Token);
                 try
                 {
                     Click(Find<Button>(window, "UsageViewSessionText"));
-                    Click(Find<Button>(window, "UsageSessionTextClose"));
+                    Require(!TextIdle() && Status().StartsWith("正在读取"), "报表刷新竞态的读取请求未先排队");
+                    Click(Find<Button>(window, "UsageRefresh"));
+                    Require(Rows().Children.Count == 0 && !detailArea.IsVisible
+                        && Field<string?>("_selectedSessionId") == null,
+                        "报表刷新没有立即清除正文并隐藏旧详情");
                 }
                 finally { gate.Release(); }
-                await Wait(TextIdle);
+                await Wait(() => TextIdle() && Find<Button>(window, "UsageRefresh").IsEnabled);
+                list = Find<ListBox>(window, "UsageSessionList");
                 Require(list.SelectedItem == null && Rows().Children.Count == 0
-                    && !Find<Button>(window, "UsageViewSessionText").IsEnabled, "关闭详情后旧结果仍显示");
-                SelectNext();
+                    && !Field<Button>("_viewText").IsEnabled && !Field<Border>("_textArea").IsVisible
+                    && ReferenceEquals(Field<Border>("_textArea").Parent, Field<StackPanel>("_detailHome"))
+                    && !detailArea.IsVisible
+                    && !firstHost.GetVisualDescendants().OfType<TextBlock>().Any(text => text.Text == SavedText),
+                    "报表刷新后旧行残留正文、详情未重置或迟到结果重新显示");
                 await gate.WaitAsync(deadline.Token);
-                try { Click(Find<Button>(window, "UsageViewSessionText")); window.Close(); }
+                try
+                {
+                    SelectNext(); // 先持有查询门再真实选择，自动读取必须在关闭窗口前排队。
+                    Require((list.SelectedItem as VoiceImeUsageReportSession)?.SessionId == "text-session"
+                        && !TextIdle() && Status().StartsWith("正在读取") && Rows().Children.Count == 0,
+                        "窗口关闭竞态的自动读取请求未先排队");
+                    window.Close();
+                }
                 finally { gate.Release(); }
                 await Wait(TextIdle);
                 Require(Rows().Children.Count == 0 && TextSnapshot(textWriter) == textBefore,
                     "关闭窗口后有迟到正文或UI改变DB/WAL/开关/状态");
 
-                // fixture 主动移走正文列：汇总/选择仍正常，点击详情才显示友好错误，不漏SQL/路径。
+                // fixture 主动移走正文列：汇总仍正常，选择自动读取后显示友好错误，不漏SQL/路径。
                 Execute(textWriter, "ALTER TABLE voice_ime_utterances RENAME COLUMN original_text TO unavailable_body;");
                 window = new VoiceImeUsageWindow(new VoiceImeUsageReportService(TextDatabase, Clock));
                 owned.Add(window);
@@ -564,23 +626,78 @@ internal static class ReportTests
                     && FindOptional<ListBox>(window, "UsageSessionList") != null);
                 list = Find<ListBox>(window, "UsageSessionList");
                 SelectNext();
-                Click(Find<Button>(window, "UsageViewSessionText"));
-                await Wait(() => Find<Button>(window, "UsageViewSessionText").IsEnabled);
+                await Wait(TextIdle);
+                AssertInline("text-session");
                 Require(Status().StartsWith("暂时无法读取识别原文") && Rows().Children.Count == 0
                     && !Status().Contains(TextDatabase) && !Status().Contains("original_text"), "原文错误态泄露路径/SQL或残留正文");
                 window.Close();
-                Console.WriteLine("PASS: actual Win32/Avalonia routed ListBox selection + Enter view displays visible nonempty saved source/time/count; selection and summary never load bodies; 100/100/5 replacing pages; loading/cancel/empty/NULL/error; stale selection/detail-close/window-close rejected; DB+WAL+meta+state unchanged.");
+                Console.WriteLine("PASS: actual Win32/Avalonia routed ListBox selection auto loads visible saved source/time/count; A/B/A moves one detail into the selected row and clears old hosts; summary never loads bodies; 100/100/5 replacing pages with sequence cursors and hidden normal status; 32px top-right refresh glyph/automation/Enter; no collapse button or normal explanation; rendered single text height <=150; loading/cancel/empty/NULL/error; stale selection/report-refresh/window-close rejected; DB+WAL+meta+state unchanged.");
 
-                StackPanel Rows() => Find<StackPanel>(window, "UsageSessionTextRows");
-                string Status() => Find<TextBlock>(window, "UsageSessionTextStatus").Text!;
-                bool TextIdle() => typeof(VoiceImeUsageWindow).GetField("_textCts", BindingFlags.Instance | BindingFlags.NonPublic)!
-                    .GetValue(window) == null;
-                void SelectNext()
+                T Field<T>(string name)
+                {
+                    object target = window;
+                    var field = target.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic);
+                    // 窗口自身字段优先；仅字段缺失时读取页面，字段值为 null 不触发回退。
+                    if (field == null)
+                    {
+                        target = target.GetType().GetField("_page", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(target)!;
+                        field = target.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic);
+                    }
+                    return (T)field!.GetValue(target)!;
+                }
+                StackPanel Rows() => Field<StackPanel>("_textRows");
+                string Status() => Field<TextBlock>("_textStatus").Text!;
+                bool NormalText() => Status() == "" && !Field<TextBlock>("_textStatus").IsVisible;
+                bool TextIdle() => Field<CancellationTokenSource?>("_textCts") == null; // 始终读取当前 window，不能缓存旧请求字段。
+                StackPanel AssertInline(string sessionId)
+                {
+                    var area = Find<Border>(window, "UsageSessionTextArea");
+                    var refresh = Find<Button>(window, "UsageViewSessionText");
+                    var caption = Field<TextBlock>("_textCaption");
+                    Require(refresh.Content is TextBlock glyph && glyph.Text == "\uE72C"
+                        && glyph.FontFamily.Equals(new Avalonia.Media.FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"))
+                        && Equals(ToolTip.GetTip(refresh), "刷新原文")
+                        && AutomationProperties.GetName(refresh) == "刷新原文"
+                        && refresh.Width == 32 && refresh.Height == 32
+                        && Math.Abs(refresh.Bounds.Width - 32) <= 1 && Math.Abs(refresh.Bounds.Height - 32) <= 1,
+                        "刷新原文不是32×32 Segoe图标Button或tooltip/无障碍名称错误");
+                    Require(refresh.Parent is Grid heading && ReferenceEquals(caption.Parent, heading)
+                        && heading.Children.Count == 2 && Grid.GetColumn(caption) == 0 && Grid.GetColumn(refresh) == 1
+                        && Grid.GetRow(caption) == Grid.GetRow(refresh)
+                        && caption.Bounds.Right <= refresh.Bounds.Left + 1
+                        && Math.Abs(refresh.Bounds.Right - heading.Bounds.Width) <= 1 && Math.Abs(refresh.Bounds.Top) <= 1
+                        && area.Child is StackPanel detail && ReferenceEquals(detail.Children[0], heading)
+                        && detail.Children.Count == 4 && ReferenceEquals(detail.Children[1], Field<TextBlock>("_textStatus"))
+                        && area.Padding == new Thickness(12, 8) && detail.Spacing == 8 && Rows().Spacing == 8
+                        && Rows().Children.OfType<Border>().All(card => card.Padding == new Thickness(10)),
+                        "原文标题与刷新按钮未在同一Grid右上排列、残留说明行或紧凑间距错误");
+                    Require(FindOptional<Button>(window, "UsageSessionTextClose") == null
+                        && !area.GetVisualDescendants().OfType<Button>()
+                            .Any(button => Equals(button.Content, "收起") || AutomationProperties.GetName(button) == "收起"),
+                        "原文详情仍保留专用收起按钮");
+                    var hosts = Field<Dictionary<string, StackPanel>>("_sessionRows");
+                    var host = hosts[sessionId];
+                    Require((list.SelectedItem as VoiceImeUsageReportSession)?.SessionId == sessionId
+                        && ReferenceEquals(area, Field<Border>("_textArea")) && area.IsEffectivelyVisible
+                        && ReferenceEquals(area.Parent, host) && Equals(host.Tag, sessionId)
+                        && host.Children.Count == 2 && ReferenceEquals(host.Children[1], area)
+                        && list.GetVisualDescendants().Any(control => ReferenceEquals(control, host))
+                        && ReferenceEquals(Find<StackPanel>(window, "UsageSessionTextRows"), Rows())
+                        && Field<StackPanel>("_detailHome").Children.Count == 0,
+                        "唯一可见详情未嵌入当前选中行：" + sessionId);
+                    foreach (var (id, previous) in hosts.Where(pair => pair.Key != sessionId))
+                        Require(previous.Children.Count == 1 && !previous.GetVisualDescendants().OfType<Control>()
+                            .Any(control => control.Name is "UsageSessionTextArea" or "UsageSessionOriginalText" or "UsageSessionTextMissing"),
+                            "未选中行仍保留详情或正文：" + id);
+                    return host;
+                }
+                void SelectNext() => SelectSession(list.SelectedItem == null ? Key.Home : Key.Down);
+                void SelectSession(Key direction)
                 {
                     list.Focus();
                     // 清空选择仍可能保留末项导航锚点；Home 明确回首项，不修改 SelectedItem 来伪造选择。
                     var key = new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent,
-                        Key = list.SelectedItem == null ? Key.Home : Key.Down, Source = list };
+                        Key = direction, Source = list };
                     list.RaiseEvent(key);
                     Require(key.Handled && list.SelectedItem != null, "ListBox未处理真实路由方向键选择");
                 }

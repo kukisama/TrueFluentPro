@@ -73,7 +73,7 @@ internal static class VoiceImeElevationDialog
     }
 
     internal static Window? ResolveOwner(IClassicDesktopStyleApplicationLifetime? desktop)
-        => VoiceImeSettingsWindow.Current
+        => VoiceImeToolsWindow.Current ?? VoiceImeSettingsWindow.Current
             ?? desktop?.Windows.FirstOrDefault(window => window.IsVisible && window.IsActive)
             ?? (desktop?.MainWindow is { IsVisible: true } main ? main : null);
 }

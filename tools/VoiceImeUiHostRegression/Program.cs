@@ -31,6 +31,8 @@ internal static class Program
     {
         try
         {
+            if (args.Length > 0 && args[0] == "--sheets")
+                return SheetInteraction.Run();
             if (args.Length > 0 && args[0].StartsWith("--content-", StringComparison.Ordinal))
                 return ContentAddressedDeployment.Run(args);
             if (args.Length > 0 && (args[0].StartsWith("--integration-", StringComparison.Ordinal)

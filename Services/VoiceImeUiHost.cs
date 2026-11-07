@@ -53,9 +53,8 @@ internal static class VoiceImeUiHost
 
     private static Window CreateWindow(VoiceImeUiCommand kind) => kind switch
     {
-        VoiceImeUiCommand.Settings => new VoiceImeSettingsWindow(),
-        VoiceImeUiCommand.Usage => new VoiceImeUsageWindow(),
-        VoiceImeUiCommand.Language => new VoiceImeLanguageWindow(),
+        VoiceImeUiCommand.Settings or VoiceImeUiCommand.Usage or VoiceImeUiCommand.Language
+            => new VoiceImeToolsWindow((VoiceImeToolTab)kind),
         _ => throw new InvalidDataException()
     };
 
@@ -128,7 +127,7 @@ internal static class VoiceImeUiHost
         {
             var value = await VoiceImeUiProtocol.ReadAsync(pipe, token);
             if (value > (byte)VoiceImeUiCommand.Language) return;
-            // 单个连接逐项派发，最多三个存活窗口；协议 ACK 只代表接收，绝不冒充渲染完成。
+            // 三条命令在同一工具窗选择页签；ACK 仅代表接收，不冒充页面加载完成。
             if (value != 0) windows.Open((VoiceImeUiCommand)value);
             using var write = CancellationTokenSource.CreateLinkedTokenSource(token);
             write.CancelAfter(VoiceImeUiProtocol.FrameTimeout);
@@ -141,7 +140,7 @@ internal sealed class VoiceImeUiWindows(Func<VoiceImeUiCommand, Window> factory)
 {
     private readonly Dictionary<VoiceImeUiCommand, Window> _windows = new();
     private TaskCompletionSource? _closed;
-    internal int Count => _windows.Count;
+    internal int Count => new HashSet<Window>(_windows.Values).Count;
     internal Task WaitForCloseAsync() => Count == 0 ? Task.CompletedTask
         : (_closed ??= new(TaskCreationOptions.RunContinuationsAsynchronously)).Task;
     internal Window Open(VoiceImeUiCommand kind)
@@ -150,17 +149,20 @@ internal sealed class VoiceImeUiWindows(Func<VoiceImeUiCommand, Window> factory)
         if (kind is < VoiceImeUiCommand.Settings or > VoiceImeUiCommand.Language) throw new InvalidDataException();
         if (!_windows.TryGetValue(kind, out var window))
         {
-            window = factory(kind);
+            // 生产工厂返回唯一 Sheet 外壳；保留已有专项的兼容窗口工厂。
+            window = System.Linq.Enumerable.FirstOrDefault(_windows.Values, value => value is VoiceImeToolsWindow) ?? factory(kind);
             _windows.Add(kind, window);
             var captured = window;
             window.Closed += (_, _) =>
             {
-                if (_windows.TryGetValue(kind, out var current) && ReferenceEquals(current, captured)) _windows.Remove(kind);
+                foreach (var entry in System.Linq.Enumerable.ToArray(_windows))
+                    if (ReferenceEquals(entry.Value, captured)) _windows.Remove(entry.Key);
                 if (_windows.Count == 0) _closed?.TrySetResult();
             };
         }
         if (window.WindowState == WindowState.Minimized) window.WindowState = WindowState.Normal;
         if (!window.IsVisible) window.Show();
+        if (window is VoiceImeToolsWindow tools) tools.Navigate((VoiceImeToolTab)kind);
         window.Activate(); // 只有用户窗口命令才能到达此处，Warm 无窗口/无激活。
         return window;
     }
