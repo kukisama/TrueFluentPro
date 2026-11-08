@@ -13,13 +13,13 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tools", "tools", "{07C2787E
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GptImageCli", "tools\GptImageCli\GptImageCli.csproj", "{C944A8CA-9345-4735-B64D-85F8048B27DF}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GptImageCli.Tests", "tools\GptImageCli.Tests\GptImageCli.Tests.csproj", "{697A4949-BC36-44C7-ACC6-7175092ECA03}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GptImageCli.Tests", "tools\回归测试\GptImageCli.Tests\GptImageCli.Tests.csproj", "{697A4949-BC36-44C7-ACC6-7175092ECA03}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EndpointCapabilityRegression", "tools\EndpointCapabilityRegression\EndpointCapabilityRegression.csproj", "{E910CD12-B4E8-4652-8725-AECD42B27FC3}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EndpointCapabilityRegression", "tools\回归测试\EndpointCapabilityRegression\EndpointCapabilityRegression.csproj", "{E910CD12-B4E8-4652-8725-AECD42B27FC3}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TranscriptChatRegression", "tools\TranscriptChatRegression\TranscriptChatRegression.csproj", "{828FFF54-4538-4804-BA6A-D6BBBDAA936C}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TranscriptChatRegression", "tools\回归测试\TranscriptChatRegression\TranscriptChatRegression.csproj", "{828FFF54-4538-4804-BA6A-D6BBBDAA936C}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VoiceImeRegression", "tools\VoiceImeRegression\VoiceImeRegression.csproj", "{EF9EE7A3-3D46-4C41-9712-610E46681115}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VoiceImeRegression", "tools\回归测试\VoiceImeRegression\VoiceImeRegression.csproj", "{EF9EE7A3-3D46-4C41-9712-610E46681115}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

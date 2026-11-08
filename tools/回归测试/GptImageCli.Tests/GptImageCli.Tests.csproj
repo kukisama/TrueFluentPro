@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Compile the same CLI sources without exposing internal implementation publicly. -->
+    <Compile Include="../../GptImageCli/*.cs" Exclude="../../GptImageCli/Program.cs" Link="Cli/%(Filename)%(Extension)" />
+    <PackageReference Include="Microsoft.Data.Sqlite.Core" Version="10.0.12" />
+    <PackageReference Include="SQLitePCLRaw.provider.winsqlite3" Version="3.0.5" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.12" />
+    <EmbeddedResource Include="../../GptImageCli/queue-settings.default.json" LogicalName="queue-settings.default.json" />
+  </ItemGroup>
+</Project>

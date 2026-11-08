@@ -4,6 +4,8 @@ obj/
 out/
 artifacts/
 .exchange/
+# 本地旧回归目录及历史产物，留给用户手动清理，不上传。
+/tools/待删除/
 # Rust build output
 **/target/
 rustbackend/data/
