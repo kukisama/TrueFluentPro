@@ -1,0 +1,21 @@
+[package]
+name = "voice-ime-win32"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Windows 原生系统集成层：命名管道服务端、前台/SID 校验、原生悬浮条 STA 桥接、文件锁与安装事务引擎"
+
+[dependencies]
+voice-ime-protocol = { workspace = true }
+serde              = { workspace = true }
+serde_json         = { workspace = true }
+thiserror          = { workspace = true }
+tokio              = { workspace = true }
+sha2               = { workspace = true }
+hex                = { workspace = true }
+uuid               = { workspace = true }
+dirs               = { workspace = true }
+tracing            = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true }

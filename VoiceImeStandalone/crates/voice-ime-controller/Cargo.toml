@@ -1,0 +1,15 @@
+[package]
+name = "voice-ime-controller"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "独立语音输入法界面业务控制器层（与 Tauri IPC 薄壳解耦，支持完整离线单测）"
+
+[dependencies]
+voice-ime-config  = { workspace = true }
+voice-ime-storage = { workspace = true }
+voice-ime-speech  = { workspace = true }
+voice-ime-win32   = { workspace = true }
+serde             = { workspace = true }
+serde_json        = { workspace = true }
+tokio             = { workspace = true }

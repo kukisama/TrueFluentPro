@@ -1,0 +1,166 @@
+//! Tauri IPC 命令薄壳（所有业务逻辑委托给 `voice-ime-controller`，保持单一职责）。
+
+use serde::Serialize;
+use voice_ime_config::{LanguageDraft, LegacyImportSummary};
+use voice_ime_controller::install_ctrl::{query_installation_status, run_installation_action};
+use voice_ime_controller::language_ctrl::{
+    load_language_snapshot, save_language_draft, LanguagePageSnapshot,
+};
+use voice_ime_controller::settings_ctrl::{
+    delete_subscription, import_legacy_subscriptions, load_settings_snapshot,
+    preview_speech_endpoint, save_general_settings as ctrl_save_general, test_subscription,
+    upsert_subscription, EndpointPreviewDto, GeneralSettingsUpdate, SettingsPageSnapshot,
+    UpsertSubscriptionInput,
+};
+use voice_ime_controller::usage_ctrl::{
+    load_session_text_page as ctrl_session_text, load_usage_report as ctrl_usage_report,
+};
+use voice_ime_controller::ToolsAppContext;
+use voice_ime_speech::SubscriptionValidationOutcome;
+use voice_ime_storage::{SessionTextPage, UsageReport};
+use voice_ime_win32::{InstallOperationResult, InstallStateSummary};
+
+pub struct ManagedToolsState {
+    pub initial_tab: String,
+    pub ctx: ToolsAppContext,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LegacyImportResponse {
+    pub summary: LegacyImportSummary,
+    pub snapshot: SettingsPageSnapshot,
+}
+
+#[cfg(not(target_os = "linux"))]
+use tauri::State;
+
+#[cfg(not(target_os = "linux"))]
+#[tauri::command]
+pub fn get_initial_tab(state: State<'_, ManagedToolsState>) -> String {
+    state.initial_tab.clone()
+}
+
+#[cfg(not(target_os = "linux"))]
+#[tauri::command]
+pub fn load_settings_page(state: State<'_, ManagedToolsState>) -> Result<SettingsPageSnapshot, String> {
+    load_settings_snapshot(&state.ctx.config_store)
+}
+
+#[cfg(not(target_os = "linux"))]
+#[tauri::command]
+pub fn preview_endpoint_url(endpoint: String) -> EndpointPreviewDto {
+    preview_speech_endpoint(&endpoint)
+}
+
+#[cfg(not(target_os = "linux"))]
+#[tauri::command]
+pub fn save_general_settings(
+    state: State<'_, ManagedToolsState>,
+    update: GeneralSettingsUpdate,
+) -> Result<SettingsPageSnapshot, String> {
+    ctrl_save_general(&state.ctx.config_store, update)
+}
+
+#[cfg(not(target_os = "linux"))]
+#[tauri::command]
+pub fn upsert_speech_subscription(
+    state: State<'_, ManagedToolsState>,
+    input: UpsertSubscriptionInput,
+) -> Result<SettingsPageSnapshot, String> {
+    upsert_subscription(&state.ctx.config_store, input)
+}
+
+#[cfg(not(target_os = "linux"))]
+#[tauri::command]
+pub fn delete_speech_subscription(
+    state: State<'_, ManagedToolsState>,
+    subscription_id: String,
+) -> Result<SettingsPageSnapshot, String> {
+    delete_subscription(&state.ctx.config_store, &subscription_id)
+}
+
+#[cfg(not(target_os = "linux"))]
+#[tauri::command]
+pub async fn test_speech_subscription(
+    state: State<'_, ManagedToolsState>,
+    saved_id: Option<String>,
+    endpoint: String,
+    subscription_key: String,
+) -> Result<SubscriptionValidationOutcome, String> {
+    test_subscription(
+        &state.ctx.config_store,
+        &state.ctx.sts_cache,
+        saved_id,
+        endpoint,
+        subscription_key,
+    )
+    .await
+}
+
+#[cfg(not(target_os = "linux"))]
+#[tauri::command]
+pub fn import_legacy_truefluent_subscriptions(
+    state: State<'_, ManagedToolsState>,
+) -> Result<LegacyImportResponse, String> {
+    let (summary, snapshot) = import_legacy_subscriptions(&state.ctx.config_store)?;
+    Ok(LegacyImportResponse { summary, snapshot })
+}
+
+#[cfg(not(target_os = "linux"))]
+#[tauri::command]
+pub fn load_language_page(state: State<'_, ManagedToolsState>) -> Result<LanguagePageSnapshot, String> {
+    load_language_snapshot(&state.ctx.config_store)
+}
+
+#[cfg(not(target_os = "linux"))]
+#[tauri::command]
+pub fn save_language_page(
+    state: State<'_, ManagedToolsState>,
+    draft: LanguageDraft,
+) -> Result<LanguagePageSnapshot, String> {
+    save_language_draft(&state.ctx.config_store, draft)
+}
+
+#[cfg(not(target_os = "linux"))]
+#[tauri::command]
+pub async fn load_usage_report(
+    state: State<'_, ManagedToolsState>,
+    days: u32,
+) -> Result<UsageReport, String> {
+    let svc = state.ctx.report_service.clone();
+    tokio::task::spawn_blocking(move || ctrl_usage_report(&svc, days))
+        .await
+        .map_err(|_| "统计读取任务异常中断。".to_string())?
+}
+
+#[cfg(not(target_os = "linux"))]
+#[tauri::command]
+pub async fn load_session_original_text(
+    state: State<'_, ManagedToolsState>,
+    session_id: String,
+    after_sequence: i64,
+) -> Result<SessionTextPage, String> {
+    let svc = state.ctx.report_service.clone();
+    tokio::task::spawn_blocking(move || ctrl_session_text(&svc, &session_id, after_sequence))
+        .await
+        .map_err(|_| "原文读取任务异常中断。".to_string())?
+}
+
+#[cfg(not(target_os = "linux"))]
+#[tauri::command]
+pub async fn query_install_status(
+    state: State<'_, ManagedToolsState>,
+) -> Result<InstallStateSummary, String> {
+    Ok(query_installation_status(&state.ctx.installer))
+}
+
+#[cfg(not(target_os = "linux"))]
+#[tauri::command]
+pub async fn manage_ime_installation(
+    state: State<'_, ManagedToolsState>,
+    install: bool,
+    confirmed_elevation: bool,
+) -> Result<InstallOperationResult, String> {
+    Ok(run_installation_action(&state.ctx.installer, install, confirmed_elevation).await)
+}

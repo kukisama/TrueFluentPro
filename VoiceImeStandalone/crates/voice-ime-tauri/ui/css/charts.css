@@ -1,0 +1,296 @@
+/* ==========================================================================
+   用量统计图表、分布条、会话列表与终结点列表专用样式
+   ========================================================================== */
+.range-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.range-btn {
+  min-height: 34px;
+  padding: 6px 12px;
+  font-size: 13px;
+  color: var(--muted);
+  background: #FFFFFF;
+}
+
+.range-btn.selected {
+  background: var(--range-selected-bg);
+  color: var(--blue);
+  font-weight: 600;
+}
+
+.metrics-grid-4 {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.metric-card {
+  background: var(--card-bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.metric-value-row {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+}
+
+.metric-value {
+  font-size: 26px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.metric-value.primary {
+  color: var(--blue);
+}
+
+.metric-unit {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.metric-note,
+.metric-compare {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.metric-compare.up {
+  color: var(--blue);
+}
+
+.activity-grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.activity-strip {
+  background: var(--page-bg);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+}
+
+/* 柱状图 */
+.bar-chart-grid {
+  display: grid;
+  gap: 4px;
+  align-items: end;
+  padding-top: 8px;
+}
+
+.bar-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.bar-top-val {
+  font-size: 11px;
+  height: 16px;
+  color: var(--muted);
+}
+
+.bar-top-val.has-val {
+  color: var(--blue);
+}
+
+.bar-track {
+  width: 100%;
+  height: 132px;
+  background: #F1F5FB;
+  border-radius: 5px 5px 0 0;
+  display: flex;
+  align-items: flex-end;
+  overflow: hidden;
+}
+
+.bar-track.hourly {
+  height: 108px;
+}
+
+.bar-fill {
+  width: 100%;
+  background: #DCE5F0;
+  border-radius: 5px 5px 0 0;
+  min-height: 2px;
+  transition: height 0.2s ease;
+}
+
+.bar-fill.active {
+  background: var(--blue);
+}
+
+.bar-date-label {
+  font-size: 10px;
+  color: var(--muted);
+  height: 16px;
+  white-space: nowrap;
+}
+
+/* 水平分布进度条 */
+.dist-row {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr) 88px;
+  align-items: center;
+  gap: 10px;
+  min-height: 26px;
+}
+
+.dist-track {
+  height: 6px;
+  background: #EDF2FA;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.dist-fill {
+  height: 100%;
+  background: var(--blue);
+  border-radius: 999px;
+}
+
+/* 会话记录表与内联原文展开区 */
+.session-table-header,
+.session-row-btn {
+  display: grid;
+  grid-template-columns: 1.6fr 1fr 1fr 1.3fr 1.4fr;
+  gap: 8px;
+  align-items: center;
+  padding: 11px 12px;
+  width: 100%;
+  text-align: left;
+}
+
+.session-table-header {
+  background: var(--page-bg);
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.session-item-wrap {
+  border-bottom: 1px solid var(--line);
+}
+
+.session-row-btn {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  font-size: 12px;
+  min-height: 44px;
+  justify-content: stretch;
+}
+
+.session-row-btn.selected {
+  background: var(--selected-bg);
+}
+
+.session-text-drawer {
+  margin: 4px 8px 12px 8px;
+  padding: 12px;
+  background: var(--page-bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.utterance-card {
+  background: #FFFFFF;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* 微软 Speech 终结点列表 */
+.endpoint-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.endpoint-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #FFFFFF;
+}
+
+.endpoint-item.active-sub {
+  border-color: var(--blue);
+  background: #F7FAFF;
+}
+
+.cloud-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--selected-bg);
+  color: var(--blue);
+}
+
+.cloud-pill.china {
+  background: #E6F4EA;
+  color: #137333;
+}
+
+details.ime-expander {
+  background: var(--card-bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: 12px 16px;
+}
+
+details.ime-expander summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.indeterminate-bar {
+  height: 4px;
+  width: 100%;
+  background: #E5EEFC;
+  border-radius: 999px;
+  overflow: hidden;
+  position: relative;
+}
+
+.indeterminate-bar::after {
+  content: "";
+  position: absolute;
+  left: -35%;
+  width: 35%;
+  height: 100%;
+  background: var(--blue);
+  animation: slide-bar 1.2s infinite ease-in-out;
+}
+
+@keyframes slide-bar {
+  0% { left: -35%; }
+  100% { left: 100%; }
+}

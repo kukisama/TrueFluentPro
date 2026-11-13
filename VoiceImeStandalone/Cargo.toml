@@ -1,0 +1,72 @@
+[workspace]
+members = [
+    "crates/voice-ime-protocol",
+    "crates/voice-ime-config",
+    "crates/voice-ime-storage",
+    "crates/voice-ime-speech",
+    "crates/voice-ime-win32",
+    "crates/voice-ime-controller",
+    "crates/voice-ime-daemon",
+    "crates/voice-ime-tauri",
+]
+resolver = "2"
+
+[workspace.package]
+version = "1.0.0"
+edition = "2021"
+license = "MIT"
+authors = ["TrueFluent Contributors"]
+
+[workspace.dependencies]
+# 内部模块（严格单向分层，杜绝循环依赖）
+voice-ime-protocol   = { path = "crates/voice-ime-protocol" }
+voice-ime-config     = { path = "crates/voice-ime-config" }
+voice-ime-storage    = { path = "crates/voice-ime-storage" }
+voice-ime-speech     = { path = "crates/voice-ime-speech" }
+voice-ime-win32      = { path = "crates/voice-ime-win32" }
+voice-ime-controller = { path = "crates/voice-ime-controller" }
+
+# 序列化与错误处理
+serde       = { version = "1.0.229", features = ["derive"] }
+serde_json  = "1.0.154"
+thiserror   = "2.0.21"
+anyhow      = "1.0.104"
+
+# 异步与网络
+tokio             = { version = "1.54.1", features = ["rt-multi-thread", "macros", "sync", "time", "fs", "io-util", "net", "process"] }
+futures           = "0.3.34"
+reqwest           = { version = "0.12.28", default-features = false, features = ["json", "rustls-tls"] }
+tokio-tungstenite = { version = "0.30.0", default-features = false, features = ["connect", "handshake", "rustls-tls-webpki-roots", "rustls-tls-native-roots"] }
+url               = "2.5.8"
+
+# 存储、编码与工具
+rusqlite             = { version = "0.32.1", features = ["bundled"] }
+chrono               = { version = "0.4.45", features = ["serde"] }
+dirs                 = "5.0.1"
+uuid                 = { version = "1.29.2", features = ["v4", "serde"] }
+sha2                 = "0.11.1"
+hex                  = "0.4.3"
+base64               = "0.22.1"
+unicode-segmentation = "1.13.3"
+
+# 日志诊断
+tracing            = "0.1.41"
+tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
+
+# Windows 专属底层系统与音频依赖
+windows-sys = { version = "0.61.2", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_Security_Cryptography",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Com",
+    "Win32_System_IO",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Pipes",
+    "Win32_System_Registry",
+    "Win32_System_Threading",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+cpal = "0.15.3"

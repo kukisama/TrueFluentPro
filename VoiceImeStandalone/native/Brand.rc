@@ -1,0 +1,38 @@
+#include <winver.h>
+
+#ifndef VOICE_IME_VERSION_CSV
+#define VOICE_IME_VERSION_CSV 1,0,0,0
+#endif
+#ifndef VOICE_IME_VERSION_STR
+#define VOICE_IME_VERSION_STR "1.0.0"
+#endif
+
+101 ICON "Brand.ico"
+
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION VOICE_IME_VERSION_CSV
+PRODUCTVERSION VOICE_IME_VERSION_CSV
+FILEFLAGSMASK 0x3fL
+FILEFLAGS 0x0L
+FILEOS VOS_NT_WINDOWS32
+FILETYPE VFT_DLL
+FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "080404b0"
+        BEGIN
+            VALUE "CompanyName", "TrueFluent"
+            VALUE "FileDescription", "译见pro语音输入法（独立版）"
+            VALUE "FileVersion", VOICE_IME_VERSION_STR
+            VALUE "InternalName", "VoiceImeStandalone.dll"
+            VALUE "OriginalFilename", "VoiceImeStandalone.dll"
+            VALUE "ProductName", "译见pro语音输入法"
+            VALUE "ProductVersion", VOICE_IME_VERSION_STR
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0804, 1200
+    END
+END

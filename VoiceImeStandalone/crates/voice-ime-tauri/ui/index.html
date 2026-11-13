@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>译见pro · 输入法工具</title>
+  <link rel="stylesheet" href="css/theme.css" />
+  <link rel="stylesheet" href="css/layout.css" />
+  <link rel="stylesheet" href="css/charts.css" />
+</head>
+<body>
+  <div class="shell-root">
+    <!-- 顶部 #132B49 深蓝页头（1:1 复刻 VoiceImeWindowDesign.Header compact） -->
+    <header class="page-header">
+      <div class="title-bar">
+        <div class="title-drag-area" id="title-drag-area">
+          <span class="title-brand-badge">译</span>
+          <span>译见pro / 语音输入法</span>
+          <span class="title-sub-hint">· F8 开始 / 停止听写</span>
+          <span id="ime-version-label" style="margin-left:auto;font-size:11px;opacity:0.8">独立版 v1.0.0</span>
+        </div>
+        <div class="caption-buttons">
+          <button type="button" class="caption-btn" id="win-min-btn" title="最小化">&#x2013;</button>
+          <button type="button" class="caption-btn" id="win-max-btn" title="最大化 / 还原">&#x25A1;</button>
+          <button type="button" class="caption-btn close" id="win-close-btn" title="关闭">&#x2715;</button>
+        </div>
+      </div>
+    </header>
+
+    <!-- 双栏主体：176px 左侧分类栏 + 右工作区 -->
+    <div class="tool-columns">
+      <aside class="sidebar" aria-label="输入法工具导航">
+        <button type="button" class="sidebar-tab-btn" data-main-tab="usage">
+          <span class="tab-glyph">📊</span>
+          <span>用量</span>
+        </button>
+        <button type="button" class="sidebar-tab-btn" data-main-tab="language">
+          <span class="tab-glyph">言</span>
+          <span>语言与翻译</span>
+        </button>
+        <button type="button" class="sidebar-tab-btn accent" data-main-tab="settings">
+          <span class="tab-glyph">⚙</span>
+          <span>设置</span>
+        </button>
+      </aside>
+
+      <main class="workspace">
+        <div id="global-sheet-notice" class="sheet-notice" style="display:none"></div>
+
+        <!-- ======================= 1. 用量页签 ======================= -->
+        <section class="tab-panel" data-tab-panel="usage">
+          <div class="panel-fixed-header">
+            <div class="panel-title-row">
+              <div>
+                <h1 class="panel-heading" style="font-size:24px">语音输入用量</h1>
+                <div class="panel-subtitle" id="usage-range-caption">最近 7 天 · 含今日</div>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px">
+                <div class="range-bar">
+                  <button type="button" class="range-btn" data-usage-days="1">今日</button>
+                  <button type="button" class="range-btn selected" data-usage-days="7">7 天</button>
+                  <button type="button" class="range-btn" data-usage-days="30">30 天</button>
+                </div>
+                <button type="button" class="icon-btn" id="usage-refresh-btn" title="刷新报表">↻</button>
+              </div>
+            </div>
+            <div class="sheet-nav-grid cols-5">
+              <button type="button" class="sheet-btn accent" data-usage-sheet="0">概览</button>
+              <button type="button" class="sheet-btn" data-usage-sheet="1">每日趋势</button>
+              <button type="button" class="sheet-btn" data-usage-sheet="2">小时分布</button>
+              <button type="button" class="sheet-btn" data-usage-sheet="3">统计分布</button>
+              <button type="button" class="sheet-btn" data-usage-sheet="4">会话记录</button>
+            </div>
+          </div>
+
+          <div id="usage-status-banner" class="status-banner" style="display:none"></div>
+          <div class="panel-scroll" id="usage-sheet-host"></div>
+
+          <footer class="panel-footer">
+            <span id="usage-footer-status">只读查询 · 不影响正在进行的语音输入</span>
+          </footer>
+        </section>
+
+        <!-- ======================= 2. 语言与翻译页签 ======================= -->
+        <section class="tab-panel" data-tab-panel="language">
+          <div class="panel-fixed-header" style="padding-bottom:4px">
+            <div>
+              <h1 class="panel-heading">语言与翻译</h1>
+              <div class="panel-subtitle">修改后自动保存，下次录音生效</div>
+            </div>
+          </div>
+
+          <div class="panel-scroll">
+            <div class="centered-stack">
+              <div class="ime-card" style="display:flex;flex-direction:column;gap:10px">
+                <div class="card-title">识别语言</div>
+                <div class="text-muted" style="font-size:13px">你将使用什么语言说话</div>
+                <select id="lang-source-select"></select>
+              </div>
+
+              <div class="ime-card" style="display:flex;flex-direction:column;gap:12px">
+                <div class="card-heading-row">
+                  <div>
+                    <div class="card-title">翻译后输入</div>
+                    <div class="text-muted" style="font-size:13px;margin-top:4px">逐句翻译，只向目标窗口输入译文</div>
+                  </div>
+                  <label class="toggle-switch" title="开启时逐句翻译只输入译文；关闭时直接输入识别原文">
+                    <input type="checkbox" id="lang-enable-translation" />
+                    <span class="toggle-slider"></span>
+                  </label>
+                </div>
+                <hr class="ime-rule" />
+                <div class="field-group">
+                  <label class="field-label" for="lang-target-select">目标语言</label>
+                  <select id="lang-target-select"></select>
+                </div>
+                <div style="background:var(--page-bg);border-radius:8px;padding:12px;color:var(--blue);font-size:13px">
+                  关闭翻译时，直接流式输入识别原文。
+                </div>
+              </div>
+
+              <div class="text-muted" style="font-size:13px;line-height:1.6">
+                直接复用传统微软 Speech 语音翻译能力（支持中国区世纪互联 21Vianet 与国际版 Global），无需额外配置大语言模型。
+              </div>
+            </div>
+          </div>
+
+          <footer class="panel-footer">
+            <span id="lang-save-status">正在读取语言配置…</span>
+            <div style="display:flex;gap:8px">
+              <button type="button" id="lang-reload-btn" style="min-height:34px">重新加载</button>
+              <button type="button" class="accent" id="lang-retry-save-btn" style="display:none;min-height:34px">重试保存</button>
+            </div>
+          </footer>
+        </section>
+
+        <!-- ======================= 3. 设置页签 ======================= -->
+        <section class="tab-panel active" data-tab-panel="settings">
+          <div class="panel-fixed-header">
+            <div>
+              <h1 class="panel-heading">设置</h1>
+              <div class="panel-subtitle">修改后自动保存 · 关窗即退出界面进程，零后台冗余占用</div>
+            </div>
+            <div class="sheet-nav-grid cols-4">
+              <button type="button" class="sheet-btn accent" data-settings-sheet="0">语音终结点</button>
+              <button type="button" class="sheet-btn" data-settings-sheet="1">识别与声音</button>
+              <button type="button" class="sheet-btn" data-settings-sheet="2">断句</button>
+              <button type="button" class="sheet-btn" data-settings-sheet="3">输入法管理</button>
+            </div>
+          </div>
+
+          <div class="panel-scroll">
+            <!-- Sheet 0: 传统微软 Speech 终结点 (21V & Global) -->
+            <div data-settings-pane="0">
+              <div style="display:flex;flex-direction:column;gap:16px">
+                <div class="ime-card" style="display:flex;flex-direction:column;gap:14px">
+                  <div class="card-heading-row">
+                    <div>
+                      <div class="card-title">传统微软 Speech 终结点（21V 中国区 &amp; Global 国际版）</div>
+                      <div class="text-muted" style="font-size:12px;margin-top:4px">
+                        支持直接粘贴 STS 令牌地址或认知服务终结点地址，密钥通过 Windows DPAPI 本机加密存储
+                      </div>
+                    </div>
+                    <button type="button" id="sub-import-legacy-btn" style="display:none;min-height:34px;font-size:12px">
+                      从译见 Pro 导入订阅
+                    </button>
+                  </div>
+
+                  <div style="display:flex;gap:8px;flex-wrap:wrap">
+                    <button type="button" class="link-btn" id="preset-21v-btn">
+                      + 填入世纪互联 21V 示例 (chinanorth3.api.cognitive.azure.cn)
+                    </button>
+                    <button type="button" class="link-btn" id="preset-global-btn">
+                      + 填入国际版 Global 示例 (southeastasia.api.cognitive.microsoft.com)
+                    </button>
+                  </div>
+
+                  <div class="two-col-grid">
+                    <div class="field-group">
+                      <label class="field-label" for="sub-name-input">终结点名称</label>
+                      <input type="text" id="sub-name-input" placeholder="如：华北三 21V / 东南亚国际版" />
+                    </div>
+                    <div class="field-group">
+                      <label class="field-label" for="sub-key-input">订阅密钥 (Subscription Key)</label>
+                      <input type="password" id="sub-key-input" placeholder="填写 Azure Speech 订阅密钥（Windows DPAPI 自动加密存储）" />
+                    </div>
+                  </div>
+
+                  <div class="field-group">
+                    <label class="field-label" for="sub-endpoint-input">终结点地址 (Endpoint / STS issueToken URL)</label>
+                    <input
+                      type="text"
+                      id="sub-endpoint-input"
+                      placeholder="https://chinanorth3.api.cognitive.azure.cn/sts/v1.0/issuetoken 或 https://southeastasia.api.cognitive.microsoft.com"
+                    />
+                    <div id="sub-region-hint" class="metric-note" style="font-size:12px"></div>
+                  </div>
+
+                  <div id="sub-op-feedback" class="status-banner" style="display:none;margin:0"></div>
+
+                  <div style="display:flex;gap:8px;flex-wrap:wrap">
+                    <button type="button" class="accent" id="sub-save-btn">保存终结点</button>
+                    <button type="button" id="sub-test-btn">验证连通性 (STS issueToken)</button>
+                    <button type="button" id="sub-reset-btn">清空表单</button>
+                  </div>
+                </div>
+
+                <div class="ime-card" style="display:flex;flex-direction:column;gap:12px">
+                  <div class="card-title">已保存的语音终结点</div>
+                  <div id="subscriptions-list" class="endpoint-list"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Sheet 1: 识别与声音（双列卡片，1:1 对齐 SettingsSheetRecognitionContent） -->
+            <div data-settings-pane="1" style="display:none">
+              <div class="two-col-grid">
+                <div class="ime-card" style="display:flex;flex-direction:column;gap:16px">
+                  <div class="card-heading-row">
+                    <div class="card-title">语音识别</div>
+                    <button type="button" class="icon-btn" id="refresh-subs-btn" title="刷新终结点列表">↻</button>
+                  </div>
+                  <div class="field-group">
+                    <label class="field-label" for="active-sub-select">当前活动语音资源</label>
+                    <select id="active-sub-select"></select>
+                  </div>
+                  <div class="text-muted" style="font-size:12px;line-height:1.5">
+                    同时承载实时语音识别（Continuous LID 自动多语种）与微软实时语音翻译。切换终结点后下次按 F8 录音立即生效。
+                  </div>
+                </div>
+
+                <div class="ime-card" style="display:flex;flex-direction:column;gap:16px">
+                  <div class="card-heading-row">
+                    <div class="card-title">声音与连接</div>
+                    <button type="button" class="icon-btn" id="refresh-mics-btn" title="刷新麦克风设备">↻</button>
+                  </div>
+                  <div class="field-group">
+                    <label class="field-label" for="mic-device-select">麦克风</label>
+                    <select id="mic-device-select"></select>
+                  </div>
+                  <hr class="ime-rule" />
+                  <div class="card-heading-row">
+                    <div>
+                      <div class="field-label">连接预热</div>
+                      <div class="text-muted" style="font-size:12px;margin-top:3px">切换到输入法时提前换取令牌并建连，加快首次出字</div>
+                    </div>
+                    <label class="toggle-switch">
+                      <input type="checkbox" id="enable-prewarm-toggle" checked />
+                      <span class="toggle-slider"></span>
+                    </label>
+                  </div>
+                  <div id="mic-count-status" class="text-muted" style="font-size:12px"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Sheet 2: 断句 -->
+            <div data-settings-pane="2" style="display:none">
+              <div class="ime-card" style="display:flex;flex-direction:column;gap:16px">
+                <div class="card-title">声音与断句</div>
+                <div class="field-group">
+                  <label class="field-label" for="end-silence-input">句尾静音</label>
+                  <div style="display:flex;align-items:center;gap:10px">
+                    <input type="number" id="end-silence-input" min="0.2" max="3.0" step="0.1" value="0.8" style="width:120px" />
+                    <span class="text-muted" style="font-size:12px">秒 · 停顿达到该时长后提交当前句（0.2–3.0 秒，默认 0.8 秒）</span>
+                  </div>
+                </div>
+                <hr class="ime-rule" />
+                <div class="card-heading-row">
+                  <div>
+                    <div class="field-label">句末语气词过滤</div>
+                    <div class="text-muted" style="font-size:12px;margin-top:3px">定稿时自动移除句末多余的“啊、呢、吧、呃”等口头禅助词</div>
+                  </div>
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="filter-particles-toggle" />
+                    <span class="toggle-slider"></span>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <!-- Sheet 3: 输入法管理 -->
+            <div data-settings-pane="3" style="display:none">
+              <div class="ime-card" style="display:flex;flex-direction:column;gap:14px">
+                <div class="card-title">输入法安装管理</div>
+                <div id="ime-reg-status" style="font-size:14px;line-height:1.5">正在查询输入法安装状态…</div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap">
+                  <button type="button" class="accent" id="ime-install-btn">安装 / 修复输入法</button>
+                  <button type="button" id="ime-uninstall-btn">卸载输入法</button>
+                  <button type="button" id="ime-status-btn">刷新状态</button>
+                </div>
+                <div id="ime-progress" class="indeterminate-bar" style="display:none"></div>
+                <div id="ime-op-message" class="text-muted" style="font-size:13px"></div>
+                <div class="text-muted" style="font-size:12px;line-height:1.55">
+                  点击即可安装/修复或卸载；权限不足时会先弹窗提示，再由 Windows 请求当前登录账户管理员授权并自动完成。64 位 Windows 自动处理双架构 / ARM64X 及 UWP 沙盒兼容；日常按 F8 听写无需管理员权限。
+                </div>
+                <details class="ime-expander">
+                  <summary>维护说明与组件清理</summary>
+                  <div class="text-muted" style="font-size:12px;line-height:1.55;margin-top:8px">
+                    维护期间自动挂起 F8、平滑停止 Rust 语音守护进程并切离本输入法，绝不强关你的编辑器或浏览器。仍被目标应用加载的旧版 DLL 由 Windows 重启删除队列自动回收，无需手动重启电脑。
+                  </div>
+                </details>
+              </div>
+            </div>
+          </div>
+
+          <footer class="panel-footer">
+            <span id="settings-save-status">正在加载配置…</span>
+            <span>浮条“言”可调语言与翻译，图表按钮可看本地用量 · 独立运行无需主程序</span>
+          </footer>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <!-- UAC 提权确认模态框（对齐 VoiceImeElevationDialog） -->
+  <div class="modal-backdrop" id="uac-modal-backdrop">
+    <div class="modal-dialog">
+      <div class="card-title" id="uac-modal-title">需要管理员权限</div>
+      <div class="text-muted" style="font-size:13px;line-height:1.6">
+        将输入法注册或从 Windows TSF 系统目录卸载需要一次管理员授权。请在随后的系统提示中使用<strong>当前登录账户</strong>点击“是”，日常 F8 语音输入无需管理员权限。
+      </div>
+      <div class="modal-actions">
+        <button type="button" id="uac-cancel-btn">取消</button>
+        <button type="button" class="accent" id="uac-confirm-btn">继续并请求授权</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

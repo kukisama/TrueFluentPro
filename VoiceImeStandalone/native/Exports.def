@@ -1,0 +1,11 @@
+LIBRARY VoiceImeStandalone
+EXPORTS
+    DllGetClassObject PRIVATE
+    DllCanUnloadNow PRIVATE
+    DllRegisterServer PRIVATE
+    DllUnregisterServer PRIVATE
+    VoiceImeToolbarCreate
+    VoiceImeToolbarUpdate
+    VoiceImeToolbarSetHistory
+    VoiceImeToolbarRun
+    VoiceImeToolbarClose

@@ -1,0 +1,28 @@
+[package]
+name = "voice-ime-daemon"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "独立语音输入法极轻量 Rust 守护进程（单线程 Actor 状态机，零 GUI 依赖，<10MB 常驻内存）"
+
+[lib]
+name = "voice_ime_daemon"
+path = "src/lib.rs"
+
+[[bin]]
+name = "TrueFluentVoiceImeHost"
+path = "src/main.rs"
+
+[dependencies]
+voice-ime-protocol = { workspace = true }
+voice-ime-config   = { workspace = true }
+voice-ime-storage  = { workspace = true }
+voice-ime-speech   = { workspace = true }
+voice-ime-win32    = { workspace = true }
+tokio              = { workspace = true }
+uuid               = { workspace = true }
+tracing            = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true }

@@ -1,0 +1,25 @@
+[package]
+name = "voice-ime-speech"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "传统微软 Speech 引擎（支持 21Vianet 与 Global：STS 鉴权、USP WebSocket 实时识别/翻译、连接预热与 16kHz 音频采集）"
+
+[dependencies]
+voice-ime-config  = { workspace = true }
+serde             = { workspace = true }
+serde_json        = { workspace = true }
+thiserror         = { workspace = true }
+tokio             = { workspace = true }
+futures           = { workspace = true }
+reqwest           = { workspace = true }
+tokio-tungstenite = { workspace = true }
+url               = { workspace = true }
+uuid              = { workspace = true }
+chrono            = { workspace = true }
+sha2              = { workspace = true }
+hex               = { workspace = true }
+tracing           = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+cpal = { workspace = true }
