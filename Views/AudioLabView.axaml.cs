@@ -29,8 +29,10 @@ namespace TrueFluentPro.Views
 
         /// <summary>与 MainWindow CompactNavWidth 同值。</summary>
         private const double CompactPanelWidth = 52;
-        /// <summary>展开宽度。</summary>
+        /// <summary>首次展开宽度；后续保留本视图内用户拖拽的宽度。</summary>
         private const double ExpandedPanelWidth = 200;
+        private double _expandedPanelWidth = ExpandedPanelWidth;
+        private bool _isFilePanelExpanded;
 
         public AudioLabView() : this(true)
         {
@@ -155,8 +157,25 @@ namespace TrueFluentPro.Views
 
         protected virtual void ApplyFilePanelState(bool isOpen)
         {
-            if (this.FindControl<Border>("FilePanelRail") is { } rail)
-                rail.Width = isOpen ? ExpandedPanelWidth : CompactPanelWidth;
+            // 仅操作经典页自己的分栏，不改变独立主题的控件树或共享业务状态。
+            if (this.FindControl<Grid>("FilePanelLayout") is not { } layout)
+                return;
+
+            var column = layout.ColumnDefinitions[0];
+            if (_isFilePanelExpanded && !isOpen && column.Width.IsAbsolute)
+                _expandedPanelWidth = column.Width.Value;
+
+            column.MinWidth = isOpen ? 160 : CompactPanelWidth;
+            column.MaxWidth = isOpen ? double.PositiveInfinity : CompactPanelWidth;
+            if (!isOpen || !_isFilePanelExpanded)
+                column.Width = new GridLength(isOpen ? _expandedPanelWidth : CompactPanelWidth);
+
+            _isFilePanelExpanded = isOpen;
+            if (this.FindControl<GridSplitter>("FilePanelSplitter") is { } splitter)
+            {
+                splitter.IsVisible = isOpen;
+                splitter.IsEnabled = isOpen;
+            }
         }
 
         protected void ToggleFilePanel_Click(object? sender, RoutedEventArgs e)
@@ -409,10 +428,17 @@ namespace TrueFluentPro.Views
 
         // ── 通用导出 ─────────────────────────────────────────
         protected async void ExportCurrent_Click(object? sender, RoutedEventArgs e)
+            => await PickExportDirectoryAsync(exportAllTranscripts: false);
+
+        protected async void ExportAllTranscripts_Click(object? sender, RoutedEventArgs e)
+            => await PickExportDirectoryAsync(exportAllTranscripts: true);
+
+        private async Task PickExportDirectoryAsync(bool exportAllTranscripts)
         {
             var topLevel = TopLevel.GetTopLevel(this);
             var viewModel = ViewModel;
-            if (_isExportPickerOpen || topLevel == null || viewModel == null || string.IsNullOrWhiteSpace(viewModel.CurrentFilePath))
+            if (_isExportPickerOpen || topLevel == null || viewModel == null || viewModel.IsExporting
+                || (!exportAllTranscripts && string.IsNullOrWhiteSpace(viewModel.CurrentFilePath)))
                 return;
 
             _isExportPickerOpen = true;
@@ -427,7 +453,10 @@ namespace TrueFluentPro.Views
                 var directory = folders.FirstOrDefault()?.TryGetLocalPath();
                 if (!string.IsNullOrWhiteSpace(directory))
                 {
-                    await viewModel.ExportCurrentTabAsync(directory);
+                    if (exportAllTranscripts)
+                        await viewModel.ExportAllTranscriptsAsync(directory);
+                    else
+                        await viewModel.ExportCurrentTabAsync(directory);
                 }
                 else if (folders.Count > 0)
                 {

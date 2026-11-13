@@ -147,7 +147,11 @@ internal static class SongScrollAudioInteractionRegression
                 if (!Equals(args?[0], audioItem?.Id)) return (false, null);
                 if (method.Name == nameof(IAudioLifecycleRepository.Get) && args?[1] is string key)
                 {
-                    if (key == "Transcribed") memoryReads++;
+                    // 此计数只观测正文加载/切页重算，新增的只读列表标题查询单独排除。
+                    if (key == "Transcribed" && !new StackTrace().GetFrames().Any(frame =>
+                        frame.GetMethod()?.DeclaringType == typeof(AudioLifecyclePipelineService)
+                        && frame.GetMethod()?.Name == nameof(AudioLifecyclePipelineService.GetAudioDisplayName)))
+                        memoryReads++;
                     Log($"MEMORY_GET {key};hit={cache.ContainsKey(key)}");
                     return (true, cache.GetValueOrDefault(key));
                 }

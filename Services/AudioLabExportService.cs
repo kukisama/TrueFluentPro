@@ -41,6 +41,8 @@ public sealed class AudioLabExportRequest
 {
     /// <summary>仅用于生成导出文件名前缀，不决定导出类型。</summary>
     public string SourceAudioPath { get; init; } = "";
+    /// <summary>可选的显示名称前缀，不作为磁盘路径解析。</summary>
+    public string FileNamePrefix { get; init; } = "";
     public IReadOnlyList<AudioLabExportArtifact> Artifacts { get; init; } = Array.Empty<AudioLabExportArtifact>();
 }
 
@@ -80,7 +82,9 @@ public sealed class AudioLabExportService : IAudioLabExportService
             throw new InvalidOperationException("当前页面没有可导出的产物。");
 
         Directory.CreateDirectory(exportDirectory);
-        var baseName = SanitizeFileName(Path.GetFileNameWithoutExtension(request.SourceAudioPath));
+        var baseName = SanitizeFileName(string.IsNullOrWhiteSpace(request.FileNamePrefix)
+            ? Path.GetFileNameWithoutExtension(request.SourceAudioPath)
+            : request.FileNamePrefix);
         if (string.IsNullOrWhiteSpace(baseName))
             baseName = "听析内容";
         baseName = FindAvailableBaseName(exportDirectory, baseName, request.Artifacts);

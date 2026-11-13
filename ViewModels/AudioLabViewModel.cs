@@ -541,6 +541,7 @@ namespace TrueFluentPro.ViewModels
             _configProvider = configProvider;
             _configService = configService;
             _pipeline = pipeline;
+            _pipeline.RecordingTitleChanged += OnRecordingTitleChanged;
             _exportService = exportService;
             _folderLauncher = folderLauncher;
             _queueService = queueService;
@@ -916,6 +917,7 @@ namespace TrueFluentPro.ViewModels
 
             // 刷新各阶段状态
             RefreshStageStates(audioItemId);
+            _ = RefreshAudioDisplayNamesAsync();
         }
 
         // ── 转录段合并（从外部 SubtitleCue 列表生成） ─────────
@@ -1060,6 +1062,7 @@ namespace TrueFluentPro.ViewModels
                     }
                 }
             });
+            await RefreshAudioDisplayNamesAsync();
         }
 
         // ── AI/ASR 配置解析（与 BatchProcessingViewModel 同模式） ──
@@ -1145,27 +1148,7 @@ namespace TrueFluentPro.ViewModels
         /// </summary>
         private List<TranscriptSegment> LoadSegmentsFromLifecycleJson(string json)
         {
-            if (Services.TranscriptionDataHelper.IsRawFormat(json))
-            {
-                var rawData = Services.TranscriptionDataHelper.ParseRawData(json);
-                if (rawData == null || string.IsNullOrWhiteSpace(rawData.RawResponse))
-                    return new();
-
-                var config = _configProvider();
-                var splitOptions = new BatchSubtitleSplitOptions
-                {
-                    EnableSentenceSplit = config.EnableBatchSubtitleSentenceSplit,
-                    SplitOnComma = config.BatchSubtitleSplitOnComma,
-                    MaxChars = config.BatchSubtitleMaxChars,
-                    MaxDurationSeconds = config.BatchSubtitleMaxDurationSeconds,
-                    PauseSplitMs = config.BatchSubtitlePauseSplitMs
-                };
-                return Services.TranscriptionDataHelper.ComputeSegments(rawData, splitOptions);
-            }
-            else
-            {
-                return Services.TranscriptionDataHelper.DeserializeLegacySegments(json);
-            }
+            return LoadStoredTranscript(json, GetTranscriptSplitOptions());
         }
 
         private static List<TranscriptSegment> BuildSegmentsFromCues(IList<SubtitleCue> cues)
@@ -2550,6 +2533,9 @@ namespace TrueFluentPro.ViewModels
 
         public void Dispose()
         {
+            _libraryDisposed = true;
+            Interlocked.Increment(ref _audioTitleRefreshVersion);
+            _pipeline.RecordingTitleChanged -= OnRecordingTitleChanged;
             ControlPanel.AutoFillMissingRequested -= OnAutoFillMissingRequested;
             ControlPanel.PodcastAudioSynthesized -= OnPodcastAudioSynthesized;
             if (_eventBus != null)

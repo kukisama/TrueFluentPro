@@ -74,7 +74,7 @@
                       <icons:Icon Value="fa-solid fa-file-audio" FontSize="28" Foreground="{DynamicResource ScrollAccent}"/>
                     </Border>
                     <StackPanel Grid.Column="1" Spacing="10">
-                      <TextBlock Text="{Binding Name}" TextWrapping="Wrap"/>
+                      <TextBlock Text="{Binding AudioDisplayName}" TextWrapping="Wrap"/>
                       <TextBlock Classes="lab-muted" Text="{Binding FullPath}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding FullPath}"/>
                     </StackPanel>
                   </Grid>

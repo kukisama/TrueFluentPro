@@ -64,17 +64,21 @@
         </Style>
     </UserControl.Styles>
 
-    <!-- 最外层 Grid：左列文件面板 + 主内容（无右侧控制面板） -->
-    <Grid ColumnDefinitions="Auto,*">
+    <!-- 最外层 Grid：文件面板 + 可拖拽分隔线 + 主内容 -->
+    <Grid Name="FilePanelLayout">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="52" MinWidth="52" MaxWidth="52"/>
+            <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="*" MinWidth="320"/>
+        </Grid.ColumnDefinitions>
 
         <!-- ═══ 左侧文件面板（与一级导航 ShellNavRail 同模式） ═══ -->
         <Border Grid.Column="0" Name="FilePanelRail"
-                Width="52"
                 ClipToBounds="True"
                 Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
                 BorderBrush="{DynamicResource CardBorderBrush}"
                 BorderThickness="0,0,1,0">
-            <Grid RowDefinitions="Auto,Auto,Auto,*">
+            <Grid RowDefinitions="Auto,Auto,Auto,Auto,*">
                 <!-- Row 0: 展开/收起按钮（与 ShellNavRail 的 ToggleShellNavButton 同构） -->
                 <StackPanel Grid.Row="0" Margin="0,8,0,0">
                     <Button Classes="shell-nav-toggle"
@@ -118,8 +122,21 @@
                     </StackPanel>
                 </Button>
 
-                <!-- Row 3: 文件列表（展开时显示） -->
-                <ListBox Grid.Row="3"
+                <!-- Row 3: 全局转录导出，不依赖当前选中的音频 -->
+                <Button Grid.Row="3" Padding="8,6" Margin="8,0,8,8"
+                        HorizontalAlignment="Stretch"
+                        HorizontalContentAlignment="Center"
+                        Click="ExportAllTranscripts_Click"
+                        IsEnabled="{Binding !IsExporting}"
+                        IsVisible="{Binding IsFilePanelOpen}">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <icons:Icon Value="fa-solid fa-download" FontSize="12"/>
+                        <TextBlock Text="导出全部转录" FontSize="12"/>
+                    </StackPanel>
+                </Button>
+
+                <!-- Row 4: 文件列表（展开时显示） -->
+                <ListBox Grid.Row="4"
                          ItemsSource="{Binding AudioFiles}"
                          SelectedItem="{Binding SelectedAudioFile}"
                          Classes="sidebar-nav-list"
@@ -133,7 +150,7 @@
                                             FontSize="12" Opacity="0.5"
                                             VerticalAlignment="Center"/>
                                 <TextBlock Grid.Column="1"
-                                           Text="{Binding Name}"
+                                           Text="{Binding AudioDisplayName}"
                                            FontSize="12"
                                            TextTrimming="CharacterEllipsis"
                                            ToolTip.Tip="{Binding FullPath}"
@@ -145,8 +162,15 @@
             </Grid>
         </Border>
 
+        <GridSplitter Grid.Column="1" Name="FilePanelSplitter"
+                  Width="5" HorizontalAlignment="Stretch"
+                  ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"
+                  Background="{DynamicResource DividerStrokeColorDefaultBrush}"
+                  IsVisible="False" IsEnabled="False"
+                  AutomationProperties.Name="调整音频列表宽度"/>
+
         <!-- ═══ 主内容区 ═══ -->
-        <Grid Grid.Column="1" Name="MainContentArea" RowDefinitions="Auto,Auto,*,Auto,Auto">
+        <Grid Grid.Column="2" Name="MainContentArea" RowDefinitions="Auto,Auto,*,Auto,Auto">
 
         <!-- ═══ 面包屑 ═══ -->
         <Border Grid.Row="0" Padding="16,12,16,4">

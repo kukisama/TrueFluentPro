@@ -12,6 +12,13 @@ namespace TrueFluentPro.Models
         private string _fullPath = "";
 
         [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(AudioDisplayName))]
+        private string _audioTitle = "";
+
+        /// <summary>听析专用显示名称；原始文件名和其他业务列表保持不变。</summary>
+        public string AudioDisplayName => string.IsNullOrWhiteSpace(AudioTitle) ? Name : AudioTitle;
+
+        [ObservableProperty]
         private ProcessingDisplayState _processingState;
 
         [ObservableProperty]
@@ -70,6 +77,7 @@ namespace TrueFluentPro.Models
 
         partial void OnNameChanged(string value)
         {
+            OnPropertyChanged(nameof(AudioDisplayName));
             OnPropertyChanged(nameof(ReviewListDisplayName));
             OnPropertyChanged(nameof(ReviewSubtitleListDisplayName));
             OnPropertyChanged(nameof(ReviewListToolTip));

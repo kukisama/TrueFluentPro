@@ -22,6 +22,9 @@ namespace TrueFluentPro.Services
         private readonly IAiInsightService _aiInsightService;
         private readonly SpeechSynthesisService _ttsService;
 
+        /// <summary>转录或总结保存后通知音频 ID；订阅方负责调度 UI 刷新。</summary>
+        public event Action<string>? RecordingTitleChanged;
+
         public AudioLifecyclePipelineService(
             IAudioLibraryRepository audioRepo,
             IAudioLifecycleRepository lifecycleRepo,
@@ -35,6 +38,69 @@ namespace TrueFluentPro.Services
         }
 
         // ── 缓存加载 ──────────────────────────────────
+
+        /// <summary>
+        /// 根据已保存的转录和总结返回显示名称；重新生成期间仍保留上次成功标题。
+        /// 兼容当前绝对路径与旧导入的 Sessions 相对路径（使用 / 分隔）。
+        /// </summary>
+        public string GetAudioDisplayName(string filePath)
+        {
+            var fileName = Path.GetFileName(filePath);
+            var audio = _audioRepo.GetByFilePath(filePath);
+            if (audio == null && !string.IsNullOrWhiteSpace(filePath))
+            {
+                string absolutePath;
+                string relativePath;
+                try
+                {
+                    var root = Path.GetFullPath(PathManager.Instance.SessionsPath);
+                    absolutePath = Path.GetFullPath(filePath, root);
+                    relativePath = Path.GetRelativePath(root, absolutePath).Replace('\\', '/');
+                }
+                catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+                {
+                    return fileName;
+                }
+
+                if (!string.Equals(filePath, absolutePath, StringComparison.Ordinal))
+                    audio = _audioRepo.GetByFilePath(absolutePath);
+
+                if (audio == null && !Path.IsPathRooted(relativePath)
+                    && relativePath != ".." && !relativePath.StartsWith("../", StringComparison.Ordinal)
+                    && !string.Equals(filePath, relativePath, StringComparison.Ordinal))
+                    audio = _audioRepo.GetByFilePath(relativePath);
+            }
+
+            if (audio == null || audio.IsDeleted) return fileName;
+
+            var transcript = _lifecycleRepo.Get(audio.Id, AudioLifecycleStage.Transcribed.ToString());
+            var summary = _lifecycleRepo.Get(audio.Id, AudioLifecycleStage.Summarized.ToString());
+            if (transcript == null || string.IsNullOrWhiteSpace(transcript.ContentJson)
+                || summary == null || string.IsNullOrWhiteSpace(summary.ContentJson))
+                return fileName;
+
+            return AudioRecordingTitle.Build(fileName, audio.CreatedAt, summary.ContentJson);
+        }
+
+        /// <summary>
+        /// 列出所有未删除且已有非空转录的数据库记录，包括过期内容，不检查源文件是否存在。
+        /// IsStale 表示转录或总结任一阶段已过期，供导出提示使用。
+        /// </summary>
+        public List<(AudioItemRecord Audio, string? TranscriptJson, string? SummaryMarkdown, bool IsStale)> ListStoredTranscripts()
+        {
+            var result = new List<(AudioItemRecord Audio, string? TranscriptJson, string? SummaryMarkdown, bool IsStale)>();
+            foreach (var audio in _audioRepo.List(limit: int.MaxValue))
+            {
+                if (audio.IsDeleted) continue;
+                var transcript = _lifecycleRepo.Get(audio.Id, AudioLifecycleStage.Transcribed.ToString());
+                if (transcript == null || string.IsNullOrWhiteSpace(transcript.ContentJson)) continue;
+
+                var summary = _lifecycleRepo.Get(audio.Id, AudioLifecycleStage.Summarized.ToString());
+                result.Add((audio, transcript.ContentJson, summary?.ContentJson,
+                    transcript.IsStale || summary?.IsStale == true));
+            }
+            return result;
+        }
 
         /// <summary>
         /// 尝试从数据库加载指定阶段的缓存内容。
@@ -102,6 +168,24 @@ namespace TrueFluentPro.Services
                 GeneratedAt = now,
                 UpdatedAt = now,
             });
+
+            if (stage == nameof(AudioLifecycleStage.Transcribed) || stage == nameof(AudioLifecycleStage.Summarized))
+            {
+                var handlers = RecordingTitleChanged;
+                if (handlers == null) return;
+                foreach (Action<string> handler in handlers.GetInvocationList())
+                {
+                    try
+                    {
+                        handler(audioItemId);
+                    }
+                    catch (Exception ex)
+                    {
+                        // 通知失败不能将已经成功的存储误报为失败，也不能阻断其他订阅者。
+                        System.Diagnostics.Debug.WriteLine($"刷新音频显示名称失败: {ex.Message}");
+                    }
+                }
+            }
         }
 
         /// <summary>保存文件类阶段结果到数据库（如 TTS 音频文件路径）。</summary>
