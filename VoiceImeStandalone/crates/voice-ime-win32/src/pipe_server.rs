@@ -87,7 +87,7 @@ pub mod windows_pipe {
     use std::io;
     use std::os::windows::ffi::OsStrExt;
     use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
-    use std::ptr::{null, null_mut};
+    use std::ptr::null_mut;
 
     use tokio::net::windows::named_pipe::NamedPipeServer;
     use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
@@ -99,7 +99,7 @@ pub mod windows_pipe {
         FILE_FLAG_FIRST_PIPE_INSTANCE, FILE_FLAG_OVERLAPPED, PIPE_ACCESS_DUPLEX,
     };
     use windows_sys::Win32::System::Pipes::{
-        GetNamedPipeClientProcessId, PIPE_READMODE_BYTE, PIPE_TYPE_BYTE,
+        GetNamedPipeClientProcessId, PIPE_READMODE_BYTE, PIPE_REJECT_REMOTE_CLIENTS, PIPE_TYPE_BYTE,
         PIPE_UNLIMITED_INSTANCES, PIPE_WAIT,
     };
 
@@ -148,18 +148,19 @@ pub mod windows_pipe {
             let raw_handle = windows_sys::Win32::System::Pipes::CreateNamedPipeW(
                 wide_path.as_ptr(),
                 open_mode,
-                PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT,
+                PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS,
                 PIPE_UNLIMITED_INSTANCES,
                 65536,
                 65536,
                 0,
                 &sa,
             );
-            windows_sys::Win32::Foundation::LocalFree(sd);
-
             if raw_handle == INVALID_HANDLE_VALUE || raw_handle.is_null() {
-                return Err(io::Error::last_os_error());
+                let error = io::Error::last_os_error();
+                windows_sys::Win32::Foundation::LocalFree(sd);
+                return Err(error);
             }
+            windows_sys::Win32::Foundation::LocalFree(sd);
 
             let owned = OwnedHandle::from_raw_handle(raw_handle as _);
             NamedPipeServer::from_raw_handle(owned.as_raw_handle())
@@ -180,4 +181,27 @@ pub mod windows_pipe {
     }
 }
 
-pub fn accept_Windows_or_test_pipe_placeholder() {}
+#[cfg(all(test, windows))]
+mod tests {
+    use super::{windows_pipe::*, PipePeerVerifier, Win32PeerVerifier};
+    use std::time::Duration;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::windows::named_pipe::ClientOptions;
+    use windows_sys::Win32::System::Threading::GetCurrentThreadId;
+
+    #[tokio::test]
+    async fn named_pipe_accepts_same_session_and_reads_bytes() {
+        let id = crate::paths::current_process_identity().unwrap();
+        let name = format!("TrueFluentVoiceIme.Test.{}", uuid::Uuid::new_v4());
+        let mut server = create_secure_pipe_instance(&name, &id.sid, true).unwrap();
+        let mut client = ClientOptions::new().open(format!(r"\\.\pipe\{name}")).unwrap();
+        tokio::time::timeout(Duration::from_secs(2), server.connect()).await.unwrap().unwrap();
+        let actual = query_pipe_client_pid(&server).unwrap();
+        assert_eq!(actual, id.pid);
+        let tid = unsafe { GetCurrentThreadId() };
+        assert!(Win32PeerVerifier::new(id.session_id, &id.sid).authenticate_peer(actual, tid));
+        assert!(!Win32PeerVerifier::new(id.session_id.wrapping_add(1), &id.sid).authenticate_peer(actual, tid));
+        client.write_all(b"H").await.unwrap();
+        assert_eq!(tokio::time::timeout(Duration::from_secs(2), server.read_u8()).await.unwrap().unwrap(), b'H');
+    }
+}

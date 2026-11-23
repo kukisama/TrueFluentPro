@@ -6,5 +6,5 @@
 pub mod actor;
 pub mod launcher;
 
-pub use actor::{serve_duplex_peer, SharedDaemonActor, SharedDaemonHandle, ToolsTabRequest};
-pub use launcher::{NoopToolsLauncher, OnDemandTauriToolsLauncher, ToolsWindowLauncher};
+pub use actor::{serve_duplex_peer, SharedDaemonActor, SharedDaemonHandle};
+pub use launcher::{NoopToolsLauncher, OnDemandTauriToolsLauncher, ToolsTabRequest, ToolsWindowLauncher};

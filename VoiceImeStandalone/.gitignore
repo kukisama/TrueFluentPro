@@ -1,5 +1,6 @@
 /target
 /dist
 /native/artifacts
+/crates/voice-ime-tauri/gen
 *.pdb
 *.log

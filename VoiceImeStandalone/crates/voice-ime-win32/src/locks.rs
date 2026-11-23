@@ -133,7 +133,7 @@ impl HostReceipt {
                 let mut any_alive = false;
                 if data_dir.exists() {
                     if let Ok(entries) = fs::read_dir(data_dir) {
-                        for entry in entries.flatten().take(64) {
+                        for entry in entries.flatten() {
                             let p = entry.path();
                             let name = p.file_name().and_then(|s| s.to_str()).unwrap_or("");
                             if !name.starts_with("host-") || !name.ends_with(".json") {
@@ -141,8 +141,7 @@ impl HostReceipt {
                             }
                             if is_receipt_alive(&p) {
                                 any_alive = true;
-                            } else {
-                                let _ = fs::remove_file(&p);
+                                break;
                             }
                         }
                     }

@@ -82,9 +82,8 @@ impl ConfigStore {
         let mut normalized = config.clone();
         for sub in &mut normalized.subscriptions {
             if !sub.encrypted_key.trim().is_empty() && !secret::is_protected_secret(&sub.encrypted_key) {
-                if let Ok(enc) = secret::protect_secret(sub.encrypted_key.trim()) {
-                    sub.encrypted_key = enc;
-                }
+                sub.encrypted_key = secret::protect_secret(sub.encrypted_key.trim())
+                    .map_err(|e| ConfigError::Validation(e.to_string()))?;
             }
         }
 

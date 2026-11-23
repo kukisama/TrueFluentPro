@@ -22,8 +22,5 @@ pub use paths::{
     current_process_identity, guard_local_path, install_root_dir, maintenance_lock_path,
     standalone_local_data_dir, ProcessIdentity,
 };
-pub use pipe_server::{
-    accept_Windows_or_test_pipe_placeholder, ClientIdentityVerifier, PipePeerVerifier,
-    Win32PeerVerifier,
-};
+pub use pipe_server::{ClientIdentityVerifier, PipePeerVerifier, Win32PeerVerifier};
 pub use toolbar_ffi::{NoopToolbarDriver, ToolbarAction, ToolbarDriver, Win32NativeToolbarDriver};

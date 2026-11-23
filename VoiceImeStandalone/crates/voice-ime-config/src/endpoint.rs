@@ -56,6 +56,8 @@ pub enum SpeechEndpointError {
     UnrecognizedEndpointFormat,
     #[error("订阅密钥不能为空")]
     EmptySubscriptionKey,
+    #[error("无法加密订阅密钥，未保存密钥")]
+    SubscriptionKeyProtectionFailed,
 }
 
 /// 解析后的标准微软 Speech 路由集合。
@@ -221,7 +223,7 @@ impl SpeechSubscription {
             return Err(SpeechEndpointError::EmptySubscriptionKey);
         }
         let encrypted_key = secret::protect_secret(trimmed_key)
-            .unwrap_or_else(|_| trimmed_key.to_string());
+            .map_err(|_| SpeechEndpointError::SubscriptionKeyProtectionFailed)?;
         Ok(Self {
             id: uuid::Uuid::new_v4().simple().to_string(),
             name: name.into().trim().to_string(),
@@ -258,7 +260,10 @@ impl SpeechSubscription {
     /// 生成脱敏展示用的密钥掩码（如 `••••abcd`）。
     pub fn masked_key_hint(&self) -> String {
         match self.plain_subscription_key() {
-            Ok(k) if k.len() >= 4 => format!("••••••••{}", &k[k.len() - 4..]),
+            Ok(k) if k.chars().count() > 4 => {
+                let suffix = k.char_indices().rev().nth(3).map(|(i, _)| &k[i..]).unwrap_or("");
+                format!("••••••••{suffix}")
+            }
             Ok(_) => "••••".to_string(),
             Err(_) => "未配置密钥".to_string(),
         }

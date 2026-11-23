@@ -3,7 +3,7 @@
 
 // Testable installation policy. The offline backend never calls Windows registration APIs.
 namespace VoiceRegistration {
-inline constexpr wchar_t Owner[] = StandaloneIdentity::OwnerValue;
+inline constexpr auto& Owner = StandaloneIdentity::OwnerValue;
 struct Record {
     bool exists = false, owned = false, apartment = false;
     bool settingsOnly = false, settingsDisabled = false;

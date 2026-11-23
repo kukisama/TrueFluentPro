@@ -205,24 +205,34 @@ pub async fn test_subscription(
     endpoint: String,
     plain_key: String,
 ) -> Result<SubscriptionValidationOutcome, String> {
-    let key_to_use = if !plain_key.trim().is_empty() {
-        plain_key.trim().to_string()
-    } else if let Some(id) = saved_id.filter(|s| !s.trim().is_empty()) {
+    let saved = if let Some(id) = saved_id.filter(|s| !s.trim().is_empty()) {
         let cfg = store.load_readonly().map_err(|e| e.to_string())?;
-        let sub = cfg
+        Some(cfg
             .subscriptions
-            .iter()
+            .into_iter()
             .find(|s| s.id == id)
-            .ok_or_else(|| "未找到对应的已保存订阅。".to_string())?;
-        sub.plain_subscription_key().map_err(|e| e.to_string())?
+            .ok_or_else(|| "未找到对应的已保存订阅。".to_string())?)
     } else {
-        return Err("请先输入订阅密钥再执行验证。".into());
+        None
     };
-
     let ep_to_use = if !endpoint.trim().is_empty() {
         endpoint
+    } else if let Some(sub) = &saved {
+        sub.endpoint.clone()
     } else {
         return Err("请先填写微软 Speech 终结点地址。".into());
+    };
+    let key_to_use = if !plain_key.trim().is_empty() {
+        plain_key.trim().to_string()
+    } else if let Some(sub) = &saved {
+        let requested = parse_speech_endpoint(&ep_to_use).map_err(|e| e.to_string())?;
+        let original = sub.resolve_endpoint().map_err(|e| e.to_string())?;
+        if requested.sts_issue_token_url != original.sts_issue_token_url {
+            return Err("验证新的区域或终结点时，请填写该终结点的订阅密钥。".into());
+        }
+        sub.plain_subscription_key().map_err(|e| e.to_string())?
+    } else {
+        return Err("请填写订阅密钥，或在下方直接验证已保存的终结点。".into());
     };
 
     Ok(sts.validate_endpoint_and_key(&ep_to_use, &key_to_use).await)

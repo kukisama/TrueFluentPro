@@ -56,7 +56,7 @@ async fn run_shared_daemon() -> i32 {
     }
 
     let data_dir = standalone_local_data_dir();
-    let owner_lock_path = data_dir.join("owner.lock");
+    let owner_lock_path = data_dir.join(format!("owner-{}.lock", identity.session_id));
     let owner_lock = match ExclusiveFileLock::try_acquire(&owner_lock_path) {
         Ok(Some(lock)) => lock,
         Ok(None) => return 0, // 同一会话已有活跃守护进程，直接退出由客户端连接同一确定性管道
@@ -68,7 +68,17 @@ async fn run_shared_daemon() -> i32 {
         return 0;
     }
 
-    let _ = HostReceipt::record_current(&data_dir);
+    let receipt_path = match HostReceipt::record_current(&data_dir) {
+        Ok(path) => path,
+        Err(error) => {
+            tracing::error!(%error, "无法创建后台回执");
+            return 1;
+        }
+    };
+    if maintenance.is_active() {
+        let _ = std::fs::remove_file(receipt_path);
+        return 0;
+    }
 
     let config_cache = Arc::new(RuntimeConfigCache::new(ConfigStore::default_store()));
     let speech_factory = Arc::new(UspSpeechEngineFactory::default());
@@ -100,7 +110,7 @@ async fn run_shared_daemon() -> i32 {
         Arc::new(NoopToolbarDriver)
     };
 
-    let (daemon_handle, actor_join) = SharedDaemonActor::spawn(
+    let (daemon_handle, mut actor_join) = SharedDaemonActor::spawn(
         config_cache,
         speech_factory,
         verifier,
@@ -113,15 +123,17 @@ async fn run_shared_daemon() -> i32 {
     );
 
     let pipe_name = StandaloneIdentityContract::shared_pipe_name(identity.session_id, &identity.sid);
-    let accept_task = spawn_pipe_accept_loop(pipe_name, identity.sid, daemon_handle.clone());
+    let mut accept_task = spawn_pipe_accept_loop(pipe_name, identity.sid, daemon_handle.clone());
 
     tokio::select! {
-        _ = actor_join => {}
-        _ = accept_task => {
+        _ = &mut actor_join => accept_task.abort(),
+        _ = &mut accept_task => {
             daemon_handle.shutdown().await;
+            let _ = actor_join.await;
         }
     }
 
+    let _ = std::fs::remove_file(receipt_path);
     drop(owner_lock);
     0
 }

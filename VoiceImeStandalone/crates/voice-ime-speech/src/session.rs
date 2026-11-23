@@ -76,12 +76,11 @@ impl SpeechSessionHandle {
         if let Some(tx) = self.stop_tx.take() {
             let _ = tx.send(());
         }
-        let _ = tokio::time::timeout(Duration::from_secs(3), self.released_rx).await;
+        let _ = self.released_rx.await;
     }
 }
 
 /// 抽象语音引擎工厂（便于守护进程 Actor 单测注入模拟引擎，生产注入 `UspSpeechEngineFactory`）。
-#[async_trait_less_wrapper]
 pub trait SpeechEngineFactory: Send + Sync {
     fn prewarm(
         &self,
@@ -96,16 +95,6 @@ pub trait SpeechEngineFactory: Send + Sync {
         events_tx: mpsc::UnboundedSender<SpeechEvent>,
     ) -> SpeechSessionHandle;
 }
-
-mod async_trait_less {
-    // 占位模块注释：直接使用原生 BoxFuture / JoinHandle 无需额外宏依赖
-}
-macro_rules! async_trait_less_wrapper {
-    ($item:item) => {
-        $item
-    };
-}
-use async_trait_less_wrapper;
 
 /// 生产环境传统微软 Speech USP 引擎工厂（同时支持 Global 与 21Vianet）。
 pub struct UspSpeechEngineFactory {
@@ -209,15 +198,16 @@ async fn open_usp_websocket(
         .map_err(|_| "语音识别连接地址无效。".to_string())?;
 
     let headers = request.headers_mut();
-    headers.insert(
-        "Ocp-Apim-Subscription-Key",
-        HeaderValue::from_str(&cfg.subscription_key)
-            .map_err(|_| "订阅密钥包含非法请求头字符。".to_string())?,
-    );
     if let Some(token) = bearer_opt {
-        if let Ok(hv) = HeaderValue::from_str(&format!("******")) {
-            headers.insert("Authorization", hv);
-        }
+        let mut header = HeaderValue::from_str(&format!("Bearer {token}"))
+            .map_err(|_| "语音服务返回的访问令牌格式无效。".to_string())?;
+        header.set_sensitive(true);
+        headers.insert("Authorization", header);
+    } else {
+        let mut header = HeaderValue::from_str(&cfg.subscription_key)
+            .map_err(|_| "订阅密钥包含非法请求头字符。".to_string())?;
+        header.set_sensitive(true);
+        headers.insert("Ocp-Apim-Subscription-Key", header);
     }
     if let Ok(hv) = HeaderValue::from_str(&connection_id) {
         headers.insert("X-ConnectionId", hv);
@@ -252,21 +242,20 @@ async fn run_usp_session(
     events_tx: mpsc::UnboundedSender<SpeechEvent>,
 ) {
     // 1. 优先复用新鲜预热连接；若无预热或已过期，则在 8s 预算内现场建连
-    let ws_pair = if let Some(warm) = prewarmed {
-        if warm.created_at.elapsed() < PREWARM_MAX_IDLE && warm.config == cfg {
-            Ok((warm.ws, warm.request_id))
-        } else {
-            drop(warm.ws);
-            tokio::time::timeout(START_TIMEOUT, open_usp_websocket(&sts, &cfg, use_sts))
-                .await
-                .map_err(|_| "语音输入启动超时，请检查网络及终结点配置后重试。".to_string())
-                .and_then(|r| r)
+    let connect = async {
+        if let Some(warm) = prewarmed {
+            if warm.created_at.elapsed() < PREWARM_MAX_IDLE && warm.config == cfg {
+                return Ok((warm.ws, warm.request_id));
+            }
         }
-    } else {
         tokio::time::timeout(START_TIMEOUT, open_usp_websocket(&sts, &cfg, use_sts))
             .await
-            .map_err(|_| "语音输入启动超时，请检查网络及终结点配置后重试。".to_string())
-            .and_then(|r| r)
+            .map_err(|_| "语音输入启动超时，请检查网络及终结点配置后重试。".to_string())?
+    };
+    let ws_pair = tokio::select! {
+        biased;
+        _ = &mut stop_rx => return,
+        result = connect => result,
     };
 
     let (ws, request_id) = match ws_pair {
@@ -277,8 +266,20 @@ async fn run_usp_session(
         }
     };
 
-    // 2. 启动麦克风采集
-    let (mut pcm_rx, mut capture_stop) = match audio_provider.start_capture(&cfg.microphone_device_id) {
+    // WASAPI 初始化是阻塞操作。等线程返回并释放采集后，才允许下一次录音。
+    let device_id = cfg.microphone_device_id.clone();
+    let mut opening = tokio::task::spawn_blocking(move || audio_provider.start_capture(&device_id));
+    let capture = tokio::select! {
+        biased;
+        _ = &mut stop_rx => {
+            if let Ok(Ok((_, mut capture))) = opening.await {
+                capture.stop();
+            }
+            return;
+        }
+        result = &mut opening => result.unwrap_or_else(|_| Err("麦克风初始化异常中断。".into())),
+    };
+    let (mut pcm_rx, mut capture_stop) = match capture {
         Ok(pair) => pair,
         Err(msg) => {
             let _ = events_tx.send(SpeechEvent::Failed { message: msg });
@@ -291,7 +292,17 @@ async fn run_usp_session(
     // 3. 发送 44 字节 WAV RIFF 流头，随后立即宣告 R (Ready)
     let wav_hdr = build_pcm16_16khz_mono_wav_header();
     let wav_frame = format_usp_audio_message(&request_id, "audio/x-wav", &wav_hdr);
-    if ws_sink.send(Message::Binary(wav_frame.into())).await.is_err() {
+    let sent = tokio::select! {
+        biased;
+        _ = &mut stop_rx => {
+            capture_stop.stop();
+            return;
+        }
+        result = tokio::time::timeout(START_TIMEOUT, ws_sink.send(Message::Binary(wav_frame.into()))) => {
+            matches!(result, Ok(Ok(())))
+        }
+    };
+    if !sent {
         capture_stop.stop();
         let _ = events_tx.send(SpeechEvent::Failed {
             message: "语音连接已失效，请重新按 F8 开始录音。".into(),
@@ -323,7 +334,17 @@ async fn run_usp_session(
                 match maybe_pcm {
                     Some(chunk) => {
                         let audio_msg = format_usp_audio_message(&request_id, "audio/pcm", &chunk);
-                        if ws_sink.send(Message::Binary(audio_msg.into())).await.is_err() {
+                        let sent = tokio::select! {
+                            biased;
+                            _ = &mut stop_rx => {
+                                capture_stop.stop();
+                                return;
+                            }
+                            result = tokio::time::timeout(START_TIMEOUT, ws_sink.send(Message::Binary(audio_msg.into()))) => {
+                                matches!(result, Ok(Ok(())))
+                            }
+                        };
+                        if !sent {
                             capture_stop.stop();
                             let _ = events_tx.send(SpeechEvent::Failed {
                                 message: "语音识别连接中断，请检查网络后重试。".into(),
@@ -426,7 +447,7 @@ mod tests {
             _device_id: &str,
         ) -> Result<(mpsc::Receiver<Vec<u8>>, Box<dyn ActiveCaptureStop>), String> {
             let (tx, rx) = mpsc::channel(8);
-            tokio::spawn(async move {
+            tokio::runtime::Handle::current().spawn(async move {
                 let _ = tx.send(vec![0u8; 640]).await;
                 tokio::time::sleep(Duration::from_secs(5)).await;
             });
@@ -434,11 +455,47 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn end_to_end_usp_websocket_stt_and_translation_loopback() {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
+    fn loopback_config(addr: std::net::SocketAddr) -> RuntimeSpeechSessionConfig {
+        let endpoint = parse_speech_endpoint(&format!("http://{addr}")).unwrap();
+        RuntimeSpeechSessionConfig {
+            subscription_id: "sub1".into(),
+            subscription_name: "Test".into(),
+            subscription_key: "0123456789abcdef0123456789abcdef".into(),
+            endpoint,
+            microphone_device_id: String::new(),
+            recognition_language: "zh-CN".into(),
+            enable_translation: false,
+            target_language: "en-US".into(),
+            end_silence_ms: 800,
+            enable_prewarm: true,
+            filter_modal_particles: false,
+        }
+    }
 
+    #[tokio::test]
+    async fn stopping_during_websocket_handshake_releases_before_opening_microphone() {
+        struct MustNotOpen(std::sync::atomic::AtomicBool);
+        impl AudioCaptureProvider for MustNotOpen {
+            fn start_capture(&self, _: &str) -> Result<(mpsc::Receiver<Vec<u8>>, Box<dyn ActiveCaptureStop>), String> {
+                self.0.store(true, std::sync::atomic::Ordering::SeqCst);
+                Err("不应开麦".into())
+            }
+        }
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let audio = Arc::new(MustNotOpen(false.into()));
+        let factory = UspSpeechEngineFactory::new(StsTokenCache::new(), audio.clone(), false);
+        let (ev_tx, mut ev_rx) = mpsc::unbounded_channel();
+        let handle = factory.start_session(loopback_config(listener.local_addr().unwrap()), None, ev_tx);
+        let (_socket, _) = tokio::time::timeout(Duration::from_secs(2), listener.accept()).await.unwrap().unwrap();
+        tokio::time::timeout(Duration::from_secs(1), handle.stop_and_wait_released()).await.unwrap();
+        assert_eq!(ev_rx.recv().await, None);
+        assert!(!audio.0.load(std::sync::atomic::Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn end_to_end_usp_websocket_stt_loopback() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let cfg = loopback_config(listener.local_addr().unwrap());
         tokio::spawn(async move {
             let (tcp, _) = listener.accept().await.unwrap();
             let mut ws = accept_async(tcp).await.unwrap();
@@ -452,21 +509,6 @@ mod tests {
             ws.send(Message::Text(fin.into())).await.unwrap();
             tokio::time::sleep(Duration::from_millis(300)).await;
         });
-
-        let endpoint = parse_speech_endpoint(&format!("http://{addr}")).unwrap();
-        let cfg = RuntimeSpeechSessionConfig {
-            subscription_id: "sub1".into(),
-            subscription_name: "Test".into(),
-            subscription_key: "0123456789abcdef0123456789abcdef".into(),
-            endpoint,
-            microphone_device_id: String::new(),
-            recognition_language: "zh-CN".into(),
-            enable_translation: false,
-            target_language: "en-US".into(),
-            end_silence_ms: 800,
-            enable_prewarm: true,
-            filter_modal_particles: false,
-        };
 
         let factory = UspSpeechEngineFactory::new(
             StsTokenCache::new(),

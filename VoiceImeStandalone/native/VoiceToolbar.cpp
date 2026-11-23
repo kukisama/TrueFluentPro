@@ -27,7 +27,7 @@ struct PlacementGuard {
     explicit PlacementGuard(bool& value) : flag(value) { flag = true; }
     ~PlacementGuard() { flag = false; }
 };
-constexpr wchar_t ToolbarRegKey[] = StandaloneIdentity::UiRegKey;
+constexpr auto& ToolbarRegKey = StandaloneIdentity::UiRegKey;
 bool LoadSavedToolbarPosition(POINT& out) {
 #ifdef VOICE_TOOLBAR_TEST
     (void)out;
@@ -176,8 +176,8 @@ SIZE VoiceToolbar::ScaledSize(int width, int height, UINT dpi) {
     return {MulDiv(width, static_cast<int>(dpi), 96), MulDiv(height, static_cast<int>(dpi), 96)};
 }
 POINT VoiceToolbar::ClampToWorkArea(POINT point, SIZE size, const RECT& work) {
-    point.x = std::clamp(point.x, work.left, std::max(work.left, work.right - size.cx));
-    point.y = std::clamp(point.y, work.top, std::max(work.top, work.bottom - size.cy));
+    point.x = std::clamp(point.x, work.left, (std::max)(work.left, work.right - size.cx));
+    point.y = std::clamp(point.y, work.top, (std::max)(work.top, work.bottom - size.cy));
     return point;
 }
 bool VoiceToolbar::FollowEditor(HMONITOR target, HMONITOR current, bool targetChanged) const {
@@ -274,6 +274,9 @@ void VoiceToolbar::SetState(VoiceToolbarState state, bool stopped, bool error) {
 }
 void VoiceToolbar::SetHistory(bool enabled, bool available) {
     // Saving sends no bool feedback; unavailable is loading or a final storage fault.
+    // A previously queued snapshot is not a reply to the user's new request.
+    if (historyPending_ && available && enabled == historyEnabled_ && enabled != historyRequested_)
+        return;
     const bool finished = historyPending_;
     const bool failed = finished && (!available || enabled != historyRequested_);
     // Repeated authoritative feedback is not a change. In particular, enabled
@@ -740,8 +743,8 @@ SIZE VoiceToolbar::HintSize(const wchar_t* text, bool status) const {
     StringFormat format; HintFormat(format); RectF bounds;
     if (g.MeasureString(text, -1, &font, PointF(0, 0), &format, &bounds) != Ok)
         bounds = RectF(0, 0, static_cast<REAL>(wcslen(text) * fontSize), static_cast<REAL>(fontSize + 4));
-    return {std::max(status ? 0 : 136, static_cast<int>(std::ceil(bounds.Width)) + padding) + Margin * 2,
-        std::max(status ? 22 : 30, static_cast<int>(std::ceil(bounds.Height)) + (status ? 4 : 10)) + Margin * 2 + (status ? 0 : HintTail)};
+    return {(std::max)(status ? 0 : 136, static_cast<int>(std::ceil(bounds.Width)) + padding) + Margin * 2,
+        (std::max)(status ? 22 : 30, static_cast<int>(std::ceil(bounds.Height)) + (status ? 4 : 10)) + Margin * 2 + (status ? 0 : HintTail)};
 }
 void VoiceToolbar::PaintHint(Gdiplus::Graphics& g, const wchar_t* text, bool status, int width, int height) const {
     using namespace Gdiplus;

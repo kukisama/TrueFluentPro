@@ -5,8 +5,8 @@
 //! 2. 查询每个架构 `VoiceImeRegister.exe --status <dll>` 与 `--probe`；
 //! 3. 管理员模式下执行：置 `maintenance.lock` → 等待后台宿主安静退出 → Staged 部署至内容寻址目录
 //!    `%ProgramFiles%\TrueFluentVoiceIme\<64hex>\<arch>\VoiceImeStandalone.dll` → 调用原生注册助手 →
-//!    后置校验 → 移除 `maintenance.lock` → 清理旧版或排入 `MoveFileExW` 重启删除队列；
-//! 4. 普通权限 UI 发起安装/卸载时，自动拉起同可执行文件的 UAC 提权子任务并回传结构化 JSON 结果。
+//!    后置校验 → 移除 `maintenance.lock`；保留历史包以避免删除仍被应用加载的 DLL。
+//! 4. 普通权限 UI 发起安装/卸载时，使用同账户 UAC 维护进程并检查退出状态。
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use voice_ime_protocol::StandaloneIdentityContract;
 
-use crate::locks::HostReceipt;
+use crate::locks::{ExclusiveFileLock, HostReceipt};
 use crate::paths::{
     current_process_identity, guard_local_path, install_root_dir, is_current_process_elevated,
     maintenance_lock_path, standalone_local_data_dir,
@@ -80,8 +80,6 @@ struct ArchEntry {
 struct HelperStatusJson {
     registered: bool,
     state: String,
-    #[serde(rename = "requiresAdmin")]
-    requires_admin: bool,
     #[serde(default)]
     maintenance: bool,
 }
@@ -107,10 +105,18 @@ impl VoiceImeInstaller {
 
     /// 定位当前应用包随附的指定架构 `VoiceImeStandalone.dll`（供守护进程悬浮条与安装器使用）。
     pub fn packaged_native_dll(&self, arch: &str) -> PathBuf {
-        self.app_base_dir
-            .join("voice-ime")
-            .join(arch)
-            .join(StandaloneIdentityContract::DLL_FILE_NAME)
+        self.component_dir(arch).join(StandaloneIdentityContract::DLL_FILE_NAME)
+    }
+
+    fn component_dir(&self, arch: &str) -> PathBuf {
+        let deployed = self.app_base_dir.parent().is_some_and(|parent| {
+            install_root_dir().is_ok_and(|root| root == parent)
+        });
+        if deployed {
+            self.app_base_dir.join(arch)
+        } else {
+            self.app_base_dir.join("voice-ime").join(arch)
+        }
     }
 
     pub fn current_arch_folder() -> &'static str {
@@ -128,39 +134,23 @@ impl VoiceImeInstaller {
         }
     }
 
-    fn expected_architectures(&self) -> Vec<String> {
-        let mut out = Vec::new();
-        for cand in ["win-arm64x", "win-x64", "win-x86"] {
-            let dir = self.app_base_dir.join("voice-ime").join(cand);
-            if dir.join(StandaloneIdentityContract::DLL_FILE_NAME).exists()
-                && dir.join(StandaloneIdentityContract::HELPER_FILE_NAME).exists()
-            {
-                // ARM64X 与 x64 共享 64 位槽位，优先使用已构建的架构目录
-                if cand == "win-x64" && out.iter().any(|x| x == "win-arm64x") {
-                    continue;
-                }
-                out.push(cand.to_string());
-            }
-        }
-        if out.is_empty() {
-            out.push("win-x64".into());
-            out.push("win-x86".into());
-        }
-        out
-    }
-
     fn manifest_path() -> Result<PathBuf, String> {
         Ok(install_root_dir()?.join("install-manifest.json"))
     }
 
-    fn read_manifest() -> InstallManifest {
-        let Ok(path) = Self::manifest_path() else {
-            return InstallManifest::default();
-        };
-        fs::read_to_string(path)
-            .ok()
-            .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_default()
+    fn read_manifest() -> Result<InstallManifest, String> {
+        let path = Self::manifest_path()?;
+        guard_local_path(&path)?;
+        match fs::read_to_string(&path) {
+            Ok(s) => {
+                let manifest: InstallManifest = serde_json::from_str(&s)
+                    .map_err(|_| "安装记录损坏；已停止维护，未修改系统登记。".to_string())?;
+                validate_manifest(&manifest, path.parent().unwrap())?;
+                Ok(manifest)
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(InstallManifest::default()),
+            Err(e) => Err(format!("无法读取安装记录：{e}")),
+        }
     }
 
     fn write_manifest(manifest: &InstallManifest) -> Result<(), String> {
@@ -168,8 +158,21 @@ impl VoiceImeInstaller {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
+        use std::io::Write;
+        guard_local_path(&path)?;
         let raw = serde_json::to_vec_pretty(manifest).map_err(|e| e.to_string())?;
-        fs::write(&path, raw).map_err(|e| format!("写入安装清单失败：{e}"))
+        let tmp = path.with_file_name(format!("install-{}.tmp", uuid::Uuid::new_v4()));
+        let result = (|| -> std::io::Result<()> {
+            let mut file = fs::OpenOptions::new().write(true).create_new(true).open(&tmp)?;
+            file.write_all(&raw)?;
+            file.sync_all()?;
+            drop(file);
+            fs::rename(&tmp, &path)
+        })();
+        if result.is_err() {
+            let _ = fs::remove_file(tmp);
+        }
+        result.map_err(|e| format!("写入安装记录失败：{e}"))
     }
 
     /// 只读查询当前系统安装登记状态（绝不弹 UAC，绝不写盘）。
@@ -187,16 +190,20 @@ impl VoiceImeInstaller {
             };
         }
 
-        let manifest = Self::read_manifest();
+        let Ok(manifest) = Self::read_manifest() else {
+            return status_unavailable(ver, "无法读取或校验安装记录，已停止查询。".into());
+        };
+        let Ok(required) = required_architectures() else {
+            return status_unavailable(ver, "当前 Windows 架构不在此测试包的支持范围内。".into());
+        };
         let archs = if !manifest.entries.is_empty() {
             manifest.entries.clone()
         } else {
-            self.expected_architectures()
-                .into_iter()
+            required.iter().copied()
                 .map(|arch| {
-                    let dir = self.app_base_dir.join("voice-ime").join(&arch);
+                    let dir = self.component_dir(arch);
                     ArchEntry {
-                        architecture: arch,
+                        architecture: arch.into(),
                         dll_path: dir
                             .join(StandaloneIdentityContract::DLL_FILE_NAME)
                             .to_string_lossy()
@@ -264,9 +271,10 @@ impl VoiceImeInstaller {
 
         let state = if any_conflict {
             RegistrationStateKind::DifferentPath
-        } else if !registered_archs.is_empty() && !any_unregistered && !any_partial && !maintenance {
+        } else if required.iter().all(|arch| registered_archs.iter().any(|r| r == arch))
+            && !any_unregistered && !any_partial && !maintenance {
             RegistrationStateKind::Registered
-        } else if registered_archs.is_empty() && !any_partial && !maintenance {
+        } else if registered_archs.is_empty() && !any_partial {
             RegistrationStateKind::Unregistered
         } else {
             RegistrationStateKind::Partial
@@ -331,6 +339,9 @@ impl VoiceImeInstaller {
     }
 
     pub async fn execute_elevated_transaction(&self, install: bool) -> InstallOperationResult {
+        if !is_current_process_elevated() {
+            return fail_op("系统注册操作需要当前账户管理员授权。".into());
+        }
         let root = match install_root_dir() {
             Ok(r) => r,
             Err(msg) => return fail_op(msg),
@@ -346,160 +357,147 @@ impl VoiceImeInstaller {
             return fail_op(format!("无法创建安装根目录：{e}"));
         }
 
-        // 1. 置全局维护门禁 maintenance.lock
-        if let Err(e) = fs::write(&gate_file, b"") {
-            return fail_op(format!("无法写入维护门禁文件：{e}"));
-        }
-
-        // 2. 等待所有已启动的守护进程释放麦克风并优雅退出
-        let data_dir = standalone_local_data_dir();
-        let _mic_guard = match HostReceipt::wait_for_all_exited(&data_dir, Duration::from_secs(6)).await {
-            Ok(g) => g,
-            Err(msg) => return fail_op(msg),
-        };
-
-        let mut manifest = Self::read_manifest();
-        if let Ok(id) = current_process_identity() {
-            manifest.owner_sid = id.sid;
-        }
-
-        // 3. 若已有旧登记，先按记录精确反注册
-        for old in &manifest.entries {
-            let helper = self.resolve_usable_helper(old);
-            if helper.exists() {
-                if let Ok((code, out)) = run_helper(&helper, &["--unregister", &old.dll_path]) {
-                    if code != 0 {
-                        return fail_op(format!("移除旧版输入法登记失败 (code={code})：{out}"));
-                    }
-                }
-            }
-        }
-
-        if !install {
-            let pending = cleanup_old_files(&manifest.entries, &[]);
-            manifest.entries.clear();
-            manifest.pending_reboot_cleanup = pending.clone();
-            manifest.phase = if pending.is_empty() {
-                "removed".into()
-            } else {
-                "pending-reboot".into()
-            };
-            let _ = Self::write_manifest(&manifest);
-            let _ = fs::remove_file(&gate_file);
-            return InstallOperationResult {
-                succeeded: true,
-                requires_elevation: false,
-                cleanup_pending_reboot: !pending.is_empty(),
-                message: if pending.is_empty() {
-                    "语音输入法已完整卸载：多架构 TSF 入口与自有组件文件已移除；个人配置与统计保留。".into()
-                } else {
-                    "语音输入法系统入口已卸载并停用；部分仍被目标应用加载的旧 DLL 已排入重启后自动清理队列。".into()
-                },
-            };
-        }
-
-        // 4. 计算包内容 SHA-256 并复制新包文件至 `%ProgramFiles%\TrueFluentVoiceIme\<64hex>\<arch>`
-        let archs = self.expected_architectures();
-        let host_exe = self.app_base_dir.join(StandaloneIdentityContract::HOST_EXE_NAME);
-        if !host_exe.exists() {
-            return fail_op(format!(
-                "未找到守护进程可执行文件 {}，请先完成完整构建。",
-                host_exe.display()
-            ));
-        }
-
-        let pkg_hash = match compute_package_sha256(&self.app_base_dir, &archs) {
-            Ok(h) => h,
-            Err(msg) => return fail_op(msg),
-        };
-
-        let mut new_entries = Vec::new();
-        for arch in &archs {
-            let src_dir = self.app_base_dir.join("voice-ime").join(arch);
-            let src_dll = src_dir.join(StandaloneIdentityContract::DLL_FILE_NAME);
-            let src_helper = src_dir.join(StandaloneIdentityContract::HELPER_FILE_NAME);
-
-            let dst_dir = root.join(&pkg_hash).join(arch);
-            if let Err(e) = fs::create_dir_all(&dst_dir) {
-                return fail_op(format!("创建架构目录失败：{e}"));
-            }
-            let dst_dll = dst_dir.join(StandaloneIdentityContract::DLL_FILE_NAME);
-            let dst_helper = dst_dir.join(StandaloneIdentityContract::HELPER_FILE_NAME);
-
-            if let Err(e) = fs::copy(&src_dll, &dst_dll) {
-                return fail_op(format!("部署 {} DLL 失败：{e}", arch));
-            }
-            if let Err(e) = fs::copy(&src_helper, &dst_helper) {
-                return fail_op(format!("部署 {} 注册助手失败：{e}", arch));
-            }
-            // 若同目录存在动态编译的 libIME2.dll，一并同步部署
-            let src_libime = src_dir.join("libIME2.dll");
-            if src_libime.exists() {
-                let _ = fs::copy(&src_libime, dst_dir.join("libIME2.dll"));
-            }
-
-            new_entries.push(ArchEntry {
-                architecture: arch.clone(),
-                dll_path: dst_dll.to_string_lossy().to_string(),
-                helper_path: dst_helper.to_string_lossy().to_string(),
-            });
-        }
-
-        // 5. 逐架构调用原生注册助手写入 COM + TSF Profile/Category + 当前用户启用
-        let host_str = host_exe.to_string_lossy().to_string();
-        for entry in &new_entries {
-            let helper = PathBuf::from(&entry.helper_path);
-            match run_helper(&helper, &["--register", &entry.dll_path, &host_str]) {
-                Ok((0, _)) => {}
-                Ok((code, out)) => {
-                    return fail_op(format!(
-                        "{} 注册失败 (退出码 {code})：{}",
-                        entry.architecture,
-                        out.trim()
-                    ));
-                }
-                Err(msg) => return fail_op(msg),
-            }
-            match run_helper(&helper, &["--probe"]) {
-                Ok((0, _)) => {}
-                _ => {
-                    return fail_op(format!(
-                        "{} 后置 TSF 枚举探测未通过，已保留维护门禁供重试。",
-                        entry.architecture
-                    ));
-                }
-            }
-        }
-
-        let pending = cleanup_old_files(&manifest.entries, &new_entries);
-        manifest.version = 1;
-        manifest.phase = "installed".into();
-        manifest.package_hash = pkg_hash;
-        manifest.host_path = host_str;
-        manifest.entries = new_entries;
-        manifest.pending_reboot_cleanup = pending.clone();
-        let _ = Self::write_manifest(&manifest);
-        let _ = fs::remove_file(&gate_file);
-
-        InstallOperationResult {
-            succeeded: true,
-            requires_elevation: false,
-            cleanup_pending_reboot: !pending.is_empty(),
-            message: "独立语音输入法安装/修复完成（未篡改系统默认输入法；切换到「译见pro语音输入法」后按 F8 即可听写）。".into(),
+        match self.maintain(&root, &gate_file, install).await {
+            Ok(message) => InstallOperationResult {
+                succeeded: true, requires_elevation: false, cleanup_pending_reboot: false, message,
+            },
+            Err(message) => fail_op(message),
         }
     }
 
-    fn resolve_usable_helper(&self, entry: &ArchEntry) -> PathBuf {
-        let pkg_helper = self
-            .app_base_dir
-            .join("voice-ime")
-            .join(&entry.architecture)
-            .join(StandaloneIdentityContract::HELPER_FILE_NAME);
-        if pkg_helper.exists() {
-            pkg_helper
-        } else {
-            PathBuf::from(&entry.helper_path)
+    async fn maintain(&self, root: &Path, gate: &Path, install: bool) -> Result<String, String> {
+        let _transaction = ExclusiveFileLock::try_acquire(&root.join("installer.lock"))?
+            .ok_or_else(|| "另一项输入法维护操作正在进行。".to_string())?;
+        let old = Self::read_manifest()?;
+        let sid = current_process_identity()?.sid;
+        if !old.owner_sid.is_empty() && !old.owner_sid.eq_ignore_ascii_case(&sid) {
+            return Err("当前系统登记属于另一 Windows 账户，请使用原安装账户维护。".into());
         }
+        if old.entries.is_empty() && !install {
+            if self.query_status().state != RegistrationStateKind::Unregistered {
+                return Err("没有可确认的安装记录，未尝试卸载现有登记。".into());
+            }
+            if old.phase == "removed" && gate.exists() {
+                guard_local_path(gate)?;
+                fs::remove_file(gate).map_err(|e| format!("无法清除已卸载输入法的维护门禁：{e}"))?;
+            }
+            return Ok("此输入法未注册，无需卸载。".into());
+        }
+        let mut next = if install {
+            self.stage_package(root, &sid)?
+        } else {
+            InstallManifest { version: 1, phase: "removed".into(), ..Default::default() }
+        };
+        guard_local_path(gate)?;
+        let gate_was_active = gate.is_file();
+        fs::write(gate, b"").map_err(|e| format!("无法设置维护门禁：{e}"))?;
+        let _mic_guard = match HostReceipt::wait_for_all_exited(&standalone_local_data_dir(), Duration::from_secs(8)).await {
+            Ok(held) => held,
+            Err(msg) => {
+                if !gate_was_active {
+                    fs::remove_file(gate).map_err(|e| format!("{msg}；无法清除维护门禁：{e}"))?;
+                }
+                return Err(msg);
+            }
+        };
+
+        // 同包修复不拆除已正确登记的部分；换包前保留旧记录直到旧登记全部移除。
+        if !install || old.package_hash != next.package_hash || old.host_path != next.host_path {
+            for entry in &old.entries {
+                execute_helper(entry, &["--unregister", &entry.dll_path])?;
+            }
+        }
+        if install {
+            // 在任何新登记之前持久化恢复记录。中断后可从同一包修复，或按原路径卸载。
+            Self::write_manifest(&next)?;
+            for entry in &next.entries {
+                execute_helper(entry, &["--register", &entry.dll_path, &next.host_path])?;
+            }
+            for entry in &next.entries {
+                execute_helper(entry, &["--probe"])?;
+                execute_helper(entry, &["--status", &entry.dll_path])?;
+            }
+            next.phase = "installed".into();
+        }
+        Self::write_manifest(&next)?;
+        fs::remove_file(gate).map_err(|e| format!("无法清除维护门禁，请点击修复重试：{e}"))?;
+        Ok(if install {
+            "已注册独立语音输入法。切换到「译见pro语音输入法」后按 F8 听写。".into()
+        } else {
+            "已卸载独立输入法的 Windows 登记。程序文件、个人配置及用量统计保留。".into()
+        })
+    }
+
+    fn stage_package(&self, root: &Path, sid: &str) -> Result<InstallManifest, String> {
+        let archs = required_architectures()?;
+        let mut files = Vec::new();
+        for name in [StandaloneIdentityContract::HOST_EXE_NAME, StandaloneIdentityContract::TOOLS_EXE_NAME] {
+            files.push((self.app_base_dir.join(name), PathBuf::from(name)));
+        }
+        for arch in archs.iter().copied() {
+            let src = self.component_dir(arch);
+            for name in [StandaloneIdentityContract::DLL_FILE_NAME, StandaloneIdentityContract::HELPER_FILE_NAME, "libIME2.dll"] {
+                let path = src.join(name);
+                if name != "libIME2.dll" || path.exists() {
+                    files.push((path, PathBuf::from(arch).join(name)));
+                }
+            }
+        }
+        let planned = files.into_iter().map(|(src, rel)| {
+            guard_local_path(&src)?;
+            let digest = sha256_file(&src)?;
+            Ok((src, rel, digest))
+        }).collect::<Result<Vec<_>, String>>()?;
+        let mut digest = Sha256::new();
+        for (_, rel, hash) in &planned {
+            digest.update(format!("{}:{hash}\n", rel.display()));
+        }
+        let hash = hex::encode(digest.finalize());
+        let package = root.join(&hash);
+        for (src, rel, expected) in planned {
+            let dst = package.join(rel);
+            guard_local_path(&dst)?;
+            if sha256_file(&dst).is_ok_and(|actual| actual == expected) {
+                continue;
+            }
+            if dst.exists() {
+                return Err(format!("已部署组件的摘要不正确，已停止覆盖：{}", dst.display()));
+            }
+            let bytes = fs::read(&src).map_err(|e| format!("无法读取 {}：{e}", src.display()))?;
+            if hex::encode(Sha256::digest(&bytes)) != expected {
+                return Err("源包在维护期间发生变更，请重新解压后重试。".into());
+            }
+            fs::create_dir_all(dst.parent().unwrap()).map_err(|e| format!("无法创建部署目录：{e}"))?;
+            let temp = dst.with_extension(format!("{}.tmp", uuid::Uuid::new_v4()));
+            let result = fs::write(&temp, bytes).and_then(|()| fs::rename(&temp, &dst));
+            if let Err(e) = result {
+                let _ = fs::remove_file(temp);
+                return Err(format!("无法部署 {}：{e}", dst.display()));
+            }
+        }
+        Ok(InstallManifest {
+            version: 1,
+            phase: "installing".into(),
+            package_hash: hash,
+            owner_sid: sid.into(),
+            host_path: package.join(StandaloneIdentityContract::HOST_EXE_NAME).to_string_lossy().into_owned(),
+            entries: archs.iter().map(|arch| {
+                let dir = package.join(arch);
+                ArchEntry {
+                    architecture: (*arch).into(),
+                    dll_path: dir.join(StandaloneIdentityContract::DLL_FILE_NAME).to_string_lossy().into_owned(),
+                    helper_path: dir.join(StandaloneIdentityContract::HELPER_FILE_NAME).to_string_lossy().into_owned(),
+                }
+            }).collect(),
+            ..Default::default()
+        })
+    }
+
+    fn resolve_usable_helper(&self, entry: &ArchEntry) -> PathBuf {
+        let pkg_helper = self.component_dir(&entry.architecture)
+            .join(StandaloneIdentityContract::HELPER_FILE_NAME);
+        let recorded = PathBuf::from(&entry.helper_path);
+        if recorded.is_file() { recorded } else { pkg_helper }
     }
 
     async fn run_via_uac_worker(&self, install: bool) -> InstallOperationResult {
@@ -509,21 +507,13 @@ impl VoiceImeInstaller {
                 return fail_op("无法确认当前登录账户身份，已取消管理员提权。".into());
             };
             let host_exe = self.app_base_dir.join(StandaloneIdentityContract::HOST_EXE_NAME);
-            if !host_exe.exists() {
+            if !host_exe.is_file() || guard_local_path(&host_exe).is_err() {
                 return fail_op("未找到 TrueFluentVoiceImeHost.exe 维护宿主。".into());
             }
-            let data_dir = standalone_local_data_dir();
-            let _ = fs::create_dir_all(&data_dir);
-            let result_file = data_dir.join(format!(
-                "uac-result-{}.json",
-                uuid::Uuid::new_v4().simple()
-            ));
             let op_arg = if install { "install" } else { "uninstall" };
             let params = format!(
-                "--maintenance-worker {} \"{}\" \"{}\"",
-                op_arg,
-                id.sid,
-                result_file.display()
+                "--maintenance-worker {op_arg} {} {}",
+                id.pid, id.start_ticks_100ns
             );
 
             let launch_res = tokio::task::spawn_blocking(move || {
@@ -532,15 +522,16 @@ impl VoiceImeInstaller {
             .await
             .unwrap_or_else(|_| Err("等待管理员维护进程异常中断。".into()));
 
-            let out = match launch_res {
-                Ok(()) => fs::read_to_string(&result_file)
-                    .ok()
-                    .and_then(|s| serde_json::from_str::<InstallOperationResult>(&s).ok())
-                    .unwrap_or_else(|| fail_op("管理员维护子进程未返回有效结果，请刷新状态确认。".into())),
+            match launch_res {
+                Ok(0) => InstallOperationResult {
+                    succeeded: true, requires_elevation: false, cleanup_pending_reboot: false,
+                    message: if install { "安装完成，请切换到独立输入法后按 F8。".into() }
+                        else { "Windows 输入法登记已卸载；程序文件及个人资料保留。".into() },
+                },
+                Ok(3 | 4) => fail_op("维护进程未通过同账户、同会话的身份验证，未修改系统登记。".into()),
+                Ok(code) => fail_op(format!("管理员维护未完成（退出码 {code}），请刷新状态并重试修复。")),
                 Err(msg) => fail_op(msg),
-            };
-            let _ = fs::remove_file(&result_file);
-            out
+            }
         }
         #[cfg(not(windows))]
         {
@@ -550,7 +541,7 @@ impl VoiceImeInstaller {
     }
 }
 
-/// 供 `TrueFluentVoiceImeHost.exe --maintenance-worker <install|uninstall> <expected_sid> <result_json>` 调用。
+/// 供 `TrueFluentVoiceImeHost.exe --maintenance-worker <install|uninstall> <caller_pid> <caller_start>` 调用。
 pub async fn execute_elevated_worker_from_cli(args: &[String]) -> i32 {
     if args.len() != 4 {
         return 2;
@@ -560,37 +551,38 @@ pub async fn execute_elevated_worker_from_cli(args: &[String]) -> i32 {
         "uninstall" => false,
         _ => return 2,
     };
-    let expected_sid = &args[2];
-    let result_path = PathBuf::from(&args[3]);
-
-    let Ok(current) = current_process_identity() else {
-        return 3;
-    };
-    if !current.sid.eq_ignore_ascii_case(expected_sid) {
-        let _ = write_worker_result(
-            &result_path,
-            &fail_op("UAC 授权使用了不同的管理员账户；为保障当前用户词库与输入法表隔离，请使用当前登录账户授权。".into()),
-        );
-        return 3;
-    }
     if !is_current_process_elevated() {
-        let _ = write_worker_result(&result_path, &fail_op("维护进程未获得管理员令牌。".into()));
         return 4;
     }
-
+    if !verify_worker_caller(&args[2], &args[3]) {
+        return 3;
+    }
     let installer = VoiceImeInstaller::from_current_exe();
     let res = installer.execute_elevated_transaction(install).await;
-    let code = if res.succeeded { 0 } else { 1 };
-    let _ = write_worker_result(&result_path, &res);
-    code
+    if res.succeeded { 0 } else { 1 }
 }
 
-fn write_worker_result(path: &Path, res: &InstallOperationResult) -> Result<(), String> {
-    if guard_local_path(path).is_err() {
-        return Err("结果文件路径校验失败".into());
+#[cfg(windows)]
+fn verify_worker_caller(pid: &str, start: &str) -> bool {
+    let (Ok(pid), Ok(start), Ok(me)) = (pid.parse(), start.parse::<u64>(), current_process_identity()) else {
+        return false;
+    };
+    let Ok(caller) = crate::paths::query_process_identity_by_pid(pid) else { return false; };
+    let tools = me.exe_path.with_file_name(StandaloneIdentityContract::TOOLS_EXE_NAME);
+    start != 0 && caller.start_ticks_100ns == start && caller.session_id == me.session_id
+        && caller.sid.eq_ignore_ascii_case(&me.sid)
+        && caller.exe_path.to_string_lossy().eq_ignore_ascii_case(&tools.to_string_lossy())
+        && guard_local_path(&tools).is_ok()
+}
+
+#[cfg(not(windows))]
+fn verify_worker_caller(_pid: &str, _start: &str) -> bool { false }
+
+fn status_unavailable(version_text: String, status_text: String) -> InstallStateSummary {
+    InstallStateSummary {
+        is_windows: cfg!(windows), state: RegistrationStateKind::Unknown, status_text,
+        requires_admin: true, maintenance_active: false, installed_architectures: Vec::new(), version_text,
     }
-    let json = serde_json::to_vec_pretty(res).map_err(|e| e.to_string())?;
-    fs::write(path, json).map_err(|e| e.to_string())
 }
 
 fn fail_op(message: String) -> InstallOperationResult {
@@ -602,19 +594,55 @@ fn fail_op(message: String) -> InstallOperationResult {
     }
 }
 
-fn compute_package_sha256(base_dir: &Path, archs: &[String]) -> Result<String, String> {
-    let mut parts = Vec::new();
-    for arch in archs {
-        let dir = base_dir.join("voice-ime").join(arch);
-        let dll = dir.join(StandaloneIdentityContract::DLL_FILE_NAME);
-        let helper = dir.join(StandaloneIdentityContract::HELPER_FILE_NAME);
-        let dll_hash = sha256_file(&dll)?;
-        let helper_hash = sha256_file(&helper)?;
-        parts.push(format!("{arch}:{dll_hash}:{helper_hash}"));
+#[cfg(windows)]
+fn required_architectures() -> Result<&'static [&'static str], String> {
+    use windows_sys::Win32::System::SystemInformation::{IMAGE_FILE_MACHINE_AMD64, IMAGE_FILE_MACHINE_ARM64};
+    use windows_sys::Win32::System::Threading::{GetCurrentProcess, IsWow64Process2};
+    let (mut process, mut native) = (0, 0);
+    if unsafe { IsWow64Process2(GetCurrentProcess(), &mut process, &mut native) } == 0 {
+        return Err("无法识别 Windows 原生架构，未修改系统登记。".into());
     }
-    let mut h = Sha256::new();
-    h.update(parts.join("\n").as_bytes());
-    Ok(hex::encode(h.finalize()))
+    match native {
+        IMAGE_FILE_MACHINE_AMD64 => Ok(&["win-x64", "win-x86"]),
+        IMAGE_FILE_MACHINE_ARM64 => Ok(&["win-arm64x", "win-x86"]),
+        _ => Err("此包仅支持 64 位 Windows。".into()),
+    }
+}
+
+#[cfg(not(windows))]
+fn required_architectures() -> Result<&'static [&'static str], String> { Err("仅支持 Windows。".into()) }
+
+fn validate_manifest(manifest: &InstallManifest, root: &Path) -> Result<(), String> {
+    let invalid = || "安装记录与本程序的受控部署路径不符，已停止维护。".to_string();
+    if manifest.version != 1 {
+        return Err(invalid());
+    }
+    if manifest.entries.is_empty() && manifest.phase == "removed" && manifest.package_hash.is_empty()
+        && manifest.host_path.is_empty() {
+        return Ok(());
+    }
+    if manifest.entries.is_empty() || manifest.owner_sid.is_empty()
+        || !matches!(manifest.phase.as_str(), "installing" | "installed")
+        || manifest.package_hash.len() != 64 || !manifest.package_hash.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(invalid());
+    }
+    let package = root.join(&manifest.package_hash);
+    if Path::new(&manifest.host_path) != package.join(StandaloneIdentityContract::HOST_EXE_NAME) {
+        return Err(invalid());
+    }
+    let mut seen = std::collections::HashSet::new();
+    for entry in &manifest.entries {
+        if !matches!(entry.architecture.as_str(), "win-x64" | "win-x86" | "win-arm64x")
+            || !seen.insert(&entry.architecture) {
+            return Err(invalid());
+        }
+        let dir = package.join(&entry.architecture);
+        if Path::new(&entry.dll_path) != dir.join(StandaloneIdentityContract::DLL_FILE_NAME)
+            || Path::new(&entry.helper_path) != dir.join(StandaloneIdentityContract::HELPER_FILE_NAME) {
+            return Err(invalid());
+        }
+    }
+    Ok(())
 }
 
 fn sha256_file(path: &Path) -> Result<String, String> {
@@ -625,59 +653,36 @@ fn sha256_file(path: &Path) -> Result<String, String> {
 }
 
 fn run_helper(helper: &Path, args: &[&str]) -> Result<(i32, String), String> {
-    let output = Command::new(helper)
-        .args(args)
-        .output()
+    guard_local_path(helper)?;
+    let mut cmd = Command::new(helper);
+    cmd.args(args);
+    if let Some(dir) = helper.parent() { cmd.current_dir(dir); }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        use windows_sys::Win32::System::Threading::CREATE_NO_WINDOW;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    let output = cmd.output()
         .map_err(|e| format!("无法启动注册助手 {}：{e}", helper.display()))?;
     let code = output.status.code().unwrap_or(6);
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     Ok((code, stdout))
 }
 
-fn cleanup_old_files(old_entries: &[ArchEntry], keep_entries: &[ArchEntry]) -> Vec<String> {
-    let mut pending = Vec::new();
-    for old in old_entries {
-        if keep_entries
-            .iter()
-            .any(|k| k.dll_path.eq_ignore_ascii_case(&old.dll_path))
-        {
-            continue;
-        }
-        for file_str in [&old.dll_path, &old.helper_path] {
-            let p = Path::new(file_str);
-            if p.exists() && fs::remove_file(p).is_err() {
-                schedule_delete_on_reboot(p);
-                pending.push(file_str.clone());
-            }
-        }
+fn execute_helper(entry: &ArchEntry, args: &[&str]) -> Result<(), String> {
+    let (code, output) = run_helper(Path::new(&entry.helper_path), args)?;
+    if code != 0 {
+        return Err(format!("{} {} 失败（{code}）：{}", entry.architecture, args[0], output.trim()));
     }
-    pending
+    Ok(())
 }
 
 #[cfg(windows)]
-fn schedule_delete_on_reboot(path: &Path) {
+fn launch_runas_and_wait(exe: &Path, params: &str) -> Result<u32, String> {
     use std::os::windows::ffi::OsStrExt;
-    use std::ptr::null;
-    use windows_sys::Win32::Storage::FileSystem::{MoveFileExW, MOVEFILE_DELAY_UNTIL_REBOOT};
-    let wide: Vec<u16> = path
-        .as_os_str()
-        .encode_wide()
-        .chain(std::iter::once(0))
-        .collect();
-    unsafe {
-        let _ = MoveFileExW(wide.as_ptr(), null(), MOVEFILE_DELAY_UNTIL_REBOOT);
-    }
-}
-
-#[cfg(not(windows))]
-fn schedule_delete_on_reboot(_path: &Path) {}
-
-#[cfg(windows)]
-fn launch_runas_and_wait(exe: &Path, params: &str) -> Result<(), String> {
-    use std::os::windows::ffi::OsStrExt;
-    use std::ptr::{null, null_mut};
-    use windows_sys::Win32::Foundation::CloseHandle;
-    use windows_sys::Win32::System::Threading::WaitForSingleObject;
+    use windows_sys::Win32::Foundation::{CloseHandle, WAIT_OBJECT_0};
+    use windows_sys::Win32::System::Threading::{GetExitCodeProcess, WaitForSingleObject, INFINITE};
     use windows_sys::Win32::UI::Shell::{
         ShellExecuteExW, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW,
     };
@@ -685,6 +690,7 @@ fn launch_runas_and_wait(exe: &Path, params: &str) -> Result<(), String> {
 
     let verb: Vec<u16> = "runas\0".encode_utf16().collect();
     let file: Vec<u16> = exe.as_os_str().encode_wide().chain(std::iter::once(0)).collect();
+    let directory: Vec<u16> = exe.parent().unwrap().as_os_str().encode_wide().chain(std::iter::once(0)).collect();
     let wide_params: Vec<u16> = params.encode_utf16().chain(std::iter::once(0)).collect();
 
     unsafe {
@@ -694,16 +700,19 @@ fn launch_runas_and_wait(exe: &Path, params: &str) -> Result<(), String> {
         info.lpVerb = verb.as_ptr();
         info.lpFile = file.as_ptr();
         info.lpParameters = wide_params.as_ptr();
-        info.lpDirectory = null();
+        info.lpDirectory = directory.as_ptr();
         info.nShow = SW_HIDE;
 
         if ShellExecuteExW(&mut info) == 0 {
             return Err("已取消 Windows 管理员授权，未修改输入法系统登记。".into());
         }
-        if !info.hProcess.is_null() {
-            let _ = WaitForSingleObject(info.hProcess, 120_000);
-            CloseHandle(info.hProcess);
+        if info.hProcess.is_null() {
+            return Err("无法获取管理员维护进程句柄。".into());
         }
+        let mut code = 0;
+        let completed = WaitForSingleObject(info.hProcess, INFINITE) == WAIT_OBJECT_0
+            && GetExitCodeProcess(info.hProcess, &mut code) != 0;
+        CloseHandle(info.hProcess);
+        if completed { Ok(code) } else { Err("无法确认管理员维护结果。".into()) }
     }
-    Ok(())
 }

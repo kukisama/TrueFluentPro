@@ -43,7 +43,7 @@ export function createSettingsController() {
     document.getElementById('sub-endpoint-input').addEventListener('input', previewEndpoint);
     document.getElementById('sub-reset-btn').addEventListener('click', clearSubEditor);
     document.getElementById('sub-save-btn').addEventListener('click', saveSubscription);
-    document.getElementById('sub-test-btn').addEventListener('click', testSubscription);
+    document.getElementById('sub-test-btn').addEventListener('click', (event) => testSubscription(event.currentTarget));
     document.getElementById('sub-import-legacy-btn').addEventListener('click', importLegacy);
 
     // 识别与声音 / 断句 自动保存控件
@@ -131,6 +131,7 @@ export function createSettingsController() {
               </div>
               <div style="display:flex;gap:6px;flex-shrink:0">
                 ${!isActive ? `<button type="button" data-use-sub="${escapeHtml(s.id)}" style="min-height:32px;padding:4px 10px;font-size:12px">启用</button>` : ''}
+                <button type="button" data-test-sub="${escapeHtml(s.id)}" style="min-height:32px;padding:4px 10px;font-size:12px">验证</button>
                 <button type="button" data-edit-sub="${escapeHtml(s.id)}" style="min-height:32px;padding:4px 10px;font-size:12px">编辑</button>
                 <button type="button" data-del-sub="${escapeHtml(s.id)}" style="min-height:32px;padding:4px 10px;font-size:12px">删除</button>
               </div>
@@ -147,6 +148,9 @@ export function createSettingsController() {
       });
       listEl.querySelectorAll('[data-edit-sub]').forEach((btn) => {
         btn.addEventListener('click', () => loadSubIntoEditor(btn.dataset.editSub));
+      });
+      listEl.querySelectorAll('[data-test-sub]').forEach((btn) => {
+        btn.addEventListener('click', () => testSubscription(btn, btn.dataset.testSub));
       });
       listEl.querySelectorAll('[data-del-sub]').forEach((btn) => {
         btn.addEventListener('click', () => removeSubscription(btn.dataset.delSub));
@@ -250,17 +254,22 @@ export function createSettingsController() {
     }
   }
 
-  async function testSubscription() {
+  let testingSubscription = false;
+
+  async function testSubscription(btn, listId = null) {
+    if (testingSubscription) return;
     const endpoint = document.getElementById('sub-endpoint-input').value;
     const key = document.getElementById('sub-key-input').value;
-    const btn = document.getElementById('sub-test-btn');
+    const name = document.getElementById('sub-name-input').value;
+    const savedId = listId ?? editingSubId ?? (!endpoint.trim() && !key.trim() && !name.trim() ? snapshot?.activeSubscriptionId : null);
+    testingSubscription = true;
     btn.disabled = true;
     showSubFeedback('正在请求 STS issueToken 接口验证密钥与区域连通性…');
     try {
       const res = await invokeCmd('test_speech_subscription', {
-        savedId: editingSubId,
-        endpoint,
-        subscriptionKey: key,
+        savedId: savedId || null,
+        endpoint: listId ? '' : endpoint,
+        subscriptionKey: listId ? '' : key,
       });
       showSubFeedback(
         res.valid ? `✓ ${res.message}` : `✗ ${res.message}`,
@@ -269,6 +278,7 @@ export function createSettingsController() {
     } catch (err) {
       showSubFeedback(`✗ ${err}`, 'error');
     } finally {
+      testingSubscription = false;
       btn.disabled = false;
     }
   }

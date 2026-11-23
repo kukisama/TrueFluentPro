@@ -10,7 +10,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -150,7 +150,7 @@ struct ActiveAudioRound {
     usage_session: Option<Uuid>,
     translation_targets: TranslationTargetQueue,
     session_handle: Option<SpeechSessionHandle>,
-    _mic_lock: Option<ExclusiveFileLock>,
+    mic_lock: Option<Arc<ExclusiveFileLock>>,
 }
 
 #[derive(Clone)]
@@ -204,6 +204,7 @@ pub struct SharedDaemonActor {
     prewarmed: Option<PrewarmedSpeechHandle>,
     audio: Option<ActiveAudioRound>,
     previous_release: Option<tokio::task::JoinHandle<()>>,
+    releasing_mic: Weak<ExclusiveFileLock>,
 }
 
 impl SharedDaemonActor {
@@ -290,6 +291,7 @@ impl SharedDaemonActor {
             prewarmed: None,
             audio: None,
             previous_release: None,
+            releasing_mic: Weak::new(),
         };
 
         let join = tokio::spawn(async move {
@@ -333,9 +335,10 @@ impl SharedDaemonActor {
                 }
                 ActorMessage::UnregisterPeer { peer_id, ack } => {
                     self.peers.remove(&peer_id);
+                    let was_target = self.target.is_some_and(|t| t.peer_id == peer_id);
                     self.unbind(peer_id, None);
-                    if self.selection.map(|s| s.peer_id == peer_id).unwrap_or(false)
-                        && self.audio.is_none()
+                    if self.target.is_none()
+                        && (was_target || self.selection.is_some_and(|s| s.peer_id == peer_id))
                     {
                         self.other_ime();
                     }
@@ -417,7 +420,6 @@ impl SharedDaemonActor {
                         let _ = u_clone.set_history_enabled(enabled).await;
                     });
                 }
-                self.sync_history_indicator();
             }
         }
     }
@@ -591,11 +593,15 @@ impl SharedDaemonActor {
         }
 
         let mic_lock = if let Some(ref mic_path) = self.mic_lock_path {
-            match ExclusiveFileLock::try_acquire(mic_path) {
-                Ok(Some(lock)) => Some(lock),
-                _ => {
-                    self.fail_round_immediately("另一个语音输入法实例正在使用麦克风，请先停止它。");
-                    return;
+            if let Some(ours) = self.releasing_mic.upgrade() {
+                Some(ours)
+            } else {
+                match ExclusiveFileLock::try_acquire(mic_path) {
+                    Ok(Some(lock)) => Some(Arc::new(lock)),
+                    _ => {
+                        self.fail_round_immediately("另一个语音输入法实例正在使用麦克风，请先停止它。");
+                        return;
+                    }
                 }
             }
         } else {
@@ -659,30 +665,19 @@ impl SharedDaemonActor {
         let prev_release = self.previous_release.take();
         let factory = Arc::clone(&self.speech_factory);
         let translating = runtime_cfg.enable_translation;
-        let (handle_tx, handle_rx) = oneshot::channel::<SpeechSessionHandle>();
+        let (stop_tx, mut stop_rx) = oneshot::channel();
+        let (release_tx, release_rx) = oneshot::channel();
         tokio::spawn(async move {
             if let Some(prev) = prev_release {
                 let _ = prev.await;
             }
-            let h = factory.start_session(runtime_cfg, warm, ev_tx);
-            let _ = handle_tx.send(h);
-        });
-
-        // 同步非阻塞接管会话句柄以便随时取消
-        let (stop_bridge_tx, stop_bridge_rx) = oneshot::channel::<()>();
-        let (rel_bridge_tx, rel_bridge_rx) = oneshot::channel::<()>();
-        tokio::spawn(async move {
-            if let Ok(real_handle) = handle_rx.await {
-                let _ = stop_bridge_rx.await;
-                real_handle.stop_and_wait_released().await;
+            if matches!(stop_rx.try_recv(), Err(oneshot::error::TryRecvError::Empty)) {
+                let handle = factory.start_session(runtime_cfg, warm, ev_tx);
+                let _ = stop_rx.await;
+                handle.stop_and_wait_released().await;
             }
-            let _ = rel_bridge_tx.send(());
+            let _ = release_tx.send(());
         });
-
-        let bridged_handle = SpeechSessionHandleBridge {
-            stop_tx: Some(stop_bridge_tx),
-            released_rx: Some(rel_bridge_rx),
-        };
 
         self.audio = Some(ActiveAudioRound {
             epoch: round_epoch,
@@ -691,21 +686,9 @@ impl SharedDaemonActor {
             last_text_at: Instant::now(),
             usage_session,
             translation_targets: TranslationTargetQueue::new(),
-            session_handle: None,
-            _mic_lock: mic_lock,
+            session_handle: Some(SpeechSessionHandle::from_channels(stop_tx, release_rx)),
+            mic_lock,
         });
-        // 将桥接句柄挂入释放链
-        self.attach_round_bridge(round_epoch, bridged_handle);
-    }
-
-    fn attach_round_bridge(&mut self, round_epoch: u64, mut bridge: SpeechSessionHandleBridge) {
-        if let Some(ref mut round) = self.audio {
-            if round.epoch == round_epoch {
-                let stop_tx = bridge.stop_tx.take().unwrap();
-                let rel_rx = bridge.released_rx.take().unwrap();
-                round.session_handle = Some(SpeechSessionHandle::from_channels(stop_tx, rel_rx));
-            }
-        }
     }
 
     fn fail_round_immediately(&mut self, message: &str) {
@@ -733,7 +716,8 @@ impl SharedDaemonActor {
         }
 
         if let Some(handle) = round.session_handle.take() {
-            let mic_lock = round._mic_lock.take();
+            let mic_lock = round.mic_lock.take();
+            self.releasing_mic = mic_lock.as_ref().map(Arc::downgrade).unwrap_or_default();
             let prev = self.previous_release.take();
             self.previous_release = Some(tokio::spawn(async move {
                 if let Some(p) = prev {
@@ -953,11 +937,6 @@ impl SharedDaemonActor {
             self.toolbar.update_history(false, false);
         }
     }
-}
-
-struct SpeechSessionHandleBridge {
-    stop_tx: Option<oneshot::Sender<()>>,
-    released_rx: Option<oneshot::Receiver<()>>,
 }
 
 /// 服务任意双向异步字节流（Windows 生产环境传入 `NamedPipeServer` 拆分流，单测传入 `tokio::io::DuplexStream`）。
@@ -1213,6 +1192,11 @@ mod tests {
         assert_eq!(f_b.kind, ServerKind::Final);
         assert_eq!(f_b.target_generation, 9);
         assert_eq!(f_b.text, "世界");
+
+        drop(b_client);
+        let stopped = tokio::time::timeout(Duration::from_secs(2), read_decoded(&mut a_client))
+            .await.unwrap();
+        assert_eq!(stopped.kind, ServerKind::Stopped);
 
         handle.shutdown().await;
         actor_join.await.unwrap();

@@ -143,9 +143,12 @@ fn platform_start_capture(
                     .ok_or_else(|| "未检测到可用的默认麦克风输入设备。".to_string())
             } else {
                 host.input_devices()
-                    .map_err(|_| "无法枚举系统音频输入设备。".to_string())?
-                    .find(|d| d.name().map(|n| n.trim() == requested_name).unwrap_or(false))
-                    .ok_or_else(|| format!("配置的麦克风「{requested_name}」当前不可用，请重新选择输入设备。"))
+                    .map_err(|_| "无法枚举系统音频输入设备。".to_string())
+                    .and_then(|mut devices| {
+                        devices
+                            .find(|d| d.name().map(|n| n.trim() == requested_name).unwrap_or(false))
+                            .ok_or_else(|| format!("配置的麦克风「{requested_name}」当前不可用，请重新选择输入设备。"))
+                    })
             };
 
             let device = match device {
@@ -227,6 +230,9 @@ fn platform_start_capture(
                 }
             };
 
+            if !matches!(stop_rx.try_recv(), Err(std_mpsc::TryRecvError::Empty)) {
+                return;
+            }
             if stream.play().is_err() {
                 let _ = init_tx.send(Err("启动麦克风采集失败，请检查设备是否被独占占用。".into()));
                 return;
@@ -247,7 +253,11 @@ fn platform_start_capture(
             }),
         )),
         Ok(Err(msg)) => Err(msg),
-        Err(_) => Err("启动麦克风超时，请检查音频设备状态。".into()),
+        Err(_) => {
+            let _ = stop_tx.send(());
+            let _ = join.join();
+            Err("启动麦克风超时，请检查音频设备状态。".into())
+        }
     }
 }
 
