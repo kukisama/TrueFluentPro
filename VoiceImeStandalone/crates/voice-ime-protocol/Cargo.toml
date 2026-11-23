@@ -1,0 +1,10 @@
+[package]
+name = "voice-ime-protocol"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "独立语音输入法跨进程二进制帧协议、UTF-16 代理对安全切片与防串窗栅栏算法"
+
+[dependencies]
+thiserror = { workspace = true }
+tokio     = { workspace = true }

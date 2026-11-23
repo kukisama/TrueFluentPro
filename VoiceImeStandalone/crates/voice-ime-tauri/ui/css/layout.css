@@ -1,0 +1,305 @@
+/* ==========================================================================
+   VoiceImeToolsWindow 统一外壳布局（深蓝页头 + 176px 左侧栏 + 右工作区 + 底栏）
+   ========================================================================== */
+.shell-root {
+  display: flex;
+  flex-direction: column;
+  width: 100vw;
+  height: 100vh;
+  border: 1px solid #1C3B63;
+}
+
+/* 顶部 #132B49 紧凑标题栏 */
+.page-header {
+  background: var(--ink);
+  color: #FFFFFF;
+  flex-shrink: 0;
+}
+
+.title-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 38px;
+}
+
+.title-drag-area {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 24px;
+  font-size: 12px;
+  color: var(--pale-blue);
+}
+
+.title-brand-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  background: linear-gradient(180deg, #2D87FF 0%, #1C6BFA 100%);
+  color: #FFFFFF;
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.title-sub-hint {
+  color: rgba(184, 206, 233, 0.78);
+  margin-left: 6px;
+}
+
+.caption-buttons {
+  display: flex;
+  height: 38px;
+}
+
+.caption-btn {
+  width: 46px;
+  height: 38px;
+  min-height: 38px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: #FFFFFF;
+  padding: 0;
+}
+
+.caption-btn:hover {
+  background: var(--ink-btn-hover);
+}
+
+.caption-btn.close:hover {
+  background: var(--close-hover);
+}
+
+/* 主体双栏结构：176px 左侧导航 + 自适应右工作区 */
+.tool-columns {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 176px minmax(0, 1fr);
+  min-height: 0;
+}
+
+.sidebar {
+  background: var(--page-bg);
+  border-right: 1px solid var(--line);
+  padding: 20px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sidebar-tab-btn {
+  width: 100%;
+  height: 64px;
+  border-radius: var(--radius-lg);
+  padding: 0 12px;
+  justify-content: flex-start;
+  font-size: 13px;
+  font-weight: 600;
+  gap: 10px;
+}
+
+.sidebar-tab-btn .tab-glyph {
+  width: 20px;
+  text-align: center;
+  font-size: 16px;
+}
+
+/* 右工作区 */
+.workspace {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+
+.sheet-notice {
+  margin: 12px 24px 0 24px;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  background: var(--error-bg);
+  color: var(--error-ink);
+  font-size: 12px;
+}
+
+.tab-panel {
+  flex: 1;
+  display: none;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.tab-panel.active {
+  display: flex;
+}
+
+.panel-fixed-header {
+  padding: 20px 24px 16px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  flex-shrink: 0;
+}
+
+.panel-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.panel-heading {
+  font-size: 26px;
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1.25;
+}
+
+.panel-subtitle {
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+/* 子页签 Sheet 按钮栏 */
+.sheet-nav-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.sheet-nav-grid.cols-5 {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.sheet-nav-grid.cols-4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.sheet-btn {
+  height: 52px;
+  border-radius: var(--radius-lg);
+  padding: 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+  justify-content: center;
+  gap: 8px;
+}
+
+.panel-scroll {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0 24px 20px 24px;
+}
+
+.centered-stack {
+  max-width: 720px;
+  margin: 20px auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.two-col-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.field-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.card-heading-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.card-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.panel-footer {
+  background: var(--card-bg);
+  border-top: 1px solid var(--line);
+  padding: 13px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.status-banner {
+  margin: 0 24px 12px 24px;
+  padding: 14px 18px;
+  border-radius: 10px;
+  background: var(--info-bg);
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.status-banner.error {
+  background: var(--error-bg);
+  color: var(--error-ink);
+}
+
+.status-banner.success {
+  background: var(--success-bg);
+  color: var(--success-ink);
+}
+
+/* UAC 提权确认模态框 */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(19, 43, 73, 0.38);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.modal-backdrop.open {
+  display: flex;
+}
+
+.modal-dialog {
+  width: 460px;
+  max-width: 92vw;
+  background: var(--card-bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  box-shadow: 0 18px 42px rgba(19, 43, 73, 0.22);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 6px;
+}

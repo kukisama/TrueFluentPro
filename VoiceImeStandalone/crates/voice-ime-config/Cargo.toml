@@ -1,0 +1,18 @@
+[package]
+name = "voice-ime-config"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "独立语音输入法配置模型、微软 Speech 21V/Global 终结点解析、DPAPI 凭据保护与持久化"
+
+[dependencies]
+serde      = { workspace = true }
+serde_json = { workspace = true }
+thiserror  = { workspace = true }
+url        = { workspace = true }
+uuid       = { workspace = true }
+base64     = { workspace = true }
+dirs       = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true }
