@@ -31,13 +31,16 @@ where
 
 #[cfg(not(target_os = "linux"))]
 pub fn run() {
+    use tracing_subscriber::{filter::Targets, prelude::*};
     use voice_ime_controller::ToolsAppContext;
 
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "warn,voice_ime_tauri_lib=info".into()),
-        )
+    let filter = std::env::var("RUST_LOG").ok()
+        .and_then(|value| value.parse::<Targets>().ok())
+        .unwrap_or_else(|| Targets::new().with_default(tracing::Level::WARN)
+            .with_target("voice_ime_tauri_lib", tracing::Level::INFO));
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::fmt::layer())
+        .with(filter)
         .init();
 
     let initial_tab = parse_initial_tab_from_args(std::env::args().skip(1));
@@ -51,6 +54,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::get_initial_tab,
             commands::load_settings_page,
+            commands::list_input_devices,
             commands::preview_endpoint_url,
             commands::save_general_settings,
             commands::upsert_speech_subscription,

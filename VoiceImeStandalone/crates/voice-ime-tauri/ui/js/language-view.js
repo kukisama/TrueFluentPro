@@ -3,11 +3,9 @@
 // ============================================================================
 
 import { invokeCmd, escapeHtml } from './api.js';
+import { createAutosave } from './autosave.js';
 
 export function createLanguageController(onLanguageSavedCallback) {
-  let dirty = false;
-  let saving = false;
-  let debounceTimer = null;
   let suppressEvents = false;
 
   const srcSelect = () => document.getElementById('lang-source-select');
@@ -15,6 +13,11 @@ export function createLanguageController(onLanguageSavedCallback) {
   const tgtSelect = () => document.getElementById('lang-target-select');
   const statusEl = () => document.getElementById('lang-save-status');
   const retryBtn = () => document.getElementById('lang-retry-save-btn');
+  const saveFailed = (err) => {
+    statusEl().textContent = `保存失败：${err}`;
+    retryBtn().style.display = 'inline-flex';
+  };
+  const autosave = createAutosave(saveImmediate, saveFailed);
 
   function bindEvents() {
     srcSelect().addEventListener('change', onEdited);
@@ -25,28 +28,21 @@ export function createLanguageController(onLanguageSavedCallback) {
     tgtSelect().addEventListener('change', onEdited);
 
     document.getElementById('lang-reload-btn').addEventListener('click', () => load());
-    retryBtn().addEventListener('click', () => saveImmediate());
+    retryBtn().addEventListener('click', () => autosave.flush().catch(saveFailed));
   }
 
   function onEdited() {
     if (suppressEvents) return;
-    dirty = true;
     retryBtn().style.display = 'none';
     statusEl().textContent = '有修改 · 修改后自动保存，下次录音生效';
-    if (debounceTimer) clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(() => {
-      debounceTimer = null;
-      saveImmediate();
-    }, 200);
+    autosave.edited();
   }
 
   async function load() {
-    if (debounceTimer) {
-      clearTimeout(debounceTimer);
-      debounceTimer = null;
-    }
+    try { await autosave.flush(); } catch (err) { saveFailed(err); return; }
     try {
       const snap = await invokeCmd('load_language_page');
+      if (autosave.dirty) return;
       suppressEvents = true;
       srcSelect().innerHTML = snap.sourceLanguages
         .map((o) => `<option value="${escapeHtml(o.code)}">${escapeHtml(o.name)}</option>`)
@@ -60,7 +56,6 @@ export function createLanguageController(onLanguageSavedCallback) {
       tgtSelect().disabled = !snap.enableTranslation;
       suppressEvents = false;
 
-      dirty = false;
       retryBtn().style.display = 'none';
       statusEl().textContent = '已加载已保存设置 · 修改后自动保存，下次录音生效';
     } catch (err) {
@@ -69,13 +64,7 @@ export function createLanguageController(onLanguageSavedCallback) {
     }
   }
 
-  async function saveImmediate() {
-    if (saving || !dirty) return;
-    if (debounceTimer) {
-      clearTimeout(debounceTimer);
-      debounceTimer = null;
-    }
-    saving = true;
+  async function saveImmediate(isCurrent) {
     const draft = {
       recognitionLanguage: srcSelect().value || 'auto',
       enableTranslation: Boolean(transToggle().checked),
@@ -84,25 +73,20 @@ export function createLanguageController(onLanguageSavedCallback) {
     statusEl().textContent = '正在保存…';
     try {
       await invokeCmd('save_language_page', { draft });
-      dirty = false;
+      if (!isCurrent()) return;
       retryBtn().style.display = 'none';
       const now = new Date().toLocaleTimeString('zh-CN', { hour12: false });
       statusEl().textContent = `已自动保存（${now}）· 下次录音生效`;
       if (onLanguageSavedCallback) onLanguageSavedCallback(draft);
     } catch (err) {
-      statusEl().textContent = `保存失败：${err}`;
-      retryBtn().style.display = 'inline-flex';
-    } finally {
-      saving = false;
+      saveFailed(err);
+      throw err;
     }
   }
 
   return {
     init: bindEvents,
     onEnter: () => load(),
-    flushPending: async () => {
-      if (dirty) await saveImmediate();
-      if (dirty) throw new Error('语言设置尚未完成保存');
-    },
+    flushPending: autosave.flush,
   };
 }

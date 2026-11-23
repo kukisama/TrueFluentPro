@@ -3,6 +3,7 @@
 
 use std::sync::Arc;
 use tokio::sync::mpsc;
+use tracing_subscriber::{filter::Targets, prelude::*};
 
 use voice_ime_config::{ConfigStore, RuntimeConfigCache};
 use voice_ime_daemon::{
@@ -17,7 +18,9 @@ use voice_ime_win32::{
     ToolbarDriver, VoiceImeInstaller, Win32NativeToolbarDriver, Win32PeerVerifier,
 };
 
-#[tokio::main]
+// The actor is serial. Keep capacity for concurrent pipe/TLS work without
+// allocating an idle worker per logical CPU; WASAPI and SQLite have their own threads.
+#[tokio::main(worker_threads = 2)]
 async fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
 
@@ -27,11 +30,13 @@ async fn main() {
         std::process::exit(code);
     }
 
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "warn,voice_ime_daemon=info".into()),
-        )
+    let filter = std::env::var("RUST_LOG").ok()
+        .and_then(|value| value.parse::<Targets>().ok())
+        .unwrap_or_else(|| Targets::new().with_default(tracing::Level::WARN)
+            .with_target("voice_ime_daemon", tracing::Level::INFO));
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::fmt::layer())
+        .with(filter)
         .init();
 
     // 2. 标准共享语音守护进程模式 (`--daemon` 或默认无参启动)

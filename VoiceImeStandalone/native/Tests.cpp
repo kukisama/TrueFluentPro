@@ -1,6 +1,11 @@
 #include "Common.h"
 #include <cstdio>
 
+#ifdef VOICE_IME_PIPE_TEST
+std::atomic<long> ModuleObjects{0};
+bool TestStandalonePipeIo();
+#endif
+
 using BridgeUpdateFn = void (WINAPI*)(void*, BOOL, int, BOOL, BOOL);
 using BridgeCloseFn = void (WINAPI*)(void*);
 struct BridgeWork { void* handle; BridgeUpdateFn update; BridgeCloseFn close; };
@@ -27,6 +32,9 @@ int wmain(int argc, wchar_t** argv) {
     if (FAILED(init)) return 3;
     unsigned failures = 0;
     auto check = [&](bool ok, const char* name) { std::printf("%s %s\n", ok ? "PASS" : "FAIL", name); if (!ok) ++failures; };
+#ifdef VOICE_IME_PIPE_TEST
+    check(TestStandalonePipeIo(), "real local overlapped pipe framing, event reuse and discarded cancelled toggle");
+#endif
     KeyLatch latch; bool toggle = false;
     check(!latch.TestDown(false, VK_F8) && !latch.Press(false, VK_F8, 0, toggle) && !latch.Release(VK_F8), "inactive F8 untouched");
     check(latch.TestDown(true, VK_F8) && !latch.down, "test-key has no side effects");
@@ -77,6 +85,9 @@ int wmain(int argc, wchar_t** argv) {
                     check(SUCCEEDED(service.As(&base)) && SUCCEEDED(service.As(&keys)) && SUCCEEDED(service.As(&focus)) &&
                         SUCCEEDED(service.As(&thread)) && SUCCEEDED(service.As(&edits)) && SUCCEEDED(service.As(&composition)), "required TSF sinks");
                     BOOL eaten = TRUE;
+                    check(keys && SUCCEEDED(keys->OnTestKeyDown(nullptr, 'A', 0, &eaten)) && !eaten &&
+                        SUCCEEDED(keys->OnKeyDown(nullptr, 'A', 0, &eaten)) && !eaten,
+                        "ordinary letters pass through without context");
                     check(keys && SUCCEEDED(keys->OnTestKeyDown(nullptr, VK_F8, 0, &eaten)) && !eaten &&
                         SUCCEEDED(keys->OnKeyDown(nullptr, VK_F8, 0, &eaten)) && !eaten &&
                         SUCCEEDED(keys->OnKeyUp(nullptr, VK_F8, 0, &eaten)) && !eaten, "real COM inactive F8 pass through");

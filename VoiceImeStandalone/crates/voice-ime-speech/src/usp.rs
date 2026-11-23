@@ -47,7 +47,8 @@ pub fn build_speech_ws_url(cfg: &RuntimeSpeechSessionConfig) -> Result<String, S
             // 自动源语言 + 实时翻译：走 Universal v2 协议
             let mut u = Url::parse(&cfg.endpoint.universal_v2_ws_url)
                 .map_err(|e| format!("构建语音翻译 URL 失败：{e}"))?;
-            u.query_pairs_mut().append_pair("format", "simple");
+            u.query_pairs_mut().append_pair("format", "simple").append_pair("lidEnabled", "true")
+                .append_pair("from", "en-US").append_pair("to", &target).append_pair("scenario", "conversation");
             return Ok(u.to_string());
         } else {
             // 显式源语言 + 实时翻译：走标准 s2s translation v1 协议（全球与 21V 全区域通用）
@@ -66,7 +67,7 @@ pub fn build_speech_ws_url(cfg: &RuntimeSpeechSessionConfig) -> Result<String, S
         // 自动多语种连续识别 Continuous LID：走 Universal v2
         let mut u = Url::parse(&cfg.endpoint.universal_v2_ws_url)
             .map_err(|e| format!("构建自动语种识别 URL 失败：{e}"))?;
-        u.query_pairs_mut().append_pair("format", "simple");
+        u.query_pairs_mut().append_pair("format", "simple").append_pair("lidEnabled", "true");
         Ok(u.to_string())
     } else {
         // 指定语种实时识别：走标准 STT v1 conversation
@@ -175,8 +176,7 @@ pub fn build_speech_context_json(cfg: &RuntimeSpeechSessionConfig) -> Value {
         json!({
             "initialSilenceTimeout": 300_000,
             "trailingSilenceTimeout": cfg.end_silence_ms,
-            "mode": "Conversation",
-            "interimResults": true
+            "mode": "Conversation"
         }),
     );
 
@@ -193,8 +193,8 @@ pub fn build_speech_context_json(cfg: &RuntimeSpeechSessionConfig) -> Value {
             "languageId".into(),
             json!({
                 "languages": CONTINUOUS_LID_LANGUAGES,
-                "onSuccess": { "action": if cfg.enable_translation { "Translate" } else { "Recognize" } },
-                "onUnknown": { "action": if cfg.enable_translation { "Translate" } else { "Recognize" } },
+                "onSuccess": { "action": "Recognize" },
+                "onUnknown": { "action": "None" },
                 "mode": "DetectContinuous",
                 "priority": "PrioritizeLatency"
             }),
@@ -206,11 +206,22 @@ pub fn build_speech_context_json(cfg: &RuntimeSpeechSessionConfig) -> Value {
         ctx.insert(
             "translation".into(),
             json!({
-                "to": [target],
+                "targetLanguages": [target],
                 "onPassthrough": { "action": "None" },
-                "interimResults": true
+                "onSuccess": { "action": "None" },
+                "output": { "includePassThroughResults": true, "interimResults": { "mode": "Always" } }
             }),
         );
+        if let Some(phrase) = ctx.get_mut("phraseDetection") {
+            phrase["onSuccess"] = json!({ "action": "Translate" });
+            phrase["onInterim"] = json!({ "action": "Translate" });
+        }
+        if is_auto {
+            ctx.insert("phraseOutput".into(), json!({
+                "interimResults": { "resultType": "None" },
+                "phraseResults": { "resultType": "None" }
+            }));
+        }
     }
 
     Value::Object(ctx)
@@ -285,8 +296,7 @@ pub fn interpret_usp_message(
             }
         }
         "speech.phrase" => {
-            let status = str_prop(body, "RecognitionStatus");
-            if !status.is_empty() && !status.eq_ignore_ascii_case("Success") {
+            if !successful_status(body, "RecognitionStatus") {
                 return ParsedUspEvent::Ignored;
             }
             let text = extract_phrase_display_text(body);
@@ -304,7 +314,7 @@ pub fn interpret_usp_message(
                 }
             }
         }
-        "translation.hypothesis" => {
+        "translation.hypothesis" if translation_mode => {
             let source_text = extract_text(body);
             let translated_text = extract_translation_text(body, target_lang);
             ParsedUspEvent::Translation {
@@ -313,9 +323,28 @@ pub fn interpret_usp_message(
                 is_final: false,
             }
         }
-        "translation.phrase" => {
-            let status = str_prop(body, "RecognitionStatus");
-            if !status.is_empty() && !status.eq_ignore_ascii_case("Success") {
+        "translation.response" if translation_mode => {
+            if let Some(phrase) = body.get("SpeechPhrase").filter(|v| v.is_object()) {
+                if !successful_status(phrase, "RecognitionStatus") {
+                    return ParsedUspEvent::Ignored;
+                }
+                return ParsedUspEvent::Translation {
+                    source_text: extract_phrase_display_text(phrase),
+                    translated_text: extract_translation_text(body, target_lang),
+                    is_final: true,
+                };
+            }
+            if let Some(hypothesis) = body.get("SpeechHypothesis").filter(|v| v.is_object()) {
+                return ParsedUspEvent::Translation {
+                    source_text: extract_text(hypothesis),
+                    translated_text: extract_translation_text(body, target_lang),
+                    is_final: false,
+                };
+            }
+            ParsedUspEvent::Ignored
+        }
+        "translation.phrase" if translation_mode => {
+            if !successful_status(body, "RecognitionStatus") {
                 return ParsedUspEvent::Ignored;
             }
             let source_text = extract_phrase_display_text(body);
@@ -358,34 +387,26 @@ fn extract_phrase_display_text(v: &Value) -> String {
 
 fn extract_translation_text(v: &Value, expected_target: &str) -> Option<String> {
     let norm_target = normalize_translation_target_language(expected_target);
-    // 兼容 `/Translation/Translations` 与顶层 `/Translations` 两种服务返回结构
-    let arr = v
-        .pointer("/Translation/Translations")
-        .and_then(|x| x.as_array())
-        .or_else(|| v.get("Translations").and_then(|x| x.as_array()))?;
-
-    let mut fallback: Option<String> = None;
+    let result = v.get("Translation").unwrap_or(v);
+    if !successful_status(result, "TranslationStatus") { return None; }
+    let arr = result.get("Translations")?.as_array()?;
     for item in arr {
-        let lang = str_prop(item, "Language");
-        let text = extract_text(item);
-        if text.trim().is_empty() {
-            continue;
-        }
-        if fallback.is_none() {
-            fallback = Some(text.clone());
-        }
+        let lang = item.get("Language").and_then(Value::as_str).unwrap_or_default();
         if lang.eq_ignore_ascii_case(&norm_target) || lang.eq_ignore_ascii_case(expected_target) {
-            return Some(text);
+            let text = extract_text(item);
+            if !text.trim().is_empty() { return Some(text); }
         }
     }
-    fallback
+    None
 }
 
-fn str_prop(v: &Value, key: &str) -> String {
-    v.get(key)
-        .and_then(|x| x.as_str())
-        .unwrap_or("")
-        .to_string()
+fn successful_status(v: &Value, key: &str) -> bool {
+    match v.get(key) {
+        None => true,
+        Some(Value::String(s)) => s.eq_ignore_ascii_case("Success"),
+        Some(Value::Number(n)) => n.as_u64() == Some(0),
+        _ => false,
+    }
 }
 
 #[cfg(test)]
@@ -414,5 +435,11 @@ mod tests {
                 is_final: true
             }
         );
+        let v2 = json!({"SpeechPhrase": {"RecognitionStatus":"Success", "DisplayText":"你好"},
+            "TranslationStatus":"Success", "Translations":[{"Language":"en","DisplayText":"Hello."}]});
+        assert_eq!(interpret_usp_message("translation.response", &v2, true, "en-US"),
+            ParsedUspEvent::Translation { source_text: "你好".into(), translated_text: Some("Hello.".into()), is_final: true });
+        assert_eq!(interpret_usp_message("translation.response", &v2, true, "ja-JP"),
+            ParsedUspEvent::Translation { source_text: "你好".into(), translated_text: None, is_final: true });
     }
 }

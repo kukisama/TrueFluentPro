@@ -3,23 +3,28 @@
 // ============================================================================
 
 import { invokeCmd, escapeHtml } from './api.js';
+import { createAutosave } from './autosave.js';
 
 export function createSettingsController() {
   let selectedSheet = 0; // 0:语音终结点 1:识别与声音 2:断句 3:输入法管理
   let snapshot = null;
   let editingSubId = null;
-  let dirtyGeneral = false;
-  let debounceTimer = null;
+  let microphones = null;
+  let loadingMics = false;
+  let checkingInstall = null;
   let suppressGeneralEvents = false;
   let pendingInstallMode = null;
 
   const statusText = () => document.getElementById('settings-save-status');
+  const autosave = createAutosave(saveGeneralImmediate, (err) => { statusText().textContent = `保存失败：${err}`; });
 
   function bindEvents() {
     document.querySelectorAll('[data-settings-sheet]').forEach((btn) => {
       btn.addEventListener('click', () => {
         selectedSheet = Number(btn.dataset.settingsSheet);
         syncSheets();
+        if (selectedSheet === 1 && !microphones) void loadMicrophones();
+        if (selectedSheet === 3) void refreshInstallStatus();
       });
     });
 
@@ -54,7 +59,7 @@ export function createSettingsController() {
     document.getElementById('filter-particles-toggle').addEventListener('change', onGeneralEdited);
 
     document.getElementById('refresh-subs-btn').addEventListener('click', () => loadAll());
-    document.getElementById('refresh-mics-btn').addEventListener('click', () => loadAll());
+    document.getElementById('refresh-mics-btn').addEventListener('click', loadMicrophones);
 
     // 系统 TSF 安装管理与 UAC 确认弹窗
     document.getElementById('ime-install-btn').addEventListener('click', () => runInstall(true, false));
@@ -96,14 +101,45 @@ export function createSettingsController() {
 
   async function loadAll() {
     try {
+      await autosave.flush();
       const snap = await invokeCmd('load_settings_page');
+      if (autosave.dirty) return;
       applySnapshot(snap);
       statusText().textContent = '已加载当前配置（修改后自动保存）';
     } catch (err) {
       statusText().textContent = `加载配置失败：${err}`;
     }
-    await previewEndpoint();
-    await refreshInstallStatus();
+    if (selectedSheet === 1 && !microphones) void loadMicrophones();
+    if (selectedSheet === 3) void refreshInstallStatus();
+  }
+
+  async function loadMicrophones() {
+    if (loadingMics) return;
+    loadingMics = true;
+    const select = document.getElementById('mic-device-select');
+    const status = document.getElementById('mic-count-status');
+    select.disabled = true;
+    status.textContent = '正在检测麦克风…';
+    try {
+      microphones = await invokeCmd('list_input_devices');
+      renderMicrophones(select.value || snapshot?.microphoneDeviceId || '');
+    } catch (err) {
+      status.textContent = `检测麦克风失败：${err}`;
+    } finally {
+      loadingMics = false;
+      select.disabled = false;
+    }
+  }
+
+  function renderMicrophones(savedId) {
+    const devices = [...(microphones ?? [{ deviceId: '', displayName: '系统默认麦克风' }])];
+    if (savedId && !devices.some((item) => item.deviceId === savedId)) {
+      devices.push({ deviceId: savedId, displayName: microphones ? `${savedId}（当前未连接）` : savedId });
+    }
+    const select = document.getElementById('mic-device-select');
+    select.innerHTML = devices.map((m) => `<option value="${escapeHtml(m.deviceId)}">${escapeHtml(m.displayName)}</option>`).join('');
+    select.value = savedId;
+    if (microphones) document.getElementById('mic-count-status').textContent = `已检测到 ${microphones.length - 1} 个物理输入设备。`;
   }
 
   function applySnapshot(snap) {
@@ -168,16 +204,7 @@ export function createSettingsController() {
       activeSubSelect.value = snap.activeSubscriptionId;
     }
 
-    const micSelect = document.getElementById('mic-device-select');
-    micSelect.innerHTML = snap.microphones
-      .map((m) => `<option value="${escapeHtml(m.deviceId)}">${escapeHtml(m.displayName)}</option>`)
-      .join('');
-    micSelect.value = snap.microphoneDeviceId;
-
-    document.getElementById('mic-count-status').textContent =
-      snap.microphones.length > 1
-        ? `已检测到 ${snap.microphones.length - 1} 个物理输入设备（默认可选系统默认麦克风）。`
-        : '当前使用系统默认麦克风。';
+    renderMicrophones(snap.microphoneDeviceId);
 
     document.getElementById('enable-prewarm-toggle').checked = Boolean(snap.enablePrewarm);
     document.getElementById('end-silence-input').value = Number(snap.endSilenceTimeoutSeconds).toFixed(1);
@@ -298,21 +325,11 @@ export function createSettingsController() {
 
   function onGeneralEdited() {
     if (suppressGeneralEvents) return;
-    dirtyGeneral = true;
     statusText().textContent = '有未保存的修改 · 修改后自动保存';
-    if (debounceTimer) clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(() => {
-      debounceTimer = null;
-      saveGeneralImmediate();
-    }, 200);
+    autosave.edited();
   }
 
-  async function saveGeneralImmediate() {
-    if (!dirtyGeneral) return;
-    if (debounceTimer) {
-      clearTimeout(debounceTimer);
-      debounceTimer = null;
-    }
+  async function saveGeneralImmediate(isCurrent) {
     const rawSilence = Number(document.getElementById('end-silence-input').value);
     const silence = Number.isFinite(rawSilence) ? Math.min(3.0, Math.max(0.2, rawSilence)) : 0.8;
     statusText().textContent = '正在保存…';
@@ -326,16 +343,22 @@ export function createSettingsController() {
           filterModalParticles: Boolean(document.getElementById('filter-particles-toggle').checked),
         },
       });
-      dirtyGeneral = false;
+      if (!isCurrent()) return;
       applySnapshot(snap);
       const now = new Date().toLocaleTimeString('zh-CN', { hour12: false });
       statusText().textContent = `已自动保存（${now}）`;
     } catch (err) {
       statusText().textContent = `保存失败：${err}`;
+      throw err;
     }
   }
 
-  async function refreshInstallStatus() {
+  function refreshInstallStatus() {
+    checkingInstall ??= loadInstallStatus().finally(() => { checkingInstall = null; });
+    return checkingInstall;
+  }
+
+  async function loadInstallStatus() {
     const statusLabel = document.getElementById('ime-reg-status');
     const verBadge = document.getElementById('ime-version-label');
     try {
@@ -356,6 +379,7 @@ export function createSettingsController() {
     progress.style.display = 'block';
     opMsg.textContent = '正在执行输入法组件维护，请稍候…';
     try {
+      await autosave.flush();
       const res = await invokeCmd('manage_ime_installation', {
         install,
         confirmedElevation,
@@ -391,9 +415,6 @@ export function createSettingsController() {
     init: bindEvents,
     onEnter: () => loadAll(),
     reloadAfterLanguageSync: () => loadAll(),
-    flushPending: async () => {
-      if (dirtyGeneral) await saveGeneralImmediate();
-      if (dirtyGeneral) throw new Error('设置尚未保存完成');
-    },
+    flushPending: autosave.flush,
   };
 }

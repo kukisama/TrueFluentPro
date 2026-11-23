@@ -132,10 +132,10 @@ class Service final : public Ime::TextService, public ITfThreadFocusSink, public
     }
     void Disconnect() {
         if (run) {
-            const bool waitFlush = run->workerStarted.load() && run->deselection.load() != 0;
-            SetEvent(run->cancel);
-            if (waitFlush && run->flushed) WaitForSingleObject(run->flushed, 1500);
             { std::lock_guard<std::mutex> guard(run->delivery); run->target = nullptr; }
+            // The worker owns the pipe and DLL reference. EOF is sufficient to unbind;
+            // never wait for the other process from an editor's TSF/message thread.
+            SetEvent(run->cancel);
             run.reset();
         }
         selectedAnnounced = false;
@@ -293,7 +293,7 @@ class Service final : public Ime::TextService, public ITfThreadFocusSink, public
         if (!CheapAllowed(context.Get())) {
             if (targetBound || probePending || composition) DropTarget();
             UpdateToolbar();
-        } else if (run && !probePending) {
+        } else if (run && !targetBound && !probePending) {
             probePending = true; Request(EditKind::Probe);
         }
     }
@@ -466,8 +466,11 @@ public:
     }
     bool keyEventsNeedEditSession() const override { return false; }
     bool KeyEligible() { return active ? SelectedForeground() : CheapAllowed(keyContext); }
-    bool filterKeyDown(Ime::KeyEvent& key) override { return latch.TestDown(KeyEligible(), key.keyCode()); }
+    bool filterKeyDown(Ime::KeyEvent& key) override {
+        return key.keyCode() == VK_F8 && latch.TestDown(KeyEligible(), key.keyCode());
+    }
     bool onKeyDown(Ime::KeyEvent& key, Ime::EditSession*) override {
+        if (key.keyCode() != VK_F8) return false;
         bool toggle = false;
         bool eaten = latch.Press(KeyEligible(), key.keyCode(), key.lParam(), toggle);
         if (toggle) ToggleRecording();
@@ -476,10 +479,12 @@ public:
     bool filterKeyUp(Ime::KeyEvent& key) override { return latch.TestUp(key.keyCode()); }
     bool onKeyUp(Ime::KeyEvent& key, Ime::EditSession*) override { return latch.Release(key.keyCode()); }
     STDMETHODIMP OnTestKeyDown(ITfContext* c, WPARAM key, LPARAM flags, BOOL* eaten) override {
+        if (key != VK_F8) { if (!eaten) return E_POINTER; *eaten = FALSE; return S_OK; }
         ITfContext* previous = keyContext; keyContext = c;
         HRESULT hr = Ime::TextService::OnTestKeyDown(c, key, flags, eaten); keyContext = previous; return hr;
     }
     STDMETHODIMP OnKeyDown(ITfContext* c, WPARAM key, LPARAM flags, BOOL* eaten) override {
+        if (key != VK_F8) { if (!eaten) return E_POINTER; *eaten = FALSE; return S_OK; }
         ITfContext* previous = keyContext; keyContext = c;
         HRESULT hr = Ime::TextService::OnKeyDown(c, key, flags, eaten); keyContext = previous; return hr;
     }

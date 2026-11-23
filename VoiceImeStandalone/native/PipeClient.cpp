@@ -1,6 +1,7 @@
 #include "Common.h"
 #include "NativeInstallPath.h"
 #include <sddl.h>
+#include <charconv>
 
 // ═══════════════════════════════════════════════════════════════════════════
 // PipeClient.cpp — 阶段 1 C++ 原生异步管道客户端
@@ -33,19 +34,18 @@ bool Post(const std::shared_ptr<PipeRun>& run, char kind, std::wstring text = {}
     return true;
 }
 
-bool Transfer(HANDLE pipe, void* data, DWORD size, bool write, HANDLE cancel, DWORD timeout) {
+bool Transfer(HANDLE pipe, void* data, DWORD size, HANDLE event, HANDLE cancel, DWORD timeout) {
     auto* bytes = static_cast<BYTE*>(data);
     while (size) {
-        Handle event(CreateEventW(nullptr, TRUE, FALSE, nullptr));
-        if (!event.h) return false;
-        OVERLAPPED ov{}; ov.hEvent = event.h;
+        ResetEvent(event);
+        OVERLAPPED ov{}; ov.hEvent = event;
         DWORD count = 0;
-        BOOL ok = write ? WriteFile(pipe, bytes, size, &count, &ov) : ReadFile(pipe, bytes, size, &count, &ov);
+        BOOL ok = WriteFile(pipe, bytes, size, &count, &ov);
         if (!ok) {
             if (GetLastError() != ERROR_IO_PENDING) return false;
-            HANDLE waits[] = {event.h, cancel};
-            DWORD ready = WaitForMultipleObjects(cancel ? 2 : 1, waits, FALSE, timeout);
-            if (ready != WAIT_OBJECT_0) {
+            HANDLE waits[] = {cancel, event};
+            DWORD ready = WaitForMultipleObjects(2, waits, FALSE, timeout);
+            if (ready != WAIT_OBJECT_0 + 1) {
                 CancelIoEx(pipe, &ov);
                 GetOverlappedResult(pipe, &ov, &count, TRUE);
                 return false;
@@ -58,49 +58,48 @@ bool Transfer(HANDLE pipe, void* data, DWORD size, bool write, HANDLE cancel, DW
     return true;
 }
 
-bool WritePacket(HANDLE pipe, char kind, uint64_t value, HANDLE cancel) noexcept try {
-    const std::string payload = std::to_string(value);
-    const DWORD size = static_cast<DWORD>(payload.size() + 1);
-    std::vector<char> bytes{
-        static_cast<char>(size), static_cast<char>(size >> 8),
-        static_cast<char>(size >> 16), static_cast<char>(size >> 24), kind
-    };
-    bytes.insert(bytes.end(), payload.begin(), payload.end());
-    return Transfer(pipe, bytes.data(), static_cast<DWORD>(bytes.size()), true, cancel, 1000);
-} catch (...) { return false; }
+bool WritePacket(HANDLE pipe, char kind, uint64_t value, HANDLE event, HANDLE cancel) noexcept {
+    if (WaitForSingleObject(cancel, 0) != WAIT_TIMEOUT) return false;
+    char bytes[25]{};
+    bytes[4] = kind;
+    const auto payload = std::to_chars(bytes + 5, bytes + sizeof(bytes), value);
+    if (payload.ec != std::errc{}) return false;
+    const DWORD size = static_cast<DWORD>(payload.ptr - (bytes + 4));
+    bytes[0] = static_cast<char>(size); // Body is at most 21 bytes; remaining prefix bytes are zero.
+    return Transfer(pipe, bytes, size + 4, event, cancel, 1000);
+}
 
-bool FlushCommands(HANDLE pipe, const std::shared_ptr<PipeRun>& run, HANDLE cancel = nullptr) {
+bool FlushCommands(HANDLE pipe, const std::shared_ptr<PipeRun>& run, HANDLE writeEvent) {
     for (;;) {
         PipeRun::Command command{};
         {
             std::lock_guard<std::mutex> guard(run->commandMutex);
-            if (cancel && Cancelled(run)) return false;
+            if (Cancelled(run)) return false;
             if (run->commands.empty()) { ResetEvent(run->commandReady); return true; }
             command = run->commands.front();
             run->commands.pop_front();
         }
-        if (!WritePacket(pipe, command.kind, command.generation, cancel)) return false;
-        if (command.kind == 'D') run->deselection = 0;
+        if (!WritePacket(pipe, command.kind, command.generation, writeEvent, run->cancel)) return false;
     }
 }
 
-bool ReadShared(HANDLE pipe, void* data, DWORD size, const std::shared_ptr<PipeRun>& run) {
+bool ReadShared(HANDLE pipe, void* data, DWORD size, const std::shared_ptr<PipeRun>& run, HANDLE readEvent, HANDLE writeEvent) {
     auto* bytes = static_cast<BYTE*>(data);
     while (size && !Cancelled(run)) {
-        Handle event(CreateEventW(nullptr, TRUE, FALSE, nullptr));
-        if (!event.h || !FlushCommands(pipe, run, run->cancel)) return false;
-        OVERLAPPED ov{}; ov.hEvent = event.h;
+        if (!FlushCommands(pipe, run, writeEvent)) return false;
+        ResetEvent(readEvent);
+        OVERLAPPED ov{}; ov.hEvent = readEvent;
         DWORD count = 0;
         if (!ReadFile(pipe, bytes, size, &count, &ov)) {
             if (GetLastError() != ERROR_IO_PENDING) return false;
             bool completed = false;
             while (!completed) {
-                HANDLE waits[] = {run->cancel, event.h, run->commandReady};
+                HANDLE waits[] = {run->cancel, readEvent, run->commandReady};
                 const DWORD ready = WaitForMultipleObjects(3, waits, FALSE, INFINITE);
                 if (ready == WAIT_OBJECT_0 + 1) {
                     completed = true;
                     if (!GetOverlappedResult(pipe, &ov, &count, FALSE)) return false;
-                } else if (ready != WAIT_OBJECT_0 + 2 || !FlushCommands(pipe, run, run->cancel)) {
+                } else if (ready != WAIT_OBJECT_0 + 2 || !FlushCommands(pipe, run, writeEvent)) {
                     CancelIoEx(pipe, &ov);
                     GetOverlappedResult(pipe, &ov, &count, TRUE);
                     return false;
@@ -194,15 +193,18 @@ void Run(const std::shared_ptr<PipeRun>& run) {
         WaitForSingleObject(run->cancel, 25);
     }
     if (pipe.h != INVALID_HANDLE_VALUE) {
-        if (!InstallationMaintenanceActive() && TrustedServer(pipe.h, host) &&
-            WritePacket(pipe.h, 'H', run->threadId, run->cancel)) {
+        Handle readEvent(CreateEventW(nullptr, TRUE, FALSE, nullptr));
+        Handle writeEvent(CreateEventW(nullptr, TRUE, FALSE, nullptr));
+        if (readEvent.h && writeEvent.h && !InstallationMaintenanceActive() && TrustedServer(pipe.h, host) &&
+            WritePacket(pipe.h, 'H', run->threadId, writeEvent.h, run->cancel)) {
+            std::vector<char> frame;
             while (!Cancelled(run)) {
                 BYTE prefix[4]{};
-                if (!ReadShared(pipe.h, prefix, 4, run)) break;
+                if (!ReadShared(pipe.h, prefix, 4, run, readEvent.h, writeEvent.h)) break;
                 DWORD size = DWORD(prefix[0]) | (DWORD(prefix[1]) << 8) | (DWORD(prefix[2]) << 16) | (DWORD(prefix[3]) << 24);
                 if (size < 1 || size > MaximumFrame) break;
-                std::vector<char> frame(size);
-                if (!ReadShared(pipe.h, frame.data(), size, run)) break;
+                frame.resize(size);
+                if (!ReadShared(pipe.h, frame.data(), size, run, readEvent.h, writeEvent.h)) break;
                 char kind = frame[0];
                 std::wstring payload, text;
                 uint64_t epoch = 0, target = 0;
@@ -210,13 +212,10 @@ void Run(const std::shared_ptr<PipeRun>& run) {
                 if (epoch > run->audioEpoch.load()) run->audioEpoch = epoch;
                 if (!Post(run, kind, std::move(text), epoch, target)) break;
             }
-            FlushCommands(pipe.h, run, nullptr);
-            const auto deselection = run->deselection.exchange(0);
-            if (deselection) WritePacket(pipe.h, 'D', deselection, nullptr);
-            FlushFileBuffers(pipe.h);
+            // Do not send queued toggles after cancellation or flush to a stalled server.
+            // Closing this connection makes the daemon discard its selection and binding.
         }
     }
-    if (run->flushed) SetEvent(run->flushed);
     if (!Cancelled(run)) Post(run, 'E');
 }
 
@@ -228,7 +227,6 @@ DWORD WINAPI Entry(void* data) {
         std::unique_ptr<Work> work(static_cast<Work*>(data));
         module = work->module;
         try { Run(work->run); } catch (...) { Post(work->run, 'E'); }
-        if (work->run->flushed) SetEvent(work->run->flushed);
         work->run->done = true;
     }
     --ModuleObjects;
@@ -247,7 +245,6 @@ bool SendSharedCommand(const std::shared_ptr<PipeRun>& run, char kind, uint64_t 
     if (!run || !SharedCommandKind(kind) || !run->cancel || !run->commandReady) return false;
     std::lock_guard<std::mutex> guard(run->commandMutex);
     if (Cancelled(run) || run->done) return false;
-    if (kind == 'D') run->deselection = generation;
     if (run->commands.size() >= 64) { SetEvent(run->cancel); return false; }
     run->commands.push_back({kind, generation});
     SetEvent(run->commandReady);
@@ -264,9 +261,42 @@ bool StartPipeWorker(const std::shared_ptr<PipeRun>& run) {
     auto* work = new (std::nothrow) Work{run, module};
     if (!work) { FreeLibrary(module); return false; }
     ++ModuleObjects;
-    run->workerStarted = true;
     HANDLE thread = CreateThread(nullptr, 0, Entry, work, 0, nullptr);
-    if (!thread) { run->workerStarted = false; --ModuleObjects; delete work; FreeLibrary(module); return false; }
+    if (!thread) { --ModuleObjects; delete work; FreeLibrary(module); return false; }
     CloseHandle(thread);
     return true;
 }
+
+#ifdef VOICE_IME_PIPE_TEST
+// Local disposable pipe only; no TSF registration or configured host is accessed.
+bool TestStandalonePipeIo() {
+    const auto name = L"\\\\.\\pipe\\TrueFluentVoiceIme.Offline." + std::to_wstring(GetCurrentProcessId()) +
+        L"." + std::to_wstring(GetTickCount64());
+    Handle server(CreateNamedPipeW(name.c_str(), PIPE_ACCESS_DUPLEX | FILE_FLAG_FIRST_PIPE_INSTANCE,
+        PIPE_TYPE_BYTE | PIPE_REJECT_REMOTE_CLIENTS, 1, 4096, 4096, 0, nullptr));
+    if (server.h == INVALID_HANDLE_VALUE) return false;
+    Handle client(CreateFileW(name.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING,
+        FILE_FLAG_OVERLAPPED, nullptr));
+    if (client.h == INVALID_HANDLE_VALUE) return false;
+    if (!ConnectNamedPipe(server.h, nullptr) && GetLastError() != ERROR_PIPE_CONNECTED) return false;
+    Handle readEvent(CreateEventW(nullptr, TRUE, FALSE, nullptr));
+    Handle writeEvent(CreateEventW(nullptr, TRUE, FALSE, nullptr));
+    auto run = std::make_shared<PipeRun>(1, nullptr, name);
+    if (!readEvent.h || !writeEvent.h || !run->cancel || !run->commandReady) return false;
+    if (!WritePacket(client.h, 'H', 18446744073709551615ull, writeEvent.h, run->cancel)) return false;
+    char packet[25]{}; DWORD count = 0;
+    if (!ReadFile(server.h, packet, sizeof(packet), &count, nullptr) || count != sizeof(packet) ||
+        static_cast<unsigned char>(packet[0]) != 21 || packet[1] || packet[2] || packet[3] ||
+        std::string(packet + 4, count - 4) != "H18446744073709551615") return false;
+    for (BYTE value : {BYTE{7}, BYTE{9}}) {
+        BYTE actual = 0;
+        if (!WriteFile(server.h, &value, 1, &count, nullptr) || count != 1 ||
+            !ReadShared(client.h, &actual, 1, run, readEvent.h, writeEvent.h) || actual != value) return false;
+    }
+    if (!SendSharedCommand(run, 'T', 1)) return false;
+    SetEvent(run->cancel);
+    if (FlushCommands(client.h, run, writeEvent.h)) return false;
+    DWORD available = 0;
+    return PeekNamedPipe(server.h, nullptr, 0, nullptr, &available, nullptr) && available == 0;
+}
+#endif

@@ -6,7 +6,6 @@ license.workspace = true
 description = "独立语音输入法 SQLite 用量统计异步写入服务与多维只读报表引擎"
 
 [dependencies]
-rusqlite             = { workspace = true }
 chrono               = { workspace = true }
 serde                = { workspace = true }
 thiserror            = { workspace = true }
@@ -14,3 +13,4 @@ tokio                = { workspace = true }
 uuid                 = { workspace = true }
 unicode-segmentation = { workspace = true }
 dirs                 = { workspace = true }
+rusqlite             = { workspace = true }

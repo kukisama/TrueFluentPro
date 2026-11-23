@@ -14,10 +14,10 @@ use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
 use tokio::io::{AsyncRead, AsyncWrite};
-use tokio::sync::{mpsc, oneshot, Semaphore};
+use tokio::sync::{mpsc, oneshot, watch, Semaphore};
 use uuid::Uuid;
 
-use voice_ime_config::RuntimeConfigCache;
+use voice_ime_config::{RuntimeConfigCache, RuntimeSpeechSessionConfig};
 use voice_ime_protocol::{
     read_raw_frame, slice_from_utf16_boundary, utf16_len, write_raw_frame, ClientCommand,
     ClientFrame, DeliveryFence, PeerId, ServerFrame, ServerKind, TargetBinding,
@@ -34,6 +34,9 @@ use crate::launcher::{ToolsTabRequest, ToolsWindowLauncher};
 const NO_TEXT_INACTIVITY_TIMEOUT: Duration = Duration::from_secs(60);
 const USAGE_CHECKPOINT_INTERVAL: Duration = Duration::from_secs(15);
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
+const TARGET_REBIND_GRACE: Duration = Duration::from_millis(350);
+const PREWARM_HANDOFF_BUDGET: Duration = Duration::from_millis(150);
+const PREWARM_REFRESH_AGE: Duration = Duration::from_secs(35);
 const MAX_CONCURRENT_PEERS: usize = 64;
 const GENERIC_ERROR_TEXT: &str = "语音输入已中断，请在输入法设置中检查语音终结点与麦克风后重试。";
 
@@ -99,7 +102,6 @@ struct OutboundItem {
 }
 
 struct PeerRecord {
-    peer_id: PeerId,
     client_pid: u32,
     thread_id: u32,
     generation: u64,
@@ -124,10 +126,7 @@ enum ActorMessage {
         ack: oneshot::Sender<()>,
     },
     Toolbar(ToolbarAction),
-    PrewarmCompleted {
-        token_id: u64,
-        handle: Option<PrewarmedSpeechHandle>,
-    },
+    TargetRebindTimeout { round_epoch: u64, target_revision: u64 },
     SpeechRoundEvent {
         round_epoch: u64,
         event: SpeechEvent,
@@ -151,6 +150,16 @@ struct ActiveAudioRound {
     translation_targets: TranslationTargetQueue,
     session_handle: Option<SpeechSessionHandle>,
     mic_lock: Option<Arc<ExclusiveFileLock>>,
+}
+
+struct PendingPrewarm {
+    config: RuntimeSpeechSessionConfig,
+    started: Instant,
+    task: tokio::task::JoinHandle<Option<PrewarmedSpeechHandle>>,
+}
+
+impl Drop for PendingPrewarm {
+    fn drop(&mut self) { self.task.abort(); }
 }
 
 #[derive(Clone)]
@@ -199,9 +208,7 @@ pub struct SharedDaemonActor {
     stopped_flag: bool,
     error_flag: bool,
 
-    prewarm_seq: u64,
-    prewarm_inflight_id: Option<u64>,
-    prewarmed: Option<PrewarmedSpeechHandle>,
+    prewarm: Option<PendingPrewarm>,
     audio: Option<ActiveAudioRound>,
     previous_release: Option<tokio::task::JoinHandle<()>>,
     releasing_mic: Weak<ExclusiveFileLock>,
@@ -247,20 +254,7 @@ impl SharedDaemonActor {
         }
 
         // 监听 maintenance.lock 100ms 熔断门禁
-        let (mut maint_rx, _maint_task) = maintenance.spawn_monitor();
-        let tx_maint = tx.clone();
-        tokio::spawn(async move {
-            if *maint_rx.borrow() {
-                let _ = tx_maint.send(ActorMessage::Shutdown).await;
-                return;
-            }
-            while maint_rx.changed().await.is_ok() {
-                if *maint_rx.borrow() {
-                    let _ = tx_maint.send(ActorMessage::Shutdown).await;
-                    break;
-                }
-            }
-        });
+        let (maint_rx, maint_task) = maintenance.spawn_monitor();
 
         let mut actor = Self {
             config_cache,
@@ -286,16 +280,15 @@ impl SharedDaemonActor {
             visible: false,
             stopped_flag: false,
             error_flag: false,
-            prewarm_seq: 0,
-            prewarm_inflight_id: None,
-            prewarmed: None,
+            prewarm: None,
             audio: None,
             previous_release: None,
             releasing_mic: Weak::new(),
         };
 
         let join = tokio::spawn(async move {
-            actor.run_loop().await;
+            actor.run_loop(maint_rx).await;
+            maint_task.abort();
         });
 
         let handle = SharedDaemonHandle {
@@ -308,12 +301,14 @@ impl SharedDaemonActor {
         (handle, join)
     }
 
-    async fn run_loop(&mut self) {
+    async fn run_loop(&mut self, mut maintenance: watch::Receiver<bool>) {
         self.sync_history_indicator();
-        while let Some(msg) = self.rx.recv().await {
-            if self.maintenance.is_active() {
-                break;
-            }
+        while !*maintenance.borrow() {
+            let msg = tokio::select! {
+                biased;
+                _ = maintenance.changed() => break,
+                msg = self.rx.recv() => match msg { Some(msg) => msg, None => break },
+            };
             match msg {
                 ActorMessage::RegisterPeer {
                     peer_id,
@@ -323,7 +318,6 @@ impl SharedDaemonActor {
                     ack,
                 } => {
                     let peer = PeerRecord {
-                        peer_id,
                         client_pid,
                         thread_id,
                         generation: 0,
@@ -336,11 +330,21 @@ impl SharedDaemonActor {
                 ActorMessage::UnregisterPeer { peer_id, ack } => {
                     self.peers.remove(&peer_id);
                     let was_target = self.target.is_some_and(|t| t.peer_id == peer_id);
+                    let was_selection = self.selection.is_some_and(|s| s.peer_id == peer_id);
                     self.unbind(peer_id, None);
-                    if self.target.is_none()
-                        && (was_target || self.selection.is_some_and(|s| s.peer_id == peer_id))
-                    {
-                        self.other_ime();
+                    if was_selection {
+                        self.selection = self.target.filter(|t| self.is_peer_foreground(t.peer_id));
+                        if self.selection.is_none() {
+                            self.other_ime();
+                        }
+                    } else if was_target {
+                        // Stop recording for the lost editor, but do not hide or deselect
+                        // a newer foreground client that has not bound its editor yet.
+                        if self.selection.is_some_and(|s| self.is_peer_foreground(s.peer_id)) {
+                            self.stop_audio(StopReason::OtherIme);
+                        } else {
+                            self.other_ime();
+                        }
                     }
                     let _ = ack.send(());
                 }
@@ -353,12 +357,9 @@ impl SharedDaemonActor {
                     let _ = ack.send(());
                 }
                 ActorMessage::Toolbar(action) => self.handle_toolbar_action(action),
-                ActorMessage::PrewarmCompleted { token_id, handle } => {
-                    if self.prewarm_inflight_id == Some(token_id) {
-                        self.prewarm_inflight_id = None;
-                        if self.visible && self.audio.is_none() {
-                            self.prewarmed = handle;
-                        }
+                ActorMessage::TargetRebindTimeout { round_epoch, target_revision } => {
+                    if self.epoch == round_epoch && self.target_revision == target_revision && self.target.is_none() {
+                        self.stop_audio(StopReason::OtherIme);
                     }
                 }
                 ActorMessage::SpeechRoundEvent { round_epoch, event } => {
@@ -527,6 +528,15 @@ impl SharedDaemonActor {
         self.target_revision += 1;
         self.fence_view.set_target(None, self.target_revision);
         self.boundary_utf16 = utf16_len(&self.sentence).max(self.delivered_utf16);
+        if let Some(round) = &self.audio {
+            let round_epoch = round.epoch;
+            let target_revision = self.target_revision;
+            let tx = self.self_tx.clone();
+            tokio::spawn(async move {
+                tokio::time::sleep(TARGET_REBIND_GRACE).await;
+                let _ = tx.send(ActorMessage::TargetRebindTimeout { round_epoch, target_revision }).await;
+            });
+        }
     }
 
     fn other_ime(&mut self) {
@@ -541,40 +551,34 @@ impl SharedDaemonActor {
     }
 
     fn maybe_trigger_prewarm(&mut self) {
-        if !self.visible
-            || self.audio.is_some()
-            || self.prewarmed.is_some()
-            || self.prewarm_inflight_id.is_some()
-        {
+        if !self.visible || self.audio.is_some() {
             return;
         }
         let Ok(cfg) = self.config_cache.get() else {
+            self.discard_prewarm();
             return;
         };
         if !cfg.enable_prewarm {
+            self.discard_prewarm();
             return;
         }
-        let (Ok(runtime_cfg), Some(fp)) = (cfg.freeze_runtime_session(), cfg.prewarm_fingerprint())
-        else {
+        let Ok(runtime_cfg) = cfg.freeze_runtime_session() else {
+            self.discard_prewarm();
             return;
         };
-
-        self.prewarm_seq += 1;
-        let token_id = self.prewarm_seq;
-        self.prewarm_inflight_id = Some(token_id);
-        let join = self.speech_factory.prewarm(fp, runtime_cfg);
-        let tx = self.self_tx.clone();
-        tokio::spawn(async move {
-            let handle = join.await.ok().flatten();
-            let _ = tx
-                .send(ActorMessage::PrewarmCompleted { token_id, handle })
-                .await;
+        if self.prewarm.as_ref().is_some_and(|p| p.config == runtime_cfg && p.started.elapsed() < PREWARM_REFRESH_AGE) {
+            return;
+        }
+        self.discard_prewarm();
+        self.prewarm = Some(PendingPrewarm {
+            task: self.speech_factory.prewarm(runtime_cfg.clone()),
+            config: runtime_cfg,
+            started: Instant::now(),
         });
     }
 
     fn discard_prewarm(&mut self) {
-        self.prewarm_inflight_id = None;
-        self.prewarmed = None;
+        self.prewarm = None;
     }
 
     fn toggle_recording(&mut self) {
@@ -622,13 +626,7 @@ impl SharedDaemonActor {
                 return;
             }
         };
-        let current_fp = cfg.prewarm_fingerprint().unwrap_or_default();
-
-        self.prewarm_inflight_id = None;
-        let warm = self
-            .prewarmed
-            .take()
-            .filter(|w| w.is_fresh(&current_fp));
+        let pending_warm = self.prewarm.take().filter(|p| p.config == runtime_cfg && p.started.elapsed() < PREWARM_REFRESH_AGE);
 
         self.epoch += 1;
         let round_epoch = self.epoch;
@@ -671,6 +669,15 @@ impl SharedDaemonActor {
             if let Some(prev) = prev_release {
                 let _ = prev.await;
             }
+            let warm = if let Some(mut pending) = pending_warm {
+                tokio::select! {
+                    biased;
+                    _ = &mut stop_rx => return,
+                    result = tokio::time::timeout(PREWARM_HANDOFF_BUDGET, &mut pending.task) => {
+                        result.ok().and_then(Result::ok).flatten()
+                    }
+                }
+            } else { None };
             if matches!(stop_rx.try_recv(), Err(oneshot::error::TryRecvError::Empty)) {
                 let handle = factory.start_session(runtime_cfg, warm, ev_tx);
                 let _ = stop_rx.await;
@@ -768,7 +775,7 @@ impl SharedDaemonActor {
                 let active_target = self.target;
                 let active_rev = self.target_revision;
                 if let Some(ref mut round) = self.audio {
-                    if let Some(uid) = round.usage_session {
+                    if let Some(uid) = round.usage_session.filter(|_| active_target.is_some()) {
                         if let Some(ref u) = self.usage {
                             u.recognized(uid, &text, is_final);
                         }
@@ -794,8 +801,9 @@ impl SharedDaemonActor {
                             .pop_valid_destination(self.target, self.target_revision)
                     });
                     if let Some(dest) = dest_opt {
-                        if self.is_peer_foreground(dest.peer_id) {
-                            self.send_text_to_target(dest, true, &text);
+                        if self.is_peer_foreground(dest.peer_id) && !self.send_text_to_target(dest, true, &text) {
+                            self.stop_audio(StopReason::Failed);
+                            self.fail_round_immediately("输入框未能及时接收译文，已停止录音，请重新按 F8。");
                         }
                     }
                     return;
@@ -824,8 +832,12 @@ impl SharedDaemonActor {
                 self.unbind(target.peer_id, Some(target.generation));
             } else {
                 let sliced = slice_from_utf16_boundary(text, self.boundary_utf16);
-                self.send_text_to_target(target, is_final, &sliced);
-                self.delivered_utf16 = self.delivered_utf16.max(utf16_len(text));
+                if self.send_text_to_target(target, is_final, &sliced) {
+                    self.delivered_utf16 = self.delivered_utf16.max(utf16_len(text));
+                } else if is_final {
+                    self.stop_audio(StopReason::Failed);
+                    self.fail_round_immediately("输入框未能及时接收定稿，已停止录音，请重新按 F8。");
+                }
             }
         }
         if is_final {
@@ -900,9 +912,9 @@ impl SharedDaemonActor {
         });
     }
 
-    fn send_text_to_target(&self, target: TargetBinding, is_final: bool, text: &str) {
+    fn send_text_to_target(&self, target: TargetBinding, is_final: bool, text: &str) -> bool {
         let Some(peer) = self.peers.get(&target.peer_id) else {
-            return;
+            return false;
         };
         let frame = ServerFrame::text_result(is_final, self.epoch, target.generation, text);
         let fence = DeliveryFence {
@@ -910,10 +922,10 @@ impl SharedDaemonActor {
             target,
             target_revision: self.target_revision,
         };
-        let _ = peer.out_tx.try_send(OutboundItem {
+        peer.out_tx.try_send(OutboundItem {
             frame,
             text_fence: Some(fence),
-        });
+        }).is_ok()
     }
 
     fn update_ui(&self) {
@@ -987,7 +999,7 @@ pub async fn serve_duplex_peer<R, W>(
     // 2. 启动写管道协程（P/F 出队写盘前二次校验三重原子栅栏 + 前台窗口资格）
     let fence_view = Arc::clone(&daemon.fence_view);
     let verifier = Arc::clone(&daemon.verifier);
-    let write_task = tokio::spawn(async move {
+    let mut write_task = tokio::spawn(async move {
         while let Some(item) = out_rx.recv().await {
             if let Some(ref fence) = item.text_fence {
                 if !fence_view.verify(fence) || !verifier.is_foreground(client_pid, thread_id) {
@@ -1009,8 +1021,14 @@ pub async fn serve_duplex_peer<R, W>(
     });
 
     // 3. 循环读取 L / B / U / T / D 命令并串行提交给 Actor
+    let mut write_finished = false;
     loop {
-        let Ok((cmd_kind, cmd_text)) = read_raw_frame(&mut reader).await else {
+        let received = tokio::select! {
+            biased;
+            _ = &mut write_task => { write_finished = true; break; }
+            frame = read_raw_frame(&mut reader) => frame,
+        };
+        let Ok((cmd_kind, cmd_text)) = received else {
             break;
         };
         let Ok(parsed) = ClientFrame::parse(cmd_kind, &cmd_text) else {
@@ -1045,7 +1063,11 @@ pub async fn serve_duplex_peer<R, W>(
         })
         .await;
     let _ = unreg_rx.await;
-    let _ = write_task.await;
+    if !write_finished {
+        // Reader EOF means the target is gone; do not keep its writer/safety slot alive.
+        write_task.abort();
+        let _ = write_task.await;
+    }
 }
 
 #[cfg(test)]
@@ -1077,7 +1099,6 @@ mod tests {
     impl SpeechEngineFactory for FakeSpeechEngine {
         fn prewarm(
             &self,
-            _fingerprint: String,
             _cfg: voice_ime_config::RuntimeSpeechSessionConfig,
         ) -> tokio::task::JoinHandle<Option<PrewarmedSpeechHandle>> {
             tokio::spawn(async { None })
@@ -1193,8 +1214,12 @@ mod tests {
         assert_eq!(f_b.target_generation, 9);
         assert_eq!(f_b.text, "世界");
 
-        drop(b_client);
-        let stopped = tokio::time::timeout(Duration::from_secs(2), read_decoded(&mut a_client))
+        // A becomes the foreground selection but never binds a new editor. Its EOF
+        // must not leave the old background target B recording or the toolbar visible.
+        *verifier.foreground_pid.lock().unwrap() = 101;
+        write_raw_frame(&mut a_client, &ClientFrame { command: ClientCommand::Selected { generation: 6 } }.encode().unwrap()).await.unwrap();
+        drop(a_client);
+        let stopped = tokio::time::timeout(Duration::from_secs(2), read_decoded(&mut b_client))
             .await.unwrap();
         assert_eq!(stopped.kind, ServerKind::Stopped);
 

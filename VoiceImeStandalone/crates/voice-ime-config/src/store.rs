@@ -1,6 +1,7 @@
 //! 独立配置文件的原子读写、`.bak` 备份自愈、局部语言字段 Patch 与内存热重载缓存。
 
 use std::fs;
+use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::SystemTime;
@@ -58,28 +59,42 @@ impl ConfigStore {
 
     /// 守护进程专用只读加载：文件不存在时返回默认内存对象，**绝不在后台擅自写盘**。
     pub fn load_readonly(&self) -> Result<StandaloneConfig, ConfigError> {
-        if !self.config_path.exists() {
-            if self.backup_path.exists() {
-                return read_typed_config(&self.backup_path);
-            }
-            return Ok(StandaloneConfig::default());
-        }
-        match read_typed_config(&self.config_path) {
-            Ok(cfg) => Ok(cfg),
-            Err(primary_err) => {
-                if self.backup_path.exists() {
-                    if let Ok(backup_cfg) = read_typed_config(&self.backup_path) {
-                        return Ok(backup_cfg);
-                    }
-                }
-                Err(primary_err)
-            }
-        }
+        decode_config(self.read_effective()?.0)
     }
 
     /// 完整原子保存（自动加密明文订阅密钥、保留原 JSON 中未来扩展的未知顶层字段、写 `.bak` 备份）。
     pub fn save(&self, config: &StandaloneConfig) -> Result<(), ConfigError> {
-        let mut normalized = config.clone();
+        self.update(|current| { *current = config.clone(); Ok(()) }).map(drop)
+    }
+
+    /// Serialize read-modify-write across tool windows; the dictation reader never takes this lock.
+    pub fn update(&self, edit: impl FnOnce(&mut StandaloneConfig) -> Result<(), String>) -> Result<StandaloneConfig, ConfigError> {
+        if let Some(parent) = self.config_path.parent() {
+            fs::create_dir_all(parent).map_err(io_error)?;
+        }
+        let mut pathname = self.config_path.as_os_str().to_os_string();
+        pathname.push(".lock");
+        let lock = fs::File::options().write(true).create(true).truncate(false)
+            .open(PathBuf::from(pathname)).map_err(io_error)?;
+        // Do not queue indefinitely behind another window's potentially blocked disk.
+        lock.try_lock().map_err(|_| ConfigError::Validation("另一窗口正在保存配置，请稍后重试。".into()))?;
+        let (mut base_obj, primary) = self.read_effective()?;
+        let mut config = decode_config(base_obj.clone())?;
+        edit(&mut config).map_err(ConfigError::Validation)?;
+        Self::normalize(&mut config)?;
+        let Value::Object(fields) = serde_json::to_value(&config).map_err(|e| ConfigError::Io(e.to_string()))? else {
+            return Err(ConfigError::CorruptedOrTooLarge);
+        };
+        base_obj.extend(fields);
+        let formatted = serde_json::to_vec_pretty(&Value::Object(base_obj)).map_err(|e| ConfigError::Io(e.to_string()))?;
+        if let Some(valid_primary) = primary {
+            atomic_write(&self.backup_path, &valid_primary)?;
+        }
+        atomic_write(&self.config_path, &formatted)?;
+        Ok(config)
+    }
+
+    fn normalize(normalized: &mut StandaloneConfig) -> Result<(), ConfigError> {
         for sub in &mut normalized.subscriptions {
             if !sub.encrypted_key.trim().is_empty() && !secret::is_protected_secret(&sub.encrypted_key) {
                 sub.encrypted_key = secret::protect_secret(sub.encrypted_key.trim())
@@ -87,17 +102,7 @@ impl ConfigStore {
             }
         }
 
-        let mut base_obj = self
-            .read_raw_json_object()
-            .unwrap_or_else(|_| Map::new());
-        let serialized = serde_json::to_value(&normalized)
-            .map_err(|e| ConfigError::Io(e.to_string()))?;
-        if let Value::Object(fields) = serialized {
-            for (k, v) in fields {
-                base_obj.insert(k, v);
-            }
-        }
-        self.write_json_object_atomically(&base_obj)
+        Ok(())
     }
 
     /// 语言页签专用局部 Patch：重读最新磁盘 JSON，仅修改 `recognitionLanguage`、`enableTranslation`、`targetLanguage`，
@@ -108,17 +113,6 @@ impl ConfigStore {
                 "开启翻译时目标语言不能为自动检测。".into(),
             ));
         }
-        let mut obj = match self.read_raw_json_object() {
-            Ok(existing) => existing,
-            Err(_) => {
-                let Value::Object(default_map) = serde_json::to_value(StandaloneConfig::default())
-                    .map_err(|e| ConfigError::Io(e.to_string()))?
-                else {
-                    unreachable!()
-                };
-                default_map
-            }
-        };
         let src = if draft.recognition_language.trim().is_empty() {
             "auto".to_string()
         } else {
@@ -129,63 +123,61 @@ impl ConfigStore {
         } else {
             draft.target_language.trim().to_string()
         };
-        obj.insert("recognitionLanguage".into(), Value::String(src));
-        obj.insert("enableTranslation".into(), Value::Bool(draft.enable_translation));
-        obj.insert("targetLanguage".into(), Value::String(tgt));
-
-        self.write_json_object_atomically(&obj)?;
-        self.load_readonly()
+        self.update(|cfg| {
+            cfg.recognition_language = src;
+            cfg.enable_translation = draft.enable_translation;
+            cfg.target_language = tgt;
+            Ok(())
+        })
     }
 
-    fn read_raw_json_object(&self) -> Result<Map<String, Value>, ConfigError> {
-        if !self.config_path.exists() {
-            return Ok(Map::new());
+    fn read_effective(&self) -> Result<(Map<String, Value>, Option<Vec<u8>>), ConfigError> {
+        match read_valid_object(&self.config_path) {
+            Ok(Some((map, bytes))) => Ok((map, Some(bytes))),
+            primary => match read_valid_object(&self.backup_path) {
+                Ok(Some((map, _))) => Ok((map, None)),
+                Ok(None) => primary.map(|_| (Map::new(), None)),
+                Err(err) => Err(primary.err().unwrap_or(err)),
+            },
         }
-        let meta = fs::metadata(&self.config_path).map_err(|e| ConfigError::Io(e.to_string()))?;
-        if meta.len() > MAX_CONFIG_FILE_BYTES {
-            return Err(ConfigError::CorruptedOrTooLarge);
-        }
-        let bytes = fs::read(&self.config_path).map_err(|e| ConfigError::Io(e.to_string()))?;
-        let val: Value = serde_json::from_slice(&bytes).map_err(|_| ConfigError::CorruptedOrTooLarge)?;
-        match val {
-            Value::Object(map) => Ok(map),
-            _ => Err(ConfigError::CorruptedOrTooLarge),
-        }
-    }
-
-    fn write_json_object_atomically(&self, obj: &Map<String, Value>) -> Result<(), ConfigError> {
-        if let Some(parent) = self.config_path.parent() {
-            fs::create_dir_all(parent).map_err(|e| ConfigError::Io(e.to_string()))?;
-        }
-        let formatted = serde_json::to_vec_pretty(&Value::Object(obj.clone()))
-            .map_err(|e| ConfigError::Io(e.to_string()))?;
-
-        let tmp_path = self.config_path.with_extension(format!(
-            "json.{}.tmp",
-            uuid::Uuid::new_v4().simple()
-        ));
-        fs::write(&tmp_path, &formatted).map_err(|e| ConfigError::Io(e.to_string()))?;
-
-        if self.config_path.exists() {
-            let _ = fs::copy(&self.config_path, &self.backup_path);
-        }
-        if let Err(rename_err) = fs::rename(&tmp_path, &self.config_path) {
-            // Windows 上若目标存在且 rename 受限，回退 copy + remove
-            fs::copy(&tmp_path, &self.config_path)
-                .map_err(|_| ConfigError::Io(rename_err.to_string()))?;
-            let _ = fs::remove_file(&tmp_path);
-        }
-        Ok(())
     }
 }
 
-fn read_typed_config(path: &Path) -> Result<StandaloneConfig, ConfigError> {
-    let meta = fs::metadata(path).map_err(|e| ConfigError::Io(e.to_string()))?;
-    if meta.len() > MAX_CONFIG_FILE_BYTES {
+fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), ConfigError> {
+    let tmp = path.with_extension(format!("{}.tmp", uuid::Uuid::new_v4().simple()));
+    let result = (|| -> io::Result<()> {
+        let mut file = fs::File::create_new(&tmp)?;
+        file.write_all(bytes)?;
+        file.sync_data()?;
+        drop(file);
+        fs::rename(&tmp, path)
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(tmp);
+    }
+    result.map_err(io_error)
+}
+
+fn io_error(e: io::Error) -> ConfigError { ConfigError::Io(e.to_string()) }
+
+fn decode_config(map: Map<String, Value>) -> Result<StandaloneConfig, ConfigError> {
+    serde_json::from_value(Value::Object(map)).map_err(|_| ConfigError::CorruptedOrTooLarge)
+}
+
+fn read_valid_object(path: &Path) -> Result<Option<(Map<String, Value>, Vec<u8>)>, ConfigError> {
+    let file = match fs::File::open(path) {
+        Ok(file) => file,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(io_error(e)),
+    };
+    let mut bytes = Vec::new();
+    file.take(MAX_CONFIG_FILE_BYTES + 1).read_to_end(&mut bytes).map_err(io_error)?;
+    if bytes.len() as u64 > MAX_CONFIG_FILE_BYTES {
         return Err(ConfigError::CorruptedOrTooLarge);
     }
-    let bytes = fs::read(path).map_err(|e| ConfigError::Io(e.to_string()))?;
-    serde_json::from_slice::<StandaloneConfig>(&bytes).map_err(|_| ConfigError::CorruptedOrTooLarge)
+    let map = serde_json::from_slice::<Map<String, Value>>(&bytes).map_err(|_| ConfigError::CorruptedOrTooLarge)?;
+    decode_config(map.clone())?;
+    Ok(Some((map, bytes)))
 }
 
 /// 守护进程常驻内存配置缓存（按文件 `modified` 时间戳与字节长度自动失效热重载，消除按 F8 时的重复磁盘读取）。
@@ -279,5 +271,24 @@ mod tests {
         assert_eq!(reloaded.subscriptions.len(), 1);
         assert_eq!(reloaded.subscriptions[0].service_region, "chinanorth3");
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn language_update_recovers_valid_backup_without_replacing_it_with_corruption() {
+        let dir = std::env::temp_dir().join(format!("voice_ime_recovery_{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        let store = ConfigStore::new(dir.join("config.json"));
+        let backup = br#"{"microphoneDeviceId":"saved microphone","futureFlag":17}"#;
+        fs::write(&store.backup_path, backup).unwrap();
+        fs::write(store.path(), br#"{"microphoneDeviceId":17}"#).unwrap();
+        let draft = LanguageDraft { recognition_language: "zh-CN".into(), enable_translation: false, target_language: "en-US".into() };
+        assert_eq!(store.patch_language_fields(&draft).unwrap().microphone_device_id, "saved microphone");
+        assert_eq!(fs::read(&store.backup_path).unwrap(), backup);
+        assert_eq!(serde_json::from_slice::<Value>(&fs::read(store.path()).unwrap()).unwrap()["futureFlag"], 17);
+        fs::write(&store.backup_path, b"bad backup").unwrap();
+        fs::write(store.path(), b"bad primary").unwrap();
+        assert!(store.patch_language_fields(&draft).is_err());
+        assert_eq!(fs::read(store.path()).unwrap(), b"bad primary");
+        let _ = fs::remove_dir_all(dir);
     }
 }

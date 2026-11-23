@@ -315,13 +315,13 @@ impl UsageReportService {
                 .map_err(map_sql_err)?;
             let rows = stmt
                 .query_map(params![&start_str, &end_str], |r| {
-                    Ok((r.get::<_, usize>(0)?, r.get::<_, i64>(1)?))
+                    Ok((r.get::<_, u8>(0)?, r.get::<_, i64>(1)?))
                 })
                 .map_err(map_sql_err)?;
             for row in rows {
                 let (idx, cnt) = row.map_err(map_sql_err)?;
-                if idx < sentence_lengths.len() {
-                    sentence_lengths[idx].count = cnt;
+                if let Some(bucket) = sentence_lengths.get_mut(usize::from(idx)) {
+                    bucket.count = cnt;
                 }
             }
         }
@@ -769,6 +769,7 @@ mod tests {
 
     #[tokio::test]
     async fn writer_and_readonly_report_roundtrip_with_privacy_gate() {
+        eprintln!("SQLite runtime: {}", rusqlite::version());
         let dir = std::env::temp_dir().join(format!("voice_ime_db_{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         let db_path = dir.join("usage.db");
@@ -802,6 +803,7 @@ mod tests {
         assert_eq!(report.session_count, 2);
         assert_eq!(report.utterances, 3);
         assert_eq!(report.characters, 7 + 8 + 4);
+        assert_eq!(report.sentence_lengths[1].count, 3);
 
         let p1 = report_svc
             .read_session_text(&sid1.hyphenated().to_string(), 0, 100)

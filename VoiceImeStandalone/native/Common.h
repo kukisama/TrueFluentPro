@@ -115,7 +115,6 @@ struct PipeRun {
     uint64_t generation;
     HANDLE cancel = CreateEventW(nullptr, TRUE, FALSE, nullptr);
     HANDLE commandReady = CreateEventW(nullptr, TRUE, FALSE, nullptr);
-    HANDLE flushed = CreateEventW(nullptr, TRUE, FALSE, nullptr);
     const DWORD threadId = GetCurrentThreadId();
     struct Command { char kind; uint64_t generation; };
     std::mutex commandMutex;
@@ -124,15 +123,12 @@ struct PipeRun {
     HWND target;
     std::atomic<unsigned> pending{0};
     std::atomic<bool> done{false};
-    std::atomic<bool> workerStarted{false};
     std::atomic<uint64_t> audioEpoch{0};
-    std::atomic<uint64_t> deselection{0};
     std::wstring pipeName;
     PipeRun(uint64_t g, HWND w, std::wstring name) : generation(g), target(w), pipeName(std::move(name)) {}
     ~PipeRun() {
         if (cancel) CloseHandle(cancel);
         if (commandReady) CloseHandle(commandReady);
-        if (flushed) CloseHandle(flushed);
     }
 };
 

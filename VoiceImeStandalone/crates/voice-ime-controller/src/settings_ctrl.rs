@@ -5,9 +5,7 @@ use voice_ime_config::legacy_import::{default_truefluentpro_config_path, import_
 use voice_ime_config::{
     parse_speech_endpoint, ConfigStore, LegacyImportSummary, SpeechSubscription,
 };
-use voice_ime_speech::{
-    list_microphone_devices, AudioDeviceItem, StsTokenCache, SubscriptionValidationOutcome,
-};
+use voice_ime_speech::{StsTokenCache, SubscriptionValidationOutcome};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -37,7 +35,6 @@ pub struct EndpointPreviewDto {
 pub struct SettingsPageSnapshot {
     pub active_subscription_id: String,
     pub subscriptions: Vec<SubscriptionDto>,
-    pub microphones: Vec<AudioDeviceItem>,
     pub microphone_device_id: String,
     pub enable_prewarm: bool,
     pub end_silence_timeout_seconds: f64,
@@ -98,21 +95,10 @@ pub fn preview_speech_endpoint(raw: &str) -> EndpointPreviewDto {
 
 pub fn load_settings_snapshot(store: &ConfigStore) -> Result<SettingsPageSnapshot, String> {
     let cfg = store.load_readonly().map_err(|e| e.to_string())?;
-    let mut microphones = list_microphone_devices();
-    let saved_mic = cfg.microphone_device_id.trim();
-    if !saved_mic.is_empty() && !microphones.iter().any(|m| m.device_id == saved_mic) {
-        // 严格对齐现有体验：暂时拔出的已保存麦克风不因刷新被静默清空
-        microphones.push(AudioDeviceItem {
-            device_id: saved_mic.to_string(),
-            display_name: format!("{saved_mic}（当前未连接）"),
-        });
-    }
-
     let subscriptions = cfg.subscriptions.iter().map(to_subscription_dto).collect();
     Ok(SettingsPageSnapshot {
         active_subscription_id: cfg.active_subscription_id.clone(),
         subscriptions,
-        microphones,
         microphone_device_id: cfg.microphone_device_id,
         enable_prewarm: cfg.enable_prewarm,
         end_silence_timeout_seconds: cfg.end_silence_timeout_seconds,
@@ -130,13 +116,18 @@ pub fn save_general_settings(
     {
         return Err("句尾静音时长必须在 0.2 到 3.0 秒之间。".into());
     }
-    let mut cfg = store.load_readonly().map_err(|e| e.to_string())?;
-    cfg.active_subscription_id = update.active_subscription_id.trim().to_string();
-    cfg.microphone_device_id = update.microphone_device_id.trim().to_string();
-    cfg.enable_prewarm = update.enable_prewarm;
-    cfg.end_silence_timeout_seconds = (update.end_silence_timeout_seconds * 10.0).round() / 10.0;
-    cfg.filter_modal_particles = update.filter_modal_particles;
-    store.save(&cfg).map_err(|e| e.to_string())?;
+    store.update(|cfg| {
+        let id = update.active_subscription_id.trim();
+        if !id.is_empty() && !cfg.subscriptions.iter().any(|sub| sub.id == id && sub.is_enabled) {
+            return Err("该语音终结点已删除或停用，请刷新列表。".into());
+        }
+        cfg.active_subscription_id = id.to_string();
+        cfg.microphone_device_id = update.microphone_device_id.trim().to_string();
+        cfg.enable_prewarm = update.enable_prewarm;
+        cfg.end_silence_timeout_seconds = (update.end_silence_timeout_seconds * 10.0).round() / 10.0;
+        cfg.filter_modal_particles = update.filter_modal_particles;
+        Ok(())
+    }).map_err(|e| e.to_string())?;
     load_settings_snapshot(store)
 }
 
@@ -149,8 +140,7 @@ pub fn upsert_subscription(
         return Err("请填写终结点名称（例如：东南亚国际版 / 华北三 21V）。".into());
     }
     let resolved = parse_speech_endpoint(&input.endpoint).map_err(|e| e.to_string())?;
-    let mut cfg = store.load_readonly().map_err(|e| e.to_string())?;
-
+    store.update(|cfg| {
     if let Some(id) = input.id.as_deref().filter(|s| !s.trim().is_empty()) {
         let existing = cfg
             .subscriptions
@@ -176,7 +166,8 @@ pub fn upsert_subscription(
         cfg.subscriptions.push(created);
     }
 
-    store.save(&cfg).map_err(|e| e.to_string())?;
+    Ok(())
+    }).map_err(|e| e.to_string())?;
     load_settings_snapshot(store)
 }
 
@@ -184,17 +175,14 @@ pub fn delete_subscription(
     store: &ConfigStore,
     subscription_id: &str,
 ) -> Result<SettingsPageSnapshot, String> {
-    let mut cfg = store.load_readonly().map_err(|e| e.to_string())?;
-    cfg.subscriptions.retain(|s| s.id != subscription_id);
-    if cfg.active_subscription_id == subscription_id {
-        cfg.active_subscription_id = cfg
-            .subscriptions
-            .iter()
-            .find(|s| s.is_enabled)
-            .map(|s| s.id.clone())
-            .unwrap_or_default();
-    }
-    store.save(&cfg).map_err(|e| e.to_string())?;
+    store.update(|cfg| {
+        cfg.subscriptions.retain(|s| s.id != subscription_id);
+        if cfg.active_subscription_id == subscription_id {
+            cfg.active_subscription_id = cfg.subscriptions.iter().find(|s| s.is_enabled)
+                .map(|s| s.id.clone()).unwrap_or_default();
+        }
+        Ok(())
+    }).map_err(|e| e.to_string())?;
     load_settings_snapshot(store)
 }
 
@@ -243,11 +231,13 @@ pub fn import_legacy_subscriptions(
 ) -> Result<(LegacyImportSummary, SettingsPageSnapshot), String> {
     let path = default_truefluentpro_config_path()
         .ok_or_else(|| "未检测到本机译见 Pro 主程序配置文件。".to_string())?;
-    let mut cfg = store.load_readonly().map_err(|e| e.to_string())?;
-    let summary = import_from_file(&path, &mut cfg)?;
-    store.save(&cfg).map_err(|e| e.to_string())?;
+    let mut summary = None;
+    store.update(|cfg| {
+        summary = Some(import_from_file(&path, cfg)?);
+        Ok(())
+    }).map_err(|e| e.to_string())?;
     let snap = load_settings_snapshot(store)?;
-    Ok((summary, snap))
+    Ok((summary.expect("successful configuration update returns an import summary"), snap))
 }
 
 fn to_subscription_dto(sub: &SpeechSubscription) -> SubscriptionDto {

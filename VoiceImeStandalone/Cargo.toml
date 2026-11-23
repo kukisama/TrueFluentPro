@@ -34,13 +34,13 @@ anyhow      = "1.0.104"
 
 # 异步与网络
 tokio             = { version = "1.54.1", features = ["rt-multi-thread", "macros", "sync", "time", "fs", "io-util", "net", "process"] }
-futures           = "0.3.34"
-reqwest           = { version = "0.12.28", default-features = false, features = ["json", "rustls-tls"] }
+futures           = { version = "0.3.34", default-features = false, features = ["std"] }
+reqwest           = { version = "0.12.28", default-features = false, features = ["rustls-tls"] }
 tokio-tungstenite = { version = "0.30.0", default-features = false, features = ["connect", "handshake", "rustls-tls-webpki-roots", "rustls-tls-native-roots"] }
 url               = "2.5.8"
 
 # 存储、编码与工具
-rusqlite             = { version = "0.32.1", features = ["bundled"] }
+rusqlite             = { version = "0.43.0", default-features = false, features = ["bundled", "cache"] }
 chrono               = { version = "0.4.45", features = ["serde"] }
 dirs                 = "5.0.1"
 uuid                 = { version = "1.29.2", features = ["v4", "serde"] }
@@ -51,7 +51,7 @@ unicode-segmentation = "1.13.3"
 
 # 日志诊断
 tracing            = "0.1.41"
-tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3.19", default-features = false, features = ["fmt", "tracing-log"] }
 
 # Windows 专属底层系统与音频依赖
 windows-sys = { version = "0.61.2", features = [
@@ -71,3 +71,14 @@ windows-sys = { version = "0.61.2", features = [
     "Win32_UI_WindowsAndMessaging",
 ] }
 cpal = "0.15.3"
+
+[profile.release]
+lto = "thin"
+opt-level = "s"
+
+# Keep the audio callback and PCM resampler optimized for throughput.
+[profile.release.package.cpal]
+opt-level = 3
+
+[profile.release.package.voice-ime-speech]
+opt-level = 3

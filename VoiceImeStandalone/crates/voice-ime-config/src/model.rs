@@ -197,18 +197,4 @@ impl StandaloneConfig {
         })
     }
 
-    /// 生成可用于比较预热会话是否仍然有效的脱敏指纹（含语言、翻译开关、终结点、静音时长）。
-    pub fn prewarm_fingerprint(&self) -> Option<String> {
-        let snap = self.freeze_runtime_session().ok()?;
-        Some(format!(
-            "{}|{}|{}|{}|{}|{}|{}",
-            snap.subscription_id,
-            snap.endpoint.sts_issue_token_url,
-            snap.microphone_device_id,
-            snap.recognition_language,
-            snap.enable_translation,
-            snap.target_language,
-            snap.end_silence_ms
-        ))
-    }
 }

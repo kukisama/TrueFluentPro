@@ -50,48 +50,55 @@ impl AudioCaptureProvider for SystemAudioProvider {
     }
 }
 
-/// 将任意采样率与声道数的 `f32` 交错音频采样重采样并量化为 16kHz 单声道 PCM16LE 字节流。
-pub fn downmix_and_resample_to_pcm16le(
-    interleaved: &[f32],
+/// 保留上一帧与分数相位，使不同 WASAPI 回调分块得到同一条 PCM 流。
+#[cfg(any(windows, test))]
+struct PcmResampler {
     channels: usize,
     src_rate: u32,
-    dst_rate: u32,
-) -> Vec<u8> {
-    if channels == 0 || interleaved.is_empty() || src_rate == 0 || dst_rate == 0 {
-        return Vec::new();
-    }
-    let frames = interleaved.len() / channels;
-    if frames == 0 {
-        return Vec::new();
-    }
-    let mut mono = Vec::with_capacity(frames);
-    for frame in interleaved.chunks_exact(channels) {
-        let sum: f32 = frame.iter().copied().sum();
-        mono.push(sum / channels as f32);
+    previous: Option<f32>,
+    remaining: u32,
+}
+
+#[cfg(any(windows, test))]
+impl PcmResampler {
+    fn new(channels: usize, src_rate: u32) -> Self {
+        Self { channels, src_rate, previous: None, remaining: src_rate }
     }
 
-    if src_rate == dst_rate {
-        let mut out = Vec::with_capacity(mono.len() * 2);
-        for s in mono {
-            let q = (s.clamp(-1.0, 1.0) * 32767.0) as i16;
-            out.extend_from_slice(&q.to_le_bytes());
+    fn push<T: Copy>(&mut self, interleaved: &[T], normalize: impl Fn(T) -> f32) -> Vec<u8> {
+        if self.channels == 0 || self.src_rate == 0 { return Vec::new(); }
+        let frames = interleaved.len() / self.channels;
+        let mut out = Vec::with_capacity((frames * TARGET_SAMPLE_RATE as usize / self.src_rate as usize + 2) * 2);
+        let mut sample = |x: f32| out.extend_from_slice(&((x.clamp(-1.0, 1.0) * 32767.0) as i16).to_le_bytes());
+        for frame in interleaved.chunks_exact(self.channels) {
+            let mono = frame.iter().copied().map(&normalize).sum::<f32>() / self.channels as f32;
+            let previous = self.previous.replace(mono);
+            if self.src_rate == TARGET_SAMPLE_RATE || previous.is_none() {
+                sample(mono);
+                continue;
+            }
+            let previous = previous.unwrap();
+            while self.remaining <= TARGET_SAMPLE_RATE {
+                let alpha = self.remaining as f32 / TARGET_SAMPLE_RATE as f32;
+                sample(previous + (mono - previous) * alpha);
+                self.remaining += self.src_rate;
+            }
+            self.remaining -= TARGET_SAMPLE_RATE;
         }
-        return out;
+        out
     }
+}
 
-    let out_frames = ((frames as u64 * dst_rate as u64) / src_rate as u64).max(1) as usize;
-    let ratio = src_rate as f64 / dst_rate as f64;
-    let mut out = Vec::with_capacity(out_frames * 2);
-    for i in 0..out_frames {
-        let src_pos = i as f64 * ratio;
-        let idx = (src_pos.floor() as usize).min(frames - 1);
-        let next = (idx + 1).min(frames - 1);
-        let frac = (src_pos - idx as f64) as f32;
-        let sample = mono[idx] * (1.0 - frac) + mono[next] * frac;
-        let q = (sample.clamp(-1.0, 1.0) * 32767.0) as i16;
-        out.extend_from_slice(&q.to_le_bytes());
+#[cfg(windows)]
+fn pcm_callback<T: Copy>(mut converter: PcmResampler, normalize: impl Fn(T) -> f32,
+    tx: mpsc::Sender<Vec<u8>>, stop: std::sync::mpsc::Sender<()>,
+) -> impl FnMut(&[T], &cpal::InputCallbackInfo) {
+    move |data, _| {
+        let bytes = converter.push(data, &normalize);
+        if !bytes.is_empty() && tx.try_send(bytes).is_err() {
+            let _ = stop.send(());
+        }
     }
-    out
 }
 
 #[cfg(windows)]
@@ -132,6 +139,7 @@ fn platform_start_capture(
     let (stop_tx, stop_rx) = std_mpsc::channel::<()>();
     let (init_tx, init_rx) = std_mpsc::channel::<Result<(), String>>();
     let requested_name = device_id.trim().to_string();
+    let error_stop = stop_tx.clone();
 
     // cpal::Stream 非 Send，固定在独立采集线程生命周期内持有并安全释放
     let join = std::thread::Builder::new()
@@ -171,48 +179,29 @@ fn platform_start_capture(
             let config: StreamConfig = supported.into();
             let channels = config.channels as usize;
             let sample_rate = config.sample_rate.0;
-            let tx = pcm_tx;
-
-            let err_fn = |err| {
+            let converter = PcmResampler::new(channels, sample_rate);
+            let pcm_stop = error_stop.clone();
+            let err_fn = move |err| {
                 tracing::warn!(?err, "麦克风音频流采集警告");
+                let _ = error_stop.send(());
             };
 
             let stream_res = match sample_format {
                 SampleFormat::F32 => device.build_input_stream(
                     &config,
-                    move |data: &[f32], _| {
-                        let bytes = downmix_and_resample_to_pcm16le(data, channels, sample_rate, TARGET_SAMPLE_RATE);
-                        if !bytes.is_empty() {
-                            let _ = tx.try_send(bytes);
-                        }
-                    },
+                    pcm_callback(converter, |x: f32| x, pcm_tx, pcm_stop),
                     err_fn,
                     None,
                 ),
                 SampleFormat::I16 => device.build_input_stream(
                     &config,
-                    move |data: &[i16], _| {
-                        let floats: Vec<f32> = data.iter().map(|&v| v as f32 / 32768.0).collect();
-                        let bytes = downmix_and_resample_to_pcm16le(&floats, channels, sample_rate, TARGET_SAMPLE_RATE);
-                        if !bytes.is_empty() {
-                            let _ = tx.try_send(bytes);
-                        }
-                    },
+                    pcm_callback(converter, |x: i16| x as f32 / 32768.0, pcm_tx, pcm_stop),
                     err_fn,
                     None,
                 ),
                 SampleFormat::U16 => device.build_input_stream(
                     &config,
-                    move |data: &[u16], _| {
-                        let floats: Vec<f32> = data
-                            .iter()
-                            .map(|&v| (v as f32 - 32768.0) / 32768.0)
-                            .collect();
-                        let bytes = downmix_and_resample_to_pcm16le(&floats, channels, sample_rate, TARGET_SAMPLE_RATE);
-                        if !bytes.is_empty() {
-                            let _ = tx.try_send(bytes);
-                        }
-                    },
+                    pcm_callback(converter, |x: u16| (x as f32 - 32768.0) / 32768.0, pcm_tx, pcm_stop),
                     err_fn,
                     None,
                 ),
@@ -291,4 +280,19 @@ fn platform_start_capture(
     _device_id: &str,
 ) -> Result<(mpsc::Receiver<Vec<u8>>, Box<dyn ActiveCaptureStop>), String> {
     Err("当前非 Windows 环境未启用物理 WASAPI 麦克风。".into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn irregular_wasapi_buffers_preserve_samples_and_duration() {
+        let signal: Vec<f32> = (0..88200).map(|i| (i as f32 / 30.0).sin()).collect();
+        let reference = PcmResampler::new(2, 44100).push(&signal, |x| x);
+        let mut resampler = PcmResampler::new(2, 44100);
+        let parts: Vec<_> = signal.chunks(514).flat_map(|p| resampler.push(p, |x| x)).collect();
+        assert_eq!(reference.len(), 32000);
+        assert_eq!(reference, parts);
+    }
 }

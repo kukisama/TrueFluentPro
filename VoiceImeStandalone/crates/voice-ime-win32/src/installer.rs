@@ -23,6 +23,9 @@ use crate::paths::{
     maintenance_lock_path, standalone_local_data_dir,
 };
 
+#[cfg(all(windows, feature = "private-sqlite"))]
+const SQLITE_DLL: &str = "TrueFluentVoiceImeSqlite.dll";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum RegistrationStateKind {
@@ -84,6 +87,7 @@ struct HelperStatusJson {
     maintenance: bool,
 }
 
+#[derive(Clone)]
 pub struct VoiceImeInstaller {
     app_base_dir: PathBuf,
 }
@@ -434,6 +438,8 @@ impl VoiceImeInstaller {
         for name in [StandaloneIdentityContract::HOST_EXE_NAME, StandaloneIdentityContract::TOOLS_EXE_NAME] {
             files.push((self.app_base_dir.join(name), PathBuf::from(name)));
         }
+        #[cfg(all(windows, feature = "private-sqlite"))]
+        files.push((self.app_base_dir.join(SQLITE_DLL), PathBuf::from(SQLITE_DLL)));
         for arch in archs.iter().copied() {
             let src = self.component_dir(arch);
             for name in [StandaloneIdentityContract::DLL_FILE_NAME, StandaloneIdentityContract::HELPER_FILE_NAME, "libIME2.dll"] {
@@ -509,6 +515,13 @@ impl VoiceImeInstaller {
             let host_exe = self.app_base_dir.join(StandaloneIdentityContract::HOST_EXE_NAME);
             if !host_exe.is_file() || guard_local_path(&host_exe).is_err() {
                 return fail_op("未找到 TrueFluentVoiceImeHost.exe 维护宿主。".into());
+            }
+            #[cfg(feature = "private-sqlite")]
+            {
+                let sqlite = self.app_base_dir.join(SQLITE_DLL);
+                if !sqlite.is_file() || guard_local_path(&sqlite).is_err() {
+                    return fail_op("缺少随输入法交付的 SQLite DLL，请使用完整的 Release 目录。".into());
+                }
             }
             let op_arg = if install { "install" } else { "uninstall" };
             let params = format!(
@@ -650,6 +663,39 @@ fn sha256_file(path: &Path) -> Result<String, String> {
     let mut h = Sha256::new();
     h.update(&bytes);
     Ok(hex::encode(h.finalize()))
+}
+
+#[cfg(all(test, windows, feature = "private-sqlite"))]
+#[test]
+fn private_sqlite_is_required_and_part_of_install_identity() {
+    let temp = std::env::temp_dir().join(format!("voice-ime-stage-{}", uuid::Uuid::new_v4()));
+    let source = temp.join("source");
+    let root = temp.join("installed");
+    let installer = VoiceImeInstaller::new(&source);
+    for arch in required_architectures().unwrap() {
+        let dir = installer.component_dir(arch);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join(StandaloneIdentityContract::DLL_FILE_NAME), b"test TSF").unwrap();
+        fs::write(dir.join(StandaloneIdentityContract::HELPER_FILE_NAME), b"test helper").unwrap();
+    }
+    for name in [StandaloneIdentityContract::HOST_EXE_NAME, StandaloneIdentityContract::TOOLS_EXE_NAME] {
+        fs::write(source.join(name), b"test app").unwrap();
+    }
+    assert!(installer.stage_package(&root, "test-sid").unwrap_err().contains(SQLITE_DLL));
+    assert!(!root.exists());
+
+    let sqlite = source.join(SQLITE_DLL);
+    fs::write(&sqlite, b"first DLL").unwrap();
+    let first = installer.stage_package(&root, "test-sid").unwrap();
+    let deployed = Path::new(&first.host_path).with_file_name(SQLITE_DLL);
+    assert_eq!(fs::read(&deployed).unwrap(), b"first DLL");
+
+    fs::write(sqlite, b"second DLL").unwrap();
+    let second = installer.stage_package(&root, "test-sid").unwrap();
+    assert_ne!(first.package_hash, second.package_hash);
+    assert_eq!(fs::read(Path::new(&second.host_path).with_file_name(SQLITE_DLL)).unwrap(), b"second DLL");
+    assert_eq!(fs::read(deployed).unwrap(), b"first DLL");
+    fs::remove_dir_all(temp).unwrap();
 }
 
 fn run_helper(helper: &Path, args: &[&str]) -> Result<(i32, String), String> {

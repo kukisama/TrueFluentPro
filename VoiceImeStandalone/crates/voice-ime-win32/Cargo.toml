@@ -5,6 +5,9 @@ edition.workspace = true
 license.workspace = true
 description = "Windows 原生系统集成层：命名管道服务端、前台/SID 校验、原生悬浮条 STA 桥接、文件锁与安装事务引擎"
 
+[features]
+private-sqlite = []
+
 [dependencies]
 voice-ime-protocol = { workspace = true }
 serde              = { workspace = true }

@@ -4,7 +4,8 @@ param(
     [ValidateSet('Debug', 'Release')][string]$Configuration = 'Release',
     [string[]]$Architectures = @('x64', 'x86', 'arm64x'),
     [ValidateSet('Static', 'DynamicLibIme')][string]$LinkMode = 'Static',
-    [string]$Version = '1.0.0'
+    [string]$Version = '1.0.0',
+    [string]$SqliteSource
 )
 $ErrorActionPreference = 'Stop'
 if (-not [IO.Path]::IsPathRooted($OutputDirectory)) { throw 'OutputDirectory 必须是绝对路径。' }
@@ -16,6 +17,19 @@ $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Componen
 if (-not $vs) { throw '需要已安装的 Visual Studio C++ x64/x86 工具链。' }
 $vcvars = Join-Path $vs 'VC\Auxiliary\Build\vcvarsall.bat'
 
+if ($SqliteSource) {
+    $sqlite = Join-Path $OutputDirectory 'sqlite-x64'
+    New-Item -ItemType Directory -Force -Path $sqlite | Out-Null
+    $batch = Join-Path $sqlite 'build.cmd'
+    @(
+        '@echo off', '@chcp 65001 >nul',
+        "call `"$vcvars`" x64 >nul", 'if errorlevel 1 exit /b %errorlevel%',
+        "cl /nologo /LD /MT /O1 /GL /DNDEBUG /D_CRT_SECURE_NO_WARNINGS /DSQLITE_API=__declspec(dllexport) /DSQLITE_THREADSAFE=1 /DSQLITE_DEFAULT_FOREIGN_KEYS=1 /DSQLITE_ENABLE_API_ARMOR /DSQLITE_OMIT_LOAD_EXTENSION /Fo:`"$sqlite\sqlite3.obj`" /Fe:`"$sqlite\TrueFluentVoiceImeSqlite.dll`" `"$SqliteSource`" /link /LTCG /INCREMENTAL:NO /DEPENDENTLOADFLAG:0x800 /IMPLIB:`"$sqlite\sqlite3.lib`""
+    ) | Set-Content -LiteralPath $batch -Encoding utf8
+    & $env:ComSpec /d /s /c "`"$batch`""
+    if ($LASTEXITCODE -ne 0) { throw "私有 SQLite DLL 编译失败 ($LASTEXITCODE)" }
+}
+
 if ($Version -notmatch '^(\d+)\.(\d+)\.(\d+)$') { throw "版本号格式无效: $Version" }
 $versionCsv = "$($Matches[1]),$($Matches[2]),$($Matches[3]),0"
 $rcVersionFlags = "/DVOICE_IME_VERSION_CSV=$versionCsv /DVOICE_IME_VERSION_STR=\`"$Version\`""
@@ -23,10 +37,10 @@ $rcVersionFlags = "/DVOICE_IME_VERSION_CSV=$versionCsv /DVOICE_IME_VERSION_STR=\
 $runtime = if ($Configuration -eq 'Debug') { '/MTd /Od /Zi' } else { '/MT /O2 /DNDEBUG' }
 $commonFlags = "/nologo /std:c++17 /EHsc /W4 /utf-8 /DUNICODE /D_UNICODE /DVOICE_IME_RUNTIME_ONLY /D_WIN32_WINNT=0x0602 $runtime"
 
-# 1. 生成高清多尺寸品牌图标 Brand.ico
-$brandIcon = Join-Path $PSScriptRoot 'Brand.ico'
-if (-not (Test-Path -LiteralPath $brandIcon)) {
-    $brandObj = Join-Path $OutputDirectory "brand-obj-$Configuration"
+# 1. 只为 TSF DLL 生成 16–64px 图标，写入构建目录，不修改源码树。
+$brandObj = Join-Path $OutputDirectory "brand-obj-$Configuration"
+$brandIcon = Join-Path $brandObj 'ImeBrand.ico'
+& {
     New-Item -ItemType Directory -Force -Path $brandObj | Out-Null
     $maker = Join-Path $brandObj 'BrandIconGenerator.exe'
     $batch = Join-Path $brandObj 'make-icon.cmd'
@@ -39,7 +53,7 @@ if (-not (Test-Path -LiteralPath $brandIcon)) {
     )
     Set-Content -LiteralPath $batch -Value $lines -Encoding utf8
     & $env:ComSpec /d /s /c "`"$batch`""
-    if ($LASTEXITCODE -ne 0) { throw "Brand.ico 生成失败 ($LASTEXITCODE)" }
+    if ($LASTEXITCODE -ne 0) { throw "ImeBrand.ico 生成失败 ($LASTEXITCODE)" }
 }
 
 $libImeSrc = Join-Path $PSScriptRoot 'ThirdParty\libIME2\src'
@@ -70,15 +84,17 @@ foreach ($arch in $Architectures) {
         $objArm64Ec = Join-Path $obj 'arm64ec'
         New-Item -ItemType Directory -Force -Path $objArm64, $objArm64Ec | Out-Null
         $res = Join-Path $obj 'Brand.res'
+        $helperRes = Join-Path $obj 'Register.res'
         $dll = Join-Path $out 'VoiceImeStandalone.dll'
         $exe = Join-Path $out 'VoiceImeRegister.exe'
         $def = Join-Path $PSScriptRoot 'Exports.arm64x.def'
 
         $commands = @(
             "call `"$vcvars`" x64_arm64 >nul",
-            "rc /nologo /c65001 $rcVersionFlags /I `"$PSScriptRoot`" /fo `"$res`" `"$(Join-Path $PSScriptRoot 'Brand.rc')`"",
+            "rc /nologo /c65001 $rcVersionFlags /I `"$brandObj`" /fo `"$res`" `"$(Join-Path $PSScriptRoot 'Brand.rc')`"",
+            "rc /nologo /c65001 $rcVersionFlags /DVOICE_IME_REGISTER_HELPER /fo `"$helperRes`" `"$(Join-Path $PSScriptRoot 'Brand.rc')`"",
             "cl $commonFlags /DNOMINMAX /D_CRT_SECURE_NO_WARNINGS /c $($libImeSources -join ' ') $($coreSources -join ' ') /Fo:`"$objArm64\\`"",
-            "cl $commonFlags `"$(Join-Path $PSScriptRoot 'RegisterMain.cpp')`" `"$(Join-Path $PSScriptRoot 'Registration.cpp')`" /Fe:`"$exe`" /Fo:`"$objArm64\\`" /link `"$res`" $exeLink $sysLibs",
+            "cl $commonFlags `"$(Join-Path $PSScriptRoot 'RegisterMain.cpp')`" `"$(Join-Path $PSScriptRoot 'Registration.cpp')`" /Fe:`"$exe`" /Fo:`"$objArm64\\`" /link `"$helperRes`" $exeLink $sysLibs",
             "call `"$vcvars`" x64_arm64ec >nul",
             "cl /arm64EC $commonFlags /DNOMINMAX /D_CRT_SECURE_NO_WARNINGS /c $($libImeSources -join ' ') $($coreSources -join ' ') /Fo:`"$objArm64Ec\\`"",
             "link /nologo /DLL /MACHINE:ARM64X /DEF:`"$def`" /DEFARM64NATIVE:`"$def`" /OUT:`"$dll`" `"$res`" `"$objArm64\*.obj`" `"$objArm64Ec\*.obj`" $sysLibs"
@@ -99,6 +115,7 @@ foreach ($arch in $Architectures) {
     New-Item -ItemType Directory -Force -Path $libImeObj | Out-Null
     $libImeLib = Join-Path $libImeObj 'libIME2.lib'
     $res = Join-Path $obj 'Brand.res'
+    $helperRes = Join-Path $obj 'Register.res'
     $dll = Join-Path $out 'VoiceImeStandalone.dll'
     $exe = Join-Path $out 'VoiceImeRegister.exe'
     $testExe = Join-Path $out 'VoiceImeTests.exe'
@@ -116,11 +133,12 @@ foreach ($arch in $Architectures) {
 
     $commands = @(
         "call `"$vcvars`" $vcArch >nul",
-        "rc /nologo /c65001 $rcVersionFlags /I `"$PSScriptRoot`" /fo `"$res`" `"$(Join-Path $PSScriptRoot 'Brand.rc')`""
+        "rc /nologo /c65001 $rcVersionFlags /I `"$brandObj`" /fo `"$res`" `"$(Join-Path $PSScriptRoot 'Brand.rc')`"",
+        "rc /nologo /c65001 $rcVersionFlags /DVOICE_IME_REGISTER_HELPER /fo `"$helperRes`" `"$(Join-Path $PSScriptRoot 'Brand.rc')`""
     ) + $libBuildStep + @(
         "cl $commonFlags /LD $($coreSources -join ' ') /Fe:`"$dll`" /Fo:`"$obj\\`" /link `"$res`" /DEF:`"$(Join-Path $PSScriptRoot $defFile)`" /INCREMENTAL:NO /DYNAMICBASE /NXCOMPAT `"$libImeLib`" $sysLibs",
-        "cl $commonFlags `"$(Join-Path $PSScriptRoot 'RegisterMain.cpp')`" `"$(Join-Path $PSScriptRoot 'Registration.cpp')`" /Fe:`"$exe`" /Fo:`"$obj\\`" /link `"$res`" $exeLink $sysLibs",
-        "cl $commonFlags `"$(Join-Path $PSScriptRoot 'Tests.cpp')`" /Fe:`"$testExe`" /Fo:`"$obj\\`" /link $exeLink $sysLibs",
+        "cl $commonFlags `"$(Join-Path $PSScriptRoot 'RegisterMain.cpp')`" `"$(Join-Path $PSScriptRoot 'Registration.cpp')`" /Fe:`"$exe`" /Fo:`"$obj\\`" /link `"$helperRes`" $exeLink $sysLibs",
+        "cl $commonFlags /DVOICE_IME_PIPE_TEST `"$(Join-Path $PSScriptRoot 'Tests.cpp')`" `"$(Join-Path $PSScriptRoot 'PipeClient.cpp')`" /Fe:`"$testExe`" /Fo:`"$obj\\`" /link $exeLink $sysLibs",
         "cl $commonFlags `"$(Join-Path $PSScriptRoot 'RegistrationTests.cpp')`" /Fe:`"$regTestExe`" /Fo:`"$obj\\`" /link $exeLink $sysLibs"
     )
 

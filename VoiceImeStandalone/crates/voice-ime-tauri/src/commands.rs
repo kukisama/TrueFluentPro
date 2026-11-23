@@ -49,35 +49,45 @@ pub fn load_settings_page(state: State<'_, ManagedToolsState>) -> Result<Setting
 
 #[cfg(not(target_os = "linux"))]
 #[tauri::command]
+pub async fn list_input_devices() -> Result<Vec<voice_ime_speech::AudioDeviceItem>, String> {
+    tokio::task::spawn_blocking(voice_ime_speech::list_microphone_devices)
+        .await.map_err(|_| "麦克风设备枚举异常中断。".to_string())
+}
+
+#[cfg(not(target_os = "linux"))]
+#[tauri::command]
 pub fn preview_endpoint_url(endpoint: String) -> EndpointPreviewDto {
     preview_speech_endpoint(&endpoint)
 }
 
 #[cfg(not(target_os = "linux"))]
 #[tauri::command]
-pub fn save_general_settings(
+pub async fn save_general_settings(
     state: State<'_, ManagedToolsState>,
     update: GeneralSettingsUpdate,
 ) -> Result<SettingsPageSnapshot, String> {
-    ctrl_save_general(&state.ctx.config_store, update)
+    let store = state.ctx.config_store.clone();
+    run_blocking(move || ctrl_save_general(&store, update)).await
 }
 
 #[cfg(not(target_os = "linux"))]
 #[tauri::command]
-pub fn upsert_speech_subscription(
+pub async fn upsert_speech_subscription(
     state: State<'_, ManagedToolsState>,
     input: UpsertSubscriptionInput,
 ) -> Result<SettingsPageSnapshot, String> {
-    upsert_subscription(&state.ctx.config_store, input)
+    let store = state.ctx.config_store.clone();
+    run_blocking(move || upsert_subscription(&store, input)).await
 }
 
 #[cfg(not(target_os = "linux"))]
 #[tauri::command]
-pub fn delete_speech_subscription(
+pub async fn delete_speech_subscription(
     state: State<'_, ManagedToolsState>,
     subscription_id: String,
 ) -> Result<SettingsPageSnapshot, String> {
-    delete_subscription(&state.ctx.config_store, &subscription_id)
+    let store = state.ctx.config_store.clone();
+    run_blocking(move || delete_subscription(&store, &subscription_id)).await
 }
 
 #[cfg(not(target_os = "linux"))]
@@ -90,7 +100,7 @@ pub async fn test_speech_subscription(
 ) -> Result<SubscriptionValidationOutcome, String> {
     test_subscription(
         &state.ctx.config_store,
-        &state.ctx.sts_cache,
+        state.ctx.sts_cache(),
         saved_id,
         endpoint,
         subscription_key,
@@ -100,10 +110,11 @@ pub async fn test_speech_subscription(
 
 #[cfg(not(target_os = "linux"))]
 #[tauri::command]
-pub fn import_legacy_truefluent_subscriptions(
+pub async fn import_legacy_truefluent_subscriptions(
     state: State<'_, ManagedToolsState>,
 ) -> Result<LegacyImportResponse, String> {
-    let (summary, snapshot) = import_legacy_subscriptions(&state.ctx.config_store)?;
+    let store = state.ctx.config_store.clone();
+    let (summary, snapshot) = run_blocking(move || import_legacy_subscriptions(&store)).await?;
     Ok(LegacyImportResponse { summary, snapshot })
 }
 
@@ -115,11 +126,17 @@ pub fn load_language_page(state: State<'_, ManagedToolsState>) -> Result<Languag
 
 #[cfg(not(target_os = "linux"))]
 #[tauri::command]
-pub fn save_language_page(
+pub async fn save_language_page(
     state: State<'_, ManagedToolsState>,
     draft: LanguageDraft,
 ) -> Result<LanguagePageSnapshot, String> {
-    save_language_draft(&state.ctx.config_store, draft)
+    let store = state.ctx.config_store.clone();
+    run_blocking(move || save_language_draft(&store, draft)).await
+}
+
+#[cfg(not(target_os = "linux"))]
+async fn run_blocking<T: Send + 'static>(operation: impl FnOnce() -> Result<T, String> + Send + 'static) -> Result<T, String> {
+    tokio::task::spawn_blocking(operation).await.map_err(|_| "配置操作异常中断。".to_string())?
 }
 
 #[cfg(not(target_os = "linux"))]
@@ -152,7 +169,9 @@ pub async fn load_session_original_text(
 pub async fn query_install_status(
     state: State<'_, ManagedToolsState>,
 ) -> Result<InstallStateSummary, String> {
-    Ok(query_installation_status(&state.ctx.installer))
+    let installer = state.ctx.installer.clone();
+    tokio::task::spawn_blocking(move || query_installation_status(&installer))
+        .await.map_err(|_| "输入法状态查询异常中断。".to_string())
 }
 
 #[cfg(not(target_os = "linux"))]

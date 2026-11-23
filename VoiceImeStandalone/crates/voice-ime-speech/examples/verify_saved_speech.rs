@@ -50,9 +50,12 @@ async fn main() -> Result<(), String> {
     if !matches!(cfg.endpoint.cloud, SpeechCloud::Global | SpeechCloud::China21V) {
         return Err("Cloud acceptance requires a saved Microsoft Speech endpoint".into());
     }
-    if std::env::args_os().nth(2).as_deref() == Some(std::ffi::OsStr::new("zh-CN")) {
-        cfg.recognition_language = "zh-CN".into();
-        cfg.enable_translation = false;
+    if let Some(mode) = std::env::args().nth(2) {
+        match mode.as_str() {
+            "zh-CN" | "auto" => { cfg.recognition_language = mode; cfg.enable_translation = false; }
+            "auto-translate" => { cfg.recognition_language = "auto".into(); cfg.enable_translation = true; cfg.target_language = "en-US".into(); }
+            _ => return Err("Expected zh-CN, auto or auto-translate".into()),
+        }
     }
     let start = Instant::now();
     let sts = StsTokenCache::new();
@@ -61,12 +64,13 @@ async fn main() -> Result<(), String> {
         cfg.recognition_language, cfg.enable_translation, start.elapsed().as_millis());
     let engine = UspSpeechEngineFactory::new(sts, Arc::new(FixtureAudio(Arc::new(bytes))), true);
     let (tx, mut rx) = mpsc::unbounded_channel();
+    let round = Instant::now();
     let handle = engine.start_session(cfg, None, tx);
     let result = tokio::time::timeout(Duration::from_secs(20), async {
         let mut finals = Vec::new();
         while let Some(event) = rx.recv().await {
             match event {
-                SpeechEvent::Ready => println!("REALTIME_READY=1"),
+                SpeechEvent::Ready => println!("REALTIME_READY_MS={}", round.elapsed().as_millis()),
                 SpeechEvent::OutputText { text, is_final: true } if !text.trim().is_empty() => {
                     println!("FINAL={text}");
                     finals.push(text);

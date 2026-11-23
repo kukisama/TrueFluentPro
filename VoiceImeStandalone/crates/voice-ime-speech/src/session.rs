@@ -42,17 +42,10 @@ pub enum SpeechEvent {
 
 /// 零费用后台预热句柄：预先完成 STS 鉴权、TLS 握手与 WebSocket 建连，尚未打开麦克风。
 pub struct PrewarmedSpeechHandle {
-    pub fingerprint: String,
     created_at: Instant,
     ws: WsStream,
     request_id: String,
     config: RuntimeSpeechSessionConfig,
-}
-
-impl PrewarmedSpeechHandle {
-    pub fn is_fresh(&self, expected_fingerprint: &str) -> bool {
-        self.fingerprint == expected_fingerprint && self.created_at.elapsed() < PREWARM_MAX_IDLE
-    }
 }
 
 /// 运行中语音会话控制句柄（停止与等待麦克风及网络彻底释放）。
@@ -84,7 +77,6 @@ impl SpeechSessionHandle {
 pub trait SpeechEngineFactory: Send + Sync {
     fn prewarm(
         &self,
-        fingerprint: String,
         cfg: RuntimeSpeechSessionConfig,
     ) -> tokio::task::JoinHandle<Option<PrewarmedSpeechHandle>>;
 
@@ -131,7 +123,6 @@ impl UspSpeechEngineFactory {
 impl SpeechEngineFactory for UspSpeechEngineFactory {
     fn prewarm(
         &self,
-        fingerprint: String,
         cfg: RuntimeSpeechSessionConfig,
     ) -> tokio::task::JoinHandle<Option<PrewarmedSpeechHandle>> {
         let sts = self.sts.clone();
@@ -140,7 +131,6 @@ impl SpeechEngineFactory for UspSpeechEngineFactory {
             let connect_fut = open_usp_websocket(&sts, &cfg, use_sts);
             match tokio::time::timeout(START_TIMEOUT, connect_fut).await {
                 Ok(Ok((ws, request_id))) => Some(PrewarmedSpeechHandle {
-                    fingerprint,
                     created_at: Instant::now(),
                     ws,
                     request_id,
@@ -217,17 +207,11 @@ async fn open_usp_websocket(
         .await
         .map_err(|_| "无法连接到微软 Speech 实时语音服务，请检查网络、区域与密钥。".to_string())?;
 
-    // 发送 speech.config 与 speech.context 握手帧（尚未发送音频数据，零计费预热）
+    // 预热只连接和发送服务配置，用户开始录音时才创建识别轮次。
     let cfg_msg = format_usp_text_message("speech.config", &request_id, &build_speech_config_json());
     ws.send(Message::Text(cfg_msg.into()))
         .await
         .map_err(|_| "发送语音配置握手失败。".to_string())?;
-
-    let ctx_msg =
-        format_usp_text_message("speech.context", &request_id, &build_speech_context_json(cfg));
-    ws.send(Message::Text(ctx_msg.into()))
-        .await
-        .map_err(|_| "发送语音上下文握手失败。".to_string())?;
 
     Ok((ws, request_id))
 }
@@ -258,13 +242,25 @@ async fn run_usp_session(
         result = connect => result,
     };
 
-    let (ws, request_id) = match ws_pair {
+    let (mut ws, mut request_id) = match ws_pair {
         Ok(pair) => pair,
         Err(msg) => {
             let _ = events_tx.send(SpeechEvent::Failed { message: msg });
             return;
         }
     };
+
+    let context = build_speech_context_json(&cfg);
+    let sent = tokio::select! {
+        biased;
+        _ = &mut stop_rx => return,
+        result = tokio::time::timeout(START_TIMEOUT, ws.send(Message::Text(
+            format_usp_text_message("speech.context", &request_id, &context).into()))) => matches!(result, Ok(Ok(()))),
+    };
+    if !sent {
+        let _ = events_tx.send(SpeechEvent::Failed { message: "发送语音上下文失败。".into() });
+        return;
+    }
 
     // WASAPI 初始化是阻塞操作。等线程返回并释放采集后，才允许下一次录音。
     let device_id = cfg.microphone_device_id.clone();
@@ -278,6 +274,11 @@ async fn run_usp_session(
             return;
         }
         result = &mut opening => result.unwrap_or_else(|_| Err("麦克风初始化异常中断。".into())),
+        _ = tokio::time::sleep(Duration::from_secs(6)) => {
+            let _ = events_tx.send(SpeechEvent::Failed { message: "麦克风驱动初始化超时。设备释放前不会重复开麦。".into() });
+            if let Ok(Ok((_, mut capture))) = opening.await { capture.stop(); }
+            return;
+        }
     };
     let (mut pcm_rx, mut capture_stop) = match capture {
         Ok(pair) => pair,
@@ -289,7 +290,7 @@ async fn run_usp_session(
 
     let (mut ws_sink, mut ws_stream) = ws.split();
 
-    // 3. 发送 44 字节 WAV RIFF 流头，随后立即宣告 R (Ready)
+    // 3. 发送流头；服务确认 turn.start 后才宣告 Ready。
     let wav_hdr = build_pcm16_16khz_mono_wav_header();
     let wav_frame = format_usp_audio_message(&request_id, "audio/x-wav", &wav_hdr);
     let sent = tokio::select! {
@@ -310,7 +311,9 @@ async fn run_usp_session(
         return;
     }
 
-    let _ = events_tx.send(SpeechEvent::Ready);
+    let mut ready = false;
+    let startup_deadline = tokio::time::sleep(START_TIMEOUT);
+    tokio::pin!(startup_deadline);
 
     // 4. 双向异步循环：推送 16kHz PCM 块 & 解析识别/翻译结果
     let translation_mode = cfg.enable_translation;
@@ -319,6 +322,11 @@ async fn run_usp_session(
 
     loop {
         tokio::select! {
+            _ = &mut startup_deadline, if !ready => {
+                capture_stop.stop();
+                let _ = events_tx.send(SpeechEvent::Failed { message: "语音服务未确认识别会话，请检查网络和终结点。".into() });
+                return;
+            }
             _ = &mut stop_rx => {
                 // 先停采集，发送 0 字节结束帧并优雅关闭连接
                 capture_stop.stop();
@@ -333,7 +341,7 @@ async fn run_usp_session(
             maybe_pcm = pcm_rx.recv() => {
                 match maybe_pcm {
                     Some(chunk) => {
-                        let audio_msg = format_usp_audio_message(&request_id, "audio/pcm", &chunk);
+                        let audio_msg = format_usp_audio_message(&request_id, "", &chunk);
                         let sent = tokio::select! {
                             biased;
                             _ = &mut stop_rx => {
@@ -402,14 +410,42 @@ async fn run_usp_session(
                                         }
                                     }
                                 }
-                                ParsedUspEvent::TurnStarted | ParsedUspEvent::TurnEnded | ParsedUspEvent::Ignored => {}
+                                ParsedUspEvent::TurnStarted => {
+                                    if !ready {
+                                        ready = true;
+                                        let _ = events_tx.send(SpeechEvent::Ready);
+                                    }
+                                }
+                                ParsedUspEvent::TurnEnded => {
+                                    request_id = Uuid::new_v4().simple().to_string();
+                                    let context_frame = format_usp_text_message("speech.context", &request_id, &context);
+                                    let header_frame = format_usp_audio_message(&request_id, "audio/x-wav", &wav_hdr);
+                                    let sent = tokio::select! {
+                                        biased;
+                                        _ = &mut stop_rx => { capture_stop.stop(); return; },
+                                        result = tokio::time::timeout(START_TIMEOUT, async {
+                                            ws_sink.send(Message::Text(context_frame.into())).await?;
+                                            ws_sink.send(Message::Binary(header_frame.into())).await
+                                        }) => matches!(result, Ok(Ok(()))),
+                                    };
+                                    if !sent {
+                                        capture_stop.stop();
+                                        let _ = events_tx.send(SpeechEvent::Failed { message: "续接语音识别会话失败。".into() });
+                                        return;
+                                    }
+                                }
+                                ParsedUspEvent::Ignored => {}
                             }
                         }
                     }
-                    Some(Ok(Message::Close(_))) | None => {
+                    close @ (Some(Ok(Message::Close(_))) | None) => {
                         capture_stop.stop();
+                        let code = match close {
+                            Some(Ok(Message::Close(Some(frame)))) => format!("（WebSocket {}）", u16::from(frame.code)),
+                            _ => String::new(),
+                        };
                         let _ = events_tx.send(SpeechEvent::Failed {
-                            message: "云端语音会话已结束，请按 F8 重新开始录音。".into(),
+                            message: format!("云端语音会话已结束{code}，请按 F8 重新开始录音。"),
                         });
                         return;
                     }
@@ -503,6 +539,7 @@ mod tests {
             for _ in 0..4 {
                 let _ = ws.next().await;
             }
+            ws.send(Message::Text("Path: turn.start\r\n\r\n{}".into())).await.unwrap();
             let hyp = "Path: speech.hypothesis\r\nX-RequestId: 1\r\n\r\n{\"Text\":\"你好\"}";
             ws.send(Message::Text(hyp.into())).await.unwrap();
             let fin = "Path: speech.phrase\r\nX-RequestId: 1\r\n\r\n{\"RecognitionStatus\":\"Success\",\"DisplayText\":\"你好世界。\"}";

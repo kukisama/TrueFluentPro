@@ -14,8 +14,9 @@ int wmain(int argc, wchar_t** argv) {
     if (Gdiplus::GdiplusStartup(&token, &startup, nullptr) != Gdiplus::Ok) return 3;
     std::vector<IconEntry> entries;
     std::vector<std::vector<BYTE>> images;
-    DWORD offset = sizeof(IconHeader) + 7 * sizeof(IconEntry);
-    for (int size : {16, 24, 32, 48, 64, 128, 256}) {
+    constexpr int sizes[]{16, 24, 32, 48, 64};
+    DWORD offset = sizeof(IconHeader) + sizeof(sizes) / sizeof(sizes[0]) * sizeof(IconEntry);
+    for (int size : sizes) {
         Gdiplus::Bitmap image(size, size, PixelFormat32bppARGB);
         {
             Gdiplus::Graphics g(&image); g.Clear(Gdiplus::Color(0, 0, 0, 0));
@@ -52,6 +53,6 @@ int wmain(int argc, wchar_t** argv) {
         if (std::fclose(file) != 0) ok = false;
     }
     Gdiplus::GdiplusShutdown(token);
-    std::printf("RESULT brand-icon sizes=16,24,32,48,64,128,256 bytes=%lu success=%d\n", offset, ok);
+    std::printf("RESULT brand-icon sizes=16,24,32,48,64 bytes=%lu success=%d\n", offset, ok);
     return ok ? 0 : 1;
 }

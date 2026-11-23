@@ -6,6 +6,7 @@ pub mod settings_ctrl;
 pub mod usage_ctrl;
 
 use std::path::PathBuf;
+use std::sync::OnceLock;
 use voice_ime_config::ConfigStore;
 use voice_ime_speech::StsTokenCache;
 use voice_ime_storage::UsageReportService;
@@ -15,7 +16,7 @@ use voice_ime_win32::VoiceImeInstaller;
 pub struct ToolsAppContext {
     pub config_store: ConfigStore,
     pub report_service: UsageReportService,
-    pub sts_cache: StsTokenCache,
+    sts_cache: OnceLock<StsTokenCache>,
     pub installer: VoiceImeInstaller,
 }
 
@@ -26,11 +27,15 @@ impl Default for ToolsAppContext {
 }
 
 impl ToolsAppContext {
+    pub fn sts_cache(&self) -> &StsTokenCache {
+        self.sts_cache.get_or_init(StsTokenCache::new)
+    }
+
     pub fn new_production() -> Self {
         Self {
             config_store: ConfigStore::default_store(),
             report_service: UsageReportService::default_service(),
-            sts_cache: StsTokenCache::new(),
+            sts_cache: OnceLock::new(),
             installer: VoiceImeInstaller::from_current_exe(),
         }
     }
@@ -39,7 +44,7 @@ impl ToolsAppContext {
         Self {
             config_store: ConfigStore::new(config_path),
             report_service: UsageReportService::new(db_path),
-            sts_cache: StsTokenCache::new(),
+            sts_cache: OnceLock::new(),
             installer: VoiceImeInstaller::new(app_base_dir),
         }
     }

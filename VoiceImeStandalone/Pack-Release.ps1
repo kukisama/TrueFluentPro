@@ -1,53 +1,82 @@
 $ErrorActionPreference = 'Stop'
 
 $target = Join-Path $PSScriptRoot 'target'
-$id = Get-Date -Format 'yyyyMMdd-HHmmss-fff'
-$work = Join-Path $target "release-package-$id"
-$dist = Join-Path $PSScriptRoot "dist\$id"
+$native = Join-Path $target 'release-native'
+$dist = Join-Path $PSScriptRoot 'dist'
+$triple = 'x86_64-pc-windows-msvc'
+$apps = [ordered]@{
+    'voice-ime-tauri' = 'TrueFluentVoiceImeTools'
+    'voice-ime-daemon' = 'TrueFluentVoiceImeHost'
+}
 
 Push-Location $PSScriptRoot
 try {
     $oldEncoding = [Console]::OutputEncoding
     try {
         [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
-        $metadata = cargo metadata --locked --no-deps --format-version 1
+        $metadata = cargo metadata --locked --format-version 1 --filter-platform $triple
         if ($LASTEXITCODE -ne 0) { throw '无法读取 Cargo 工作区元数据。' }
     } finally {
         [Console]::OutputEncoding = $oldEncoding
     }
-    $version = ($metadata | ConvertFrom-Json).packages.Where({ $_.name -eq 'voice-ime-tauri' })[0].version
-    $name = "TrueFluentVoiceIme-$version-win-x64"
-    $package = Join-Path $work $name
-    $native = Join-Path $work 'native-build'
+    $packages = (($metadata -join "`n") | ConvertFrom-Json).packages
+    $version = ($packages | Where-Object name -eq 'voice-ime-tauri').version
+    $sqliteInclude = Join-Path (Split-Path ($packages | Where-Object name -eq 'libsqlite3-sys').manifest_path) 'sqlite3'
+    & "$PSScriptRoot\native\Build.ps1" -OutputDirectory $native -Configuration Release -Architectures @('x64', 'x86') -LinkMode Static -Version $version -SqliteSource (Join-Path $sqliteInclude 'sqlite3.c')
 
-    cargo build --locked --release --bins -p voice-ime-tauri -p voice-ime-daemon --features tauri/custom-protocol --target x86_64-pc-windows-msvc --target-dir $target
-    if ($LASTEXITCODE -ne 0) { throw 'Rust Release 构建失败。' }
-    & "$PSScriptRoot\native\Build.ps1" -OutputDirectory $native -Configuration Release -Architectures @('x64', 'x86') -LinkMode Static -Version $version
-
-    New-Item -ItemType Directory -Path $package, $dist | Out-Null
-    $rust = Join-Path $target 'x86_64-pc-windows-msvc\release'
-    foreach ($file in 'TrueFluentVoiceImeTools.exe', 'TrueFluentVoiceImeHost.exe') {
-        Copy-Item -LiteralPath (Join-Path $rust $file) -Destination $package
+    # libsqlite3-sys 的官方链接覆盖：保留 bundled bindings，改链接本次生成的导入库。
+    $sqlite = Join-Path $native 'sqlite-x64'
+    $overrides = @{
+        LIBSQLITE3_SYS_USE_PKG_CONFIG = '1'
+        SQLITE3_NO_PKG_CONFIG = '1'
+        SQLITE3_LIB_DIR = $sqlite
+        SQLITE3_INCLUDE_DIR = $sqliteInclude
+        SQLITE3_STATIC = '0'
     }
-    foreach ($arch in 'win-x64', 'win-x86') {
-        $archDir = Join-Path $package "voice-ime\$arch"
-        New-Item -ItemType Directory -Path $archDir | Out-Null
-        foreach ($file in 'VoiceImeStandalone.dll', 'VoiceImeRegister.exe') {
-            Copy-Item -LiteralPath (Join-Path $native "$arch\$file") -Destination $archDir
+    $previous = @{}
+    try {
+        foreach ($key in $overrides.Keys) {
+            $previous[$key] = [Environment]::GetEnvironmentVariable($key)
+            Set-Item -LiteralPath "Env:$key" -Value $overrides[$key]
+        }
+        foreach ($app in $apps.GetEnumerator()) {
+            $features = 'voice-ime-win32/private-sqlite'
+            if ($app.Key -eq 'voice-ime-tauri') { $features += ',tauri/custom-protocol' }
+            cargo rustc --locked --release -p $app.Key --bin $app.Value --features $features --target $triple --target-dir $target -- -C link-arg=/DEPENDENTLOADFLAG:0xA00
+            if ($LASTEXITCODE -ne 0) { throw "Rust Release 构建失败：$($app.Value)" }
+        }
+    } finally {
+        foreach ($key in $previous.Keys) {
+            if ($null -eq $previous[$key]) { Remove-Item -LiteralPath "Env:$key" -ErrorAction SilentlyContinue }
+            else { Set-Item -LiteralPath "Env:$key" -Value $previous[$key] }
         }
     }
-    Copy-Item -LiteralPath "$PSScriptRoot\README.md" -Destination $package
-    Copy-Item -LiteralPath "$PSScriptRoot\..\LICENSE" -Destination $package
-    $source = Join-Path $package 'relink-source\native'
-    New-Item -ItemType Directory -Path $source | Out-Null
-    Get-ChildItem -LiteralPath "$PSScriptRoot\native" -Exclude 'artifacts', '.gitignore' |
-        Copy-Item -Destination $source -Recurse
 
-    $zip = Join-Path $dist "$name.zip"
-    Compress-Archive -LiteralPath $package -DestinationPath $zip -CompressionLevel Optimal
-    $hash = Get-FileHash -LiteralPath $zip -Algorithm SHA256
-    "$($hash.Hash.ToLowerInvariant())  $name.zip" | Set-Content -LiteralPath "$zip.sha256" -Encoding ascii
-    Write-Output "PACKAGE=$zip"
+    # 不覆盖仍在运行的文件；也不结束已安装版或旧目录里的进程。
+    $running = Get-Process -Name @($apps.Values) -ErrorAction SilentlyContinue | Where-Object {
+        $_.Path -and (Split-Path $_.Path) -eq $dist
+    }
+    if ($running) { throw '请关闭 dist 中正在运行的输入法工具或后台，再重新构建。' }
+    New-Item -ItemType Directory -Force -Path $dist | Out-Null
+    $rust = Join-Path $target "$triple\release"
+    Copy-Item -LiteralPath (Join-Path $sqlite 'TrueFluentVoiceImeSqlite.dll') -Destination $dist -Force
+    foreach ($exe in $apps.Values) {
+        Copy-Item -LiteralPath (Join-Path $rust "$exe.exe") -Destination $dist -Force
+    }
+    foreach ($arch in 'win-x64', 'win-x86') {
+        $archDir = Join-Path $dist "voice-ime\$arch"
+        New-Item -ItemType Directory -Force -Path $archDir | Out-Null
+        foreach ($file in 'VoiceImeStandalone.dll', 'VoiceImeRegister.exe') {
+            Copy-Item -LiteralPath (Join-Path $native "$arch\$file") -Destination $archDir -Force
+        }
+    }
+    Copy-Item -LiteralPath "$PSScriptRoot\README.md", "$PSScriptRoot\..\LICENSE" -Destination $dist -Force
+    $source = Join-Path $dist 'relink-source\native'
+    New-Item -ItemType Directory -Force -Path $source | Out-Null
+    Get-ChildItem -LiteralPath "$PSScriptRoot\native" -Exclude 'artifacts', '.gitignore', 'Brand.ico' |
+        Copy-Item -Destination $source -Recurse -Force
+
+    Write-Output "DIRECTORY=$dist"
     Write-Output "NATIVE_TESTS=$native"
 } finally {
     Pop-Location
